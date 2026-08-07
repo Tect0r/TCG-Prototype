@@ -1,0 +1,1222 @@
+{
+  "schemaVersion": 1,
+  "setId": "prototype_core",
+  "name": "Prototype Core Set",
+  "cards": [
+    {
+      "schemaVersion": 1,
+      "id": "prototype_commander_white",
+      "name": "Bulwark Marshal",
+      "type": "commander",
+      "colorIdentity": ["white"],
+      "cost": null,
+      "attack": 2,
+      "health": 14,
+      "unique": true,
+      "role": "blocker",
+      "powerClass": "centerpiece",
+      "tags": ["soldier", "commander"],
+      "keywords": ["guardian"],
+      "abilities": [
+        {
+          "id": "muster",
+          "trigger": "on_turn_start",
+          "effects": [
+            { "type": "create_token", "tokenCardId": "prototype_soldier_token", "amount": 1 }
+          ]
+        }
+      ],
+      "displayText": "At the start of your turn, create a 1/1 Soldier token."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_commander_blue",
+      "name": "Tidecaller Archivist",
+      "type": "commander",
+      "colorIdentity": ["blue"],
+      "cost": null,
+      "attack": 1,
+      "health": 13,
+      "unique": true,
+      "role": "enabler",
+      "powerClass": "centerpiece",
+      "tags": ["mage", "commander"],
+      "abilities": [
+        {
+          "id": "steady_study",
+          "trigger": "on_turn_end",
+          "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
+        }
+      ],
+      "displayText": "At the end of your turn, draw a card."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_commander_black",
+      "name": "Grave Quartermaster",
+      "type": "commander",
+      "colorIdentity": ["black"],
+      "cost": null,
+      "attack": 3,
+      "health": 12,
+      "unique": true,
+      "role": "payoff",
+      "powerClass": "centerpiece",
+      "tags": ["undead", "commander"],
+      "keywords": ["siphon"],
+      "abilities": [
+        {
+          "id": "grim_dividend",
+          "trigger": "on_attack",
+          "effects": [
+            {
+              "type": "modify_stats",
+              "target": { "zone": "battlefield", "controller": "self", "count": 1, "selection": "player_choice" },
+              "attack": 1,
+              "health": 0,
+              "duration": "end_of_turn"
+            }
+          ]
+        }
+      ],
+      "displayText": "Whenever this Commander attacks, a friendly unit gets +1/+0 until end of turn."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_commander_red",
+      "name": "Emberline Captain",
+      "type": "commander",
+      "colorIdentity": ["red"],
+      "cost": null,
+      "attack": 4,
+      "health": 11,
+      "unique": true,
+      "role": "attacker",
+      "powerClass": "centerpiece",
+      "tags": ["warrior", "commander"],
+      "keywords": ["swift"],
+      "abilities": [
+        {
+          "id": "opening_volley",
+          "trigger": "on_attack",
+          "effects": [
+            {
+              "type": "deal_damage",
+              "target": {
+                "zone": "battlefield",
+                "controller": "opponent",
+                "filter": { "cardTypes": ["unit", "token"] },
+                "count": 1
+              },
+              "amount": 1
+            }
+          ]
+        }
+      ],
+      "displayText": "Whenever this Commander attacks, deal 1 damage to an enemy unit."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_commander_green",
+      "name": "Thornwarden Elder",
+      "type": "commander",
+      "colorIdentity": ["green"],
+      "cost": null,
+      "attack": 3,
+      "health": 13,
+      "unique": true,
+      "role": "support",
+      "powerClass": "centerpiece",
+      "tags": ["druid", "commander"],
+      "abilities": [
+        {
+          "id": "grove_tending",
+          "trigger": "on_turn_end",
+          "effects": [
+            {
+              "type": "heal",
+              "target": {
+                "zone": "battlefield",
+                "controller": "self",
+                "count": "all",
+                "selection": "automatic"
+              },
+              "amount": 1
+            }
+          ]
+        }
+      ],
+      "displayText": "At the end of your turn, heal each friendly unit 1."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_commander_blue_red",
+      "name": "Arc Tactician",
+      "type": "commander",
+      "colorIdentity": ["blue", "red"],
+      "cost": null,
+      "attack": 3,
+      "health": 12,
+      "unique": true,
+      "role": "build_around",
+      "powerClass": "centerpiece",
+      "tags": ["mage", "commander"],
+      "abilities": [
+        {
+          "id": "arcing_plan",
+          "trigger": "on_turn_start",
+          "effects": [
+            { "type": "draw", "player": "self", "amount": 1 },
+            {
+              "type": "discard",
+              "player": "self",
+              "amount": 1,
+              "selection": "player_choice"
+            }
+          ]
+        }
+      ],
+      "displayText": "At the start of your turn, draw a card, then discard a card."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_commander_white_black",
+      "name": "Tithe Warden",
+      "type": "commander",
+      "colorIdentity": ["white", "black"],
+      "cost": null,
+      "attack": 2,
+      "health": 13,
+      "unique": true,
+      "role": "support",
+      "powerClass": "centerpiece",
+      "tags": ["cleric", "commander"],
+      "abilities": [
+        {
+          "id": "final_tithe",
+          "trigger": "on_survive_combat",
+          "effects": [
+            {
+              "type": "heal",
+              "target": { "zone": "commander_zone", "controller": "self", "count": 1, "selection": "automatic" },
+              "amount": 2
+            }
+          ]
+        }
+      ],
+      "displayText": "Whenever this Commander survives combat, heal it 2."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_commander_green_blue",
+      "name": "Silt Cartographer",
+      "type": "commander",
+      "colorIdentity": ["green", "blue"],
+      "cost": null,
+      "attack": 2,
+      "health": 13,
+      "unique": true,
+      "role": "enabler",
+      "powerClass": "centerpiece",
+      "tags": ["druid", "commander"],
+      "abilities": [
+        {
+          "id": "chart_the_silt",
+          "trigger": "on_turn_start",
+          "effects": [
+            { "type": "reorder_zone", "player": "self", "zone": "deck", "amount": 3 }
+          ]
+        }
+      ],
+      "displayText": "At the start of your turn, look at the top 3 cards of your deck and put them back in any order."
+    },
+
+    {
+      "schemaVersion": 1,
+      "id": "prototype_soldier_token",
+      "name": "Soldier",
+      "type": "token",
+      "colorIdentity": ["white"],
+      "cost": null,
+      "attack": 1,
+      "health": 1,
+      "collectible": false,
+      "role": "token",
+      "powerClass": "minor",
+      "tags": ["soldier"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_beast_token",
+      "name": "Beast",
+      "type": "token",
+      "colorIdentity": ["green"],
+      "cost": null,
+      "attack": 3,
+      "health": 3,
+      "collectible": false,
+      "role": "token",
+      "powerClass": "minor",
+      "tags": ["beast"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_spark_token",
+      "name": "Spark",
+      "type": "token",
+      "colorIdentity": ["red"],
+      "cost": null,
+      "attack": 1,
+      "health": 1,
+      "collectible": false,
+      "role": "token",
+      "powerClass": "minor",
+      "tags": ["elemental"],
+      "keywords": ["swift"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_scrap_token",
+      "name": "Scrap",
+      "type": "token",
+      "colorIdentity": [],
+      "cost": null,
+      "attack": 1,
+      "health": 1,
+      "collectible": false,
+      "role": "token",
+      "powerClass": "minor",
+      "tags": ["construct"]
+    },
+
+    {
+      "schemaVersion": 1,
+      "id": "prototype_drone",
+      "name": "Salvage Drone",
+      "type": "unit",
+      "colorIdentity": [],
+      "cost": 0,
+      "attack": 0,
+      "health": 1,
+      "role": "support",
+      "powerClass": "minor",
+      "tags": ["construct"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_scout",
+      "name": "Prototype Scout",
+      "type": "unit",
+      "colorIdentity": [],
+      "cost": 1,
+      "attack": 1,
+      "health": 2,
+      "role": "attacker",
+      "powerClass": "minor",
+      "tags": ["scout"],
+      "keywords": ["swift"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "prototype_guard",
+      "name": "Prototype Guard",
+      "type": "unit",
+      "colorIdentity": [],
+      "cost": 2,
+      "attack": 1,
+      "health": 4,
+      "role": "blocker",
+      "powerClass": "standard",
+      "tags": ["construct"],
+      "keywords": ["guardian"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "trench_guard",
+      "name": "Trench Guard",
+      "type": "unit",
+      "colorIdentity": [],
+      "cost": 3,
+      "attack": 1,
+      "health": 5,
+      "role": "blocker",
+      "powerClass": "standard",
+      "tags": ["soldier"],
+      "keywords": ["guardian", "armored"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "unstable_construct",
+      "name": "Unstable Construct",
+      "type": "unit",
+      "colorIdentity": [],
+      "cost": 4,
+      "attack": 4,
+      "health": 4,
+      "role": "attacker",
+      "powerClass": "standard",
+      "tags": ["construct"],
+      "abilities": [
+        {
+          "id": "scatter_parts",
+          "trigger": "on_defeated",
+          "effects": [
+            { "type": "create_token", "tokenCardId": "prototype_scrap_token", "amount": 2 }
+          ]
+        }
+      ],
+      "displayText": "When this unit is defeated, create two 1/1 Scrap tokens."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "surveyors_lens",
+      "name": "Surveyor's Lens",
+      "type": "relic",
+      "colorIdentity": [],
+      "cost": 2,
+      "role": "enabler",
+      "powerClass": "minor",
+      "tags": ["artifact"],
+      "effects": [{ "type": "draw", "player": "self", "amount": 1 }],
+      "displayText": "When this relic is deployed, draw a card."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "energy_font",
+      "name": "Energy Font",
+      "type": "relic",
+      "colorIdentity": [],
+      "cost": 3,
+      "role": "support",
+      "powerClass": "standard",
+      "tags": ["artifact"],
+      "abilities": [
+        {
+          "id": "channel",
+          "trigger": "on_turn_start",
+          "effects": [
+            {
+              "type": "modify_cost",
+              "player": "self",
+              "filter": { "cardTypes": ["unit"] },
+              "delta": -1,
+              "duration": "end_of_turn"
+            }
+          ]
+        }
+      ],
+      "displayText": "At the start of your turn, your units cost 1 less this turn."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "field_survey",
+      "name": "Field Survey",
+      "type": "spell",
+      "colorIdentity": [],
+      "cost": 1,
+      "role": "enabler",
+      "powerClass": "minor",
+      "tags": ["plan"],
+      "effects": [{ "type": "reorder_zone", "player": "self", "zone": "deck", "amount": 3 }],
+      "displayText": "Look at the top 3 cards of your deck and put them back in any order."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "worldbreaker_engine",
+      "name": "Worldbreaker Engine",
+      "type": "relic",
+      "colorIdentity": [],
+      "cost": 8,
+      "unique": true,
+      "role": "build_around",
+      "powerClass": "centerpiece",
+      "tags": ["artifact", "finisher"],
+      "abilities": [
+        {
+          "id": "overwhelming_barrage",
+          "trigger": "on_turn_start",
+          "effects": [
+            {
+              "type": "deal_damage",
+              "target": {
+                "zone": "battlefield",
+                "controller": "opponent",
+                "count": "all",
+                "selection": "automatic"
+              },
+              "amount": 3
+            }
+          ]
+        }
+      ],
+      "displayText": "At the start of your turn, deal 3 damage to each enemy unit."
+    },
+
+    {
+      "schemaVersion": 1,
+      "id": "dawn_conscript",
+      "name": "Dawn Conscript",
+      "type": "unit",
+      "colorIdentity": ["white"],
+      "cost": 1,
+      "attack": 2,
+      "health": 1,
+      "role": "attacker",
+      "powerClass": "minor",
+      "tags": ["soldier"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "field_medic",
+      "name": "Field Medic",
+      "type": "unit",
+      "colorIdentity": ["white"],
+      "cost": 2,
+      "attack": 1,
+      "health": 3,
+      "role": "support",
+      "powerClass": "standard",
+      "tags": ["soldier", "healer"],
+      "effects": [
+        {
+          "type": "heal",
+          "target": {
+            "zone": "battlefield",
+            "controller": "self",
+            "count": 1,
+            "excludeSource": true,
+            "optional": true
+          },
+          "amount": 2
+        }
+      ],
+      "displayText": "When this unit is deployed, heal another friendly unit 2."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "shieldline_sergeant",
+      "name": "Shieldline Sergeant",
+      "type": "unit",
+      "colorIdentity": ["white"],
+      "cost": 3,
+      "attack": 2,
+      "health": 4,
+      "role": "blocker",
+      "powerClass": "standard",
+      "tags": ["soldier"],
+      "keywords": ["guardian"],
+      "abilities": [
+        {
+          "id": "call_reserves",
+          "trigger": "on_deploy",
+          "effects": [
+            { "type": "create_token", "tokenCardId": "prototype_soldier_token", "amount": 1 }
+          ]
+        }
+      ],
+      "displayText": "When this unit is deployed, create a 1/1 Soldier token."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "radiant_bulwark",
+      "name": "Radiant Bulwark",
+      "type": "relic",
+      "colorIdentity": ["white"],
+      "cost": 3,
+      "role": "support",
+      "powerClass": "standard",
+      "tags": ["artifact"],
+      "effects": [
+        {
+          "type": "grant_keyword",
+          "target": {
+            "zone": "battlefield",
+            "controller": "self",
+            "count": "all",
+            "selection": "automatic"
+          },
+          "keyword": "armored",
+          "duration": "permanent"
+        }
+      ],
+      "displayText": "When this relic is deployed, your units gain Armored."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "sunrise_decree",
+      "name": "Sunrise Decree",
+      "type": "spell",
+      "colorIdentity": ["white"],
+      "cost": 5,
+      "unique": true,
+      "role": "payoff",
+      "powerClass": "major",
+      "tags": ["decree"],
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "zone": "battlefield",
+            "controller": "self",
+            "count": "all",
+            "selection": "automatic"
+          },
+          "attack": 2,
+          "health": 2,
+          "duration": "permanent"
+        }
+      ],
+      "displayText": "Your units get +2/+2."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "oathbound_paladin",
+      "name": "Oathbound Paladin",
+      "type": "unit",
+      "colorIdentity": ["white"],
+      "cost": 5,
+      "attack": 4,
+      "health": 5,
+      "role": "finisher",
+      "powerClass": "major",
+      "tags": ["soldier", "knight"],
+      "keywords": ["siphon", "guardian"]
+    },
+
+    {
+      "schemaVersion": 1,
+      "id": "tidepool_apprentice",
+      "name": "Tidepool Apprentice",
+      "type": "unit",
+      "colorIdentity": ["blue"],
+      "cost": 2,
+      "attack": 1,
+      "health": 2,
+      "role": "enabler",
+      "powerClass": "standard",
+      "tags": ["mage"],
+      "effects": [{ "type": "draw", "player": "self", "amount": 1 }],
+      "displayText": "When this unit is deployed, draw a card."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "mistveil_stalker",
+      "name": "Mistveil Stalker",
+      "type": "unit",
+      "colorIdentity": ["blue"],
+      "cost": 3,
+      "attack": 3,
+      "health": 2,
+      "role": "attacker",
+      "powerClass": "standard",
+      "tags": ["rogue"],
+      "keywords": ["evasive"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "desperate_insight",
+      "name": "Desperate Insight",
+      "type": "spell",
+      "colorIdentity": ["blue"],
+      "cost": 2,
+      "role": "enabler",
+      "powerClass": "minor",
+      "tags": ["plan"],
+      "effects": [
+        { "type": "discard", "player": "self", "amount": 1, "selection": "player_choice" },
+        { "type": "draw", "player": "self", "amount": 1 }
+      ],
+      "displayText": "Discard a card, then draw a card."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "arcane_recall",
+      "name": "Arcane Recall",
+      "type": "spell",
+      "colorIdentity": ["blue"],
+      "cost": 3,
+      "role": "enabler",
+      "powerClass": "standard",
+      "tags": ["plan"],
+      "effects": [
+        {
+          "type": "search_zone",
+          "player": "self",
+          "zone": "deck",
+          "filter": { "cardTypes": ["spell"] },
+          "amount": 1,
+          "destination": "hand",
+          "reveal": true
+        }
+      ],
+      "displayText": "Search your deck for a spell, reveal it, and put it into your hand."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "tide_binder",
+      "name": "Tide Binder",
+      "type": "unit",
+      "colorIdentity": ["blue"],
+      "cost": 4,
+      "attack": 2,
+      "health": 5,
+      "role": "removal",
+      "powerClass": "standard",
+      "tags": ["mage"],
+      "effects": [
+        {
+          "type": "return_to_hand",
+          "target": {
+            "zone": "battlefield",
+            "controller": "opponent",
+            "filter": { "cardTypes": ["unit"] },
+            "count": 1
+          }
+        }
+      ],
+      "displayText": "When this unit is deployed, return an enemy unit to its owner's hand."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "cryptic_archivist",
+      "name": "Cryptic Archivist",
+      "type": "unit",
+      "colorIdentity": ["blue"],
+      "cost": 6,
+      "attack": 4,
+      "health": 6,
+      "unique": true,
+      "role": "payoff",
+      "powerClass": "major",
+      "tags": ["mage"],
+      "abilities": [
+        {
+          "id": "endless_notes",
+          "trigger": "on_turn_start",
+          "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
+        }
+      ],
+      "displayText": "At the start of your turn, draw a card."
+    },
+
+    {
+      "schemaVersion": 1,
+      "id": "grave_rat",
+      "name": "Grave Rat",
+      "type": "unit",
+      "colorIdentity": ["black"],
+      "cost": 1,
+      "attack": 2,
+      "health": 1,
+      "role": "attacker",
+      "powerClass": "minor",
+      "tags": ["vermin", "undead"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "wither_touch",
+      "name": "Wither Touch",
+      "type": "spell",
+      "colorIdentity": ["black"],
+      "cost": 1,
+      "role": "removal",
+      "powerClass": "minor",
+      "tags": ["curse"],
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "zone": "battlefield",
+            "controller": "any",
+            "filter": { "cardTypes": ["unit", "token"] },
+            "count": 1
+          },
+          "amount": 2
+        }
+      ],
+      "displayText": "Deal 2 damage to a unit."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "blood_pact",
+      "name": "Blood Pact",
+      "type": "spell",
+      "colorIdentity": ["black"],
+      "cost": 2,
+      "role": "enabler",
+      "powerClass": "standard",
+      "tags": ["curse"],
+      "effects": [
+        {
+          "type": "sacrifice",
+          "target": {
+            "zone": "battlefield",
+            "controller": "self",
+            "filter": { "cardTypes": ["unit", "token"] },
+            "count": 1
+          }
+        },
+        { "type": "draw", "player": "self", "amount": 2 }
+      ],
+      "displayText": "Sacrifice a friendly unit, then draw 2 cards."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "bone_harvester",
+      "name": "Bone Harvester",
+      "type": "unit",
+      "colorIdentity": ["black"],
+      "cost": 3,
+      "attack": 3,
+      "health": 3,
+      "role": "payoff",
+      "powerClass": "standard",
+      "tags": ["undead"],
+      "abilities": [
+        {
+          "id": "feast_on_remains",
+          "trigger": "on_survive_combat",
+          "effects": [
+            {
+              "type": "modify_stats",
+              "target": {
+                "zone": "battlefield",
+                "controller": "self",
+                "count": 1,
+                "selection": "automatic"
+              },
+              "attack": 1,
+              "health": 0,
+              "duration": "permanent"
+            }
+          ]
+        }
+      ],
+      "displayText": "Whenever this unit survives combat, it gets +1/+0 permanently."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "plague_censer",
+      "name": "Plague Censer",
+      "type": "relic",
+      "colorIdentity": ["black"],
+      "cost": 3,
+      "role": "removal",
+      "powerClass": "standard",
+      "tags": ["artifact"],
+      "abilities": [
+        {
+          "id": "creeping_miasma",
+          "trigger": "on_turn_end",
+          "effects": [
+            {
+              "type": "deal_damage",
+              "target": {
+                "zone": "battlefield",
+                "controller": "opponent",
+                "count": "all",
+                "selection": "automatic"
+              },
+              "amount": 1
+            }
+          ]
+        }
+      ],
+      "displayText": "At the end of your turn, deal 1 damage to each enemy unit."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "dread_sovereign",
+      "name": "Dread Sovereign",
+      "type": "unit",
+      "colorIdentity": ["black"],
+      "cost": 7,
+      "attack": 7,
+      "health": 7,
+      "unique": true,
+      "role": "finisher",
+      "powerClass": "centerpiece",
+      "tags": ["undead", "noble"],
+      "keywords": ["venom", "resilient"],
+      "abilities": [
+        {
+          "id": "sovereign_decree",
+          "trigger": "on_deploy",
+          "effects": [
+            {
+              "type": "destroy",
+              "target": {
+                "zone": "battlefield",
+                "controller": "opponent",
+                "filter": { "cardTypes": ["unit", "token"] },
+                "count": 1
+              }
+            }
+          ]
+        }
+      ],
+      "displayText": "When this unit is deployed, destroy an enemy unit."
+    },
+
+    {
+      "schemaVersion": 1,
+      "id": "goblin_scout",
+      "name": "Goblin Scout",
+      "type": "unit",
+      "colorIdentity": ["red"],
+      "cost": 1,
+      "attack": 1,
+      "health": 1,
+      "role": "attacker",
+      "powerClass": "minor",
+      "tags": ["goblin", "scout"],
+      "keywords": ["swift"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "scorch",
+      "name": "Scorch",
+      "type": "spell",
+      "colorIdentity": ["red"],
+      "cost": 1,
+      "role": "removal",
+      "powerClass": "standard",
+      "tags": ["burn"],
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "zone": "battlefield",
+            "controller": "any",
+            "filter": { "cardTypes": ["unit", "token"] },
+            "count": 1
+          },
+          "amount": 3
+        }
+      ],
+      "displayText": "Deal 3 damage to a unit."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "warband_horn",
+      "name": "Warband Horn",
+      "type": "relic",
+      "colorIdentity": ["red"],
+      "cost": 2,
+      "role": "enabler",
+      "powerClass": "standard",
+      "tags": ["artifact"],
+      "abilities": [
+        {
+          "id": "rally_sparks",
+          "trigger": "on_turn_start",
+          "effects": [
+            { "type": "create_token", "tokenCardId": "prototype_spark_token", "amount": 1 }
+          ]
+        }
+      ],
+      "displayText": "At the start of your turn, create a 1/1 Spark token."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "powder_keg_runner",
+      "name": "Powder Keg Runner",
+      "type": "unit",
+      "colorIdentity": ["red"],
+      "cost": 2,
+      "attack": 3,
+      "health": 1,
+      "role": "attacker",
+      "powerClass": "standard",
+      "tags": ["goblin"],
+      "abilities": [
+        {
+          "id": "final_blast",
+          "trigger": "on_defeated",
+          "effects": [
+            {
+              "type": "deal_damage",
+              "target": {
+                "zone": "battlefield",
+                "controller": "opponent",
+                "filter": { "cardTypes": ["unit", "token"] },
+                "count": 1
+              },
+              "amount": 2
+            }
+          ]
+        }
+      ],
+      "displayText": "When this unit is defeated, deal 2 damage to an enemy unit."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "overload_conduit",
+      "name": "Overload Conduit",
+      "type": "spell",
+      "colorIdentity": ["red"],
+      "cost": 4,
+      "unique": true,
+      "role": "build_around",
+      "powerClass": "major",
+      "tags": ["burn", "plan"],
+      "effects": [
+        { "type": "modify_cost", "player": "self", "delta": -2, "duration": "end_of_turn" },
+        { "type": "draw", "player": "self", "amount": 1 }
+      ],
+      "displayText": "Your cards cost 2 less this turn. Draw a card."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "pyre_champion",
+      "name": "Pyre Champion",
+      "type": "unit",
+      "colorIdentity": ["red"],
+      "cost": 5,
+      "attack": 6,
+      "health": 4,
+      "role": "finisher",
+      "powerClass": "major",
+      "tags": ["warrior"],
+      "keywords": ["quick_strike"]
+    },
+
+    {
+      "schemaVersion": 1,
+      "id": "root_snare",
+      "name": "Root Snare",
+      "type": "spell",
+      "colorIdentity": ["green"],
+      "cost": 1,
+      "role": "removal",
+      "powerClass": "minor",
+      "tags": ["growth"],
+      "effects": [
+        {
+          "type": "exhaust",
+          "target": {
+            "zone": "battlefield",
+            "controller": "opponent",
+            "filter": { "cardTypes": ["unit", "token"] },
+            "count": 1
+          }
+        }
+      ],
+      "displayText": "Exhaust an enemy unit."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "thornback_calf",
+      "name": "Thornback Calf",
+      "type": "unit",
+      "colorIdentity": ["green"],
+      "cost": 2,
+      "attack": 2,
+      "health": 3,
+      "role": "blocker",
+      "powerClass": "minor",
+      "tags": ["beast"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "verdant_ward",
+      "name": "Verdant Ward",
+      "type": "spell",
+      "colorIdentity": ["green"],
+      "cost": 2,
+      "role": "support",
+      "powerClass": "minor",
+      "tags": ["growth"],
+      "effects": [
+        {
+          "type": "prevent_damage",
+          "target": { "zone": "battlefield", "controller": "self", "count": 1 },
+          "amount": 3,
+          "duration": "end_of_turn"
+        }
+      ],
+      "displayText": "Prevent the next 3 damage that would be dealt to a friendly unit this turn."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "pack_summons",
+      "name": "Pack Summons",
+      "type": "spell",
+      "colorIdentity": ["green"],
+      "cost": 3,
+      "role": "enabler",
+      "powerClass": "standard",
+      "tags": ["growth", "beast"],
+      "effects": [
+        { "type": "create_token", "tokenCardId": "prototype_beast_token", "amount": 1 }
+      ],
+      "displayText": "Create a 3/3 Beast token."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "wildgrowth_shaman",
+      "name": "Wildgrowth Shaman",
+      "type": "unit",
+      "colorIdentity": ["green"],
+      "cost": 3,
+      "attack": 2,
+      "health": 4,
+      "role": "support",
+      "powerClass": "standard",
+      "tags": ["druid"],
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "zone": "battlefield",
+            "controller": "self",
+            "count": "all",
+            "selection": "automatic",
+            "excludeSource": true
+          },
+          "attack": 1,
+          "health": 1,
+          "duration": "permanent"
+        }
+      ],
+      "displayText": "When this unit is deployed, your other units get +1/+1."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "apex_grovekeeper",
+      "name": "Apex Grovekeeper",
+      "type": "unit",
+      "colorIdentity": ["green"],
+      "cost": 5,
+      "attack": 4,
+      "health": 6,
+      "unique": true,
+      "role": "payoff",
+      "powerClass": "major",
+      "tags": ["druid", "beast"],
+      "abilities": [
+        {
+          "id": "grove_renewal",
+          "trigger": "on_turn_end",
+          "effects": [
+            {
+              "type": "heal",
+              "target": {
+                "zone": "battlefield",
+                "controller": "self",
+                "count": "all",
+                "selection": "automatic"
+              },
+              "amount": 1
+            }
+          ]
+        }
+      ],
+      "displayText": "At the end of your turn, heal each friendly unit 1."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "bramble_titan",
+      "name": "Bramble Titan",
+      "type": "unit",
+      "colorIdentity": ["green"],
+      "cost": 6,
+      "attack": 7,
+      "health": 7,
+      "role": "finisher",
+      "powerClass": "major",
+      "tags": ["beast"],
+      "keywords": ["armored"]
+    },
+
+    {
+      "schemaVersion": 1,
+      "id": "stormforge_adept",
+      "name": "Stormforge Adept",
+      "type": "unit",
+      "colorIdentity": ["blue", "red"],
+      "cost": 3,
+      "attack": 3,
+      "health": 3,
+      "role": "enabler",
+      "powerClass": "standard",
+      "tags": ["mage"],
+      "effects": [
+        { "type": "draw", "player": "self", "amount": 1 },
+        {
+          "type": "deal_damage",
+          "target": {
+            "zone": "battlefield",
+            "controller": "opponent",
+            "filter": { "cardTypes": ["unit", "token"] },
+            "count": 1,
+            "optional": true
+          },
+          "amount": 1
+        }
+      ],
+      "displayText": "When this unit is deployed, draw a card and deal 1 damage to an enemy unit."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "dusk_tithe_priest",
+      "name": "Dusk Tithe Priest",
+      "type": "unit",
+      "colorIdentity": ["white", "black"],
+      "cost": 4,
+      "attack": 3,
+      "health": 4,
+      "role": "support",
+      "powerClass": "standard",
+      "tags": ["cleric"],
+      "abilities": [
+        {
+          "id": "last_rites",
+          "trigger": "on_defeated",
+          "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
+        }
+      ],
+      "displayText": "When this unit is defeated, draw a card."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "tidal_grove_warden",
+      "name": "Tidal Grove Warden",
+      "type": "unit",
+      "colorIdentity": ["green", "blue"],
+      "cost": 4,
+      "attack": 3,
+      "health": 5,
+      "role": "blocker",
+      "powerClass": "standard",
+      "tags": ["druid", "beast"],
+      "keywords": ["evasive"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "crimson_covenant",
+      "name": "Crimson Covenant",
+      "type": "spell",
+      "colorIdentity": ["black", "red"],
+      "cost": 3,
+      "unique": true,
+      "role": "removal",
+      "powerClass": "major",
+      "tags": ["curse", "burn"],
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "zone": "battlefield",
+            "controller": "any",
+            "filter": { "cardTypes": ["unit", "token"] },
+            "count": "all",
+            "selection": "automatic"
+          },
+          "amount": 2
+        }
+      ],
+      "displayText": "Deal 2 damage to each unit."
+    }
+  ]
+}
