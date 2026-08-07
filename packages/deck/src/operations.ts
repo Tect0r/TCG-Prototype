@@ -40,7 +40,11 @@ export function renameDeck(deck: SavedDeck, name: string, clock: Clock = systemC
   return touch({ ...deck, name }, clock);
 }
 
-export function setDeckNotes(deck: SavedDeck, notes: string, clock: Clock = systemClock): SavedDeck {
+export function setDeckNotes(
+  deck: SavedDeck,
+  notes: string,
+  clock: Clock = systemClock,
+): SavedDeck {
   const trimmed = notes.trim();
   const { notes: _dropped, ...rest } = deck;
   return touch(trimmed ? { ...rest, notes: trimmed } : rest, clock);
@@ -97,7 +101,10 @@ export function setCardQuantity(
   options: { limit?: number; clock?: Clock } = {},
 ): SavedDeck {
   const clock = options.clock ?? systemClock;
-  const clamped = Math.max(0, Math.min(Math.floor(quantity), options.limit ?? Number.MAX_SAFE_INTEGER));
+  const clamped = Math.max(
+    0,
+    Math.min(Math.floor(quantity), options.limit ?? Number.MAX_SAFE_INTEGER),
+  );
   const existing = countOf(deck, cardId);
   if (clamped === existing) return deck;
 

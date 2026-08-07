@@ -44,7 +44,10 @@ export function CardFrame({ card, copies = 0, compact = false }: CardFrameProps)
         <h3 className="card-frame__name" title={card.name}>
           {card.name}
         </h3>
-        <span className="card-frame__cost" aria-label={card.cost === null ? 'No energy cost' : `${card.cost} energy`}>
+        <span
+          className="card-frame__cost"
+          aria-label={card.cost === null ? 'No energy cost' : `${card.cost} energy`}
+        >
           {card.cost ?? '—'}
         </span>
       </header>
@@ -80,12 +83,18 @@ export function CardFrame({ card, copies = 0, compact = false }: CardFrameProps)
 
       <footer className="card-frame__footer">
         <span className="card-frame__meta">
-          {[card.role && ROLE_NAMES[card.role], card.powerClass && POWER_CLASS_NAMES[card.powerClass]]
+          {[
+            card.role && ROLE_NAMES[card.role],
+            card.powerClass && POWER_CLASS_NAMES[card.powerClass],
+          ]
             .filter(Boolean)
             .join(' · ')}
         </span>
         {hasStats && (
-          <span className="card-frame__stats" aria-label={`${card.attack} attack, ${card.health} health`}>
+          <span
+            className="card-frame__stats"
+            aria-label={`${card.attack} attack, ${card.health} health`}
+          >
             {card.attack}/{card.health}
           </span>
         )}

@@ -71,7 +71,12 @@
           "effects": [
             {
               "type": "modify_stats",
-              "target": { "zone": "battlefield", "controller": "self", "count": 1, "selection": "player_choice" },
+              "target": {
+                "zone": "battlefield",
+                "controller": "self",
+                "count": 1,
+                "selection": "player_choice"
+              },
               "attack": 1,
               "health": 0,
               "duration": "end_of_turn"
@@ -198,7 +203,12 @@
           "effects": [
             {
               "type": "heal",
-              "target": { "zone": "commander_zone", "controller": "self", "count": 1, "selection": "automatic" },
+              "target": {
+                "zone": "commander_zone",
+                "controller": "self",
+                "count": 1,
+                "selection": "automatic"
+              },
               "amount": 2
             }
           ]
@@ -223,9 +233,7 @@
         {
           "id": "chart_the_silt",
           "trigger": "on_turn_start",
-          "effects": [
-            { "type": "reorder_zone", "player": "self", "zone": "deck", "amount": 3 }
-          ]
+          "effects": [{ "type": "reorder_zone", "player": "self", "zone": "deck", "amount": 3 }]
         }
       ],
       "displayText": "At the start of your turn, look at the top 3 cards of your deck and put them back in any order."
@@ -1047,9 +1055,7 @@
       "role": "enabler",
       "powerClass": "standard",
       "tags": ["growth", "beast"],
-      "effects": [
-        { "type": "create_token", "tokenCardId": "prototype_beast_token", "amount": 1 }
-      ],
+      "effects": [{ "type": "create_token", "tokenCardId": "prototype_beast_token", "amount": 1 }],
       "displayText": "Create a 3/3 Beast token."
     },
     {

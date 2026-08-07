@@ -1,11 +1,5 @@
 import type { CardDefinition } from './schema/card.js';
-import type {
-  CardType,
-  ColorId,
-  KeywordId,
-  PowerClass,
-  Role,
-} from './schema/primitives.js';
+import type { CardType, ColorId, KeywordId, PowerClass, Role } from './schema/primitives.js';
 
 /**
  * Deck-builder browse query. Every field is optional; an empty query matches
@@ -62,7 +56,8 @@ export function matchesQuery(card: CardDefinition, query: CardQuery): boolean {
     if (!neutralOk && !colorHit) return false;
   }
 
-  if (query.minCost !== undefined && (card.cost === null || card.cost < query.minCost)) return false;
+  if (query.minCost !== undefined && (card.cost === null || card.cost < query.minCost))
+    return false;
   if (
     query.maxCost !== undefined &&
     query.maxCost !== null &&
@@ -71,7 +66,8 @@ export function matchesQuery(card: CardDefinition, query: CardQuery): boolean {
     return false;
   }
 
-  if (query.keywords?.length && !query.keywords.some((k) => card.keywords.includes(k))) return false;
+  if (query.keywords?.length && !query.keywords.some((k) => card.keywords.includes(k)))
+    return false;
   if (query.tags?.length && !query.tags.some((t) => card.tags.includes(t))) return false;
 
   if (query.roles?.length && (card.role === undefined || !query.roles.includes(card.role))) {

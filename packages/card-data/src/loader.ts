@@ -29,9 +29,13 @@ function migrateRawSet(raw: unknown, index: number): Result<unknown, Issue[]> {
   const version = (raw as { schemaVersion?: unknown }).schemaVersion;
   if (typeof version !== 'number') {
     return err([
-      error('card_data/missing_schema_version', 'A card set must declare a numeric schemaVersion.', {
-        path: `sets[${index}].schemaVersion`,
-      }),
+      error(
+        'card_data/missing_schema_version',
+        'A card set must declare a numeric schemaVersion.',
+        {
+          path: `sets[${index}].schemaVersion`,
+        },
+      ),
     ]);
   }
   if (version > CARD_SCHEMA_VERSION) {
@@ -39,7 +43,10 @@ function migrateRawSet(raw: unknown, index: number): Result<unknown, Issue[]> {
       error(
         'card_data/unsupported_schema_version',
         `Card set uses schemaVersion ${version}, but this build understands at most ${CARD_SCHEMA_VERSION}. Update the application.`,
-        { path: `sets[${index}].schemaVersion`, context: { found: version, supported: CARD_SCHEMA_VERSION } },
+        {
+          path: `sets[${index}].schemaVersion`,
+          context: { found: version, supported: CARD_SCHEMA_VERSION },
+        },
       ),
     ]);
   }
@@ -122,7 +129,10 @@ export function loadCardSets(rawSets: readonly unknown[]): Result<LoadedCardData
           error(
             'card_data/unknown_token',
             `"${card.name}" creates token "${effect.tokenCardId}", which is not defined in any loaded set.`,
-            { path: `${card.id}.effects`, context: { cardId: card.id, tokenCardId: effect.tokenCardId } },
+            {
+              path: `${card.id}.effects`,
+              context: { cardId: card.id, tokenCardId: effect.tokenCardId },
+            },
           ),
         );
       } else if (token.type !== 'token') {
@@ -130,7 +140,10 @@ export function loadCardSets(rawSets: readonly unknown[]): Result<LoadedCardData
           error(
             'card_data/invalid_token_reference',
             `"${card.name}" creates "${effect.tokenCardId}", which is a ${token.type}, not a token.`,
-            { path: `${card.id}.effects`, context: { cardId: card.id, tokenCardId: effect.tokenCardId } },
+            {
+              path: `${card.id}.effects`,
+              context: { cardId: card.id, tokenCardId: effect.tokenCardId },
+            },
           ),
         );
       }

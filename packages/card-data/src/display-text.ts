@@ -12,7 +12,10 @@ import { KEYWORD_INFO } from './vocabulary.js';
  * clearly names a mechanic must have a matching effect. Extra effects are not
  * flagged, because plenty of behaviour reads naturally without a keyword.
  */
-const PROSE_MARKERS: ReadonlyArray<{ readonly pattern: RegExp; readonly effects: readonly EffectType[] }> = [
+const PROSE_MARKERS: ReadonlyArray<{
+  readonly pattern: RegExp;
+  readonly effects: readonly EffectType[];
+}> = [
   { pattern: /\bdraws? (a|an|\d+|one|two|three) card/i, effects: ['draw', 'search_zone'] },
   { pattern: /\bdiscards? (a|an|\d+|one|two|three)/i, effects: ['discard'] },
   { pattern: /\bdeals? \d+ damage/i, effects: ['deal_damage'] },

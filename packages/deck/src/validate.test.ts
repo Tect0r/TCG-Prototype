@@ -38,7 +38,10 @@ describe('validateDeck', () => {
   });
 
   it('accepts neutral cards under any Commander', () => {
-    const report = validateDeck(deckWith([['prototype_scout', 2]], 'prototype_commander_green'), database);
+    const report = validateDeck(
+      deckWith([['prototype_scout', 2]], 'prototype_commander_green'),
+      database,
+    );
     expect(codes(report.issues)).not.toContain('deck/color_identity');
   });
 
@@ -71,7 +74,13 @@ describe('validateDeck', () => {
   });
 
   it('reports unknown card IDs without discarding the rest of the deck', () => {
-    const report = validateDeck(deckWith([['goblin_scout', 2], ['removed_card', 1]]), database);
+    const report = validateDeck(
+      deckWith([
+        ['goblin_scout', 2],
+        ['removed_card', 1],
+      ]),
+      database,
+    );
     expect(codes(report.issues)).toContain('deck/unknown_card');
     expect(report.stats.unresolvedCardIds).toEqual(['removed_card']);
     expect(report.stats.totalCards).toBe(3);
@@ -90,9 +99,9 @@ describe('validateDeck', () => {
     expect(short.issues.find((i) => i.code === 'deck/size')?.message).toMatch(/add 28 more/);
 
     const long = setCardQuantity(legalDeck(), 'prototype_drone', 3, { clock: fixedClock });
-    expect(validateDeck(long, database).issues.find((i) => i.code === 'deck/size')?.message).toMatch(
-      /3 over/,
-    );
+    expect(
+      validateDeck(long, database).issues.find((i) => i.code === 'deck/size')?.message,
+    ).toMatch(/3 over/);
   });
 
   it('honours a custom format configuration', () => {

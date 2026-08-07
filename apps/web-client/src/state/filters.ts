@@ -1,11 +1,4 @@
-import type {
-  CardQuery,
-  CardType,
-  ColorId,
-  KeywordId,
-  PowerClass,
-  Role,
-} from '@tcg/card-data';
+import type { CardQuery, CardType, ColorId, KeywordId, PowerClass, Role } from '@tcg/card-data';
 
 /** UI filter state. Translated into a `CardQuery` for the card database. */
 export interface FilterState {

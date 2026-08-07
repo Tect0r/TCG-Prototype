@@ -117,10 +117,14 @@ function validateCommander(
 
   if (!commander.collectible) {
     issues.push(
-      error('deck/commander_not_collectible', `"${commander.name}" cannot be chosen in the deck builder.`, {
-        path: 'commanderId',
-        context: { cardId: commander.id },
-      }),
+      error(
+        'deck/commander_not_collectible',
+        `"${commander.name}" cannot be chosen in the deck builder.`,
+        {
+          path: 'commanderId',
+          context: { cardId: commander.id },
+        },
+      ),
     );
   }
 
@@ -221,8 +225,9 @@ function addWarnings(
 ): void {
   const resolved = deck.cards
     .map((entry) => ({ entry, card: database.get(entry.cardId) }))
-    .filter((pair): pair is { entry: (typeof deck.cards)[number]; card: CardDefinition } =>
-      pair.card !== undefined,
+    .filter(
+      (pair): pair is { entry: (typeof deck.cards)[number]; card: CardDefinition } =>
+        pair.card !== undefined,
     );
 
   if (stats.totalCards > 0 && (stats.typeCounts.unit ?? 0) === 0) {

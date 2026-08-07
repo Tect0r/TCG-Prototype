@@ -65,12 +65,19 @@ export function DeckPanel({ deck, database, onChange }: DeckPanelProps) {
       />
 
       <div className="deck-panel__summary">
-        <p className={`deck-panel__size${stats.totalCards === DEFAULT_DECK_FORMAT.deckSize ? ' is-complete' : ''}`}>
+        <p
+          className={`deck-panel__size${stats.totalCards === DEFAULT_DECK_FORMAT.deckSize ? ' is-complete' : ''}`}
+          data-testid="deck-size"
+        >
           <strong>{stats.totalCards}</strong> / {DEFAULT_DECK_FORMAT.deckSize} cards
         </p>
         <p className="deck-panel__identity">
           {stats.colorIdentity.length === 0 ? (
-            <span className="swatch" style={{ background: NEUTRAL_INFO.swatch }} title={NEUTRAL_INFO.name} />
+            <span
+              className="swatch"
+              style={{ background: NEUTRAL_INFO.swatch }}
+              title={NEUTRAL_INFO.name}
+            />
           ) : (
             stats.colorIdentity.map((color) => (
               <span
@@ -83,7 +90,9 @@ export function DeckPanel({ deck, database, onChange }: DeckPanelProps) {
           )}
         </p>
         <p className={`deck-panel__legality${report.legal ? ' is-legal' : ''}`}>
-          {report.legal ? 'Legal deck' : `${errors.length} problem${errors.length === 1 ? '' : 's'}`}
+          {report.legal
+            ? 'Legal deck'
+            : `${errors.length} problem${errors.length === 1 ? '' : 's'}`}
         </p>
       </div>
 
@@ -101,21 +110,29 @@ export function DeckPanel({ deck, database, onChange }: DeckPanelProps) {
 
       {stats.unresolvedCardIds.length > 0 && (
         <div className="deck-panel__unresolved">
+          <p data-testid="unresolved-summary">
+            {stats.unresolvedCardIds.length === 1
+              ? '1 card ID in this deck no longer exists.'
+              : `${stats.unresolvedCardIds.length} card IDs in this deck no longer exist.`}
+          </p>
           <p>
-            {stats.unresolvedCardIds.length} card ID
-            {stats.unresolvedCardIds.length === 1 ? '' : 's'} in this deck no longer exist:{' '}
             {stats.unresolvedCardIds.map((id) => (
               <code key={id}>{id}</code>
             ))}
           </p>
-          <button type="button" onClick={() => onChange(removeUnresolvedCards(deck, stats.unresolvedCardIds))}>
+          <button
+            type="button"
+            onClick={() => onChange(removeUnresolvedCards(deck, stats.unresolvedCardIds))}
+          >
             Remove unresolved cards
           </button>
         </div>
       )}
 
       <ol className="deck-list">
-        {rows.length === 0 && <li className="empty-state">No cards yet. Add some from the grid.</li>}
+        {rows.length === 0 && (
+          <li className="empty-state">No cards yet. Add some from the grid.</li>
+        )}
         {rows.map((row) => (
           <li key={row.cardId} className={`deck-list__row${row.card ? '' : ' is-unresolved'}`}>
             <span className="deck-list__quantity">{row.quantity}×</span>
@@ -124,14 +141,14 @@ export function DeckPanel({ deck, database, onChange }: DeckPanelProps) {
             <span className="deck-list__buttons">
               <button
                 type="button"
-                aria-label={`Remove one ${row.card?.name ?? row.cardId}`}
+                aria-label={`Decrease copies of ${row.card?.name ?? row.cardId}`}
                 onClick={() => onChange(setCardQuantity(deck, row.cardId, row.quantity - 1))}
               >
                 −
               </button>
               <button
                 type="button"
-                aria-label={`Add one ${row.card?.name ?? row.cardId}`}
+                aria-label={`Increase copies of ${row.card?.name ?? row.cardId}`}
                 disabled={!row.card || row.quantity >= copyLimitFor(row.card)}
                 onClick={() =>
                   onChange(
@@ -150,7 +167,10 @@ export function DeckPanel({ deck, database, onChange }: DeckPanelProps) {
 
       <div className="deck-panel__validation">
         <h3>Validation</h3>
-        <IssueList issues={[...errors, ...warnings]} emptyMessage="This deck is legal and ready to play." />
+        <IssueList
+          issues={[...errors, ...warnings]}
+          emptyMessage="This deck is legal and ready to play."
+        />
       </div>
     </section>
   );

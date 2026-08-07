@@ -32,11 +32,17 @@ export function issue(
   };
 }
 
-export const error = (code: string, message: string, extra?: Pick<Issue, 'path' | 'context'>): Issue =>
-  issue('error', code, message, extra);
+export const error = (
+  code: string,
+  message: string,
+  extra?: Pick<Issue, 'path' | 'context'>,
+): Issue => issue('error', code, message, extra);
 
-export const warning = (code: string, message: string, extra?: Pick<Issue, 'path' | 'context'>): Issue =>
-  issue('warning', code, message, extra);
+export const warning = (
+  code: string,
+  message: string,
+  extra?: Pick<Issue, 'path' | 'context'>,
+): Issue => issue('warning', code, message, extra);
 
 export const errorsOf = (issues: readonly Issue[]): Issue[] =>
   issues.filter((i) => i.severity === 'error');

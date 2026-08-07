@@ -8,7 +8,10 @@ export function NoticeBar() {
   if (!notice) return null;
 
   return (
-    <div className={`notice notice--${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>
+    <div
+      className={`notice notice--${notice.tone}`}
+      role={notice.tone === 'error' ? 'alert' : 'status'}
+    >
       <div className="notice__body">
         <p>{notice.message}</p>
         {notice.details && notice.details.length > 0 && <IssueList issues={notice.details} />}

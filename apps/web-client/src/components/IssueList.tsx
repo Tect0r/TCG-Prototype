@@ -14,8 +14,13 @@ export function IssueList({ issues, emptyMessage }: IssueListProps) {
   return (
     <ul className="issues">
       {issues.map((issue, index) => (
-        <li key={`${issue.code}:${issue.path ?? index}`} className={`issue issue--${issue.severity}`}>
-          <span className="issue__severity">{issue.severity === 'error' ? 'Error' : 'Warning'}</span>
+        <li
+          key={`${issue.code}:${issue.path ?? index}`}
+          className={`issue issue--${issue.severity}`}
+        >
+          <span className="issue__severity">
+            {issue.severity === 'error' ? 'Error' : 'Warning'}
+          </span>
           <span className="issue__message">{issue.message}</span>
           <code className="issue__code">{issue.code}</code>
         </li>

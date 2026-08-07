@@ -27,7 +27,13 @@ export const CONTROLLERS = ['self', 'opponent', 'any'] as const;
 export const controllerSchema = z.enum(CONTROLLERS);
 export type Controller = z.infer<typeof controllerSchema>;
 
-export const PLAYER_SELECTORS = ['self', 'opponent', 'each_opponent', 'all', 'target_player'] as const;
+export const PLAYER_SELECTORS = [
+  'self',
+  'opponent',
+  'each_opponent',
+  'all',
+  'target_player',
+] as const;
 export const playerSelectorSchema = z.enum(PLAYER_SELECTORS);
 export type PlayerSelector = z.infer<typeof playerSelectorSchema>;
 

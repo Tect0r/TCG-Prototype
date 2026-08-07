@@ -29,7 +29,9 @@ export function CardArt({ cardId, alt }: CardArtProps) {
       loading="lazy"
       decoding="async"
       draggable={false}
-      onError={() => setSrc((current) => (current === null ? null : nextArtworkSource(current, cardId)))}
+      onError={() =>
+        setSrc((current) => (current === null ? null : nextArtworkSource(current, cardId)))
+      }
     />
   );
 }

@@ -72,18 +72,9 @@ export {
 } from './schema/card.js';
 
 export { CardDatabase } from './database.js';
-export {
-  loadCardSets,
-  zodIssuesToIssues,
-  type LoadedCardData,
-} from './loader.js';
+export { loadCardSets, zodIssuesToIssues, type LoadedCardData } from './loader.js';
 export { BUNDLED_CARD_SETS, loadBundledCardData } from './default-set.js';
-export {
-  compareCards,
-  isColorIdentityLegal,
-  matchesQuery,
-  type CardQuery,
-} from './query.js';
+export { compareCards, isColorIdentityLegal, matchesQuery, type CardQuery } from './query.js';
 export {
   artworkSources,
   cardArtUrl,

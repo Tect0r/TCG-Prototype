@@ -199,7 +199,12 @@ describe('loadCardSets validation', () => {
 
   it('warns, but does not fail, when prose and effects disagree', () => {
     const result = loadCardSets([
-      minimalSet([unitCard({ effects: [{ type: 'draw', amount: 1 }], displayText: 'Deal 3 damage to a unit.' })]),
+      minimalSet([
+        unitCard({
+          effects: [{ type: 'draw', amount: 1 }],
+          displayText: 'Deal 3 damage to a unit.',
+        }),
+      ]),
     ]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;

@@ -41,7 +41,8 @@ export const initialAppState: AppState = {
   hydrated: false,
 };
 
-const byUpdatedDesc = (a: SavedDeck, b: SavedDeck): number => b.updatedAt.localeCompare(a.updatedAt);
+const byUpdatedDesc = (a: SavedDeck, b: SavedDeck): number =>
+  b.updatedAt.localeCompare(a.updatedAt);
 
 /** Most recently edited first, so the deck list matches how people work. */
 export function sortDecks(decks: readonly SavedDeck[]): SavedDeck[] {
@@ -66,7 +67,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       if (!state.decks.some((deck) => deck.id === action.deck.id)) return state;
       return {
         ...state,
-        decks: sortDecks(state.decks.map((deck) => (deck.id === action.deck.id ? action.deck : deck))),
+        decks: sortDecks(
+          state.decks.map((deck) => (deck.id === action.deck.id ? action.deck : deck)),
+        ),
       };
     }
 
@@ -82,7 +85,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'decks_imported': {
       const decks = sortDecks([...state.decks, ...action.decks]);
-      return { decks, activeDeckId: action.decks[0]?.id ?? state.activeDeckId, notice: action.notice };
+      return {
+        ...state,
+        decks,
+        activeDeckId: action.decks[0]?.id ?? state.activeDeckId,
+        notice: action.notice,
+      };
     }
 
     case 'notice_shown':

@@ -75,7 +75,9 @@ export function parseDecksFromJson(text: string): Result<ImportedDecks, Issue[]>
     issues.push(
       ...result.error.map((problem) => ({
         ...problem,
-        ...(problem.path === undefined && !prefix ? {} : { path: `${prefix}${problem.path ?? ''}` }),
+        ...(problem.path === undefined && !prefix
+          ? {}
+          : { path: `${prefix}${problem.path ?? ''}` }),
       })),
     );
   });
@@ -94,10 +96,7 @@ export interface ImportPreparationOptions {
  * Rewrites an imported deck so it cannot overwrite anything already saved:
  * a colliding deck ID gets a fresh one, and a colliding name is suffixed.
  */
-export function prepareImportedDeck(
-  deck: SavedDeck,
-  options: ImportPreparationOptions,
-): SavedDeck {
+export function prepareImportedDeck(deck: SavedDeck, options: ImportPreparationOptions): SavedDeck {
   const usedIds = new Set(options.existing.map((d) => d.id));
   const usedNames = new Set(options.existing.map((d) => d.name.toLowerCase()));
   const clock = options.clock ?? (() => new Date().toISOString());

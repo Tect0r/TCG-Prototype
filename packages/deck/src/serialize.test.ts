@@ -37,8 +37,20 @@ describe('exportDeckToJson', () => {
 
   it('sorts entries by card ID so diffs stay stable', () => {
     const base = deckWith([]);
-    const a = { ...base, cards: [{ cardId: 'scorch', quantity: 1 }, { cardId: 'goblin_scout', quantity: 1 }] };
-    const b = { ...base, cards: [{ cardId: 'goblin_scout', quantity: 1 }, { cardId: 'scorch', quantity: 1 }] };
+    const a = {
+      ...base,
+      cards: [
+        { cardId: 'scorch', quantity: 1 },
+        { cardId: 'goblin_scout', quantity: 1 },
+      ],
+    };
+    const b = {
+      ...base,
+      cards: [
+        { cardId: 'goblin_scout', quantity: 1 },
+        { cardId: 'scorch', quantity: 1 },
+      ],
+    };
     expect(exportDeckToJson(a)).toBe(exportDeckToJson(b));
   });
 

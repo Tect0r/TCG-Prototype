@@ -12,7 +12,13 @@ import {
   type KeyValueStore,
   type SavedDeck,
 } from '@tcg/deck';
-import { activeDeck as selectActiveDeck, appReducer, initialAppState, type AppState, type Notice } from './app-state.js';
+import {
+  activeDeck as selectActiveDeck,
+  appReducer,
+  initialAppState,
+  type AppState,
+  type Notice,
+} from './app-state.js';
 
 export interface AppActions {
   newDeck(name: string): void;

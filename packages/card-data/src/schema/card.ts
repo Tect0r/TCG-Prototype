@@ -12,11 +12,9 @@ import {
 import { abilityDefinitionSchema, effectDefinitionSchema } from './effect.js';
 
 const uniqueArray = <T extends z.ZodTypeAny>(item: T, label: string) =>
-  z
-    .array(item)
-    .refine((values) => new Set(values).size === values.length, {
-      message: `${label} must not contain duplicates.`,
-    });
+  z.array(item).refine((values) => new Set(values).size === values.length, {
+    message: `${label} must not contain duplicates.`,
+  });
 
 const baseCardSchema = z.strictObject({
   schemaVersion: z.number().int().min(1),

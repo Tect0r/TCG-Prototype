@@ -100,7 +100,9 @@ describe('deck persistence', () => {
       </AppProvider>,
     );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Some saved decks could not be read');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Some saved decks could not be read',
+    );
     // The unreadable payload is parked, not overwritten.
     expect(store.getItem(`${DECK_STORAGE_KEY}:unreadable`)).toBe('not json');
   });

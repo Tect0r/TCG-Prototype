@@ -104,10 +104,7 @@ export class DeckRepository {
   }
 
   saveAll(decks: readonly SavedDeck[]): void {
-    this.#store.setItem(
-      this.#key,
-      JSON.stringify({ schemaVersion: COLLECTION_VERSION, decks }),
-    );
+    this.#store.setItem(this.#key, JSON.stringify({ schemaVersion: COLLECTION_VERSION, decks }));
   }
 
   clear(): void {

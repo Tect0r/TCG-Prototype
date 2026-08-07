@@ -1,5 +1,10 @@
 import { useRef, useState } from 'react';
-import { exportDeckToJson, exportDecksToJson, suggestDeckFilename, type SavedDeck } from '@tcg/deck';
+import {
+  exportDeckToJson,
+  exportDecksToJson,
+  suggestDeckFilename,
+  type SavedDeck,
+} from '@tcg/deck';
 import { useAppActions, useAppState } from '../state/AppContext.js';
 import { downloadTextFile } from '../lib/download.js';
 
@@ -54,7 +59,11 @@ export function DeckToolbar({ deck }: { readonly deck: SavedDeck | undefined }) 
         ))}
       </select>
 
-      <button type="button" className="primary" onClick={() => actions.newDeck(`Deck ${decks.length + 1}`)}>
+      <button
+        type="button"
+        className="primary"
+        onClick={() => actions.newDeck(`Deck ${decks.length + 1}`)}
+      >
         New deck
       </button>
 

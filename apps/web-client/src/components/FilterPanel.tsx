@@ -59,7 +59,9 @@ export function FilterPanel({
               key={color.id}
               type="button"
               className={`chip chip--color${filters.colors.includes(color.id) ? ' is-active' : ''}`}
-              style={{ '--chip-color': color.swatch, '--chip-on-color': color.onSwatch } as CSSProperties}
+              style={
+                { '--chip-color': color.swatch, '--chip-on-color': color.onSwatch } as CSSProperties
+              }
               aria-pressed={filters.colors.includes(color.id)}
               onClick={() => patch({ colors: toggle(filters.colors, color.id) })}
             >
@@ -225,7 +227,9 @@ export function FilterPanel({
         type="button"
         className="filters__reset"
         disabled={!isFilterActive(filters)}
-        onClick={() => onChange({ ...emptyFilters, commanderLegalOnly: filters.commanderLegalOnly })}
+        onClick={() =>
+          onChange({ ...emptyFilters, commanderLegalOnly: filters.commanderLegalOnly })
+        }
       >
         Clear filters
       </button>
