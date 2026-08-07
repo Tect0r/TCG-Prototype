@@ -3,9 +3,14 @@
 A standalone, browser-based card-game prototype for testing mechanics, cards and
 balance before the card game is integrated into a larger MMO.
 
-**Current milestone: Phase 1 — the deck builder.** The rules engine, multiplayer
-server and simulator are not implemented; the package boundaries that will hold
-them are described in [ADR 0001](docs/architecture/0001-monorepo-and-tooling.md).
+**Current milestone: Phase 1 — the deck builder, complete.** The rules engine,
+multiplayer server and simulator are not implemented; the package boundaries
+that will hold them are described in
+[ADR 0001](docs/architecture/0001-monorepo-and-tooling.md).
+
+Phase-by-phase progress is in
+[docs/project-status.md](docs/project-status.md); everything still undecided is
+in [docs/open-questions.md](docs/open-questions.md).
 
 The full project specification is in [CLAUDE.md](CLAUDE.md).
 
@@ -67,6 +72,8 @@ assets/
   card-art/             Optional card artwork, discovered by card ID
   defaults/             Fallback card image
 docs/
+  project-status.md     Phase and milestone progress
+  open-questions.md     Undecided questions, and what they block
   rules/                Confirmed rules and open design decisions
   architecture/         Architecture decision records
 scripts/                Development utilities
