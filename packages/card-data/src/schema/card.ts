@@ -9,7 +9,11 @@ import {
   roleSchema,
   tagSchema,
 } from './primitives.js';
-import { abilityDefinitionSchema, effectDefinitionSchema } from './effect.js';
+import {
+  abilityDefinitionSchema,
+  activatedAbilityDefinitionSchema,
+  effectDefinitionSchema,
+} from './effect.js';
 
 const uniqueArray = <T extends z.ZodTypeAny>(item: T, label: string) =>
   z.array(item).refine((values) => new Set(values).size === values.length, {
@@ -38,6 +42,8 @@ const baseCardSchema = z.strictObject({
   effects: z.array(effectDefinitionSchema).default([]),
   /** Effects resolved when a trigger fires while the card is in play. */
   abilities: z.array(abilityDefinitionSchema).default([]),
+  /** Abilities the controller chooses to use, paying their cost first. */
+  activatedAbilities: z.array(activatedAbilityDefinitionSchema).default([]),
   /** Presentation only. Never executed, never parsed for behaviour. */
   displayText: z.string().max(400).optional(),
 });

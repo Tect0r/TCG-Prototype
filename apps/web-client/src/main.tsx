@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BUNDLED_CARD_SETS, loadCardSets } from '@tcg/card-data';
 import { App } from './App.js';
 import { AppProvider } from './state/AppContext.js';
+import { MatchProvider } from './state/MatchContext.js';
 import { CardDataError } from './components/CardDataError.js';
 import './styles.css';
 
@@ -23,7 +24,9 @@ createRoot(container).render(
   <StrictMode>
     {loaded.ok ? (
       <AppProvider database={loaded.value.database}>
-        <App />
+        <MatchProvider>
+          <App />
+        </MatchProvider>
       </AppProvider>
     ) : (
       <CardDataError issues={loaded.error} />

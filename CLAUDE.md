@@ -12,7 +12,7 @@ The application should grow in this order:
 4. Local, headless AI simulations and card-balance analysis
 5. Optional analysis of pseudonymous real-player match data
 
-The first implementation milestone is the **deck builder only**. However, its data model and repository structure must already support the later deterministic rules engine, multiplayer server, and simulator. Do not implement later phases prematurely.
+Phase 1, the deck builder, is complete. The active implementation milestone is now **Phase 2: a deterministic headless rules engine followed by online 1v1**. Preserve the working deck builder and its saved-data compatibility while extending the project.
 
 ## 2. Core design principles
 
@@ -52,9 +52,9 @@ docs/
 
 Do not create circular dependencies. `rules-engine` may depend on `card-data`; `card-data` must not depend on the UI, server, simulator, or rules engine.
 
-## 4. Confirmed game direction
+## 4. Confirmed game direction and provisional v0.2 rules
 
-These rules are the current direction, but some values remain configurable until playtesting confirms them.
+Structural rules below are confirmed. Numeric values marked **provisional** are playable defaults, not final balance decisions. Store them in one shared, validated rules configuration rather than scattering constants through the engine, server, tests, or UI.
 
 ### Decks and Commanders
 
@@ -67,17 +67,49 @@ These rules are the current direction, but some values remain configurable until
 - Begin with single-color and two-color Commanders.
 - All cards are unlocked; there is no collection, account progression, or monetization system.
 
-### Match direction
+### Match setup
+
+- Initial mode: online 1v1.
+- Each player brings one server-validated 30-card deck and its external Commander.
+- Starting player is selected using the match's seeded random-number generator.
+- Both players draw five cards (**provisional**).
+- Use one free opening-hand redraw (**provisional**): a player may return any number of opening cards, draw the same number, then the returned cards are shuffled into the deck. Both players submit or keep before either result is revealed.
+- Starting health: 20 (**provisional**).
+- Maximum hand size: 10 (**provisional**). At turn end, the active player must choose and discard down to the limit.
+- The first player skips their first normal draw (**provisional**) to reduce first-player advantage.
+- Empty-deck rule: attempting to draw from an empty deck causes that player to lose (**provisional**). Drawing multiple cards resolves one draw at a time.
+
+### Energy
 
 - Universal energy increases automatically; there are no land or colored-resource cards.
+- Each player starts with 1 maximum energy on their first turn (**provisional**).
+- At the start of that player's turn, maximum energy increases by 1 up to a maximum of 10 (**provisional**), then current energy refills to maximum.
+- Unspent energy does not carry over.
+- Costs are paid before a card or activated ability enters the resolution queue.
+
+### Battlefield and units
+
+- Each player has five unit slots (**provisional**).
+- A unit cannot be played if no friendly slot is available unless the play itself legally frees or replaces a slot.
+- Units enter ready but have summoning sickness: they cannot attack on the turn they enter unless they have a keyword that permits it.
+- A ready unit may attack once per turn and becomes exhausted when declared as an attacker.
+- Exhausted units ready at the start of their controller's turn.
+- Exhausted units cannot attack but may block (**provisional**).
+- A unit can block at most one attacker; each attacker can initially receive at most one blocker (**provisional**). Model blocker assignment so multiple blockers can be added later without rewriting combat state.
+- Units retain marked damage across turns. A unit is defeated when marked damage is greater than or equal to its current Health.
+- Temporary Attack/Health changes expire at the documented duration boundary, normally turn end. Removing a Health bonus may defeat a damaged unit during the following state-based check.
+
+### Turn and timing
+
 - Initial target is online 1v1 through private invite-code lobbies.
 - Accounts and public matchmaking are out of scope initially.
 - The attacker declares attackers.
 - The defending player assigns blockers.
 - Blocked units deal combat damage simultaneously unless an effect says otherwise.
-- Units retain damage between turns until healed or defeated.
 - No opponent-turn spells, priority system, or MTG-style stack in the initial ruleset.
-- Commander recovery after defeat is intended, currently proposed as three turns, but is not final.
+- Units, relics, and normal spells may be played only during either Main Phase while the effect queue is empty and no choice is pending.
+- Phase 2 has no reactions, interrupts, instants, or player-controlled trigger ordering.
+- Activated abilities may only be used during the controller's Main Phase unless their definition explicitly uses an automatic trigger.
 - Multiplayer later means a genuine Commander-style free-for-all for two to four players, not parallel 1v1 games.
 
 ### Current provisional turn phases
@@ -93,7 +125,56 @@ Second Main Phase
 Turn End
 ```
 
-Treat these as explicit state-machine states. Do not rely on UI flow to enforce phase legality.
+Treat these as explicit state-machine states. Do not rely on UI flow to enforce phase legality. Skip `Assign Blockers` when no legal attacker was declared. Players explicitly pass each Main Phase and confirm attackers/blockers.
+
+### Combat
+
+- An attacker chooses any ready, non-summoning-sick friendly unit and targets the opposing player in 1v1.
+- Declared attackers exhaust immediately.
+- The defender may assign legal blockers or decline to block.
+- An unblocked attacker deals damage equal to its Attack to the defending player.
+- A blocked attacker and its blocker deal damage to each other simultaneously.
+- If the blocker leaves play before combat damage, the attacker remains blocked and deals no player damage unless it has a future piercing/overrun keyword (**provisional**).
+- Negative Attack is treated as 0 when dealing damage.
+- After simultaneous damage is marked, run state-based checks and defeat all lethally damaged units simultaneously. Then emit defeat events in deterministic order.
+- No default excess damage reaches the defending player.
+
+### Relics and spells
+
+- Spells resolve their structured effects in order and then move to discard.
+- A spell with no legal required target cannot be played.
+- If a target becomes invalid before its effect resolves, that target is ignored; other valid targets and later instructions still resolve unless the effect definition says all targets are required.
+- Relics occupy a separate persistent battlefield zone and do not consume unit slots.
+- Each player may control up to three relics (**provisional**).
+- A relic remains in play until destroyed, sacrificed, or moved by an effect.
+- Phase 2 does not implement hidden traps, equipment attachment, or opponent-turn activations.
+
+### Commander
+
+- The Commander begins outside the 30-card deck in the Commander zone.
+- A Commander has a structured passive ability and may have one activated ability. It is not automatically a unit.
+- Commander passives function from the Commander zone unless the card explicitly states another zone.
+- Phase 2 does not summon Commanders as combat units (**provisional simplification**).
+- An activated Commander ability has structured timing, costs, targets, and either `once_per_match` or a documented reusable restriction.
+- Commander defeat and three-turn recovery are deferred until Commanders can enter the battlefield. Do not invent that subsystem in Phase 2.
+
+### Trigger ordering and resolution
+
+- Do not implement an MTG-style stack or player priority.
+- Effects resolve through one deterministic FIFO resolution queue. Instructions belonging to one effect are enqueued in authored array order.
+- After an instruction resolves: run state-based checks, emit resulting events, discover triggered effects, then enqueue those triggers before continuing normal play.
+- Simultaneous triggers are ordered by active player first, then non-active player, then source instance creation order, then trigger index in the card definition.
+- A pending mandatory choice pauses the queue. Only the expected player's valid choice action, concession, or server-authorized timeout action is accepted.
+- Newly created triggers do not interrupt the currently executing atomic instruction.
+- Add a configurable resolution-step limit and repeated-state safeguard so accidental infinite loops terminate with a structured engine error and complete diagnostic log rather than hanging.
+
+### Victory and match termination
+
+- A player loses when their Health is 0 or lower, when required to draw from an empty deck, or when they concede.
+- Check loss after every atomic effect instruction and state-based check, and after simultaneous combat damage.
+- If both players lose in the same state-based check, the match is a draw.
+- A disconnected player receives a 90-second reconnection window (**provisional server rule**). Expiry counts as a loss.
+- Main-phase and choice timers are deferred unless needed during testing; server timeout handling must nevertheless be represented as explicit validated actions, not wall-clock logic inside the engine.
 
 ## 5. Phase 1 — Deck builder requirements
 
@@ -332,7 +413,7 @@ Never store executable closures or functions in game state. Pending choices, con
 
 Target definitions should be structured filters, for example controller, zone, card type, tags, damaged state, cost range, and selection mode. The client must never determine legality independently.
 
-## 10. Rules-engine requirements for Phase 2
+## 10. Phase 2A — Headless rules engine
 
 When match development begins, implement the rules engine as pure state transitions where practical:
 
@@ -357,13 +438,114 @@ Required concepts:
 - Redacted player views so hidden hands/decks are not leaked
 - Structured action and event logs suitable for replay and simulation
 
+### Required serializable state
+
+At minimum, model and runtime-validate:
+
+- `MatchState`: schema version, rules version, match ID, seed/RNG state, status, mode, players, turn number, active player, phase, effect queue, pending choice, result, and resolution counters.
+- `PlayerState`: player ID, health, energy, zones, Commander state, mulligan state, and connection-independent match flags.
+- `CardInstance`: permanent definition ID, unique match instance ID, owner, controller, zone, slot/order, current modifiers, marked damage, exhausted state, turn-entered marker, and counters.
+- `Action`: discriminated union for mulligan, keep hand, play card, activate ability, pass phase, declare attackers, assign blockers, submit choice, concede, and server timeout.
+- `GameEvent`: discriminated union for every observable state change, with sequence number and causal action/effect/source IDs.
+- `PendingChoice`: expected player, choice kind, min/max selections, engine-generated legal entity IDs/options, and serializable continuation.
+- `MatchResult`: winner/draw, reason, final turn, and final event sequence.
+
+Do not expose raw authoritative `MatchState` directly to clients. Derive a `PlayerView` that redacts opponent hands, deck order, unrevealed choices, internal RNG state, and any future hidden information.
+
+### Required legal actions
+
+The engine—not the UI—must generate or validate all legal actions. Phase 2A must support:
+
+- Opening-hand keep and partial redraw
+- Playing a unit into a selected free slot
+- Playing a spell and selecting all required legal targets/choices
+- Playing a relic
+- Activating a supported Commander ability
+- Passing Main Phases
+- Declaring zero or more legal attackers
+- Assigning zero or more legal blockers
+- Resolving mandatory discard/selection choices
+- Conceding at any time
+- A server-originated disconnect-timeout loss action
+
+Invalid actions return structured errors without mutating state or advancing RNG.
+
+### Required v0.2 effects
+
+Implement and test this intentionally limited effect vocabulary before adding more:
+
+- `draw`
+- `discard`
+- `damage`
+- `heal`
+- `modify_stats`
+- `grant_keyword`
+- `remove_keyword`
+- `create_token`
+- `destroy`
+- `sacrifice`
+- `return_to_hand`
+- `exhaust`
+- `ready`
+- `prevent_damage`
+- `move_card`
+
+Support `self`, `opponent`, source, chosen card/unit, and filtered legal target sets. Support fixed numeric values first. Variable values, deck searches, reordering, copying, control changes, and arbitrary custom scripts are out of scope unless an existing Phase 1 card already requires them.
+
+### Required v0.2 triggers
+
+- `on_deploy`
+- `on_attack`
+- `on_block`
+- `on_survive_combat`
+- `on_defeated`
+- `on_turn_start`
+- `on_turn_end`
+- `on_sacrifice`
+
+Every trigger must identify its source instance and causal event. A source leaving play does not cancel an already-created triggered effect unless a future effect explicitly requires the source to remain present.
+
+### Phase 2A test scenarios
+
+In addition to unit tests, add deterministic scenario tests covering:
+
+1. Full setup, seeded shuffle, simultaneous mulligan decisions, and first turn.
+2. Energy growth/refill and first-player skipped draw.
+3. Unit play, slot limit, summoning sickness, ready/exhaust behavior.
+4. Unblocked combat damage.
+5. Blocked simultaneous combat with zero, one, and both units defeated.
+6. Persistent damage and healing across turns.
+7. Spell requiring a target and rejection when no legal target exists.
+8. Discard-then-draw pausing for a player choice and resuming correctly.
+9. Deploy, defeat, turn-start, and turn-end triggers in deterministic order.
+10. Token creation when slots are available and when the battlefield is full.
+11. Simultaneous player loss resulting in a draw.
+12. Empty-deck loss during a multi-card draw.
+13. Concession and server timeout termination.
+14. Identical seed plus identical actions producing identical states/events.
+15. State serialization and restoration during an unresolved choice.
+16. Hidden-information redaction for both player views.
+17. Loop/step safeguard producing a diagnostic failure instead of hanging.
+
 Every rule requires unit tests. Add deterministic scenario tests for full interactions and regression tests for every reported rules bug.
 
-## 11. Online multiplayer roadmap
+### Phase 2A acceptance criteria
 
-After the deck builder and rules engine are stable:
+Phase 2A is complete when:
 
-### Online 1v1
+- The rules engine runs complete 1v1 matches without React, networking, a database, or wall-clock dependencies.
+- All state, actions, events, choices, and results are serializable and runtime-validated.
+- All provisional rules values come from one shared versioned rules configuration.
+- Invalid actions never partially mutate match state.
+- Seeded matches are exactly reproducible.
+- Pending choices survive JSON serialization and resume correctly.
+- Player views do not leak hidden information.
+- The required scenarios and effect/trigger handlers pass tests.
+- A small CLI or test harness can play a scripted complete match and print its structured event log.
+
+Do not begin Phase 2B until Phase 2A passes these criteria.
+
+## 11. Phase 2B — Online 1v1
 
 - Authoritative Node.js server
 - WebSocket communication
@@ -375,9 +557,52 @@ After the deck builder and rules engine are stable:
 - Clear handling of disconnects, timeouts, invalid actions, and version mismatch
 - Structured match logs
 
-Developers must be able to run two browser clients against a local server for testing. Do not build a disposable hot-seat mode.
+### Network boundary
 
-### Two-to-four-player free-for-all
+- Clients send versioned intent messages containing an action and the last event/state revision they observed.
+- The server authenticates the connection to one lobby seat using an opaque reconnect token, validates the action through the shared engine, and broadcasts derived player views/events.
+- The server is the only process allowed to mutate authoritative match state.
+- Reject malformed messages, stale revisions, actions from the wrong player, and incompatible client/card/rules versions with structured errors.
+- Never trust client-supplied costs, legal targets, card definitions, RNG results, hidden card IDs, or resulting state.
+- Make action submission idempotent through unique client action IDs so reconnect/retry cannot play a card twice.
+
+### Lobby and connection flow
+
+1. A host creates a private lobby and receives a short invite code.
+2. Each player joins with a temporary display name and receives an opaque reconnect token.
+3. Each player submits a locally saved deck; the server validates it against its own card data.
+4. Both players mark ready.
+5. The server locks deck revisions, creates the seeded match, and sends each player their redacted view.
+6. Refreshing or reconnecting with the token restores the correct seat and current view.
+7. If a player fails to reconnect within the configured window, the server submits the explicit timeout action.
+
+Initial match and lobby state may remain in memory. Process restarts may end matches in this phase; document that limitation clearly. Do not add accounts or a database merely to solve it yet.
+
+### Match UI requirements
+
+- Show both players, Health, energy, deck/discard counts, Commander, relics, unit slots, active player, current phase, and connection state.
+- Show only the local player's hand and permitted private information.
+- Highlight legal actions and legal targets using server-derived data.
+- Provide explicit controls for pass phase, confirm attackers, confirm blockers, resolve choices, and concede.
+- Render a readable chronological game log based on public events.
+- Disable animation input while awaiting an authoritative revision; animations must never own or delay game rules.
+- Recover cleanly from refresh, stale actions, rejected actions, and temporary connection loss.
+
+### Phase 2B acceptance criteria
+
+- Two browsers can create/join an invite lobby, submit decks, and finish a complete online 1v1 match.
+- The server remains authoritative for every rule, target, cost, random result, and transition.
+- Neither client receives the opponent's hand or deck order.
+- Reconnect within the configured window restores the match without duplicate actions.
+- Invalid, stale, duplicated, or out-of-turn actions are safely rejected.
+- Disconnect expiry, concession, normal Health loss, empty-deck loss, and draw results work end to end.
+- Server and client version mismatches produce a clear actionable message.
+- Automated integration tests cover lobby creation/join, start, representative actions, reconnection, hidden information, and match termination.
+- Existing Phase 1 deck creation, persistence, import, and export still work.
+
+## 12. Later online free-for-all roadmap
+
+Developers must be able to run two browser clients against a local server for testing. Do not build a disposable hot-seat mode.
 
 - Choose which opponent each attacker attacks where applicable
 - Only the attacked player assigns blockers for attacks directed at them
@@ -388,7 +613,7 @@ Developers must be able to run two browser clients against a local server for te
 
 Do not begin this phase until the exact multiplayer combat, targeting, elimination, and Commander rules are documented.
 
-## 12. Local simulation and balance laboratory
+## 13. Local simulation and balance laboratory
 
 The simulator must import the shared rules engine directly. It must not use browsers, rendering, WebSockets, or the multiplayer server. It should run many matches in memory, use seeded randomness, and parallelize safely across CPU workers.
 
@@ -424,7 +649,7 @@ For a new card or rules change, support reproducible baseline-versus-candidate e
 
 High-impact cards are not inherently unbalanced. Evaluate impact relative to energy cost, role, setup requirements, strategic dependency, vulnerability, and counterplay. A centerpiece card should not be compared directly with a minor token.
 
-## 13. Real-player data, later
+## 14. Real-player data, later
 
 If the project eventually has enough players, simulated evidence can be supplemented with pseudonymous real-player data:
 
@@ -437,7 +662,7 @@ If the project eventually has enough players, simulated evidence can be suppleme
 
 Telemetry must be transparent and privacy-conscious. Do not blindly treat popularity as power: popular decks may be easier, cheaper, fashionable, or copied from public lists.
 
-## 14. Engineering standards
+## 15. Engineering standards
 
 - Enable strict TypeScript settings.
 - Validate every external boundary: card JSON, deck imports, network messages, saved data, and simulator configuration.
@@ -451,7 +676,7 @@ Telemetry must be transparent and privacy-conscious. Do not blindly treat popula
 - Keep dependencies minimal and justified.
 - Never silently change confirmed game rules. Document ambiguity in `docs/rules/open-decisions.md` and implement configuration or the simplest reversible placeholder where necessary.
 
-## 15. Phase 1 acceptance criteria
+## 16. Phase 1 acceptance criteria — completed baseline
 
 Phase 1 is complete when:
 
@@ -468,16 +693,37 @@ Phase 1 is complete when:
 - Automated tests cover core schemas, validation, persistence, migration behavior, and artwork resolution.
 - The codebase contains clean package boundaries for future rules-engine, server, and simulator work without pretending those later systems are already implemented.
 
-## 16. Implementation instruction
+## 17. Open decisions after Phase 2
 
-Begin with Phase 1 only. Before writing substantial code:
+Do not block Phase 2 on these unless implementation reveals a structural dependency:
+
+- Final starting Health, hand size, battlefield slots, relic limit, and energy curve
+- Whether exhausted units may block
+- Whether multiple units may block one attacker
+- Final mulligan system
+- Final empty-deck/fatigue rule
+- Commander summoning, combat stats, defeat, additional cost, and recovery
+- Reaction-speed cards, opponent-turn actions, and any future priority system
+- Piercing/overrun and other expanded keywords
+- Phase timers beyond disconnect recovery
+- Multiplayer politics, targeting, elimination, and simultaneous-trigger ownership
+
+When playtesting changes a provisional value, update the versioned rules configuration and affected tests. When a structural rule changes, update this document and add an architecture/rules decision record before implementation.
+
+## 18. Phase 2 implementation instruction
+
+Implement Phase 2 in two strict subphases. Before writing substantial code:
 
 1. Inspect the repository and preserve any existing configuration or user work.
-2. Propose a short implementation plan and identify any decision that truly blocks Phase 1.
-3. Create the monorepo/package boundaries and minimal card/deck schemas.
-4. Implement a thin vertical slice: load cards, render them, create one deck, validate it, save it, and reload it.
-5. Expand to the full Phase 1 requirements.
-6. Run tests, type-checking, linting, and a production build.
-7. Summarize what is complete, commands to run it, remaining open decisions, and any deliberate deviations from this specification.
+2. Verify Phase 1 tests/build and document the actual package boundaries before modifying them.
+3. Propose a short Phase 2A plan and flag only decisions that truly block the deterministic engine.
+4. Implement the versioned rules configuration and runtime schemas.
+5. Build one thin headless vertical slice: seeded setup, draw, play a basic unit, pass phases, attack, block, resolve damage, and finish a match.
+6. Expand to the required effects, triggers, choices, redacted views, logs, and complete Phase 2A test suite.
+7. Stop and report Phase 2A results. Do not start networking until its acceptance criteria pass.
+8. Implement Phase 2B lobby/server protocol, then the smallest match UI consuming authoritative player views.
+9. Add reconnection, idempotency, error handling, integration tests, and the remaining UI requirements.
+10. Run tests, type-checking, linting, and production builds for the entire monorepo.
+11. Summarize completed work, exact run commands, rules/configuration assumptions, test results, open decisions, and deliberate deviations.
 
 Do not replace unresolved game-design decisions with elaborate assumptions. Make uncertain values configurable, document them, and keep the implementation easy to revise after playtesting.

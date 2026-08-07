@@ -14,6 +14,7 @@ import { DeckPanel } from './components/DeckPanel.js';
 import { DeckToolbar } from './components/DeckToolbar.js';
 import { FilterPanel } from './components/FilterPanel.js';
 import { NoticeBar } from './components/NoticeBar.js';
+import { MatchScreen } from './components/match/MatchScreen.js';
 import { emptyFilters, toCardQuery, type FilterState } from './state/filters.js';
 import { useActiveDeck, useAppActions, useCardDatabase } from './state/AppContext.js';
 
@@ -36,11 +37,15 @@ function blockedReason(
   return null;
 }
 
+/** Top-level screens. The deck builder is unchanged; matches live beside it. */
+type Mode = 'build' | 'play';
+
 export function App() {
   const database = useCardDatabase();
   const deck = useActiveDeck();
   const actions = useAppActions();
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
+  const [mode, setMode] = useState<Mode>('build');
 
   const commanderColors = useMemo<readonly ColorId[] | null>(() => {
     if (!deck || deck.commanderId === null) return null;
@@ -63,15 +68,37 @@ export function App() {
     <div className="app">
       <header className="app__header">
         <div className="app__title">
-          <h1>Deck Builder</h1>
+          <h1>{mode === 'build' ? 'Deck Builder' : 'Match'}</h1>
           <p className="app__subtitle">Card game prototype · {database.size} cards loaded</p>
         </div>
-        <DeckToolbar deck={deck} />
+        <nav className="app__modes" aria-label="Screen">
+          <button
+            type="button"
+            aria-pressed={mode === 'build'}
+            className={mode === 'build' ? 'is-active' : ''}
+            onClick={() => setMode('build')}
+          >
+            Deck Builder
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'play'}
+            className={mode === 'play' ? 'is-active' : ''}
+            onClick={() => setMode('play')}
+          >
+            Play
+          </button>
+        </nav>
+        {mode === 'build' && <DeckToolbar deck={deck} />}
       </header>
 
       <NoticeBar />
 
-      {deck ? (
+      {mode === 'play' ? (
+        <main className="app__match">
+          <MatchScreen />
+        </main>
+      ) : deck ? (
         <main className="app__body">
           <FilterPanel
             filters={filters}

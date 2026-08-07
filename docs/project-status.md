@@ -4,162 +4,194 @@ Where the project actually is, phase by phase. This file is the single place to
 check before starting work: it records what is done, what is deliberately not
 started, and what "done" means for each remaining phase.
 
-**Last updated:** 2026-08-07 (commit `66ae97f`)
+**Last updated:** 2026-08-07
 
 | Phase | Scope                          | Status                  |
 | ----- | ------------------------------ | ----------------------- |
 | 1     | Deck builder                   | **Complete**            |
-| 2     | Rules engine + online 1v1      | Not started             |
+| 2A    | Deterministic rules engine     | **Complete**            |
+| 2B    | Online 1v1                     | **Complete**            |
 | 3     | 2–4 player free-for-all        | Not started, blocked    |
 | 4     | Headless simulator and balance | Not started             |
 | 5     | Pseudonymous real-player data  | Not started, contingent |
 
-Phases 2–5 have **no code**, by design. The package boundaries that will hold
-them (`packages/rules-engine`, `packages/bot-interface`,
-`apps/multiplayer-server`, `apps/simulator`) are documented in
-[ADR 0001](architecture/0001-monorepo-and-tooling.md) but are deliberately
-absent rather than present as empty stubs.
+**Verification for the whole monorepo:** `npm run verify` (typecheck → lint →
+test → build). Last run: **268 tests in 22 files, all passing**; typecheck,
+ESLint, Prettier and the production build all clean.
 
 ---
 
 ## Phase 1 — Deck builder — complete
 
-Delivered across commits `08e95be` → `66ae97f`.
+Delivered across commits `08e95be` → `66ae97f`. Every acceptance criterion from
+CLAUDE.md §16 is met; the detailed table is preserved in the git history of this
+file. Phase 2 did not change any Phase 1 behaviour, and the builder's tests
+(`builder-flow`, `persistence`, `CardArt`, deck and card-data suites) all still
+pass unmodified.
 
-### Acceptance criteria
+### What Phase 2 changed in Phase 1 packages
 
-Every criterion from CLAUDE.md §15:
+Three additive changes, all backward compatible with existing saved decks:
 
-| Criterion                                                        | Status | Evidence                                                                        |
-| ---------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------- |
-| Clean install + documented command starts the builder            | Done   | `npm install && npm run dev` — [README](../README.md)                           |
-| Card database runtime-validated, actionable errors               | Done   | `card-data/src/loader.ts`, `loader.test.ts`                                     |
-| Create/edit/duplicate/rename/delete/save decks                   | Done   | `deck/src/operations.ts`, `builder-flow.test.tsx`                               |
-| Import and export decks                                          | Done   | `deck/src/serialize.ts`, `serialize.test.ts`                                    |
-| Commander identity, size, copy limits, unknown IDs               | Done   | `deck/src/validate.ts` (23 tests)                                               |
-| Search and all required filters                                  | Done   | `card-data/src/query.ts`, `web-client/src/state/filters.ts`                     |
-| Artwork loads from the standardised ID filename                  | Done   | `card-data/src/artwork.ts`, [ADR 0004](architecture/0004-artwork-resolution.md) |
-| Missing/broken artwork falls back to the default                 | Done   | `CardArt.test.tsx` (8 tests, incl. default-image failure)                       |
-| Card text and stats render dynamically                           | Done   | `web-client/src/components/` card frame                                         |
-| Refresh preserves locally saved decks                            | Done   | `deck/src/repository.ts`, `persistence.test.tsx`                                |
-| Invalid imports cannot corrupt saved decks                       | Done   | `serialize.test.ts` — import is validate-then-commit                            |
-| Tests cover schemas, validation, persistence, migration, artwork | Done   | 160 tests across 14 files, all passing                                          |
-| Clean package boundaries for later phases                        | Done   | one-way dependency rule enforced by ESLint                                      |
+- `targetsSource: boolean` on `TargetSelector` — CLAUDE.md §10 requires a
+  `source` target and a zone-and-filter selector cannot express "the card this is
+  printed on". Two bundled cards now use it. Tracked as Q29.
+- `activatedAbilities` on `CardDefinition` — the schema had no way to express an
+  activated Commander ability, which §10 requires the engine to support. Tracked
+  as Q27.
+- `lintDisplayText` now also inspects `activatedAbilities`, so text/effect drift
+  is still caught in the new field.
 
-### What exists
-
-- **`packages/shared`** — `Result` type, structured diagnostics, ID generation.
-- **`packages/card-data`** — card schema, effect/target schemas, loader, query,
-  artwork resolution. 56 cards in the bundled development set: 26 units,
-  12 spells, 8 commanders, 6 relics, 4 tokens.
-- **`packages/deck`** — deck schema v1, migrations, legality, persistence,
-  import/export.
-- **`apps/web-client`** — the deck builder (React + Vite).
-- **Schema breadth beyond Phase 1 needs:** all 8 triggers from CLAUDE.md §8 and
-  18 effect types are defined and validated, so card data authored now will not
-  need rewriting when Phase 2 starts. **None of them execute** — validation
-  only.
-
-### Verification
-
-`npm run verify` (typecheck + lint + test + build). Last run: 160/160 tests
-passing in 14 files.
-
-### Known gaps carried forward
-
-Not defects — scope decisions, listed so they are not rediscovered later:
-
-- Card art exists for 3 cards; the rest use the fallback. That is the designed
-  behaviour, not an omission.
-- `displayText` is authored by hand and only loosely cross-checked against
-  structured effects. Generating it is a Phase 2+ concern.
-- No undo/redo in the builder.
-- Deck storage is browser local storage only. No cloud saves, per §5 scope.
+Saved deck format is untouched: no migration was needed.
 
 ---
 
-## Phase 2 — Rules engine and online 1v1 — not started
+## Phase 2A — Rules engine — complete
 
-Two separable milestones. The engine must land first; the server is a transport
-around it.
+`packages/rules-engine`. Design rationale in
+[ADR 0005](architecture/0005-rules-engine.md).
 
-### Milestone 2a — `packages/rules-engine`
+### Acceptance criteria (CLAUDE.md §10)
 
-Definition of done, from CLAUDE.md §10:
+| Criterion                                                      | Evidence                                                          |
+| -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Runs complete 1v1 matches with no React/network/DB/wall clock  | `harness/scripted-match.test.ts` — full matches across four seeds |
+| All state, actions, events, choices, results runtime-validated | Zod schemas in `src/schema/`; `serialize.ts` round trip           |
+| All provisional values from one versioned rules configuration  | `config.ts`; nothing in the engine inlines a rule number          |
+| Invalid actions never partially mutate state                   | `applyAction` works on a clone; asserted in `scenarios.test.ts`   |
+| Seeded matches exactly reproducible                            | scenario 14 and the harness replay test                           |
+| Pending choices survive JSON serialisation and resume          | scenario 15                                                       |
+| Player views do not leak hidden information                    | scenario 16 and the server's hidden-information suite             |
+| Required effects and triggers pass tests                       | `effects.test.ts`, `keywords.test.ts`, `scenarios.test.ts`        |
+| A CLI harness plays a scripted match and prints its event log  | `npm run demo:match`                                              |
 
-- [ ] `applyAction(state, action, context) => result` as pure state transitions
-- [ ] Explicit phase state machine (the 8 provisional phases in
-      [confirmed-rules.md](rules/confirmed-rules.md))
-- [ ] Zones: deck, hand, battlefield, discard, Commander zone, recovery
-- [ ] Card definition ID vs. in-match instance ID
-- [ ] Legal-action generation and validation
-- [ ] Ordered effect-resolution queue
-- [ ] Events and triggers
-- [ ] Serializable pending choices and resumable continuations (§9)
-- [ ] Seeded RNG
-- [ ] State-based checks and victory detection
-- [ ] Redacted per-player views
-- [ ] Structured action/event logs suitable for replay
-- [ ] Unit tests per rule; deterministic scenario tests; regression test per bug
+### The seventeen required scenarios
 
-**Blocked on:** the keyword definitions and the `effects`/`abilities` question
-in [open-questions.md](open-questions.md). Writing the queue before those are
-settled means rewriting it.
+All present in `packages/rules-engine/src/scenarios.test.ts`, numbered to match
+CLAUDE.md §10: setup and mulligan, energy and the skipped draw, unit play and
+slots and summoning sickness, unblocked damage, blocked combat with zero/one/both
+defeated, persistent damage and healing, an untargetable spell, a paused
+discard-then-draw, trigger ordering, token creation with a full board,
+simultaneous loss, empty-deck loss mid-draw, concession and timeout, seeded
+reproducibility, serialisation during a choice, redaction, and the loop
+safeguard.
 
-**Dependency rule:** `rules-engine` may depend on `card-data`. Never the
-reverse.
+### Tests
 
-### Milestone 2b — `apps/multiplayer-server`
+| Suite                            | Tests | Covers                                                |
+| -------------------------------- | ----- | ----------------------------------------------------- |
+| `scenarios.test.ts`              | 41    | the 17 required scenarios plus cross-cutting rules    |
+| `effects.test.ts`                | 12    | one per v0.2 effect handler, plus activated abilities |
+| `keywords.test.ts`               | 9     | one per implemented keyword; inertness of the others  |
+| `rng.test.ts`                    | 7     | determinism, bounds, JSON round trip, shuffle         |
+| `harness/scripted-match.test.ts` | 7     | complete matches, replay, dense event numbering       |
 
-- [ ] Authoritative Node.js server over WebSocket
-- [ ] Private invite-code lobbies, temporary names, no accounts
-- [ ] Server-side deck validation before match start
-- [ ] Hidden-information-safe state updates
-- [ ] Reconnection token and match recovery
-- [ ] Handling for disconnects, timeouts, invalid actions, version mismatch
-- [ ] Two browser clients against a local server (the developer test loop)
-- [ ] Structured match logs
+### Bugs found by the test suite, and fixed
 
-Explicitly **not** a hot-seat mode.
+- Events emitted directly by an action handler (`unit_deployed`,
+  `attackers_declared`, `blockers_assigned`) never reached trigger discovery, so
+  `on_deploy`, `on_attack` and `on_block` silently never fired. Found by the
+  defeat-trigger scenario.
+- The server marked a lobby `finished` before broadcasting, so the "match over"
+  lobby update was suppressed and clients never learned the lobby had ended.
+
+### Known gaps, carried deliberately
+
+- `guardian` and `resilient` are inert. See
+  [open-decisions.md](rules/open-decisions.md#keywords) and Q4.
+- No continuous-effects layer, so "your units gain X" applies once. Q2.
+- Effects cannot target a player directly — the target schema always names a
+  zone. Q23.
+- Commanders never enter the battlefield, so six of the eight triggers can never
+  fire on a Commander. Deferred by CLAUDE.md §4.
+
+---
+
+## Phase 2B — Online 1v1 — complete
+
+`packages/protocol` and `apps/multiplayer-server`, plus the match screen in
+`apps/web-client`. Design rationale in
+[ADR 0006](architecture/0006-network-protocol.md).
+
+### Acceptance criteria (CLAUDE.md §11)
+
+| Criterion                                                       | Evidence                                                            |
+| --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Create/join an invite lobby, submit decks, finish a full match  | `match-server.test.ts` — a full match driven only by `legalActions` |
+| Server authoritative for every rule, target, cost and random    | only the server calls `applyAction`; clients receive views          |
+| Neither client receives the opponent's hand or deck order       | hidden-information suite; `playerView` omits rather than blanks     |
+| Reconnect restores the match without duplicate actions          | reconnection suite, including an action replayed after a drop       |
+| Invalid, stale, duplicated, out-of-turn actions safely rejected | actions suite — one test per rejection path                         |
+| Disconnect expiry, concession, health loss, empty deck, draw    | covered in the server and engine suites                             |
+| Version mismatch produces a clear actionable message            | server suite and `match-flow.test.tsx`                              |
+| Integration tests cover the required surface                    | 20 protocol tests + 3 real-socket tests + 9 UI tests                |
+| Phase 1 deck creation, persistence, import, export still work   | Phase 1 suites unchanged and passing                                |
+
+### Running two clients against a local server
+
+```bash
+npm run dev:server      # ws://127.0.0.1:8787, plus GET /health
+npm run dev             # http://localhost:5173
+```
+
+Open the client twice, switch to the **Play** tab in both, create a lobby in one
+and join with its code in the other. Each seat submits a saved deck and readies
+up; the match starts when both are ready.
+
+### Known limitations, deliberate for this phase
+
+- **Lobbies and matches are in memory only.** Restarting the server ends every
+  live match. CLAUDE.md §11 explicitly allows this and warns against adding a
+  database to solve it yet. The server says so in its startup banner.
+- Reconnect tokens live in `sessionStorage` and expire with the lobby. They are
+  not a security boundary — there are no accounts.
+- No public matchmaking, no spectating, no chat. All out of scope.
+- The match UI is deliberately plain. Animations are not implemented at all,
+  which trivially satisfies "animations must never own or delay game rules".
 
 ---
 
 ## Phase 3 — Two-to-four-player free-for-all — not started, blocked
 
-CLAUDE.md §11 states this phase must not begin until multiplayer combat,
+CLAUDE.md §12 states this phase must not begin until multiplayer combat,
 targeting, elimination and Commander rules are documented. They are not. The
 open items are tracked in [open-questions.md](open-questions.md) as Q10–Q13.
 
-Scope when unblocked: attack-target choice, blocker assignment by the attacked
-player only, explicit priority for simultaneous triggers, elimination, victory
-conditions, spectating after elimination.
+Two things Phase 2 did to keep the door open rather than to start the phase:
+blocks are stored as `(attacker, blocker)` pairs, and player selectors resolve
+through a single function. Both are extension points; neither is multiplayer
+support.
 
 ---
 
 ## Phase 4 — Simulator and balance laboratory — not started
 
-Three separate responsibilities (§12), to be built in this order:
+Three separate responsibilities (CLAUDE.md §13), to be built in this order:
 
 1. **Pilot AI** — heuristic agents: random-legal, aggressive, defensive, value.
 2. **Deck search** — evolutionary generation and selection.
 3. **Balance analyzer** — baseline-vs-candidate experiments on shared seeds.
 
-`apps/simulator` imports the rules engine directly: no browser, no rendering,
-no WebSockets, no server. Requires Milestone 2a and stable match logs. The
-metric list in §12 is the specification for the analyzer; nothing is chosen yet.
+`apps/simulator` will import the rules engine directly: no browser, no
+rendering, no WebSockets, no server. The engine side is ready — `createMatch`
+takes a seed string, generator state travels inside `MatchState`, and
+`enumerateActions` already gives a bot a finite legal action list. The scripted
+harness in `rules-engine/src/harness/` is the seed of a pilot, though it is
+deliberately dumb and belongs to the test suite, not to Phase 4.
 
 ---
 
 ## Phase 5 — Real-player data — not started, contingent
 
 Only meaningful with a real player base. Nothing to build or decide yet beyond
-not painting ourselves into a corner: match logs must already be structured and
-replayable, which Milestone 2a covers.
+not painting ourselves into a corner: match logs are structured, redacted and
+replayable, and every accepted action is recorded in `MatchState.actionLog`
+alongside the seed, so a match can be re-derived exactly.
 
 ---
 
 ## Keeping this file honest
 
 Update it when a milestone's status changes — not at the end of a phase. If a
-checkbox above is ticked without a test or a document to point at, it is not
-done.
+row above claims something is done without a test or a document to point at, it
+is not done.

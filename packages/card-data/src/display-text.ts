@@ -32,7 +32,11 @@ const PROSE_MARKERS: ReadonlyArray<{
 ];
 
 function collectEffects(card: CardDefinition): EffectDefinition[] {
-  return [...card.effects, ...card.abilities.flatMap((ability) => ability.effects)];
+  return [
+    ...card.effects,
+    ...card.abilities.flatMap((ability) => ability.effects),
+    ...card.activatedAbilities.flatMap((ability) => ability.effects),
+  ];
 }
 
 /** Warnings only — never blocks loading. */

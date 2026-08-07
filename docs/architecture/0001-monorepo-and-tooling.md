@@ -61,3 +61,11 @@ a `pnpm-workspace.yaml` and deleting `package-lock.json`; no source changes.
 - `rules-engine`, `bot-interface`, `multiplayer-server` and `simulator` are
   **not** created as empty packages. Their place in the layout is documented
   here and in the README rather than faked with stub code.
+
+**Updated 2026-08-07 (Phase 2):** `packages/rules-engine`,
+`packages/protocol` and `apps/multiplayer-server` now exist. `protocol` was not
+in the original layout sketch — it holds the client/server message schemas,
+which could not live in `card-data` (which must not know about the network) and
+would have made `shared` non-trivial. Rationale in
+[ADR 0006](0006-network-protocol.md). `bot-interface` and `simulator` remain
+absent, awaiting Phase 4.

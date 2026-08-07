@@ -76,5 +76,12 @@ export const targetSelectorSchema = z.strictObject({
   optional: z.boolean().default(false),
   /** Excludes the card that produced the effect from the legal set. */
   excludeSource: z.boolean().default(false),
+  /**
+   * When true the effect applies to its own source instance and every other
+   * field here is ignored. CLAUDE.md §10 requires the engine to support a
+   * `source` target, and "the unit this is printed on" cannot otherwise be
+   * expressed by a zone-and-filter selector.
+   */
+  targetsSource: z.boolean().default(false),
 });
 export type TargetSelector = z.infer<typeof targetSelectorSchema>;

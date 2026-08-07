@@ -15,6 +15,14 @@ export default defineConfig({
           environment: 'node',
         },
       },
+      {
+        test: {
+          name: 'server',
+          root: import.meta.dirname,
+          include: ['apps/multiplayer-server/src/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
       './apps/web-client',
     ],
   },

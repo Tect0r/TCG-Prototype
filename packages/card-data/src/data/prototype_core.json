@@ -48,7 +48,19 @@
           "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
         }
       ],
-      "displayText": "At the end of your turn, draw a card."
+      "activatedAbilities": [
+        {
+          "id": "tidal_insight",
+          "name": "Tidal Insight",
+          "energyCost": 2,
+          "usageLimit": "once_per_turn",
+          "effects": [
+            { "type": "draw", "player": "self", "amount": 1 },
+            { "type": "discard", "player": "self", "amount": 1, "selection": "player_choice" }
+          ]
+        }
+      ],
+      "displayText": "At the end of your turn, draw a card. 2 energy, once per turn: draw a card, then discard a card."
     },
     {
       "schemaVersion": 1,
@@ -207,7 +219,8 @@
                 "zone": "commander_zone",
                 "controller": "self",
                 "count": 1,
-                "selection": "automatic"
+                "selection": "automatic",
+                "targetsSource": true
               },
               "amount": 2
             }
@@ -791,7 +804,8 @@
                 "zone": "battlefield",
                 "controller": "self",
                 "count": 1,
-                "selection": "automatic"
+                "selection": "automatic",
+                "targetsSource": true
               },
               "attack": 1,
               "health": 0,

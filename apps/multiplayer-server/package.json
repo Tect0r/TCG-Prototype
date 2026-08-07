@@ -1,0 +1,28 @@
+{
+  "name": "@tcg/multiplayer-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "vite-node src/main.ts",
+    "start": "vite-node src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tcg/card-data": "*",
+    "@tcg/deck": "*",
+    "@tcg/protocol": "*",
+    "@tcg/rules-engine": "*",
+    "@tcg/shared": "*",
+    "ws": "^8.18.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13"
+  }
+}

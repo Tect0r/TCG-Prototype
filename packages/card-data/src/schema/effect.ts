@@ -141,13 +141,42 @@ export const TRIGGER_IDS = [
 export const triggerIdSchema = z.enum(TRIGGER_IDS);
 export type TriggerId = z.infer<typeof triggerIdSchema>;
 
+const abilityIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9_]*$/, 'Ability IDs must be lowercase_snake_case.');
+
 export const abilityDefinitionSchema = z.strictObject({
-  id: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z][a-z0-9_]*$/, 'Ability IDs must be lowercase_snake_case.'),
+  id: abilityIdSchema,
   trigger: triggerIdSchema,
   effects: z.array(effectDefinitionSchema).min(1),
 });
 export type AbilityDefinition = z.infer<typeof abilityDefinitionSchema>;
+
+/**
+ * How often an activated ability may be used. CLAUDE.md §4 requires either
+ * `once_per_match` or a documented reusable restriction, so the restriction is
+ * an explicit enum rather than an open-ended field.
+ */
+export const ABILITY_USAGE_LIMITS = ['once_per_match', 'once_per_turn', 'unlimited'] as const;
+export const abilityUsageLimitSchema = z.enum(ABILITY_USAGE_LIMITS);
+export type AbilityUsageLimit = z.infer<typeof abilityUsageLimitSchema>;
+
+/**
+ * An ability the controller chooses to use. Phase 2 has no reactions, so the
+ * only legal timing is the controller's own Main Phase with an empty effect
+ * queue and no pending choice (CLAUDE.md §4).
+ */
+export const activatedAbilityDefinitionSchema = z.strictObject({
+  id: abilityIdSchema,
+  name: z.string().min(1).max(80),
+  /** Energy paid before the ability enters the resolution queue. */
+  energyCost: z.number().int().min(0).max(20),
+  /** Whether using the ability exhausts its source. */
+  exhaustsSource: z.boolean().default(false),
+  usageLimit: abilityUsageLimitSchema,
+  timing: z.literal('main_phase').default('main_phase'),
+  effects: z.array(effectDefinitionSchema).min(1),
+});
+export type ActivatedAbilityDefinition = z.infer<typeof activatedAbilityDefinitionSchema>;

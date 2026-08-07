@@ -13,6 +13,8 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @tcg/web-client",
+    "dev:server": "npm run dev --workspace @tcg/multiplayer-server",
+    "demo:match": "npm run demo:match --workspace @tcg/rules-engine",
     "build": "npm run build --workspace @tcg/web-client",
     "preview": "npm run preview --workspace @tcg/web-client",
     "test": "vitest run",
