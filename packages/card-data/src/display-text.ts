@@ -39,15 +39,39 @@ function collectEffects(card: CardDefinition): EffectDefinition[] {
   ];
 }
 
+/**
+ * Effect types a card's continuous abilities cover. A static "+1/+1 to your
+ * units" reads as a stat change in prose but is not an `EffectDefinition`, so
+ * the linter has to know about it or it reports a false mismatch.
+ */
+function staticEffectTypes(card: CardDefinition): EffectType[] {
+  return card.staticAbilities.map((ability) => ability.effect.type);
+}
+
+/** Keywords the card has printed, grants once, or grants continuously. */
+function keywordsInPlay(card: CardDefinition, effects: readonly EffectDefinition[]): Set<string> {
+  const keywords = new Set<string>(card.keywords);
+  for (const effect of effects) {
+    if (effect.type === 'grant_keyword') keywords.add(effect.keyword);
+  }
+  for (const ability of card.staticAbilities) {
+    if (ability.effect.type === 'grant_keyword') keywords.add(ability.effect.keyword);
+  }
+  return keywords;
+}
+
 /** Warnings only — never blocks loading. */
 export function lintDisplayText(card: CardDefinition): Issue[] {
   const issues: Issue[] = [];
   const effects = collectEffects(card);
-  const effectTypes = new Set(effects.map((effect) => effect.type));
+  const effectTypes = new Set<string>([
+    ...effects.map((effect) => effect.type),
+    ...staticEffectTypes(card),
+  ]);
   const text = card.displayText;
 
   if (text === undefined) {
-    if (effects.length > 0) {
+    if (effects.length > 0 || card.staticAbilities.length > 0) {
       issues.push(
         warning(
           'display_text/missing',
@@ -76,9 +100,10 @@ export function lintDisplayText(card: CardDefinition): Issue[] {
 
   // Keywords live in structured data; repeating their reminder text in prose
   // without granting the keyword is the other common drift.
+  const granted = keywordsInPlay(card, effects);
   for (const info of Object.values(KEYWORD_INFO)) {
     const named = new RegExp(`\\b${info.name}\\b`, 'i').test(text);
-    if (named && !card.keywords.includes(info.id) && !effectTypes.has('grant_keyword')) {
+    if (named && !granted.has(info.id)) {
       issues.push(
         warning(
           'display_text/keyword_mismatch',

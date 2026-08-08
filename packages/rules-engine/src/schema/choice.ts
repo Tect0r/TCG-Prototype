@@ -16,6 +16,12 @@ export const continuationSchema = z.discriminatedUnion('kind', [
     itemId: z.string().min(1),
     /** Index of the instruction that asked for the choice. */
     effectIndex: z.number().int().min(0),
+    /**
+     * Where to file the answer in the item's `selections`. Usually the effect
+     * index, but one instruction can need several answers — an `each_opponent`
+     * discard asks every opponent in turn — so the key is explicit.
+     */
+    selectionKey: z.string().min(1),
   }),
   z.strictObject({
     kind: z.literal('turn_end_discard'),
@@ -40,10 +46,13 @@ export const CHOICE_REASONS = [
   'effect_target',
   'discard_effect',
   'sacrifice_cost',
+  'discard_cost',
   'search_zone',
   'reorder_zone',
   'hand_size_discard',
   'unit_slot',
+  /** Which living opponent an `opponent` target means (CLAUDE.md §12). */
+  'select_opponent',
 ] as const;
 export const choiceReasonSchema = z.enum(CHOICE_REASONS);
 export type ChoiceReason = z.infer<typeof choiceReasonSchema>;

@@ -16,6 +16,7 @@ export {
   tagSchema,
   ZONE_IDS,
   zoneIdSchema,
+  TARGETABLE_ZONE_IDS,
   DECKABLE_CARD_TYPES,
   type CardId,
   type ColorId,
@@ -35,7 +36,10 @@ export {
   playerSelectorSchema,
   selectionModeSchema,
   targetSelectorSchema,
+  targetDefinitionSchema,
   targetCountSchema,
+  entityTarget,
+  targetsPlayers,
   CONTROLLERS,
   DURATIONS,
   PLAYER_SELECTORS,
@@ -47,23 +51,32 @@ export {
   type PlayerSelector,
   type SelectionMode,
   type TargetCount,
+  type TargetDefinition,
+  type TargetDefinitionInput,
   type TargetSelector,
 } from './schema/target.js';
 
 export {
   effectDefinitionSchema,
   abilityDefinitionSchema,
+  abilityCostSchema,
   activatedAbilityDefinitionSchema,
   abilityUsageLimitSchema,
+  continuousScopeSchema,
+  staticAbilityDefinitionSchema,
   triggerIdSchema,
   ABILITY_USAGE_LIMITS,
   EFFECT_TYPES,
   TRIGGER_IDS,
+  type AbilityCost,
   type AbilityDefinition,
   type ActivatedAbilityDefinition,
   type AbilityUsageLimit,
+  type ContinuousScope,
   type EffectDefinition,
   type EffectType,
+  type EntityTarget,
+  type StaticAbilityDefinition,
   type TriggerId,
 } from './schema/effect.js';
 
@@ -78,6 +91,7 @@ export {
 
 export { CardDatabase } from './database.js';
 export { loadCardSets, zodIssuesToIssues, type LoadedCardData } from './loader.js';
+export { migrateCardSet, canMigrateCardSet } from './migrate.js';
 export { BUNDLED_CARD_SETS, loadBundledCardData } from './default-set.js';
 export { compareCards, isColorIdentityLegal, matchesQuery, type CardQuery } from './query.js';
 export {

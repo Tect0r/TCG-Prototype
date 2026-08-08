@@ -40,7 +40,10 @@ const damageTarget = {
  */
 export const gameEventSchema = z.discriminatedUnion('type', [
   event('match_started', {
+    /** Turn order: the seat circle rotated to the starting player. */
     playerIds: z.array(playerIdSchema),
+    /** The stable seat circle itself, which never changes (CLAUDE.md §12). */
+    seatOrder: z.array(playerIdSchema),
     startingPlayerId: playerIdSchema,
     rulesVersion: z.string(),
   }),
@@ -65,7 +68,12 @@ export const gameEventSchema = z.discriminatedUnion('type', [
   // `definitionId` is redacted to null for players who may not see the card.
   event('card_drawn', {
     playerId: playerIdSchema,
-    instanceId: instanceIdSchema,
+    /**
+     * Null for other viewers. A drawn card was never public, so even its opaque
+     * instance ID is hidden information: leaving it in would let a viewer track
+     * which physical cards a rival kept through a mulligan (CLAUDE.md §12).
+     */
+    instanceId: instanceIdSchema.nullable(),
     definitionId: cardIdSchema.nullable(),
     deckRemaining: z.number().int().min(0),
   }),
@@ -111,9 +119,26 @@ export const gameEventSchema = z.discriminatedUnion('type', [
   event('attackers_declared', {
     playerId: playerIdSchema,
     instanceIds: z.array(instanceIdSchema),
+    /** Which opponent each attacker chose, in the same order (CLAUDE.md §12). */
+    attacks: z.array(
+      z.strictObject({
+        attackerInstanceId: instanceIdSchema,
+        defenderPlayerId: playerIdSchema,
+      }),
+    ),
   }),
-  event('blockers_assigned', {
+  /**
+   * One defender has answered. Deliberately carries no assignments: the choices
+   * stay hidden until every attacked player has submitted (CLAUDE.md §12).
+   */
+  event('blockers_submitted', {
     playerId: playerIdSchema,
+    blockCount: z.number().int().min(0),
+    awaitingPlayerIds: z.array(playerIdSchema),
+  }),
+  /** Every defender has answered; the merged assignment is now public. */
+  event('blockers_assigned', {
+    playerId: playerIdSchema.nullable(),
     blocks: z.array(
       z.strictObject({
         attackerInstanceId: instanceIdSchema,
@@ -232,6 +257,12 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     health: z.number().int(),
   }),
   event('player_lost', { playerId: playerIdSchema, reason: lossReasonSchema }),
+  /** The elimination cleanup has run for this seat (CLAUDE.md §12). */
+  event('player_eliminated', { playerId: playerIdSchema, turn: z.number().int().min(0) }),
+  event('effects_cancelled', { playerId: playerIdSchema, count: z.number().int().min(0) }),
+  event('choice_cancelled', { choiceId: z.string(), playerId: playerIdSchema }),
+  /** A card an eliminated player controlled has gone back to its owner. */
+  event('control_returned', { instanceId: instanceIdSchema, playerId: playerIdSchema }),
   event('match_ended', {
     outcome: z.enum(['win', 'draw']),
     winnerId: playerIdSchema.nullable(),

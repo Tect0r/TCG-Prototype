@@ -38,9 +38,8 @@ function chooseAction(actions: readonly Action[]): Action | undefined {
   const attacks = ranked.filter((action) => action.type === 'declare_attackers');
   if (attacks.length > 0 && ranked[0]?.type === 'declare_attackers') {
     return (
-      attacks.find(
-        (action) => action.type === 'declare_attackers' && action.attackerInstanceIds.length > 0,
-      ) ?? attacks[0]
+      attacks.find((action) => action.type === 'declare_attackers' && action.attacks.length > 0) ??
+      attacks[0]
     );
   }
   return ranked[0];

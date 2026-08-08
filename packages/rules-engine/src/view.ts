@@ -16,6 +16,7 @@ import {
   combatStateSchema,
   matchResultSchema,
   mulliganStatusSchema,
+  type CombatState,
   type MatchState,
 } from './schema/state.js';
 import {
@@ -59,6 +60,8 @@ export type CardInstanceView = z.infer<typeof cardInstanceViewSchema>;
 export const playerViewSummarySchema = z.strictObject({
   playerId: playerIdSchema,
   name: z.string(),
+  /** Position in the stable seat circle, for rendering the table in order. */
+  seatIndex: z.number().int().min(0),
   health: z.number().int(),
   energy: z.number().int().min(0),
   maxEnergy: z.number().int().min(0),
@@ -71,6 +74,8 @@ export const playerViewSummarySchema = z.strictObject({
   mulliganStatus: mulliganStatusSchema,
   lost: z.boolean(),
   lossReason: lossReasonSchema.nullable(),
+  /** Cleanup has run: their board is gone and they are watching (CLAUDE.md §12). */
+  eliminated: z.boolean(),
 });
 export type PlayerViewSummary = z.infer<typeof playerViewSummarySchema>;
 
@@ -85,11 +90,14 @@ export const playerViewSchema = z.strictObject({
   turn: z.number().int().min(0),
   activePlayerId: playerIdSchema,
   sequence: z.number().int().min(0),
+  /** Stable seat circle; never reordered, even as players are eliminated. */
+  seatOrder: z.array(playerIdSchema),
   playerOrder: z.array(playerIdSchema),
   players: z.array(playerViewSummarySchema),
   /** The viewer's own hand. Never populated for anyone else. */
   hand: z.array(instanceIdSchema),
   instances: z.record(instanceIdSchema, cardInstanceViewSchema),
+  /** Redacted: other defenders' pending blocker submissions are stripped. */
   combat: combatStateSchema,
   /** Only ever the viewer's own choice; otherwise null. */
   pendingChoice: pendingChoiceSchema.nullable(),
@@ -113,7 +121,9 @@ export type PlayerView = z.infer<typeof playerViewSchema>;
 export function redactEvent(event: GameEvent, viewerId: PlayerId): GameEvent {
   switch (event.type) {
     case 'card_drawn':
-      return event.playerId === viewerId ? event : { ...event, definitionId: null };
+      return event.playerId === viewerId
+        ? event
+        : { ...event, instanceId: null, definitionId: null };
     case 'card_moved':
       // Moving into a hidden zone hides the card from everyone but its owner.
       if (event.playerId === viewerId) return event;
@@ -128,6 +138,24 @@ export function redactEvent(event: GameEvent, viewerId: PlayerId): GameEvent {
     default:
       return event;
   }
+}
+
+/**
+ * Combat as one seat may see it.
+ *
+ * Attacks are public the moment they are declared. Blocker submissions are not:
+ * each defender answers independently and nobody — attacker or fellow defender —
+ * sees an assignment until every defender has submitted, at which point the
+ * merged `blocks` list becomes public (CLAUDE.md §12).
+ */
+function redactCombat(state: MatchState, viewerId: PlayerId): CombatState {
+  const combat = structuredClone(state.combat);
+  return {
+    ...combat,
+    submissions: combat.submissions.filter(
+      (submission) => submission.defenderPlayerId === viewerId,
+    ),
+  };
 }
 
 function instanceView(
@@ -179,7 +207,7 @@ export function playerView(
     if (view) visible[instanceId] = view;
   };
 
-  for (const playerId of state.playerOrder) {
+  for (const playerId of state.seatOrder) {
     const player = playerOf(state, playerId);
     for (const slot of player.units) reveal(slot);
     for (const relic of player.relics) reveal(relic);
@@ -194,11 +222,12 @@ export function playerView(
     for (const entityId of state.pendingChoice.validEntityIds) reveal(entityId);
   }
 
-  const players = state.playerOrder.map((playerId) => {
+  const players = state.seatOrder.map((playerId, seatIndex) => {
     const player = playerOf(state, playerId);
     return {
       playerId,
       name: player.name,
+      seatIndex,
       health: player.health,
       energy: player.energy,
       maxEnergy: player.maxEnergy,
@@ -211,6 +240,7 @@ export function playerView(
       mulliganStatus: player.mulligan.status,
       lost: player.lost,
       lossReason: player.lossReason,
+      eliminated: player.eliminatedOnTurn !== null,
     };
   });
 
@@ -227,11 +257,12 @@ export function playerView(
     turn: state.turn,
     activePlayerId: state.activePlayerId,
     sequence: state.sequence,
+    seatOrder: [...state.seatOrder],
     playerOrder: [...state.playerOrder],
     players,
     hand: [...viewer.hand],
     instances: visible,
-    combat: structuredClone(state.combat),
+    combat: redactCombat(state, viewerId),
     pendingChoice:
       state.pendingChoice && state.pendingChoice.playerId === viewerId
         ? structuredClone(state.pendingChoice)

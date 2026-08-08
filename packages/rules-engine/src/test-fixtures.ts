@@ -8,12 +8,13 @@ import {
 } from '@tcg/card-data';
 import { isErr, unwrap } from '@tcg/shared';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
+import { opponentOf } from './derive.js';
 import { applyAction, type ApplyContext } from './engine.js';
 import { createMatch, type MatchDeck } from './setup.js';
 import type { EngineError } from './errors.js';
 import type { ActionInput } from './schema/action.js';
 import type { InstanceId, MatchPhase, PlayerId } from './schema/primitives.js';
-import type { CardInstance, MatchState } from './schema/state.js';
+import type { AttackDeclaration, CardInstance, MatchState } from './schema/state.js';
 
 /**
  * Deterministic scaffolding for engine tests.
@@ -76,6 +77,7 @@ export function startMatch(options: StartOptions = {}): MatchState {
       seed: options.seed ?? 'test-seed',
       database: options.database ?? testDatabase(),
       config: options.config ?? DEFAULT_RULES_CONFIG,
+      preserveSeatOrder: true,
       seats: [
         { playerId: 'player_1', name: 'One', deck: decks[0] },
         { playerId: 'player_2', name: 'Two', deck: decks[1] },
@@ -83,6 +85,57 @@ export function startMatch(options: StartOptions = {}): MatchState {
     }),
     'Test match setup failed',
   ).state;
+}
+
+const SEAT_NAMES = ['One', 'Two', 'Three', 'Four'] as const;
+
+export interface StartTableOptions extends Omit<StartOptions, 'decks'> {
+  readonly deck?: MatchDeck;
+  /** Shuffle seats from the seed instead of using the declared order. */
+  readonly shuffleSeats?: boolean;
+}
+
+/**
+ * A free-for-all with `count` seats, in a known seat order.
+ *
+ * Seat order is preserved rather than shuffled so a test can name
+ * `player_1..player_4` and mean a specific table; the seeded shuffle itself is
+ * tested separately (open-questions.md Q31).
+ */
+export function startTable(count: number, options: StartTableOptions = {}): MatchState {
+  const deck = options.deck ?? makeDeck();
+  return unwrap(
+    createMatch({
+      matchId: 'test_table',
+      seed: options.seed ?? 'test-seed',
+      database: options.database ?? testDatabase(),
+      config: options.config ?? DEFAULT_RULES_CONFIG,
+      preserveSeatOrder: options.shuffleSeats !== true,
+      seats: Array.from({ length: count }, (_, index) => ({
+        playerId: `player_${index + 1}`,
+        name: SEAT_NAMES[index] ?? `Seat ${index + 1}`,
+        deck,
+      })),
+    }),
+    `Test table setup for ${count} seats failed`,
+  ).state;
+}
+
+/** Every seat keeps its opening hand, taking the match to turn 1. */
+export function keepAllHands(state: MatchState, context: ApplyContext = testContext()): MatchState {
+  let next = state;
+  for (const playerId of state.seatOrder) {
+    next = apply(next, { type: 'mulligan', playerId, returnInstanceIds: [] }, context);
+  }
+  return next;
+}
+
+/** Drives the active player through to the attack step of their own turn. */
+export function toDeclareAttackers(
+  state: MatchState,
+  context: ApplyContext = testContext(),
+): MatchState {
+  return apply(state, { type: 'pass_phase', playerId: state.activePlayerId }, context);
 }
 
 /** Applies an action and fails loudly if the engine rejects it. */
@@ -125,6 +178,24 @@ export function keepBothHands(
   return next;
 }
 
+/**
+ * Attack declarations pointing every attacker at the sole opponent.
+ *
+ * Only meaningful at two seats, which is exactly where it is used: a
+ * free-for-all test names its defenders explicitly, because *which* opponent
+ * each attacker chose is the thing under test (CLAUDE.md §12).
+ */
+export function attacksOnOpponent(
+  state: MatchState,
+  attackerInstanceIds: readonly InstanceId[],
+): AttackDeclaration[] {
+  const defenderPlayerId = opponentOf(state, state.activePlayerId);
+  return attackerInstanceIds.map((attackerInstanceId) => ({
+    attackerInstanceId,
+    defenderPlayerId,
+  }));
+}
+
 /* -------------------------------------------------------- board manipulation */
 
 function clone(state: MatchState): MatchState {
@@ -158,6 +229,7 @@ function newInstance(
     damageShields: [],
     counters: {},
     isToken: false,
+    continuous: { attack: 0, health: 0, grantedKeywords: [], removedKeywords: [] },
   };
   state.instances[instanceId] = instance;
   return instance;
@@ -268,6 +340,35 @@ export function setEnergy(state: MatchState, playerId: PlayerId, energy: number)
 export function forcePhase(state: MatchState, phase: MatchPhase): MatchState {
   const next = clone(state);
   next.phase = phase;
+  return next;
+}
+
+/**
+ * Moves a card out of play directly, the way an effect eventually would.
+ *
+ * Used to test what happens *after* something leaves — a continuous effect
+ * ending, for instance — without needing a card that removes it.
+ */
+export function moveInstance(
+  state: MatchState,
+  instanceId: InstanceId,
+  toZone: 'discard' | 'hand' | 'removed',
+): MatchState {
+  const next = clone(state);
+  const instance = next.instances[instanceId];
+  if (!instance) throw new Error(`No instance ${instanceId}`);
+  const controller = next.players[instance.controller];
+  const owner = next.players[instance.owner];
+  if (!controller || !owner) throw new Error('Instance has no player');
+
+  const slot = controller.units.indexOf(instanceId);
+  if (slot >= 0) controller.units[slot] = null;
+  const relicIndex = controller.relics.indexOf(instanceId);
+  if (relicIndex >= 0) controller.relics.splice(relicIndex, 1);
+
+  instance.zone = toZone;
+  instance.slot = null;
+  owner[toZone].push(instanceId);
   return next;
 }
 

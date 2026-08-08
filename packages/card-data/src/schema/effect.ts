@@ -2,21 +2,32 @@ import { z } from 'zod';
 import { cardIdSchema, keywordIdSchema, zoneIdSchema } from './primitives.js';
 import {
   cardFilterSchema,
+  controllerSchema,
   durationSchema,
   playerSelectorSchema,
   selectionModeSchema,
+  targetDefinitionSchema,
   targetSelectorSchema,
 } from './target.js';
 
 /**
  * Structured effects. Card behaviour is data, never parsed prose (CLAUDE.md §8).
  *
- * These schemas exist in Phase 1 so card data does not have to be rewritten
- * later; execution is deliberately out of scope until the rules engine lands.
  * A discriminated union keeps each effect's required fields its own business.
  */
 
 const amount = z.number().int().min(0).max(99);
+
+/**
+ * Effects that can only ever apply to a card or unit. Restricting the union at
+ * the schema boundary means "destroy target opponent" is rejected when the data
+ * loads rather than fizzling silently at resolution time.
+ */
+const entityTargetSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('entity'), selector: targetSelectorSchema }),
+  z.strictObject({ kind: z.literal('source') }),
+]);
+export type EntityTarget = z.infer<typeof entityTargetSchema>;
 
 export const effectDefinitionSchema = z.discriminatedUnion('type', [
   z.strictObject({
@@ -32,30 +43,31 @@ export const effectDefinitionSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z.literal('deal_damage'),
-    target: targetSelectorSchema,
+    /** Units, the source itself, or a player (CLAUDE.md §12). */
+    target: targetDefinitionSchema,
     amount,
   }),
   z.strictObject({
     type: z.literal('heal'),
-    target: targetSelectorSchema,
+    target: targetDefinitionSchema,
     amount,
   }),
   z.strictObject({
     type: z.literal('modify_stats'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
     attack: z.number().int().min(-99).max(99).default(0),
     health: z.number().int().min(-99).max(99).default(0),
     duration: durationSchema.default('permanent'),
   }),
   z.strictObject({
     type: z.literal('grant_keyword'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
     keyword: keywordIdSchema,
     duration: durationSchema.default('permanent'),
   }),
   z.strictObject({
     type: z.literal('remove_keyword'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
     keyword: keywordIdSchema,
     duration: durationSchema.default('permanent'),
   }),
@@ -67,15 +79,15 @@ export const effectDefinitionSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z.literal('destroy'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
   }),
   z.strictObject({
     type: z.literal('sacrifice'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
   }),
   z.strictObject({
     type: z.literal('return_to_hand'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
   }),
   z.strictObject({
     type: z.literal('search_zone'),
@@ -85,6 +97,12 @@ export const effectDefinitionSchema = z.discriminatedUnion('type', [
     amount: z.number().int().min(1).max(10).default(1),
     destination: zoneIdSchema.default('hand'),
     reveal: z.boolean().default(false),
+    /**
+     * Searching a *public* zone is mandatory when a legal result exists unless
+     * the effect opts out here; a hidden zone may always legally find nothing
+     * (CLAUDE.md §17 Q25).
+     */
+    upTo: z.boolean().default(false),
   }),
   z.strictObject({
     type: z.literal('reorder_zone'),
@@ -101,21 +119,21 @@ export const effectDefinitionSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z.literal('prevent_damage'),
-    target: targetSelectorSchema,
+    target: targetDefinitionSchema,
     amount,
     duration: durationSchema.default('end_of_turn'),
   }),
   z.strictObject({
     type: z.literal('exhaust'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
   }),
   z.strictObject({
     type: z.literal('ready'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
   }),
   z.strictObject({
     type: z.literal('move_card'),
-    target: targetSelectorSchema,
+    target: entityTargetSchema,
     toZone: zoneIdSchema,
   }),
 ]);
@@ -129,7 +147,6 @@ export const EFFECT_TYPES = effectDefinitionSchema.options.map(
 
 /** Triggers that a card ability may listen to (CLAUDE.md §8). */
 export const TRIGGER_IDS = [
-  'on_deploy',
   'on_attack',
   'on_block',
   'on_survive_combat',
@@ -147,6 +164,13 @@ const abilityIdSchema = z
   .max(64)
   .regex(/^[a-z][a-z0-9_]*$/, 'Ability IDs must be lowercase_snake_case.');
 
+/**
+ * A triggered ability.
+ *
+ * `on_deploy` is deliberately *not* in the trigger vocabulary: deploy behaviour
+ * has exactly one authoring form, a card's top-level `effects` (CLAUDE.md §17
+ * Q1). The v1 → v2 migration folds old `on_deploy` abilities into `effects`.
+ */
 export const abilityDefinitionSchema = z.strictObject({
   id: abilityIdSchema,
   trigger: triggerIdSchema,
@@ -164,19 +188,78 @@ export const abilityUsageLimitSchema = z.enum(ABILITY_USAGE_LIMITS);
 export type AbilityUsageLimit = z.infer<typeof abilityUsageLimitSchema>;
 
 /**
- * An ability the controller chooses to use. Phase 2 has no reactions, so the
+ * What activating an ability costs.
+ *
+ * A structured, extensible array rather than a lone `energyCost` field: costs
+ * are validated and paid atomically before the ability is queued, and sacrifice
+ * is legal as a cost as well as an effect (CLAUDE.md §17 Q3/Q27).
+ */
+export const abilityCostSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('energy'), amount: z.number().int().min(0).max(20) }),
+  z.strictObject({ type: z.literal('exhaust_source') }),
+  z.strictObject({
+    type: z.literal('discard'),
+    amount: z.number().int().min(1).max(10),
+    selection: selectionModeSchema.default('player_choice'),
+  }),
+  z.strictObject({
+    type: z.literal('sacrifice'),
+    amount: z.number().int().min(1).max(10),
+    /** Restricts which friendly permanents may pay. Defaults to any unit. */
+    filter: cardFilterSchema.optional(),
+  }),
+]);
+export type AbilityCost = z.infer<typeof abilityCostSchema>;
+
+/**
+ * An ability the controller chooses to use. Phase 2/3 have no reactions, so the
  * only legal timing is the controller's own Main Phase with an empty effect
  * queue and no pending choice (CLAUDE.md §4).
  */
 export const activatedAbilityDefinitionSchema = z.strictObject({
   id: abilityIdSchema,
   name: z.string().min(1).max(80),
-  /** Energy paid before the ability enters the resolution queue. */
-  energyCost: z.number().int().min(0).max(20),
-  /** Whether using the ability exhausts its source. */
-  exhaustsSource: z.boolean().default(false),
+  costs: z.array(abilityCostSchema).default([]),
   usageLimit: abilityUsageLimitSchema,
   timing: z.literal('main_phase').default('main_phase'),
   effects: z.array(effectDefinitionSchema).min(1),
 });
 export type ActivatedAbilityDefinition = z.infer<typeof activatedAbilityDefinitionSchema>;
+
+/**
+ * The set a continuous effect applies to. Deliberately not a `TargetSelector`:
+ * a static ability has no count, no chooser and no moment of selection — it
+ * describes a set that is recomputed whenever the board changes.
+ */
+export const continuousScopeSchema = z.strictObject({
+  zone: zoneIdSchema.default('battlefield'),
+  controller: controllerSchema.default('self'),
+  filter: cardFilterSchema.optional(),
+  /** Excludes the card the ability is printed on (a lord that does not buff itself). */
+  excludeSource: z.boolean().default(false),
+});
+export type ContinuousScope = z.infer<typeof continuousScopeSchema>;
+
+/**
+ * A continuous effect.
+ *
+ * Static abilities are *derived*, never applied: nothing is stamped onto the
+ * recipients, and the whole layer is recomputed after any relevant state change.
+ * That is what makes "your units get +1/+0" cover units that arrive later, and
+ * makes the bonus vanish the instant the source leaves play (CLAUDE.md §17 Q2).
+ */
+export const staticAbilityDefinitionSchema = z.strictObject({
+  id: abilityIdSchema,
+  /** Zone the source must be in for the ability to be active. */
+  activeZone: zoneIdSchema.default('battlefield'),
+  affects: continuousScopeSchema,
+  effect: z.discriminatedUnion('type', [
+    z.strictObject({
+      type: z.literal('modify_stats'),
+      attack: z.number().int().min(-99).max(99).default(0),
+      health: z.number().int().min(-99).max(99).default(0),
+    }),
+    z.strictObject({ type: z.literal('grant_keyword'), keyword: keywordIdSchema }),
+  ]),
+});
+export type StaticAbilityDefinition = z.infer<typeof staticAbilityDefinitionSchema>;

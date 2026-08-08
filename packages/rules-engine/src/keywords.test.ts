@@ -3,6 +3,7 @@ import { DEFAULT_RULES_CONFIG } from './config.js';
 import { currentAttack, opponentOf } from './derive.js';
 import { INERT_KEYWORDS, KEYWORD_BEHAVIOUR } from './keywords.js';
 import {
+  attacksOnOpponent,
   apply,
   deployUnit,
   eventsOfType,
@@ -41,7 +42,7 @@ function fight(attackerCard: string, blockerCard: string | null): Fight {
   let state = apply(atAttack, {
     type: 'declare_attackers',
     playerId: active,
-    attackerInstanceIds: [attacker.instanceId],
+    attacks: attacksOnOpponent(atAttack, [attacker.instanceId]),
   });
   state = apply(state, {
     type: 'assign_blockers',
@@ -97,7 +98,7 @@ describe('siphon', () => {
     let state = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [attacker.instanceId],
+      attacks: attacksOnOpponent(atAttack, [attacker.instanceId]),
     });
     state = apply(state, { type: 'assign_blockers', playerId: other, blocks: [] });
 
@@ -139,9 +140,11 @@ describe('evasive and swift', () => {
     const state = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [swift.instanceId],
+      attacks: attacksOnOpponent(atAttack, [swift.instanceId]),
     });
-    expect(state.combat.attackerInstanceIds).toEqual([swift.instanceId]);
+    expect(state.combat.attacks.map((attack) => attack.attackerInstanceId)).toEqual([
+      swift.instanceId,
+    ]);
   });
 });
 
@@ -159,7 +162,7 @@ describe('on_survive_combat with a source target', () => {
     let state = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [harvester.instanceId],
+      attacks: attacksOnOpponent(atAttack, [harvester.instanceId]),
     });
     state = apply(state, {
       type: 'assign_blockers',

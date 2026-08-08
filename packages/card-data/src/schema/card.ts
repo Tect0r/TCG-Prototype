@@ -13,6 +13,7 @@ import {
   abilityDefinitionSchema,
   activatedAbilityDefinitionSchema,
   effectDefinitionSchema,
+  staticAbilityDefinitionSchema,
 } from './effect.js';
 
 const uniqueArray = <T extends z.ZodTypeAny>(item: T, label: string) =>
@@ -38,12 +39,18 @@ const baseCardSchema = z.strictObject({
   keywords: uniqueArray(keywordIdSchema, 'keywords').default([]),
   role: roleSchema.optional(),
   powerClass: powerClassSchema.optional(),
-  /** Effects resolved when the card is played (spell resolution / unit deploy). */
+  /**
+   * Effects resolved when the card is played: spell resolution, and unit/relic
+   * deploy resolution. The single authoring form for deploy behaviour — there is
+   * no `on_deploy` trigger (CLAUDE.md §17 Q1).
+   */
   effects: z.array(effectDefinitionSchema).default([]),
-  /** Effects resolved when a trigger fires while the card is in play. */
+  /** Effects resolved when a non-deploy trigger fires while the card is in play. */
   abilities: z.array(abilityDefinitionSchema).default([]),
-  /** Abilities the controller chooses to use, paying their cost first. */
+  /** Abilities the controller chooses to use, paying their costs first. */
   activatedAbilities: z.array(activatedAbilityDefinitionSchema).default([]),
+  /** Continuous effects, recomputed from state rather than applied once. */
+  staticAbilities: z.array(staticAbilityDefinitionSchema).default([]),
   /** Presentation only. Never executed, never parsed for behaviour. */
   displayText: z.string().max(400).optional(),
 });
@@ -124,6 +131,14 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
       code: 'custom',
       path: ['abilities'],
       message: 'Spells resolve and leave play; use `effects` instead of triggered abilities.',
+    });
+  }
+
+  if (card.type === 'spell' && card.staticAbilities.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['staticAbilities'],
+      message: 'Spells resolve and leave play; they cannot carry a continuous effect.',
     });
   }
 

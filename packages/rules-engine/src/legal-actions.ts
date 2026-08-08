@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { CardDatabase } from '@tcg/card-data';
+import type { AbilityCost, CardDatabase } from '@tcg/card-data';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
-import { createContext } from './context.js';
+import { createContext, type MatchContext } from './context.js';
 import {
   definitionOf,
   energyCostOf,
@@ -9,10 +9,11 @@ import {
   freeUnitSlots,
   hasKeyword,
   isSummoningSick,
-  opponentOf,
+  livingOpponents,
+  matchesCardFilter,
   playerOf,
 } from './derive.js';
-import { legalTargets } from './targeting.js';
+import { spellHasLegalTargets } from './engine.js';
 import {
   MAIN_PHASES,
   instanceIdSchema,
@@ -21,7 +22,7 @@ import {
   type PlayerId,
 } from './schema/primitives.js';
 import type { Action } from './schema/action.js';
-import type { MatchState } from './schema/state.js';
+import type { CardInstance, MatchState } from './schema/state.js';
 import { pendingChoiceSchema } from './schema/choice.js';
 
 /**
@@ -66,14 +67,32 @@ export const legalActionsSchema = z.strictObject({
     }),
   ),
   canPassPhase: z.boolean(),
-  legalAttackers: z.array(instanceIdSchema).nullable(),
+  /**
+   * Attack declaration for this seat: which of its units may attack, and which
+   * opponents they may be pointed at. Both halves come from the engine, so the
+   * client never works out for itself who is a legal defender (CLAUDE.md §12).
+   */
+  attacking: z
+    .strictObject({
+      legalAttackers: z.array(instanceIdSchema),
+      legalDefenders: z.array(playerIdSchema),
+    })
+    .nullable(),
+  /**
+   * Blocking for this seat, populated only while this player still owes a
+   * submission — and listing only the attackers aimed at them.
+   */
   blocking: z
     .strictObject({
       attackerInstanceIds: z.array(instanceIdSchema),
       blockerInstanceIds: z.array(instanceIdSchema),
     })
     .nullable(),
+  /** Defenders the match is still waiting on, without revealing their choices. */
+  awaitingDefenders: z.array(playerIdSchema),
   pendingChoice: pendingChoiceSchema.nullable(),
+  /** True once this seat is out: it may watch, but every action is rejected. */
+  eliminated: z.boolean(),
 });
 
 export type LegalActions = z.infer<typeof legalActionsSchema>;
@@ -94,18 +113,23 @@ export function legalActions(
 
   const empty: LegalActions = {
     playerId,
-    canConcede: state.status !== 'complete',
+    canConcede: state.status !== 'complete' && !player.lost,
     mulligan: null,
     playableCards: [],
     activatableAbilities: [],
     canPassPhase: false,
-    legalAttackers: null,
+    attacking: null,
     blocking: null,
+    awaitingDefenders: [...state.combat.awaitingDefenders],
     pendingChoice:
       state.pendingChoice?.playerId === playerId ? structuredClone(state.pendingChoice) : null,
+    eliminated: player.lost,
   };
 
   if (state.status === 'complete') return { ...empty, canConcede: false };
+  // An eliminated player is a spectator: nothing is legal for them
+  // (CLAUDE.md §12).
+  if (player.lost) return empty;
   if (state.pendingChoice !== null) return empty;
 
   if (state.status === 'mulligan') {
@@ -135,18 +159,9 @@ export function legalActions(
       if (cost > player.energy) continue;
       if (definition.type === 'unit' && free.length === 0) continue;
       if (definition.type === 'relic' && player.relics.length >= config.relicSlots) continue;
-      if (definition.type === 'spell') {
-        const blocked = definition.effects.some((effect) => {
-          if (!('target' in effect) || effect.target.optional) return false;
-          return (
-            legalTargets(ctx, effect.target, {
-              controllerId: playerId,
-              sourceInstanceId: instanceId,
-            }).length === 0
-          );
-        });
-        if (blocked) continue;
-      }
+      // A spell with no legal target for a required target cannot be played at
+      // all, so it must not be offered (CLAUDE.md §4).
+      if (definition.type === 'spell' && !spellHasLegalTargets(ctx, definition, instance)) continue;
 
       playableCards.push({
         instanceId,
@@ -167,8 +182,6 @@ export function legalActions(
       if (!instance) continue;
       const definition = definitionOf(options.database, instance);
       for (const ability of definition.activatedAbilities) {
-        if (ability.energyCost > player.energy) continue;
-        if (ability.exhaustsSource && instance.exhausted) continue;
         if (
           ability.usageLimit === 'once_per_match' &&
           (instance.counters[`used:${ability.id}`] ?? 0) > 0
@@ -179,10 +192,11 @@ export function legalActions(
           instance.counters[`usedTurn:${ability.id}`] === state.turn
         )
           continue;
+        if (!costsPayable(ctx, playerId, instance, ability.costs)) continue;
         activatableAbilities.push({
           sourceInstanceId,
           abilityId: ability.id,
-          energyCost: ability.energyCost,
+          energyCost: energyPortionOf(ability.costs),
         });
       }
     }
@@ -199,15 +213,24 @@ export function legalActions(
         const definition = definitionOf(options.database, instance);
         return !isSummoningSick(instance, state) || hasKeyword(instance, definition, 'swift');
       });
-    return { ...empty, legalAttackers };
+    return {
+      ...empty,
+      attacking: { legalAttackers, legalDefenders: livingOpponents(state, playerId) },
+    };
   }
 
-  if (state.phase === 'assign_blockers' && playerId === opponentOf(state, state.activePlayerId)) {
-    const attackerInstanceIds = state.combat.attackerInstanceIds.filter((instanceId) => {
-      const instance = findInstance(state, instanceId);
-      if (!instance) return false;
-      return !hasKeyword(instance, definitionOf(options.database, instance), 'evasive');
-    });
+  // Only a player who is actually being attacked, and has not answered yet,
+  // may assign blockers — and only against the attackers aimed at them
+  // (CLAUDE.md §12).
+  if (state.phase === 'assign_blockers' && state.combat.awaitingDefenders.includes(playerId)) {
+    const attackerInstanceIds = state.combat.attacks
+      .filter((attack) => attack.defenderPlayerId === playerId)
+      .map((attack) => attack.attackerInstanceId)
+      .filter((instanceId) => {
+        const instance = findInstance(state, instanceId);
+        if (!instance) return false;
+        return !hasKeyword(instance, definitionOf(options.database, instance), 'evasive');
+      });
     const blockerInstanceIds = player.units
       .filter((id): id is InstanceId => id !== null)
       .filter((instanceId) => {
@@ -219,6 +242,59 @@ export function legalActions(
   }
 
   return empty;
+}
+
+/** The energy portion of an activation cost, for display and for bots. */
+function energyPortionOf(costs: readonly AbilityCost[]): number {
+  return costs.reduce((sum, cost) => (cost.type === 'energy' ? sum + cost.amount : sum), 0);
+}
+
+/**
+ * Whether every cost in an activation could be paid right now. Mirrors the
+ * engine's own plan step, so an ability is only offered when activating it
+ * would actually be accepted.
+ */
+function costsPayable(
+  ctx: MatchContext,
+  playerId: PlayerId,
+  source: CardInstance,
+  costs: readonly AbilityCost[],
+): boolean {
+  const player = playerOf(ctx.state, playerId);
+  let energy = 0;
+  let discards = 0;
+  let sacrifices = 0;
+
+  for (const cost of costs) {
+    switch (cost.type) {
+      case 'energy':
+        energy += cost.amount;
+        if (energy > player.energy) return false;
+        break;
+      case 'exhaust_source':
+        if (source.exhausted) return false;
+        break;
+      case 'discard':
+        discards += cost.amount;
+        if (discards > player.hand.length) return false;
+        break;
+      case 'sacrifice': {
+        const available = player.units.filter((id): id is InstanceId => {
+          if (id === null) return false;
+          if (!cost.filter) return true;
+          const instance = findInstance(ctx.state, id);
+          if (!instance) return false;
+          return matchesCardFilter(definitionOf(ctx.database, instance), instance, cost.filter);
+        });
+        sacrifices += cost.amount;
+        if (sacrifices > available.length) return false;
+        break;
+      }
+      default:
+        return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -277,13 +353,19 @@ export function enumerateActions(
   }
   if (legal.canPassPhase) actions.push({ type: 'pass_phase', playerId });
 
-  if (legal.legalAttackers) {
-    actions.push({ type: 'declare_attackers', playerId, attackerInstanceIds: [] });
-    if (legal.legalAttackers.length > 0) {
+  if (legal.attacking) {
+    actions.push({ type: 'declare_attackers', playerId, attacks: [] });
+    const defender = legal.attacking.legalDefenders[0];
+    if (legal.attacking.legalAttackers.length > 0 && defender !== undefined) {
+      // Deliberately conservative: "everyone attacks the first living
+      // opponent", not every assignment of attackers to defenders.
       actions.push({
         type: 'declare_attackers',
         playerId,
-        attackerInstanceIds: [...legal.legalAttackers],
+        attacks: legal.attacking.legalAttackers.map((attackerInstanceId) => ({
+          attackerInstanceId,
+          defenderPlayerId: defender,
+        })),
       });
     }
   }

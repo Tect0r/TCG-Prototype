@@ -1,20 +1,20 @@
 import { emit, type MatchContext } from './context.js';
 import { damagePlayer, damageUnit, healPlayer } from './damage.js';
-import { currentAttack, definitionOf, findInstance, hasKeyword, opponentOf } from './derive.js';
+import { currentAttack, definitionOf, findInstance, hasKeyword, isAlive } from './derive.js';
 import { settle } from './queue.js';
-import type { CardInstance } from './schema/state.js';
-import type { InstanceId } from './schema/primitives.js';
+import { EMPTY_COMBAT, type CardInstance } from './schema/state.js';
+import type { InstanceId, PlayerId } from './schema/primitives.js';
 
 type DamageStep = 'quick_strike' | 'regular';
 
 interface CombatHit {
   readonly sourceInstanceId: InstanceId;
   readonly targetInstanceId: InstanceId | null;
-  readonly targetPlayerId: string | null;
+  readonly targetPlayerId: PlayerId | null;
   readonly amount: number;
   readonly lethal: boolean;
   readonly siphon: boolean;
-  readonly controllerId: string;
+  readonly controllerId: PlayerId;
 }
 
 function livingCombatant(ctx: MatchContext, instanceId: InstanceId): CardInstance | undefined {
@@ -29,28 +29,41 @@ function stepOf(ctx: MatchContext, instance: CardInstance): DamageStep {
     : 'regular';
 }
 
+/**
+ * Builds every hit for one damage step across *all* defenders at once.
+ *
+ * Multi-defender combat is still one combat: the amounts are computed for the
+ * whole step before any of them is applied, so two players can be dealt lethal
+ * damage simultaneously and the result is a draw rather than whoever the loop
+ * reached first (CLAUDE.md §12).
+ */
 function buildHits(ctx: MatchContext, step: DamageStep): CombatHit[] {
   const hits: CombatHit[] = [];
-  const defenderId = opponentOf(ctx.state, ctx.state.activePlayerId);
-  const { attackerInstanceIds, blocks } = ctx.state.combat;
+  const { attacks, blocks } = ctx.state.combat;
 
-  for (const attackerId of attackerInstanceIds) {
-    const attacker = livingCombatant(ctx, attackerId);
+  for (const attack of attacks) {
+    const attacker = livingCombatant(ctx, attack.attackerInstanceId);
     if (!attacker || stepOf(ctx, attacker) !== step) continue;
+
+    // An attack aimed at a player who has already been eliminated is removed
+    // rather than retargeted; the attacker stays exhausted (CLAUDE.md §12 step 7).
+    if (!isAlive(ctx.state, attack.defenderPlayerId)) continue;
 
     const definition = definitionOf(ctx.database, attacker);
     const amount = currentAttack(attacker, definition);
-    const assigned = blocks.filter((block) => block.attackerInstanceId === attackerId);
+    const assigned = blocks.filter(
+      (block) => block.attackerInstanceId === attack.attackerInstanceId,
+    );
     const livingBlockers = assigned
       .map((block) => livingCombatant(ctx, block.blockerInstanceId))
       .filter((instance): instance is CardInstance => instance !== undefined);
 
     if (assigned.length === 0) {
-      // Unblocked: damage goes to the defending player.
+      // Unblocked: damage goes to the player this attacker chose.
       hits.push({
-        sourceInstanceId: attackerId,
+        sourceInstanceId: attack.attackerInstanceId,
         targetInstanceId: null,
-        targetPlayerId: defenderId,
+        targetPlayerId: attack.defenderPlayerId,
         amount,
         lethal: false,
         siphon: hasKeyword(attacker, definition, 'siphon'),
@@ -63,7 +76,7 @@ function buildHits(ctx: MatchContext, step: DamageStep): CombatHit[] {
     // it stays blocked and deals no player damage (CLAUDE.md §4).
     for (const blocker of livingBlockers) {
       hits.push({
-        sourceInstanceId: attackerId,
+        sourceInstanceId: attack.attackerInstanceId,
         targetInstanceId: blocker.instanceId,
         targetPlayerId: null,
         amount,
@@ -102,9 +115,7 @@ function applyStep(ctx: MatchContext, step: DamageStep): void {
   emit(ctx, { type: 'combat_damage_step', step });
   const before = ctx.events.length;
 
-  // Amounts are computed for the whole step before any of it is applied, so
-  // blocked units damage each other simultaneously (CLAUDE.md §4).
-  const siphoned = new Map<string, number>();
+  const siphoned = new Map<PlayerId, number>();
   for (const hit of hits) {
     const dealt =
       hit.targetInstanceId !== null
@@ -113,7 +124,7 @@ function applyStep(ctx: MatchContext, step: DamageStep): void {
             combat: true,
             lethal: hit.lethal,
           })
-        : damagePlayer(ctx, hit.targetPlayerId as string, hit.amount, {
+        : damagePlayer(ctx, hit.targetPlayerId as PlayerId, hit.amount, {
             sourceInstanceId: hit.sourceInstanceId,
             combat: true,
           });
@@ -136,7 +147,7 @@ function applyStep(ctx: MatchContext, step: DamageStep): void {
  */
 export function resolveCombat(ctx: MatchContext): void {
   const combatants = new Set<InstanceId>([
-    ...ctx.state.combat.attackerInstanceIds,
+    ...ctx.state.combat.attacks.map((attack) => attack.attackerInstanceId),
     ...ctx.state.combat.blocks.map((block) => block.blockerInstanceId),
   ]);
   ctx.state.combat.combatantInstanceIds = [...combatants];
@@ -164,9 +175,43 @@ export function resolveCombat(ctx: MatchContext): void {
 /** Clears combat bookkeeping at the end of the turn. */
 export function clearCombat(ctx: MatchContext): void {
   ctx.state.combat = {
-    attackerInstanceIds: [],
+    ...EMPTY_COMBAT,
+    attacks: [],
+    awaitingDefenders: [],
+    submissions: [],
     blocks: [],
     combatantInstanceIds: [],
-    damageResolved: false,
   };
+}
+
+/**
+ * Drops everything an eliminated player owed or was owed by the current combat:
+ * their outstanding blocker submission, any blocks they had already committed,
+ * and every attack aimed at them (CLAUDE.md §12 step 7).
+ */
+export function removeFromCombat(ctx: MatchContext, playerId: PlayerId): void {
+  const combat = ctx.state.combat;
+  combat.awaitingDefenders = combat.awaitingDefenders.filter((id) => id !== playerId);
+  combat.submissions = combat.submissions.filter(
+    (submission) => submission.defenderPlayerId !== playerId,
+  );
+  combat.attacks = combat.attacks.filter((attack) => attack.defenderPlayerId !== playerId);
+
+  const stillAttacking = new Set(combat.attacks.map((attack) => attack.attackerInstanceId));
+  combat.blocks = combat.blocks.filter((block) => {
+    if (!stillAttacking.has(block.attackerInstanceId)) return false;
+    const blocker = findInstance(ctx.state, block.blockerInstanceId);
+    return blocker !== undefined && blocker.controller !== playerId;
+  });
+}
+
+/** Living players who have at least one attack pointed at them. */
+export function defendersOf(ctx: MatchContext): PlayerId[] {
+  const seen: PlayerId[] = [];
+  for (const attack of ctx.state.combat.attacks) {
+    if (!isAlive(ctx.state, attack.defenderPlayerId)) continue;
+    if (!seen.includes(attack.defenderPlayerId)) seen.push(attack.defenderPlayerId);
+  }
+  // Clockwise from the attacker so the waiting list has a stable order.
+  return ctx.state.seatOrder.filter((id) => seen.includes(id));
 }

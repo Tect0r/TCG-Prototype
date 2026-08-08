@@ -27,13 +27,18 @@ export const CONTROLLERS = ['self', 'opponent', 'any'] as const;
 export const controllerSchema = z.enum(CONTROLLERS);
 export type Controller = z.infer<typeof controllerSchema>;
 
-export const PLAYER_SELECTORS = [
-  'self',
-  'opponent',
-  'each_opponent',
-  'all',
-  'target_player',
-] as const;
+/**
+ * Which players an effect applies to.
+ *
+ * `opponent` names exactly one living opponent. With three or four seats that
+ * is genuinely ambiguous, so the engine asks the controller to pick rather than
+ * guessing — CLAUDE.md §12 requires an explicitly selected living opponent
+ * unless the definition says `each_opponent`.
+ *
+ * `each_opponent` and `all_players` resolve clockwise; `all_players` puts the
+ * controller first, then clockwise (open-questions.md Q33).
+ */
+export const PLAYER_SELECTORS = ['self', 'opponent', 'each_opponent', 'all_players'] as const;
 export const playerSelectorSchema = z.enum(PLAYER_SELECTORS);
 export type PlayerSelector = z.infer<typeof playerSelectorSchema>;
 
@@ -64,6 +69,7 @@ export const cardFilterSchema = z.strictObject({
 });
 export type CardFilter = z.infer<typeof cardFilterSchema>;
 
+/** A zone-and-filter query for cards or units. */
 export const targetSelectorSchema = z.strictObject({
   zone: zoneIdSchema,
   controller: controllerSchema.default('any'),
@@ -76,12 +82,54 @@ export const targetSelectorSchema = z.strictObject({
   optional: z.boolean().default(false),
   /** Excludes the card that produced the effect from the legal set. */
   excludeSource: z.boolean().default(false),
-  /**
-   * When true the effect applies to its own source instance and every other
-   * field here is ignored. CLAUDE.md §10 requires the engine to support a
-   * `source` target, and "the unit this is printed on" cannot otherwise be
-   * expressed by a zone-and-filter selector.
-   */
-  targetsSource: z.boolean().default(false),
 });
 export type TargetSelector = z.infer<typeof targetSelectorSchema>;
+
+/**
+ * What an effect points at.
+ *
+ * A discriminated union rather than one selector with escape-hatch booleans:
+ * "the card this is printed on" and "an opposing player" are not zone queries,
+ * and forcing them through `TargetSelector` is what produced the `targetsSource`
+ * flag in Phase 2 (CLAUDE.md §12, open-questions.md Q23/Q29).
+ */
+export const targetDefinitionSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('entity'),
+    selector: targetSelectorSchema,
+  }),
+  /** The instance whose text this is. Always exactly one entity, never chosen. */
+  z.strictObject({
+    kind: z.literal('source'),
+  }),
+  z.strictObject({
+    kind: z.literal('player'),
+    relation: z.enum(['self', 'opponent']),
+    /**
+     * `automatic` only resolves without asking when there is exactly one legal
+     * answer; otherwise the engine raises a `select_players` choice regardless,
+     * because it may not invent a target.
+     */
+    selection: z.enum(['automatic', 'player_choice']).default('player_choice'),
+  }),
+  z.strictObject({
+    kind: z.literal('players'),
+    relation: z.enum(['each_opponent', 'all_players']),
+  }),
+]);
+export type TargetDefinition = z.infer<typeof targetDefinitionSchema>;
+export type TargetDefinitionInput = z.input<typeof targetDefinitionSchema>;
+
+/** Convenience constructor for the common "one zone query" case. */
+export function entityTarget(
+  selector: z.input<typeof targetSelectorSchema>,
+): TargetDefinitionInput {
+  return { kind: 'entity', selector };
+}
+
+/** True when the definition points at players rather than cards. */
+export function targetsPlayers(
+  target: TargetDefinition,
+): target is Extract<TargetDefinition, { kind: 'player' | 'players' }> {
+  return target.kind === 'player' || target.kind === 'players';
+}

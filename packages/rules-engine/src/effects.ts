@@ -1,16 +1,29 @@
-import type { EffectDefinition, PlayerSelector, TargetSelector, ZoneId } from '@tcg/card-data';
+import type {
+  EffectDefinition,
+  PlayerSelector,
+  TargetDefinition,
+  TargetSelector,
+  ZoneId,
+} from '@tcg/card-data';
 import { emit, type MatchContext } from './context.js';
-import { addDamageShield, damageUnit, healUnit } from './damage.js';
+import { addDamageShield, damagePlayer, damageUnit, healPlayer, healUnit } from './damage.js';
 import {
   definitionOf,
   findInstance,
   freeUnitSlots,
   hasKeyword,
   matchesCardFilter,
-  opponentOf,
   playerOf,
 } from './derive.js';
-import { autoSelect, legalTargets, requestedCount, type TargetScope } from './targeting.js';
+import {
+  autoSelect,
+  legalTargets,
+  playerCandidates,
+  requestedCount,
+  resolvePlayerSelector,
+  type TargetScope,
+} from './targeting.js';
+import { enqueue } from './triggers.js';
 import { createInstance, discardCard, drawCards, moveToZone, shuffleDeck } from './zones.js';
 import type { ChoiceReason, ChoiceType, PendingChoice } from './schema/choice.js';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
@@ -52,6 +65,8 @@ function buildChoice(
     readonly maximum: number;
     readonly validEntityIds: readonly string[];
     readonly ordered?: boolean;
+    /** Defaults to the effect index; set when one instruction asks twice. */
+    readonly selectionKey?: string;
   },
 ): PendingChoice {
   return {
@@ -65,67 +80,131 @@ function buildChoice(
     validEntityIds: [...options.validEntityIds],
     ordered: options.ordered ?? false,
     sourceInstanceId: item.sourceInstanceId,
-    continuation: { kind: 'resolution', itemId: item.id, effectIndex },
+    continuation: {
+      kind: 'resolution',
+      itemId: item.id,
+      effectIndex,
+      selectionKey: options.selectionKey ?? String(effectIndex),
+    },
   };
 }
 
-/** Who a `PlayerSelector` refers to, from the point of view of the effect's controller. */
-export function resolvePlayers(
-  ctx: MatchContext,
-  selector: PlayerSelector,
-  controllerId: PlayerId,
-): PlayerId[] | null {
-  switch (selector) {
-    case 'self':
-      return [controllerId];
-    case 'opponent':
-    case 'each_opponent':
-      return [opponentOf(ctx.state, controllerId)];
-    case 'all':
-      return [...ctx.state.playerOrder];
-    case 'target_player':
-      // Player targeting has no expression in the Phase 1 target schema (a
-      // TargetSelector always names a zone). Unsupported rather than guessed.
-      return null;
-    default:
-      return null;
-  }
+/** Selection key for the answer one specific player gave to one instruction. */
+function perPlayerKey(effectIndex: number, playerId: PlayerId): string {
+  return `${effectIndex}:${playerId}`;
 }
 
-/** Which player answers a target choice. */
+type PlayerResolution =
+  | { readonly kind: 'players'; readonly ids: PlayerId[] }
+  | { readonly kind: 'choice'; readonly choice: PendingChoice };
+
+/**
+ * Turns a `PlayerSelector` into concrete seats, asking the controller to pick
+ * when `opponent` is ambiguous.
+ *
+ * With two seats "your opponent" has exactly one answer and nothing pauses;
+ * with three or four the controller must say who they mean, because the engine
+ * is not allowed to choose a victim on their behalf (CLAUDE.md §12).
+ */
+function resolveEffectPlayers(
+  ctx: MatchContext,
+  item: ResolutionItem,
+  effectIndex: number,
+  selector: PlayerSelector,
+): PlayerResolution {
+  const key = `${effectIndex}:player`;
+  const stored = item.selections[key];
+  if (stored !== undefined) {
+    return { kind: 'players', ids: stored.filter((id) => ctx.state.players[id] !== undefined) };
+  }
+
+  const direct = resolvePlayerSelector(ctx, selector, item.controllerId);
+  if (direct !== null) return { kind: 'players', ids: direct };
+
+  const candidates = playerCandidates(
+    ctx,
+    { kind: 'player', relation: 'opponent', selection: 'player_choice' },
+    item.controllerId,
+  );
+  return {
+    kind: 'choice',
+    choice: buildChoice(ctx, item, effectIndex, {
+      playerId: item.controllerId,
+      type: 'select_players',
+      reason: 'select_opponent',
+      zone: null,
+      minimum: 1,
+      maximum: 1,
+      validEntityIds: candidates,
+      selectionKey: key,
+    }),
+  };
+}
+
+/** Which player answers a target choice. Falls back to the controller. */
 function chooserFor(ctx: MatchContext, selector: TargetSelector, controllerId: PlayerId): PlayerId {
-  const players = resolvePlayers(ctx, selector.chooser, controllerId);
+  const players = resolvePlayerSelector(ctx, selector.chooser, controllerId);
   return players?.[0] ?? controllerId;
 }
 
 type TargetResolution =
-  | { readonly kind: 'targets'; readonly ids: InstanceId[] }
+  | { readonly kind: 'entities'; readonly ids: InstanceId[] }
+  | { readonly kind: 'players'; readonly ids: PlayerId[] }
   | { readonly kind: 'choice'; readonly choice: PendingChoice }
   | { readonly kind: 'fizzle' };
 
 /**
- * Turns a target selector into concrete instances, asking the right player when
- * the selector calls for a choice.
+ * Turns a target definition into concrete recipients, asking the right player
+ * when the definition calls for a choice.
  *
  * On resume, previously chosen targets are re-checked against the current legal
  * set: a target that has become invalid is dropped and the rest of the
- * instruction still resolves (CLAUDE.md §4).
+ * instruction still resolves (CLAUDE.md §4). That is also what removes a player
+ * who was eliminated between choosing and resolving.
  */
 function resolveTargets(
   ctx: MatchContext,
   item: ResolutionItem,
   effectIndex: number,
-  selector: TargetSelector,
+  target: TargetDefinition,
 ): TargetResolution {
-  const candidates = legalTargets(ctx, selector, scopeOf(item));
+  if (target.kind === 'player' || target.kind === 'players') {
+    const candidates = playerCandidates(ctx, target, item.controllerId);
+    const stored = item.selections[String(effectIndex)];
+    if (stored !== undefined) {
+      return { kind: 'players', ids: stored.filter((id) => candidates.includes(id)) };
+    }
+    if (candidates.length === 0) return { kind: 'fizzle' };
+    if (target.kind === 'players') return { kind: 'players', ids: candidates };
+    if (candidates.length === 1) return { kind: 'players', ids: candidates };
+
+    return {
+      kind: 'choice',
+      choice: buildChoice(ctx, item, effectIndex, {
+        playerId: item.controllerId,
+        type: 'select_players',
+        reason: 'select_opponent',
+        zone: null,
+        minimum: 1,
+        maximum: 1,
+        validEntityIds: candidates,
+      }),
+    };
+  }
+
+  const candidates = legalTargets(ctx, target, scopeOf(item));
   const stored = item.selections[String(effectIndex)];
 
   if (stored !== undefined) {
-    return { kind: 'targets', ids: stored.filter((id) => candidates.includes(id)) };
+    return { kind: 'entities', ids: stored.filter((id) => candidates.includes(id)) };
+  }
+  if (target.kind === 'source') {
+    return candidates.length > 0 ? { kind: 'entities', ids: candidates } : { kind: 'fizzle' };
   }
 
+  const selector = target.selector;
   if (candidates.length === 0) {
-    return selector.optional ? { kind: 'targets', ids: [] } : { kind: 'fizzle' };
+    return selector.optional ? { kind: 'entities', ids: [] } : { kind: 'fizzle' };
   }
 
   if (selector.selection === 'player_choice') {
@@ -144,12 +223,16 @@ function resolveTargets(
     };
   }
 
-  return { kind: 'targets', ids: autoSelect(ctx, selector, candidates) };
+  return { kind: 'entities', ids: autoSelect(ctx, selector, candidates) };
 }
 
 /**
  * Executes one instruction. Never loops, never resolves more than a single
  * atomic step, and never advances the queue: the caller owns sequencing.
+ *
+ * A multi-recipient instruction (`each_opponent`, `all_players`) resolves every
+ * recipient inside this one call, so simultaneous loss is a draw rather than a
+ * race decided by iteration order (CLAUDE.md §12).
  */
 export function executeEffect(
   ctx: MatchContext,
@@ -161,55 +244,60 @@ export function executeEffect(
 
   switch (effect.type) {
     case 'draw': {
-      const players = resolvePlayers(ctx, effect.player, item.controllerId);
-      if (!players) return { kind: 'fizzled', reason: 'unsupported' };
-      for (const playerId of players) drawCards(ctx, playerId, effect.amount);
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
+      for (const playerId of players.ids) drawCards(ctx, playerId, effect.amount);
       return RESOLVED;
     }
 
     case 'discard': {
-      const players = resolvePlayers(ctx, effect.player, item.controllerId);
-      if (!players) return { kind: 'fizzled', reason: 'unsupported' };
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
 
-      const stored = item.selections[key];
-      if (stored !== undefined) {
-        for (const instanceId of stored) {
-          const instance = findInstance(ctx.state, instanceId);
-          if (instance && instance.zone === 'hand') discardCard(ctx, instance.owner, instanceId);
+      // Each discarding player answers separately, in the order the selector
+      // produced them (clockwise for `each_opponent`), and the answers are
+      // filed under per-player keys so a reconnect resumes at the right one.
+      for (const playerId of players.ids) {
+        const playerKey = perPlayerKey(effectIndex, playerId);
+        const stored = item.selections[playerKey];
+        if (stored !== undefined) {
+          for (const instanceId of stored) {
+            const instance = findInstance(ctx.state, instanceId);
+            if (instance && instance.zone === 'hand') discardCard(ctx, instance.owner, instanceId);
+          }
+          continue;
         }
-        return RESOLVED;
+
+        const hand = playerOf(ctx.state, playerId).hand;
+        const amount = Math.min(effect.amount, hand.length);
+        if (amount === 0) {
+          item.selections[playerKey] = [];
+          continue;
+        }
+
+        if (effect.selection === 'player_choice') {
+          return {
+            kind: 'awaiting_choice',
+            choice: buildChoice(ctx, item, effectIndex, {
+              playerId,
+              type: 'select_cards',
+              reason: 'discard_effect',
+              zone: 'hand',
+              minimum: amount,
+              maximum: amount,
+              validEntityIds: hand,
+              selectionKey: playerKey,
+            }),
+          };
+        }
+
+        const picked =
+          effect.selection === 'random'
+            ? autoSelect(ctx, { ...AUTO_SELECTOR, count: amount, selection: 'random' }, hand)
+            : hand.slice(0, amount);
+        for (const instanceId of picked) discardCard(ctx, playerId, instanceId);
+        item.selections[playerKey] = [];
       }
-
-      // Only the controller's own discard can pause for a choice in v0.2; a
-      // multi-player discard would need one choice per player, which no card
-      // in the set requires.
-      const chooser = players[0];
-      if (chooser === undefined) return RESOLVED;
-      const hand = playerOf(ctx.state, chooser).hand;
-      if (hand.length === 0) return RESOLVED;
-      const amount = Math.min(effect.amount, hand.length);
-      if (amount === 0) return RESOLVED;
-
-      if (effect.selection === 'player_choice') {
-        return {
-          kind: 'awaiting_choice',
-          choice: buildChoice(ctx, item, effectIndex, {
-            playerId: chooser,
-            type: 'select_cards',
-            reason: 'discard_effect',
-            zone: 'hand',
-            minimum: amount,
-            maximum: amount,
-            validEntityIds: hand,
-          }),
-        };
-      }
-
-      const picked =
-        effect.selection === 'random'
-          ? autoSelect(ctx, { ...DEFAULT_AUTO_SELECTOR, count: amount, selection: 'random' }, hand)
-          : hand.slice(0, amount);
-      for (const instanceId of picked) discardCard(ctx, chooser, instanceId);
       return RESOLVED;
     }
 
@@ -218,6 +306,13 @@ export function executeEffect(
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+
+      if (resolution.kind === 'players') {
+        for (const playerId of resolution.ids) {
+          damagePlayer(ctx, playerId, effect.amount, { sourceInstanceId: item.sourceInstanceId });
+        }
+        return RESOLVED;
+      }
 
       const source = item.sourceInstanceId
         ? findInstance(ctx.state, item.sourceInstanceId)
@@ -239,6 +334,10 @@ export function executeEffect(
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+      if (resolution.kind === 'players') {
+        for (const playerId of resolution.ids) healPlayer(ctx, playerId, effect.amount);
+        return RESOLVED;
+      }
       for (const targetId of resolution.ids) healUnit(ctx, targetId, effect.amount);
       return RESOLVED;
     }
@@ -247,7 +346,7 @@ export function executeEffect(
       const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
-      if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+      if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
       for (const targetId of resolution.ids) {
         const instance = findInstance(ctx.state, targetId);
         if (!instance) continue;
@@ -274,7 +373,7 @@ export function executeEffect(
       const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
-      if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+      if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
       for (const targetId of resolution.ids) {
         const instance = findInstance(ctx.state, targetId);
         if (!instance) continue;
@@ -306,12 +405,12 @@ export function executeEffect(
     }
 
     case 'create_token': {
-      const players = resolvePlayers(ctx, effect.controller, item.controllerId);
-      if (!players) return { kind: 'fizzled', reason: 'unsupported' };
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.controller);
+      if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
       const definition = ctx.database.get(effect.tokenCardId);
       if (!definition) return { kind: 'fizzled', reason: 'unsupported' };
 
-      for (const playerId of players) {
+      for (const playerId of players.ids) {
         for (let i = 0; i < effect.amount; i += 1) {
           const player = playerOf(ctx.state, playerId);
           const slot = freeUnitSlots(player)[0];
@@ -337,6 +436,23 @@ export function executeEffect(
             definitionId: definition.id,
             slot,
           });
+
+          // A token entering play resolves its own deploy effects, exactly as a
+          // played unit does — one authoring form for deploy behaviour
+          // (CLAUDE.md §17 Q1). Appended, so the rest of this instruction
+          // finishes first (Q28).
+          if (definition.effects.length > 0) {
+            enqueue(ctx, {
+              kind: 'card_effects',
+              sourceInstanceId: token.instanceId,
+              sourceDefinitionId: definition.id,
+              controllerId: playerId,
+              abilityId: null,
+              effects: [...definition.effects],
+              causeSequence: ctx.state.sequence,
+              completesSpell: false,
+            });
+          }
         }
       }
       return RESOLVED;
@@ -347,20 +463,9 @@ export function executeEffect(
       const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
-      if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+      if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
 
-      for (const targetId of resolution.ids) {
-        const instance = findInstance(ctx.state, targetId);
-        if (!instance || instance.zone !== 'battlefield') continue;
-        emit(ctx, {
-          type: 'unit_defeated',
-          instanceId: targetId,
-          definitionId: instance.definitionId,
-          controllerId: instance.controller,
-          reason: effect.type === 'destroy' ? 'destroyed' : 'sacrificed',
-        });
-        moveToZone(ctx, targetId, 'discard', { silent: true });
-      }
+      for (const targetId of resolution.ids) defeatUnit(ctx, targetId, effect.type);
       return RESOLVED;
     }
 
@@ -368,7 +473,7 @@ export function executeEffect(
       const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
-      if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+      if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
       for (const targetId of resolution.ids) moveToZone(ctx, targetId, 'hand');
       return RESOLVED;
     }
@@ -377,7 +482,7 @@ export function executeEffect(
       const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
-      if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+      if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
       for (const targetId of resolution.ids) moveToZone(ctx, targetId, effect.toZone);
       return RESOLVED;
     }
@@ -387,7 +492,7 @@ export function executeEffect(
       const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
-      if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+      if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
       for (const targetId of resolution.ids) {
         const instance = findInstance(ctx.state, targetId);
         if (!instance) continue;
@@ -407,6 +512,12 @@ export function executeEffect(
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
+      if (resolution.kind === 'players') {
+        for (const playerId of resolution.ids) {
+          addDamageShield(ctx, { playerId }, effect.amount, effect.duration);
+        }
+        return RESOLVED;
+      }
       for (const targetId of resolution.ids) {
         addDamageShield(ctx, { instanceId: targetId }, effect.amount, effect.duration);
       }
@@ -414,9 +525,9 @@ export function executeEffect(
     }
 
     case 'modify_cost': {
-      const players = resolvePlayers(ctx, effect.player, item.controllerId);
-      if (!players) return { kind: 'fizzled', reason: 'unsupported' };
-      for (const playerId of players) {
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
+      for (const playerId of players.ids) {
         playerOf(ctx.state, playerId).costModifiers.push({
           delta: effect.delta,
           filter: effect.filter ?? null,
@@ -435,9 +546,9 @@ export function executeEffect(
     }
 
     case 'search_zone': {
-      const players = resolvePlayers(ctx, effect.player, item.controllerId);
-      if (!players) return { kind: 'fizzled', reason: 'unsupported' };
-      const searcher = players[0];
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
+      const searcher = players.ids[0];
       if (searcher === undefined) return RESOLVED;
 
       const stored = item.selections[key];
@@ -470,6 +581,11 @@ export function executeEffect(
         return RESOLVED;
       }
 
+      const maximum = Math.min(effect.amount, candidates.length);
+      // Searching a *public* zone is mandatory when a legal result exists;
+      // a hidden zone may always legally find nothing (CLAUDE.md §17 Q25).
+      const mandatory = PUBLIC_ZONES.has(effect.zone) && !effect.upTo;
+
       return {
         kind: 'awaiting_choice',
         choice: buildChoice(ctx, item, effectIndex, {
@@ -477,19 +593,17 @@ export function executeEffect(
           type: 'select_cards',
           reason: 'search_zone',
           zone: effect.zone,
-          // A search may legally find nothing; forcing a pick would be a rules
-          // decision nobody has made. See open-questions.md.
-          minimum: 0,
-          maximum: Math.min(effect.amount, candidates.length),
+          minimum: mandatory ? maximum : 0,
+          maximum,
           validEntityIds: candidates,
         }),
       };
     }
 
     case 'reorder_zone': {
-      const players = resolvePlayers(ctx, effect.player, item.controllerId);
-      if (!players) return { kind: 'fizzled', reason: 'unsupported' };
-      const playerId = players[0];
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
+      const playerId = players.ids[0];
       if (playerId === undefined) return RESOLVED;
 
       const contents = zoneContents(ctx, playerId, effect.zone);
@@ -535,7 +649,35 @@ export function executeEffect(
   }
 }
 
-function zoneContents(ctx: MatchContext, playerId: PlayerId, zone: ZoneId): InstanceId[] {
+/**
+ * Removes a unit from play as a destroy or a sacrifice.
+ *
+ * A sacrificed unit counts as defeated and fires both `on_sacrifice` and
+ * `on_defeated`; the `reason` is retained so a future card can tell them apart
+ * (CLAUDE.md §17 Q24). Shared with activation-cost payment, where sacrifice is
+ * a cost rather than an effect (Q3).
+ */
+export function defeatUnit(
+  ctx: MatchContext,
+  instanceId: InstanceId,
+  cause: 'destroy' | 'sacrifice',
+): void {
+  const instance = findInstance(ctx.state, instanceId);
+  if (!instance || instance.zone !== 'battlefield') return;
+  emit(ctx, {
+    type: 'unit_defeated',
+    instanceId,
+    definitionId: instance.definitionId,
+    controllerId: instance.controller,
+    reason: cause === 'destroy' ? 'destroyed' : 'sacrificed',
+  });
+  moveToZone(ctx, instanceId, 'discard', { silent: true });
+}
+
+/** Zones every player can already see, where a search cannot be declined. */
+const PUBLIC_ZONES = new Set<ZoneId>(['discard', 'battlefield', 'commander_zone']);
+
+export function zoneContents(ctx: MatchContext, playerId: PlayerId, zone: ZoneId): InstanceId[] {
   const player = playerOf(ctx.state, playerId);
   switch (zone) {
     case 'deck':
@@ -554,7 +696,7 @@ function zoneContents(ctx: MatchContext, playerId: PlayerId, zone: ZoneId): Inst
 }
 
 /** Selector shape used when a non-target effect needs `autoSelect`'s randomness. */
-const DEFAULT_AUTO_SELECTOR: TargetSelector = {
+const AUTO_SELECTOR: TargetSelector = {
   zone: 'hand',
   controller: 'self',
   count: 1,
@@ -562,5 +704,4 @@ const DEFAULT_AUTO_SELECTOR: TargetSelector = {
   chooser: 'self',
   optional: false,
   excludeSource: false,
-  targetsSource: false,
 };

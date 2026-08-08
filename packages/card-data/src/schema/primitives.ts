@@ -3,8 +3,13 @@ import { z } from 'zod';
 /**
  * Card schema version. Bump when the card schema changes in a way that older
  * data files cannot satisfy, and add a loader migration at the same time.
+ *
+ * v2 (Phase 3) replaced the zone-only `TargetSelector` with a discriminated
+ * `TargetDefinition`, replaced an activated ability's lone `energyCost` with a
+ * structured `costs` array, and added `staticAbilities`. `migrateCardSet`
+ * upgrades v1 data automatically, so older files keep loading.
  */
-export const CARD_SCHEMA_VERSION = 1;
+export const CARD_SCHEMA_VERSION = 2;
 
 /**
  * Permanent card identity: lowercase ASCII letters, digits and underscores.
@@ -96,9 +101,24 @@ export const ZONE_IDS = [
   'discard',
   'commander_zone',
   'recovery',
+  /**
+   * Terminal. Cards owned by an eliminated player go here and never come back
+   * (CLAUDE.md §12). Nothing may target it: it exists so a removed card is
+   * still accounted for in replays and logs rather than vanishing.
+   */
+  'removed',
 ] as const;
 export const zoneIdSchema = z.enum(ZONE_IDS);
 export type ZoneId = z.infer<typeof zoneIdSchema>;
+
+/** Zones an effect may legally name as a source or destination. */
+export const TARGETABLE_ZONE_IDS: readonly ZoneId[] = [
+  'deck',
+  'hand',
+  'battlefield',
+  'discard',
+  'commander_zone',
+];
 
 /** Card types that can be put into a deck list (Commanders are chosen separately). */
 export const DECKABLE_CARD_TYPES: readonly CardType[] = ['unit', 'spell', 'relic'];

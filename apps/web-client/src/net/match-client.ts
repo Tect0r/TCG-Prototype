@@ -36,6 +36,12 @@ export type TransportFactory = (handlers: TransportHandlers) => Transport;
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'open' | 'closed';
 
+/** Live connection state for one other seat at the table. */
+export interface SeatConnection {
+  readonly connected: boolean;
+  readonly graceSeconds: number | null;
+}
+
 export interface MatchClientState {
   readonly connection: ConnectionStatus;
   readonly seatId: SeatId | null;
@@ -45,8 +51,11 @@ export interface MatchClientState {
   readonly pendingActionId: string | null;
   readonly lastError: ProtocolError | EngineError | null;
   readonly deckError: ProtocolError | null;
-  readonly opponentConnected: boolean;
-  readonly opponentGraceSeconds: number | null;
+  /**
+   * Per seat, because a free-for-all has up to three other players and one of
+   * them dropping does not stop the match (CLAUDE.md §12).
+   */
+  readonly seatConnections: Readonly<Partial<Record<SeatId, SeatConnection>>>;
 }
 
 const INITIAL: MatchClientState = {
@@ -57,8 +66,7 @@ const INITIAL: MatchClientState = {
   pendingActionId: null,
   lastError: null,
   deckError: null,
-  opponentConnected: true,
-  opponentGraceSeconds: null,
+  seatConnections: {},
 };
 
 /** Where the reconnect token is kept so a refresh can reclaim the seat. */
@@ -139,9 +147,19 @@ export class MatchClient {
     this.publish();
   }
 
-  createLobby(displayName: string): void {
+  createLobby(displayName: string, maxSeats = 2): void {
     this.#storage?.removeItem(RECONNECT_TOKEN_KEY);
-    this.dispatch({ type: 'create_lobby', versions: CURRENT_VERSIONS, displayName });
+    this.dispatch({ type: 'create_lobby', versions: CURRENT_VERSIONS, displayName, maxSeats });
+  }
+
+  /** Host-only; the server rejects it from anyone else. */
+  setMaxSeats(maxSeats: number): void {
+    this.dispatch({ type: 'set_max_seats', maxSeats });
+  }
+
+  /** Host-only; needed for three- and four-seat tables (open-questions.md Q36). */
+  startMatch(): void {
+    this.dispatch({ type: 'start_match' });
   }
 
   joinLobby(inviteCode: string, displayName: string): void {
@@ -233,10 +251,15 @@ export class MatchClient {
         this.patch({ pendingActionId: null, lastError: message.error });
         return;
 
-      case 'opponent_connection':
+      case 'seat_connection':
         this.patch({
-          opponentConnected: message.connected,
-          opponentGraceSeconds: message.graceSeconds,
+          seatConnections: {
+            ...this.#state.seatConnections,
+            [message.seatId]: {
+              connected: message.connected,
+              graceSeconds: message.graceSeconds,
+            },
+          },
         });
         return;
 

@@ -7,6 +7,7 @@ import { deserializeMatchState, serializeMatchState } from './serialize.js';
 import { playerView } from './view.js';
 import { legalActions } from './legal-actions.js';
 import {
+  attacksOnOpponent,
   apply,
   deployRelic,
   deployUnit,
@@ -125,7 +126,7 @@ describe('2. energy growth and the first-player skipped draw', () => {
 
     // Pass through to the other player's first turn.
     let next = apply(state, { type: 'pass_phase', playerId: starter });
-    next = apply(next, { type: 'declare_attackers', playerId: starter, attackerInstanceIds: [] });
+    next = apply(next, { type: 'declare_attackers', playerId: starter, attacks: [] });
     next = apply(next, { type: 'pass_phase', playerId: starter });
 
     const second = next.activePlayerId;
@@ -135,7 +136,7 @@ describe('2. energy growth and the first-player skipped draw', () => {
     expect(next.players[second]?.hand).toHaveLength(DEFAULT_RULES_CONFIG.openingHandSize + 1);
 
     next = apply(next, { type: 'pass_phase', playerId: second });
-    next = apply(next, { type: 'declare_attackers', playerId: second, attackerInstanceIds: [] });
+    next = apply(next, { type: 'declare_attackers', playerId: second, attacks: [] });
     next = apply(next, { type: 'pass_phase', playerId: second });
 
     expect(next.activePlayerId).toBe(starter);
@@ -151,11 +152,7 @@ describe('2. energy growth and the first-player skipped draw', () => {
     for (let i = 0; i < 6; i += 1) {
       const active = state.activePlayerId;
       state = apply(state, { type: 'pass_phase', playerId: active }, local);
-      state = apply(
-        state,
-        { type: 'declare_attackers', playerId: active, attackerInstanceIds: [] },
-        local,
-      );
+      state = apply(state, { type: 'declare_attackers', playerId: active, attacks: [] }, local);
       state = apply(state, { type: 'pass_phase', playerId: active }, local);
     }
 
@@ -209,14 +206,14 @@ describe('3. playing units, slot limits, summoning sickness and exhaustion', () 
     const error = expectRejected(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [sick.instanceId],
+      attacks: attacksOnOpponent(atAttack, [sick.instanceId]),
     });
     expect(error.code).toBe('engine/illegal_attacker');
 
     const ok = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [swift.instanceId],
+      attacks: attacksOnOpponent(atAttack, [swift.instanceId]),
     });
     expect(instanceIn(ok, swift.instanceId).exhausted).toBe(true);
   });
@@ -227,14 +224,14 @@ describe('3. playing units, slot limits, summoning sickness and exhaustion', () 
     const unit = deployUnit(start, active, 'prototype_drone', { exhausted: true });
 
     let state = apply(unit.state, { type: 'pass_phase', playerId: active });
-    state = apply(state, { type: 'declare_attackers', playerId: active, attackerInstanceIds: [] });
+    state = apply(state, { type: 'declare_attackers', playerId: active, attacks: [] });
     state = apply(state, { type: 'pass_phase', playerId: active });
 
     const other = state.activePlayerId;
     expect(instanceIn(state, unit.instanceId).exhausted).toBe(true);
 
     state = apply(state, { type: 'pass_phase', playerId: other });
-    state = apply(state, { type: 'declare_attackers', playerId: other, attackerInstanceIds: [] });
+    state = apply(state, { type: 'declare_attackers', playerId: other, attacks: [] });
     state = apply(state, { type: 'pass_phase', playerId: other });
 
     expect(state.activePlayerId).toBe(active);
@@ -253,7 +250,7 @@ describe('4. unblocked combat damage', () => {
     let state = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [attacker.instanceId],
+      attacks: attacksOnOpponent(atAttack, [attacker.instanceId]),
     });
     state = apply(state, { type: 'assign_blockers', playerId: other, blocks: [] });
 
@@ -278,7 +275,7 @@ describe('5. blocked combat resolves simultaneously', () => {
     let state = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [attacker.instanceId],
+      attacks: attacksOnOpponent(atAttack, [attacker.instanceId]),
     });
     state = apply(state, {
       type: 'assign_blockers',
@@ -326,7 +323,7 @@ describe('5. blocked combat resolves simultaneously', () => {
     let state = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [attacker.instanceId],
+      attacks: attacksOnOpponent(atAttack, [attacker.instanceId]),
     });
     state = apply(state, {
       type: 'assign_blockers',
@@ -353,7 +350,7 @@ describe('5. blocked combat resolves simultaneously', () => {
     const declared = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [attacker.instanceId],
+      attacks: attacksOnOpponent(atAttack, [attacker.instanceId]),
     });
     const error = expectRejected(declared, {
       type: 'assign_blockers',
@@ -377,7 +374,7 @@ describe('6. damage persists across turns and healing removes it', () => {
     let state = apply(atAttack, {
       type: 'declare_attackers',
       playerId: active,
-      attackerInstanceIds: [attacker.instanceId],
+      attacks: attacksOnOpponent(atAttack, [attacker.instanceId]),
     });
     state = apply(state, {
       type: 'assign_blockers',
@@ -595,20 +592,20 @@ describe('9. triggers fire in a deterministic order', () => {
       state = apply(state, {
         type: 'declare_attackers',
         playerId: active,
-        attackerInstanceIds: [],
+        attacks: [],
       });
       state = apply(state, { type: 'pass_phase', playerId: active });
     }
 
     const active = state.activePlayerId;
     state = apply(state, { type: 'pass_phase', playerId: active });
-    state = apply(state, { type: 'declare_attackers', playerId: active, attackerInstanceIds: [] });
+    state = apply(state, { type: 'declare_attackers', playerId: active, attacks: [] });
     state = apply(state, { type: 'pass_phase', playerId: active });
     state = apply(state, { type: 'pass_phase', playerId: state.activePlayerId });
     state = apply(state, {
       type: 'declare_attackers',
       playerId: state.activePlayerId,
-      attackerInstanceIds: [],
+      attacks: [],
     });
     state = apply(state, { type: 'pass_phase', playerId: state.activePlayerId });
 
@@ -749,7 +746,7 @@ describe('14. identical seeds and actions reproduce identical matches', () => {
         next = apply(next, {
           type: 'declare_attackers',
           playerId: active,
-          attackerInstanceIds: [],
+          attacks: [],
         });
         next = apply(next, { type: 'pass_phase', playerId: active });
       }
@@ -922,7 +919,11 @@ describe('cross-cutting guarantees', () => {
     const before = { ...state.rng };
     applyAction(
       state,
-      { type: 'declare_attackers', playerId: state.activePlayerId, attackerInstanceIds: ['nope'] },
+      {
+        type: 'declare_attackers',
+        playerId: state.activePlayerId,
+        attacks: attacksOnOpponent(state, ['nope']),
+      },
       context,
     );
     expect(state.rng).toEqual(before);
@@ -934,7 +935,7 @@ describe('cross-cutting guarantees', () => {
     const legal = legalActions(state, active, context);
 
     expect(legal.canPassPhase).toBe(true);
-    expect(legal.legalAttackers).toBeNull();
+    expect(legal.attacking).toBeNull();
     for (const card of legal.playableCards) {
       expect(card.energyCost).toBeLessThanOrEqual(state.players[active]?.energy ?? 0);
     }
@@ -960,7 +961,7 @@ describe('cross-cutting guarantees', () => {
 
     // Sunrise Decree is permanent, so it survives the turn boundary.
     state = apply(state, { type: 'pass_phase', playerId: active });
-    state = apply(state, { type: 'declare_attackers', playerId: active, attackerInstanceIds: [] });
+    state = apply(state, { type: 'declare_attackers', playerId: active, attacks: [] });
     state = apply(state, { type: 'pass_phase', playerId: active });
     expect(currentAttack(instanceIn(state, unit.instanceId), definition)).toBe(3);
   });
@@ -972,11 +973,7 @@ describe('cross-cutting guarantees', () => {
     const active = start.activePlayerId;
 
     let state = apply(start, { type: 'pass_phase', playerId: active }, local);
-    state = apply(
-      state,
-      { type: 'declare_attackers', playerId: active, attackerInstanceIds: [] },
-      local,
-    );
+    state = apply(state, { type: 'declare_attackers', playerId: active, attacks: [] }, local);
     state = apply(state, { type: 'pass_phase', playerId: active }, local);
 
     expect(state.pendingChoice?.reason).toBe('hand_size_discard');

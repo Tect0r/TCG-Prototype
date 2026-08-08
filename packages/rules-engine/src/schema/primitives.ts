@@ -3,8 +3,15 @@ import { z } from 'zod';
 /**
  * Match state schema version. Bump together with a migration whenever the
  * persisted/serialised match shape changes.
+ *
+ * v2 (Phase 3) added the stable seat order, the terminal `removed` zone, the
+ * derived continuous-effect layer on every instance, and per-defender combat.
  */
-export const MATCH_SCHEMA_VERSION = 1;
+export const MATCH_SCHEMA_VERSION = 2;
+
+/** Seats a single match may hold. Two is 1v1; three and four are free-for-all. */
+export const MIN_PLAYERS = 2;
+export const MAX_PLAYERS = 4;
 
 /** Seat identity within a match. Not an account: temporary for the match. */
 export const playerIdSchema = z.string().min(1).max(64);
@@ -47,7 +54,12 @@ export const MATCH_STATUSES = ['mulligan', 'playing', 'waiting_for_choice', 'com
 export const matchStatusSchema = z.enum(MATCH_STATUSES);
 export type MatchStatus = z.infer<typeof matchStatusSchema>;
 
-export const MATCH_MODES = ['1v1'] as const;
+/**
+ * `1v1` and `ffa` run through exactly the same engine paths — the mode is
+ * recorded for logs and presentation, never branched on for a rule. A
+ * two-player free-for-all and a 1v1 are the same match (CLAUDE.md §12).
+ */
+export const MATCH_MODES = ['1v1', 'ffa'] as const;
 export const matchModeSchema = z.enum(MATCH_MODES);
 export type MatchMode = z.infer<typeof matchModeSchema>;
 

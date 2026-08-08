@@ -18,7 +18,7 @@ import {
  * handshake compares versions and refuses to start rather than failing halfway
  * through a match with a confusing error.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({
@@ -43,8 +43,14 @@ export const displayNameSchema = z.string().trim().min(1).max(24);
 /** Opaque: the client stores it and sends it back, and never interprets it. */
 export const reconnectTokenSchema = z.string().min(16).max(128);
 
-export const seatIdSchema = z.enum(['seat_1', 'seat_2']);
+/** Up to four seats. Two is a 1v1; three or four is a free-for-all. */
+export const SEAT_IDS = ['seat_1', 'seat_2', 'seat_3', 'seat_4'] as const;
+export const seatIdSchema = z.enum(SEAT_IDS);
 export type SeatId = z.infer<typeof seatIdSchema>;
+
+export const MIN_SEATS = 2;
+export const MAX_SEATS = 4;
+export const seatCountSchema = z.number().int().min(MIN_SEATS).max(MAX_SEATS);
 
 export const LOBBY_STATUSES = ['waiting', 'ready', 'in_match', 'finished', 'closed'] as const;
 export const lobbyStatusSchema = z.enum(LOBBY_STATUSES);
@@ -59,12 +65,21 @@ export const lobbySeatViewSchema = z.strictObject({
   deckName: z.string().nullable(),
   deckLegal: z.boolean(),
   isHost: z.boolean(),
+  /** Seconds left in this seat's reconnect window, when it is disconnected. */
+  graceSeconds: z.number().int().min(0).nullable(),
+  /** Out of the match, watching only (CLAUDE.md §12). */
+  eliminated: z.boolean(),
 });
 export type LobbySeatView = z.infer<typeof lobbySeatViewSchema>;
 
 export const lobbyViewSchema = z.strictObject({
   inviteCode: inviteCodeSchema,
   status: lobbyStatusSchema,
+  /** Seats the host opened. Empty seats cannot be filled once the match starts. */
+  maxSeats: seatCountSchema,
+  /** Only the host may change the size or start the match (open-questions.md Q36). */
+  hostSeatId: seatIdSchema,
+  canStart: z.boolean(),
   seats: z.array(lobbySeatViewSchema),
 });
 export type LobbyView = z.infer<typeof lobbyViewSchema>;
@@ -76,7 +91,20 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('create_lobby'),
     versions: versionsSchema,
     displayName: displayNameSchema,
+    /** How many seats the table has. Defaults to a 1v1. */
+    maxSeats: seatCountSchema.default(MIN_SEATS),
   }),
+  /** Host-only: resize the table before the match starts. */
+  z.strictObject({
+    type: z.literal('set_max_seats'),
+    maxSeats: seatCountSchema,
+  }),
+  /**
+   * Host-only: begin with everyone who is seated and ready. A free-for-all does
+   * not start by itself, because "everyone ready" is a legal state at two of
+   * four seats and only the host knows whether they are still waiting.
+   */
+  z.strictObject({ type: z.literal('start_match') }),
   z.strictObject({
     type: z.literal('join_lobby'),
     versions: versionsSchema,
@@ -130,6 +158,8 @@ export const PROTOCOL_ERROR_CODES = [
   'protocol/already_started',
   'protocol/stale_revision',
   'protocol/wrong_seat',
+  'protocol/not_host',
+  'protocol/not_enough_players',
   'protocol/internal',
 ] as const;
 export const protocolErrorCodeSchema = z.enum(PROTOCOL_ERROR_CODES);
@@ -171,8 +201,13 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     actionId: z.string(),
     error: z.union([engineErrorSchema, protocolErrorSchema]),
   }),
+  /**
+   * One other seat's connection changed. Named per seat rather than
+   * "the opponent" because a free-for-all has up to three of them, and one
+   * dropping does not stop the match (CLAUDE.md §12).
+   */
   z.strictObject({
-    type: z.literal('opponent_connection'),
+    type: z.literal('seat_connection'),
     seatId: seatIdSchema,
     connected: z.boolean(),
     /** Seconds left before a disconnect becomes a loss, when disconnected. */

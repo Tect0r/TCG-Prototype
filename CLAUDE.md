@@ -12,7 +12,7 @@ The application should grow in this order:
 4. Local, headless AI simulations and card-balance analysis
 5. Optional analysis of pseudonymous real-player match data
 
-Phase 1, the deck builder, is complete. The active implementation milestone is now **Phase 2: a deterministic headless rules engine followed by online 1v1**. Preserve the working deck builder and its saved-data compatibility while extending the project.
+Phases 1, 2A, and 2B are complete: the deck builder, deterministic headless rules engine, and authoritative online 1v1 all work. The active implementation milestone is now **Phase 3: online free-for-all for two to four players**. Preserve all working behavior, protocol validation, replay determinism, hidden-information guarantees, and saved-data compatibility while extending the project.
 
 ## 2. Core design principles
 
@@ -600,18 +600,120 @@ Initial match and lobby state may remain in memory. Process restarts may end mat
 - Automated integration tests cover lobby creation/join, start, representative actions, reconnection, hidden information, and match termination.
 - Existing Phase 1 deck creation, persistence, import, and export still work.
 
-## 12. Later online free-for-all roadmap
+## 12. Phase 3 — Online free-for-all for two to four players
 
-Developers must be able to run two browser clients against a local server for testing. Do not build a disposable hot-seat mode.
+Extend the existing authoritative server and shared rules engine into a genuine free-for-all. This is not a set of parallel 1v1 matches and not a hot-seat mode. The same mode must support two, three, or four seated players; existing 1v1 behavior must remain compatible.
 
-- Choose which opponent each attacker attacks where applicable
-- Only the attacked player assigns blockers for attacks directed at them
-- Explicit turn order and priority for simultaneous triggers
-- Player elimination rules
-- Victory conditions for the last remaining player/team, once confirmed
-- Spectating after elimination
+### Confirmed multiplayer rules
 
-Do not begin this phase until the exact multiplayer combat, targeting, elimination, and Commander rules are documented.
+- No teams in Phase 3. Every player competes independently.
+- Players take complete turns in a stable circular seat order established at match creation.
+- A player who is eliminated is skipped without renumbering or reordering the remaining seats.
+- During attacker declaration, each attacking unit independently targets one living opponent. Attackers may be split across multiple opponents in the same combat.
+- Units cannot attack other units directly.
+- A unit may block only an attacker targeting that unit's controller. Third-party blocking is not allowed.
+- Each targeted defender submits blockers only for attacks directed at them. If several defenders are attacked, blocker choices are collected independently and hidden until all required defenders submit or explicitly decline.
+- Combat then resolves as one deterministic combat event. Damage within the same combat-damage step is simultaneous across all defenders.
+- Effects using `opponent` must resolve to one explicitly selected living opponent unless their definition says `each_opponent`.
+- `each_opponent` resolves in clockwise seat order starting after the effect controller. It is one atomic multi-recipient instruction when simultaneous loss matters; presentation events may still be emitted per recipient in that deterministic order.
+- Simultaneous triggers are ordered by active player first, then clockwise seat order, then source-instance creation order, then trigger index. No player-controlled trigger ordering or priority system is added.
+- The last living player wins. If all remaining players lose in the same state-based check, the match is a draw.
+- Spectating after elimination is allowed, but an eliminated player receives only the public/redacted view and cannot submit gameplay actions.
+
+### Elimination semantics
+
+When a player loses:
+
+1. Mark the player eliminated and remove them from future turn, choice, and combat participation.
+2. Remove all cards and tokens they own from every match zone. Tokens cease to exist; non-token cards move to a terminal `removed` zone or equivalent serializable state.
+3. End all static, delayed, and queued effects controlled by that player unless an already-resolving atomic instruction must complete to preserve determinism.
+4. Return cards owned by another player but controlled by the eliminated player to their owner's corresponding legal zone; default to the owner's discard pile when no originating zone is meaningful.
+5. Remove cards owned by the eliminated player even when another player controls them.
+6. Cancel unresolved choices assigned to the eliminated player and continue resolution with a documented no-selection result where legal; otherwise cancel the containing effect.
+7. Remove attacks directed at that player before combat damage. Attackers remain exhausted and do not retarget or deal damage to another player.
+8. Run state-based checks and trigger discovery once after the full elimination cleanup, not after every removed object.
+
+Every ownership/control rule must be represented explicitly in serializable state. Do not infer ownership from the current battlefield container.
+
+### Player targeting schema
+
+Add player targets as a first-class discriminated target type rather than forcing players into zone-based `TargetSelector`:
+
+```ts
+type TargetDefinition =
+  | { kind: "entity"; selector: TargetSelector }
+  | { kind: "source" }
+  | { kind: "player"; relation: "self" | "opponent"; selection: "automatic" | "player_choice" }
+  | { kind: "players"; relation: "each_opponent" | "all_players" };
+```
+
+This confirms the existing `targetsSource` requirement conceptually, though a schema migration may replace the boolean with the `source` variant. Card data, protocol messages, pending choices, legal actions, logs, and player views must use stable player IDs—not array positions.
+
+### Engine changes
+
+- Replace assumptions of exactly two players or one `opponentId` with ordered living-player helpers.
+- Preserve the full original seat order in match state.
+- Extend attacker declarations to store `{ attackerId, defenderPlayerId }`.
+- Group blocker requirements by defender and allow several pending defender submissions without allowing unrelated gameplay actions.
+- Keep all pending multiplayer choices JSON-serializable and reconnect-safe.
+- Redact every player's hand, deck order, private mulligan choice, and private search information independently for every viewer.
+- Enumerate legal actions for the requesting player only, including legal defender targets.
+- Preserve seeded determinism regardless of connection timing or the order in which independent blocker submissions reach the server.
+- Do not add Commander battlefield deployment, Commander recovery, teams, table politics, chat, public matchmaking, reactions, or a priority stack in this phase.
+
+### Server, lobby, and reconnection
+
+- Lobbies accept two to four seats and the host chooses or configures the maximum before the match starts.
+- Start requires at least two occupied, ready seats with valid submitted decks.
+- Once the match starts, empty seats cannot be filled.
+- Each seat keeps an independent reconnection token and configured grace window.
+- Disconnect does not stop the entire match. If the grace window expires, the server submits an explicit timeout/elimination action through the engine.
+- Lobby and match state may remain in memory; server-restart recovery remains out of scope.
+- Protocol changes must be versioned and runtime-validated on both client and server.
+- Strict stale-revision rejection remains confirmed: reject the action and resend the current player view.
+
+### Match UI
+
+- Display all players in seat/turn order with health, energy, Commander, board, relics, deck count, hand count, connection state, and eliminated state.
+- Clearly identify the active player and local player.
+- Attacker declaration must make the target opponent for each attacker explicit and editable before confirmation.
+- Each defender sees and assigns only their relevant blockers.
+- Waiting states must identify which defenders have not submitted without leaking their tentative assignments.
+- After elimination, switch the local client to spectator mode automatically.
+- Keep the UI functional and readable before adding animations. Animations never own, delay, or determine rules resolution.
+
+### Required Phase 3 tests
+
+At minimum, add deterministic engine, protocol, server, and UI coverage for:
+
+1. Starting legal matches with two, three, and four players.
+2. Stable circular turns and skipping eliminated seats.
+3. Splitting attackers across two or three opponents.
+4. Rejecting third-party and otherwise illegal blockers.
+5. Independent blocker submissions arriving in different network orders but producing identical final state.
+6. Simultaneous combat across several defenders.
+7. `opponent` choice and clockwise `each_opponent` resolution.
+8. Active-player-then-clockwise simultaneous trigger ordering.
+9. Elimination cleanup for owned cards, controlled cards, tokens, queued effects, choices, and pending attacks.
+10. Timeout elimination while other players continue.
+11. Last-player victory and simultaneous-loss draw.
+12. Per-viewer hidden-information redaction with four players.
+13. Reconnection for every seat and idempotent replay of an action.
+14. Eliminated-player spectating and action rejection.
+15. Existing complete online 1v1 flows remaining unchanged.
+
+### Phase 3 acceptance criteria
+
+Phase 3 is complete when:
+
+- Two to four browsers can create/join one lobby, submit decks, reconnect, and finish a free-for-all match.
+- Attack and block ownership, multi-defender combat, triggers, elimination, and victory follow the rules above deterministically.
+- The server remains authoritative and no player receives another player's hidden information.
+- Different arrival orders for independent network choices cannot change a seeded match result.
+- Eliminated players can spectate but cannot act.
+- Existing Phase 1 and Phase 2 tests and behavior remain intact.
+- New engine, protocol, server, and client tests cover every required scenario.
+- `npm run verify` passes for the entire monorepo.
 
 ## 13. Local simulation and balance laboratory
 
@@ -693,9 +795,27 @@ Phase 1 is complete when:
 - Automated tests cover core schemas, validation, persistence, migration behavior, and artwork resolution.
 - The codebase contains clean package boundaries for future rules-engine, server, and simulator work without pretending those later systems are already implemented.
 
-## 17. Open decisions after Phase 2
+## 17. Decisions confirmed after Phase 2 and remaining open decisions
 
-Do not block Phase 2 on these unless implementation reveals a structural dependency:
+The following implementation questions raised in `docs/open-questions.md` are now confirmed:
+
+- **Q1:** Keep top-level `effects` for spell resolution and unit/relic deploy resolution. Keep triggered `abilities` only for non-deploy event triggers; migrate `on_deploy` abilities into top-level `effects` so deploy behavior has one authoring form.
+- **Q2:** Add a separate validated `staticAbilities`/continuous-effects layer. Continuous effects are derived from current state and never permanently stamp recipients. Recalculate after relevant state changes. Do not author more aura/lord cards until this exists.
+- **Q3:** Sacrifice may be either a cost or an effect. Activated abilities need a structured, extensible `costs` array; costs are validated and paid atomically before queueing the ability. A sacrifice instruction inside `effects` remains an effect.
+- **Q23:** Effects may target players directly using the first-class player target variants in Phase 3.
+- **Q24:** A sacrificed unit counts as defeated: it triggers both `on_sacrifice` and `on_defeated`. The defeat event retains `reason: "sacrificed"` so future cards can filter it.
+- **Q25:** Searching a hidden zone may legally find nothing even when a valid card exists. Searching a public zone is mandatory when a legal result exists unless the effect explicitly says `up_to` or `may`.
+- **Q26:** Player healing is uncapped unless an effect explicitly sets a maximum.
+- **Q27:** Activated abilities use structured `costs`, supporting energy first and later discard/sacrifice/exhaust costs. Keep the placeholder Commander ability while the prototype set remains test data.
+- **Q28:** Finish all authored instructions of the current card/effect before resolving triggers they create. State-based checks still occur after every atomic instruction.
+- **Q29:** A source/self target is required and confirmed; prefer a discriminated `source` target over a boolean during the next schema migration.
+- **Q30:** Keep strict stale-revision rejection and resend the latest authoritative player view.
+
+Update `docs/open-questions.md`, `docs/rules/open-decisions.md`, schemas, migrations, and tests alongside implementation so confirmed items do not remain labelled open.
+
+The following remain genuine game-design or playtest decisions:
+
+Do not block Phase 3 on these unless implementation reveals a structural dependency:
 
 - Final starting Health, hand size, battlefield slots, relic limit, and energy curve
 - Whether exhausted units may block
@@ -706,24 +826,27 @@ Do not block Phase 2 on these unless implementation reveals a structural depende
 - Reaction-speed cards, opponent-turn actions, and any future priority system
 - Piercing/overrun and other expanded keywords
 - Phase timers beyond disconnect recovery
-- Multiplayer politics, targeting, elimination, and simultaneous-trigger ownership
+- Exact keyword behavior, especially `guardian`, `armored`, and `resilient`
+- Alternate victory conditions
+- Whether server-restart match persistence is ever needed
+- Main-phase and pending-choice timers beyond disconnect recovery
 
 When playtesting changes a provisional value, update the versioned rules configuration and affected tests. When a structural rule changes, update this document and add an architecture/rules decision record before implementation.
 
-## 18. Phase 2 implementation instruction
+## 18. Phase 3 implementation instruction
 
-Implement Phase 2 in two strict subphases. Before writing substantial code:
+Implement Phase 3 in bounded vertical slices. Before writing substantial code:
 
-1. Inspect the repository and preserve any existing configuration or user work.
-2. Verify Phase 1 tests/build and document the actual package boundaries before modifying them.
-3. Propose a short Phase 2A plan and flag only decisions that truly block the deterministic engine.
-4. Implement the versioned rules configuration and runtime schemas.
-5. Build one thin headless vertical slice: seeded setup, draw, play a basic unit, pass phases, attack, block, resolve damage, and finish a match.
-6. Expand to the required effects, triggers, choices, redacted views, logs, and complete Phase 2A test suite.
-7. Stop and report Phase 2A results. Do not start networking until its acceptance criteria pass.
-8. Implement Phase 2B lobby/server protocol, then the smallest match UI consuming authoritative player views.
-9. Add reconnection, idempotency, error handling, integration tests, and the remaining UI requirements.
-10. Run tests, type-checking, linting, and production builds for the entire monorepo.
-11. Summarize completed work, exact run commands, rules/configuration assumptions, test results, open decisions, and deliberate deviations.
+1. Inspect the completed Phase 2 implementation and run `npm run verify` as the baseline.
+2. Update the decision documents for the confirmed answers in §17 and write ADRs for multiplayer state/choice handling and continuous effects.
+3. Add schema migrations and runtime validation for first-class player/source targets, structured activation costs, static abilities, stable seat order, ownership/control, and multi-defender combat.
+4. Refactor exact-two-player assumptions behind tested ordered-player helpers without changing existing 1v1 behavior.
+5. Build a headless three-player vertical slice: circular turns, one attacker choosing a defender, that defender blocking, elimination, and last-player victory.
+6. Expand the engine to split attacks, independent blocker submissions, four players, simultaneous triggers, cleanup semantics, redacted views, and deterministic replay.
+7. Stop and report engine results before changing networking or UI. All engine acceptance tests and existing Phase 2 tests must pass.
+8. Version and extend the protocol and lobby/server flow for two to four seats, reconnection, timeouts, and spectator views.
+9. Implement the smallest complete multiplayer UI consuming only authoritative player views and legal actions.
+10. Add all Phase 3 integration/UI tests, then run `npm run verify` for the whole monorepo.
+11. Update `README.md` and `docs/project-status.md`, and summarize exact run commands, migrations, test results, assumptions, and deliberate deferrals.
 
 Do not replace unresolved game-design decisions with elaborate assumptions. Make uncertain values configurable, document them, and keep the implementation easy to revise after playtesting.

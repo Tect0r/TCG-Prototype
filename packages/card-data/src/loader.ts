@@ -2,6 +2,7 @@ import { err, error, hasErrors, ok, warning, type Issue, type Result } from '@tc
 import type { z } from 'zod';
 import { cardSetSchema, type CardDefinition, type CardSet } from './schema/card.js';
 import { CARD_SCHEMA_VERSION } from './schema/primitives.js';
+import { migrateCardSet } from './migrate.js';
 import { lintDisplayText } from './display-text.js';
 import { CardDatabase } from './database.js';
 
@@ -16,10 +17,7 @@ export function zodIssuesToIssues(zodError: z.ZodError, pathPrefix = ''): Issue[
   });
 }
 
-/**
- * Applies migrations to a raw set payload so older data files keep loading.
- * No migrations exist yet; the seam is here so the first schema bump is cheap.
- */
+/** Applies migrations to a raw set payload so older data files keep loading. */
 function migrateRawSet(raw: unknown, index: number): Result<unknown, Issue[]> {
   if (typeof raw !== 'object' || raw === null) {
     return err([
@@ -50,7 +48,23 @@ function migrateRawSet(raw: unknown, index: number): Result<unknown, Issue[]> {
       ),
     ]);
   }
-  return ok(raw);
+  if (version < 1 || !Number.isInteger(version)) {
+    return err([
+      error('card_data/malformed', `Card set has an invalid schemaVersion ${version}.`, {
+        path: `sets[${index}].schemaVersion`,
+      }),
+    ]);
+  }
+  return ok(migrateCardSet(raw as Record<string, unknown>, version));
+}
+
+/** Every effect a card can ever resolve, wherever it is authored. */
+function allEffectsOf(card: CardDefinition) {
+  return [
+    ...card.effects,
+    ...card.abilities.flatMap((ability) => ability.effects),
+    ...card.activatedAbilities.flatMap((ability) => ability.effects),
+  ];
 }
 
 export interface LoadedCardData {
@@ -120,8 +134,7 @@ export function loadCardSets(rawSets: readonly unknown[]): Result<LoadedCardData
 
   // Structured references must resolve, or the rules engine will fail at runtime.
   for (const card of byId.values()) {
-    const effects = [...card.effects, ...card.abilities.flatMap((a) => a.effects)];
-    for (const effect of effects) {
+    for (const effect of allEffectsOf(card)) {
       if (effect.type !== 'create_token') continue;
       const token = byId.get(effect.tokenCardId);
       if (!token) {
@@ -159,7 +172,7 @@ export function loadCardSets(rawSets: readonly unknown[]): Result<LoadedCardData
 
   const referencedTokens = new Set<string>();
   for (const card of byId.values()) {
-    for (const effect of [...card.effects, ...card.abilities.flatMap((a) => a.effects)]) {
+    for (const effect of allEffectsOf(card)) {
       if (effect.type !== 'create_token') continue;
       referencedTokens.add(effect.tokenCardId);
 

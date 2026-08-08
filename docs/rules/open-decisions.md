@@ -7,11 +7,17 @@ file may be treated as a confirmed rule.
 Where a value is provisional, the implementation keeps it configurable rather
 than inlining it, so playtesting can move it without a rewrite.
 
-Phase 2A forced a decision on several things that are genuinely still open. In
-every such case the engine ships the smallest, most reversible placeholder, and
-this file records exactly what it does and where to change it. A placeholder is
-not an answer — the questions stay open in
+Phase 2A forced a decision on several things that were genuinely open. In every
+such case the engine ships the smallest, most reversible placeholder, and this
+file records exactly what it does and where to change it. A placeholder is not
+an answer — the questions stay open in
 [open-questions.md](../open-questions.md).
+
+**As of 2026-08-07** some of those placeholders have been ruled on by CLAUDE.md
+§17 without the code having caught up yet. Each entry below says which of three
+states it is in: **open** (no answer), **confirmed — implemented** (the
+placeholder was ratified, nothing to do), or **confirmed — not implemented**
+(Phase 3 work item). Only "open" entries are still decisions to make.
 
 ---
 
@@ -107,12 +113,14 @@ changing that table and the handler it names — not hunting through combat code
 Two of them do nothing on purpose:
 
 - **`guardian` is inert** because taunt-style semantics have no meaning in the
-  Phase 2 combat model: attackers target the opposing _player_ and never choose
-  a unit to attack, so "must be blocked by a guardian" has nothing to attach to.
-  Inventing a different meaning would be guessing at a design decision nobody
-  has made. Cards keep the keyword, the deck builder keeps filtering on it, and
-  a regression test asserts that a guardian blocker currently behaves exactly
-  like any other blocker.
+  combat model: attackers target a _player_ and never choose a unit to attack,
+  so "must be attacked through a guardian" has nothing to attach to. Phase 3
+  makes that permanent rather than temporary — CLAUDE.md §12 confirms that units
+  cannot attack other units directly at any player count, so any eventual
+  meaning has to live on the blocking or damage side. Inventing one would be
+  guessing at a design decision nobody has made. Cards keep the keyword, the
+  deck builder keeps filtering on it, and a regression test asserts that a
+  guardian blocker currently behaves exactly like any other blocker.
 - **`resilient` is inert** because the plausible readings (clear all damage at
   end of turn, versus survive lethal damage once per turn) differ enormously in
   power and interact directly with the "damage persists between turns" rule.
@@ -135,9 +143,10 @@ warning to an error in `loader.ts`. The bundled set already respects it.
 ## Commander recovery
 
 Still **not implemented and not modelled**, per CLAUDE.md §4 ("do not invent
-that subsystem in Phase 2"). Commanders do not enter the battlefield, are never
-defeated, and the `recovery` zone exists in the schema with nothing that can
-enter it.
+that subsystem in Phase 2") and now §12, which also bars Commander battlefield
+deployment and recovery from Phase 3. Commanders do not enter the battlefield,
+are never defeated, and the `recovery` zone exists in the schema with nothing
+that can enter it.
 
 One consequence worth knowing: Commander abilities triggered by `on_attack`,
 `on_block`, `on_survive_combat`, `on_deploy`, `on_defeated` or `on_sacrifice`
@@ -152,25 +161,29 @@ the Commander zone, as CLAUDE.md §4 requires.
 
 ## Card-schema questions: what the engine does today
 
-These remain open questions ([open-questions.md](../open-questions.md) Q1–Q3).
-The engine could not run without picking something, so each has a placeholder
-chosen to be the smallest and most reversible option.
+Q1–Q3 were **answered on 2026-08-07** (CLAUDE.md §17). The engine still runs the
+Phase 2A placeholder for all three; each is now a Phase 3 work item rather than a
+decision.
 
 ### `effects` vs. `abilities` (Q1)
 
-**Still open.** Today the engine treats a unit's or relic's top-level `effects`
-as its deploy effects: they are enqueued when the card enters play, immediately
-before any `on_deploy` triggered ability on the same card. For a spell,
-`effects` are its resolution instructions.
+**Confirmed — not implemented.** The ruling: keep top-level `effects` for spell
+resolution _and_ for unit/relic deploy resolution, keep triggered `abilities`
+only for non-deploy triggers, and migrate every `on_deploy` ability into
+top-level `effects` so deploy behaviour has one authoring form.
 
-Both authoring forms work and produce the same observable result for the bundled
-set. Collapsing them to one form is still worth doing; the engine does not force
-the answer either way. See
+Today the engine still accepts both: it enqueues a unit's or relic's top-level
+`effects` when the card enters play, immediately before any `on_deploy` ability
+on the same card, and the bundled set uses both forms. Closing this needs a card
+migration plus a schema rule rejecting `on_deploy` inside `abilities`. See
 [ADR 0002](../architecture/0002-card-data-model.md).
 
 ### Static and continuous abilities (Q2)
 
-**Still open, and still a real gap.** There is no continuous-effects layer.
+**Confirmed — not implemented,** and still the real gap. The ruling: a separate
+validated `staticAbilities` layer whose effects are derived from current state,
+never permanently stamped onto recipients, and recalculated after every relevant
+state change. Until it exists there is no continuous-effects layer at all.
 
 Concretely:
 
@@ -181,15 +194,20 @@ Concretely:
   engine grants Armored to units present when it is deployed and does _not_
   grant it to units that arrive later.
 
-That divergence between text and behaviour is a consequence of Q2 being open,
-not a bug to fix in isolation. Lord-style and aura cards should not be authored
-until Q2 is answered.
+That divergence between text and behaviour is a consequence of the layer not
+existing yet, not a bug to fix in isolation. Lord-style and aura cards still
+should not be authored until it does.
 
 ### `sacrifice` as cost or effect (Q3)
 
-**Still open.** Modelled as an effect: it resolves in authored order like any
-other instruction. With no stack in v0.2, nothing currently distinguishes the
-two readings observably.
+**Confirmed — not implemented.** The ruling: it may be **either**. A `sacrifice`
+instruction inside `effects` stays an effect, and activated abilities gain a
+structured, extensible `costs` array — energy first, then discard, sacrifice and
+exhaust — validated and paid atomically before the ability is queued.
+
+Today it is only ever an effect, resolving in authored order, and an activation
+cost is the single `energyCost` field on `activatedAbilities`. Closing this needs
+a card migration from `energyCost` to `costs`.
 
 ### Trigger scope
 
@@ -203,26 +221,26 @@ bundled set needs it.
 
 Relatedly, `on_sacrifice` and `on_defeated` **both** fire when a unit is
 sacrificed: sacrifice emits `unit_defeated` with `reason: 'sacrificed'`, and
-`on_defeated` matches any defeat. Whether a sacrificed unit should also trigger
-death effects is a genuine design question. The current rule is at least simple
-and changeable in one place (`triggers.ts`).
+`on_defeated` matches any defeat. That is now **confirmed — implemented** (Q24):
+a sacrificed unit counts as defeated, and the `reason` is retained so a future
+card can filter on it.
 
 ---
 
 ## Phase 2 engine placeholders
 
 Everything else the engine had to assume in order to run, with where to change
-it. None of these are confirmed rules.
+it and whether CLAUDE.md §17 has since ruled on it.
 
-| Placeholder                                                                                                                                  | Where it lives                            |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| A search may legally find nothing (`minimum: 0`)                                                                                             | `effects.ts`, `search_zone`               |
-| `while_source_present` duration behaves as `permanent`                                                                                       | `flow.ts`, `expireEndOfTurnEffects`       |
-| Player healing has no upper bound                                                                                                            | `damage.ts`, `healPlayer`                 |
-| A spell is unplayable when a **required** target has no legal option; a unit or relic still enters play and its deploy effect simply fizzles | `engine.ts`, `spellHasLegalTargets`       |
-| Damage reduction order: `armored` first, then prevention shields                                                                             | `damage.ts`, `damageUnit`                 |
-| Triggers created mid-card are appended, so the rest of that card's instructions resolve first                                                | `queue.ts`, `pumpQueue`                   |
-| Leaving a live match concedes; losing the socket starts the grace window instead                                                             | `match-server.ts`, `leave` / `disconnect` |
+| Placeholder                                                                                                                                  | Status                                                                                                                               | Where it lives                            |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| A search may legally find nothing (`minimum: 0`)                                                                                             | Confirmed for **hidden** zones only; public zones must be mandatory unless the effect says `up_to`/`may` — **not implemented** (Q25) | `effects.ts`, `search_zone`               |
+| Player healing has no upper bound                                                                                                            | Confirmed — implemented (Q26); a per-effect maximum is a later schema addition                                                       | `damage.ts`, `healPlayer`                 |
+| Triggers created mid-card are appended, so the rest of that card's instructions resolve first                                                | Confirmed — implemented (Q28)                                                                                                        | `queue.ts`, `pumpQueue`                   |
+| `while_source_present` duration behaves as `permanent`                                                                                       | Open; subsumed by the `staticAbilities` layer (Q2)                                                                                   | `flow.ts`, `expireEndOfTurnEffects`       |
+| A spell is unplayable when a **required** target has no legal option; a unit or relic still enters play and its deploy effect simply fizzles | Open                                                                                                                                 | `engine.ts`, `spellHasLegalTargets`       |
+| Damage reduction order: `armored` first, then prevention shields                                                                             | Open; depends on Q4                                                                                                                  | `damage.ts`, `damageUnit`                 |
+| Leaving a live match concedes; losing the socket starts the grace window instead                                                             | Open; free-for-all raises the stakes (Q34)                                                                                           | `match-server.ts`, `leave` / `disconnect` |
 
 ---
 

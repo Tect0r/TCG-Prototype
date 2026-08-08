@@ -6,9 +6,9 @@ import type { InstanceId, PlayerId } from './schema/primitives.js';
 import type { CardInstance } from './schema/state.js';
 
 /** Zones whose contents are a flat ordered list on the owning player. */
-type ListZone = 'deck' | 'hand' | 'discard';
+type ListZone = 'deck' | 'hand' | 'discard' | 'removed';
 
-const LIST_ZONES = new Set<ZoneId>(['deck', 'hand', 'discard']);
+const LIST_ZONES = new Set<ZoneId>(['deck', 'hand', 'discard', 'removed']);
 
 function isListZone(zone: ZoneId): zone is ListZone {
   return LIST_ZONES.has(zone);
@@ -49,6 +49,7 @@ export function createInstance(
     damageShields: [],
     counters: {},
     isToken: options.isToken ?? false,
+    continuous: { attack: 0, health: 0, grantedKeywords: [], removedKeywords: [] },
   };
   ctx.state.instances[instanceId] = instance;
   return instance;
@@ -84,6 +85,9 @@ function resetPermanentState(instance: CardInstance): void {
   instance.damageShields = [];
   instance.counters = {};
   instance.slot = null;
+  // The continuous layer is derived, so it is rebuilt on the next
+  // recalculation rather than carried into the new zone.
+  instance.continuous = { attack: 0, health: 0, grantedKeywords: [], removedKeywords: [] };
 }
 
 export interface MoveOptions {
@@ -112,7 +116,11 @@ export function moveToZone(
 
   detach(ctx, instance);
 
-  if (instance.isToken && toZone !== 'battlefield') {
+  // A token-type definition is a token however it reached play, not only when
+  // `create_token` remembered to set the flag.
+  const isToken = instance.isToken || ctx.database.get(instance.definitionId)?.type === 'token';
+
+  if (isToken && toZone !== 'battlefield') {
     // A token that leaves the battlefield ceases to exist. Emit the move first
     // so the log still shows where it went before it disappears.
     if (!options.silent) {

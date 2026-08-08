@@ -1,6 +1,6 @@
 import type { CardDefinition, CardId, EffectDefinition, TriggerId } from '@tcg/card-data';
 import { emit, type MatchContext } from './context.js';
-import { findInstance, playerOf } from './derive.js';
+import { activeFirstOrder, findInstance, playerOf } from './derive.js';
 import type { GameEvent } from './schema/event.js';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
 import type { ResolutionItem } from './schema/state.js';
@@ -55,11 +55,6 @@ function hitsFromEvent(ctx: MatchContext, event: GameEvent): TriggerHit[] {
   });
 
   switch (event.type) {
-    case 'unit_deployed':
-    case 'relic_deployed':
-    case 'token_created':
-      return [hit('on_deploy', event.instanceId, event.definitionId, event.playerId)];
-
     case 'attackers_declared':
       return event.instanceIds.flatMap((instanceId) => {
         const instance = findInstance(ctx.state, instanceId);
@@ -122,9 +117,13 @@ interface QueuedTrigger {
 
 /**
  * Discovers triggers for a batch of events and appends them to the resolution
- * queue in the deterministic order required by CLAUDE.md §4: active player
- * first, then non-active player, then source instance creation order, then
+ * queue in the deterministic order required by CLAUDE.md §12: active player
+ * first, then clockwise seat order, then source instance creation order, then
  * trigger index within the card definition.
+ *
+ * There is no player-controlled ordering and no priority: with three or four
+ * seats the clockwise tier is what stops the answer depending on who happened
+ * to be looked at first.
  */
 export function collectTriggers(ctx: MatchContext, events: readonly GameEvent[]): void {
   const queued: QueuedTrigger[] = [];
@@ -133,6 +132,9 @@ export function collectTriggers(ctx: MatchContext, events: readonly GameEvent[])
     for (const hit of hitsFromEvent(ctx, event)) {
       const definition: CardDefinition | undefined = ctx.database.get(hit.definitionId);
       if (!definition) continue;
+      // A trigger controlled by an eliminated player never fires: their static,
+      // delayed and queued effects all end with them (CLAUDE.md §12 step 3).
+      if (playerOf(ctx.state, hit.controllerId).lost) continue;
       definition.abilities.forEach((ability, abilityIndex) => {
         if (ability.trigger !== hit.triggerId) return;
         queued.push({ hit, abilityId: ability.id, abilityIndex, effects: ability.effects });
@@ -142,11 +144,14 @@ export function collectTriggers(ctx: MatchContext, events: readonly GameEvent[])
 
   if (queued.length === 0) return;
 
-  const active = ctx.state.activePlayerId;
+  // Precomputed seat ranks: active player is 0, then clockwise around the table.
+  const rank = new Map<PlayerId, number>();
+  activeFirstOrder(ctx.state, false).forEach((playerId, index) => rank.set(playerId, index));
+
   queued.sort((left, right) => {
-    const leftActive = left.hit.controllerId === active ? 0 : 1;
-    const rightActive = right.hit.controllerId === active ? 0 : 1;
-    if (leftActive !== rightActive) return leftActive - rightActive;
+    const leftSeat = rank.get(left.hit.controllerId) ?? Number.MAX_SAFE_INTEGER;
+    const rightSeat = rank.get(right.hit.controllerId) ?? Number.MAX_SAFE_INTEGER;
+    if (leftSeat !== rightSeat) return leftSeat - rightSeat;
 
     const leftOrdinal = ordinalOf(ctx, left.hit.sourceInstanceId);
     const rightOrdinal = ordinalOf(ctx, right.hit.sourceInstanceId);

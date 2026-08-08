@@ -37,11 +37,27 @@ export const actionSchema = z.discriminatedUnion('type', [
     type: z.literal('pass_phase'),
     playerId: playerIdSchema,
   }),
+  /**
+   * Each attacker independently names the opponent it attacks, so a
+   * free-for-all attack can be split across several players in one combat
+   * (CLAUDE.md §12). With two seats there is only one legal defender, and the
+   * client fills it in.
+   */
   z.strictObject({
     type: z.literal('declare_attackers'),
     playerId: playerIdSchema,
-    attackerInstanceIds: z.array(instanceIdSchema),
+    attacks: z.array(
+      z.strictObject({
+        attackerInstanceId: instanceIdSchema,
+        defenderPlayerId: playerIdSchema,
+      }),
+    ),
   }),
+  /**
+   * One defender's answer, covering only the attacks aimed at them. Each
+   * attacked player submits independently and the assignments stay hidden until
+   * the last of them arrives (CLAUDE.md §12).
+   */
   z.strictObject({
     type: z.literal('assign_blockers'),
     playerId: playerIdSchema,

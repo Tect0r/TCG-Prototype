@@ -3,10 +3,10 @@
 A standalone, browser-based card-game prototype for testing mechanics, cards and
 balance before the card game is integrated into a larger MMO.
 
-**Current milestone: Phase 2 — complete.** The deck builder (Phase 1), the
-deterministic headless rules engine (Phase 2A) and online 1v1 through private
-invite-code lobbies (Phase 2B) all work. The free-for-all mode and the balance
-simulator are not started.
+**Current milestone: Phase 3 — complete.** The deck builder (Phase 1), the
+deterministic headless rules engine (Phase 2A), online 1v1 (Phase 2B) and the
+two-to-four-player free-for-all (Phase 3) all work. The balance simulator is not
+started.
 
 Phase-by-phase progress is in
 [docs/project-status.md](docs/project-status.md); everything still undecided is
@@ -31,18 +31,26 @@ That is the whole setup. No database, no accounts, no environment variables.
 
 ### Playing a match locally
 
-Run both commands above, then open <http://localhost:5173> in **two** browser
-windows and switch each to the **Play** tab.
+Run both commands above, then open <http://localhost:5173> in **one browser
+window per player** (two to four) and switch each to the **Play** tab.
 
-1. In the first window, choose a display name and create a lobby. It shows a
-   six-character invite code.
-2. In the second, enter that code and join.
+1. In the first window, choose a display name, pick the table size (2–4) and
+   create a lobby. It shows a six-character invite code.
+2. In each other window, enter that code and join.
 3. Each seat picks a saved deck and submits it. The server validates it against
    its own card database and rejects it with reasons if it is illegal.
-4. Both seats press Ready; the match starts.
+4. Every seat presses Ready. A 1v1 then starts by itself; at a larger table the
+   host presses Start, because "everyone seated is ready" is a legal state at
+   two of four seats and only the host knows whether they are still waiting.
+
+In a free-for-all every player takes a complete turn in a seat order rolled from
+the match seed, each attacker picks which opponent it is attacking, and only the
+attacked player assigns blockers. The last player standing wins; an eliminated
+player keeps watching but cannot act.
 
 Refreshing mid-match reclaims the same seat. Closing a window starts a
-90-second reconnection window before the match is lost.
+90-second reconnection window before that seat is eliminated — at three or four
+seats the others carry on without it.
 
 To watch the engine run a match with no browser and no server at all:
 

@@ -36,23 +36,113 @@ export function definitionOf(database: CardDatabase, instance: CardInstance): Ca
   return database.getOrThrow(instance.definitionId);
 }
 
-/** The other seat. 1v1 only; free-for-all turn order arrives in Phase 3. */
-export function opponentOf(state: MatchState, playerId: PlayerId): PlayerId {
-  const other = state.playerOrder.find((id) => id !== playerId);
-  if (!other) throw new Error(`Match state has no opponent for "${playerId}"`);
-  return other;
+/* ------------------------------------------------------ seats and turn order */
+
+/**
+ * Seat helpers.
+ *
+ * Every "who else is in this match" question goes through one of these, so no
+ * rule can quietly assume two players. Eliminated seats stay in `seatOrder`
+ * forever and are skipped rather than removed, which is what keeps the circle
+ * stable as players drop out (CLAUDE.md §12).
+ */
+
+export function isAlive(state: MatchState, playerId: PlayerId): boolean {
+  return !playerOf(state, playerId).lost;
 }
 
+/** Every seat still in the match, in stable seat order. */
+export function livingPlayers(state: MatchState): PlayerId[] {
+  return state.seatOrder.filter((id) => isAlive(state, id));
+}
+
+/**
+ * Seats clockwise from `playerId`, excluding `playerId` itself. This is the
+ * order `each_opponent` resolves in (CLAUDE.md §12).
+ */
+export function clockwiseFrom(
+  state: MatchState,
+  playerId: PlayerId,
+  options: { readonly includeSelf?: boolean; readonly livingOnly?: boolean } = {},
+): PlayerId[] {
+  const { seatOrder } = state;
+  const start = seatOrder.indexOf(playerId);
+  if (start < 0) return [];
+
+  const ordered: PlayerId[] = [];
+  for (let step = options.includeSelf ? 0 : 1; step < seatOrder.length; step += 1) {
+    const id = seatOrder[(start + step) % seatOrder.length];
+    if (id === undefined) continue;
+    if (options.livingOnly !== false && !isAlive(state, id)) continue;
+    ordered.push(id);
+  }
+  return ordered;
+}
+
+/** Living opponents of `playerId`, clockwise. Empty once they have won. */
+export function livingOpponents(state: MatchState, playerId: PlayerId): PlayerId[] {
+  return clockwiseFrom(state, playerId);
+}
+
+/**
+ * The single opponent, for the two-player case.
+ *
+ * Throws with three or more living seats rather than picking one: a rule that
+ * needs "the" opponent in a free-for-all is a rule that has not been written
+ * yet, and silently choosing a seat would be a hidden game decision.
+ */
+export function opponentOf(state: MatchState, playerId: PlayerId): PlayerId {
+  const opponents = state.seatOrder.filter((id) => id !== playerId);
+  const [only, extra] = opponents;
+  if (only === undefined) throw new Error(`Match state has no opponent for "${playerId}"`);
+  if (extra !== undefined) {
+    throw new Error(
+      `opponentOf is only meaningful with two seats; this match has ${state.seatOrder.length}.`,
+    );
+  }
+  return only;
+}
+
+/** The next living seat to take a turn after `playerId`, or null if none is left. */
+export function nextLivingPlayer(state: MatchState, playerId: PlayerId): PlayerId | null {
+  const order = state.playerOrder;
+  const start = order.indexOf(playerId);
+  if (start < 0) return null;
+  for (let step = 1; step <= order.length; step += 1) {
+    const id = order[(start + step) % order.length];
+    if (id !== undefined && isAlive(state, id)) return id;
+  }
+  return null;
+}
+
+/**
+ * Every seat ordered active-player-first, then clockwise. The tiebreak for
+ * simultaneous triggers and for deterministic event ordering (CLAUDE.md §12).
+ */
+export function activeFirstOrder(state: MatchState, livingOnly = true): PlayerId[] {
+  const active = state.activePlayerId;
+  const ordered = clockwiseFrom(state, active, { includeSelf: true, livingOnly });
+  return ordered.length > 0 ? ordered : [...state.seatOrder];
+}
+
+/**
+ * Current stats and keywords are always derived from the printed definition
+ * plus the applied modifiers plus the continuous layer — never stored. Removing
+ * a temporary Health bonus therefore defeats a damaged unit on the very next
+ * state-based check (CLAUDE.md §4), and a lord leaving play takes its bonus with
+ * it on the next recalculation (§17 Q2).
+ */
 export function currentAttack(instance: CardInstance, definition: CardDefinition): number {
   const base = definition.attack ?? 0;
   const bonus = instance.statModifiers.reduce((sum, mod) => sum + mod.attack, 0);
   // Negative Attack is treated as 0 when dealing damage (CLAUDE.md §4).
-  return Math.max(0, base + bonus);
+  return Math.max(0, base + bonus + instance.continuous.attack);
 }
 
 export function currentHealth(instance: CardInstance, definition: CardDefinition): number {
   const base = definition.health ?? 0;
-  return base + instance.statModifiers.reduce((sum, mod) => sum + mod.health, 0);
+  const bonus = instance.statModifiers.reduce((sum, mod) => sum + mod.health, 0);
+  return base + bonus + instance.continuous.health;
 }
 
 export function remainingHealth(instance: CardInstance, definition: CardDefinition): number {
@@ -65,7 +155,9 @@ export function effectiveKeywords(
 ): ReadonlySet<KeywordId> {
   const keywords = new Set<KeywordId>(definition.keywords);
   for (const grant of instance.grantedKeywords) keywords.add(grant.keyword);
+  for (const keyword of instance.continuous.grantedKeywords) keywords.add(keyword);
   for (const removal of instance.removedKeywords) keywords.delete(removal.keyword);
+  for (const keyword of instance.continuous.removedKeywords) keywords.delete(keyword);
   return keywords;
 }
 

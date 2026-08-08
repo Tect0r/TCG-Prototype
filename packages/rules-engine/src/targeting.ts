@@ -1,13 +1,21 @@
-import type { TargetSelector } from '@tcg/card-data';
+import type { PlayerSelector, TargetDefinition, TargetSelector } from '@tcg/card-data';
 import type { MatchContext } from './context.js';
-import { definitionOf, findInstance, matchesCardFilter, opponentOf, playerOf } from './derive.js';
+import {
+  clockwiseFrom,
+  definitionOf,
+  findInstance,
+  isAlive,
+  livingOpponents,
+  matchesCardFilter,
+  playerOf,
+} from './derive.js';
 import { nextInt } from './rng.js';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
 
 export interface TargetScope {
   /** Player the effect belongs to: resolves `self` / `opponent`. */
   readonly controllerId: PlayerId;
-  /** The instance whose text this is, for `targetsSource` and `excludeSource`. */
+  /** The instance whose text this is, for `source` and `excludeSource`. */
   readonly sourceInstanceId: InstanceId | null;
 }
 
@@ -35,28 +43,65 @@ function instancesInZone(
     case 'commander_zone':
       return [player.commanderInstanceId];
     case 'recovery':
-      // The recovery zone exists in the schema but nothing enters it in v0.2:
-      // Commander defeat and recovery are explicitly deferred (CLAUDE.md §4).
+      // The recovery zone exists in the schema but nothing enters it: Commander
+      // defeat and recovery are deferred past Phase 3 (CLAUDE.md §12).
+      return [];
+    case 'removed':
+      // Terminal by definition. Nothing may target it (CLAUDE.md §12).
       return [];
     default:
       return [];
   }
 }
 
-function playersFor(
+/**
+ * Which players a `PlayerSelector` names, from the controller's point of view.
+ *
+ * Returns `null` when the answer is genuinely ambiguous — `opponent` with more
+ * than one living opponent — so the caller raises a choice instead of the
+ * engine silently picking a seat (CLAUDE.md §12).
+ */
+export function resolvePlayerSelector(
   ctx: MatchContext,
-  scope: TargetScope,
-  controller: TargetSelector['controller'],
+  selector: PlayerSelector,
+  controllerId: PlayerId,
+): PlayerId[] | null {
+  switch (selector) {
+    case 'self':
+      return isAlive(ctx.state, controllerId) ? [controllerId] : [];
+    case 'opponent': {
+      const opponents = livingOpponents(ctx.state, controllerId);
+      if (opponents.length <= 1) return opponents;
+      return null;
+    }
+    case 'each_opponent':
+      return livingOpponents(ctx.state, controllerId);
+    case 'all_players':
+      // Controller first, then clockwise — one ordering rule for every
+      // multi-player effect (open-questions.md Q33).
+      return clockwiseFrom(ctx.state, controllerId, { includeSelf: true });
+    default:
+      return null;
+  }
+}
+
+/** The living opponents a `player`/`players` target could legally name. */
+export function playerCandidates(
+  ctx: MatchContext,
+  target: Extract<TargetDefinition, { kind: 'player' | 'players' }>,
+  controllerId: PlayerId,
 ): PlayerId[] {
-  const self = scope.controllerId;
-  const opponent = opponentOf(ctx.state, self);
-  if (controller === 'self') return [self];
-  if (controller === 'opponent') return [opponent];
-  return [self, opponent];
+  if (target.kind === 'players') {
+    return resolvePlayerSelector(ctx, target.relation, controllerId) ?? [];
+  }
+  if (target.relation === 'self') {
+    return isAlive(ctx.state, controllerId) ? [controllerId] : [];
+  }
+  return livingOpponents(ctx.state, controllerId);
 }
 
 /**
- * Every instance a selector could legally apply to right now.
+ * Every instance an *entity* target could legally apply to right now.
  *
  * This is the single source of truth for legality: the engine hands the result
  * to the client as `validEntityIds`, and re-derives it when a choice comes back
@@ -64,16 +109,18 @@ function playersFor(
  */
 export function legalTargets(
   ctx: MatchContext,
-  selector: TargetSelector,
+  target: TargetDefinition,
   scope: TargetScope,
 ): InstanceId[] {
-  if (selector.targetsSource) {
+  if (target.kind === 'source') {
     const source = scope.sourceInstanceId
       ? findInstance(ctx.state, scope.sourceInstanceId)
       : undefined;
     return source ? [source.instanceId] : [];
   }
+  if (target.kind !== 'entity') return [];
 
+  const selector = target.selector;
   const candidates: InstanceId[] = [];
   for (const playerId of playersFor(ctx, scope, selector.controller)) {
     for (const instanceId of instancesInZone(ctx, playerId, selector.zone)) {
@@ -88,6 +135,23 @@ export function legalTargets(
     }
   }
   return candidates;
+}
+
+/**
+ * Whose zones an entity selector searches. `opponent` and `any` widen to every
+ * living opponent, so a three-player "destroy target enemy unit" sees all of
+ * them (CLAUDE.md §12).
+ */
+function playersFor(
+  ctx: MatchContext,
+  scope: TargetScope,
+  controller: TargetSelector['controller'],
+): PlayerId[] {
+  const self = scope.controllerId;
+  const opponents = livingOpponents(ctx.state, self);
+  if (controller === 'self') return [self];
+  if (controller === 'opponent') return opponents;
+  return [self, ...opponents];
 }
 
 /** How many entities a selector wants, given what is actually available. */

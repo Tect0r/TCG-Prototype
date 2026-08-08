@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CardDefinitionInput } from '@tcg/card-data';
+import type { PlayerId } from './schema/primitives.js';
+import type { MatchState } from './schema/state.js';
 import { DEFAULT_RULES_CONFIG } from './config.js';
 import { effectiveKeywords, energyCostOf, opponentOf } from './derive.js';
 import {
@@ -13,6 +15,7 @@ import {
   instanceIn,
   keepBothHands,
   makeDeck,
+  moveInstance,
   setEnergy,
   stackDeck,
   startMatch,
@@ -28,8 +31,23 @@ import {
 
 const context = testContext();
 
-describe('grant_keyword', () => {
-  it('grants a keyword to every friendly unit already in play', () => {
+describe('static abilities', () => {
+  const drone = () => testDatabase().getOrThrow('prototype_drone');
+
+  /** Deploys `radiant_bulwark` — a lord granting Armored to your units. */
+  function withBulwark(): { state: MatchState; active: PlayerId; relicInstanceId: string } {
+    const start = keepBothHands(startMatch());
+    const active = start.activePlayerId;
+    const relic = giveCard(setEnergy(start, active, 5), active, 'radiant_bulwark');
+    const state = apply(relic.state, {
+      type: 'play_card',
+      playerId: active,
+      instanceId: relic.instanceId,
+    });
+    return { state, active, relicInstanceId: relic.instanceId };
+  }
+
+  it('reaches units that were already in play', () => {
     const start = keepBothHands(startMatch());
     const active = start.activePlayerId;
     const unit = deployUnit(start, active, 'prototype_drone');
@@ -41,11 +59,39 @@ describe('grant_keyword', () => {
       instanceId: relic.instanceId,
     });
 
-    const definition = testDatabase().getOrThrow('prototype_drone');
-    expect([...effectiveKeywords(instanceIn(state, unit.instanceId), definition)]).toContain(
+    expect([...effectiveKeywords(instanceIn(state, unit.instanceId), drone())]).toContain(
       'armored',
     );
-    expect(eventsOfType(state, 'keyword_granted').length).toBeGreaterThan(0);
+    // Nothing is stamped onto the recipient: the bonus is derived, so no
+    // one-shot grant event is emitted (CLAUDE.md §17 Q2).
+    expect(eventsOfType(state, 'keyword_granted')).toHaveLength(0);
+  });
+
+  it('reaches a unit that arrives after it', () => {
+    const { state, active } = withBulwark();
+    const later = deployUnit(state, active, 'prototype_drone');
+
+    // The board was edited directly, so recalculation has not run yet; any
+    // real action settles the state.
+    const settled = apply(later.state, { type: 'pass_phase', playerId: active });
+    expect([...effectiveKeywords(instanceIn(settled, later.instanceId), drone())]).toContain(
+      'armored',
+    );
+  });
+
+  it('takes the bonus away when the source leaves play', () => {
+    const { state, active, relicInstanceId } = withBulwark();
+    const unit = deployUnit(state, active, 'prototype_drone');
+    const settled = apply(unit.state, { type: 'pass_phase', playerId: active });
+    expect([...effectiveKeywords(instanceIn(settled, unit.instanceId), drone())]).toContain(
+      'armored',
+    );
+
+    const destroyed = moveInstance(settled, relicInstanceId, 'discard');
+    const after = apply(destroyed, { type: 'declare_attackers', playerId: active, attacks: [] });
+    expect([...effectiveKeywords(instanceIn(after, unit.instanceId), drone())]).not.toContain(
+      'armored',
+    );
   });
 });
 
@@ -68,7 +114,7 @@ describe('modify_cost', () => {
 
     // Play through to the end of the turn; the discount is gone.
     let next = apply(state, { type: 'pass_phase', playerId: active });
-    next = apply(next, { type: 'declare_attackers', playerId: active, attackerInstanceIds: [] });
+    next = apply(next, { type: 'declare_attackers', playerId: active, attacks: [] });
     next = apply(next, { type: 'pass_phase', playerId: active });
     expect(next.activePlayerId).not.toBe(active);
     expect(next.players[active]?.costModifiers).toHaveLength(0);
@@ -263,7 +309,15 @@ const TEST_CARDS: CardDefinitionInput[] = [
     effects: [
       {
         type: 'ready',
-        target: { zone: 'battlefield', controller: 'self', count: 'all', selection: 'automatic' },
+        target: {
+          kind: 'entity',
+          selector: {
+            zone: 'battlefield',
+            controller: 'self',
+            count: 'all',
+            selection: 'automatic',
+          },
+        },
       },
     ],
   },
@@ -278,7 +332,10 @@ const TEST_CARDS: CardDefinitionInput[] = [
     effects: [
       {
         type: 'move_card',
-        target: { zone: 'discard', controller: 'self', count: 1, selection: 'player_choice' },
+        target: {
+          kind: 'entity',
+          selector: { zone: 'discard', controller: 'self', count: 1, selection: 'player_choice' },
+        },
         toZone: 'hand',
       },
     ],

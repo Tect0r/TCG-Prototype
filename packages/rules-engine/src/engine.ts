@@ -1,5 +1,6 @@
-import type { CardDatabase, CardDefinition } from '@tcg/card-data';
+import type { AbilityCost, CardDatabase, CardDefinition } from '@tcg/card-data';
 import { err, ok, type Result } from '@tcg/shared';
+import { defendersOf } from './combat.js';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
 import { createContext, emit, type MatchContext } from './context.js';
 import { engineError, type EngineError } from './errors.js';
@@ -10,19 +11,21 @@ import {
   freeUnitSlots,
   hasKeyword,
   isSummoningSick,
-  opponentOf,
+  livingOpponents,
+  matchesCardFilter,
   playerOf,
 } from './derive.js';
+import { defeatUnit } from './effects.js';
 import { advance, resolveMulligans, setPhase } from './flow.js';
 import { settle } from './queue.js';
-import { legalTargets } from './targeting.js';
+import { legalTargets, playerCandidates } from './targeting.js';
 import { enqueue } from './triggers.js';
-import { concludeIfOver, markLoss } from './state-based.js';
+import { markLoss, runStateBasedChecks } from './state-based.js';
 import { discardCard, moveToZone } from './zones.js';
 import { actionSchema, type Action, type ActionInput } from './schema/action.js';
 import type { GameEvent } from './schema/event.js';
 import { MAIN_PHASES, type InstanceId, type PlayerId } from './schema/primitives.js';
-import type { CardInstance, MatchState } from './schema/state.js';
+import type { AttackDeclaration, CardInstance, MatchState } from './schema/state.js';
 
 export interface ApplyContext {
   readonly database: CardDatabase;
@@ -63,9 +66,20 @@ export function applyAction(
   if (state.status === 'complete') {
     return err(engineError('engine/match_over', 'The match has already ended.'));
   }
-  if (!state.players[validated.playerId]) {
+  const seat = state.players[validated.playerId];
+  if (!seat) {
     return err(
       engineError('engine/wrong_player', `"${validated.playerId}" is not a seat in this match.`, {
+        playerId: validated.playerId,
+      }),
+    );
+  }
+  // An eliminated player may watch but not act (CLAUDE.md §12). Conceding or
+  // timing out again is accepted and harmlessly idempotent, which keeps a
+  // duplicate server timeout from turning into an error.
+  if (seat.lost && validated.type !== 'concede' && validated.type !== 'server_timeout') {
+    return err(
+      engineError('engine/eliminated', 'You have been eliminated and can only spectate.', {
         playerId: validated.playerId,
       }),
     );
@@ -113,7 +127,7 @@ function dispatch(ctx: MatchContext, action: Action): EngineError | null {
     case 'pass_phase':
       return handlePassPhase(ctx, action.playerId);
     case 'declare_attackers':
-      return handleDeclareAttackers(ctx, action.playerId, action.attackerInstanceIds);
+      return handleDeclareAttackers(ctx, action.playerId, action.attacks);
     case 'assign_blockers':
       return handleAssignBlockers(ctx, action.playerId, action.blocks);
     default:
@@ -127,7 +141,10 @@ function handleTermination(
   reason: 'concede' | 'timeout',
 ): EngineError | null {
   markLoss(ctx, playerId, reason);
-  concludeIfOver(ctx);
+  // Not just `concludeIfOver`: with three or more seats the match carries on, so
+  // the loss still has to run the full check that performs elimination cleanup
+  // and hands the turn to the next living player (CLAUDE.md §12).
+  runStateBasedChecks(ctx);
   return null;
 }
 
@@ -261,7 +278,7 @@ function handleSubmitChoice(
   } else {
     const item = ctx.state.queue.find((entry) => entry.id === continuation.itemId);
     if (item) {
-      item.selections[String(continuation.effectIndex)] = [...selectedIds];
+      item.selections[continuation.selectionKey] = [...selectedIds];
     }
   }
 
@@ -299,15 +316,24 @@ function requireMainPhase(ctx: MatchContext, playerId: PlayerId): EngineError | 
  * at all (CLAUDE.md §4). Units and relics are not checked the same way: their
  * deploy effects simply fizzle, because the card itself still enters play.
  */
-function spellHasLegalTargets(
+export function spellHasLegalTargets(
   ctx: MatchContext,
   definition: CardDefinition,
   instance: CardInstance,
 ): boolean {
   for (const effect of definition.effects) {
     if (!('target' in effect)) continue;
-    if (effect.target.optional) continue;
-    const targets = legalTargets(ctx, effect.target, {
+    const target = effect.target;
+
+    if (target.kind === 'player' || target.kind === 'players') {
+      // A player target needs at least one living recipient; in a free-for-all
+      // that is normally true right up until the match ends.
+      if (playerCandidates(ctx, target, instance.controller).length === 0) return false;
+      continue;
+    }
+    if (target.kind === 'entity' && target.selector.optional) continue;
+
+    const targets = legalTargets(ctx, target, {
       controllerId: instance.controller,
       sourceInstanceId: instance.instanceId,
     });
@@ -515,26 +541,15 @@ function handleActivateAbility(
     });
   }
 
-  const player = playerOf(ctx.state, playerId);
-  if (ability.energyCost > player.energy) {
-    return engineError(
-      'engine/insufficient_energy',
-      `That ability costs ${ability.energyCost} energy; you have ${player.energy}.`,
-      { abilityId, cost: ability.energyCost, energy: player.energy },
-    );
-  }
-  if (ability.exhaustsSource && instance.exhausted) {
-    return engineError('engine/invalid_action', 'That card is exhausted.', { sourceInstanceId });
-  }
+  // Every cost is checked before any of it is paid, so a half-payable ability
+  // never leaves the player short (CLAUDE.md §17 Q3).
+  const payment = planCosts(ctx, playerId, instance, ability.costs);
+  if ('code' in payment) return payment;
 
-  // ---- committed: costs are paid before the ability enters the queue.
-  player.energy -= ability.energyCost;
+  // ---- committed: costs are paid atomically before the ability is queued.
+  payCosts(ctx, playerId, instance, payment);
   instance.counters[usedKey] = timesUsed + 1;
   instance.counters[turnKey] = ctx.state.turn;
-  if (ability.exhaustsSource) {
-    instance.exhausted = true;
-    emit(ctx, { type: 'unit_exhausted', instanceId: sourceInstanceId });
-  }
 
   enqueue(ctx, {
     kind: 'triggered_ability',
@@ -549,6 +564,120 @@ function handleActivateAbility(
 
   advance(ctx);
   return null;
+}
+
+/* ------------------------------------------------------------ ability costs */
+
+interface CostPlan {
+  energy: number;
+  exhaustSource: boolean;
+  readonly discards: InstanceId[];
+  readonly sacrifices: InstanceId[];
+}
+
+/**
+ * Works out exactly what an activation would cost, or returns why it cannot be
+ * paid. Nothing is spent here.
+ *
+ * Discards and sacrifices are chosen deterministically rather than by asking:
+ * a cost is paid *before* the ability is queued, and the queue is the only
+ * thing that can pause for a choice. Making a cost interactive means giving it
+ * its own pending-choice state, which no bundled card needs yet.
+ */
+function planCosts(
+  ctx: MatchContext,
+  playerId: PlayerId,
+  source: CardInstance,
+  costs: readonly AbilityCost[],
+): CostPlan | EngineError {
+  const player = playerOf(ctx.state, playerId);
+  const plan: CostPlan = { energy: 0, exhaustSource: false, discards: [], sacrifices: [] };
+
+  for (const cost of costs) {
+    switch (cost.type) {
+      case 'energy': {
+        const total = plan.energy + cost.amount;
+        if (total > player.energy) {
+          return engineError(
+            'engine/insufficient_energy',
+            `That ability costs ${total} energy; you have ${player.energy}.`,
+            { cost: total, energy: player.energy },
+          );
+        }
+        plan.energy = total;
+        break;
+      }
+
+      case 'exhaust_source': {
+        if (source.exhausted || plan.exhaustSource) {
+          return engineError('engine/cost_unpayable', 'That card is already exhausted.', {
+            sourceInstanceId: source.instanceId,
+          });
+        }
+        plan.exhaustSource = true;
+        break;
+      }
+
+      case 'discard': {
+        const available = player.hand.filter((id) => !plan.discards.includes(id));
+        if (available.length < cost.amount) {
+          return engineError(
+            'engine/cost_unpayable',
+            `That ability costs ${cost.amount} discarded card(s); you have ${available.length}.`,
+            { required: cost.amount, available: available.length },
+          );
+        }
+        plan.discards.push(...available.slice(0, cost.amount));
+        break;
+      }
+
+      case 'sacrifice': {
+        const available = player.units
+          .filter((id): id is InstanceId => id !== null && !plan.sacrifices.includes(id))
+          .filter((id) => {
+            if (!cost.filter) return true;
+            const instance = findInstance(ctx.state, id);
+            if (!instance) return false;
+            return matchesCardFilter(definitionOf(ctx.database, instance), instance, cost.filter);
+          });
+        if (available.length < cost.amount) {
+          return engineError(
+            'engine/cost_unpayable',
+            `That ability costs ${cost.amount} sacrificed unit(s); you have ${available.length}.`,
+            { required: cost.amount, available: available.length },
+          );
+        }
+        plan.sacrifices.push(...available.slice(0, cost.amount));
+        break;
+      }
+
+      default: {
+        const _never: never = cost;
+        void _never;
+        return engineError('engine/cost_unpayable', 'Unsupported activation cost.');
+      }
+    }
+  }
+
+  return plan;
+}
+
+/** Spends a validated plan. Only ever called once the plan is known payable. */
+function payCosts(
+  ctx: MatchContext,
+  playerId: PlayerId,
+  source: CardInstance,
+  plan: CostPlan,
+): void {
+  if (plan.energy > 0) playerOf(ctx.state, playerId).energy -= plan.energy;
+  if (plan.exhaustSource) {
+    source.exhausted = true;
+    emit(ctx, { type: 'unit_exhausted', instanceId: source.instanceId });
+  }
+  for (const instanceId of plan.discards) discardCard(ctx, playerId, instanceId);
+  // A sacrifice paid as a cost is still a defeat: it fires `on_sacrifice` and
+  // `on_defeated` exactly as the effect does (CLAUDE.md §17 Q3, Q24).
+  for (const instanceId of plan.sacrifices) defeatUnit(ctx, instanceId, 'sacrifice');
 }
 
 function handlePassPhase(ctx: MatchContext, playerId: PlayerId): EngineError | null {
@@ -575,7 +704,7 @@ function handlePassPhase(ctx: MatchContext, playerId: PlayerId): EngineError | n
 function handleDeclareAttackers(
   ctx: MatchContext,
   playerId: PlayerId,
-  attackerInstanceIds: readonly InstanceId[],
+  attacks: readonly AttackDeclaration[],
 ): EngineError | null {
   if (ctx.state.phase !== 'declare_attackers') {
     return engineError('engine/wrong_phase', 'Attackers are declared in the attack phase.', {
@@ -586,37 +715,60 @@ function handleDeclareAttackers(
     return engineError('engine/wrong_player', 'Only the active player declares attackers.');
   }
 
+  const opponents = livingOpponents(ctx.state, playerId);
   const seen = new Set<InstanceId>();
-  for (const instanceId of attackerInstanceIds) {
-    if (seen.has(instanceId)) {
+
+  for (const attack of attacks) {
+    if (seen.has(attack.attackerInstanceId)) {
       return engineError('engine/duplicate_attacker', 'A unit cannot attack twice.', {
-        instanceId,
+        instanceId: attack.attackerInstanceId,
       });
     }
-    seen.add(instanceId);
+    seen.add(attack.attackerInstanceId);
 
-    const problem = validateAttacker(ctx, playerId, instanceId);
+    // Units attack players, never other units, and never a seat that is out
+    // of the match (CLAUDE.md §12).
+    if (!opponents.includes(attack.defenderPlayerId)) {
+      return engineError(
+        'engine/illegal_defender',
+        'That is not a living opponent you can attack.',
+        { defenderPlayerId: attack.defenderPlayerId },
+      );
+    }
+
+    const problem = validateAttacker(ctx, playerId, attack.attackerInstanceId);
     if (problem) return problem;
   }
 
   // ---- committed
-  ctx.state.combat.attackerInstanceIds = [...attackerInstanceIds];
-  for (const instanceId of attackerInstanceIds) {
-    const instance = findInstance(ctx.state, instanceId);
+  ctx.state.combat.attacks = attacks.map((attack) => ({ ...attack }));
+  for (const attack of attacks) {
+    const instance = findInstance(ctx.state, attack.attackerInstanceId);
     if (!instance) continue;
     // Declared attackers exhaust immediately (CLAUDE.md §4).
     instance.exhausted = true;
-    emit(ctx, { type: 'unit_exhausted', instanceId });
+    emit(ctx, { type: 'unit_exhausted', instanceId: attack.attackerInstanceId });
   }
 
   const before = ctx.events.length;
-  emit(ctx, { type: 'attackers_declared', playerId, instanceIds: [...attackerInstanceIds] });
+  emit(ctx, {
+    type: 'attackers_declared',
+    playerId,
+    instanceIds: attacks.map((attack) => attack.attackerInstanceId),
+    attacks: ctx.state.combat.attacks.map((attack) => ({ ...attack })),
+  });
   // `on_attack` triggers are discovered now and resolve before blockers are
   // assigned, because `advance` pumps the queue before yielding to a player.
   settle(ctx, before);
 
-  // Skip blocker assignment entirely when nothing was declared (CLAUDE.md §4).
-  setPhase(ctx, attackerInstanceIds.length === 0 ? 'resolve_combat' : 'assign_blockers');
+  ctx.state.combat.awaitingDefenders = defendersOf(ctx);
+  ctx.state.combat.submissions = [];
+
+  // Skip blocker assignment entirely when nobody is being attacked (CLAUDE.md §4).
+  setPhase(
+    ctx,
+    ctx.state.combat.awaitingDefenders.length === 0 ? 'resolve_combat' : 'assign_blockers',
+  );
   advance(ctx);
   return null;
 }
@@ -654,6 +806,14 @@ function validateAttacker(
   return null;
 }
 
+/**
+ * One defender's blocker submission.
+ *
+ * A defender may only answer for attacks aimed at them, and may only block with
+ * their own units — third-party blocking is not allowed (CLAUDE.md §12). The
+ * submission is stored privately; nothing becomes public and no damage happens
+ * until every attacked player has answered.
+ */
 function handleAssignBlockers(
   ctx: MatchContext,
   playerId: PlayerId,
@@ -667,21 +827,34 @@ function handleAssignBlockers(
       phase: ctx.state.phase,
     });
   }
-  const defenderId = opponentOf(ctx.state, ctx.state.activePlayerId);
-  if (playerId !== defenderId) {
-    return engineError('engine/wrong_player', 'Only the defending player assigns blockers.', {
-      expected: defenderId,
-    });
+  if (!ctx.state.combat.awaitingDefenders.includes(playerId)) {
+    return engineError(
+      'engine/wrong_player',
+      'Only a player who is being attacked assigns blockers, and only once.',
+      { expected: ctx.state.combat.awaitingDefenders.join(', ') },
+    );
   }
 
   const usedBlockers = new Set<InstanceId>();
   const perAttacker = new Map<InstanceId, number>();
 
   for (const block of blocks) {
-    if (!ctx.state.combat.attackerInstanceIds.includes(block.attackerInstanceId)) {
+    const attack = ctx.state.combat.attacks.find(
+      (entry) => entry.attackerInstanceId === block.attackerInstanceId,
+    );
+    if (!attack) {
       return engineError('engine/illegal_blocker', 'That unit is not attacking.', {
         attackerInstanceId: block.attackerInstanceId,
       });
+    }
+    // The heart of "no third-party blocking": you may only interpose your own
+    // units between an attacker and yourself.
+    if (attack.defenderPlayerId !== playerId) {
+      return engineError(
+        'engine/illegal_blocker',
+        'That attacker is not attacking you; you cannot block for another player.',
+        { attackerInstanceId: block.attackerInstanceId, defenderPlayerId: attack.defenderPlayerId },
+      );
     }
     if (usedBlockers.has(block.blockerInstanceId)) {
       return engineError('engine/duplicate_blocker', 'A unit can block at most one attacker.', {
@@ -710,17 +883,23 @@ function handleAssignBlockers(
   }
 
   // ---- committed
-  const before = ctx.events.length;
-  ctx.state.combat.blocks = blocks.map((block) => ({ ...block }));
-  emit(ctx, {
-    type: 'blockers_assigned',
-    playerId,
-    blocks: ctx.state.combat.blocks.map((b) => ({ ...b })),
+  ctx.state.combat.submissions.push({
+    defenderPlayerId: playerId,
+    blocks: blocks.map((block) => ({ ...block })),
   });
-  // `on_block` triggers resolve before combat damage.
-  settle(ctx, before);
+  ctx.state.combat.awaitingDefenders = ctx.state.combat.awaitingDefenders.filter(
+    (id) => id !== playerId,
+  );
 
-  setPhase(ctx, 'resolve_combat');
+  // Only the *count* is public until everyone has answered, so no defender can
+  // see what another has committed to (CLAUDE.md §12).
+  emit(ctx, {
+    type: 'blockers_submitted',
+    playerId,
+    blockCount: blocks.length,
+    awaitingPlayerIds: [...ctx.state.combat.awaitingDefenders],
+  });
+
   advance(ctx);
   return null;
 }

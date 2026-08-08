@@ -1,10 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "setId": "prototype_core",
   "name": "Prototype Core Set",
   "cards": [
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_commander_white",
       "name": "Bulwark Marshal",
       "type": "commander",
@@ -22,14 +22,18 @@
           "id": "muster",
           "trigger": "on_turn_start",
           "effects": [
-            { "type": "create_token", "tokenCardId": "prototype_soldier_token", "amount": 1 }
+            {
+              "type": "create_token",
+              "tokenCardId": "prototype_soldier_token",
+              "amount": 1
+            }
           ]
         }
       ],
       "displayText": "At the start of your turn, create a 1/1 Soldier token."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_commander_blue",
       "name": "Tidecaller Archivist",
       "type": "commander",
@@ -45,25 +49,45 @@
         {
           "id": "steady_study",
           "trigger": "on_turn_end",
-          "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
+          "effects": [
+            {
+              "type": "draw",
+              "player": "self",
+              "amount": 1
+            }
+          ]
         }
       ],
       "activatedAbilities": [
         {
           "id": "tidal_insight",
           "name": "Tidal Insight",
-          "energyCost": 2,
           "usageLimit": "once_per_turn",
           "effects": [
-            { "type": "draw", "player": "self", "amount": 1 },
-            { "type": "discard", "player": "self", "amount": 1, "selection": "player_choice" }
+            {
+              "type": "draw",
+              "player": "self",
+              "amount": 1
+            },
+            {
+              "type": "discard",
+              "player": "self",
+              "amount": 1,
+              "selection": "player_choice"
+            }
+          ],
+          "costs": [
+            {
+              "type": "energy",
+              "amount": 2
+            }
           ]
         }
       ],
       "displayText": "At the end of your turn, draw a card. 2 energy, once per turn: draw a card, then discard a card."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_commander_black",
       "name": "Grave Quartermaster",
       "type": "commander",
@@ -84,10 +108,13 @@
             {
               "type": "modify_stats",
               "target": {
-                "zone": "battlefield",
-                "controller": "self",
-                "count": 1,
-                "selection": "player_choice"
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "self",
+                  "count": 1,
+                  "selection": "player_choice"
+                }
               },
               "attack": 1,
               "health": 0,
@@ -99,7 +126,7 @@
       "displayText": "Whenever this Commander attacks, a friendly unit gets +1/+0 until end of turn."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_commander_red",
       "name": "Emberline Captain",
       "type": "commander",
@@ -120,10 +147,15 @@
             {
               "type": "deal_damage",
               "target": {
-                "zone": "battlefield",
-                "controller": "opponent",
-                "filter": { "cardTypes": ["unit", "token"] },
-                "count": 1
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "opponent",
+                  "filter": {
+                    "cardTypes": ["unit", "token"]
+                  },
+                  "count": 1
+                }
               },
               "amount": 1
             }
@@ -133,7 +165,7 @@
       "displayText": "Whenever this Commander attacks, deal 1 damage to an enemy unit."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_commander_green",
       "name": "Thornwarden Elder",
       "type": "commander",
@@ -153,10 +185,13 @@
             {
               "type": "heal",
               "target": {
-                "zone": "battlefield",
-                "controller": "self",
-                "count": "all",
-                "selection": "automatic"
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "self",
+                  "count": "all",
+                  "selection": "automatic"
+                }
               },
               "amount": 1
             }
@@ -166,7 +201,7 @@
       "displayText": "At the end of your turn, heal each friendly unit 1."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_commander_blue_red",
       "name": "Arc Tactician",
       "type": "commander",
@@ -183,7 +218,11 @@
           "id": "arcing_plan",
           "trigger": "on_turn_start",
           "effects": [
-            { "type": "draw", "player": "self", "amount": 1 },
+            {
+              "type": "draw",
+              "player": "self",
+              "amount": 1
+            },
             {
               "type": "discard",
               "player": "self",
@@ -196,7 +235,7 @@
       "displayText": "At the start of your turn, draw a card, then discard a card."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_commander_white_black",
       "name": "Tithe Warden",
       "type": "commander",
@@ -216,11 +255,7 @@
             {
               "type": "heal",
               "target": {
-                "zone": "commander_zone",
-                "controller": "self",
-                "count": 1,
-                "selection": "automatic",
-                "targetsSource": true
+                "kind": "source"
               },
               "amount": 2
             }
@@ -230,7 +265,7 @@
       "displayText": "Whenever this Commander survives combat, heal it 2."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_commander_green_blue",
       "name": "Silt Cartographer",
       "type": "commander",
@@ -246,14 +281,20 @@
         {
           "id": "chart_the_silt",
           "trigger": "on_turn_start",
-          "effects": [{ "type": "reorder_zone", "player": "self", "zone": "deck", "amount": 3 }]
+          "effects": [
+            {
+              "type": "reorder_zone",
+              "player": "self",
+              "zone": "deck",
+              "amount": 3
+            }
+          ]
         }
       ],
       "displayText": "At the start of your turn, look at the top 3 cards of your deck and put them back in any order."
     },
-
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_soldier_token",
       "name": "Soldier",
       "type": "token",
@@ -267,7 +308,7 @@
       "tags": ["soldier"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_beast_token",
       "name": "Beast",
       "type": "token",
@@ -281,7 +322,7 @@
       "tags": ["beast"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_spark_token",
       "name": "Spark",
       "type": "token",
@@ -296,7 +337,7 @@
       "keywords": ["swift"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_scrap_token",
       "name": "Scrap",
       "type": "token",
@@ -309,9 +350,8 @@
       "powerClass": "minor",
       "tags": ["construct"]
     },
-
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_drone",
       "name": "Salvage Drone",
       "type": "unit",
@@ -324,7 +364,7 @@
       "tags": ["construct"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_scout",
       "name": "Prototype Scout",
       "type": "unit",
@@ -338,7 +378,7 @@
       "keywords": ["swift"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "prototype_guard",
       "name": "Prototype Guard",
       "type": "unit",
@@ -352,7 +392,7 @@
       "keywords": ["guardian"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "trench_guard",
       "name": "Trench Guard",
       "type": "unit",
@@ -366,7 +406,7 @@
       "keywords": ["guardian", "armored"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "unstable_construct",
       "name": "Unstable Construct",
       "type": "unit",
@@ -382,14 +422,18 @@
           "id": "scatter_parts",
           "trigger": "on_defeated",
           "effects": [
-            { "type": "create_token", "tokenCardId": "prototype_scrap_token", "amount": 2 }
+            {
+              "type": "create_token",
+              "tokenCardId": "prototype_scrap_token",
+              "amount": 2
+            }
           ]
         }
       ],
       "displayText": "When this unit is defeated, create two 1/1 Scrap tokens."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "surveyors_lens",
       "name": "Surveyor's Lens",
       "type": "relic",
@@ -398,11 +442,17 @@
       "role": "enabler",
       "powerClass": "minor",
       "tags": ["artifact"],
-      "effects": [{ "type": "draw", "player": "self", "amount": 1 }],
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ],
       "displayText": "When this relic is deployed, draw a card."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "energy_font",
       "name": "Energy Font",
       "type": "relic",
@@ -419,7 +469,9 @@
             {
               "type": "modify_cost",
               "player": "self",
-              "filter": { "cardTypes": ["unit"] },
+              "filter": {
+                "cardTypes": ["unit"]
+              },
               "delta": -1,
               "duration": "end_of_turn"
             }
@@ -429,7 +481,7 @@
       "displayText": "At the start of your turn, your units cost 1 less this turn."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "field_survey",
       "name": "Field Survey",
       "type": "spell",
@@ -438,11 +490,18 @@
       "role": "enabler",
       "powerClass": "minor",
       "tags": ["plan"],
-      "effects": [{ "type": "reorder_zone", "player": "self", "zone": "deck", "amount": 3 }],
+      "effects": [
+        {
+          "type": "reorder_zone",
+          "player": "self",
+          "zone": "deck",
+          "amount": 3
+        }
+      ],
       "displayText": "Look at the top 3 cards of your deck and put them back in any order."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "worldbreaker_engine",
       "name": "Worldbreaker Engine",
       "type": "relic",
@@ -460,10 +519,13 @@
             {
               "type": "deal_damage",
               "target": {
-                "zone": "battlefield",
-                "controller": "opponent",
-                "count": "all",
-                "selection": "automatic"
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "opponent",
+                  "count": "all",
+                  "selection": "automatic"
+                }
               },
               "amount": 3
             }
@@ -472,9 +534,8 @@
       ],
       "displayText": "At the start of your turn, deal 3 damage to each enemy unit."
     },
-
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "dawn_conscript",
       "name": "Dawn Conscript",
       "type": "unit",
@@ -487,7 +548,7 @@
       "tags": ["soldier"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "field_medic",
       "name": "Field Medic",
       "type": "unit",
@@ -502,11 +563,14 @@
         {
           "type": "heal",
           "target": {
-            "zone": "battlefield",
-            "controller": "self",
-            "count": 1,
-            "excludeSource": true,
-            "optional": true
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "self",
+              "count": 1,
+              "excludeSource": true,
+              "optional": true
+            }
           },
           "amount": 2
         }
@@ -514,7 +578,7 @@
       "displayText": "When this unit is deployed, heal another friendly unit 2."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "shieldline_sergeant",
       "name": "Shieldline Sergeant",
       "type": "unit",
@@ -526,19 +590,17 @@
       "powerClass": "standard",
       "tags": ["soldier"],
       "keywords": ["guardian"],
-      "abilities": [
+      "displayText": "When this unit is deployed, create a 1/1 Soldier token.",
+      "effects": [
         {
-          "id": "call_reserves",
-          "trigger": "on_deploy",
-          "effects": [
-            { "type": "create_token", "tokenCardId": "prototype_soldier_token", "amount": 1 }
-          ]
+          "type": "create_token",
+          "tokenCardId": "prototype_soldier_token",
+          "amount": 1
         }
-      ],
-      "displayText": "When this unit is deployed, create a 1/1 Soldier token."
+      ]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "radiant_bulwark",
       "name": "Radiant Bulwark",
       "type": "relic",
@@ -547,23 +609,26 @@
       "role": "support",
       "powerClass": "standard",
       "tags": ["artifact"],
-      "effects": [
+      "displayText": "While this relic is in play, your units have Armored.",
+      "staticAbilities": [
         {
-          "type": "grant_keyword",
-          "target": {
+          "id": "bulwark_aura",
+          "affects": {
             "zone": "battlefield",
             "controller": "self",
-            "count": "all",
-            "selection": "automatic"
+            "filter": {
+              "cardTypes": ["unit"]
+            }
           },
-          "keyword": "armored",
-          "duration": "permanent"
+          "effect": {
+            "type": "grant_keyword",
+            "keyword": "armored"
+          }
         }
-      ],
-      "displayText": "When this relic is deployed, your units gain Armored."
+      ]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "sunrise_decree",
       "name": "Sunrise Decree",
       "type": "spell",
@@ -577,10 +642,13 @@
         {
           "type": "modify_stats",
           "target": {
-            "zone": "battlefield",
-            "controller": "self",
-            "count": "all",
-            "selection": "automatic"
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "self",
+              "count": "all",
+              "selection": "automatic"
+            }
           },
           "attack": 2,
           "health": 2,
@@ -590,7 +658,7 @@
       "displayText": "Your units get +2/+2."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "oathbound_paladin",
       "name": "Oathbound Paladin",
       "type": "unit",
@@ -603,9 +671,8 @@
       "tags": ["soldier", "knight"],
       "keywords": ["siphon", "guardian"]
     },
-
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "tidepool_apprentice",
       "name": "Tidepool Apprentice",
       "type": "unit",
@@ -616,11 +683,17 @@
       "role": "enabler",
       "powerClass": "standard",
       "tags": ["mage"],
-      "effects": [{ "type": "draw", "player": "self", "amount": 1 }],
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ],
       "displayText": "When this unit is deployed, draw a card."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "mistveil_stalker",
       "name": "Mistveil Stalker",
       "type": "unit",
@@ -634,7 +707,7 @@
       "keywords": ["evasive"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "desperate_insight",
       "name": "Desperate Insight",
       "type": "spell",
@@ -644,13 +717,22 @@
       "powerClass": "minor",
       "tags": ["plan"],
       "effects": [
-        { "type": "discard", "player": "self", "amount": 1, "selection": "player_choice" },
-        { "type": "draw", "player": "self", "amount": 1 }
+        {
+          "type": "discard",
+          "player": "self",
+          "amount": 1,
+          "selection": "player_choice"
+        },
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
       ],
       "displayText": "Discard a card, then draw a card."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "arcane_recall",
       "name": "Arcane Recall",
       "type": "spell",
@@ -664,7 +746,9 @@
           "type": "search_zone",
           "player": "self",
           "zone": "deck",
-          "filter": { "cardTypes": ["spell"] },
+          "filter": {
+            "cardTypes": ["spell"]
+          },
           "amount": 1,
           "destination": "hand",
           "reveal": true
@@ -673,7 +757,7 @@
       "displayText": "Search your deck for a spell, reveal it, and put it into your hand."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "tide_binder",
       "name": "Tide Binder",
       "type": "unit",
@@ -688,17 +772,22 @@
         {
           "type": "return_to_hand",
           "target": {
-            "zone": "battlefield",
-            "controller": "opponent",
-            "filter": { "cardTypes": ["unit"] },
-            "count": 1
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "filter": {
+                "cardTypes": ["unit"]
+              },
+              "count": 1
+            }
           }
         }
       ],
       "displayText": "When this unit is deployed, return an enemy unit to its owner's hand."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "cryptic_archivist",
       "name": "Cryptic Archivist",
       "type": "unit",
@@ -714,14 +803,19 @@
         {
           "id": "endless_notes",
           "trigger": "on_turn_start",
-          "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
+          "effects": [
+            {
+              "type": "draw",
+              "player": "self",
+              "amount": 1
+            }
+          ]
         }
       ],
       "displayText": "At the start of your turn, draw a card."
     },
-
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "grave_rat",
       "name": "Grave Rat",
       "type": "unit",
@@ -734,7 +828,7 @@
       "tags": ["vermin", "undead"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "wither_touch",
       "name": "Wither Touch",
       "type": "spell",
@@ -747,10 +841,15 @@
         {
           "type": "deal_damage",
           "target": {
-            "zone": "battlefield",
-            "controller": "any",
-            "filter": { "cardTypes": ["unit", "token"] },
-            "count": 1
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "any",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": 1
+            }
           },
           "amount": 2
         }
@@ -758,7 +857,7 @@
       "displayText": "Deal 2 damage to a unit."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "blood_pact",
       "name": "Blood Pact",
       "type": "spell",
@@ -771,18 +870,27 @@
         {
           "type": "sacrifice",
           "target": {
-            "zone": "battlefield",
-            "controller": "self",
-            "filter": { "cardTypes": ["unit", "token"] },
-            "count": 1
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "self",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": 1
+            }
           }
         },
-        { "type": "draw", "player": "self", "amount": 2 }
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 2
+        }
       ],
       "displayText": "Sacrifice a friendly unit, then draw 2 cards."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "bone_harvester",
       "name": "Bone Harvester",
       "type": "unit",
@@ -801,11 +909,7 @@
             {
               "type": "modify_stats",
               "target": {
-                "zone": "battlefield",
-                "controller": "self",
-                "count": 1,
-                "selection": "automatic",
-                "targetsSource": true
+                "kind": "source"
               },
               "attack": 1,
               "health": 0,
@@ -817,7 +921,7 @@
       "displayText": "Whenever this unit survives combat, it gets +1/+0 permanently."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "plague_censer",
       "name": "Plague Censer",
       "type": "relic",
@@ -834,10 +938,13 @@
             {
               "type": "deal_damage",
               "target": {
-                "zone": "battlefield",
-                "controller": "opponent",
-                "count": "all",
-                "selection": "automatic"
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "opponent",
+                  "count": "all",
+                  "selection": "automatic"
+                }
               },
               "amount": 1
             }
@@ -847,7 +954,7 @@
       "displayText": "At the end of your turn, deal 1 damage to each enemy unit."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "dread_sovereign",
       "name": "Dread Sovereign",
       "type": "unit",
@@ -860,28 +967,26 @@
       "powerClass": "centerpiece",
       "tags": ["undead", "noble"],
       "keywords": ["venom", "resilient"],
-      "abilities": [
+      "displayText": "When this unit is deployed, destroy an enemy unit.",
+      "effects": [
         {
-          "id": "sovereign_decree",
-          "trigger": "on_deploy",
-          "effects": [
-            {
-              "type": "destroy",
-              "target": {
-                "zone": "battlefield",
-                "controller": "opponent",
-                "filter": { "cardTypes": ["unit", "token"] },
-                "count": 1
-              }
+          "type": "destroy",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": 1
             }
-          ]
+          }
         }
-      ],
-      "displayText": "When this unit is deployed, destroy an enemy unit."
+      ]
     },
-
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "goblin_scout",
       "name": "Goblin Scout",
       "type": "unit",
@@ -895,7 +1000,7 @@
       "keywords": ["swift"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "scorch",
       "name": "Scorch",
       "type": "spell",
@@ -908,10 +1013,15 @@
         {
           "type": "deal_damage",
           "target": {
-            "zone": "battlefield",
-            "controller": "any",
-            "filter": { "cardTypes": ["unit", "token"] },
-            "count": 1
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "any",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": 1
+            }
           },
           "amount": 3
         }
@@ -919,7 +1029,7 @@
       "displayText": "Deal 3 damage to a unit."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "warband_horn",
       "name": "Warband Horn",
       "type": "relic",
@@ -933,14 +1043,18 @@
           "id": "rally_sparks",
           "trigger": "on_turn_start",
           "effects": [
-            { "type": "create_token", "tokenCardId": "prototype_spark_token", "amount": 1 }
+            {
+              "type": "create_token",
+              "tokenCardId": "prototype_spark_token",
+              "amount": 1
+            }
           ]
         }
       ],
       "displayText": "At the start of your turn, create a 1/1 Spark token."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "powder_keg_runner",
       "name": "Powder Keg Runner",
       "type": "unit",
@@ -959,10 +1073,15 @@
             {
               "type": "deal_damage",
               "target": {
-                "zone": "battlefield",
-                "controller": "opponent",
-                "filter": { "cardTypes": ["unit", "token"] },
-                "count": 1
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "opponent",
+                  "filter": {
+                    "cardTypes": ["unit", "token"]
+                  },
+                  "count": 1
+                }
               },
               "amount": 2
             }
@@ -972,7 +1091,7 @@
       "displayText": "When this unit is defeated, deal 2 damage to an enemy unit."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "overload_conduit",
       "name": "Overload Conduit",
       "type": "spell",
@@ -983,13 +1102,22 @@
       "powerClass": "major",
       "tags": ["burn", "plan"],
       "effects": [
-        { "type": "modify_cost", "player": "self", "delta": -2, "duration": "end_of_turn" },
-        { "type": "draw", "player": "self", "amount": 1 }
+        {
+          "type": "modify_cost",
+          "player": "self",
+          "delta": -2,
+          "duration": "end_of_turn"
+        },
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
       ],
       "displayText": "Your cards cost 2 less this turn. Draw a card."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "pyre_champion",
       "name": "Pyre Champion",
       "type": "unit",
@@ -1002,9 +1130,8 @@
       "tags": ["warrior"],
       "keywords": ["quick_strike"]
     },
-
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "root_snare",
       "name": "Root Snare",
       "type": "spell",
@@ -1017,17 +1144,22 @@
         {
           "type": "exhaust",
           "target": {
-            "zone": "battlefield",
-            "controller": "opponent",
-            "filter": { "cardTypes": ["unit", "token"] },
-            "count": 1
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": 1
+            }
           }
         }
       ],
       "displayText": "Exhaust an enemy unit."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "thornback_calf",
       "name": "Thornback Calf",
       "type": "unit",
@@ -1040,7 +1172,7 @@
       "tags": ["beast"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "verdant_ward",
       "name": "Verdant Ward",
       "type": "spell",
@@ -1052,7 +1184,14 @@
       "effects": [
         {
           "type": "prevent_damage",
-          "target": { "zone": "battlefield", "controller": "self", "count": 1 },
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "self",
+              "count": 1
+            }
+          },
           "amount": 3,
           "duration": "end_of_turn"
         }
@@ -1060,7 +1199,7 @@
       "displayText": "Prevent the next 3 damage that would be dealt to a friendly unit this turn."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "pack_summons",
       "name": "Pack Summons",
       "type": "spell",
@@ -1069,11 +1208,17 @@
       "role": "enabler",
       "powerClass": "standard",
       "tags": ["growth", "beast"],
-      "effects": [{ "type": "create_token", "tokenCardId": "prototype_beast_token", "amount": 1 }],
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "prototype_beast_token",
+          "amount": 1
+        }
+      ],
       "displayText": "Create a 3/3 Beast token."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "wildgrowth_shaman",
       "name": "Wildgrowth Shaman",
       "type": "unit",
@@ -1088,11 +1233,14 @@
         {
           "type": "modify_stats",
           "target": {
-            "zone": "battlefield",
-            "controller": "self",
-            "count": "all",
-            "selection": "automatic",
-            "excludeSource": true
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "self",
+              "count": "all",
+              "selection": "automatic",
+              "excludeSource": true
+            }
           },
           "attack": 1,
           "health": 1,
@@ -1102,7 +1250,7 @@
       "displayText": "When this unit is deployed, your other units get +1/+1."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "apex_grovekeeper",
       "name": "Apex Grovekeeper",
       "type": "unit",
@@ -1122,10 +1270,13 @@
             {
               "type": "heal",
               "target": {
-                "zone": "battlefield",
-                "controller": "self",
-                "count": "all",
-                "selection": "automatic"
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "self",
+                  "count": "all",
+                  "selection": "automatic"
+                }
               },
               "amount": 1
             }
@@ -1135,7 +1286,7 @@
       "displayText": "At the end of your turn, heal each friendly unit 1."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "bramble_titan",
       "name": "Bramble Titan",
       "type": "unit",
@@ -1148,9 +1299,8 @@
       "tags": ["beast"],
       "keywords": ["armored"]
     },
-
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "stormforge_adept",
       "name": "Stormforge Adept",
       "type": "unit",
@@ -1162,15 +1312,24 @@
       "powerClass": "standard",
       "tags": ["mage"],
       "effects": [
-        { "type": "draw", "player": "self", "amount": 1 },
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        },
         {
           "type": "deal_damage",
           "target": {
-            "zone": "battlefield",
-            "controller": "opponent",
-            "filter": { "cardTypes": ["unit", "token"] },
-            "count": 1,
-            "optional": true
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": 1,
+              "optional": true
+            }
           },
           "amount": 1
         }
@@ -1178,7 +1337,7 @@
       "displayText": "When this unit is deployed, draw a card and deal 1 damage to an enemy unit."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "dusk_tithe_priest",
       "name": "Dusk Tithe Priest",
       "type": "unit",
@@ -1193,13 +1352,19 @@
         {
           "id": "last_rites",
           "trigger": "on_defeated",
-          "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
+          "effects": [
+            {
+              "type": "draw",
+              "player": "self",
+              "amount": 1
+            }
+          ]
         }
       ],
       "displayText": "When this unit is defeated, draw a card."
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "tidal_grove_warden",
       "name": "Tidal Grove Warden",
       "type": "unit",
@@ -1213,7 +1378,7 @@
       "keywords": ["evasive"]
     },
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "id": "crimson_covenant",
       "name": "Crimson Covenant",
       "type": "spell",
@@ -1227,11 +1392,16 @@
         {
           "type": "deal_damage",
           "target": {
-            "zone": "battlefield",
-            "controller": "any",
-            "filter": { "cardTypes": ["unit", "token"] },
-            "count": "all",
-            "selection": "automatic"
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "any",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": "all",
+              "selection": "automatic"
+            }
           },
           "amount": 2
         }

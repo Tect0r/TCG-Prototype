@@ -1,18 +1,36 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CardDatabase } from '@tcg/card-data';
-import type { CardInstanceView, PlayerView, PlayerViewSummary } from '@tcg/rules-engine';
+import type { SeatId } from '@tcg/protocol';
+import type {
+  AttackDeclaration,
+  CardInstanceView,
+  PlayerView,
+  PlayerViewSummary,
+} from '@tcg/rules-engine';
 import { useCardDatabase } from '../../state/AppContext.js';
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
+import type { SeatConnection } from '../../net/match-client.js';
 import { buildLog } from '../../lib/event-text.js';
 
 /**
- * The match board. Every element is rendered from the authoritative
- * `PlayerView`: what is legal comes from `view.legalActions`, never from a
- * client-side rule (CLAUDE.md §11).
+ * The match board, for two to four players.
  *
+ * Every element is rendered from the authoritative `PlayerView`: what is legal
+ * comes from `view.legalActions`, never from a client-side rule (CLAUDE.md §11).
  * While an action is in flight, input is locked. Nothing here delays or owns a
  * rule — the server has already decided by the time anything re-renders.
  */
+
+/** Seats map one-to-one onto engine player IDs, so connection state can be keyed by either. */
+function seatIdFor(playerId: string): SeatId | undefined {
+  const map: Record<string, SeatId> = {
+    player_1: 'seat_1',
+    player_2: 'seat_2',
+    player_3: 'seat_3',
+    player_4: 'seat_4',
+  };
+  return map[playerId];
+}
 
 function UnitCard({
   instance,
@@ -64,41 +82,144 @@ function PlayerHeader({
   player,
   database,
   view,
-  isActive,
   isViewer,
-  connected,
-  graceSeconds,
+  connection,
+  awaitingBlockers,
 }: {
   readonly player: PlayerViewSummary;
   readonly database: CardDatabase;
   readonly view: PlayerView;
-  readonly isActive: boolean;
   readonly isViewer: boolean;
-  readonly connected: boolean;
-  readonly graceSeconds: number | null;
+  readonly connection: SeatConnection | undefined;
+  readonly awaitingBlockers: boolean;
 }) {
   const commander = view.instances[player.commanderInstanceId];
+  const isActive = view.activePlayerId === player.playerId;
+  const connected = connection?.connected ?? true;
+  const classes = [
+    'player-bar',
+    isActive && !player.lost ? 'player-bar--active' : '',
+    player.lost ? 'player-bar--out' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className={`player-bar ${isActive ? 'player-bar--active' : ''}`}>
+    <div className={classes}>
       <span className="player-bar__name">
-        {player.name}
+        seat {player.seatIndex + 1}: {player.name}
         {isViewer ? ' (you)' : ''}
       </span>
-      <span className="player-bar__stat">♥ {player.health}</span>
-      <span className="player-bar__stat">
-        ⚡ {player.energy}/{player.maxEnergy}
-      </span>
-      <span className="player-bar__stat">hand {player.handCount}</span>
-      <span className="player-bar__stat">deck {player.deckCount}</span>
-      <span className="player-bar__stat">discard {player.discard.length}</span>
-      <span className="player-bar__stat">
-        cmd {commander ? (database.get(commander.definitionId)?.name ?? '?') : '?'}
-      </span>
+      {player.lost ? (
+        <span className="tag tag--error">
+          eliminated{player.lossReason ? ` · ${player.lossReason.replace(/_/g, ' ')}` : ''}
+        </span>
+      ) : (
+        <>
+          <span className="player-bar__stat">♥ {player.health}</span>
+          <span className="player-bar__stat">
+            ⚡ {player.energy}/{player.maxEnergy}
+          </span>
+          <span className="player-bar__stat">hand {player.handCount}</span>
+          <span className="player-bar__stat">deck {player.deckCount}</span>
+          <span className="player-bar__stat">discard {player.discard.length}</span>
+          <span className="player-bar__stat">
+            cmd {commander ? (database.get(commander.definitionId)?.name ?? '?') : '?'}
+          </span>
+        </>
+      )}
+      {isActive && !player.lost && <span className="tag tag--ok">active</span>}
+      {/* Who has not answered yet is public; *what* they chose is not. */}
+      {awaitingBlockers && <span className="tag tag--warn">choosing blockers</span>}
       {!connected && (
         <span className="tag tag--warn">
-          disconnected{graceSeconds !== null ? ` · ${graceSeconds}s` : ''}
+          disconnected
+          {connection?.graceSeconds !== null && connection?.graceSeconds !== undefined
+            ? ` · ${connection.graceSeconds}s`
+            : ''}
         </span>
       )}
+    </div>
+  );
+}
+
+/** One opponent's battlefield, with blocker assignment when they are attacking us. */
+function OpponentBoard({
+  player,
+  view,
+  database,
+  locked,
+  pendingBlocker,
+  onAssignBlock,
+  attackTarget,
+  onChooseDefender,
+}: {
+  readonly player: PlayerViewSummary;
+  readonly view: PlayerView;
+  readonly database: CardDatabase;
+  readonly locked: boolean;
+  readonly pendingBlocker: string | null;
+  readonly onAssignBlock: (attackerInstanceId: string) => void;
+  /** Set while declaring attackers: clicking the header aims at this player. */
+  readonly attackTarget: boolean;
+  readonly onChooseDefender: () => void;
+}) {
+  const legal = view.legalActions;
+  const attacksOnMe = new Map(
+    view.combat.attacks.map((attack) => [attack.attackerInstanceId, attack.defenderPlayerId]),
+  );
+
+  return (
+    <div className="board__side" aria-label={`${player.name} battlefield`}>
+      {attackTarget && (
+        <button
+          type="button"
+          className="board__target"
+          disabled={locked}
+          onClick={onChooseDefender}
+        >
+          Attack {player.name}
+        </button>
+      )}
+      <div className="board__units">
+        {player.units.map((instanceId, index) => {
+          const instance = instanceId ? view.instances[instanceId] : undefined;
+          const defenderId = instanceId ? attacksOnMe.get(instanceId) : undefined;
+          const blockable =
+            instanceId !== null &&
+            (legal.blocking?.attackerInstanceIds.includes(instanceId) ?? false);
+          // An attacker is only clickable once one of our blockers is picked.
+          const assignBlock =
+            blockable && pendingBlocker !== null && !locked && instanceId !== null
+              ? () => onAssignBlock(instanceId)
+              : undefined;
+
+          const attackedName =
+            defenderId === undefined
+              ? undefined
+              : defenderId === view.viewerId
+                ? 'attacking you'
+                : `attacking ${view.players.find((p) => p.playerId === defenderId)?.name ?? '?'}`;
+
+          return (
+            <UnitCard
+              key={index}
+              instance={instance}
+              database={database}
+              highlighted={blockable && pendingBlocker !== null}
+              label={attackedName}
+              onClick={assignBlock}
+            />
+          );
+        })}
+      </div>
+      <div className="board__relics">
+        {player.relics.map((instanceId) => (
+          <span key={instanceId} className="relic">
+            {database.get(view.instances[instanceId]?.definitionId ?? '')?.name ?? '?'}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -106,10 +227,11 @@ function PlayerHeader({
 export function MatchBoard() {
   const client = useMatchClient();
   const database = useCardDatabase();
-  const { view, pendingActionId, lastError, opponentConnected, opponentGraceSeconds } =
-    useMatchState();
+  const { view, pendingActionId, lastError, seatConnections } = useMatchState();
 
-  const [selectedAttackers, setSelectedAttackers] = useState<string[]>([]);
+  /** Attacker → chosen defender, built up before the declaration is confirmed. */
+  const [attacks, setAttacks] = useState<Record<string, string>>({});
+  const [selectedAttacker, setSelectedAttacker] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<{ attackerInstanceId: string; blockerInstanceId: string }[]>(
     [],
   );
@@ -121,7 +243,8 @@ export function MatchBoard() {
 
   // Any change of phase or choice invalidates a half-built declaration.
   useEffect(() => {
-    setSelectedAttackers([]);
+    setAttacks({});
+    setSelectedAttacker(null);
     setBlocks([]);
     setPendingBlocker(null);
   }, [phase]);
@@ -132,24 +255,44 @@ export function MatchBoard() {
   if (!view) return null;
 
   const legal = view.legalActions;
-  const locked = pendingActionId !== null || view.status === 'complete';
+  const eliminated = legal.eliminated;
+  const locked = pendingActionId !== null || view.status === 'complete' || eliminated;
   const me = view.players.find((player) => player.playerId === view.viewerId);
-  const opponent = view.players.find((player) => player.playerId !== view.viewerId);
+  // Seat order, starting after us: the table as the local player sees it.
+  const others = (() => {
+    const index = view.seatOrder.indexOf(view.viewerId);
+    const rotated = view.seatOrder
+      .map((_, offset) => view.seatOrder[(index + offset + 1) % view.seatOrder.length])
+      .filter(
+        (playerId): playerId is string => playerId !== undefined && playerId !== view.viewerId,
+      );
+    return rotated
+      .map((playerId) => view.players.find((player) => player.playerId === playerId))
+      .filter((player): player is PlayerViewSummary => player !== undefined);
+  })();
   const choice = view.pendingChoice;
 
   const playable = new Map(legal.playableCards.map((card) => [card.instanceId, card]));
+  const nameOf = (playerId: string): string =>
+    view.players.find((player) => player.playerId === playerId)?.name ?? playerId;
 
-  const toggle = (list: string[], id: string): string[] =>
-    list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
+  const declaredAttacks: AttackDeclaration[] = Object.entries(attacks).map(
+    ([attackerInstanceId, defenderPlayerId]) => ({ attackerInstanceId, defenderPlayerId }),
+  );
 
-  const submitChoice = (): void => {
-    if (!choice) return;
-    client.sendAction({
-      type: 'submit_choice',
-      playerId: view.viewerId,
-      choiceId: choice.id,
-      selectedIds: choice.ordered ? choiceSelection : choiceSelection,
-    });
+  const assignBlock = (attackerInstanceId: string): void => {
+    if (pendingBlocker === null) return;
+    setBlocks((current) => [
+      ...current.filter((block) => block.blockerInstanceId !== pendingBlocker),
+      { attackerInstanceId, blockerInstanceId: pendingBlocker },
+    ]);
+    setPendingBlocker(null);
+  };
+
+  const chooseDefender = (defenderPlayerId: string): void => {
+    if (selectedAttacker === null) return;
+    setAttacks((current) => ({ ...current, [selectedAttacker]: defenderPlayerId }));
+    setSelectedAttacker(null);
   };
 
   return (
@@ -159,16 +302,31 @@ export function MatchBoard() {
           Turn {view.turn} · <strong>{view.phase.replace(/_/g, ' ')}</strong>
         </span>
         <span>
-          {view.activePlayerId === view.viewerId ? 'Your turn' : "Opponent's turn"}
+          {eliminated
+            ? 'Spectating'
+            : view.activePlayerId === view.viewerId
+              ? 'Your turn'
+              : `${nameOf(view.activePlayerId)}'s turn`}
           {view.awaitingChoiceFrom && view.awaitingChoiceFrom !== view.viewerId
-            ? ' · waiting for opponent'
+            ? ` · waiting for ${nameOf(view.awaitingChoiceFrom)}`
             : ''}
         </span>
+        {legal.awaitingDefenders.length > 0 && (
+          <span className="tag tag--warn">
+            waiting for blockers: {legal.awaitingDefenders.map(nameOf).join(', ')}
+          </span>
+        )}
         {pendingActionId && <span className="tag tag--warn">sending…</span>}
         <button type="button" className="button--quiet" onClick={() => client.leave()}>
-          Concede and leave
+          {eliminated ? 'Leave' : 'Concede and leave'}
         </button>
       </div>
+
+      {eliminated && view.status !== 'complete' && (
+        <p className="board__result" role="status">
+          You are out of the match. You can watch the rest, but not act.
+        </p>
+      )}
 
       {lastError && (
         <p className="board__error" role="alert">
@@ -182,62 +340,40 @@ export function MatchBoard() {
             ? `Draw — ${view.result.reason.replace(/_/g, ' ')}`
             : view.result.winnerId === view.viewerId
               ? `You win — ${view.result.reason.replace(/_/g, ' ')}`
-              : `You lose — ${view.result.reason.replace(/_/g, ' ')}`}
+              : `${nameOf(view.result.winnerId ?? '')} wins — ${view.result.reason.replace(/_/g, ' ')}`}
         </p>
       )}
 
-      {opponent && (
-        <PlayerHeader
-          player={opponent}
-          database={database}
-          view={view}
-          isActive={view.activePlayerId === opponent.playerId}
-          isViewer={false}
-          connected={opponentConnected}
-          graceSeconds={opponentGraceSeconds}
-        />
-      )}
-
-      <div className="board__side" aria-label="Opponent battlefield">
-        <div className="board__units">
-          {opponent?.units.map((instanceId, index) => {
-            const instance = instanceId ? view.instances[instanceId] : undefined;
-            const isAttacker = instanceId
-              ? view.combat.attackerInstanceIds.includes(instanceId)
-              : false;
-            const blockable =
-              legal.blocking?.attackerInstanceIds.includes(instanceId ?? '') ?? false;
-            // An attacker is only clickable once a blocker has been picked.
-            const assignBlock =
-              blockable && pendingBlocker !== null && !locked && instanceId !== null
-                ? () => {
-                    setBlocks((current) => [
-                      ...current.filter((block) => block.blockerInstanceId !== pendingBlocker),
-                      { attackerInstanceId: instanceId, blockerInstanceId: pendingBlocker },
-                    ]);
-                    setPendingBlocker(null);
-                  }
-                : undefined;
-            return (
-              <UnitCard
-                key={index}
-                instance={instance}
+      {others.map((player) => {
+        const seatId = seatIdFor(player.playerId);
+        return (
+          <div key={player.playerId}>
+            <PlayerHeader
+              player={player}
+              database={database}
+              view={view}
+              isViewer={false}
+              connection={seatId ? seatConnections[seatId] : undefined}
+              awaitingBlockers={legal.awaitingDefenders.includes(player.playerId)}
+            />
+            {!player.lost && (
+              <OpponentBoard
+                player={player}
+                view={view}
                 database={database}
-                highlighted={blockable && pendingBlocker !== null}
-                label={isAttacker ? 'attacking' : undefined}
-                onClick={assignBlock}
+                locked={locked}
+                pendingBlocker={pendingBlocker}
+                onAssignBlock={assignBlock}
+                attackTarget={
+                  selectedAttacker !== null &&
+                  (legal.attacking?.legalDefenders.includes(player.playerId) ?? false)
+                }
+                onChooseDefender={() => chooseDefender(player.playerId)}
               />
-            );
-          })}
-        </div>
-        <div className="board__relics">
-          {opponent?.relics.map((instanceId) => (
-            <span key={instanceId} className="relic">
-              {database.get(view.instances[instanceId]?.definitionId ?? '')?.name ?? '?'}
-            </span>
-          ))}
-        </div>
-      </div>
+            )}
+          </div>
+        );
+      })}
 
       <div className="board__side" aria-label="Your battlefield">
         <div className="board__relics">
@@ -251,17 +387,32 @@ export function MatchBoard() {
           {me?.units.map((instanceId, index) => {
             const instance = instanceId ? view.instances[instanceId] : undefined;
             const canAttack = instanceId
-              ? (legal.legalAttackers?.includes(instanceId) ?? false)
+              ? (legal.attacking?.legalAttackers.includes(instanceId) ?? false)
               : false;
             const canBlock = instanceId
               ? (legal.blocking?.blockerInstanceIds.includes(instanceId) ?? false)
               : false;
             const assigned = blocks.find((block) => block.blockerInstanceId === instanceId);
+            const target = instanceId ? attacks[instanceId] : undefined;
 
             let onClick: (() => void) | undefined;
             if (!locked && instanceId !== null) {
               if (canAttack) {
-                onClick = () => setSelectedAttackers((current) => toggle(current, instanceId));
+                // Click to pick an attacker, then click an opponent to aim it.
+                // Clicking an already-aimed attacker clears its target, so a
+                // declaration stays editable until it is confirmed.
+                onClick = () => {
+                  if (target !== undefined) {
+                    setAttacks((current) => {
+                      const next = { ...current };
+                      delete next[instanceId];
+                      return next;
+                    });
+                    setSelectedAttacker(null);
+                    return;
+                  }
+                  setSelectedAttacker((current) => (current === instanceId ? null : instanceId));
+                };
               } else if (canBlock) {
                 onClick = () =>
                   setPendingBlocker((current) => (current === instanceId ? null : instanceId));
@@ -274,14 +425,13 @@ export function MatchBoard() {
                 instance={instance}
                 database={database}
                 highlighted={canAttack || canBlock}
-                selected={
-                  (instanceId !== null && selectedAttackers.includes(instanceId)) ||
-                  pendingBlocker === instanceId
-                }
+                selected={selectedAttacker === instanceId || pendingBlocker === instanceId}
                 label={
-                  assigned
-                    ? `blocking ${database.get(view.instances[assigned.attackerInstanceId]?.definitionId ?? '')?.name ?? ''}`
-                    : undefined
+                  target !== undefined
+                    ? `→ ${nameOf(target)}`
+                    : assigned
+                      ? `blocking ${database.get(view.instances[assigned.attackerInstanceId]?.definitionId ?? '')?.name ?? ''}`
+                      : undefined
                 }
                 onClick={onClick}
               />
@@ -295,10 +445,9 @@ export function MatchBoard() {
           player={me}
           database={database}
           view={view}
-          isActive={view.activePlayerId === me.playerId}
           isViewer
-          connected
-          graceSeconds={null}
+          connection={undefined}
+          awaitingBlockers={legal.awaitingDefenders.includes(me.playerId)}
         />
       )}
 
@@ -334,22 +483,27 @@ export function MatchBoard() {
           </button>
         )}
 
-        {legal.legalAttackers !== null && (
-          <button
-            type="button"
-            disabled={locked}
-            onClick={() =>
-              client.sendAction({
-                type: 'declare_attackers',
-                playerId: view.viewerId,
-                attackerInstanceIds: selectedAttackers,
-              })
-            }
-          >
-            {selectedAttackers.length === 0
-              ? 'Attack with nobody'
-              : `Confirm ${selectedAttackers.length} attacker(s)`}
-          </button>
+        {legal.attacking && (
+          <>
+            {selectedAttacker !== null && (
+              <span className="tag tag--warn">Now choose which opponent to attack</span>
+            )}
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() =>
+                client.sendAction({
+                  type: 'declare_attackers',
+                  playerId: view.viewerId,
+                  attacks: declaredAttacks,
+                })
+              }
+            >
+              {declaredAttacks.length === 0
+                ? 'Attack with nobody'
+                : `Confirm ${declaredAttacks.length} attacker(s)`}
+            </button>
+          </>
         )}
 
         {legal.blocking && (
@@ -394,6 +548,11 @@ export function MatchBoard() {
             {choice.validEntityIds.map((entityId) => {
               const instance = view.instances[entityId];
               const position = choiceSelection.indexOf(entityId);
+              // A `select_players` choice lists player IDs, not instances.
+              const optionLabel =
+                choice.type === 'select_players'
+                  ? nameOf(entityId)
+                  : (database.get(instance?.definitionId ?? '')?.name ?? entityId);
               return (
                 <button
                   key={entityId}
@@ -408,7 +567,7 @@ export function MatchBoard() {
                     )
                   }
                 >
-                  {database.get(instance?.definitionId ?? '')?.name ?? entityId}
+                  {optionLabel}
                   {choice.ordered && position >= 0 ? ` #${position + 1}` : ''}
                 </button>
               );
@@ -423,7 +582,14 @@ export function MatchBoard() {
                 : choiceSelection.length < choice.minimum ||
                   choiceSelection.length > choice.maximum)
             }
-            onClick={submitChoice}
+            onClick={() =>
+              client.sendAction({
+                type: 'submit_choice',
+                playerId: view.viewerId,
+                choiceId: choice.id,
+                selectedIds: choiceSelection,
+              })
+            }
           >
             Confirm
           </button>

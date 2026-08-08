@@ -4,19 +4,19 @@ Where the project actually is, phase by phase. This file is the single place to
 check before starting work: it records what is done, what is deliberately not
 started, and what "done" means for each remaining phase.
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-08
 
 | Phase | Scope                          | Status                  |
 | ----- | ------------------------------ | ----------------------- |
 | 1     | Deck builder                   | **Complete**            |
 | 2A    | Deterministic rules engine     | **Complete**            |
 | 2B    | Online 1v1                     | **Complete**            |
-| 3     | 2–4 player free-for-all        | Not started, blocked    |
+| 3     | 2–4 player free-for-all        | **Complete**            |
 | 4     | Headless simulator and balance | Not started             |
 | 5     | Pseudonymous real-player data  | Not started, contingent |
 
 **Verification for the whole monorepo:** `npm run verify` (typecheck → lint →
-test → build). Last run: **268 tests in 22 files, all passing**; typecheck,
+test → build). Last run: **325 tests in 23 files, all passing**; typecheck,
 ESLint, Prettier and the production build all clean.
 
 ---
@@ -99,11 +99,13 @@ safeguard.
 
 - `guardian` and `resilient` are inert. See
   [open-decisions.md](rules/open-decisions.md#keywords) and Q4.
-- No continuous-effects layer, so "your units gain X" applies once. Q2.
-- Effects cannot target a player directly — the target schema always names a
-  zone. Q23.
 - Commanders never enter the battlefield, so six of the eight triggers can never
   fire on a Commander. Deferred by CLAUDE.md §4.
+
+Two gaps recorded here at the end of Phase 2A were **closed by Phase 3**: there
+is now a continuous-effects layer, so "your units gain X" tracks the board
+(Q2, [ADR 0008](architecture/0008-continuous-effects.md)), and effects can
+target players directly through first-class `player`/`players` targets (Q23).
 
 ---
 
@@ -151,16 +153,91 @@ up; the match starts when both are ready.
 
 ---
 
-## Phase 3 — Two-to-four-player free-for-all — not started, blocked
+## Phase 3 — Two-to-four-player free-for-all — complete
 
-CLAUDE.md §12 states this phase must not begin until multiplayer combat,
-targeting, elimination and Commander rules are documented. They are not. The
-open items are tracked in [open-questions.md](open-questions.md) as Q10–Q13.
+Unblocked on 2026-08-07 and delivered on 2026-08-08. Design rationale in
+[ADR 0007](architecture/0007-free-for-all-state.md) (seat order, multi-defender
+combat, player targets, elimination) and
+[ADR 0008](architecture/0008-continuous-effects.md) (static abilities).
 
-Two things Phase 2 did to keep the door open rather than to start the phase:
-blocks are stored as `(attacker, blocker)` pairs, and player selectors resolve
-through a single function. Both are extension points; neither is multiplayer
-support.
+### Schema and authoring work done first (CLAUDE.md §18 steps 2–3)
+
+The confirmed answers from §17 landed before any multiplayer engine work:
+
+| Item                                                        | Where                                           |
+| ----------------------------------------------------------- | ----------------------------------------------- |
+| One authoring form for deploy effects (Q1)                  | `card-data/src/migrate.ts` folds `on_deploy` in |
+| `staticAbilities` continuous layer (Q2)                     | `rules-engine/src/continuous.ts`                |
+| Structured activation `costs` (Q3, Q27)                     | `card-data/src/schema/card.ts`                  |
+| First-class player/source targets (Q23, Q29)                | `card-data/src/schema/target.ts`                |
+| Stable seat order, ownership/control, multi-defender combat | `rules-engine/src/schema/state.ts`              |
+
+Card data is migrated on load, so no hand-editing of `prototype_core.json` was
+needed and older card JSON still validates.
+
+### Acceptance criteria (CLAUDE.md §12)
+
+| Criterion                                                         | Evidence                                                   |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| Two to four browsers create/join one lobby and finish a match     | `match-server.test.ts` — 2/3/4-seat tables end to end      |
+| Multi-defender combat, triggers, elimination, victory determinism | `free-for-all.test.ts` §§3–9, 11                           |
+| Server authoritative; no player sees another's hidden information | redaction suites at both engine and server layers          |
+| Arrival order of independent choices cannot change the result     | `free-for-all.test.ts` §5 submits blocks in both orders    |
+| Eliminated players spectate but cannot act                        | engine §14 plus the server's `engine/eliminated` rejection |
+| Phase 1 and Phase 2 tests and behaviour intact                    | every earlier suite passes unmodified                      |
+| New engine, protocol, server and client tests                     | 36 engine + 14 server + 5 UI tests added                   |
+| `npm run verify` passes for the whole monorepo                    | 325 tests in 23 files                                      |
+
+### The fifteen required tests
+
+`packages/rules-engine/src/free-for-all.test.ts` is numbered to match CLAUDE.md
+§12 so a missing case is obvious: two/three/four-player starts, circular turns
+skipping eliminated seats, split attacks, illegal blockers, independent blocker
+submissions, simultaneous multi-defender combat, `opponent` and `each_opponent`
+targeting, trigger ordering, elimination cleanup, timeout elimination, victory
+and draw, four-player redaction, determinism and replay, and spectating.
+
+Items 13 (per-seat reconnection and idempotent replay) and 15 (1v1 unchanged)
+are server-level and live in `apps/multiplayer-server/src/match-server.test.ts`.
+
+### Bugs found by the new tests, and fixed
+
+- **Concession never cleaned up in a multiplayer game.** `handleTermination`
+  called `concludeIfOver` rather than the full state-based check. In 1v1 that
+  was invisible because a concession ended the match; with three seats the
+  loser's board, cards and pending attacks stayed on the table.
+- **`card_drawn` leaked another player's instance IDs.** The event redacted
+  `definitionId` but not `instanceId`, so a viewer could track which physical
+  cards a rival kept through a mulligan. `instanceId` is now nullable and
+  nulled for everyone but the drawer.
+- **A token-type card only ceased to exist if the `isToken` flag was set.**
+  `moveToZone` now also treats a `token`-type definition as a token, so
+  tokenness cannot be lost by whatever route the card reached play.
+
+### Running a three- or four-player table
+
+```bash
+npm run dev:server      # ws://127.0.0.1:8787
+npm run dev             # http://localhost:5173
+```
+
+Open the client once per player and switch each to the **Play** tab. The host
+creates a lobby and picks the seat count; everyone else joins with the invite
+code. Each seat submits a deck and readies up. A 1v1 starts by itself, exactly
+as in Phase 2B; a larger table waits for the host to start it, because
+"everyone seated is ready" is a legal state at two of four seats.
+
+### Known limitations, deliberate for this phase
+
+- Seat order is rolled from the match seed, so joining first cannot buy a better
+  table position. Players cannot choose seats.
+- No teams, table politics, chat, public matchmaking, reactions or priority
+  stack. All explicitly out of scope.
+- Commanders still never enter the battlefield, so Commander defeat and recovery
+  remain deferred.
+- Lobbies and matches are still in memory only; a server restart ends them.
+- Multiple blockers per attacker is still unimplemented, but `blocks` is already
+  a list of pairs, so it is no longer structurally blocked.
 
 ---
 

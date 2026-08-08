@@ -38,6 +38,8 @@ export {
   MATCH_STATUSES,
   MAIN_PHASES,
   LOSS_REASONS,
+  MIN_PLAYERS,
+  MAX_PLAYERS,
   instanceIdSchema,
   lossReasonSchema,
   matchModeSchema,
@@ -53,16 +55,23 @@ export {
 } from './schema/primitives.js';
 
 export {
+  attackDeclarationSchema,
+  blockerSubmissionSchema,
   cardInstanceSchema,
   combatStateSchema,
+  continuousLayerSchema,
   matchResultSchema,
   matchStateSchema,
   playerStateSchema,
   resolutionItemSchema,
+  EMPTY_COMBAT,
   MATCH_END_REASONS,
+  type AttackDeclaration,
   type BlockAssignment,
+  type BlockerSubmission,
   type CardInstance,
   type CombatState,
+  type ContinuousLayer,
   type CostModifier,
   type MatchEndReason,
   type MatchResult,
@@ -137,12 +146,18 @@ export {
 export { serializeMatchState, deserializeMatchState, parseMatchState } from './serialize.js';
 
 export {
+  activeFirstOrder,
+  clockwiseFrom,
   currentAttack,
   currentHealth,
   effectiveKeywords,
   energyCostOf,
   hasKeyword,
+  isAlive,
   isSummoningSick,
+  livingOpponents,
+  livingPlayers,
+  nextLivingPlayer,
   opponentOf,
   remainingHealth,
 } from './derive.js';

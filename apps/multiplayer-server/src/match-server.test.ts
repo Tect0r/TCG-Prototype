@@ -12,7 +12,7 @@ import {
   type ClientMessageInput,
   type ServerMessage,
 } from '@tcg/protocol';
-import type { Action, PlayerView } from '@tcg/rules-engine';
+import type { Action, PlayerId, PlayerView } from '@tcg/rules-engine';
 import { MatchServer, type ScheduleTimer, type ServerConnection } from './match-server.js';
 
 /**
@@ -406,8 +406,8 @@ describe('reconnection', () => {
     const sequenceBefore = harness.host.view().sequence;
 
     harness.server.disconnect(harness.host);
-    expect(harness.guest.last('opponent_connection')?.connected).toBe(false);
-    expect(harness.guest.last('opponent_connection')?.graceSeconds).toBeGreaterThan(0);
+    expect(harness.guest.last('seat_connection')?.connected).toBe(false);
+    expect(harness.guest.last('seat_connection')?.graceSeconds).toBeGreaterThan(0);
 
     const revived = new FakeConnection('conn_host_2');
     harness.server.connect(revived);
@@ -420,7 +420,7 @@ describe('reconnection', () => {
     expect(revived.last('lobby_joined')?.seatId).toBe('seat_1');
     expect(revived.view().sequence).toBe(sequenceBefore);
     expect(revived.view().viewerId).toBe('player_1');
-    expect(harness.guest.last('opponent_connection')?.connected).toBe(true);
+    expect(harness.guest.last('seat_connection')?.connected).toBe(true);
     // The pending disconnect loss was cancelled.
     expect(harness.timers).toHaveLength(0);
   });
@@ -525,7 +525,7 @@ describe('match termination', () => {
       act(harness, activeConnection, {
         type: 'declare_attackers',
         playerId: activeId,
-        attackerInstanceIds: [],
+        attacks: [],
       });
       resolvePendingChoices(harness);
       act(harness, activeConnection, { type: 'pass_phase', playerId: activeId });
@@ -565,11 +565,18 @@ describe('match termination', () => {
         act(harness, connection, { type: 'mulligan', playerId: me, returnInstanceIds: [] });
         return true;
       }
-      if (legal.legalAttackers) {
+      if (legal.attacking) {
+        const defender = legal.attacking.legalDefenders[0];
         act(harness, connection, {
           type: 'declare_attackers',
           playerId: me,
-          attackerInstanceIds: [...legal.legalAttackers],
+          attacks:
+            defender === undefined
+              ? []
+              : legal.attacking.legalAttackers.map((attackerInstanceId) => ({
+                  attackerInstanceId,
+                  defenderPlayerId: defender,
+                })),
         });
         return true;
       }
@@ -606,5 +613,313 @@ describe('match termination', () => {
     // A real ending, not a concession or an engine fault.
     expect(['health_depleted', 'empty_deck', 'simultaneous_loss']).toContain(view.result?.reason);
     expect(harness.guest.view().result?.winnerId).toBe(view.result?.winnerId);
+  });
+});
+
+/* ------------------------------------------------ Phase 3: free-for-all seats */
+
+/**
+ * A table of two to four seats, driven through the same encoded-message path as
+ * the 1v1 harness above. `seats[0]` is always the host.
+ */
+interface Table extends Harness {
+  readonly seats: FakeConnection[];
+  readonly seatTokens: string[];
+  readonly playerIds: PlayerId[];
+}
+
+function createTable(seatCount: number): Table {
+  const timers: { delayMs: number; fire: () => void }[] = [];
+  const schedule: ScheduleTimer = (delayMs, callback) => {
+    const entry = { delayMs, fire: callback };
+    timers.push(entry);
+    return () => {
+      const index = timers.indexOf(entry);
+      if (index >= 0) timers.splice(index, 1);
+    };
+  };
+
+  const server = new MatchServer({
+    database,
+    random: sequenceRandom(),
+    schedule,
+    seedFor: () => 'fixed-table-seed',
+    now: () => 1_000_000,
+  });
+
+  const send = (connection: FakeConnection, message: ClientMessageInput): void => {
+    server.receive(connection, encode(message as never));
+  };
+
+  const host = new FakeConnection('conn_seat_1');
+  server.connect(host);
+  send(host, {
+    type: 'create_lobby',
+    versions: CURRENT_VERSIONS,
+    displayName: 'Seat 1',
+    maxSeats: seatCount,
+  });
+  const hostJoined = host.last('lobby_joined');
+  if (!hostJoined) throw new Error('Host did not join');
+  const inviteCode = hostJoined.lobby.inviteCode;
+
+  const seats = [host];
+  const seatTokens = [hostJoined.reconnectToken];
+  for (let index = 1; index < seatCount; index += 1) {
+    const connection = new FakeConnection(`conn_seat_${index + 1}`);
+    server.connect(connection);
+    send(connection, {
+      type: 'join_lobby',
+      versions: CURRENT_VERSIONS,
+      inviteCode,
+      displayName: `Seat ${index + 1}`,
+    });
+    const joined = connection.last('lobby_joined');
+    if (!joined) throw new Error(`Seat ${index + 1} did not join`);
+    seats.push(connection);
+    seatTokens.push(joined.reconnectToken);
+  }
+
+  return {
+    server,
+    host,
+    guest: seats[1] as FakeConnection,
+    inviteCode,
+    tokens: { host: seatTokens[0] as string, guest: seatTokens[1] as string },
+    timers,
+    send,
+    seats,
+    seatTokens,
+    playerIds: seats.map((_, index) => `player_${index + 1}` as PlayerId),
+  };
+}
+
+/** Submits a legal deck for every seat, readies up, and starts the match. */
+function startTable(table: Table): void {
+  table.seats.forEach((connection, index) => {
+    table.send(connection, {
+      type: 'submit_deck',
+      deck: legalDeckFor('prototype_commander_blue_red', `Deck ${index + 1}`),
+    });
+    table.send(connection, { type: 'set_ready', ready: true });
+  });
+  // Tables larger than a 1v1 wait for the host to say go (open-questions.md Q36).
+  if (table.seats.length > 2) table.send(table.host, { type: 'start_match' });
+}
+
+/** Keeps every opening hand so the match reaches turn 1. */
+function keepAllHands(table: Table): void {
+  table.seats.forEach((connection, index) => {
+    act(table, connection, {
+      type: 'mulligan',
+      playerId: table.playerIds[index] as PlayerId,
+      returnInstanceIds: [],
+    });
+  });
+}
+
+describe('1. free-for-all lobbies of two, three and four seats', () => {
+  it.each([2, 3, 4])('starts a legal match with %i players', (seatCount) => {
+    const table = createTable(seatCount);
+    startTable(table);
+
+    const orders: string[][] = [];
+    for (const connection of table.seats) {
+      const view = connection.view();
+      expect(view.players).toHaveLength(seatCount);
+      expect(view.status).toBe('mulligan');
+      // Seat order is shuffled from the match seed rather than taken from join
+      // order (open-questions.md Q31), so assert it is a permutation, not a list.
+      expect([...view.seatOrder].sort()).toEqual([...table.playerIds].sort());
+      orders.push(view.seatOrder);
+    }
+    // Every seat sees the same circle, and the summaries follow it.
+    for (const order of orders) expect(order).toEqual(orders[0]);
+    const first = table.seats[0]?.view();
+    expect(first?.players.map((player) => player.playerId)).toEqual(first?.seatOrder);
+  });
+
+  it('does not auto-start a larger table until the host says so', () => {
+    const table = createTable(3);
+    table.seats.forEach((connection, index) => {
+      table.send(connection, {
+        type: 'submit_deck',
+        deck: legalDeckFor('prototype_commander_blue_red', `Deck ${index + 1}`),
+      });
+      table.send(connection, { type: 'set_ready', ready: true });
+    });
+
+    // Everyone is ready, but three seats is a deliberate choice, not a cue.
+    expect(table.host.last('lobby_updated')?.lobby.canStart).toBe(true);
+    expect(table.host.last('match_state')).toBeUndefined();
+
+    table.send(table.host, { type: 'start_match' });
+    expect(table.host.view().players).toHaveLength(3);
+  });
+
+  it('cannot be joined once the match has started', () => {
+    const table = createTable(3);
+    startTable(table);
+
+    const latecomer = new FakeConnection('conn_late');
+    table.server.connect(latecomer);
+    table.send(latecomer, {
+      type: 'join_lobby',
+      versions: CURRENT_VERSIONS,
+      inviteCode: table.inviteCode,
+      displayName: 'Late',
+    });
+    expect(latecomer.last('error')).toBeDefined();
+    expect(latecomer.last('match_state')).toBeUndefined();
+  });
+});
+
+describe('13. reconnection for every seat', () => {
+  it.each([0, 1, 2, 3])('restores seat index %i with its own token', (seatIndex) => {
+    const table = createTable(4);
+    startTable(table);
+    keepAllHands(table);
+
+    const original = table.seats[seatIndex] as FakeConnection;
+    const playerId = table.playerIds[seatIndex] as PlayerId;
+    const sequenceBefore = original.view().sequence;
+
+    table.server.disconnect(original);
+    const revived = new FakeConnection(`conn_revived_${seatIndex}`);
+    table.server.connect(revived);
+    table.send(revived, {
+      type: 'reconnect',
+      versions: CURRENT_VERSIONS,
+      reconnectToken: table.seatTokens[seatIndex] as string,
+    });
+
+    expect(revived.last('lobby_joined')?.seatId).toBe(`seat_${seatIndex + 1}`);
+    expect(revived.view().viewerId).toBe(playerId);
+    expect(revived.view().sequence).toBe(sequenceBefore);
+    // The dropped seat's timer was cancelled by the reconnect.
+    expect(table.timers).toHaveLength(0);
+  });
+
+  it('replays an action idempotently after a four-player reconnect', () => {
+    const table = createTable(4);
+    startTable(table);
+
+    const first = table.seats[0] as FakeConnection;
+    const sequenceBefore = first.view().sequence;
+    table.send(first, {
+      type: 'submit_action',
+      actionId: 'keep_1',
+      lastSequence: sequenceBefore,
+      action: { type: 'mulligan', playerId: 'player_1', returnInstanceIds: [] },
+    });
+    const afterApply = first.view().sequence;
+
+    table.server.disconnect(first);
+    const revived = new FakeConnection('conn_seat_1_again');
+    table.server.connect(revived);
+    table.send(revived, {
+      type: 'reconnect',
+      versions: CURRENT_VERSIONS,
+      reconnectToken: table.seatTokens[0] as string,
+    });
+    table.send(revived, {
+      type: 'submit_action',
+      actionId: 'keep_1',
+      lastSequence: sequenceBefore,
+      action: { type: 'mulligan', playerId: 'player_1', returnInstanceIds: [] },
+    });
+
+    expect(revived.view().sequence).toBe(afterApply);
+    const submitted = revived
+      .view()
+      .log.filter((event) => event.type === 'mulligan_submitted' && event.playerId === 'player_1');
+    expect(submitted).toHaveLength(1);
+  });
+});
+
+describe('10/14. timeout elimination and spectating', () => {
+  it('eliminates a timed-out seat while the rest of the table plays on', () => {
+    const table = createTable(3);
+    startTable(table);
+    keepAllHands(table);
+
+    const victim = table.seats[2] as FakeConnection;
+    table.server.disconnect(victim);
+    expect(table.timers).toHaveLength(1);
+    table.timers[0]?.fire();
+
+    const survivor = (table.seats[0] as FakeConnection).view();
+    // Three players means one loss is not the end of the match.
+    expect(survivor.status).not.toBe('complete');
+    expect(survivor.players.find((p) => p.playerId === 'player_3')?.lost).toBe(true);
+    expect(survivor.players.filter((p) => !p.lost)).toHaveLength(2);
+  });
+
+  it('lets an eliminated seat watch but rejects any action it submits', () => {
+    const table = createTable(3);
+    startTable(table);
+    keepAllHands(table);
+
+    const victim = table.seats[1] as FakeConnection;
+    act(table, victim, { type: 'concede', playerId: 'player_2' });
+
+    // Still receiving views: elimination is not a disconnect.
+    const view = victim.view();
+    expect(view.status).not.toBe('complete');
+    expect(view.players.find((p) => p.playerId === 'player_2')?.eliminated).toBe(true);
+    expect(view.legalActions.eliminated).toBe(true);
+
+    // But every gameplay action is refused.
+    table.send(victim, {
+      type: 'submit_action',
+      actionId: 'ghost_action',
+      lastSequence: view.sequence,
+      action: { type: 'pass_phase', playerId: 'player_2' },
+    });
+    expect(victim.last('action_rejected')?.actionId).toBe('ghost_action');
+    expect(victim.last('action_rejected')?.error.code).toBe('engine/eliminated');
+
+    // A spectator never gains sight of a live player's hand.
+    const spectated = victim.view();
+    const survivorHand = (table.seats[0] as FakeConnection).view().hand;
+    for (const instanceId of survivorHand) {
+      expect(Object.keys(spectated.instances)).not.toContain(instanceId);
+    }
+  });
+
+  it('ends a three-player match when only one seat is left standing', () => {
+    const table = createTable(3);
+    startTable(table);
+    keepAllHands(table);
+
+    act(table, table.seats[1] as FakeConnection, { type: 'concede', playerId: 'player_2' });
+    act(table, table.seats[2] as FakeConnection, { type: 'concede', playerId: 'player_3' });
+
+    const view = (table.seats[0] as FakeConnection).view();
+    expect(view.status).toBe('complete');
+    expect(view.result?.winnerId).toBe('player_1');
+  });
+});
+
+describe('12. per-viewer redaction at four seats', () => {
+  it('gives each of four seats only its own hand', () => {
+    const table = createTable(4);
+    startTable(table);
+    keepAllHands(table);
+
+    const views = table.seats.map((connection) => connection.view());
+    for (const [index, view] of views.entries()) {
+      expect(view.viewerId).toBe(table.playerIds[index]);
+      expect(view.hand.length).toBeGreaterThan(0);
+
+      for (const [otherIndex, other] of views.entries()) {
+        if (otherIndex === index) continue;
+        for (const instanceId of other.hand) {
+          expect(view.hand).not.toContain(instanceId);
+          expect(Object.keys(view.instances)).not.toContain(instanceId);
+        }
+      }
+      expect(JSON.stringify(view)).not.toContain('"rng"');
+    }
   });
 });

@@ -50,14 +50,32 @@ export function describeEvent(
       return `${playerName(event.playerId)} creates ${cardName(event.definitionId)}.`;
     case 'token_creation_failed':
       return `${playerName(event.playerId)} has no room for ${cardName(event.definitionId)}.`;
-    case 'attackers_declared':
-      return event.instanceIds.length === 0
-        ? `${playerName(event.playerId)} declines to attack.`
-        : `${playerName(event.playerId)} attacks with ${event.instanceIds.map(instanceName).join(', ')}.`;
+    case 'attackers_declared': {
+      if (event.attacks.length === 0) return `${playerName(event.playerId)} declines to attack.`;
+      // Who each attacker chose matters in a free-for-all, so the log says so.
+      const byDefender = new Map<string, string[]>();
+      for (const attack of event.attacks) {
+        const names = byDefender.get(attack.defenderPlayerId) ?? [];
+        names.push(instanceName(attack.attackerInstanceId));
+        byDefender.set(attack.defenderPlayerId, names);
+      }
+      const parts = [...byDefender].map(
+        ([defenderId, names]) => `${names.join(', ')} → ${playerName(defenderId)}`,
+      );
+      return `${playerName(event.playerId)} attacks: ${parts.join('; ')}.`;
+    }
+    case 'blockers_submitted':
+      return event.awaitingPlayerIds.length === 0
+        ? `${playerName(event.playerId)} has chosen blockers.`
+        : `${playerName(event.playerId)} has chosen blockers; waiting for ${event.awaitingPlayerIds.map(playerName).join(', ')}.`;
     case 'blockers_assigned':
       return event.blocks.length === 0
-        ? `${playerName(event.playerId)} does not block.`
-        : `${playerName(event.playerId)} blocks with ${event.blocks.map((block) => instanceName(block.blockerInstanceId)).join(', ')}.`;
+        ? `Nobody blocks.`
+        : `Blocks: ${event.blocks.map((block) => `${instanceName(block.blockerInstanceId)} blocks ${instanceName(block.attackerInstanceId)}`).join('; ')}.`;
+    case 'player_eliminated':
+      return `${playerName(event.playerId)} is out of the match.`;
+    case 'control_returned':
+      return `${instanceName(event.instanceId)} returns to ${playerName(event.playerId)}.`;
     case 'damage_dealt':
       return event.targetPlayerId
         ? `${playerName(event.targetPlayerId)} takes ${event.amount} damage.`
@@ -112,6 +130,8 @@ export function describeEvent(
     case 'damage_shield_added':
     case 'player_damaged':
     case 'player_healed':
+    case 'effects_cancelled':
+    case 'choice_cancelled':
       return null;
 
     default:

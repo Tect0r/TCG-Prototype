@@ -27,14 +27,18 @@ import {
 } from '@tcg/rules-engine';
 import { errorsOf, isErr } from '@tcg/shared';
 import {
-  bothSeatsReady,
+  canStart,
   createSeat,
+  freeSeats,
   generateInviteCode,
   generateReconnectToken,
+  graceSecondsFor,
   lobbyView,
+  MAX_SEATS,
+  MIN_SEATS,
   PLAYER_ID_BY_SEAT,
   seatByToken,
-  SEAT_IDS,
+  seatsOf,
   type Lobby,
   type Seat,
 } from './lobby.js';
@@ -130,10 +134,16 @@ export class MatchServer {
         connection.send({ type: 'pong' });
         return;
       case 'create_lobby':
-        this.createLobby(connection, message.versions, message.displayName);
+        this.createLobby(connection, message.versions, message.displayName, message.maxSeats);
         return;
       case 'join_lobby':
         this.joinLobby(connection, message.versions, message.inviteCode, message.displayName);
+        return;
+      case 'set_max_seats':
+        this.setMaxSeats(connection, message.maxSeats);
+        return;
+      case 'start_match':
+        this.requestStart(connection);
         return;
       case 'reconnect':
         this.reconnect(connection, message.versions, message.reconnectToken);
@@ -202,7 +212,12 @@ export class MatchServer {
     return true;
   }
 
-  private createLobby(connection: ServerConnection, versions: Versions, displayName: string): void {
+  private createLobby(
+    connection: ServerConnection,
+    versions: Versions,
+    displayName: string,
+    maxSeats: number,
+  ): void {
     if (this.rejectVersions(connection, versions)) return;
 
     const inviteCode = generateInviteCode(this.#random, new Set(this.#lobbies.keys()));
@@ -211,6 +226,7 @@ export class MatchServer {
       inviteCode,
       hostSeatId: 'seat_1',
       seats: new Map([['seat_1', seat]]),
+      maxSeats: Math.min(MAX_SEATS, Math.max(MIN_SEATS, maxSeats)),
       status: 'waiting',
       state: null,
     };
@@ -221,8 +237,74 @@ export class MatchServer {
       versions: CURRENT_VERSIONS,
       seatId: seat.seatId,
       reconnectToken: seat.reconnectToken,
-      lobby: lobbyView(lobby),
+      lobby: this.viewOf(lobby),
     });
+  }
+
+  /**
+   * Host-only table resize. The size can never drop below the seats that are
+   * already occupied — nobody is evicted from a lobby they joined
+   * (open-questions.md Q36).
+   */
+  private setMaxSeats(connection: ServerConnection, maxSeats: number): void {
+    const attachment = this.#attachments.get(connection.id);
+    if (!attachment) {
+      this.fail(connection, 'protocol/not_in_lobby', 'Join a lobby first.');
+      return;
+    }
+    const { lobby, seat } = attachment;
+    if (seat.seatId !== lobby.hostSeatId) {
+      this.fail(connection, 'protocol/not_host', 'Only the host can resize the table.');
+      return;
+    }
+    if (lobby.status === 'in_match' || lobby.status === 'finished') {
+      this.fail(connection, 'protocol/already_started', 'The match has already started.');
+      return;
+    }
+
+    const occupied = seatsOf(lobby).length;
+    if (maxSeats < occupied) {
+      this.fail(
+        connection,
+        'protocol/lobby_full',
+        `${occupied} players have already joined; the table cannot shrink below that.`,
+      );
+      return;
+    }
+
+    lobby.maxSeats = Math.min(MAX_SEATS, Math.max(MIN_SEATS, maxSeats));
+    this.broadcastLobby(lobby);
+  }
+
+  /**
+   * Host-only start. A free-for-all does not start itself the moment everyone
+   * present is ready, because "two of four seats ready" is a legal state the
+   * host may still be filling (CLAUDE.md §12).
+   */
+  private requestStart(connection: ServerConnection): void {
+    const attachment = this.#attachments.get(connection.id);
+    if (!attachment) {
+      this.fail(connection, 'protocol/not_in_lobby', 'Join a lobby first.');
+      return;
+    }
+    const { lobby, seat } = attachment;
+    if (seat.seatId !== lobby.hostSeatId) {
+      this.fail(connection, 'protocol/not_host', 'Only the host can start the match.');
+      return;
+    }
+    if (lobby.status === 'in_match' || lobby.status === 'finished') {
+      this.fail(connection, 'protocol/already_started', 'The match has already started.');
+      return;
+    }
+    if (!canStart(lobby)) {
+      this.fail(
+        connection,
+        'protocol/not_enough_players',
+        'The match needs at least two seated players, each with a legal deck and marked ready.',
+      );
+      return;
+    }
+    this.startMatch(lobby);
   }
 
   private joinLobby(
@@ -238,9 +320,15 @@ export class MatchServer {
       this.fail(connection, 'protocol/unknown_lobby', `No lobby with code ${inviteCode}.`);
       return;
     }
-    const freeSeat = SEAT_IDS.find((seatId) => !lobby.seats.has(seatId));
+    // Once the match starts an empty seat stays empty: joining a match in
+    // progress would mean dealing a deck mid-game (CLAUDE.md §12).
+    if (lobby.status === 'in_match' || lobby.status === 'finished') {
+      this.fail(connection, 'protocol/already_started', 'That match has already started.');
+      return;
+    }
+    const freeSeat = freeSeats(lobby)[0];
     if (!freeSeat) {
-      this.fail(connection, 'protocol/lobby_full', 'That lobby already has two players.');
+      this.fail(connection, 'protocol/lobby_full', `That lobby is full (${lobby.maxSeats} seats).`);
       return;
     }
 
@@ -253,7 +341,7 @@ export class MatchServer {
       versions: CURRENT_VERSIONS,
       seatId: seat.seatId,
       reconnectToken: seat.reconnectToken,
-      lobby: lobbyView(lobby),
+      lobby: this.viewOf(lobby),
     });
     this.broadcastLobby(lobby);
   }
@@ -286,7 +374,7 @@ export class MatchServer {
         versions: CURRENT_VERSIONS,
         seatId: seat.seatId,
         reconnectToken: seat.reconnectToken,
-        lobby: lobbyView(lobby),
+        lobby: this.viewOf(lobby),
       });
       if (lobby.state) {
         seat.lastSentSequence = 0;
@@ -348,16 +436,18 @@ export class MatchServer {
     }
 
     seat.ready = ready;
-    lobby.status = bothSeatsReady(lobby) ? 'ready' : 'waiting';
+    lobby.status = canStart(lobby) ? 'ready' : 'waiting';
     this.broadcastLobby(lobby);
 
-    if (bothSeatsReady(lobby)) this.startMatch(lobby);
+    // A two-seat table still starts by itself, exactly as it did in Phase 2B:
+    // there is nobody else the host could be waiting for. Larger tables wait
+    // for an explicit `start_match` (open-questions.md Q36).
+    if (lobby.maxSeats === MIN_SEATS && canStart(lobby)) this.startMatch(lobby);
   }
 
   private startMatch(lobby: Lobby): void {
-    const seat1 = lobby.seats.get('seat_1');
-    const seat2 = lobby.seats.get('seat_2');
-    if (!seat1?.deck || !seat2?.deck) return;
+    const seats = seatsOf(lobby).filter((entry) => entry.deck !== null);
+    if (seats.length < MIN_SEATS) return;
 
     const toMatchDeck = (deck: SavedDeck): MatchDeck => ({
       commanderId: deck.commanderId as string,
@@ -369,18 +459,12 @@ export class MatchServer {
       seed: this.#seedFor(lobby.inviteCode),
       database: this.#database,
       config: this.#config,
-      seats: [
-        {
-          playerId: PLAYER_ID_BY_SEAT.seat_1,
-          name: seat1.displayName,
-          deck: toMatchDeck(seat1.deck),
-        },
-        {
-          playerId: PLAYER_ID_BY_SEAT.seat_2,
-          name: seat2.displayName,
-          deck: toMatchDeck(seat2.deck),
-        },
-      ],
+      seats: seats.map((entry) => ({
+        playerId: PLAYER_ID_BY_SEAT[entry.seatId],
+        name: entry.displayName,
+        // `entry.deck` is non-null by the filter above.
+        deck: toMatchDeck(entry.deck as SavedDeck),
+      })),
     });
 
     if (isErr(created)) {
@@ -518,19 +602,21 @@ export class MatchServer {
     for (const seat of lobby.seats.values()) this.connectionFor(seat)?.send(message);
   }
 
-  private broadcastLobby(lobby: Lobby): void {
-    this.broadcast(lobby, { type: 'lobby_updated', lobby: lobbyView(lobby) });
+  private viewOf(lobby: Lobby) {
+    return lobbyView(lobby, this.#now);
   }
 
+  private broadcastLobby(lobby: Lobby): void {
+    this.broadcast(lobby, { type: 'lobby_updated', lobby: this.viewOf(lobby) });
+  }
+
+  /** Tells every *other* seat that one seat's connection changed. */
   private broadcastConnection(lobby: Lobby, changed: Seat): void {
-    const graceSeconds =
-      changed.disconnectDeadline === null
-        ? null
-        : Math.max(0, Math.round((changed.disconnectDeadline - this.#now()) / 1000));
+    const graceSeconds = graceSecondsFor(changed, this.#now);
     for (const seat of lobby.seats.values()) {
       if (seat.seatId === changed.seatId) continue;
       this.connectionFor(seat)?.send({
-        type: 'opponent_connection',
+        type: 'seat_connection',
         seatId: changed.seatId,
         connected: changed.connectionId !== null,
         graceSeconds: changed.connectionId === null ? graceSeconds : null,

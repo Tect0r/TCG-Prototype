@@ -18,9 +18,11 @@ export function LobbyScreen() {
   const [displayName, setDisplayName] = useState('Player');
   const [inviteCode, setInviteCode] = useState('');
   const [selectedDeckId, setSelectedDeckId] = useState<string>('');
+  const [tableSize, setTableSize] = useState(2);
 
   const mySeat = lobby?.seats.find((seat) => seat.seatId === seatId);
-  const opponent = lobby?.seats.find((seat) => seat.seatId !== seatId);
+  const isHost = mySeat?.isHost ?? false;
+  const emptySeats = lobby ? lobby.maxSeats - lobby.seats.length : 0;
   const selectedDeck = decks.find((deck) => deck.id === selectedDeckId);
   const localReport = selectedDeck ? validateDeck(selectedDeck, database) : null;
 
@@ -51,10 +53,22 @@ export function LobbyScreen() {
             />
           </label>
 
+          <label className="field">
+            <span>Players</span>
+            <select
+              value={tableSize}
+              onChange={(event) => setTableSize(Number(event.target.value))}
+            >
+              <option value={2}>2 — one on one</option>
+              <option value={3}>3 — free-for-all</option>
+              <option value={4}>4 — free-for-all</option>
+            </select>
+          </label>
+
           <div className="lobby__actions">
             <button
               type="button"
-              onClick={() => client.createLobby(displayName.trim() || 'Player')}
+              onClick={() => client.createLobby(displayName.trim() || 'Player', tableSize)}
               disabled={displayName.trim().length === 0}
             >
               Create a lobby
@@ -83,8 +97,27 @@ export function LobbyScreen() {
       ) : (
         <div className="lobby__room">
           <p className="lobby__code">
-            Invite code: <strong>{lobby.inviteCode}</strong> — share it with your opponent.
+            Invite code: <strong>{lobby.inviteCode}</strong> — share it with the other{' '}
+            {lobby.maxSeats - 1 === 1 ? 'player' : `${lobby.maxSeats - 1} players`}.
           </p>
+
+          {isHost && lobby.status !== 'in_match' && (
+            <label className="field">
+              <span>Table size</span>
+              <select
+                value={lobby.maxSeats}
+                onChange={(event) => client.setMaxSeats(Number(event.target.value))}
+              >
+                {[2, 3, 4]
+                  .filter((size) => size >= lobby.seats.length)
+                  .map((size) => (
+                    <option key={size} value={size}>
+                      {size} players
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
 
           <ul className="lobby__seats">
             {lobby.seats.map((seat) => (
@@ -108,9 +141,11 @@ export function LobbyScreen() {
                 </span>
               </li>
             ))}
-            {!opponent && (
-              <li className="lobby__seat lobby__seat--empty">Waiting for an opponent…</li>
-            )}
+            {Array.from({ length: Math.max(0, emptySeats) }, (_, index) => (
+              <li key={`empty_${index}`} className="lobby__seat lobby__seat--empty">
+                Waiting for a player…
+              </li>
+            ))}
           </ul>
 
           <div className="lobby__deck">
@@ -156,6 +191,17 @@ export function LobbyScreen() {
               >
                 {mySeat?.ready ? 'Not ready' : 'Ready'}
               </button>
+              {/* A larger table does not start by itself: two of four seats
+                  being ready is a legal state the host may still be filling. */}
+              {isHost && lobby.maxSeats > 2 && (
+                <button
+                  type="button"
+                  onClick={() => client.startMatch()}
+                  disabled={!lobby.canStart}
+                >
+                  Start match ({lobby.seats.length} players)
+                </button>
+              )}
               <button type="button" className="button--quiet" onClick={() => client.leave()}>
                 Leave lobby
               </button>

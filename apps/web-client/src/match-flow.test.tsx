@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { loadBundledCardData } from '@tcg/card-data';
 import { DECK_SCHEMA_VERSION, DECK_STORAGE_KEY, MemoryStore, type SavedDeck } from '@tcg/deck';
@@ -11,6 +11,7 @@ import {
   type ServerMessage,
 } from '@tcg/protocol';
 import {
+  applyAction,
   createMatch,
   playerView,
   type MatchDeck,
@@ -165,6 +166,9 @@ describe('lobby screen', () => {
       lobby: {
         inviteCode: 'ABC123',
         status: 'waiting',
+        maxSeats: 2,
+        hostSeatId: 'seat_1',
+        canStart: false,
         seats: [
           {
             seatId: 'seat_1',
@@ -174,13 +178,15 @@ describe('lobby screen', () => {
             deckName: null,
             deckLegal: false,
             isHost: true,
+            graceSeconds: null,
+            eliminated: false,
           },
         ],
       },
     });
 
     expect(await screen.findByText('ABC123')).toBeInTheDocument();
-    expect(screen.getByText(/Waiting for an opponent/)).toBeInTheDocument();
+    expect(screen.getByText(/Waiting for a player/)).toBeInTheDocument();
   });
 
   it('surfaces a version mismatch as an actionable message', async () => {
@@ -215,6 +221,9 @@ describe('lobby screen', () => {
       lobby: {
         inviteCode: 'DEF456',
         status: 'waiting',
+        maxSeats: 2,
+        hostSeatId: 'seat_1',
+        canStart: false,
         seats: [
           {
             seatId: 'seat_1',
@@ -224,6 +233,8 @@ describe('lobby screen', () => {
             deckName: 'UI Test Deck',
             deckLegal: false,
             isHost: true,
+            graceSeconds: null,
+            eliminated: false,
           },
         ],
       },
@@ -266,7 +277,7 @@ describe('match board', () => {
 
     expect(await screen.findByLabelText('Match board')).toBeInTheDocument();
     expect(screen.getByText(/You \(you\)/)).toBeInTheDocument();
-    expect(screen.getByText('Rival')).toBeInTheDocument();
+    expect(screen.getByText(/seat \d+: Rival/)).toBeInTheDocument();
 
     // The viewer's hand is rendered by name; the opponent's is only a count.
     const hand = screen.getByLabelText('Your hand');
@@ -335,7 +346,7 @@ describe('match board', () => {
     const harness = await boardWithState(state);
 
     harness.transport().deliver({
-      type: 'opponent_connection',
+      type: 'seat_connection',
       seatId: 'seat_2',
       connected: false,
       graceSeconds: 90,
@@ -343,7 +354,7 @@ describe('match board', () => {
     expect(await screen.findByText(/disconnected · 90s/)).toBeInTheDocument();
 
     harness.transport().deliver({
-      type: 'opponent_connection',
+      type: 'seat_connection',
       seatId: 'seat_2',
       connected: true,
       graceSeconds: null,
@@ -360,5 +371,199 @@ describe('deck builder is unaffected', () => {
 
     await harness.user.click(screen.getByRole('button', { name: 'Deck Builder' }));
     expect(await screen.findByLabelText('Card browser')).toBeInTheDocument();
+  });
+});
+
+/* ------------------------------------------------ Phase 3: the four-seat table */
+
+/** A four-player table with a known seat order, so assertions can name seats. */
+function ffaState(): MatchState {
+  return unwrap(
+    createMatch({
+      matchId: 'ui_ffa',
+      seed: 'ui-ffa-seed',
+      database,
+      preserveSeatOrder: true,
+      seats: [
+        {
+          playerId: 'player_1',
+          name: 'You',
+          deck: deckFor('prototype_commander_red', 'goblin_scout'),
+        },
+        {
+          playerId: 'player_2',
+          name: 'Rival',
+          deck: deckFor('prototype_commander_green', 'thornback_calf'),
+        },
+        {
+          playerId: 'player_3',
+          name: 'Third',
+          deck: deckFor('prototype_commander_red', 'goblin_scout'),
+        },
+        {
+          playerId: 'player_4',
+          name: 'Fourth',
+          deck: deckFor('prototype_commander_green', 'thornback_calf'),
+        },
+      ],
+    }),
+    'ffa setup',
+  ).state;
+}
+
+describe('free-for-all match board', () => {
+  /** Renders the board against an arbitrary authoritative view. */
+  async function boardWithView(view: PlayerView) {
+    const harness = renderMatchApp();
+    await openPlayTab(harness.user);
+    await clickCreateLobby(harness);
+    harness.transport().deliver({ type: 'match_state', view, events: [] });
+    await screen.findByLabelText('Match board');
+    return harness;
+  }
+
+  it('shows all four seats, with the local player marked and the rest in seat order', async () => {
+    const view = viewFor(ffaState(), 'player_1');
+    await boardWithView(view);
+
+    expect(screen.getByText(/You \(you\)/)).toBeInTheDocument();
+    for (const name of ['Rival', 'Third', 'Fourth']) {
+      expect(screen.getByText(new RegExp(`seat \\d+: ${name}`))).toBeInTheDocument();
+    }
+
+    // Opponents are laid out clockwise starting after the viewer, not in
+    // whatever order the players array happens to hold. Each seat's battlefield
+    // is one labelled region, so DOM order is the rendered table order.
+    const battlefields = screen
+      .getAllByLabelText(/ battlefield$/)
+      .map((node) => node.getAttribute('aria-label'));
+    expect(battlefields).toEqual([
+      'Rival battlefield',
+      'Third battlefield',
+      'Fourth battlefield',
+      'Your battlefield',
+    ]);
+  });
+
+  it('never leaks another seat’s hand at a four-player table', async () => {
+    const state = ffaState();
+    await boardWithView(viewFor(state, 'player_1'));
+
+    for (const playerId of ['player_2', 'player_3', 'player_4'] as const) {
+      for (const instanceId of state.players[playerId]?.hand ?? []) {
+        expect(screen.queryByText(instanceId)).not.toBeInTheDocument();
+      }
+    }
+    expect(document.body.textContent).not.toContain('Thornback Calf');
+  });
+
+  it('switches an eliminated player to spectator mode automatically', async () => {
+    const state = ffaState();
+    const eliminated = unwrap(
+      applyAction(state, { type: 'concede', playerId: 'player_1' }, { database }),
+      'concede',
+    ).state;
+    // Three players remain, so the match is still running around the spectator.
+    expect(eliminated.status).not.toBe('complete');
+
+    await boardWithView(viewFor(eliminated, 'player_1'));
+
+    expect(screen.getByText('Spectating')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/out of the match/i);
+    // The concede control becomes a plain exit: there is nothing left to concede.
+    expect(screen.getByRole('button', { name: 'Leave' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Concede and leave' })).not.toBeInTheDocument();
+    // And no gameplay control is offered.
+    expect(screen.queryByRole('button', { name: 'Keep hand' })).not.toBeInTheDocument();
+  });
+
+  it('names the defenders it is still waiting on without showing their blocks', async () => {
+    const base = viewFor(ffaState(), 'player_1');
+    const view: PlayerView = {
+      ...base,
+      legalActions: { ...base.legalActions, awaitingDefenders: ['player_2', 'player_4'] },
+    };
+    await boardWithView(view);
+
+    const waiting = screen.getByText(/waiting for blockers:/);
+    expect(waiting).toHaveTextContent('Rival');
+    expect(waiting).toHaveTextContent('Fourth');
+    // The seat that already answered is not listed as outstanding.
+    expect(waiting).not.toHaveTextContent('Third');
+    // Nothing about what anyone tentatively assigned is on screen.
+    expect(view.combat.submissions).toEqual([]);
+  });
+
+  it('makes each attacker’s target explicit and editable before confirming', async () => {
+    const base = viewFor(ffaState(), 'player_1');
+    const attacker = 'inst_attacker';
+    const view: PlayerView = {
+      ...base,
+      status: 'playing',
+      phase: 'declare_attackers',
+      legalActions: {
+        ...base.legalActions,
+        mulligan: null,
+        canPassPhase: false,
+        attacking: {
+          legalAttackers: [attacker],
+          legalDefenders: ['player_2', 'player_3', 'player_4'],
+        },
+      },
+      players: base.players.map((player) =>
+        player.playerId === 'player_1'
+          ? { ...player, units: [attacker, null, null, null, null] }
+          : player,
+      ),
+      instances: {
+        ...base.instances,
+        [attacker]: {
+          instanceId: attacker,
+          definitionId: 'goblin_scout',
+          owner: 'player_1',
+          controller: 'player_1',
+          zone: 'battlefield',
+          slot: 0,
+          attack: 2,
+          health: 1,
+          markedDamage: 0,
+          exhausted: false,
+          summoningSick: false,
+          keywords: [],
+          isToken: false,
+        },
+      },
+    };
+
+    const harness = await boardWithView(view);
+    // Scoped to the battlefield: the viewer's hand holds Goblin Scouts too.
+    const unit = (): HTMLElement =>
+      within(screen.getByLabelText('Your battlefield')).getByRole('button', {
+        name: /Goblin Scout/,
+      });
+
+    // Every living opponent is offered as a target, not just one.
+    await harness.user.click(unit());
+    for (const name of ['Rival', 'Third', 'Fourth']) {
+      expect(screen.getByRole('button', { name: `Attack ${name}` })).toBeInTheDocument();
+    }
+
+    // Aiming at a seat shows the pairing on the attacker itself.
+    await harness.user.click(screen.getByRole('button', { name: 'Attack Third' }));
+    expect(unit()).toHaveTextContent('→ Third');
+
+    // The declaration stays editable: clicking clears it, and it can be re-aimed.
+    await harness.user.click(unit());
+    expect(unit()).not.toHaveTextContent('→ Third');
+    await harness.user.click(unit());
+    await harness.user.click(screen.getByRole('button', { name: 'Attack Fourth' }));
+    expect(unit()).toHaveTextContent('→ Fourth');
+
+    await harness.user.click(screen.getByRole('button', { name: 'Confirm 1 attacker(s)' }));
+    expect(harness.transport().last('submit_action')?.action).toEqual({
+      type: 'declare_attackers',
+      playerId: 'player_1',
+      attacks: [{ attackerInstanceId: attacker, defenderPlayerId: 'player_4' }],
+    });
   });
 });

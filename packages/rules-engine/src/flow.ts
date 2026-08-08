@@ -1,11 +1,18 @@
 import { emit, type MatchContext } from './context.js';
 import { clearCombat, resolveCombat } from './combat.js';
-import { findInstance, instanceOf, isMatchOver, playerOf } from './derive.js';
+import {
+  findInstance,
+  instanceOf,
+  isAlive,
+  isMatchOver,
+  nextLivingPlayer,
+  playerOf,
+} from './derive.js';
 import { nextChoiceId } from './effects.js';
 import { pumpQueue, settle } from './queue.js';
 import { shuffleDeck } from './zones.js';
 import { drawOne } from './zones.js';
-import type { MatchPhase } from './schema/primitives.js';
+import type { MatchPhase, PlayerId } from './schema/primitives.js';
 
 /**
  * Turn and phase machine. Every transition happens here and is observable in the
@@ -22,7 +29,7 @@ export function setPhase(ctx: MatchContext, to: MatchPhase): void {
   settle(ctx, before);
 }
 
-/** Both players have submitted; apply the redraws and start turn 1. */
+/** Every seat has submitted; apply the redraws and start turn 1. */
 export function resolveMulligans(ctx: MatchContext): void {
   for (const playerId of ctx.state.playerOrder) {
     const player = playerOf(ctx.state, playerId);
@@ -53,13 +60,13 @@ export function resolveMulligans(ctx: MatchContext): void {
   }
 
   ctx.state.status = 'playing';
-  const first = ctx.state.playerOrder[0];
-  if (first === undefined) throw new Error('Match has no players');
+  const first = ctx.state.playerOrder.find((id) => isAlive(ctx.state, id));
+  if (first === undefined) throw new Error('Match has no living players');
   beginTurn(ctx, first, 1);
 }
 
 /** Turn-start bookkeeping, then the `on_turn_start` triggers. */
-export function beginTurn(ctx: MatchContext, playerId: string, turn: number): void {
+export function beginTurn(ctx: MatchContext, playerId: PlayerId, turn: number): void {
   ctx.state.turn = turn;
   ctx.state.activePlayerId = playerId;
   ctx.state.phase = 'turn_start';
@@ -139,7 +146,7 @@ function expireEndOfTurnEffects(ctx: MatchContext): void {
     }
   }
 
-  for (const playerId of ctx.state.playerOrder) {
+  for (const playerId of ctx.state.seatOrder) {
     const player = playerOf(ctx.state, playerId);
     player.costModifiers = player.costModifiers.filter((m) => m.duration !== 'end_of_turn');
     player.damageShields = player.damageShields.filter((s) => s.duration !== 'end_of_turn');
@@ -188,12 +195,41 @@ function performTurnEnd(ctx: MatchContext): boolean {
   expireEndOfTurnEffects(ctx);
   if (isMatchOver(ctx.state)) return false;
 
-  const currentIndex = ctx.state.playerOrder.indexOf(ctx.state.activePlayerId);
-  const next = ctx.state.playerOrder[(currentIndex + 1) % ctx.state.playerOrder.length];
-  if (next === undefined) return false;
+  // An eliminated seat is skipped without renumbering or reordering the rest,
+  // so the circle stays exactly as it was dealt (CLAUDE.md §12).
+  const next = nextLivingPlayer(ctx.state, ctx.state.activePlayerId);
+  if (next === null) return false;
 
   beginTurn(ctx, next, ctx.state.turn + 1);
   return true;
+}
+
+/**
+ * Merges the independently collected blocker submissions into one public
+ * assignment and moves to damage.
+ *
+ * Ordering the merge by seat rather than by arrival is what makes two defenders
+ * answering in either network order produce byte-identical state
+ * (CLAUDE.md §12).
+ */
+function finalizeBlockers(ctx: MatchContext): void {
+  const combat = ctx.state.combat;
+  const bySeat = ctx.state.seatOrder
+    .map((playerId) => combat.submissions.find((entry) => entry.defenderPlayerId === playerId))
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+
+  combat.blocks = bySeat.flatMap((entry) => entry.blocks.map((block) => ({ ...block })));
+
+  const before = ctx.events.length;
+  emit(ctx, {
+    type: 'blockers_assigned',
+    playerId: null,
+    blocks: combat.blocks.map((block) => ({ ...block })),
+  });
+  // `on_block` triggers resolve before combat damage.
+  settle(ctx, before);
+
+  setPhase(ctx, 'resolve_combat');
 }
 
 /**
@@ -213,9 +249,19 @@ export function advance(ctx: MatchContext): void {
       case 'main_1':
       case 'main_2':
       case 'declare_attackers':
-      case 'assign_blockers':
       case 'complete':
         return;
+
+      case 'assign_blockers':
+        // Several defenders answer independently; damage waits for the last of
+        // them. An eliminated defender is dropped from the list rather than
+        // stalling the match (CLAUDE.md §12).
+        ctx.state.combat.awaitingDefenders = ctx.state.combat.awaitingDefenders.filter((id) =>
+          isAlive(ctx.state, id),
+        );
+        if (ctx.state.combat.awaitingDefenders.length > 0) return;
+        finalizeBlockers(ctx);
+        break;
 
       case 'turn_start':
         setPhase(ctx, 'draw');
