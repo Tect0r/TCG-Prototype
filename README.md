@@ -3,10 +3,14 @@
 A standalone, browser-based card-game prototype for testing mechanics, cards and
 balance before the card game is integrated into a larger MMO.
 
-**Current milestone: Phase 3 — complete.** The deck builder (Phase 1), the
-deterministic headless rules engine (Phase 2A), online 1v1 (Phase 2B) and the
-two-to-four-player free-for-all (Phase 3) all work. The balance simulator is not
-started.
+**Current milestone: Phase 4 — complete.** The deck builder (Phase 1), the
+deterministic headless rules engine (Phase 2A), online 1v1 (Phase 2B), the
+two-to-four-player free-for-all (Phase 3) and the local balance laboratory
+(Phase 4) all work.
+
+The laboratory produces reproducible evidence about cards. It does **not** prove
+that anything is balanced, and it is not built to: it runs matches with
+heuristic pilots, records what happened, and flags what a human should look at.
 
 Phase-by-phase progress is in
 [docs/project-status.md](docs/project-status.md); everything still undecided is
@@ -61,20 +65,22 @@ npm run demo:match -- seed  # same match every time, for a given seed
 
 ## Scripts
 
-| Command                       | What it does                                 |
-| ----------------------------- | -------------------------------------------- |
-| `npm run dev`                 | Web client with hot reload on port 5173      |
-| `npm run dev:server`          | Authoritative match server on port 8787      |
-| `npm run demo:match`          | Play a scripted match, print its event log   |
-| `npm run build`               | Production build into `apps/web-client/dist` |
-| `npm run preview`             | Serve the production build locally           |
-| `npm test`                    | Run every test once                          |
-| `npm run test:watch`          | Watch mode                                   |
-| `npm run typecheck`           | Strict TypeScript check across all packages  |
-| `npm run lint`                | ESLint                                       |
-| `npm run format`              | Prettier, writing changes                    |
-| `npm run verify`              | typecheck + lint + test + build              |
-| `npm run gen:placeholder-art` | Regenerate the placeholder PNGs in `assets/` |
+| Command                       | What it does                                  |
+| ----------------------------- | --------------------------------------------- |
+| `npm run dev`                 | Web client with hot reload on port 5173       |
+| `npm run dev:server`          | Authoritative match server on port 8787       |
+| `npm run demo:match`          | Play a scripted match, print its event log    |
+| `npm run simulate`            | Run a simulator experiment from a config      |
+| `npm run bench`               | Benchmark the simulator at 1, 2 and 4 workers |
+| `npm run build`               | Production build into `apps/web-client/dist`  |
+| `npm run preview`             | Serve the production build locally            |
+| `npm test`                    | Run every test once                           |
+| `npm run test:watch`          | Watch mode                                    |
+| `npm run typecheck`           | Strict TypeScript check across all packages   |
+| `npm run lint`                | ESLint                                        |
+| `npm run format`              | Prettier, writing changes                     |
+| `npm run verify`              | typecheck + lint + test + build               |
+| `npm run gen:placeholder-art` | Regenerate the placeholder PNGs in `assets/`  |
 
 ## What the deck builder does
 
@@ -107,18 +113,72 @@ npm run demo:match -- seed  # same match every time, for a given seed
 - Actions carry a client-generated ID, so retrying after a reconnect can never
   play a card twice.
 
+## The balance laboratory
+
+Everything below runs locally, with no browser and no server. It imports the
+same rules engine, card database and deck format that human matches use.
+
+```bash
+npm run simulate -- --config experiments/smoke.json                # ~12 matches
+npm run simulate -- --config experiments/batch.json --workers 8    # a real batch
+npm run simulate -- --config experiments/abuse-search.json         # evolutionary search
+npm run simulate -- --config experiments/replacement.json          # controlled substitution
+npm run simulate -- --config experiments/candidate-vs-baseline.json
+```
+
+Other flags: `--output <dir>` to place the experiment directory, `--resume` to
+continue an interrupted run, `--quiet` to suppress progress, `--help`.
+
+Each run writes a directory described in
+[ADR 0012](docs/architecture/0012-experiment-storage-and-checkpointing.md):
+`matches.jsonl` is the raw, lossless output, and every number in `summary.json`
+and `report.md` is recomputable from it.
+
+**Four pilots** — `random_legal`, `aggressive`, `defensive`, `value` — play using
+only the redacted view and the legal actions a human client would receive
+([ADR 0009](docs/architecture/0009-bot-information-boundary.md)). Their weights
+are named, serializable and overridable per experiment.
+
+**Reproducibility** is structural, not aspirational: seeds are hashes of a
+readable derivation path, so the same config produces byte-identical records
+whatever the worker count
+([ADR 0010](docs/architecture/0010-seed-derivation-and-reproducibility.md)).
+Paired comparisons — baseline versus candidate, and card replacement — play the
+_same_ games in both arms.
+
+**What it reports** is review guidance with evidence attached: every flag is
+`review_recommended`, `possible_interaction`, `insufficient_data` or
+`run_quality`, and carries a reason code, the numbers it was computed from, a
+sample size and an uncertainty interval. There is deliberately no "overpowered"
+and no "balanced". A finding below the configured minimum sample is downgraded to
+`insufficient_data` rather than dropped, so "we do not know" stays visible.
+
+Measured on this machine (`npm run bench`, 120 matches, 6 generated decks):
+
+| Workers | Matches/s | Actions/s | Peak heap | Wall clock |
+| ------- | --------- | --------- | --------- | ---------- |
+| 1       | 3.33      | 419       | 123 MB    | 36.0 s     |
+| 2       | 4.30      | 541       | 51 MB     | 27.9 s     |
+| 4       | 8.16      | 1028      | 51 MB     | 14.7 s     |
+
+2.45× at four workers, with results identical across all three — the benchmark
+asserts that rather than reporting it.
+
 ## Repository layout
 
 ```text
 apps/
   web-client/           Deck builder and match UI (React + Vite)
   multiplayer-server/    Authoritative 1v1 server (Node + ws)
+  simulator/            Headless experiments, deck search, balance analysis
 packages/
   shared/               Result type, structured diagnostics, ID generation
   card-data/            Card schemas, structured effects, loader, query, artwork
   deck/                 Deck schema, migrations, legality, persistence, I/O
   rules-engine/         Deterministic match state, effects, combat, views
   protocol/             Versioned client/server message schemas
+  bot-interface/        Pilot contract, heuristics, the four built-in pilots
+experiments/            Example experiment configurations
 assets/
   card-art/             Optional card artwork, discovered by card ID
   defaults/             Fallback card image
@@ -136,15 +196,13 @@ Dependencies flow one way:
 web-client ─┬─> protocol ─> rules-engine ─> card-data ─> shared
             └─> deck ──────────────────────^
 multiplayer-server ─> protocol, deck, rules-engine, card-data, shared
+simulator ─> bot-interface ─> rules-engine, card-data
+          └─> deck, rules-engine, card-data, shared
 ```
 
 `card-data` never imports the UI, the server or the engine, and an ESLint rule
-fails the build if it tries.
-
-### Not yet created
-
-`packages/bot-interface` and `apps/simulator` belong to Phase 4. They are
-deliberately absent rather than present as empty stubs.
+fails the build if it tries. `rules-engine` does not import `bot-interface`, and
+the simulator imports neither the web client nor the multiplayer server.
 
 ## Adding card artwork
 

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "kind": "batch",
+  "id": "batch",
+  "label": "Round-robin batch — ten generated decks across all four pilots",
+  "seed": "batch-2026-08",
+  "output": "results",
+  "playerCount": 2,
+  "pilots": [
+    { "id": "random_legal" },
+    { "id": "aggressive" },
+    { "id": "defensive" },
+    { "id": "value" }
+  ],
+  "pilotPairing": "mirror",
+  "environment": {
+    "id": "prototype_core",
+    "label": "Bundled prototype set at the default rules configuration"
+  },
+  "decks": {
+    "kind": "generated",
+    "count": 10,
+    "generator": {
+      "minUnits": 12,
+      "curve": { "cheap": 0.4, "mid": 0.4, "expensive": 0.2 }
+    }
+  },
+  "schedule": "round_robin",
+  "gamesPerPairing": 2,
+  "mirrorSeats": true,
+  "limits": { "maxTurns": 150 },
+  "retention": { "replaySampleRate": 50 },
+  "analysis": {
+    "minMatchesPerCard": 30,
+    "minPairSupport": 20,
+    "minMatchesPerDeck": 20,
+    "confidence": 0.95
+  },
+  "workers": 4
+}

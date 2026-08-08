@@ -243,6 +243,19 @@ export function advance(ctx: MatchContext): void {
     if (ctx.state.pendingChoice !== null) return;
     if (ctx.state.status === 'waiting_for_choice') ctx.state.status = 'playing';
 
+    // The active seat can be eliminated in the middle of its own turn: an
+    // empty-deck draw, a concession, a timeout, or an effect that kills its
+    // controller. The circle skips it immediately rather than stalling on a turn
+    // nobody is left to take (CLAUDE.md §12). With two seats the match is
+    // already over by the time this is reached, so it only ever fires in a
+    // free-for-all.
+    if (!isAlive(ctx.state, ctx.state.activePlayerId)) {
+      const heir = nextLivingPlayer(ctx.state, ctx.state.activePlayerId);
+      if (heir === null) return;
+      beginTurn(ctx, heir, ctx.state.turn + 1);
+      continue;
+    }
+
     switch (ctx.state.phase) {
       case 'setup':
       case 'mulligan':

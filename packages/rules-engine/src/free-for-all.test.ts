@@ -139,6 +139,77 @@ describe('2. stable circular turns, skipping eliminated seats', () => {
     expect(state.activePlayerId).toBe(order[2]);
     expect(state.seatOrder).toHaveLength(4);
   });
+
+  /**
+   * Regression, found by the Phase 4 pilots. Every earlier test eliminated a
+   * seat that was *not* taking its turn, so nothing noticed that eliminating the
+   * active player left the match parked on a turn nobody could take: no seat had
+   * a legal action and the match could never end.
+   */
+  it('hands the turn on when the active player is eliminated mid-turn', () => {
+    let state = keepAllHands(startTable(3));
+    const active = state.activePlayerId;
+    const expected = clockwiseFrom(state, active)[0] as PlayerId;
+
+    state = apply(state, { type: 'concede', playerId: active });
+
+    expect(state.status).not.toBe('complete');
+    expect(state.activePlayerId).toBe(expected);
+    expect(legalActions(state, expected, testContext()).canPassPhase).toBe(true);
+  });
+
+  it('hands the turn on when the active player draws from an empty deck', () => {
+    let state = keepAllHands(startTable(3));
+    const active = state.activePlayerId;
+    const expected = clockwiseFrom(state, active)[0] as PlayerId;
+
+    // Empty the deck of whoever is about to draw, then run their turn out.
+    const drained = structuredClone(state);
+    const player = drained.players[active];
+    if (player) {
+      player.deck = [];
+      player.skipNextDraw = false;
+    }
+    state = drained;
+
+    state = apply(state, { type: 'pass_phase', playerId: active });
+    state = apply(state, { type: 'declare_attackers', playerId: active, attacks: [] });
+    state = apply(state, { type: 'pass_phase', playerId: active });
+
+    expect(state.players[active]?.lossReason).toBe('empty_deck');
+    expect(state.status).not.toBe('complete');
+    expect(livingPlayers(state)).toHaveLength(2);
+    // Somebody can act: the match is not stranded on the dead seat's turn.
+    const actionable = livingPlayers(state).filter((playerId) => {
+      const legal = legalActions(state, playerId, testContext());
+      return legal.canPassPhase || legal.attacking !== null || legal.blocking !== null;
+    });
+    expect(actionable.length).toBeGreaterThan(0);
+    expect(state.activePlayerId).toBe(expected);
+  });
+
+  it('releases a combat whose last awaited defender concedes', () => {
+    let state = keepAllHands(startTable(3));
+    const attacker = state.activePlayerId;
+    state = deployUnit(state, attacker, 'prototype_scout', { summoningSick: false }).state;
+    const unit = state.players[attacker]?.units.find((id) => id !== null) as string;
+    const defender = clockwiseFrom(state, attacker)[0] as PlayerId;
+
+    state = toDeclareAttackers(state);
+    state = apply(state, {
+      type: 'declare_attackers',
+      playerId: attacker,
+      attacks: [{ attackerInstanceId: unit, defenderPlayerId: defender }],
+    });
+    expect(state.combat.awaitingDefenders).toEqual([defender]);
+
+    state = apply(state, { type: 'concede', playerId: defender });
+
+    // Combat moved on rather than waiting forever for a seat that has left.
+    expect(state.combat.awaitingDefenders).toHaveLength(0);
+    expect(state.phase).not.toBe('assign_blockers');
+    expect(state.status).not.toBe('complete');
+  });
 });
 
 /* ------------------------------------------------------- 3. splitting attacks */

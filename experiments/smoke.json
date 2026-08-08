@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "batch",
+  "id": "smoke",
+  "label": "Smoke test — four generated decks, one pilot, a handful of games",
+  "seed": "smoke-2026-08",
+  "output": "results",
+  "playerCount": 2,
+  "pilots": [{ "id": "value" }],
+  "pilotPairing": "mirror",
+  "environment": {
+    "id": "prototype_core",
+    "label": "Bundled prototype set at the default rules configuration"
+  },
+  "decks": {
+    "kind": "generated",
+    "count": 4,
+    "generator": { "minUnits": 10 }
+  },
+  "schedule": "round_robin",
+  "gamesPerPairing": 1,
+  "mirrorSeats": true,
+  "retention": { "replaySampleRate": 4 },
+  "workers": 1
+}

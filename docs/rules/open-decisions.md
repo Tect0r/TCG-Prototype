@@ -260,3 +260,37 @@ Still provisional: the phase list itself. Nothing so far suggests it is wrong.
 `768 × 1024 px` PNG, per the spec, is what the placeholder generator emits and
 what the card frame reserves space for. Marked "unless implementation testing
 exposes a better choice" — nothing so far suggests it should change.
+
+---
+
+## Simulator analysis thresholds
+
+**Not game rules.** Nothing in this section changes how a match plays. These are
+the numbers the Phase 4 balance analyser uses to decide when to ask a human to
+look at something, and they are listed here so they are not mistaken for
+confirmed values of anything.
+
+All of them live in one validated block (`analysisSettings` in
+`apps/simulator/src/config.ts`), are written into every experiment's
+`config.json`, and are overridable per experiment.
+
+| Setting                  | Provisional default | What it gates                                                |
+| ------------------------ | ------------------- | ------------------------------------------------------------ |
+| `minMatchesPerCard`      | 30                  | Below this, a card is reported `insufficient_data`           |
+| `minPairSupport`         | 20                  | Below this, a card pair is not reported at all               |
+| `minMatchesPerDeck`      | 20                  | Below this, a deck or cluster win rate is indicative only    |
+| `confidence`             | 0.95                | Every interval the analyser prints                           |
+| `autoIncludeWinRateLift` | 0.08                | Inclusion lift that suggests a broad auto-include            |
+| `crossClusterShare`      | 0.75                | Share of clusters a card must beat to count as cross-cluster |
+| `replacementImpact`      | 0.06                | Controlled substitution impact worth reviewing               |
+| `polarizationThreshold`  | 0.85                | Matchup win rate called polarised                            |
+| `deadHandShare`          | 0.5                 | Share of drawn copies dead before an inclusion looks wrong   |
+| `abnormalShare`          | 0.02                | Abnormal terminations above which the run is suspect         |
+
+These are guesses. They were chosen to be legible rather than tuned, and nobody
+has run enough matches against a real card pool to say whether any of them is
+right — that is **Q14** in [open-questions.md](../open-questions.md). The
+analyser never converts a threshold into a verdict: it produces
+`review_recommended`, `possible_interaction`, `insufficient_data` or
+`run_quality`, always with the evidence, the sample size and the interval
+attached, so the number can be argued with.

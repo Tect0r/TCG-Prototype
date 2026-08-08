@@ -12,11 +12,11 @@ The application should grow in this order:
 4. Local, headless AI simulations and card-balance analysis
 5. Optional analysis of pseudonymous real-player match data
 
-Phases 1, 2A, and 2B are complete: the deck builder, deterministic headless rules engine, and authoritative online 1v1 all work. The active implementation milestone is now **Phase 3: online free-for-all for two to four players**. Preserve all working behavior, protocol validation, replay determinism, hidden-information guarantees, and saved-data compatibility while extending the project.
+Phases 1–3 are complete: the deck builder, deterministic headless rules engine, authoritative online matches, and two-to-four-player free-for-all all work. The active implementation milestone is now **Phase 4: local headless simulation, automated deck search, and card-balance analysis**. Preserve all working behavior, protocol validation, replay determinism, hidden-information guarantees, and saved-data compatibility while extending the project.
 
 ## 2. Core design principles
 
-- The server will eventually be authoritative. Clients request actions; the server validates and resolves them.
+- The server is authoritative for online matches. Clients request actions; the server validates and resolves them.
 - All game rules must live in a shared, deterministic, headless rules-engine package—not in the UI, network layer, or animations.
 - Card rules are structured data. The game must never interpret human-readable effect text to determine behavior.
 - Human-readable card text is presentation only and should preferably be generated from structured effects where practical.
@@ -28,19 +28,19 @@ Phases 1, 2A, and 2B are complete: the deck builder, deterministic headless rule
 
 ## 3. Recommended technology and repository structure
 
-Use a TypeScript monorepo. Prefer a stable, mainstream toolchain such as pnpm workspaces with React and Vite for the client, Node.js for server-side applications, Zod for runtime schema validation, and Vitest for tests.
+Use the existing npm-workspaces TypeScript monorepo with React and Vite for the client, Node.js for server-side applications, Zod for runtime schema validation, and Vitest for tests.
 
 Suggested structure:
 
 ```text
 apps/
-  web-client/             # Deck builder now; match UI later
-  multiplayer-server/     # Later: authoritative online matches
-  simulator/              # Later: local headless simulations
+  web-client/             # Deck builder and match UI
+  multiplayer-server/     # Authoritative online matches
+  simulator/              # Local headless simulations, experiments, reports
 packages/
   card-data/              # Card definitions, schemas, loaders, validation
-  rules-engine/           # Later: deterministic game state and rules
-  bot-interface/          # Later: common interface for AI agents
+  rules-engine/           # Deterministic game state and rules
+  bot-interface/          # Pilot policies and common bot contracts
   shared/                 # Small genuinely shared types/utilities only
 assets/
   card-art/               # Optional card artwork
@@ -717,39 +717,359 @@ Phase 3 is complete when:
 
 ## 13. Local simulation and balance laboratory
 
-The simulator must import the shared rules engine directly. It must not use browsers, rendering, WebSockets, or the multiplayer server. It should run many matches in memory, use seeded randomness, and parallelize safely across CPU workers.
+Phase 4 builds a local balance laboratory on the completed engine. It is not a fun tester and must not claim to prove that a game or card is balanced. Its job is to produce reproducible evidence, discover abusive combinations, compare candidate card pools or rules, and show why a card or interaction deserves human review.
 
-Separate three responsibilities:
+### 13.1 Scope and boundaries
 
-1. **Pilot AI:** selects legal actions while playing a supplied deck.
-2. **Deck search:** generates, mutates, and selects decks to discover strong combinations and counters.
-3. **Balance analyzer:** compares environments and diagnoses suspicious cards/interactions.
+- Import `@tcg/rules-engine` directly and call `legalActions`/`applyAction` in memory.
+- Never simulate through React, WebSockets, the multiplayer server, animation, wall-clock timers, or a duplicated rules implementation.
+- Phase 4 experiments run 1v1 first. All formats and records must carry `playerCount`, and bot contracts must not hard-code one opponent, so 3–4-player analysis can be added later without a redesign.
+- Use legal, server-validatable decks and the same card database, deck format, rules configuration, and migrations as human matches.
+- Do not add machine learning in Phase 4. Use transparent heuristic pilots and evolutionary deck search. Preserve data that could support later learning.
+- Raw observations and configuration are primary outputs. Scores, flags, and written interpretations are derived outputs and must link back to their evidence.
+- Do not silently rebalance cards, edit card data, or select a “best” patch. The analyzer recommends investigation; a human changes the game.
 
-Start later with heuristic pilots such as random-legal, aggressive, defensive, and value-oriented agents. Evolutionary deck search is likely more useful than machine learning initially. Learning through self-play can be added only after stable rules and reliable logs exist.
+Keep these responsibilities separate:
 
-The goal is a healthy plural meta: multiple viable strategies with soft counter relationships, no single deck that dominates almost everything, and no mandatory narrow silver-bullet counter.
+1. **Pilot AI:** plays a supplied legal deck.
+2. **Match runner:** executes one deterministic headless match and records telemetry.
+3. **Batch runner:** schedules many independent matches and aggregates results.
+4. **Deck search:** generates and mutates legal decks to hunt for strong combinations and counters.
+5. **Balance analyzer:** compares environments and diagnoses suspicious cards/interactions.
+6. **Report layer:** writes machine-readable results and a concise human-readable summary.
 
-Analysis must focus primarily on cards and interactions, not fixed deck win rates, because players create their own decks.
+### 13.2 Required package structure
 
-Track and compare cards within relevant cost, role, power-class, strategy, and dependency groups. Useful metrics include:
+```text
+packages/
+  bot-interface/
+    src/types.ts             # BotPolicy, observation, decision and metadata
+    src/random-legal.ts
+    src/aggressive.ts
+    src/defensive.ts
+    src/value.ts
+    src/scoring.ts           # Shared transparent action/board scoring helpers
+apps/
+  simulator/
+    src/config.ts            # Runtime-validated experiment schemas
+    src/seed.ts              # Stable hierarchical seed derivation
+    src/run-match.ts
+    src/run-batch.ts
+    src/workers/             # Optional worker-thread execution
+    src/telemetry/
+    src/deck-search/
+    src/analysis/
+    src/reporting/
+    src/cli.ts
+```
 
-- Inclusion rate in generated deck populations
-- Draw and play rate
-- Dead-hand rate
-- Energy efficiency
-- Marginal performance when replacing the closest alternative in otherwise similar decks
-- Archetype/strategy spread
-- Matchup impact and polarization
-- Synergy dependence
-- Counter availability and counter breadth
-- Power spikes after drawing or playing the card
-- Displacement of older or comparable cards
-- Infinite loops, soft locks, abnormal board states, and excessive match length
-- First-player advantage
+`bot-interface` may depend on public rules-engine/card/deck types. It must not receive private state it would not have in a real match. `rules-engine` must not depend on bots or the simulator. `simulator` may depend on bots, rules, decks, and card data, but never on the web client or multiplayer server.
 
-For a new card or rules change, support reproducible baseline-versus-candidate experiments using the same seeds, pilot populations, and deck-search settings where possible.
+### 13.3 Bot contract and observations
 
-High-impact cards are not inherently unbalanced. Evaluate impact relative to energy cost, role, setup requirements, strategic dependency, vulnerability, and counterplay. A centerpiece card should not be compared directly with a minor token.
+Each pilot receives only:
+
+- Its authoritative `PlayerView`
+- Its structured `LegalActions`
+- Public match history/events as visible to that seat
+- Its own immutable bot configuration
+- A bot-specific seeded RNG stream
+
+It returns one valid engine `Action` plus optional structured decision diagnostics. It must never inspect another hand, deck order, hidden choice, full `MatchState`, or engine RNG state. The match runner validates every returned action against the current legal-action description and then submits it through `applyAction`; a bot has no mutation access.
+
+The contract must support asynchronous implementations later but the built-in bots should remain synchronous and fast. Given the same observation, bot version, config, and seed, a pilot must return the same decision.
+
+Required pilots:
+
+- **Random legal:** uniformly or explicitly weighted selection among legal action families; deterministic tie-breaking and RNG. This is a baseline, not a competent player.
+- **Aggressive:** values immediate player damage, efficient attackers, tempo, low-cost deployment, and closing the match; deprioritizes long-term defense.
+- **Defensive:** values survival, blockers, removal, healing, board stability, and preventing lethal damage.
+- **Value:** values energy use, favorable trades, card advantage, persistent board/relic value, and avoiding dead resources.
+
+All heuristic weights must be named, serializable, runtime-validated, exported in result metadata, and overridable by experiment config. Avoid card-ID-specific rules. A generic tag/role/keyword-aware heuristic is allowed when its behavior is documented. Decisions with equal scores use stable ordering plus the bot RNG, never JavaScript iteration accident.
+
+Bots must handle every current legal decision surface:
+
+- Mulligan/keep
+- Playing units, spells, and relics with slot selection
+- Activated abilities
+- Passing Main Phases
+- Declaring zero or more attackers and selecting defenders
+- Assigning blockers
+- Every pending choice type and ordering choice
+- Concession only when explicitly enabled by experiment policy
+
+Add a maximum decision budget and a deterministic fallback to random-legal if a pilot throws, times out in a future async implementation, or produces an illegal action. Record the failure; never hide it as an ordinary decision.
+
+### 13.4 Deterministic seed hierarchy
+
+Reproducibility must be independent of worker count, scheduling order, machine speed, and result arrival order. Derive named child seeds with a stable documented hash/PRNG algorithm:
+
+```text
+experiment seed
+  -> environment seed
+  -> matchup/deck-pair seed
+  -> game index seed
+       -> match RNG seed
+       -> seat assignment seed
+       -> pilot seed per seat
+```
+
+At minimum, the game seed must derive from immutable values equivalent to:
+
+```text
+experimentId + environmentId + deckPairId + gameIndex
+```
+
+Do not use worker IDs, timestamps, array completion order, `Math.random()`, or process IDs. Store the root seed, derivation version, derived match seed, pilot seeds, seat assignment, deck hashes, rules version, card-pool hash, and software commit when available in every result.
+
+Paired comparisons must use common random numbers: baseline and candidate runs share the same derived game/seat/pilot seeds wherever the changed environment still permits the same experimental unit. This reduces noise and makes regressions reproducible.
+
+### 13.5 Single-match runner
+
+The runner accepts validated decks, pilots, card database/environment, rules config, and seed bundle. It creates a match, repeatedly requests decisions from the correct pilot, and stops on a normal result or a structured safety termination.
+
+Required safeguards:
+
+- Existing engine resolution-step and repeated-state safeguards remain authoritative.
+- Configurable maximum turns, accepted actions, and decisions per match.
+- Detect no-progress patterns using a documented public-state/action signature; never declare a loop solely because two full states match when hidden RNG/deck state differs.
+- Classify termination as `victory`, `draw`, `engine_error`, `pilot_error`, `illegal_bot_action`, `turn_limit`, `action_limit`, or `no_progress`.
+- Preserve a replay bundle for every abnormal match and for a configurable sample of normal matches.
+- A single broken match must not crash or invalidate an entire batch unless fail-fast is configured.
+
+The same seed, inputs, bot versions, and software version must reproduce the same final result, action log, event log, and telemetry.
+
+### 13.6 Telemetry model
+
+Record events during simulation rather than reconstructing them only from the final board. Use permanent card definition IDs for analysis and match-local instance IDs only for causal tracing.
+
+Every match summary must include:
+
+- Experiment/environment/match identifiers and schema versions
+- Deck IDs/hashes and complete decklists
+- Pilot IDs, versions, configs, seats, and colors/Commanders
+- Seeds and derivation version
+- Winner/result/termination reason
+- Starting player and seat order
+- Turns, actions, decisions, and resolution steps
+- Starting and ending health, damage dealt/taken, healing, cards drawn/played/discarded, energy spent/unspent, units/relics deployed, defeats, and choice counts per player
+- Any safeguard, error, fallback, or diagnostic
+
+Per card definition and per copy, track where applicable:
+
+- Included copies and opening-hand presence
+- Mulliganed away/kept
+- Draw turn and time spent in hand
+- Play opportunities while affordable/legal
+- Times played, activated, discarded, sacrificed, defeated, removed, or still in hand at termination
+- Energy spent and immediate/turn-later measurable output
+- Player/unit damage, healing, cards drawn/discarded, units/tokens created or removed, and triggered-effect counts attributable through source/effect provenance
+- Board survival duration and attacks/blocks participated in
+- State immediately before and after play using compact derived features, so swing measures are inspectable
+
+“Dead-hand” must have explicit components instead of one vague number:
+
+- **Never affordable:** never had enough energy after draw.
+- **No legal window:** requirements/targets/slots never made it legal.
+- **Legal but unchosen:** at least one legal opportunity existed but the pilot chose another action until match end/discard.
+- **Unseen:** remained in deck and must not count as dead in hand.
+
+Do not attribute victory to a card merely because it was drawn or present. Clearly label simple correlations as correlations.
+
+### 13.7 Batch runner and parallel execution
+
+Provide a CLI and programmatic API capable of:
+
+- Round-robin or sampled deck-pair schedules
+- Mirrored seat assignments for each deck/pilot pairing
+- Multiple pilots or pilot mixtures
+- Configurable games per pairing
+- Sequential and worker-thread execution
+- Progress, elapsed time, throughput, error counts, and estimated completion
+- Resuming an interrupted experiment without rerunning completed deterministic match IDs
+- Streaming results to disk so large experiments do not remain entirely in memory
+
+Results must be identical between `workers: 1` and `workers: N` after sorting by stable match ID. Aggregate floating-point statistics in deterministic match-ID order. Worker messages must contain plain validated data, not closures or mutable shared state.
+
+Start with JSON/JSONL as the canonical lossless format. Export flat CSV tables for common inspection (`matches`, `decks`, `card_usage`, `card_pairs`, `errors`). A future SQLite/columnar sink may be added behind an interface only when volume justifies it.
+
+### 13.8 Legal deck generation
+
+Deck generation uses `validateDeck` as the final authority and must respect Commander identity, deck size, unique/copy limits, and card availability. Never repair an illegal deck silently; return structured generation diagnostics.
+
+Support:
+
+- Seed decks supplied by the user
+- Random legal decks with configurable Commander and role/cost/tag weighting
+- Stratified initial populations so generation does not collapse immediately into one obvious card cluster
+- A stable canonical deck hash independent of card entry order
+- Deduplication by canonical hash
+
+Tokens and Commanders outside the main deck are never inserted as ordinary deck cards unless the deck format explicitly permits it.
+
+### 13.9 Evolutionary abuse search
+
+The search system exists to discover combinations, not to declare a permanent best deck. It should:
+
+1. Create or accept a diverse legal population.
+2. Evaluate decks against a rotating, archived opponent field and multiple pilots/seats.
+3. Select a mixture of strong, novel, and counter-performing candidates.
+4. Mutate them through legal card replacement and quantity changes.
+5. Optionally cross over compatible decks only if legality and useful diversity can be maintained.
+6. Re-evaluate elites on fresh deterministic seeds to reduce overfitting.
+7. Preserve discovered champions, counters, exploit candidates, and lineage.
+
+Fitness must be multi-objective. It may include performance evidence, opponent breadth, robustness across pilots/seats, novelty, and uncertainty. Do not optimize a single raw win percentage against a fixed weak field. Penalize or separately flag abnormal termination exploitation, extreme match stalling, and dependence on pilot failures.
+
+Maintain a hall of fame/opponent archive across generations so the population cannot forget older strategies. Track card-frequency entropy, deck-distance diversity, Commander diversity, and strategic feature clusters. If diversity collapses, report it; do not mask it by injecting unexplained randomness.
+
+Every mutation records parent hash, changed card counts, generation, mutation seed, legality result, and evaluation IDs. Search can be paused and resumed from a versioned checkpoint.
+
+### 13.10 Replacement and contribution experiments
+
+Card-level diagnosis must rely heavily on controlled substitutions:
+
+- Identify comparison candidates by shared cost, type, role, tags, color legality, power class, and optionally effect features.
+- Create otherwise identical legal deck variants replacing one or more copies of card A with candidate B.
+- Run paired mirrored matches against the same opponent population with common seeds and pilots.
+- Report the change with sample size, uncertainty interval, effect size, and contextual breakdowns.
+- Never claim a causal effect when replacement changes legality, strategy identity, curve, or required synergy without explicitly reporting that confound.
+
+For build-around and centerpiece cards, compare both removal/replacement from decks designed to support them and insertion into decks without support. High inclusion inside one coherent synergy cluster is not inherently suspicious; broad improvement across unrelated clusters is.
+
+### 13.11 Balance analysis
+
+The target is a healthy plural meta: several viable strategic clusters connected by soft counter relationships, no single strategy that performs strongly across almost everything, and no mandatory narrow silver-bullet counter. Individual exact deck win rates are experimental samples, not the product’s balance model.
+
+Group decks by interpretable features such as Commander, color identity, cost curve, card/tag/role frequencies, token/removal/healing density, and play-pattern telemetry. Start with deterministic feature-based clustering or similarity grouping; do not introduce opaque ML solely to name archetypes.
+
+Required analysis views:
+
+- Card inclusion, draw, keep, play, activation, dead-hand, survival, and removal rates
+- Contextual efficiency relative to cost, type, role, power class, dependency, and vulnerability
+- Replacement impact with uncertainty
+- Card-pair and small-combination lift, with minimum sample/support requirements
+- Strategic-cluster prevalence, performance range, and matchup matrix
+- Counter breadth: number and diversity of practical answers/strategies
+- Matchup polarization and non-games
+- Starting-seat/player advantage and pilot-style sensitivity
+- Match length distribution and stall/loop/error rates
+- Displacement: whether a candidate consistently removes comparable old cards from successful populations
+- Robustness across seeds, opponent archives, pilot mixtures, and reasonable heuristic-weight perturbations
+
+Do not compare a 1/1 token directly with a centerpiece or Commander. Evaluate impact relative to cost, role, setup, dependency, vulnerability, available response windows, and intended power class. A powerful build-around is suspicious when it is strong without its setup, makes most alternatives irrelevant, or has no broad practical counter—not merely because it produces large numbers.
+
+All flags require a reason code, evidence references, sample size, and uncertainty. Initial thresholds are configurable provisional analysis settings, not game rules. Prefer labels such as `review_recommended`, `insufficient_data`, and `possible_interaction` over `overpowered` or `balanced`.
+
+At minimum, flag:
+
+- Broad cross-cluster auto-inclusion
+- Large positive controlled replacement impact
+- Strong low-support card pairs/combinations
+- Lack of meaningful unfavorable contexts
+- Only one narrow counter family
+- Severe matchup polarization
+- Candidate-driven displacement of comparable cards or whole clusters
+- High legal-but-unchosen/dead-hand rates in intended contexts
+- Excessive sensitivity to seat, pilot, or one opponent field
+- Loops, soft locks, abnormal terminations, and excessive match duration
+
+### 13.12 Baseline-versus-candidate experiments
+
+An environment is a versioned bundle of card pool, card definitions, deck format, rules config, and optional ban/allow list. A comparison contains one immutable baseline and one candidate.
+
+The comparison workflow must:
+
+1. Validate and hash both environments.
+2. State exactly which cards/rules differ.
+3. Evaluate unchanged reference decks where legal.
+4. Re-run deck search in both environments so the candidate may create new strategies.
+5. Use paired seeds/pilots/seats for directly comparable runs.
+6. Separate “existing decks changed” from “new decks discovered.”
+7. Report cards/strategies gained, lost, displaced, or made newly viable.
+8. Preserve both raw datasets and the comparison configuration.
+
+Do not test a new card only by inserting it into existing decks; that misses novel abuse. Do not test only freshly optimized candidate decks against stale baseline decks; that biases the result in the other direction. Run both reference-population and independently searched-population comparisons.
+
+### 13.13 Reports and CLI
+
+Provide documented commands conceptually equivalent to:
+
+```bash
+npm run simulate -- --config experiments/smoke.json
+npm run simulate -- --config experiments/batch.json --workers 8
+npm run search:decks -- --config experiments/abuse-search.json
+npm run analyze:balance -- --baseline results/base --candidate results/candidate
+```
+
+Exact command names may follow repository conventions. Configuration files and every output must have runtime schemas and `schemaVersion` fields.
+
+Each experiment directory should contain:
+
+```text
+manifest.json
+config.json
+matches.jsonl
+decks.json
+card-usage.csv
+card-pairs.csv
+summary.json
+report.md
+replays/                 # abnormal plus sampled normal matches
+checkpoints/             # when deck search is used
+```
+
+`report.md` should lead with limitations, experiment scale, environment diff, and strongest evidence. It must distinguish observation, inference, and recommendation. Include compact tables; do not generate prose by pretending certainty.
+
+### 13.14 Performance targets
+
+First optimize correctness and useful telemetry, then measure. Establish a checked-in benchmark scenario and report matches/second, actions/second, peak memory, output size, and scaling at 1/2/4 workers. Do not impose a speculative hard speed threshold before profiling.
+
+The default large-run mode should avoid retaining full action/event logs for every normal match. Keep aggregates plus configurable sampling, while always preserving abnormal replays. A debug mode may retain everything.
+
+### 13.15 Required Phase 4 tests
+
+At minimum add automated coverage for:
+
+1. Every built-in pilot can finish complete matches across many fixed seeds without illegal actions.
+2. Every current action and pending-choice family is handled by each pilot or its explicit fallback.
+3. Bots cannot observe another player's hidden hand/deck/order or private choice.
+4. Identical match inputs reproduce byte-equivalent normalized results and replay logs.
+5. Changing worker count and scheduling order does not change sorted results or aggregates.
+6. Seat-mirrored schedules are generated correctly and expose a deliberately biased fixture.
+7. Match/action/turn/no-progress limits end pathological fixtures with the correct classification and replay.
+8. Pilot errors and illegal decisions are isolated, recorded, and deterministically recovered or terminated according to config.
+9. Telemetry correctly distinguishes unseen, never-affordable, never-legal, and legal-but-unchosen cards.
+10. Source/effect attribution survives tokens, triggers, sacrifice, removal, and continuous effects where attribution is defined.
+11. JSONL streaming, resume, deduplication, and corrupted/incomplete-tail recovery do not duplicate matches.
+12. Generated and mutated decks always pass normal deck validation; impossible configs fail with actionable diagnostics.
+13. Canonical deck hashes are stable across entry order and change when quantities/Commander change.
+14. Evolutionary search rediscovers a deliberately strong synthetic synergy and preserves a viable counter in its archive.
+15. Hall-of-fame evaluation prevents a synthetic population from forgetting an older counter strategy.
+16. Controlled replacement analysis detects a deliberately stronger fixture card and does not flag an equivalent fixture.
+17. Minimum-support and uncertainty rules suppress conclusions from tiny samples.
+18. Baseline-versus-candidate common-seed pairing is correct and environment diffs are complete.
+19. Report numbers reconcile exactly with raw records on a small fixture batch.
+20. Existing Phase 1–3 tests remain unchanged and pass.
+
+### 13.16 Phase 4 acceptance criteria
+
+Phase 4 is complete when:
+
+- A clean install can run a documented local smoke experiment with no browser or server.
+- Random, aggressive, defensive, and value pilots complete games using only redacted views and authoritative legal actions.
+- Identical configs reproduce identical normalized results across repeated runs and worker counts.
+- The batch runner streams, resumes, mirrors seats, parallelizes, and exports validated JSON/JSONL/CSV.
+- Card telemetry and attribution are tested and raw enough to independently verify derived metrics.
+- Legal deck generation and evolutionary search discover strong combinations without collapsing evaluation onto a fixed opponent or single pilot.
+- Controlled card-replacement tests and baseline-versus-candidate experiments work with common seeds and uncertainty reporting.
+- The analyzer reports card-, interaction-, and strategy-cluster evidence, not only fixed deck win rates.
+- Every automated warning carries evidence, context, sample size, uncertainty, and a non-definitive reason code.
+- Abnormal matches always produce reproducible diagnostics/replays and never silently contaminate ordinary statistics.
+- Performance has a repeatable benchmark and large runs do not retain unnecessary full logs.
+- `npm run verify` passes and Phase 1–3 behavior remains intact.
+- README, project status, experiment examples, schemas, and relevant ADRs document exactly how to reproduce the delivered results.
 
 ## 14. Real-player data, later
 
@@ -815,7 +1135,7 @@ Update `docs/open-questions.md`, `docs/rules/open-decisions.md`, schemas, migrat
 
 The following remain genuine game-design or playtest decisions:
 
-Do not block Phase 3 on these unless implementation reveals a structural dependency:
+Do not block Phase 4 on these unless implementation reveals a structural dependency:
 
 - Final starting Health, hand size, battlefield slots, relic limit, and energy curve
 - Whether exhausted units may block
@@ -833,20 +1153,22 @@ Do not block Phase 3 on these unless implementation reveals a structural depende
 
 When playtesting changes a provisional value, update the versioned rules configuration and affected tests. When a structural rule changes, update this document and add an architecture/rules decision record before implementation.
 
-## 18. Phase 3 implementation instruction
+## 18. Phase 4 implementation instruction
 
-Implement Phase 3 in bounded vertical slices. Before writing substantial code:
+Implement the complete Phase 4 scope in staged acceptance gates. Claude may continue through all gates automatically while the current gate's tests pass and no genuinely blocking design decision appears.
 
-1. Inspect the completed Phase 2 implementation and run `npm run verify` as the baseline.
-2. Update the decision documents for the confirmed answers in §17 and write ADRs for multiplayer state/choice handling and continuous effects.
-3. Add schema migrations and runtime validation for first-class player/source targets, structured activation costs, static abilities, stable seat order, ownership/control, and multi-defender combat.
-4. Refactor exact-two-player assumptions behind tested ordered-player helpers without changing existing 1v1 behavior.
-5. Build a headless three-player vertical slice: circular turns, one attacker choosing a defender, that defender blocking, elimination, and last-player victory.
-6. Expand the engine to split attacks, independent blocker submissions, four players, simultaneous triggers, cleanup semantics, redacted views, and deterministic replay.
-7. Stop and report engine results before changing networking or UI. All engine acceptance tests and existing Phase 2 tests must pass.
-8. Version and extend the protocol and lobby/server flow for two to four seats, reconnection, timeouts, and spectator views.
-9. Implement the smallest complete multiplayer UI consuming only authoritative player views and legal actions.
-10. Add all Phase 3 integration/UI tests, then run `npm run verify` for the whole monorepo.
-11. Update `README.md` and `docs/project-status.md`, and summarize exact run commands, migrations, test results, assumptions, and deliberate deferrals.
+1. Inspect the completed Phase 3 implementation and run `npm run verify` as the immutable baseline.
+2. Update `README.md` and `docs/project-status.md` to mark Phase 4 active. Write ADRs for bot information boundaries, seed derivation/reproducibility, telemetry provenance, and experiment storage/checkpointing.
+3. Create `packages/bot-interface` with the validated deterministic bot contract, random-legal pilot, decision diagnostics, and hidden-information tests.
+4. Create `apps/simulator` with validated config/result schemas, hierarchical seeds, a single-match runner, safeguards, replay bundles, and a smoke CLI.
+5. Add aggressive, defensive, and value pilots with documented serializable weights. Cover all current legal actions and choices; validate them across many fixed seeds.
+6. Add the streaming/resumable batch runner, mirrored schedules, deterministic worker-thread parallelism, progress reporting, JSONL/CSV sinks, and worker-count equivalence tests.
+7. Add card-instance/source telemetry, explicit dead-hand categories, aggregate reconciliation tests, and sampled/abnormal replay retention.
+8. Add legal random/stratified deck generation, canonical hashes, mutations, population diversity, checkpoints, and the evolutionary opponent archive.
+9. Add controlled replacement experiments, strategic feature grouping, card-pair/interaction analysis, uncertainty/support handling, and evidence-backed flags.
+10. Add complete baseline-versus-candidate comparison using both reference decks and independently searched populations with common seeds.
+11. Produce a human-readable `report.md`, raw machine-readable outputs, example smoke/batch/search/comparison configs, and reproducible CLI documentation.
+12. Run the synthetic acceptance fixtures, benchmark 1/2/4 workers, then run `npm run verify` for the whole monorepo.
+13. Update `docs/project-status.md`, open questions, README, and ADRs with delivered behavior, exact commands, test counts, benchmark results, assumptions, and deliberate deferrals.
 
-Do not replace unresolved game-design decisions with elaborate assumptions. Make uncertain values configurable, document them, and keep the implementation easy to revise after playtesting.
+Do not pause merely because balance thresholds are not yet known: make provisional analyzer thresholds explicit and configurable, retain the raw evidence, and label the output as review guidance. Stop only when continuing would require choosing an unresolved game rule, compromising determinism/information boundaries, or changing confirmed Phase 1–3 behavior.

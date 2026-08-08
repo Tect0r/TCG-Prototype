@@ -12,11 +12,11 @@ started, and what "done" means for each remaining phase.
 | 2A    | Deterministic rules engine     | **Complete**            |
 | 2B    | Online 1v1                     | **Complete**            |
 | 3     | 2–4 player free-for-all        | **Complete**            |
-| 4     | Headless simulator and balance | Not started             |
+| 4     | Headless simulator and balance | **Complete**            |
 | 5     | Pseudonymous real-player data  | Not started, contingent |
 
 **Verification for the whole monorepo:** `npm run verify` (typecheck → lint →
-test → build). Last run: **325 tests in 23 files, all passing**; typecheck,
+test → build). Last run: **544 tests in 35 files, all passing**; typecheck,
 ESLint, Prettier and the production build all clean.
 
 ---
@@ -241,20 +241,111 @@ as in Phase 2B; a larger table waits for the host to start it, because
 
 ---
 
-## Phase 4 — Simulator and balance laboratory — not started
+## Phase 4 — Simulator and balance laboratory — complete
 
-Three separate responsibilities (CLAUDE.md §13), to be built in this order:
+`packages/bot-interface` and `apps/simulator`. Everything here runs locally with
+no browser, no server, no database and no wall clock, against the same rules
+engine, card database, deck format and migrations that human matches use.
 
-1. **Pilot AI** — heuristic agents: random-legal, aggressive, defensive, value.
-2. **Deck search** — evolutionary generation and selection.
-3. **Balance analyzer** — baseline-vs-candidate experiments on shared seeds.
+### What was delivered
 
-`apps/simulator` will import the rules engine directly: no browser, no
-rendering, no WebSockets, no server. The engine side is ready — `createMatch`
-takes a seed string, generator state travels inside `MatchState`, and
-`enumerateActions` already gives a bot a finite legal action list. The scripted
-harness in `rules-engine/src/harness/` is the seed of a pilot, though it is
-deliberately dumb and belongs to the test suite, not to Phase 4.
+| Area                   | Where                                                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Pilot contract         | `bot-interface/src/types.ts`, `validate.ts`, `run-pilot.ts`                                                           |
+| Four pilots            | `random-legal.ts`, `aggressive.ts`, `defensive.ts`, `value.ts` + shared `scoring.ts`, `candidates.ts`, `heuristic.ts` |
+| Hierarchical seeds     | `simulator/src/seed.ts`, `hash.ts`                                                                                    |
+| Environments and diffs | `simulator/src/environment.ts`                                                                                        |
+| Single-match runner    | `simulator/src/run-match.ts`, `run-one.ts`                                                                            |
+| Telemetry              | `simulator/src/telemetry/`                                                                                            |
+| Schedules and batches  | `simulator/src/schedule.ts`, `run-batch.ts`, `workers/`                                                               |
+| Deck generation/search | `simulator/src/deck-search/`                                                                                          |
+| Analysis               | `simulator/src/analysis/`                                                                                             |
+| Reporting and CLI      | `simulator/src/reporting/`, `experiment.ts`, `cli.ts`, `benchmark.ts`                                                 |
+| Example configs        | `experiments/*.json`                                                                                                  |
+
+Four experiment kinds run end to end: `batch`, `replacement`, `search` and
+`comparison`.
+
+### Decisions recorded
+
+- [ADR 0009](architecture/0009-bot-information-boundary.md) — a pilot receives a
+  six-field observation containing the redacted `PlayerView` and the engine's
+  `LegalActions`, and nothing else. The boundary is a type, not a convention.
+- [ADR 0010](architecture/0010-seed-derivation-and-reproducibility.md) — seeds
+  are hashes of a readable derivation path; identity is content-addressed; paired
+  comparisons force common random numbers by _removing_ the differing term from
+  the path.
+- [ADR 0011](architecture/0011-telemetry-and-provenance.md) — telemetry is
+  collected from the event stream during the match and attributed through causal
+  source IDs; dead-hand has four distinct causes; raw records are the product.
+- [ADR 0012](architecture/0012-experiment-storage-and-checkpointing.md) — one
+  directory per experiment, JSONL streaming, resume by content-addressed match
+  ID, search checkpoints carrying the already-bred next population.
+
+### Verification
+
+`npm run verify` passes for the whole monorepo: **544 tests in 35 files**
+(baseline before Phase 4 was 325 in 23), typecheck, ESLint, Prettier and the
+production build all clean. Phase 1–3 tests are unmodified except for three
+added regression tests (below).
+
+New suites: `bot-interface/src/contract.test.ts` (23) and eleven simulator
+suites totalling 193 — `hash`, `seed`, `schedule`, `deck-generation`,
+`run-match`, `telemetry`, `run-batch`, `search`, `analysis`, `compare`,
+`experiment`.
+
+Benchmark (`npm run bench`, 120 matches over 6 generated decks):
+
+| Workers | Matches/s | Actions/s | Peak heap | Wall clock |
+| ------- | --------- | --------- | --------- | ---------- |
+| 1       | 3.33      | 419       | 123 MB    | 36.0 s     |
+| 2       | 4.30      | 541       | 51 MB     | 27.9 s     |
+| 4       | 8.16      | 1028      | 51 MB     | 14.7 s     |
+
+2.45× at four workers; results identical across all three worker counts, which
+the benchmark asserts rather than reports.
+
+### An engine bug Phase 4 found
+
+The new pilots play far more matches than the Phase 3 suites did, and they
+deadlocked the free-for-all: when the **active** seat was eliminated during its
+own turn — an empty-deck draw, a concession, a timeout, or an effect that killed
+its controller — `advance()` stalled on a turn nobody was left to take. Fixed in
+`flow.ts` by handing the turn to the next living seat, with `handleTermination`
+now advancing after its state-based checks. Three regression tests were added to
+`free-for-all.test.ts`. This only ever fired at three or four seats; a 1v1 is
+already over by that point.
+
+### Deliberate limitations, stated in every report
+
+- Heuristic pilots are not good players. A result describes what these bots did
+  with these decks under these rules, and nothing more.
+- No machine learning. Transparent heuristics and evolutionary deck search only,
+  per CLAUDE.md §13.1 — the telemetry is deliberately raw enough to support
+  learning later.
+- Experiments run 1v1. `playerCount` is carried through every schedule, record
+  and bot contract, and the runner already seats four, so 3–4-player analysis is
+  a configuration change rather than a redesign.
+- The analyser recommends investigation. It never edits card data, never picks a
+  "best" patch, and its flags are `review_recommended`, `possible_interaction`,
+  `insufficient_data` or `run_quality` — never "overpowered" or "balanced".
+- Card-pair analysis reports pairs only. Triples explode combinatorially and
+  cannot clear a support threshold worth having at these sample sizes, so they
+  are not attempted rather than reported badly.
+
+### Things worth knowing before extending it
+
+- **The bundled prototype set is not a balanced format.** `trench_guard` (1/5
+  guardian + armored) is close to unbreakable in a small pool, and matches in a
+  12-card test format are decided by decking out rather than by combat. Both
+  distorted early test fixtures before being understood.
+- **Statline buffs are pilot-fragile; cost reductions are not.** A bigger body at
+  the same price makes the value pilot _less_ willing to trade it, so a stat buff
+  can move a win rate in either direction. Fixtures that need a reliably strong
+  card change the cost.
+- Any module reachable from a worker thread must use erasable-only TypeScript
+  syntax — no parameter properties, no enums — because workers load TS through a
+  resolve hook rather than a build step.
 
 ---
 

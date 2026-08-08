@@ -143,8 +143,12 @@ function handleTermination(
   markLoss(ctx, playerId, reason);
   // Not just `concludeIfOver`: with three or more seats the match carries on, so
   // the loss still has to run the full check that performs elimination cleanup
-  // and hands the turn to the next living player (CLAUDE.md §12).
+  // (CLAUDE.md §12).
   runStateBasedChecks(ctx);
+  // …and then the match has to keep moving. Whoever just left may have been the
+  // active player, or the last defender a combat was waiting on; either way the
+  // remaining seats must not be stranded on a turn that can no longer be taken.
+  advance(ctx);
   return null;
 }
 

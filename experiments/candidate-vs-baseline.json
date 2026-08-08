@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "kind": "comparison",
+  "id": "candidate-vs-baseline",
+  "label": "Does making Scorch deal three damage instead of two change the game?",
+  "seed": "compare-2026-08",
+  "output": "results",
+  "playerCount": 2,
+  "pilots": [{ "id": "value" }, { "id": "aggressive" }],
+  "pilotPairing": "mirror",
+
+  "baseline": {
+    "id": "baseline",
+    "label": "Bundled prototype set, unchanged"
+  },
+
+  "candidate": {
+    "id": "candidate",
+    "label": "Scorch buffed from 2 damage to 3",
+    "cardOverrides": [
+      {
+        "schemaVersion": 2,
+        "id": "scorch",
+        "name": "Scorch",
+        "type": "spell",
+        "colorIdentity": ["red"],
+        "cost": 1,
+        "role": "removal",
+        "powerClass": "standard",
+        "tags": ["burn"],
+        "displayText": "Deal 3 damage to target unit.",
+        "effects": [
+          {
+            "type": "deal_damage",
+            "amount": 3,
+            "target": {
+              "kind": "entity",
+              "selector": { "zone": "battlefield", "controller": "any", "count": 1 }
+            }
+          }
+        ]
+      }
+    ]
+  },
+
+  "referenceDecks": { "kind": "generated", "count": 6, "generator": { "minUnits": 12 } },
+  "gamesPerPairing": 2,
+  "mirrorSeats": true,
+  "searchBothEnvironments": true,
+  "search": {
+    "populationSize": 8,
+    "generations": 2,
+    "eliteCount": 2,
+    "opponentsPerEvaluation": 3,
+    "gamesPerOpponent": 1,
+    "archiveSize": 10
+  },
+  "limits": { "maxTurns": 150 },
+  "retention": { "replaySampleRate": 0 },
+  "analysis": { "minMatchesPerCard": 20, "minPairSupport": 15, "minMatchesPerDeck": 10 },
+  "workers": 4
+}

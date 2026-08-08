@@ -6,3 +6,7 @@ coverage/
 .vite/
 .env
 .env.local
+
+# Simulator experiment output. Runs are reproducible from the config plus the
+# seed, so the artefacts belong to whoever ran them, not to the repository.
+results/

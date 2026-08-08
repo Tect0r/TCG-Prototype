@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "replacement",
+  "id": "replacement",
+  "label": "Controlled substitution — what is Pyre Champion actually worth?",
+  "seed": "replacement-2026-08",
+  "output": "results",
+  "playerCount": 2,
+  "pilots": [{ "id": "value" }],
+  "pilotPairing": "mirror",
+  "environment": {
+    "id": "prototype_core",
+    "label": "Bundled prototype set at the default rules configuration"
+  },
+
+  "subjectCardId": "pyre_champion",
+  "candidateCardIds": [],
+  "copies": "all",
+
+  "baseDecks": {
+    "kind": "inline",
+    "decks": [
+      {
+        "id": "izzet_midrange",
+        "label": "Blue/red midrange running Pyre Champion",
+        "commanderId": "prototype_commander_blue_red",
+        "cards": [
+          { "cardId": "goblin_scout", "quantity": 2 },
+          { "cardId": "powder_keg_runner", "quantity": 2 },
+          { "cardId": "scorch", "quantity": 2 },
+          { "cardId": "warband_horn", "quantity": 2 },
+          { "cardId": "pyre_champion", "quantity": 2 },
+          { "cardId": "stormforge_adept", "quantity": 2 },
+          { "cardId": "mistveil_stalker", "quantity": 2 },
+          { "cardId": "tidepool_apprentice", "quantity": 2 },
+          { "cardId": "prototype_scout", "quantity": 2 },
+          { "cardId": "prototype_guard", "quantity": 2 },
+          { "cardId": "trench_guard", "quantity": 2 },
+          { "cardId": "unstable_construct", "quantity": 2 },
+          { "cardId": "surveyors_lens", "quantity": 2 },
+          { "cardId": "field_survey", "quantity": 2 },
+          { "cardId": "overload_conduit", "quantity": 1 },
+          { "cardId": "worldbreaker_engine", "quantity": 1 }
+        ]
+      }
+    ]
+  },
+
+  "opponentDecks": { "kind": "generated", "count": 4, "generator": { "minUnits": 12 } },
+  "gamesPerPairing": 3,
+  "mirrorSeats": true,
+  "includeInsertion": true,
+  "limits": { "maxTurns": 150 },
+  "retention": { "replaySampleRate": 0 },
+  "analysis": { "minMatchesPerCard": 20, "minPairSupport": 15, "minMatchesPerDeck": 10 },
+  "workers": 4
+}

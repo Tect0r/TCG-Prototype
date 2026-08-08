@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "search",
+  "id": "abuse-search",
+  "label": "Evolutionary abuse search — twelve decks, four generations, archived opponents",
+  "seed": "search-2026-08",
+  "output": "results",
+  "playerCount": 2,
+  "pilots": [{ "id": "value" }, { "id": "aggressive" }],
+  "pilotPairing": "mirror",
+  "environment": {
+    "id": "prototype_core",
+    "label": "Bundled prototype set at the default rules configuration"
+  },
+  "generator": { "minUnits": 12 },
+  "populationSize": 12,
+  "generations": 4,
+  "eliteCount": 3,
+  "mutationStrength": 3,
+  "crossoverShare": 0.25,
+  "opponentsPerEvaluation": 4,
+  "gamesPerOpponent": 1,
+  "archiveSize": 16,
+  "checkpointEvery": 1,
+  "reevaluateElites": true,
+  "limits": { "maxTurns": 150 },
+  "retention": { "replaySampleRate": 0 },
+  "analysis": { "minMatchesPerCard": 20, "minPairSupport": 15, "minMatchesPerDeck": 10 },
+  "workers": 4
+}

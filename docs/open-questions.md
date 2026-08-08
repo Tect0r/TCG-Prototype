@@ -25,6 +25,14 @@ an answer. See [project-status.md](project-status.md) for phase definitions.
 > **Q36** (host controls the lobby). **Q34** (disconnect fairness at four seats)
 > and **Q35** (per-player-count rule values) shipped on their placeholders and
 > are still genuinely open.
+>
+> **Update, 2026-08-08 (Phase 4).** The simulator answered **Q16** (seed
+> derivation and worker-independent reproducibility — see ADR 0010). **Q14**
+> (balance thresholds) and **Q15** (a healthy plural meta) shipped on explicit,
+> configurable, clearly-labelled placeholders rather than being answered, which
+> is what CLAUDE.md §18 asks for; the values remain playtest decisions. Two new
+> questions: **Q37** (how good do the pilots need to be?) and **Q38** (when is a
+> multiplayer balance run worth its cost?).
 
 ---
 
@@ -254,31 +262,81 @@ so auto-starting would rob the host of the choice to wait for the fourth player.
 
 ---
 
-## Blocking Phase 4 (simulator)
+## Raised by Phase 4, still open
 
-### Q14. What counts as a balance verdict?
+Phase 4 shipped without answers to these, deliberately: CLAUDE.md §18 says not
+to pause on unknown thresholds, but to make them explicit, configurable and
+labelled as review guidance. That is what happened. What remains open is the
+_values_, and they are playtest decisions rather than engineering ones.
 
-§13 lists ~15 metrics but no thresholds and no decision rule. Which metrics
-gate a card change, and at what values? Without this the analyzer produces
-numbers nobody acts on.
+### Q14. What thresholds should actually gate a card change?
 
-**Needed by:** the balance analyzer, not the pilots — Phase 4 can start without
-it.
+**Shipped on a placeholder.** Every threshold lives in one validated
+`analysisSettings` block with documented provisional defaults — 30 matches
+minimum per card, 20 co-occurrences per pair, 8 win-rate points of inclusion
+lift, 6 points of replacement impact, 85% for a polarised matchup, 50% dead in
+hand, 2% abnormal terminations. All are overridable per experiment.
+
+The analyser never converts them into a verdict: a flag says
+`review_recommended`, `possible_interaction`, `insufficient_data` or
+`run_quality`, and carries its reason code, evidence, sample size and interval so
+a human can disagree with it on the numbers.
+
+**Still open:** which of these values are right, and whether any of them should
+gate a change automatically. Answering it needs runs at real scale against a real
+card pool, not a decision now.
+
+**Needed by:** the first time a card is actually changed on simulated evidence.
 
 ### Q15. How is "a healthy plural meta" measured?
 
-The stated goal is multiple viable strategies with soft counters and no
-dominant deck. Needs an operational definition before it can be reported on.
+**Shipped on a placeholder.** Decks are grouped into strategic clusters by a
+named, inspectable feature vector — colours, curve bands, type and role mix,
+keyword density — using deterministic average-linkage clustering, and the
+matchup matrix is reported per cluster. The analyser flags a cluster with no
+unfavourable matchup, a cluster with exactly one narrow counter, a polarised
+pairing, and a population that has collapsed into one cluster.
 
-### Q16. Simulator determinism boundary
+**Still open:** how many viable clusters is "plural", and how soft a counter has
+to be to count. The tooling reports the shape; nobody has decided what shape is
+healthy.
 
-Seeded RNG is required, but parallel workers plus a shared seed need a defined
-seeding scheme so a run is reproducible regardless of worker count. Decide when
-the worker pool is designed, not after.
+### Q16. Simulator determinism boundary — **answered 2026-08-08**
 
-The engine side of this is settled: `createMatch` takes a seed string and the
-generator state travels inside `MatchState`, so a worker needs nothing but a
-seed.
+Answered by [ADR 0010](architecture/0010-seed-derivation-and-reproducibility.md).
+Seeds are hashes of a readable derivation path built only from immutable
+identifiers, so a match's seed does not depend on worker count, scheduling or
+completion order. Aggregation sorts by a stable `orderKey` before summing, so
+floating-point results are identical too. Both are asserted by the test suite and
+by the benchmark, which fails if worker counts disagree.
+
+### Q37. Should the pilots be better players than they are?
+
+New. The pilots are transparent heuristics with named weights, and they are not
+good: they misvalue large units, and a statline buff at a constant cost can make
+a deck measurably _worse_ because the value pilot grows reluctant to trade the
+unit it now rates highly.
+
+Every report says results describe what these bots did. But it caps what the
+laboratory can conclude — a card that only rewards play the pilots cannot find
+will look weak, and a card that punishes their specific mistakes will look
+strong. CLAUDE.md §13.1 rules out machine learning for Phase 4, and the telemetry
+is deliberately raw enough to support it later.
+
+**Needed by:** the first finding that hinges on a card the pilots plausibly
+misplay. Perturbing the heuristic weights across runs is the cheap partial
+answer and is already supported.
+
+### Q38. When is a multiplayer balance run worth it?
+
+New. Phase 4 experiments run 1v1. `playerCount` is carried through every
+schedule, record, bot observation and analysis path, and the match runner already
+seats four, so this is a configuration change rather than a redesign — but
+nothing has validated that three- and four-player results say anything useful,
+and they cost 2–4× as much per data point.
+
+Related to **Q35** (whether the rule values should differ per player count),
+which is still open for the same reason.
 
 ---
 
