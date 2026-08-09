@@ -2,12 +2,17 @@ import { useState } from 'react';
 import { useAppState, useCardDatabase } from '../../state/AppContext.js';
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
 import { validateDeck } from '@tcg/deck';
+import { RulebookPanel } from '../help/RulebookPanel.js';
 
 /**
  * Create or join a private invite-code lobby, submit a deck, and ready up.
  *
  * Deck legality shown here is a convenience preview; the server validates
  * independently and its verdict is the one that counts (CLAUDE.md §11).
+ *
+ * The rulebook opens over the top of this screen rather than replacing it: a
+ * player reading about blocking while three seats fill up must not lose their
+ * lobby, their chosen deck or their place in it.
  */
 export function LobbyScreen() {
   const client = useMatchClient();
@@ -19,6 +24,9 @@ export function LobbyScreen() {
   const [inviteCode, setInviteCode] = useState('');
   const [selectedDeckId, setSelectedDeckId] = useState<string>('');
   const [tableSize, setTableSize] = useState(2);
+  const [rulebookOpen, setRulebookOpen] = useState(false);
+  /** Remembered for this lobby session, so reopening lands where you left off. */
+  const [rulebookSection, setRulebookSection] = useState<string | null>(null);
 
   const mySeat = lobby?.seats.find((seat) => seat.seatId === seatId);
   const isHost = mySeat?.isHost ?? false;
@@ -33,7 +41,17 @@ export function LobbyScreen() {
         <p className="lobby__status">
           Server: <strong>{connection}</strong>
         </p>
+        <button type="button" className="lobby__rulebook" onClick={() => setRulebookOpen(true)}>
+          Rulebook
+        </button>
       </header>
+
+      <RulebookPanel
+        open={rulebookOpen}
+        onClose={() => setRulebookOpen(false)}
+        initialSectionId={rulebookSection}
+        onSectionChange={setRulebookSection}
+      />
 
       {lastError && (
         <p className="lobby__error" role="alert">

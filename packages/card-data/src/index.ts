@@ -87,6 +87,7 @@ export {
   type CardDefinitionInput,
   type CardSet,
   type CardSetInput,
+  type CardText,
 } from './schema/card.js';
 
 export { CardDatabase } from './database.js';
@@ -108,15 +109,25 @@ export {
 } from './artwork.js';
 export { lintDisplayText } from './display-text.js';
 export {
+  KEYWORD_REGISTRY,
+  KEYWORD_LIST,
+  KEYWORD_CATEGORIES,
+  KEYWORD_REGISTRY_SCHEMA_VERSION,
+  IMPLEMENTED_KEYWORDS,
+  UNIMPLEMENTED_KEYWORDS,
+  keywordCategorySchema,
+  keywordDefinition,
+  keywordDefinitionSchema,
+  type KeywordCategory,
+  type KeywordDefinition,
+} from './keywords.js';
+export {
   COLOR_INFO,
   COLOR_LIST,
   NEUTRAL_INFO,
-  KEYWORD_INFO,
-  KEYWORD_LIST,
   ROLE_NAMES,
   ROLE_LIST,
   POWER_CLASS_NAMES,
   POWER_CLASS_LIST,
   type ColorInfo,
-  type KeywordInfo,
 } from './vocabulary.js';

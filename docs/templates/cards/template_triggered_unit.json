@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "id": "template_triggered_unit",
+  "name": "Template Triggered Unit",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "attack": 3,
+  "health": 3,
+  "role": "payoff",
+  "powerClass": "standard",
+  "tags": ["undead"],
+  "displayText": "When this unit is deployed, deal 1 damage to an opponent. When it is defeated, draw a card.",
+  "effects": [
+    {
+      "type": "deal_damage",
+      "amount": 1,
+      "target": {
+        "kind": "player",
+        "relation": "opponent",
+        "selection": "player_choice"
+      }
+    }
+  ],
+  "abilities": [
+    {
+      "id": "parting_gift",
+      "trigger": "on_defeated",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "text": {
+    "notes": [
+      "Deploy behaviour goes in `effects`, not in an ability. There is no `on_deploy` trigger.",
+      "The defeated trigger still resolves even though the unit has already left the battlefield."
+    ]
+  }
+}

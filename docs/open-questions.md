@@ -50,6 +50,13 @@ Still open, and the most consequential item on this list.
 meaning would have been an invention. The full table, with rationale, is in
 [open-decisions.md](rules/open-decisions.md#keywords).
 
+Players are now told this directly. Both keywords' entries in `KEYWORD_REGISTRY`
+say, in the definition shown in the glossary and the card inspector, that they
+currently do nothing and why — rather than describing a plausible rule the game
+does not implement. `npm run validate:content` warns on every card printing one;
+six bundled cards do. Deciding Q4 means editing the registry entry, the engine
+note beside it and the handler, together.
+
 Specific things that need deciding:
 
 - What should `guardian` do? Q10's answer narrowed this rather than settling it:

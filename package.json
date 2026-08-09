@@ -24,7 +24,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "validate:content": "vite-node packages/help-content/src/cli.ts",
+    "verify": "npm run typecheck && npm run lint && npm run validate:content && npm run test && npm run build",
     "gen:placeholder-art": "node scripts/generate-placeholder-art.mjs",
     "simulate": "vite-node apps/simulator/src/cli.ts --",
     "bench": "vite-node apps/simulator/src/benchmark.ts --"

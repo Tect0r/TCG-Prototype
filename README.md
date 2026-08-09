@@ -83,7 +83,8 @@ npm run demo:match -- seed  # same match every time, for a given seed
 | `npm run typecheck`           | Strict TypeScript check across all packages   |
 | `npm run lint`                | ESLint                                        |
 | `npm run format`              | Prettier, writing changes                     |
-| `npm run verify`              | typecheck + lint + test + build               |
+| `npm run validate:content`    | Check cards, registries, rulebook, templates  |
+| `npm run verify`              | typecheck + lint + content + test + build     |
 | `npm run gen:placeholder-art` | Regenerate the placeholder PNGs in `assets/`  |
 
 ## What the deck builder does
@@ -101,6 +102,40 @@ npm run demo:match -- seed  # same match every time, for a given seed
   permanent ID only.
 - Handles removed cards gracefully — unresolved IDs are listed, counted and
   removable in one click.
+
+## Player help
+
+The game explains itself, from the same data it runs on.
+
+- A **Rulebook** button in the lobby opens a searchable, keyboard-accessible
+  overlay covering every rule the game actually implements — objective, setup,
+  deck building, card anatomy, energy, turn phases, combat, damage, Commanders,
+  free-for-all, targeting, keywords, glossary, a worked first turn and the
+  common edge cases. It opens over the lobby, so nothing is lost while you read.
+- Every number in it — starting health, hand size, unit slots, deck size — is a
+  live reference to the shared configuration, not a copied number. Tune a
+  provisional value and the rulebook follows.
+- A **`? Help`** toggle in a match makes every visible card readable. Clicking a
+  card in Help mode opens an inspector and cannot play, target, attack with or
+  select it. Hands, decks and private choices belonging to other players are not
+  in your view at all, so they cannot be inspected either.
+- The inspector shows the card's printed text **and** a step-by-step explanation
+  generated from its structured effects, clearly labelled as generated. Trigger
+  timing, activation costs, usage limits, target filters and keyword definitions
+  all come from shared registries.
+- Contextual status ("You can play this now for 2 energy", "This unit arrived
+  this turn") comes from the server's own legal-action data. Where the client
+  cannot know why something is illegal, it says so rather than guessing.
+
+Keywords, effect types, triggers and the glossary each have exactly one
+definition in the repository, and keyword definitions describe what the engine
+does today — including saying plainly that `Guardian` and `Resilient` currently
+do nothing.
+
+To add or change a card, see **[docs/ADDING_CARDS.md](docs/ADDING_CARDS.md)**.
+An ordinary card is a data edit plus an optional PNG; no UI code is involved.
+`npm run validate:content` proves the pool is coherent and that every effect on
+every card can actually be explained to a player.
 
 ## What the match client and server do
 

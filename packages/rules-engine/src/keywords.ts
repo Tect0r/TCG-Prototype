@@ -1,13 +1,20 @@
+import { KEYWORD_REGISTRY, IMPLEMENTED_KEYWORDS, UNIMPLEMENTED_KEYWORDS } from '@tcg/card-data';
 import type { KeywordId } from '@tcg/card-data';
 
 /**
- * What each keyword does *in the engine today*.
+ * Engineering notes on what each keyword does *in the engine today*.
  *
  * None of these are confirmed rules. CLAUDE.md §4 lists keyword behaviour as an
  * open design decision, and `docs/open-questions.md` Q4 keeps it open. This
  * table is the single reversible placeholder: changing a keyword's behaviour
  * means changing this table and the handler it names, not hunting through
  * combat code.
+ *
+ * The player-facing definition and the `implemented` flag are **not** duplicated
+ * here — both come from `KEYWORD_REGISTRY` in `@tcg/card-data`, so the glossary
+ * a player reads and the engine's own record of what is wired up can never
+ * drift apart. What stays here is the developer-facing note: which handler owns
+ * the behaviour and which open question governs it.
  *
  * `implemented: false` means the keyword is inert — it is still authored on
  * cards, still filterable in the deck builder, and still rendered in card text,
@@ -22,66 +29,41 @@ export interface KeywordBehaviour {
   readonly engineBehaviour: string;
 }
 
-export const KEYWORD_BEHAVIOUR: Readonly<Record<KeywordId, KeywordBehaviour>> = Object.freeze({
-  swift: {
-    id: 'swift',
-    implemented: true,
-    engineBehaviour: 'Ignores summoning sickness: may attack the turn it enters play.',
-  },
-  evasive: {
-    id: 'evasive',
-    implemented: true,
-    engineBehaviour: 'Cannot be assigned a blocker.',
-  },
-  armored: {
-    id: 'armored',
-    implemented: true,
-    engineBehaviour:
-      'Reduces each separate instance of damage dealt to this unit by ' +
-      '`RulesConfig.armoredReduction`, to a minimum of zero. Per instance, not per turn — ' +
-      'see open-questions.md Q4.',
-  },
-  quick_strike: {
-    id: 'quick_strike',
-    implemented: true,
-    engineBehaviour:
-      'Deals its combat damage in an earlier damage step. A combatant defeated in that ' +
-      'step never deals its own combat damage.',
-  },
-  venom: {
-    id: 'venom',
-    implemented: true,
-    engineBehaviour: 'Any damage this unit deals to another unit is lethal to that unit.',
-  },
-  siphon: {
-    id: 'siphon',
-    implemented: true,
-    engineBehaviour: 'Combat damage this unit deals heals its controller by the same amount.',
-  },
-  resilient: {
-    id: 'resilient',
-    implemented: false,
-    engineBehaviour:
-      'INERT. Candidate readings (clear damage at end of turn / survive lethal damage once ' +
-      'per turn) differ sharply in power and interact with the "damage persists between ' +
-      'turns" rule. Awaiting open-questions.md Q4.',
-  },
-  guardian: {
-    id: 'guardian',
-    implemented: false,
-    engineBehaviour:
-      'INERT. Taunt-style semantics have no meaning in the Phase 2 combat model, because ' +
-      'attackers target the opposing player and never choose a unit to attack. Awaiting ' +
-      'open-questions.md Q4 and Q10.',
-  },
-});
+/** Developer notes, keyed by keyword. Merged with the registry below. */
+const ENGINE_NOTES: Readonly<Record<KeywordId, string>> = {
+  swift: 'derive.isSummoningSick bypass in legal-actions.ts. Open question Q4.',
+  evasive: 'Filtered out of `blocking.attackerInstanceIds` in legal-actions.ts. Open question Q4.',
+  armored:
+    'damage.ts reduces each instance by `RulesConfig.armoredReduction` before shields. ' +
+    'Per instance, not per turn — see open-questions.md Q4.',
+  quick_strike: 'combat.ts `stepOf` puts it in the earlier damage step. Open question Q4.',
+  venom: 'damage.ts raises marked damage to current health when the `lethal` flag is set.',
+  siphon: 'combat.ts accumulates dealt combat damage per controller and calls healPlayer.',
+  resilient:
+    'INERT. Candidate readings (clear damage at end of turn / survive lethal damage once ' +
+    'per turn) differ sharply in power and interact with the "damage persists between ' +
+    'turns" rule. Awaiting open-questions.md Q4.',
+  guardian:
+    'INERT. Taunt-style semantics have no meaning in the Phase 2 combat model, because ' +
+    'attackers target the opposing player and never choose a unit to attack. Awaiting ' +
+    'open-questions.md Q4 and Q10.',
+};
+
+export const KEYWORD_BEHAVIOUR: Readonly<Record<KeywordId, KeywordBehaviour>> = Object.freeze(
+  Object.fromEntries(
+    Object.values(KEYWORD_REGISTRY).map((keyword) => [
+      keyword.id,
+      {
+        id: keyword.id,
+        implemented: keyword.implemented,
+        engineBehaviour: ENGINE_NOTES[keyword.id],
+      },
+    ]),
+  ) as Record<KeywordId, KeywordBehaviour>,
+);
 
 /** Keywords the engine currently acts on. Everything else is authored-but-inert. */
-export const ACTIVE_KEYWORDS: readonly KeywordId[] = Object.values(KEYWORD_BEHAVIOUR)
-  .filter((entry) => entry.implemented)
-  .map((entry) => entry.id);
+export const ACTIVE_KEYWORDS: readonly KeywordId[] = IMPLEMENTED_KEYWORDS;
 
 /** Keywords that exist on cards but do nothing yet. Reported by the CLI harness. */
-export const INERT_KEYWORDS: readonly KeywordId[] = Object.values(KEYWORD_BEHAVIOUR)
-  .filter((entry) => !entry.implemented)
-  .map((entry) => entry.id);
+export const INERT_KEYWORDS: readonly KeywordId[] = UNIMPLEMENTED_KEYWORDS;

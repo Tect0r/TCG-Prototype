@@ -1,7 +1,7 @@
 import { warning, type Issue } from '@tcg/shared';
 import type { CardDefinition } from './schema/card.js';
 import type { EffectDefinition, EffectType } from './schema/effect.js';
-import { KEYWORD_INFO } from './vocabulary.js';
+import { KEYWORD_LIST } from './keywords.js';
 
 /**
  * `displayText` is presentation only. It is never executed and never parsed to
@@ -101,14 +101,14 @@ export function lintDisplayText(card: CardDefinition): Issue[] {
   // Keywords live in structured data; repeating their reminder text in prose
   // without granting the keyword is the other common drift.
   const granted = keywordsInPlay(card, effects);
-  for (const info of Object.values(KEYWORD_INFO)) {
-    const named = new RegExp(`\\b${info.name}\\b`, 'i').test(text);
-    if (named && !granted.has(info.id)) {
+  for (const keyword of KEYWORD_LIST) {
+    const named = new RegExp(`\\b${keyword.name}\\b`, 'i').test(text);
+    if (named && !granted.has(keyword.id)) {
       issues.push(
         warning(
           'display_text/keyword_mismatch',
-          `"${card.name}" mentions ${info.name} but does not have or grant that keyword.`,
-          { path: 'displayText', context: { cardId: card.id, keyword: info.id } },
+          `"${card.name}" mentions ${keyword.name} but does not have or grant that keyword.`,
+          { path: 'displayText', context: { cardId: card.id, keyword: keyword.id } },
         ),
       );
     }

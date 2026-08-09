@@ -12,6 +12,7 @@
   "dependencies": {
     "@tcg/card-data": "*",
     "@tcg/deck": "*",
+    "@tcg/help-content": "*",
     "@tcg/protocol": "*",
     "@tcg/rules-engine": "*",
     "@tcg/shared": "*",

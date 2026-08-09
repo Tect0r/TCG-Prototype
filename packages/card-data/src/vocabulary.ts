@@ -1,10 +1,8 @@
 import {
   COLOR_IDS,
-  KEYWORD_IDS,
   POWER_CLASSES,
   ROLES,
   type ColorId,
-  type KeywordId,
   type PowerClass,
   type Role,
 } from './schema/primitives.js';
@@ -12,6 +10,9 @@ import {
 /**
  * Display metadata for the fixed vocabularies. Kept beside the card data so the
  * UI never hard-codes a label, and so renaming a display name cannot break IDs.
+ *
+ * Keywords are not here: they carry player-facing definitions as well as names,
+ * so they live in their own registry in `keywords.ts`.
  *
  * Colour names and swatches are placeholders pending art direction; see
  * docs/rules/open-decisions.md.
@@ -41,46 +42,6 @@ export const NEUTRAL_INFO = {
   swatch: '#8d8578',
   onSwatch: '#f7f5f1',
 } as const;
-
-export interface KeywordInfo {
-  readonly id: KeywordId;
-  readonly name: string;
-  /** Provisional reminder text. Behaviour is implemented by the rules engine. */
-  readonly reminder: string;
-}
-
-export const KEYWORD_INFO: Readonly<Record<KeywordId, KeywordInfo>> = {
-  swift: { id: 'swift', name: 'Swift', reminder: 'Can attack the turn it is deployed.' },
-  guardian: {
-    id: 'guardian',
-    name: 'Guardian',
-    reminder: 'While this unit is on the battlefield, enemy attacks must be blocked by it if able.',
-  },
-  evasive: { id: 'evasive', name: 'Evasive', reminder: 'Can only be blocked by Evasive units.' },
-  armored: { id: 'armored', name: 'Armored', reminder: 'Reduces each instance of damage by 1.' },
-  siphon: {
-    id: 'siphon',
-    name: 'Siphon',
-    reminder: 'Damage dealt by this unit also heals your Commander.',
-  },
-  venom: {
-    id: 'venom',
-    name: 'Venom',
-    reminder: 'Any damage this unit deals to another unit defeats it.',
-  },
-  quick_strike: {
-    id: 'quick_strike',
-    name: 'Quick Strike',
-    reminder: 'Deals combat damage before units without Quick Strike.',
-  },
-  resilient: {
-    id: 'resilient',
-    name: 'Resilient',
-    reminder: 'Damage on this unit is removed at the end of each turn.',
-  },
-};
-
-export const KEYWORD_LIST: readonly KeywordInfo[] = KEYWORD_IDS.map((id) => KEYWORD_INFO[id]);
 
 export const ROLE_NAMES: Readonly<Record<Role, string>> = {
   token: 'Token',

@@ -11,6 +11,7 @@ import { useCardDatabase } from '../../state/AppContext.js';
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
 import type { SeatConnection } from '../../net/match-client.js';
 import { buildLog } from '../../lib/event-text.js';
+import { CardInspector, type InspectableCard } from '../help/CardInspector.js';
 
 /**
  * The match board, for two to four players.
@@ -19,6 +20,14 @@ import { buildLog } from '../../lib/event-text.js';
  * comes from `view.legalActions`, never from a client-side rule (CLAUDE.md §11).
  * While an action is in flight, input is locked. Nothing here delays or owns a
  * rule — the server has already decided by the time anything re-renders.
+ *
+ * ## Help mode
+ *
+ * With Help mode on, every click inspects instead of acting. That is done by
+ * replacing the click handler outright rather than by adding a guard inside it,
+ * so there is no path where a player reading a card accidentally plays it,
+ * attacks with it or picks it as a target. Turning Help mode on or off sends
+ * nothing to the server and changes no match state.
  */
 
 /** Seats map one-to-one onto engine player IDs, so connection state can be keyed by either. */
@@ -78,6 +87,24 @@ function UnitCard({
   );
 }
 
+/**
+ * Describes a card the local player is allowed to read.
+ *
+ * Returns `null` when the instance is not in the view at all — which is what
+ * happens for every card the seat may not identify, so an inspect affordance
+ * can never be built for hidden information.
+ */
+function inspectable(
+  view: PlayerView,
+  instanceId: string | null | undefined,
+  label: string,
+): InspectableCard | null {
+  if (!instanceId) return null;
+  const instance = view.instances[instanceId];
+  if (!instance) return null;
+  return { instanceId, definitionId: instance.definitionId, label };
+}
+
 function PlayerHeader({
   player,
   database,
@@ -85,6 +112,7 @@ function PlayerHeader({
   isViewer,
   connection,
   awaitingBlockers,
+  onInspect,
 }: {
   readonly player: PlayerViewSummary;
   readonly database: CardDatabase;
@@ -92,6 +120,8 @@ function PlayerHeader({
   readonly isViewer: boolean;
   readonly connection: SeatConnection | undefined;
   readonly awaitingBlockers: boolean;
+  /** Set only in Help mode: makes the Commander and discard readable. */
+  readonly onInspect: ((card: InspectableCard) => void) | null;
 }) {
   const commander = view.instances[player.commanderInstanceId];
   const isActive = view.activePlayerId === player.playerId;
@@ -123,9 +153,23 @@ function PlayerHeader({
           <span className="player-bar__stat">hand {player.handCount}</span>
           <span className="player-bar__stat">deck {player.deckCount}</span>
           <span className="player-bar__stat">discard {player.discard.length}</span>
-          <span className="player-bar__stat">
-            cmd {commander ? (database.get(commander.definitionId)?.name ?? '?') : '?'}
-          </span>
+          {onInspect && commander ? (
+            <button
+              type="button"
+              className="player-bar__inspect"
+              aria-label={`Inspect ${player.name}'s Commander`}
+              onClick={() => {
+                const card = inspectable(view, commander.instanceId, `${player.name}'s Commander`);
+                if (card) onInspect(card);
+              }}
+            >
+              cmd {database.get(commander.definitionId)?.name ?? '?'}
+            </button>
+          ) : (
+            <span className="player-bar__stat">
+              cmd {commander ? (database.get(commander.definitionId)?.name ?? '?') : '?'}
+            </span>
+          )}
         </>
       )}
       {isActive && !player.lost && <span className="tag tag--ok">active</span>}
@@ -143,6 +187,57 @@ function PlayerHeader({
   );
 }
 
+/**
+ * Every public card belonging to one player, as inspectable entries.
+ *
+ * Built from `view.instances`, so an entry only exists for a card the seat may
+ * legitimately identify. The viewer's own hand is added separately.
+ */
+function publicCardsOf(view: PlayerView, player: PlayerViewSummary): InspectableCard[] {
+  const cards: (InspectableCard | null)[] = [
+    ...player.units.map((instanceId) => inspectable(view, instanceId, `${player.name}'s board`)),
+    ...player.relics.map((instanceId) => inspectable(view, instanceId, `${player.name}'s relics`)),
+    inspectable(view, player.commanderInstanceId, `${player.name}'s Commander`),
+    ...player.discard.map((instanceId) =>
+      inspectable(view, instanceId, `${player.name}'s discard`),
+    ),
+  ];
+  return cards.filter((card): card is InspectableCard => card !== null);
+}
+
+/** The discard pile, listed card by card. Discard piles are public. */
+function DiscardStrip({
+  player,
+  view,
+  database,
+  onInspect,
+}: {
+  readonly player: PlayerViewSummary;
+  readonly view: PlayerView;
+  readonly database: CardDatabase;
+  readonly onInspect: (card: InspectableCard) => void;
+}) {
+  if (player.discard.length === 0) return null;
+  return (
+    <div className="board__discard" aria-label={`${player.name} discard pile`}>
+      {player.discard.map((instanceId) => {
+        const card = inspectable(view, instanceId, `${player.name}'s discard`);
+        if (!card) return null;
+        return (
+          <button
+            key={instanceId}
+            type="button"
+            className="button--quiet"
+            onClick={() => onInspect(card)}
+          >
+            {database.get(card.definitionId)?.name ?? card.definitionId}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** One opponent's battlefield, with blocker assignment when they are attacking us. */
 function OpponentBoard({
   player,
@@ -153,6 +248,7 @@ function OpponentBoard({
   onAssignBlock,
   attackTarget,
   onChooseDefender,
+  onInspect,
 }: {
   readonly player: PlayerViewSummary;
   readonly view: PlayerView;
@@ -163,6 +259,8 @@ function OpponentBoard({
   /** Set while declaring attackers: clicking the header aims at this player. */
   readonly attackTarget: boolean;
   readonly onChooseDefender: () => void;
+  /** Set only in Help mode, and then it replaces every other click handler. */
+  readonly onInspect: ((card: InspectableCard) => void) | null;
 }) {
   const legal = view.legalActions;
   const attacksOnMe = new Map(
@@ -171,7 +269,7 @@ function OpponentBoard({
 
   return (
     <div className="board__side" aria-label={`${player.name} battlefield`}>
-      {attackTarget && (
+      {attackTarget && !onInspect && (
         <button
           type="button"
           className="board__target"
@@ -189,8 +287,14 @@ function OpponentBoard({
             instanceId !== null &&
             (legal.blocking?.attackerInstanceIds.includes(instanceId) ?? false);
           // An attacker is only clickable once one of our blockers is picked.
-          const assignBlock =
-            blockable && pendingBlocker !== null && !locked && instanceId !== null
+          // In Help mode the inspect handler replaces it entirely, so a click
+          // can never assign a blocker while the player is reading.
+          const inspect = inspectable(view, instanceId, `${player.name}'s board`);
+          const assignBlock = onInspect
+            ? inspect
+              ? () => onInspect(inspect)
+              : undefined
+            : blockable && pendingBlocker !== null && !locked && instanceId !== null
               ? () => onAssignBlock(instanceId)
               : undefined;
 
@@ -214,11 +318,24 @@ function OpponentBoard({
         })}
       </div>
       <div className="board__relics">
-        {player.relics.map((instanceId) => (
-          <span key={instanceId} className="relic">
-            {database.get(view.instances[instanceId]?.definitionId ?? '')?.name ?? '?'}
-          </span>
-        ))}
+        {player.relics.map((instanceId) => {
+          const name = database.get(view.instances[instanceId]?.definitionId ?? '')?.name ?? '?';
+          const card = inspectable(view, instanceId, `${player.name}'s relics`);
+          return onInspect && card ? (
+            <button
+              key={instanceId}
+              type="button"
+              className="relic relic--clickable"
+              onClick={() => onInspect(card)}
+            >
+              {name}
+            </button>
+          ) : (
+            <span key={instanceId} className="relic">
+              {name}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
@@ -237,6 +354,8 @@ export function MatchBoard() {
   );
   const [pendingBlocker, setPendingBlocker] = useState<string | null>(null);
   const [choiceSelection, setChoiceSelection] = useState<string[]>([]);
+  const [helpMode, setHelpMode] = useState(false);
+  const [inspecting, setInspecting] = useState<InspectableCard | null>(null);
 
   const phase = view?.phase;
   const choiceId = view?.pendingChoice?.id ?? null;
@@ -275,6 +394,19 @@ export function MatchBoard() {
   const playable = new Map(legal.playableCards.map((card) => [card.instanceId, card]));
   const nameOf = (playerId: string): string =>
     view.players.find((player) => player.playerId === playerId)?.name ?? playerId;
+
+  // Non-null only in Help mode. Every click handler below branches on this one
+  // value, so "Help mode never acts" is a single, checkable property.
+  const inspect: ((card: InspectableCard) => void) | null = helpMode ? setInspecting : null;
+
+  // Everything the local seat may read, for stepping between cards in the
+  // inspector. Hidden cards are absent from `view.instances` and so from here.
+  const inspectableCards: InspectableCard[] = [
+    ...view.hand
+      .map((instanceId) => inspectable(view, instanceId, 'Your hand'))
+      .filter((card): card is InspectableCard => card !== null),
+    ...view.players.flatMap((player) => publicCardsOf(view, player)),
+  ];
 
   const declaredAttacks: AttackDeclaration[] = Object.entries(attacks).map(
     ([attackerInstanceId, defenderPlayerId]) => ({ attackerInstanceId, defenderPlayerId }),
@@ -317,10 +449,37 @@ export function MatchBoard() {
           </span>
         )}
         {pendingActionId && <span className="tag tag--warn">sending…</span>}
+        <button
+          type="button"
+          className={`board__help-toggle${helpMode ? ' is-active' : ''}`}
+          aria-pressed={helpMode}
+          onClick={() => {
+            setHelpMode((current) => !current);
+            setInspecting(null);
+          }}
+        >
+          ? Help
+        </button>
         <button type="button" className="button--quiet" onClick={() => client.leave()}>
           {eliminated ? 'Leave' : 'Concede and leave'}
         </button>
       </div>
+
+      {helpMode && (
+        <p className="board__help-hint" role="status">
+          Help mode is on. Click any card you can see to read what it does — nothing you click will
+          be played, targeted or attacked with.
+        </p>
+      )}
+
+      <CardInspector
+        card={inspecting}
+        view={view}
+        database={database}
+        neighbours={inspectableCards}
+        onSelect={setInspecting}
+        onClose={() => setInspecting(null)}
+      />
 
       {eliminated && view.status !== 'complete' && (
         <p className="board__result" role="status">
@@ -355,6 +514,7 @@ export function MatchBoard() {
               isViewer={false}
               connection={seatId ? seatConnections[seatId] : undefined}
               awaitingBlockers={legal.awaitingDefenders.includes(player.playerId)}
+              onInspect={inspect}
             />
             {!player.lost && (
               <OpponentBoard
@@ -369,7 +529,11 @@ export function MatchBoard() {
                   (legal.attacking?.legalDefenders.includes(player.playerId) ?? false)
                 }
                 onChooseDefender={() => chooseDefender(player.playerId)}
+                onInspect={inspect}
               />
+            )}
+            {inspect && (
+              <DiscardStrip player={player} view={view} database={database} onInspect={inspect} />
             )}
           </div>
         );
@@ -377,11 +541,24 @@ export function MatchBoard() {
 
       <div className="board__side" aria-label="Your battlefield">
         <div className="board__relics">
-          {me?.relics.map((instanceId) => (
-            <span key={instanceId} className="relic">
-              {database.get(view.instances[instanceId]?.definitionId ?? '')?.name ?? '?'}
-            </span>
-          ))}
+          {me?.relics.map((instanceId) => {
+            const name = database.get(view.instances[instanceId]?.definitionId ?? '')?.name ?? '?';
+            const card = inspectable(view, instanceId, 'Your relics');
+            return inspect && card ? (
+              <button
+                key={instanceId}
+                type="button"
+                className="relic relic--clickable"
+                onClick={() => inspect(card)}
+              >
+                {name}
+              </button>
+            ) : (
+              <span key={instanceId} className="relic">
+                {name}
+              </span>
+            );
+          })}
         </div>
         <div className="board__units">
           {me?.units.map((instanceId, index) => {
@@ -395,8 +572,12 @@ export function MatchBoard() {
             const assigned = blocks.find((block) => block.blockerInstanceId === instanceId);
             const target = instanceId ? attacks[instanceId] : undefined;
 
+            const inspectCard = inspectable(view, instanceId, 'Your board');
             let onClick: (() => void) | undefined;
-            if (!locked && instanceId !== null) {
+            // Help mode short-circuits the whole attacker/blocker branch below.
+            if (inspect && inspectCard) {
+              onClick = () => inspect(inspectCard);
+            } else if (!inspect && !locked && instanceId !== null) {
               if (canAttack) {
                 // Click to pick an attacker, then click an opponent to aim it.
                 // Clicking an already-aimed attacker clears its target, so a
@@ -441,14 +622,20 @@ export function MatchBoard() {
       </div>
 
       {me && (
-        <PlayerHeader
-          player={me}
-          database={database}
-          view={view}
-          isViewer
-          connection={undefined}
-          awaitingBlockers={legal.awaitingDefenders.includes(me.playerId)}
-        />
+        <>
+          <PlayerHeader
+            player={me}
+            database={database}
+            view={view}
+            isViewer
+            connection={undefined}
+            awaitingBlockers={legal.awaitingDefenders.includes(me.playerId)}
+            onInspect={inspect}
+          />
+          {inspect && (
+            <DiscardStrip player={me} view={view} database={database} onInspect={inspect} />
+          )}
+        </>
       )}
 
       <div className="board__controls">
@@ -602,13 +789,21 @@ export function MatchBoard() {
           const definition = instance ? database.get(instance.definitionId) : undefined;
           const option = playable.get(instanceId);
           const mulliganSelected = legal.mulligan && choiceSelection.includes(instanceId);
+          const inspectCard = inspectable(view, instanceId, 'Your hand');
           return (
             <button
               key={instanceId}
               type="button"
               className={`hand__card ${option ? 'hand__card--playable' : ''} ${mulliganSelected ? 'hand__card--selected' : ''}`}
-              disabled={locked || (!option && !legal.mulligan)}
+              // In Help mode every card in hand is readable, including ones
+              // that are not playable — that is usually the card you want
+              // explained.
+              disabled={inspect ? false : locked || (!option && !legal.mulligan)}
               onClick={() => {
+                if (inspect) {
+                  if (inspectCard) inspect(inspectCard);
+                  return;
+                }
                 if (legal.mulligan) {
                   setChoiceSelection((current) =>
                     current.includes(instanceId)

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 2,
+  "id": "template_choice_spell",
+  "name": "Template Choice Spell",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "role": "enabler",
+  "powerClass": "minor",
+  "tags": ["plan"],
+  "displayText": "Discard a card, then draw two cards.",
+  "effects": [
+    {
+      "type": "discard",
+      "player": "self",
+      "amount": 1,
+      "selection": "player_choice"
+    },
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 2
+    }
+  ],
+  "text": {
+    "summary": "Trade one card you do not want for two you have not seen.",
+    "effectExplanations": [
+      "Resolution pauses here until you pick a card. Nothing else in the match happens while it waits."
+    ],
+    "notes": [
+      "With an empty hand there is nothing to discard, so that step does nothing and the draw still happens."
+    ]
+  }
+}

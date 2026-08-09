@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 2,
+  "id": "template_static_relic",
+  "name": "Template Static Relic",
+  "type": "relic",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": ["artifact"],
+  "displayText": "While this relic is in play, your units get +1/+0.",
+  "staticAbilities": [
+    {
+      "id": "rallying_standard",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "self",
+        "excludeSource": false
+      },
+      "effect": {
+        "type": "modify_stats",
+        "attack": 1,
+        "health": 0
+      }
+    }
+  ],
+  "text": {
+    "notes": [
+      "Continuous effects are recalculated from the board, so units that arrive later are covered automatically and the bonus disappears the instant this relic leaves play.",
+      "Nothing is stamped onto the units themselves — do not use `modify_stats` in `effects` for this."
+    ]
+  }
+}

@@ -15,6 +15,10 @@ started, and what "done" means for each remaining phase.
 | 4     | Headless simulator and balance | **Hardening in progress** |
 | 5     | Pseudonymous real-player data  | Not started, contingent   |
 
+| Milestone | Scope                          | Status       |
+| --------- | ------------------------------ | ------------ |
+| Help      | Player help and content system | **Complete** |
+
 Phase 4's machinery is built and runs; its analytical contracts are being
 audited and corrected against [PHASE4_HARDENING.md](../PHASE4_HARDENING.md). It
 is deliberately **not** marked complete until that document's definition of done
@@ -22,8 +26,9 @@ holds — a laboratory that runs is not the same as one whose numbers mean what
 they say.
 
 **Verification for the whole monorepo:** `npm run verify` (typecheck → lint →
-test → build). Last run: **610 tests in 37 files, all passing**; typecheck,
-ESLint, Prettier and the production build all clean.
+content validation → test → build). Last run: **679 tests in 42 files, all
+passing**; typecheck, ESLint, Prettier, `validate:content` and the production
+build all clean.
 
 ---
 
@@ -432,6 +437,63 @@ already over by that point.
 - Any module reachable from a worker thread must use erasable-only TypeScript
   syntax — no parameter properties, no enums — because workers load TS through a
   resolve hook rather than a build step.
+
+---
+
+## Player help and content system — complete
+
+Defined by [PLAYER_HELP_AND_CONTENT_SYSTEM.md](../PLAYER_HELP_AND_CONTENT_SYSTEM.md),
+designed in [ADR 0015](architecture/0015-player-help-and-content.md). A
+cross-cutting milestone rather than a phase: it touches card data, the engine's
+keyword table and the web client, and changes no game rule.
+
+### What was delivered
+
+| Area                | Delivered                                                                                                                                     |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Keyword registry    | Consolidated into `@tcg/card-data`. `rules-engine` imports the `implemented` flag rather than duplicating it. `KEYWORD_INFO` removed.         |
+| `@tcg/help-content` | New package: effect/trigger registries, glossary, rulebook schema and content, reference resolver, explanation service, content validator.    |
+| Explanations        | `explainCard` — pure, deterministic, total over the effect union. No default branch, so an unhandled effect is a compile error.               |
+| Rulebook            | 17 sections of typed blocks in `rulebook.json`, with a closed block vocabulary and no markup. `RulebookPanel` renders block types, not rules. |
+| Lobby UI            | Rulebook button opening an accessible overlay with TOC, search, Escape, focus trap and focus restore. Lobby state survives.                   |
+| Match UI            | `? Help` toggle, safe inspection of hand, both battlefields, relics, Commanders and discard piles, with authoritative contextual status.      |
+| Authoring           | `npm run validate:content`, five validated templates, [ADDING_CARDS.md](ADDING_CARDS.md).                                                     |
+
+Tests: **69 new** — 51 in `help-content`, 18 in the web client — plus the
+existing suites unchanged.
+
+### Rules text that was wrong, and is now correct
+
+The consolidation exposed three player-facing definitions that disagreed with
+the engine. These are **content corrections, not rules changes**: no engine
+behaviour moved, and no test changed its expectation.
+
+| Keyword     | Said                                                      | Actually does                                 |
+| ----------- | --------------------------------------------------------- | --------------------------------------------- |
+| `evasive`   | "Can only be blocked by Evasive units."                   | Cannot be blocked at all.                     |
+| `siphon`    | "Damage dealt by this unit also heals your Commander."    | Combat damage heals its **controller**.       |
+| `guardian`  | "Enemy attacks must be blocked by it if able."            | Nothing. Deliberately inert, awaiting Q4/Q10. |
+| `resilient` | "Damage on this unit is removed at the end of each turn." | Nothing. Deliberately inert, awaiting Q4.     |
+
+`guardian` and `resilient` now say so in the words a player reads, and the
+content validator warns on every card printing them. Six bundled cards do.
+
+### Deliberate deferrals
+
+- **Cards stay in one `prototype_core.json`.** At 56 cards it is not yet
+  inconvenient, and the loader API already hides the physical layout from every
+  consumer, so a split can happen later without touching a single call site.
+- **No `text.rules` field.** `displayText` remains the single canonical rules
+  text; adding a second field for the same thing would recreate the drift this
+  milestone removed. The rest of the spec's `text.*` metadata is implemented.
+- **The inspector does not infer why a card is unplayable.** Where the view does
+  not say, it says so. Explaining it properly would need the engine to report a
+  reason alongside legality — a worthwhile future change to `LegalActions`, and
+  the honest fallback until then.
+- **No graphical card editor**, as the spec requires. The loader and validation
+  APIs are shaped so one could be added.
+- **Variable effect amounts still do not exist.** `ADDING_CARDS.md` says so
+  plainly rather than leaving an author to discover it.
 
 ---
 

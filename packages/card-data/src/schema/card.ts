@@ -21,6 +21,34 @@ const uniqueArray = <T extends z.ZodTypeAny>(item: T, label: string) =>
     message: `${label} must not contain duplicates.`,
   });
 
+/**
+ * Optional player-help metadata. Presentation only, exactly like `displayText`:
+ * none of it is ever executed, parsed for behaviour, or consulted by the engine.
+ *
+ * There is deliberately no `rules` field here. `displayText` is the canonical
+ * rules text and remains the only place it is written, so a card can never have
+ * two competing "official" texts.
+ *
+ * Nothing in this object is required. A card with no curated help still gets a
+ * complete explanation, generated from its structured effects — curated text
+ * supplements the generated explanation, it never replaces the mechanism.
+ */
+const cardTextSchema = z.strictObject({
+  /** One-sentence beginner explanation. Replaces the generated summary. */
+  summary: z.string().min(1).max(300).optional(),
+  /**
+   * Clarifications for complex steps, index-aligned with the card's top-level
+   * `effects`. Shown *beside* the generated step, never instead of it, so a
+   * stale clarification cannot hide what the card really does.
+   */
+  effectExplanations: z.array(z.string().min(1).max(300)).max(20).optional(),
+  /** Edge cases worth showing to players. */
+  notes: z.array(z.string().min(1).max(400)).max(10).optional(),
+  /** Non-rules flavour text. */
+  flavor: z.string().min(1).max(300).optional(),
+});
+export type CardText = z.infer<typeof cardTextSchema>;
+
 const baseCardSchema = z.strictObject({
   schemaVersion: z.number().int().min(1),
   id: cardIdSchema,
@@ -53,6 +81,8 @@ const baseCardSchema = z.strictObject({
   staticAbilities: z.array(staticAbilityDefinitionSchema).default([]),
   /** Presentation only. Never executed, never parsed for behaviour. */
   displayText: z.string().max(400).optional(),
+  /** Optional curated help. Supplements generated explanations; never behaviour. */
+  text: cardTextSchema.optional(),
 });
 
 /** Card types that carry a combat statline. */
@@ -147,6 +177,18 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
       code: 'custom',
       path: ['effects'],
       message: 'A spell must define at least one effect.',
+    });
+  }
+
+  // Curated step clarifications are index-aligned with `effects`. More of them
+  // than there are steps means the card was edited and the prose was not — the
+  // exact drift this metadata is supposed to be safe from.
+  const explanations = card.text?.effectExplanations;
+  if (explanations !== undefined && explanations.length > card.effects.length) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['text', 'effectExplanations'],
+      message: `${explanations.length} effect explanations were written for ${card.effects.length} effect(s). Each entry clarifies the effect at the same index.`,
     });
   }
 });

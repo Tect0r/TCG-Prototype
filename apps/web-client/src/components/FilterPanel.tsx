@@ -10,6 +10,7 @@ import {
   DECKABLE_CARD_TYPES,
   type CardType,
 } from '@tcg/card-data';
+import { resolveTemplate } from '@tcg/help-content';
 import { emptyFilters, isFilterActive, toggle, type FilterState } from '../state/filters.js';
 
 interface FilterPanelProps {
@@ -140,7 +141,7 @@ export function FilterPanel({
               type="button"
               className={`chip${filters.keywords.includes(keyword.id) ? ' is-active' : ''}`}
               aria-pressed={filters.keywords.includes(keyword.id)}
-              title={keyword.reminder}
+              title={resolveTemplate(keyword.shortDefinition)}
               onClick={() => patch({ keywords: toggle(filters.keywords, keyword.id) })}
             >
               {keyword.name}

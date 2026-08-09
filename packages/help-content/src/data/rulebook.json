@@ -1,0 +1,558 @@
+{
+  "schemaVersion": 1,
+  "title": "How to Play",
+  "intro": "Everything below describes the rules as the game actually implements them today. Numbers come straight from the shared match configuration, so they are always the ones your match will use. Where a rule has deliberately not been decided yet, this book says so rather than inventing an answer.",
+  "sections": [
+    {
+      "id": "objective",
+      "title": "Objective and winning",
+      "order": 10,
+      "searchTerms": ["win", "lose", "victory", "defeat", "draw"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "You and up to three opponents each command a deck and one Commander. The last player still standing wins. There are no teams: everyone plays for themselves."
+        },
+        { "type": "heading", "text": "How a player loses" },
+        {
+          "type": "bulletList",
+          "items": [
+            "Their health drops to zero or below.",
+            "They have to draw a card and their deck is empty.",
+            "They concede.",
+            "They disconnect and do not return within {matchConfig.disconnectGraceSeconds} seconds."
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Losing conditions are checked after every single instruction an effect carries out, and again after combat damage is dealt. If the last remaining players all lose in the same check, the match is a draw."
+        },
+        {
+          "type": "configValue",
+          "label": "Starting health",
+          "source": "matchConfig.startingHealth"
+        }
+      ]
+    },
+    {
+      "id": "setup",
+      "title": "Setting up a match",
+      "order": 20,
+      "searchTerms": ["mulligan", "redraw", "opening hand", "invite", "lobby", "shuffle"],
+      "blocks": [
+        {
+          "type": "numberedList",
+          "items": [
+            "One player creates a lobby and shares its six-character invite code. A lobby seats {matchConfig.minPlayers} to {matchConfig.maxPlayers} players.",
+            "Everyone joins, picks a saved deck and submits it. The server validates every deck against its own card database and rejects illegal ones with reasons.",
+            "Everyone marks ready. The seat order and the starting player are rolled from the match seed.",
+            "Each player draws their opening hand.",
+            "Each player decides, privately, whether to keep it. Nobody sees anyone else's decision until all of them are in.",
+            "The first turn begins."
+          ]
+        },
+        { "type": "heading", "text": "The opening hand" },
+        {
+          "type": "configValue",
+          "label": "Opening hand",
+          "source": "matchConfig.openingHandSize",
+          "suffix": "cards"
+        },
+        {
+          "type": "configValue",
+          "label": "Free redraws",
+          "source": "matchConfig.openingRedraws"
+        },
+        {
+          "type": "paragraph",
+          "text": "To redraw, choose any number of cards from your opening hand and return them. You immediately draw the same number, and only then are the returned cards shuffled back into your deck — so you can never draw one of them straight back."
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "The first player skips a draw",
+          "text": "Going first is an advantage, so the player who takes the first turn skips their very first draw step. Everyone else draws normally from their first turn onwards."
+        }
+      ]
+    },
+    {
+      "id": "deck_building",
+      "title": "Building a deck",
+      "order": 30,
+      "searchTerms": [
+        "deck",
+        "copies",
+        "colour identity",
+        "color identity",
+        "legal",
+        "commander colours"
+      ],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A deck is exactly one Commander plus a fixed number of other cards. The Commander is not part of the deck: it starts in its own zone and stays there."
+        },
+        {
+          "type": "configValue",
+          "label": "Deck size",
+          "source": "deckRules.deckSize",
+          "suffix": "cards"
+        },
+        {
+          "type": "configValue",
+          "label": "Copies of a regular card",
+          "source": "deckRules.copyLimit"
+        },
+        {
+          "type": "configValue",
+          "label": "Copies of a unique card",
+          "source": "deckRules.uniqueCopyLimit"
+        },
+        {
+          "type": "configValue",
+          "label": "Colours in a Commander's identity",
+          "source": "deckRules.maxCommanderColors",
+          "suffix": "at most"
+        },
+        { "type": "heading", "text": "Colour identity" },
+        {
+          "type": "paragraph",
+          "text": "Your Commander has one or more colours. A card is legal in your deck only if every colour in its identity also appears in your Commander's identity. Neutral cards have no colours at all and are legal under any Commander."
+        },
+        {
+          "type": "paragraph",
+          "text": "The deck builder checks all of this live, and the server checks it again before the match starts. Its verdict is the one that counts."
+        }
+      ]
+    },
+    {
+      "id": "card_anatomy",
+      "title": "Reading a card",
+      "order": 40,
+      "searchTerms": ["cost", "attack", "health", "artwork", "rules text", "stats"],
+      "blocks": [
+        {
+          "type": "bulletList",
+          "items": [
+            "Name — what the card is called. Names can change; the card's internal identity never does, so decks and replays never break.",
+            "Cost — energy you pay to play it from your hand. Commanders and tokens are never paid for and show no cost.",
+            "Type — unit, spell, relic, Commander or token.",
+            "Colours — the coloured bar. It decides which Commanders can run the card.",
+            "Attack and health — units, Commanders and tokens only. Attack is damage dealt; health is damage survived.",
+            "Keywords — named rules shorthand, listed as chips. Every keyword is defined in this book.",
+            "Rules text — what the card does, written out. It is a description of the card's structured effects, never the thing that makes them happen.",
+            "Artwork — decoration. A card with no artwork uses a default image and plays exactly the same."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "Text never drives behaviour",
+          "text": "Card behaviour comes from structured data the rules engine executes. The sentence you read is generated from, or checked against, that data — so a card can never do something its text does not describe because someone edited the wrong field. In a match you can open any visible card in Help mode to see its effects explained step by step, in the order they resolve."
+        }
+      ]
+    },
+    {
+      "id": "card_types",
+      "title": "Card types",
+      "order": 50,
+      "searchTerms": ["unit", "spell", "relic", "token", "permanent"],
+      "blocks": [
+        {
+          "type": "bulletList",
+          "items": [
+            "Unit — goes onto your battlefield into a free slot and stays there. It can attack and block. It resolves its own effects as it arrives.",
+            "Spell — resolves its effects immediately, then goes to your discard pile. It never stays in play.",
+            "Relic — goes into a separate row and stays until something removes it. Relics do not use unit slots and cannot attack or block.",
+            "Commander — starts outside your deck in the Commander zone and stays there all match.",
+            "Token — a unit created by an effect. Tokens are never in a deck, and a token that leaves play stops existing entirely."
+          ]
+        },
+        {
+          "type": "configValue",
+          "label": "Unit slots per player",
+          "source": "matchConfig.unitSlots"
+        },
+        { "type": "configValue", "label": "Relics per player", "source": "matchConfig.relicSlots" },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "A full battlefield blocks deployment",
+          "text": "You cannot play a unit with no free slot. An effect that would create a token with no free slot simply does not create it — nothing is destroyed to make room."
+        }
+      ]
+    },
+    {
+      "id": "energy",
+      "title": "Energy and paying costs",
+      "order": 60,
+      "searchTerms": ["mana", "resource", "cost", "afford", "ramp"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Energy is the only resource. There are no resource cards to draw and nothing to miss: your maximum simply grows on its own, every one of your turns."
+        },
+        {
+          "type": "configValue",
+          "label": "Maximum energy on your first turn",
+          "source": "matchConfig.startingMaxEnergy"
+        },
+        {
+          "type": "configValue",
+          "label": "Maximum energy gained each of your turns",
+          "source": "matchConfig.energyGainPerTurn"
+        },
+        {
+          "type": "configValue",
+          "label": "Maximum energy ever",
+          "source": "matchConfig.energyCap"
+        },
+        {
+          "type": "paragraph",
+          "text": "At the start of your turn your maximum rises, then your current energy refills to that maximum. Energy you do not spend is lost at the end of your turn; it never carries over."
+        },
+        {
+          "type": "paragraph",
+          "text": "Costs are paid in full before a card or ability starts resolving. If paying would be impossible, the action is refused outright and nothing is spent — you can never be left half-committed."
+        }
+      ]
+    },
+    {
+      "id": "turn_structure",
+      "title": "The turn",
+      "order": 70,
+      "searchTerms": ["phase", "priority", "pass", "turn order", "sequence"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Players take complete turns one at a time, in a fixed circle decided when the match is created. Each turn runs through the same phases in the same order."
+        },
+        { "type": "phaseList", "source": "matchConfig.turnPhases" },
+        {
+          "type": "paragraph",
+          "text": "You pass each Main Phase explicitly, and confirm your attackers and blockers explicitly. Assign Blockers is skipped entirely when nobody declared an attack."
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "There is no acting on someone else's turn",
+          "text": "There are no instants, no interrupts and no priority passing. Everything you do happens in one of your own two Main Phases, apart from assigning blockers when you are attacked."
+        }
+      ]
+    },
+    {
+      "id": "playing_cards",
+      "title": "Playing cards and using abilities",
+      "order": 80,
+      "searchTerms": ["deploy", "cast", "activate", "summoning sickness", "slot", "ability"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "During either of your Main Phases, with nothing currently resolving and no choice pending, you may play units, spells and relics, and use activated abilities, in any order you can pay for."
+        },
+        { "type": "heading", "text": "Units" },
+        {
+          "type": "bulletList",
+          "items": [
+            "A unit needs a free slot on your battlefield.",
+            "It arrives ready but summoning sick: it cannot attack this turn unless it has Swift.",
+            "It can block on the turn it arrives.",
+            "Its own effects resolve as it enters play."
+          ]
+        },
+        { "type": "heading", "text": "Spells" },
+        {
+          "type": "bulletList",
+          "items": [
+            "A spell resolves its effects in the order they are written, then goes to your discard pile.",
+            "A spell that requires a target cannot be played at all when no legal target exists — it will not even be offered."
+          ]
+        },
+        { "type": "heading", "text": "Activated abilities" },
+        {
+          "type": "bulletList",
+          "items": [
+            "Only during your own Main Phase, and only when nothing else is resolving.",
+            "Costs may include energy, exhausting the card, discarding, or sacrificing a unit. All costs are paid together, before the ability starts.",
+            "Each ability states how often it may be used: once per match, once per turn, or as often as you can pay."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "combat",
+      "title": "Attacking and blocking",
+      "order": 90,
+      "searchTerms": ["attack", "block", "combat", "blocker", "exhaust", "declare"],
+      "blocks": [
+        { "type": "heading", "text": "Declaring attackers" },
+        {
+          "type": "bulletList",
+          "items": [
+            "Choose any of your ready units that are not summoning sick.",
+            "Each attacker independently picks one living opponent to attack. Different attackers may attack different opponents.",
+            "Units attack players, never other units.",
+            "Every declared attacker exhausts immediately, whether or not it is blocked.",
+            "You can change your mind about any attacker right up until you confirm."
+          ]
+        },
+        { "type": "heading", "text": "Declaring blockers" },
+        {
+          "type": "bulletList",
+          "items": [
+            "Only the player being attacked may block, and only against attacks aimed at them. You cannot block to protect somebody else.",
+            "One blocker per attacker, and each blocker blocks at most one attacker.",
+            "Attackers with Evasive cannot be blocked at all.",
+            "When several players are attacked at once, each answers separately and nobody sees anyone else's blocks until every defender has submitted."
+          ]
+        },
+        {
+          "type": "configValue",
+          "label": "Exhausted units may block",
+          "source": "matchConfig.exhaustedUnitsMayBlock"
+        },
+        {
+          "type": "configValue",
+          "label": "Blockers per attacker",
+          "source": "matchConfig.blockersPerAttacker"
+        },
+        { "type": "heading", "text": "Resolving combat" },
+        {
+          "type": "bulletList",
+          "items": [
+            "An unblocked attacker deals its attack as damage to the player it attacked.",
+            "A blocked attacker and its blocker deal damage to each other at the same time.",
+            "Units with Quick Strike deal their damage in an earlier step. Anything defeated in that step never strikes back.",
+            "Excess damage from a blocked attacker does not spill over to the defending player.",
+            "If a blocker leaves play before damage, the attacker stays blocked and still deals no damage to the player.",
+            "Attack below zero counts as zero damage."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "damage_and_defeat",
+      "title": "Damage, defeat and elimination",
+      "order": 100,
+      "searchTerms": ["damage", "heal", "die", "destroy", "elimination", "state based"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Damage dealt to a unit is marked on it and stays there across turns until something heals it. A unit is defeated as soon as its marked damage reaches its current health."
+        },
+        {
+          "type": "paragraph",
+          "text": "Defeats are never resolved one at a time in the middle of something. After each instruction, and after combat damage, the game runs a single check that defeats everything lethally damaged simultaneously — which is how two units can trade and both die."
+        },
+        { "type": "heading", "text": "Healing" },
+        {
+          "type": "bulletList",
+          "items": [
+            "Healing a unit removes marked damage. It never raises a unit above its printed health.",
+            "Healing a player raises their health, with no maximum."
+          ]
+        },
+        { "type": "heading", "text": "Losing health bonuses" },
+        {
+          "type": "paragraph",
+          "text": "A temporary bonus that expires at end of turn takes its health back with it. A unit that survived only because of that bonus is defeated in the next check."
+        },
+        { "type": "heading", "text": "Elimination" },
+        {
+          "type": "bulletList",
+          "items": [
+            "An eliminated player's cards and tokens all leave the match. Tokens stop existing; other cards go to a removed pile.",
+            "Cards they controlled but did not own go back to their owner.",
+            "Attacks aimed at them are cancelled. The attackers stay exhausted and do not pick a new victim.",
+            "Choices they still owed are cancelled, and their queued effects end.",
+            "All of that cleanup happens first, and only then does the game run one check and look for triggers."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "commander",
+      "title": "Your Commander",
+      "order": 110,
+      "searchTerms": ["commander", "leader", "identity", "passive"],
+      "blocks": [
+        {
+          "type": "bulletList",
+          "items": [
+            "Your Commander starts outside your deck, in the Commander zone, and stays there for the whole match.",
+            "It decides which cards are legal in your deck, through its colour identity.",
+            "It may have a passive ability, which works from the Commander zone.",
+            "It may have one activated ability, usable in your own Main Phase and subject to its own usage limit."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "unresolved",
+          "title": "Commanders do not fight yet",
+          "text": "Commanders are never deployed to the battlefield in this version, and there is no Commander damage, Commander defeat or recovery timer. Those rules are deliberately not written yet, so nothing here describes them. A Commander's printed attack and health are reserved for when they are."
+        }
+      ]
+    },
+    {
+      "id": "multiplayer",
+      "title": "Three and four player games",
+      "order": 120,
+      "searchTerms": ["multiplayer", "free for all", "ffa", "seat", "politics", "spectate"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A larger table is a genuine free-for-all, not several duels running side by side. Every player competes independently and there are no teams."
+        },
+        {
+          "type": "bulletList",
+          "items": [
+            "Turns pass around a fixed circle. Eliminated seats are skipped and the circle is never renumbered.",
+            "Each of your attackers picks its own victim, so you can split an attack across two or three opponents in the same combat.",
+            "Only the player being attacked chooses blockers, and only for the attacks aimed at them.",
+            "An effect that says 'an opponent' asks you which one, when there is more than one to choose from.",
+            "An effect that says 'each opponent' works its way clockwise from you, and counts as happening all at once when it matters.",
+            "When several abilities trigger at the same moment, the active player's resolve first, then the rest clockwise. Nobody chooses the order.",
+            "Once you are out, you keep watching but cannot act. You only ever see public information."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "choices_and_targets",
+      "title": "Targets, choices and how effects resolve",
+      "order": 130,
+      "searchTerms": ["target", "choice", "queue", "stack", "trigger", "fizzle", "resolve"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Effects resolve through one first-in, first-out queue. There is no stack and no priority, so nothing can be responded to while it is resolving."
+        },
+        { "type": "heading", "text": "Order of events" },
+        {
+          "type": "numberedList",
+          "items": [
+            "You act. The server validates the action, the phase, the targets and the cost.",
+            "Costs are paid, and the effects join the queue.",
+            "Each instruction resolves in the order it is written on the card.",
+            "After each instruction the game checks for defeats and losses, then looks for abilities that have triggered.",
+            "New triggers wait until the current card has finished all of its own instructions, then join the queue behind whatever is already in it."
+          ]
+        },
+        { "type": "heading", "text": "When you have to choose" },
+        {
+          "type": "bulletList",
+          "items": [
+            "An effect that needs a decision stops the whole queue until the right player answers. Nobody else can act in the meantime.",
+            "The legal options are worked out by the server. The client only shows them.",
+            "If a chosen target is no longer legal when the effect actually resolves, it is skipped and everything else still happens.",
+            "Searching a hidden zone such as your deck may legally find nothing. Searching a public zone must take a card if a legal one is there."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "Runaway loops end safely",
+          "text": "The engine counts resolution steps and watches for repeated states. A combination that would loop forever stops with a diagnostic instead of hanging the match."
+        }
+      ]
+    },
+    {
+      "id": "keywords",
+      "title": "Keywords",
+      "order": 140,
+      "searchTerms": ["keyword", "swift", "evasive", "armored", "venom", "siphon", "quick strike"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Keywords are shorthand for rules that appear on many cards. Every keyword below is defined by what the rules engine actually does with it."
+        },
+        { "type": "keywordIndex", "source": "keywordRegistry" }
+      ]
+    },
+    {
+      "id": "glossary",
+      "title": "Glossary",
+      "order": 150,
+      "searchTerms": ["glossary", "terms", "definitions", "vocabulary"],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The words the rules themselves are written in."
+        },
+        { "type": "glossaryIndex", "source": "glossary" }
+      ]
+    },
+    {
+      "id": "example_first_turn",
+      "title": "An example first turn",
+      "order": 160,
+      "searchTerms": ["example", "walkthrough", "first turn", "tutorial"],
+      "blocks": [
+        {
+          "type": "example",
+          "title": "You are going first in a two-player match",
+          "steps": [
+            "Turn Start: your maximum energy becomes {matchConfig.startingMaxEnergy} and refills. Nothing is exhausted yet.",
+            "Draw: you skip it, because you are the player going first.",
+            "Main Phase: you have {matchConfig.startingMaxEnergy} energy, so you play a one-cost unit into an empty slot. It arrives summoning sick.",
+            "Declare Attackers: your only unit is summoning sick, so you confirm with nobody attacking.",
+            "Assign Blockers is skipped, because there were no attacks.",
+            "Second Main Phase: you have no energy left, so you pass.",
+            "Turn End: your hand is under the limit, so nothing is discarded. Play passes to your opponent, who draws normally on their turn."
+          ]
+        },
+        {
+          "type": "example",
+          "title": "Your second turn",
+          "steps": [
+            "Turn Start: your unit readies, your maximum energy rises and refills.",
+            "Draw: you draw one card.",
+            "Main Phase: you spend energy on a second unit.",
+            "Declare Attackers: your first unit is no longer summoning sick, so you attack with it. It exhausts as you declare.",
+            "Assign Blockers: your opponent may block with one of their units, or take the damage.",
+            "Resolve Combat: damage is dealt at the same time, and anything lethally damaged is defeated together."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "edge_cases",
+      "title": "Common edge cases",
+      "order": 170,
+      "searchTerms": [
+        "edge case",
+        "corner case",
+        "empty deck",
+        "hand size",
+        "fizzle",
+        "disconnect"
+      ],
+      "blocks": [
+        {
+          "type": "bulletList",
+          "items": [
+            "Empty deck: drawing from an empty deck loses you the match. A multi-card draw resolves one card at a time, so you can lose part-way through it.",
+            "Hand limit: at the end of your turn you must discard down to the maximum hand size, choosing which cards to lose.",
+            "Full battlefield: a token that has nowhere to go is never created, and nothing is destroyed to make space.",
+            "No legal target: a spell that needs a target and has none cannot be played. If a target becomes illegal later, it is skipped and the rest of the effect still resolves.",
+            "Blocker removed before damage: the attacker stays blocked and deals no damage to the player.",
+            "Expiring buffs: when a temporary health bonus ends, a unit whose marked damage now reaches its health is defeated straight away.",
+            "Sacrifice: a sacrificed unit counts as defeated as well, so both kinds of ability trigger.",
+            "Disconnecting: you have {matchConfig.disconnectGraceSeconds} seconds to come back. Refreshing the page reclaims your seat. At a larger table, everyone else carries on without you."
+          ]
+        },
+        {
+          "type": "configValue",
+          "label": "Maximum hand size at end of turn",
+          "source": "matchConfig.maxHandSize"
+        },
+        {
+          "type": "callout",
+          "tone": "unresolved",
+          "title": "Rules still being decided",
+          "text": "Every number in this book is a playtest setting rather than a final decision, and two keywords, Guardian and Resilient, are printed on cards but do nothing yet. Their entries in the keyword list say so. Nothing in this book describes a rule the game does not actually implement."
+        }
+      ]
+    }
+  ]
+}

@@ -1,11 +1,12 @@
 import {
   COLOR_INFO,
-  KEYWORD_INFO,
+  KEYWORD_REGISTRY,
   NEUTRAL_INFO,
   POWER_CLASS_NAMES,
   ROLE_NAMES,
   type CardDefinition,
 } from '@tcg/card-data';
+import { resolveTemplate } from '@tcg/help-content';
 import { CardArt } from './CardArt.js';
 
 /**
@@ -72,8 +73,12 @@ export function CardFrame({ card, copies = 0, compact = false }: CardFrameProps)
         {card.keywords.length > 0 && (
           <p className="card-frame__keywords">
             {card.keywords.map((keyword) => (
-              <span key={keyword} className="keyword-chip" title={KEYWORD_INFO[keyword].reminder}>
-                {KEYWORD_INFO[keyword].name}
+              <span
+                key={keyword}
+                className="keyword-chip"
+                title={resolveTemplate(KEYWORD_REGISTRY[keyword].shortDefinition)}
+              >
+                {KEYWORD_REGISTRY[keyword].name}
               </span>
             ))}
           </p>

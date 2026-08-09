@@ -94,10 +94,16 @@ interactions are **still undecided** ([open-questions.md](../open-questions.md)
 Q4).
 
 Phase 2A had to do _something_ with them to run a match. The single source of
-truth is the `KEYWORD_BEHAVIOUR` table in
-`packages/rules-engine/src/keywords.ts`, which states in one line what the
-engine does today and carries an `implemented` flag. Changing a keyword means
-changing that table and the handler it names — not hunting through combat code.
+truth is `KEYWORD_REGISTRY` in `packages/card-data/src/keywords.ts`: it carries
+the player-facing definition every tooltip, glossary entry and card explanation
+reads, plus the `implemented` flag saying whether the engine acts on the keyword
+at all. `packages/rules-engine/src/keywords.ts` imports that flag rather than
+keeping a copy, and adds only the developer-facing note naming the handler that
+owns the behaviour — so the definition a player reads and the engine's record of
+what is wired up cannot drift apart.
+
+Changing a keyword means changing the registry entry, the engine note, and the
+handler it names — not hunting through combat code.
 
 | Keyword        | Engine behaviour today                                                          |
 | -------------- | ------------------------------------------------------------------------------- |

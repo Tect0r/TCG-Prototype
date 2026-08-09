@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 2,
+  "id": "template_basic_unit",
+  "name": "Template Basic Unit",
+  "type": "unit",
+  "colorIdentity": ["green"],
+  "cost": 3,
+  "attack": 3,
+  "health": 4,
+  "role": "blocker",
+  "powerClass": "standard",
+  "tags": ["beast"],
+  "keywords": [],
+  "displayText": "A plain unit with no special rules.",
+  "text": {
+    "flavor": "Copy this file, change the id and the numbers, and you have a card."
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 2,
+  "id": "template_filtered_target_spell",
+  "name": "Template Filtered Target Spell",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "role": "removal",
+  "powerClass": "standard",
+  "tags": ["burn"],
+  "displayText": "Deal 3 damage to a damaged enemy unit that costs 4 or less.",
+  "effects": [
+    {
+      "type": "deal_damage",
+      "amount": 3,
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit", "token"],
+            "damaged": true,
+            "cost": { "max": 4 }
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self",
+          "optional": false
+        }
+      }
+    }
+  ],
+  "text": {
+    "summary": "Finishes off a wounded enemy unit.",
+    "notes": [
+      "Because the target is required and filtered, this spell cannot be played at all when no enemy unit matches. The engine works that out; the client only shows the result.",
+      "Amounts are fixed numbers. There is no variable-value expression in the schema yet — a card whose damage depends on the board needs engine work, not just data."
+    ]
+  }
+}

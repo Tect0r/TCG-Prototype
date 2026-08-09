@@ -1058,3 +1058,432 @@ code {
 .match-log li {
   padding: 0.1rem 0;
 }
+
+/* ---------------------------------------------------------- Player help */
+
+.lobby__rulebook {
+  margin-left: auto;
+}
+
+.board__help-toggle.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #0d0f13;
+}
+
+.board__help-hint {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.82rem;
+}
+
+.player-bar__inspect {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.82rem;
+}
+
+.relic--clickable:hover {
+  border-color: var(--accent);
+}
+
+.board__discard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.3rem 0;
+  font-size: 0.78rem;
+}
+
+/* The rulebook overlay: a modal over the lobby, never a route away from it. */
+
+.rulebook__backdrop,
+.inspector__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  padding: 1rem;
+  background: rgb(0 0 0 / 60%);
+}
+
+.rulebook {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: auto;
+  width: min(56rem, 100%);
+  max-height: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.rulebook__header {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.rulebook__header h2 {
+  margin-right: auto;
+}
+
+.rulebook__search input {
+  min-width: 14rem;
+}
+
+.rulebook__intro {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.rulebook__body {
+  display: grid;
+  grid-template-columns: 14rem 1fr;
+  gap: 1rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.rulebook__toc {
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  padding-right: 0.5rem;
+}
+
+.rulebook__toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rulebook__toc button {
+  width: 100%;
+  text-align: left;
+  padding: 0.25rem 0.4rem;
+}
+
+.rulebook__result-count {
+  margin: 0 0 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.rulebook__content {
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  scroll-behavior: smooth;
+}
+
+.rulebook__section {
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.rulebook__section h3 {
+  margin-bottom: 0.5rem;
+  font-size: 1.05rem;
+}
+
+.rulebook__subheading {
+  margin: 0.9rem 0 0.3rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rulebook__paragraph {
+  margin: 0 0 0.6rem;
+}
+
+.rulebook__list {
+  margin: 0 0 0.6rem;
+  padding-left: 1.2rem;
+}
+
+.rulebook__list li {
+  margin-bottom: 0.25rem;
+}
+
+.rulebook__callout {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.rulebook__callout--warning {
+  border-left-color: var(--warning);
+}
+
+.rulebook__callout--unresolved {
+  border-left-color: var(--danger);
+}
+
+.rulebook__callout p {
+  margin: 0.2rem 0 0;
+  font-size: 0.88rem;
+}
+
+.rulebook__example {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.rulebook__example-line {
+  margin: 0.2rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+.rulebook__value {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.2rem 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.rulebook__value-number {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.rulebook__phases {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.rulebook__phases li {
+  margin-bottom: 0.35rem;
+}
+
+.rulebook__phases span {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.rulebook__definitions {
+  margin: 0;
+}
+
+.rulebook__definition {
+  margin-bottom: 0.7rem;
+}
+
+.rulebook__definition dt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.rulebook__definition dd {
+  margin: 0.15rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+}
+
+.rulebook__definition dd p {
+  margin: 0 0 0.2rem;
+}
+
+/* The card inspector: a side panel, so the board stays visible behind it. */
+
+.inspector__backdrop {
+  justify-content: flex-end;
+  background: rgb(0 0 0 / 35%);
+}
+
+.inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: min(24rem, 100%);
+  max-height: 100%;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow-y: auto;
+}
+
+.inspector__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.inspector__where {
+  margin: 0.1rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.inspector__art {
+  max-width: 9rem;
+}
+
+.inspector__identity {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.inspector__identity dt {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inspector__identity dd {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.inspector__printed {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--border);
+  background: var(--surface);
+}
+
+.inspector__printed p {
+  margin: 0;
+}
+
+.inspector__printed footer {
+  margin-top: 0.25rem;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.inspector__summary {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.inspector__generated {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.inspector__status {
+  margin: 0;
+  padding: 0.4rem 0.6rem 0.4rem 1.4rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+
+.inspector__section h4 {
+  margin: 0.6rem 0 0.2rem;
+  font-size: 0.9rem;
+}
+
+.inspector__timing,
+.inspector__costs {
+  margin: 0 0 0.3rem;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.inspector__steps {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.inspector__steps li {
+  margin-bottom: 0.4rem;
+}
+
+.inspector__step-text {
+  display: block;
+}
+
+.inspector__step-note {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.82rem;
+}
+
+.inspector__step-caveat {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.inspector__keywords dt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.inspector__keywords dd {
+  margin: 0 0 0.5rem;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+.inspector__notes {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+.inspector__flavor {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+.inspector__neighbours {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.inspector__neighbours .is-active {
+  border-color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  .rulebook__body {
+    grid-template-columns: 1fr;
+  }
+
+  .rulebook__toc {
+    max-height: 9rem;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .inspector {
+    width: 100%;
+  }
+}
