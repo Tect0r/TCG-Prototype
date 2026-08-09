@@ -26,6 +26,9 @@ function options(overrides: Partial<RunMatchOptions> = {}): RunMatchOptions {
   const seeds = overrides.seeds ?? deriveSeedBundle('test|game:000000', 2);
   return {
     experimentId: 'test',
+    experimentKind: 'batch',
+    configHash: 'run-match-test',
+    arm: null,
     environment: env as Environment,
     matchId: 'm_test',
     orderKey: 'test 000',

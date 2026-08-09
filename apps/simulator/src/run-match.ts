@@ -70,6 +70,12 @@ export const DEFAULT_LIMITS: MatchLimits = Object.freeze({
 
 export interface RunMatchOptions {
   readonly experimentId: string;
+  /** Experiment kind, stamped on the record so one stream can hold every arm. */
+  readonly experimentKind: MatchRecord['experimentKind'];
+  /** Hash of the normalized experiment configuration. */
+  readonly configHash: string;
+  /** Which arm of the experiment this match belongs to; `null` for a plain batch. */
+  readonly arm: string | null;
   readonly environment: Environment;
   /** Identity of the match, as decided by the schedule. */
   readonly matchId: string;
@@ -160,7 +166,7 @@ export async function runMatch(options: RunMatchOptions): Promise<RunMatchResult
     pilotSeed: options.seeds.pilotSeeds[index] ?? '',
   }));
 
-  const collector = new TelemetryCollector(database, setups, state);
+  const collector = new TelemetryCollector(database, setups, state, rulesConfig);
   const rngs = setups.map((setup) => rngFor(setup.pilotSeed));
   const decisionCounts = setups.map(() => 0);
 
@@ -295,6 +301,9 @@ export async function runMatch(options: RunMatchOptions): Promise<RunMatchResult
     matchId: options.matchId,
     orderKey: options.orderKey,
     experimentId: options.experimentId,
+    experimentKind: options.experimentKind,
+    configHash: options.configHash,
+    arm: options.arm,
     environmentId: environment.id,
     environmentHash: environment.hash,
     cardPoolHash: environment.cardPoolHash,

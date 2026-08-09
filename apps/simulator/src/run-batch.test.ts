@@ -2,10 +2,16 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { runBatch, shouldKeepReplay, type BatchOutcome } from './run-batch.js';
+import {
+  runBatch,
+  shouldKeepReplay,
+  type BatchOutcome,
+  type RunBatchOptions,
+} from './run-batch.js';
 import { buildSchedule } from './schedule.js';
 import { generatePopulation } from './deck-search/generate.js';
 import { JsonlWriter, readJsonl, toCsv } from './reporting/sinks.js';
+import { MatchStore } from './reporting/match-store.js';
 import { matchRecordSchema } from './telemetry/schema.js';
 import { aggregate } from './analysis/aggregate.js';
 import {
@@ -20,6 +26,11 @@ import {
  * CLAUDE.md §13.7 and §13.15 items 5, 6, 7 and 11: worker-count equivalence,
  * mirrored schedules, and JSONL streaming, resume, deduplication and damaged-tail
  * recovery.
+ *
+ * Since PHASE4_HARDENING §7 the stream is owned by a `MatchStore` rather than by
+ * the batch, so these tests open one explicitly. That is the same object every
+ * experiment kind uses, which is the point: resume behaviour is tested once and
+ * applies to batches, searches, replacements and comparisons alike.
  */
 
 const roots: string[] = [];
@@ -35,6 +46,7 @@ afterAll(() => {
 
 const env = tinyEnvironment();
 const decks = generatePopulation(env, 'batch-pop', 3).decks;
+const CONFIG_HASH = 'batch-config-hash';
 
 function schedule(games = 1) {
   return buildSchedule({
@@ -52,9 +64,22 @@ function schedule(games = 1) {
   });
 }
 
-async function run(overrides: Partial<Parameters<typeof runBatch>[0]> = {}): Promise<BatchOutcome> {
+/** A store over a temp directory, resuming an existing stream when asked. */
+function batchStore(root: string | null, resume = false): MatchStore {
+  return new MatchStore(root, {
+    experimentId: 'batch',
+    experimentKind: 'batch',
+    configHash: CONFIG_HASH,
+    resume,
+  });
+}
+
+async function run(overrides: Partial<RunBatchOptions> = {}): Promise<BatchOutcome> {
   return runBatch({
     experimentId: 'batch',
+    experimentKind: 'batch',
+    configHash: CONFIG_HASH,
+    arm: null,
     environment: env,
     decks,
     pilots: [VALUE_PILOT, AGGRESSIVE_PILOT],
@@ -63,7 +88,7 @@ async function run(overrides: Partial<Parameters<typeof runBatch>[0]> = {}): Pro
     retention: NO_RETENTION,
     workers: 1,
     failFast: false,
-    outputDir: null,
+    sink: null,
     softwareCommit: null,
     ...overrides,
   });
@@ -183,7 +208,10 @@ describe('mirrored schedules', () => {
 describe('streaming, resume and recovery', () => {
   it('streams every record to matches.jsonl as it finishes', async () => {
     const dir = tempDir();
-    const outcome = await run({ outputDir: dir });
+    const store = batchStore(dir);
+    const outcome = await run({ sink: store });
+    store.flush();
+
     const onDisk = readJsonl(join(dir, 'matches.jsonl'), matchRecordSchema);
     expect(onDisk.skipped).toEqual([]);
     expect(onDisk.records).toHaveLength(outcome.records.length);
@@ -192,18 +220,34 @@ describe('streaming, resume and recovery', () => {
     );
   });
 
+  it('writes a header sidecar identifying the configuration that wrote the stream', () => {
+    const dir = tempDir();
+    const store = batchStore(dir);
+    store.flush();
+    const header = JSON.parse(readFileSync(join(dir, 'matches.header.json'), 'utf8'));
+    expect(header.configHash).toBe(CONFIG_HASH);
+    expect(header.experimentKind).toBe('batch');
+    expect(header.telemetrySchemaVersion).toBeGreaterThan(0);
+  });
+
   it('resumes without rerunning or duplicating completed matches', async () => {
     const dir = tempDir();
     const plan = schedule(2);
 
     // A first run that stops after part of the schedule.
     const partial = plan.slice(0, 4);
-    await run({ outputDir: dir, schedule: partial });
+    const first = batchStore(dir);
+    await run({ sink: first, schedule: partial });
+    first.flush();
 
-    const resumed = await run({ outputDir: dir, schedule: plan, resume: true });
+    const second = batchStore(dir, true);
+    const resumed = await run({ sink: second, schedule: plan });
+    second.flush();
+
+    expect(second.resumedCount).toBe(partial.length);
     expect(resumed.skippedByResume).toBe(partial.length);
-    expect(resumed.records).toHaveLength(plan.length);
-    expect(new Set(resumed.records.map((record) => record.matchId)).size).toBe(plan.length);
+    expect(second.all()).toHaveLength(plan.length);
+    expect(new Set(second.all().map((record) => record.matchId)).size).toBe(plan.length);
 
     const onDisk = readJsonl(join(dir, 'matches.jsonl'), matchRecordSchema);
     expect(onDisk.records).toHaveLength(plan.length);
@@ -211,19 +255,53 @@ describe('streaming, resume and recovery', () => {
 
   it('produces the same results whether or not it was interrupted', async () => {
     const plan = schedule(2);
-    const whole = await run({ outputDir: tempDir(), schedule: plan });
+    const wholeStore = batchStore(tempDir());
+    await run({ sink: wholeStore, schedule: plan });
+    wholeStore.flush();
 
     const dir = tempDir();
-    await run({ outputDir: dir, schedule: plan.slice(0, 3) });
-    const resumed = await run({ outputDir: dir, schedule: plan, resume: true });
+    const first = batchStore(dir);
+    await run({ sink: first, schedule: plan.slice(0, 3) });
+    first.flush();
+    const second = batchStore(dir, true);
+    await run({ sink: second, schedule: plan });
+    second.flush();
 
-    expect(JSON.stringify(resumed.records)).toBe(JSON.stringify(whole.records));
+    // Summaries must agree, not merely the record counts: that is what makes an
+    // interrupted run indistinguishable from an uninterrupted one.
+    expect(JSON.stringify(second.all())).toBe(JSON.stringify(wholeStore.all()));
+    expect(JSON.stringify(aggregate(second.all()))).toBe(
+      JSON.stringify(aggregate(wholeStore.all())),
+    );
+  });
+
+  it('refuses to resume a stream written by a different configuration', async () => {
+    const dir = tempDir();
+    const first = batchStore(dir);
+    await run({ sink: first });
+    first.flush();
+
+    expect(
+      () =>
+        new MatchStore(dir, {
+          experimentId: 'batch',
+          experimentKind: 'batch',
+          configHash: 'a-different-configuration',
+          resume: true,
+        }),
+    ).toThrow(/different run|configuration hash/i);
   });
 
   it('starts a fresh file when not resuming, rather than appending to an old run', async () => {
     const dir = tempDir();
-    await run({ outputDir: dir });
-    await run({ outputDir: dir });
+    const first = batchStore(dir);
+    await run({ sink: first });
+    first.flush();
+
+    const second = batchStore(dir);
+    await run({ sink: second });
+    second.flush();
+
     const onDisk = readJsonl(join(dir, 'matches.jsonl'), matchRecordSchema);
     expect(onDisk.records).toHaveLength(schedule().length);
   });
@@ -231,7 +309,9 @@ describe('streaming, resume and recovery', () => {
   it('recovers from a truncated final line without losing the rest', async () => {
     const dir = tempDir();
     const plan = schedule(2);
-    await run({ outputDir: dir, schedule: plan.slice(0, 4) });
+    const first = batchStore(dir);
+    await run({ sink: first, schedule: plan.slice(0, 4) });
+    first.flush();
 
     // Simulate a process killed mid-write.
     const path = join(dir, 'matches.jsonl');
@@ -242,14 +322,21 @@ describe('streaming, resume and recovery', () => {
     expect(read.skipped).toHaveLength(1);
     expect(read.skipped[0]?.reason).toMatch(/truncated|unparseable/i);
 
-    // And the run still resumes correctly, without a duplicate.
-    const resumed = await run({ outputDir: dir, schedule: plan, resume: true });
-    expect(resumed.recovered).toHaveLength(1);
-    expect(resumed.records).toHaveLength(plan.length);
-    expect(new Set(resumed.records.map((record) => record.matchId)).size).toBe(plan.length);
+    // And the run still resumes correctly, without a duplicate and without
+    // losing any of the four valid records before the damaged tail.
+    const second = batchStore(dir, true);
+    expect(second.recovered).toHaveLength(1);
+    expect(second.resumedCount).toBe(4);
+    const resumed = await run({ sink: second, schedule: plan });
+    second.flush();
+    expect(resumed.skippedByResume).toBe(4);
+    expect(second.all()).toHaveLength(plan.length);
+    expect(new Set(second.all().map((record) => record.matchId)).size).toBe(plan.length);
+    // The damaged tail is truncated exactly once rather than re-read forever.
+    expect(readJsonl(path, matchRecordSchema).skipped).toEqual([]);
   });
 
-  it('drops a structurally invalid line and says why', async () => {
+  it('drops a structurally invalid line and says why', () => {
     const dir = tempDir();
     const path = join(dir, 'matches.jsonl');
     writeFileSync(path, `${JSON.stringify({ schemaVersion: 1, matchId: 'nope' })}\n`, 'utf8');
@@ -259,12 +346,33 @@ describe('streaming, resume and recovery', () => {
     expect(read.skipped[0]?.reason.length).toBeGreaterThan(0);
   });
 
+  it('deduplicates by arm and match ID rather than by match ID alone', async () => {
+    const dir = tempDir();
+    const store = batchStore(dir);
+    const plan = schedule();
+    await run({ sink: store, schedule: plan, arm: 'baseline' });
+    await run({ sink: store, schedule: plan, arm: 'candidate' });
+    store.flush();
+
+    // The same match IDs in two arms are two records, not one overwritten one.
+    expect(store.all()).toHaveLength(plan.length * 2);
+    expect(store.arm('baseline')).toHaveLength(plan.length);
+    expect(store.arm('candidate')).toHaveLength(plan.length);
+    expect(new Set(store.arm('baseline').map((record) => record.matchId))).toEqual(
+      new Set(store.arm('candidate').map((record) => record.matchId)),
+    );
+  });
+
   it('writes a replay for every abnormal match', async () => {
     const dir = tempDir();
+    const store = batchStore(dir);
     const outcome = await run({
-      outputDir: dir,
+      sink: store,
+      replayDir: join(dir, 'replays'),
       limits: { ...FAST_LIMITS, maxTurns: 2 },
     });
+    store.flush();
+
     const abnormal = outcome.records.filter((record) => record.termination === 'turn_limit');
     expect(abnormal.length).toBeGreaterThan(0);
     for (const record of abnormal) {

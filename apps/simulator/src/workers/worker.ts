@@ -30,6 +30,9 @@ async function main(): Promise<void> {
       try {
         const outcome = await runOne({
           experimentId: setup.experimentId,
+          experimentKind: setup.experimentKind,
+          configHash: setup.configHash,
+          arm: setup.arm,
           environment,
           decks: setup.decks,
           pilots: setup.pilots,

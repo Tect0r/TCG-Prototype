@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "kind": "robustness",
+  "id": "pilot-robustness",
+  "label": "Do the conclusions survive reasonable re-tuning of the pilots?",
+  "seed": "robustness-2026-08",
+  "output": "results",
+  "playerCount": 2,
+  "pilots": [{ "id": "value" }, { "id": "aggressive" }],
+  "pilotPairing": "mirror",
+  "environment": {
+    "id": "prototype_core",
+    "label": "Bundled prototype set at the default rules configuration"
+  },
+  "decks": {
+    "kind": "generated",
+    "count": 6,
+    "generator": { "minUnits": 12 }
+  },
+
+  "profiles": [
+    "published",
+    "combat_forward",
+    "combat_cautious",
+    "card_advantage",
+    "removal_forward"
+  ],
+
+  "schedule": "round_robin",
+  "gamesPerPairing": 2,
+  "mirrorSeats": true,
+  "limits": { "maxTurns": 150 },
+  "retention": { "replaySampleRate": 0 },
+  "analysis": {
+    "minMatchesPerCard": 20,
+    "minPairSupport": 15,
+    "minMatchesPerDeck": 10,
+    "pilotRobustnessAgreement": 0.75
+  },
+  "workers": 4
+}

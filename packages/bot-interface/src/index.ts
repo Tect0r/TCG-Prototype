@@ -70,5 +70,17 @@ export {
   type PilotSpecInput,
 } from './registry.js';
 
+export {
+  perturbPilot,
+  perturbationProfile,
+  perturbationProfileIdSchema,
+  PERTURBATION_PROFILES,
+  PERTURBATION_PROFILE_IDS,
+  PERTURBATION_PROFILE_VERSION,
+  PERTURBABLE_WEIGHTS,
+  UNPERTURBED_WEIGHTS,
+  type PerturbationProfile,
+} from './perturbation.js';
+
 export { checkActionOffered, type ActionCheck } from './validate.js';
 export { decideSafely, type PilotRunOptions, type PilotRunResult } from './run-pilot.js';

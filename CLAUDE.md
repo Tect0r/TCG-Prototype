@@ -12,7 +12,7 @@ The application should grow in this order:
 4. Local, headless AI simulations and card-balance analysis
 5. Optional analysis of pseudonymous real-player match data
 
-Phases 1–3 are complete: the deck builder, deterministic headless rules engine, authoritative online matches, and two-to-four-player free-for-all all work. The active implementation milestone is now **Phase 4: local headless simulation, automated deck search, and card-balance analysis**. Preserve all working behavior, protocol validation, replay determinism, hidden-information guarantees, and saved-data compatibility while extending the project.
+Phases 1–3 are complete: the deck builder, deterministic headless rules engine, authoritative online matches, and two-to-four-player free-for-all all work. **Phase 4 — local headless simulation, automated deck search, and card-balance analysis — is implemented**: the simulator, the four pilots, batch execution, telemetry, deck generation, evolutionary search, replacement experiments, comparisons and reporting all run. The active milestone is the correctness and trustworthiness pass over that laboratory defined in `PHASE4_HARDENING.md`; §18 below describes how Phase 4 was built and remains the reference for its structure. Preserve all working behavior, protocol validation, replay determinism, hidden-information guarantees, and saved-data compatibility while extending the project.
 
 ## 2. Core design principles
 

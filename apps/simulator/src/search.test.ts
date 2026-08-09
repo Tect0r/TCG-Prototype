@@ -57,6 +57,9 @@ function options(overrides: Partial<SearchOptions> = {}): SearchOptions {
   return {
     experimentId: 'search',
     experimentSeed: 'search-seed',
+    experimentKind: 'search',
+    configHash: 'search-test',
+    armPrefix: 'search:r0',
     environment: env,
     pilots: [VALUE_PILOT],
     limits: FAST_LIMITS,

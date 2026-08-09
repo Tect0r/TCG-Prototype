@@ -24,17 +24,34 @@ export function readJson<T>(path: string, schema: z.ZodType<T>): T {
   return schema.parse(JSON.parse(readFileSync(path, 'utf8')));
 }
 
-/** Appends one record per line. Each line is independently parseable. */
+export interface JsonlWriterOptions {
+  /** Records buffered before a write reaches the filesystem. */
+  readonly flushEvery?: number;
+  /** Start an empty file, discarding anything already there. */
+  readonly truncate?: boolean;
+}
+
+/**
+ * Appends one record per line. Each line is independently parseable.
+ *
+ * Buffering is bounded rather than unlimited: a large run must not accumulate
+ * its whole output in memory before touching the disk, and a record is only
+ * resumable once its newline is committed (PHASE4_HARDENING §7).
+ */
 export class JsonlWriter {
   readonly path: string;
   #buffer: string[] = [];
   #flushEvery: number;
 
-  constructor(path: string, flushEvery = 16) {
+  constructor(path: string, options: JsonlWriterOptions | number = {}) {
+    // The numeric form is the original signature, kept so existing callers and
+    // tests that pass a flush interval directly keep working.
+    const resolved: JsonlWriterOptions =
+      typeof options === 'number' ? { flushEvery: options } : options;
     this.path = path;
-    this.#flushEvery = flushEvery;
+    this.#flushEvery = resolved.flushEvery ?? 16;
     ensureDir(dirname(path));
-    if (!existsSync(path)) writeFileSync(path, '', 'utf8');
+    if (resolved.truncate || !existsSync(path)) writeFileSync(path, '', 'utf8');
   }
 
   append(value: unknown): void {
@@ -128,9 +145,14 @@ export interface ExperimentPaths {
   readonly manifest: string;
   readonly config: string;
   readonly matches: string;
+  /** Sidecar identifying which configuration wrote `matches.jsonl`. */
+  readonly matchesHeader: string;
   readonly decks: string;
+  /** The frozen reference population a comparison replayed in both environments. */
+  readonly referencePopulation: string;
   readonly cardUsage: string;
   readonly cardPairs: string;
+  readonly clusterInclusion: string;
   readonly summary: string;
   readonly report: string;
   readonly replays: string;
@@ -144,9 +166,12 @@ export function experimentPaths(root: string): ExperimentPaths {
     manifest: join(root, 'manifest.json'),
     config: join(root, 'config.json'),
     matches: join(root, 'matches.jsonl'),
+    matchesHeader: join(root, 'matches.header.json'),
     decks: join(root, 'decks.json'),
+    referencePopulation: join(root, 'reference-population.json'),
     cardUsage: join(root, 'card-usage.csv'),
     cardPairs: join(root, 'card-pairs.csv'),
+    clusterInclusion: join(root, 'cluster-inclusion.csv'),
     summary: join(root, 'summary.json'),
     report: join(root, 'report.md'),
     replays: join(root, 'replays'),

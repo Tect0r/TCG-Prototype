@@ -1,5 +1,4 @@
-import { writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type { PilotSpec } from '@tcg/bot-interface';
 import type { Environment } from './environment.js';
 import { buildSchedule, type ScheduledMatch, type ScheduleOptions } from './schedule.js';
@@ -7,8 +6,9 @@ import { runOne } from './run-one.js';
 import { seededIndex } from './seed.js';
 import type { MatchLimits } from './run-match.js';
 import type { SimDeck } from './deck-search/deck.js';
-import { JsonlWriter, ensureDir, readJsonl, writeJson } from './reporting/sinks.js';
-import { matchRecordSchema, isAbnormal, type MatchRecord } from './telemetry/schema.js';
+import { ensureDir, writeJson } from './reporting/sinks.js';
+import { compareRecords, type MatchSink } from './reporting/match-store.js';
+import { isAbnormal, recordIdentity, type MatchRecord } from './telemetry/schema.js';
 import { runJobsInPool } from './workers/pool.js';
 import { workerSetupSchema, type WorkerJob } from './workers/protocol.js';
 
@@ -19,13 +19,17 @@ import { workerSetupSchema, type WorkerJob } from './workers/protocol.js';
  * being decided up front:
  *
  * - **Resumable.** An interrupted run is restarted by regenerating the same
- *   schedule and skipping the match IDs already on disk. Nothing is re-run and
- *   nothing is duplicated.
- * - **Worker-count invariant.** Records are re-sorted by their stable order key
+ *   schedule and skipping the identities already committed to the shared
+ *   `matches.jsonl`. Nothing is re-run and nothing is duplicated.
+ * - **Worker-count invariant.** Records are re-sorted by arm and stable order key
  *   before any aggregate is computed, so floating-point sums are added in the
  *   same order however the matches were distributed.
- * - **Streamed.** Records are appended to `matches.jsonl` as they finish, so a
- *   large experiment never has to fit in memory.
+ * - **Streamed.** Records are appended as they finish, so a large experiment
+ *   never has to fit in memory.
+ *
+ * The store is supplied by the caller rather than opened here, because every
+ * experiment kind — including a search's generations and a comparison's two
+ * arms — writes into one stream (PHASE4_HARDENING §7).
  */
 
 export interface BatchRetention {
@@ -46,6 +50,10 @@ export interface BatchProgress {
 
 export interface RunBatchOptions {
   readonly experimentId: string;
+  readonly experimentKind: MatchRecord['experimentKind'];
+  readonly configHash: string;
+  /** Arm label stamped on every record this batch produces. */
+  readonly arm: string | null;
   readonly environment: Environment;
   readonly decks: readonly SimDeck[];
   readonly pilots: readonly PilotSpec[];
@@ -55,23 +63,26 @@ export interface RunBatchOptions {
   readonly workers: number;
   readonly failFast: boolean;
   readonly softwareCommit?: string | null;
-  /** Experiment directory. `null` keeps everything in memory (used by tests). */
-  readonly outputDir: string | null;
-  /** Skip matches already present in `matches.jsonl`. */
-  readonly resume?: boolean;
+  /**
+   * Where raw records are committed. `null` keeps this batch in memory only,
+   * which is what an in-process test or a nested evaluation without its own
+   * stream wants.
+   */
+  readonly sink?: MatchSink | null;
+  /** Directory replays are written to. `null` writes none. */
+  readonly replayDir?: string | null;
   readonly onProgress?: (progress: BatchProgress) => void;
   /** How often to report progress, in completed matches. */
   readonly progressEvery?: number;
 }
 
 export interface BatchOutcome {
-  /** Every record for this run, in canonical order key order. */
+  /** Every record produced *or resumed* for this batch, in canonical order. */
   readonly records: readonly MatchRecord[];
+  /** Matches skipped because the stream already had them. */
   readonly skippedByResume: number;
   /** Matches whose runner threw outright, as opposed to terminating abnormally. */
   readonly failures: readonly { readonly matchId: string; readonly message: string }[];
-  /** Damaged JSONL lines found while resuming. */
-  readonly recovered: readonly { readonly line: number; readonly reason: string }[];
   readonly elapsedMs: number;
 }
 
@@ -84,19 +95,18 @@ export function shouldKeepReplay(matchId: string, sampleRate: number): boolean {
 
 export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> {
   const started = Date.now();
-  const paths = options.outputDir;
-  const matchesPath = paths === null ? null : join(paths, 'matches.jsonl');
+  const sink = options.sink ?? null;
+  const replayDir = options.replayDir ?? null;
 
-  let existing: readonly MatchRecord[] = [];
-  let recovered: readonly { line: number; reason: string }[] = [];
-  if (matchesPath !== null && options.resume) {
-    const read = readJsonl(matchesPath, matchRecordSchema);
-    existing = read.records;
-    recovered = read.skipped;
-  }
-  const alreadyDone = new Set(existing.map((record) => record.matchId));
+  const identityOf = (matchId: string): string => recordIdentity({ matchId, arm: options.arm });
 
-  const pending = options.schedule.filter((match) => !alreadyDone.has(match.matchId));
+  // Anything already committed to the stream under this arm is done. That is
+  // the whole resume mechanism: the file on disk *is* the progress.
+  const pending = options.schedule.filter(
+    (match) => sink === null || !sink.has(identityOf(match.matchId)),
+  );
+  const skippedByResume = options.schedule.length - pending.length;
+
   const jobs: WorkerJob[] = pending.map((match) => ({
     matchId: match.matchId,
     orderKey: match.orderKey,
@@ -109,16 +119,12 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> 
     keepReplay: shouldKeepReplay(match.matchId, options.retention.replaySampleRate),
   }));
 
-  const records: MatchRecord[] = [...existing];
+  const records: MatchRecord[] = [];
   const failures: { matchId: string; message: string }[] = [];
-  let abnormal = records.filter((record) => isAbnormal(record.termination)).length;
+  let abnormal = 0;
   let completed = 0;
 
-  const writer =
-    matchesPath === null
-      ? null
-      : new JsonlWriter(options.resume ? matchesPath : freshFile(matchesPath));
-  if (paths !== null) ensureDir(join(paths, 'replays'));
+  if (replayDir !== null) ensureDir(replayDir);
 
   const progressEvery = options.progressEvery ?? 25;
   const report = (): void => {
@@ -143,9 +149,9 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> 
     } else {
       records.push(record);
       if (isAbnormal(record.termination)) abnormal += 1;
-      writer?.append(record);
-      if (replay !== null && replay !== undefined && paths !== null) {
-        writeJson(join(paths, 'replays', `${matchId}.json`), replay);
+      sink?.append(record);
+      if (replay !== null && replay !== undefined && replayDir !== null) {
+        writeJson(join(replayDir, `${matchId}.json`), replay);
       }
     }
     if (completed % progressEvery === 0) report();
@@ -154,6 +160,9 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> 
   if (options.workers > 1 && jobs.length > 1) {
     const setup = workerSetupSchema.parse({
       experimentId: options.experimentId,
+      experimentKind: options.experimentKind,
+      configHash: options.configHash,
+      arm: options.arm,
       environment: options.environment.config,
       decks: options.decks,
       pilots: options.pilots,
@@ -174,6 +183,9 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> 
       try {
         const outcome = await runOne({
           experimentId: options.experimentId,
+          experimentKind: options.experimentKind,
+          configHash: options.configHash,
+          arm: options.arm,
           environment: options.environment,
           decks: options.decks,
           pilots: options.pilots,
@@ -190,27 +202,18 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> 
     }
   }
 
-  writer?.flush();
   report();
 
   // Canonical order, always — this is what makes the aggregates independent of
   // the order results happened to arrive in.
-  records.sort((left, right) => left.orderKey.localeCompare(right.orderKey));
+  records.sort(compareRecords);
 
   return {
     records,
-    skippedByResume: alreadyDone.size,
+    skippedByResume,
     failures,
-    recovered,
     elapsedMs: Date.now() - started,
   };
-}
-
-/** Starts a fresh `matches.jsonl`, so a non-resumed run never appends to an old one. */
-function freshFile(path: string): string {
-  ensureDir(dirname(path));
-  writeFileSync(path, '', 'utf8');
-  return path;
 }
 
 export function scheduleFor(options: ScheduleOptions): ScheduledMatch[] {

@@ -12,9 +12,15 @@ import { experimentPaths } from './reporting/sinks.js';
  * npm run simulate -- --config experiments/smoke.json
  * npm run simulate -- --config experiments/batch.json --workers 8
  * npm run simulate -- --config experiments/abuse-search.json
+ * npm run simulate -- --config experiments/replacement.json
  * npm run simulate -- --config experiments/candidate-vs-baseline.json
+ * npm run simulate -- --config experiments/pilot-robustness.json
  * npm run simulate -- --config experiments/batch.json --resume
  * ```
+ *
+ * Every experiment kind streams its raw records to one `matches.jsonl`, so
+ * `--resume` means the same thing for a search or a comparison as it does for a
+ * batch: skip what is already committed, re-run nothing (PHASE4_HARDENING §7).
  *
  * Every input is a validated configuration file. There are no flags that change
  * what an experiment *is* — only where it runs and how loudly it reports — so a

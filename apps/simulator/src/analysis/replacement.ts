@@ -8,7 +8,8 @@ import {
 import type { Environment } from '../environment.js';
 import { checkDeck, makeDeck, type SimDeck } from '../deck-search/deck.js';
 import type { MatchRecord } from '../telemetry/schema.js';
-import { cohensH, effectSizeLabel, proportion, proportionDifference, round } from './stats.js';
+import { pairedBinary } from './paired.js';
+import { cohensH, effectSizeLabel, proportion, round } from './stats.js';
 
 /**
  * Controlled card replacement (CLAUDE.md §13.10).
@@ -305,6 +306,11 @@ export const replacementImpactSchema = z.strictObject({
   effectSize: z.number(),
   effectSizeLabel: z.string(),
   pairedGames: z.number().int().min(0),
+  /**
+   * The full paired estimate: discordant counts, exclusions with reasons, and
+   * the interval the headline numbers are taken from (PHASE4_HARDENING §9.1).
+   */
+  paired: z.unknown(),
   confounds: z.array(z.string()),
   /** Set when the sample is too small for the comparison to mean anything. */
   insufficientData: z.boolean(),
@@ -317,12 +323,25 @@ export type ReplacementImpact = z.infer<typeof replacementImpactSchema>;
  * `impact` is stated as base minus variant so its sign reads naturally: a large
  * positive impact means the deck did *worse* without the subject card, which is
  * the direction that makes a card worth a second look.
+ *
+ * The estimate is **paired** (PHASE4_HARDENING §9.1). The schedule masks the two
+ * arms when deriving seeds precisely so that "deck A" and "deck A with one card
+ * swapped" play the same opponents on the same shuffles; analysing the result as
+ * two independent samples would discard that design and report a wider interval
+ * than the experiment paid for. Games without a partner in the other arm are
+ * excluded from the paired estimate, counted, and reported with the reason.
  */
 export function replacementImpact(
   variant: ReplacementVariant,
   baseRecords: readonly MatchRecord[],
   variantRecords: readonly MatchRecord[],
-  options: { readonly confidence?: number; readonly minMatches?: number } = {},
+  options: {
+    readonly confidence?: number;
+    readonly minMatches?: number;
+    readonly minPairs?: number;
+    readonly iterations?: number;
+    readonly seed?: string;
+  } = {},
 ): ReplacementImpact {
   const confidence = options.confidence ?? 0.95;
   const minMatches = options.minMatches ?? 30;
@@ -330,7 +349,7 @@ export function replacementImpact(
   const tally = (records: readonly MatchRecord[], deckHash: string) => {
     let wins = 0;
     let total = 0;
-    const games = new Set<string>();
+    const games = new Map<string, { won: boolean; stratum: string }>();
     for (const record of records) {
       for (const seat of record.seats) {
         if (seat.deckHash !== deckHash) continue;
@@ -346,7 +365,10 @@ export function replacementImpact(
           .map((other) => other.deckHash)
           .sort()
           .join(',');
-        games.add(`${opponents}:${record.variantKey}:${record.gameIndex}:${seat.seatIndex}`);
+        games.set(`${opponents}:${record.variantKey}:${record.gameIndex}:${seat.seatIndex}`, {
+          won: seat.won,
+          stratum: `${seat.pilotId}|${seat.seatIndex}`,
+        });
       }
     }
     return { wins, total, games };
@@ -357,14 +379,33 @@ export function replacementImpact(
 
   const baseRate = proportion(base.wins, base.total, confidence);
   const variantRate = proportion(changed.wins, changed.total, confidence);
-  const difference = proportionDifference(
-    { successes: base.wins, total: base.total },
-    { successes: changed.wins, total: changed.total },
-    confidence,
-  );
   const h = cohensH(baseRate.point, variantRate.point);
 
-  const paired = [...base.games].filter((game) => changed.games.has(game)).length;
+  // `baselineWon` is the *variant* arm and `candidateWon` is the base arm, so
+  // the paired delta comes out as base minus variant and `impact` keeps the sign
+  // convention documented above.
+  const outcomes = [...changed.games]
+    .filter(([key]) => base.games.has(key))
+    .map(([key, entry]) => ({
+      key,
+      baselineWon: entry.won,
+      candidateWon: base.games.get(key)?.won ?? false,
+      stratum: entry.stratum,
+    }));
+
+  const unmatchedBase = base.games.size - outcomes.length;
+  const unmatchedVariant = changed.games.size - outcomes.length;
+  const excluded: Record<string, number> = {};
+  if (unmatchedBase > 0) excluded.base_game_without_variant = unmatchedBase;
+  if (unmatchedVariant > 0) excluded.variant_game_without_base = unmatchedVariant;
+
+  const paired = pairedBinary(outcomes, {
+    seed: `${options.seed ?? 'replacement'}|${variant.baseDeckHash}|${variant.variantDeckHash}`,
+    confidence,
+    minPairs: options.minPairs ?? 20,
+    ...(options.iterations === undefined ? {} : { iterations: options.iterations }),
+    ...(Object.keys(excluded).length > 0 ? { excluded } : {}),
+  });
 
   return {
     subjectCardId: variant.subjectCardId,
@@ -375,13 +416,15 @@ export function replacementImpact(
     variantMatches: changed.total,
     baseWinRate: round(baseRate.point),
     variantWinRate: round(variantRate.point),
-    impact: round(difference.point),
-    low: round(difference.low),
-    high: round(difference.high),
+    impact: paired.delta,
+    low: paired.low,
+    high: paired.high,
     effectSize: round(h),
     effectSizeLabel: effectSizeLabel(h),
-    pairedGames: paired,
+    pairedGames: paired.pairs,
+    paired,
     confounds: [...variant.confounds],
-    insufficientData: base.total < minMatches || changed.total < minMatches,
+    insufficientData:
+      paired.insufficientEvidence || base.total < minMatches || changed.total < minMatches,
   };
 }

@@ -3,6 +3,7 @@ import type { PilotSpec } from '@tcg/bot-interface';
 import type { Environment } from '../environment.js';
 import type { MatchLimits } from '../run-match.js';
 import { runBatch, type BatchRetention } from '../run-batch.js';
+import type { MatchSink } from '../reporting/match-store.js';
 import { buildSchedule } from '../schedule.js';
 import { normalizedEntropy, proportion, round } from '../analysis/stats.js';
 import { isAbnormal, type MatchRecord } from '../telemetry/schema.js';
@@ -93,6 +94,18 @@ export type SearchCheckpoint = z.infer<typeof searchCheckpointSchema>;
 export interface SearchOptions {
   readonly experimentId: string;
   readonly experimentSeed: string;
+  /** Experiment kind stamped on every evaluation record. */
+  readonly experimentKind: MatchRecord['experimentKind'];
+  readonly configHash: string;
+  /**
+   * Arm prefix for this search. Every generation appends `:g<n>` to it, so a
+   * comparison running two searched populations and a search running several
+   * replicates all land in one `matches.jsonl` without colliding.
+   */
+  readonly armPrefix: string;
+  /** Shared raw-record stream. `null` keeps this search in memory only. */
+  readonly sink?: MatchSink | null;
+  readonly replayDir?: string | null;
   readonly environment: Environment;
   readonly pilots: readonly PilotSpec[];
   readonly limits: MatchLimits;
@@ -248,6 +261,9 @@ async function evaluate(
 
   const outcome = await runBatch({
     experimentId: `${options.experimentId}:g${generation}`,
+    experimentKind: options.experimentKind,
+    configHash: options.configHash,
+    arm: `${options.armPrefix}:g${generation}`,
     environment: options.environment,
     decks,
     pilots: options.pilots,
@@ -256,7 +272,8 @@ async function evaluate(
     retention: options.retention,
     workers: options.workers,
     failFast: false,
-    outputDir: null,
+    sink: options.sink ?? null,
+    replayDir: options.replayDir ?? null,
   });
 
   return { records: [...outcome.records] };

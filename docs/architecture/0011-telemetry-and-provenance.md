@@ -1,6 +1,10 @@
 # ADR 0011 — Telemetry, provenance and dead-hand categories (Phase 4)
 
-**Status:** accepted · **Date:** 2026-08-08
+**Status:** accepted · **Date:** 2026-08-08 · **Amended by:**
+[ADR 0013](0013-statistical-contracts.md) — the dead-hand vocabulary was widened
+from four causes to six and split into mechanical and strategic groups, and
+per-copy draw/play counters were added. The reasoning below stands; the table is
+superseded by the one in the section that follows it.
 
 ## Context
 
@@ -34,23 +38,36 @@ are never emitted. Every row that leaves is keyed by the permanent card
 definition ID, because that is the only identifier that means the same thing
 across matches, experiments and releases.
 
-### Dead-hand has four causes, not one number
+### Dead-hand has distinct causes, not one number
 
-A copy that was never played falls into exactly one bucket:
+A copy that was never played falls into exactly one bucket. The vocabulary was
+widened during Phase 4 hardening (§8.2); the current set is:
 
-| Category             | Meaning                                                                  |
-| -------------------- | ------------------------------------------------------------------------ |
-| `unseen`             | Stayed in the deck. Not dead _in hand_, and never counted as such.       |
-| `never_affordable`   | Reached a hand; the seat never had the energy for it after a draw.       |
-| `no_legal_window`    | Affordable at some point; targets, slots or requirements never lined up. |
-| `legal_but_unchosen` | The engine offered it and the pilot chose something else.                |
-| `used`               | Not dead: played, activated, or spent as a cost.                         |
+| Category             | Group      | Meaning                                                               |
+| -------------------- | ---------- | --------------------------------------------------------------------- |
+| `unseen`             | —          | Stayed in the deck. Not dead _in hand_, and never counted as such.    |
+| `never_affordable`   | mechanical | Reached a hand; the seat never had the energy for it after a draw.    |
+| `no_capacity`        | mechanical | Affordable, but the board or zone was full every time.                |
+| `no_legal_target`    | mechanical | Affordable, but a required target never existed.                      |
+| `no_legal_window`    | mechanical | Affordable, never legal, and not attributable to capacity or targets. |
+| `legal_but_unchosen` | strategic  | Offered at least once, passed over, and gone from hand by the end.    |
+| `held_at_end`        | strategic  | Offered at least once and still in hand when the match ended.         |
+| `used`               | —          | Not dead: played, activated, or spent as a cost.                      |
 
-The distinctions carry the diagnosis. `never_affordable` is a statement about
-the card's cost against the energy curve; `no_legal_window` is a statement about
-its requirements; `legal_but_unchosen` is a statement about _the pilot_, not the
-card, and must be readable as such. Collapsing them would make all three look
-like "this card is bad".
+The distinctions carry the diagnosis, and the **mechanical / strategic split is
+the load-bearing one**. A mechanical category is a statement about the card and
+the board: it could not be played. A strategic category is a statement about
+_the pilot_: it could, and the pilot chose otherwise. Collapsing the second into
+the first is the specific mistake PHASE4_HARDENING §8.2 forbids — it would let
+"these bots do not want this card" masquerade as "this card is unplayable".
+
+Aggregates report `mechanicallyUnusableShare` and `strategicallyUnusedShare`
+separately alongside the combined `deadInHandShare`, and a flag's wording
+changes according to which half dominates.
+
+`no_capacity` and `no_legal_target` are counted per decision rather than
+latched, and attributed to whichever obstruction dominated, falling back to
+`no_legal_window` on a tie so the attribution is never decided by a coin flip.
 
 Two consequences follow, and both are enforced:
 

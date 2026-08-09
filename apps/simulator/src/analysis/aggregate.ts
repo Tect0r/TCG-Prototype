@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { DEAD_HAND_CATEGORIES, isAbnormal, type MatchRecord } from '../telemetry/schema.js';
+import {
+  DEAD_HAND_CATEGORIES,
+  DEAD_IN_HAND_CATEGORIES,
+  MECHANICALLY_UNUSABLE_CATEGORIES,
+  STRATEGICALLY_UNUSED_CATEGORIES,
+  isAbnormal,
+  type MatchRecord,
+} from '../telemetry/schema.js';
 import { mean, percentile, proportion, round, type ProportionEstimate } from './stats.js';
 
 /**
@@ -94,7 +101,31 @@ export const cardSummarySchema = z.strictObject({
   inclusionWinRateLift: z.number(),
 
   drawRate: z.number(),
-  playRatePerDrawn: z.number(),
+
+  /* ------------------------------------- play metrics (PHASE4_HARDENING §8.1) */
+  /**
+   * Play events per draw event. **Unbounded** — a card returned to hand and
+   * replayed, or copied, legitimately exceeds 1.
+   *
+   * This is the number that used to be called `playRatePerDrawn` and formatted
+   * as a percentage, which made "112%" a thing a report could print. It is kept,
+   * under a name that says what it is, because "how many times does this card
+   * get cast per draw" is a real question — it just is not a rate.
+   */
+  playsPerDraw: z.number(),
+  /**
+   * Distinct drawn copies played at least once, over distinct drawn copies.
+   * Bounded 0–1. `null` when the records predate per-copy tracking.
+   */
+  drawnCopyPlayConversion: z.number().nullable(),
+  /**
+   * Games in which the card was drawn *and* played, over games in which it was
+   * drawn. Bounded 0–1.
+   */
+  gamesDrawnAndPlayedShare: z.number(),
+  /** Games in which at least one copy reached hand. Denominator of the above. */
+  gamesDrawn: z.number().int().min(0),
+
   activationsPerMatch: z.number(),
   averageEnergySpent: z.number(),
 
@@ -111,6 +142,16 @@ export const cardSummarySchema = z.strictObject({
   /** Copy counts by dead-hand category, and the share of *seen* copies dead. */
   deadHand: z.record(z.string(), z.number().int().min(0)),
   deadInHandShare: z.number(),
+  /**
+   * Dead share split by what it means (PHASE4_HARDENING §8.2).
+   *
+   * `mechanicallyUnusable` is a fact about the card and the board;
+   * `strategicallyUnused` is a fact about the pilot. A high second number with a
+   * low first one says the pilots do not want the card, which is a different
+   * finding from "the card could not be played".
+   */
+  mechanicallyUnusableShare: z.number(),
+  strategicallyUnusedShare: z.number(),
   removalRate: z.number(),
 });
 export type CardSummary = z.infer<typeof cardSummarySchema>;
@@ -310,6 +351,10 @@ interface CardTally {
   copies: number;
   wins: number;
   drawn: number;
+  drawnCopies: number;
+  drawnCopiesPlayed: number;
+  gamesDrawn: number;
+  gamesDrawnAndPlayed: number;
   played: number;
   activations: number;
   energy: number;
@@ -333,6 +378,10 @@ function emptyCardTally(): CardTally {
     copies: 0,
     wins: 0,
     drawn: 0,
+    drawnCopies: 0,
+    drawnCopiesPlayed: 0,
+    gamesDrawn: 0,
+    gamesDrawnAndPlayed: 0,
     played: 0,
     activations: 0,
     energy: 0,
@@ -389,6 +438,12 @@ function summarizeCards(usable: readonly MatchRecord[], confidence: number): Car
         tally.copies += card.copiesInDeck;
         if (seat.won) tally.wins += 1;
         tally.drawn += card.timesDrawn;
+        tally.drawnCopies += card.drawnCopies;
+        tally.drawnCopiesPlayed += card.drawnCopiesPlayed;
+        if (card.drawnCopies > 0) {
+          tally.gamesDrawn += 1;
+          if (card.timesPlayed > 0 || card.timesActivated > 0) tally.gamesDrawnAndPlayed += 1;
+        }
         tally.played += card.timesPlayed;
         tally.activations += card.timesActivated;
         tally.energy += card.energySpent;
@@ -416,15 +471,13 @@ function summarizeCards(usable: readonly MatchRecord[], confidence: number): Car
       const missing = absence.get(definitionId) ?? { wins: 0, total: 0 };
       const absent = proportion(missing.wins, missing.total, confidence);
 
-      const seenCopies =
-        (tally.dead.never_affordable ?? 0) +
-        (tally.dead.no_legal_window ?? 0) +
-        (tally.dead.legal_but_unchosen ?? 0) +
-        (tally.dead.used ?? 0);
-      const deadCopies =
-        (tally.dead.never_affordable ?? 0) +
-        (tally.dead.no_legal_window ?? 0) +
-        (tally.dead.legal_but_unchosen ?? 0);
+      const sumOf = (categories: readonly string[]): number =>
+        categories.reduce((sum, category) => sum + (tally.dead[category] ?? 0), 0);
+
+      const deadCopies = sumOf(DEAD_IN_HAND_CATEGORIES);
+      const seenCopies = deadCopies + (tally.dead.used ?? 0);
+      const mechanical = sumOf(MECHANICALLY_UNUSABLE_CATEGORIES);
+      const strategic = sumOf(STRATEGICALLY_UNUSED_CATEGORIES);
 
       const per = (value: number): number =>
         tally.seatMatches === 0 ? 0 : round(value / tally.seatMatches, 3);
@@ -438,7 +491,12 @@ function summarizeCards(usable: readonly MatchRecord[], confidence: number): Car
         winRateWhenAbsent: rounded(absent),
         inclusionWinRateLift: round(included.point - absent.point),
         drawRate: tally.copies === 0 ? 0 : round(tally.drawn / tally.copies, 3),
-        playRatePerDrawn: tally.drawn === 0 ? 0 : round(tally.played / tally.drawn, 3),
+        playsPerDraw: tally.drawn === 0 ? 0 : round(tally.played / tally.drawn, 3),
+        drawnCopyPlayConversion:
+          tally.drawnCopies === 0 ? null : round(tally.drawnCopiesPlayed / tally.drawnCopies, 3),
+        gamesDrawnAndPlayedShare:
+          tally.gamesDrawn === 0 ? 0 : round(tally.gamesDrawnAndPlayed / tally.gamesDrawn, 3),
+        gamesDrawn: tally.gamesDrawn,
         activationsPerMatch: per(tally.activations),
         averageEnergySpent: per(tally.energy),
         averageDamageToPlayers: per(tally.damagePlayers),
@@ -452,6 +510,8 @@ function summarizeCards(usable: readonly MatchRecord[], confidence: number): Car
         averageBlocks: per(tally.blocks),
         deadHand: { ...tally.dead },
         deadInHandShare: seenCopies === 0 ? 0 : round(deadCopies / seenCopies, 3),
+        mechanicallyUnusableShare: seenCopies === 0 ? 0 : round(mechanical / seenCopies, 3),
+        strategicallyUnusedShare: seenCopies === 0 ? 0 : round(strategic / seenCopies, 3),
         removalRate: tally.played === 0 ? 0 : round(tally.removed / tally.played, 3),
       };
     });

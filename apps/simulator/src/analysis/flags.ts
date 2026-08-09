@@ -2,8 +2,12 @@ import { z } from 'zod';
 import type { AnalysisSettings } from '../config.js';
 import type { Aggregate, CardSummary } from './aggregate.js';
 import type { Cluster, ClusterMatchup, ClusteringResult } from './clusters.js';
+import type { CounterBreadth } from './counters.js';
+import type { Displacement } from './displacement.js';
+import type { InclusionAnalysis } from './inclusion.js';
 import type { CardPair } from './pairs.js';
 import type { ReplacementImpact } from './replacement.js';
+import type { OpponentSensitivity } from './sensitivity.js';
 import { round } from './stats.js';
 
 /**
@@ -32,7 +36,15 @@ export const flagLevelSchema = z.enum(FLAG_LEVELS);
 export type FlagLevel = z.infer<typeof flagLevelSchema>;
 
 export const FLAG_REASONS = [
+  /** Covers enough *strategic clusters*, by the §5 definition. Never deck share. */
   'broad_cross_cluster_inclusion',
+  /**
+   * Decks running the card win more than decks without it. A correlation, and
+   * separate from cross-cluster coverage — the two used to share one reason code
+   * and one message, which is how a deck-share number came to be described as
+   * cluster breadth (PHASE4_HARDENING §5).
+   */
+  'high_inclusion_win_rate_lift',
   'large_replacement_impact',
   'strong_card_pair',
   'no_unfavourable_context',
@@ -72,21 +84,27 @@ export interface FlagInputs {
   readonly pairs: readonly CardPair[];
   readonly replacements: readonly ReplacementImpact[];
   readonly settings: AnalysisSettings;
-  /** Cards the candidate environment introduced, for displacement checks. */
-  readonly candidateCardIds?: readonly string[];
-  /** Card inclusion counts in a baseline population, for displacement checks. */
-  readonly baselineInclusion?: ReadonlyMap<string, number>;
-  readonly candidateInclusion?: ReadonlyMap<string, number>;
+  /** Cluster-based inclusion coverage (PHASE4_HARDENING §5). */
+  readonly inclusion?: InclusionAnalysis;
+  /** Per-card opponent-field sensitivity (PHASE4_HARDENING §10.1). */
+  readonly sensitivity?: readonly OpponentSensitivity[];
+  /** Replicated, normalized displacement evidence (PHASE4_HARDENING §11). */
+  readonly displacement?: readonly Displacement[];
+  /** Controlled counter evidence, when a target population was declared. */
+  readonly counters?: CounterBreadth;
 }
 
 export function computeFlags(inputs: FlagInputs): Flag[] {
   const flags: Flag[] = [
     ...runQualityFlags(inputs),
     ...cardFlags(inputs),
+    ...inclusionFlags(inputs),
     ...pairFlags(inputs),
     ...replacementFlags(inputs),
     ...clusterFlags(inputs),
+    ...sensitivityFlags(inputs),
     ...displacementFlags(inputs),
+    ...counterFlags(inputs),
   ];
 
   // Stable order: most actionable first, then alphabetically, so two runs of
@@ -238,12 +256,8 @@ function runQualityFlags(inputs: FlagInputs): Flag[] {
 /* ------------------------------------------------------------------- cards */
 
 function cardFlags(inputs: FlagInputs): Flag[] {
-  const { settings, clustering } = inputs;
+  const { settings } = inputs;
   const flags: Flag[] = [];
-  const clusterOf = new Map<string, string>();
-  for (const cluster of clustering.clusters) {
-    for (const hash of cluster.deckHashes) clusterOf.set(hash, cluster.id);
-  }
 
   for (const card of inputs.aggregate.cards) {
     if (card.seatMatches < settings.minMatchesPerCard) {
@@ -255,26 +269,22 @@ function cardFlags(inputs: FlagInputs): Flag[] {
       card.inclusionWinRateLift >= settings.autoIncludeWinRateLift &&
       card.winRateWhenIncluded.low > card.winRateWhenAbsent.point
     ) {
-      const clusters = new Set(
-        clustering.clusters.filter((cluster) => cluster.deckHashes.length > 0).map((c) => c.id),
-      );
-      const share =
-        clusters.size === 0 ? 0 : card.decksIncluding / Math.max(1, clustering.features.length);
       flags.push({
         level: 'review_recommended',
-        reason: 'broad_cross_cluster_inclusion',
+        reason: 'high_inclusion_win_rate_lift',
         subject: card.definitionId,
         message:
           `Decks running ${card.definitionId} win ${round(card.winRateWhenIncluded.point * 100, 1)}% ` +
           `against ${round(card.winRateWhenAbsent.point * 100, 1)}% for decks without it ` +
-          `(+${round(card.inclusionWinRateLift * 100, 1)} points). This is a correlation, not a controlled ` +
-          'result — run a replacement experiment before drawing a conclusion.',
+          `(+${round(card.inclusionWinRateLift * 100, 1)} points). This is an **association** between ` +
+          'the card and winning decks, not evidence that the card caused it, and it says nothing ' +
+          'about how many strategies want the card — run a replacement experiment for the first ' +
+          'question and read the cross-cluster coverage table for the second.',
         evidence: {
           included: card.winRateWhenIncluded.point,
           absent: card.winRateWhenAbsent.point,
           lift: card.inclusionWinRateLift,
           decksIncluding: card.decksIncluding,
-          populationShare: round(share, 3),
         },
         sampleSize: card.seatMatches,
         interval: { low: card.winRateWhenIncluded.low, high: card.winRateWhenIncluded.high },
@@ -283,14 +293,28 @@ function cardFlags(inputs: FlagInputs): Flag[] {
     }
 
     if (card.deadInHandShare >= settings.deadHandShare && card.drawRate > 0.3) {
+      // Which half dominates changes what the finding *is*, so it changes the
+      // sentence rather than only the numbers behind it.
+      const mechanical = card.mechanicallyUnusableShare >= card.strategicallyUnusedShare;
       flags.push({
         level: 'review_recommended',
         reason: 'high_dead_hand_rate',
         subject: card.definitionId,
         message:
-          `${round(card.deadInHandShare * 100, 1)}% of drawn copies of ${card.definitionId} were never used. ` +
-          `Breakdown: ${describeDead(card)}. That is a card doing nothing in the decks that chose it.`,
-        evidence: { ...card.deadHand, deadShare: card.deadInHandShare, drawRate: card.drawRate },
+          `${round(card.deadInHandShare * 100, 1)}% of the copies of ${card.definitionId} that reached ` +
+          `hand were never used. Breakdown: ${describeDead(card)}. ` +
+          (mechanical
+            ? 'Most of that is mechanical — the card could not legally be played — which is a ' +
+              'statement about the card and the board.'
+            : 'Most of that is strategic — the card was legal and the pilot chose otherwise — which ' +
+              'is a statement about these pilots, and may say more about them than about the card.'),
+        evidence: {
+          ...card.deadHand,
+          deadShare: card.deadInHandShare,
+          mechanicallyUnusableShare: card.mechanicallyUnusableShare,
+          strategicallyUnusedShare: card.strategicallyUnusedShare,
+          drawRate: card.drawRate,
+        },
         sampleSize: card.seatMatches,
         interval: null,
         threshold: { name: 'deadHandShare', value: settings.deadHandShare },
@@ -302,17 +326,21 @@ function cardFlags(inputs: FlagInputs): Flag[] {
 }
 
 function describeDead(card: CardSummary): string {
+  const at = (key: string): number => card.deadHand[key] ?? 0;
   return (
-    `${card.deadHand.never_affordable ?? 0} never affordable, ` +
-    `${card.deadHand.no_legal_window ?? 0} with no legal window, ` +
-    `${card.deadHand.legal_but_unchosen ?? 0} legal but unchosen`
+    `${at('never_affordable')} never affordable, ` +
+    `${at('no_capacity')} with no room on the board, ` +
+    `${at('no_legal_target')} with no legal target, ` +
+    `${at('no_legal_window')} with no legal window, ` +
+    `${at('legal_but_unchosen')} legal but unchosen, ` +
+    `${at('held_at_end')} still in hand at the end`
   );
 }
 
 function insufficient(card: CardSummary, settings: AnalysisSettings): Flag {
   return {
     level: 'insufficient_data',
-    reason: 'broad_cross_cluster_inclusion',
+    reason: 'high_inclusion_win_rate_lift',
     subject: card.definitionId,
     message:
       `${card.definitionId} appeared in ${card.seatMatches} seat-matches, below the configured ` +
@@ -324,31 +352,135 @@ function insufficient(card: CardSummary, settings: AnalysisSettings): Flag {
   };
 }
 
+/* ----------------------------------------------- cross-cluster inclusion (§5) */
+
+/**
+ * Coverage of *strategic clusters*, not of decks.
+ *
+ * Every condition was already decided in `analyzeInclusion`, which is
+ * deliberate: the criteria and the numbers behind them live together, and this
+ * function only turns a qualifying card into a sentence.
+ */
+function inclusionFlags(inputs: FlagInputs): Flag[] {
+  const { inclusion, settings } = inputs;
+  if (!inclusion) return [];
+
+  const flags: Flag[] = [];
+  for (const card of inclusion.cards) {
+    if (!card.qualifies) continue;
+
+    const covered = card.perCluster.filter((entry) => entry.covered);
+    const evidence: Record<string, string | number | boolean> = {
+      crossClusterShare: card.crossClusterShare,
+      coveredClusters: card.coveredClusters,
+      eligibleClusters: card.eligibleClusters,
+      decksIncluding: card.decksIncluding,
+      decksTotal: card.decksTotal,
+      deckInclusionShare: card.deckInclusionShare,
+    };
+    // The qualifying clusters and their individual inclusion values are a §5
+    // reporting requirement, not an optional extra.
+    for (const entry of covered) {
+      evidence[`cluster_${entry.clusterId}`] =
+        `${entry.decksIncluding}/${entry.decksInCluster} decks (${round(entry.inclusion * 100, 1)}%), ` +
+        `${entry.observations} seat-matches`;
+    }
+
+    flags.push({
+      level: 'review_recommended',
+      reason: 'broad_cross_cluster_inclusion',
+      subject: card.definitionId,
+      message:
+        `${card.definitionId} is run by at least ` +
+        `${round(settings.withinClusterInclusionThreshold * 100, 1)}% of the decks in ` +
+        `${card.coveredClusters} of ${card.eligibleClusters} eligible strategic cluster(s) ` +
+        `(cross-cluster share ${round(card.crossClusterShare * 100, 1)}%): ` +
+        `${covered.map((entry) => `${entry.clusterId} ${round(entry.inclusion * 100, 1)}%`).join(', ')}. ` +
+        'This is a **review signal for low opportunity cost or broad generic utility**, not a ' +
+        'finding that the card is unhealthy — a card every strategy wants may simply be a good ' +
+        'generic card in a small pool.',
+      evidence,
+      sampleSize: card.supportingObservations,
+      interval: null,
+      threshold: { name: 'crossClusterShare', value: settings.crossClusterShare },
+    });
+  }
+  return flags;
+}
+
 /* ------------------------------------------------------------------- pairs */
 
 function pairFlags(inputs: FlagInputs): Flag[] {
-  return inputs.pairs
-    .filter((pair) => pair.support >= inputs.settings.minPairSupport)
-    .filter((pair) => pair.lift >= inputs.settings.autoIncludeWinRateLift && pair.low > 0)
-    .map((pair) => ({
-      level: 'possible_interaction' as const,
-      reason: 'strong_card_pair' as const,
-      subject: `${pair.cardA}+${pair.cardB}`,
-      message:
-        `Decks running both ${pair.cardA} and ${pair.cardB} win ${round(pair.winRateTogether * 100, 1)}%, ` +
-        `against ${round(Math.max(pair.winRateAOnly, pair.winRateBOnly) * 100, 1)}% for the better card alone ` +
-        `(+${round(pair.lift * 100, 1)} points, ${pair.effectSizeLabel} effect).`,
-      evidence: {
-        together: pair.winRateTogether,
-        aOnly: pair.winRateAOnly,
-        bOnly: pair.winRateBOnly,
-        lift: pair.lift,
-        effectSize: pair.effectSize,
-      },
-      sampleSize: pair.support,
-      interval: { low: pair.low, high: pair.high },
-      threshold: { name: 'minPairSupport', value: inputs.settings.minPairSupport },
-    }));
+  const { settings } = inputs;
+  const flags: Flag[] = [];
+
+  for (const pair of inputs.pairs) {
+    if (pair.support < settings.minPairSupport) continue;
+    const subject = `${pair.cardA}+${pair.cardB}`;
+
+    // A sparse cell makes the difference-in-differences undefined, not merely
+    // imprecise. Saying so is the point of PHASE4_HARDENING §9.2.
+    if (pair.insufficientEvidence) {
+      flags.push({
+        level: 'insufficient_data',
+        reason: 'strong_card_pair',
+        subject,
+        message:
+          `The interaction between ${pair.cardA} and ${pair.cardB} cannot be estimated: the ` +
+          `${pair.sparseCells.join(', ')} cell(s) hold fewer than ${settings.minPairCellSupport} ` +
+          'seat-matches. The contrast needs all four cells — both cards, each alone, and neither — ' +
+          'so no number is reported rather than one computed from an empty group.',
+        evidence: {
+          both: pair.support,
+          aOnly: pair.supportAOnly,
+          bOnly: pair.supportBOnly,
+          neither: pair.supportNeither,
+          sparseCells: pair.sparseCells.join(','),
+        },
+        sampleSize: pair.support,
+        interval: null,
+        threshold: { name: 'minPairCellSupport', value: settings.minPairCellSupport },
+      });
+      continue;
+    }
+
+    if (pair.interaction >= settings.autoIncludeWinRateLift && pair.low > 0) {
+      flags.push({
+        level: 'possible_interaction',
+        reason: 'strong_card_pair',
+        subject,
+        message:
+          `${pair.cardA} and ${pair.cardB} show an interaction of ` +
+          `${round(pair.interaction * 100, 1)} points (${round(pair.low * 100, 1)} … ` +
+          `${round(pair.high * 100, 1)}, ${pair.effectSizeLabel} effect): what each card adds is ` +
+          'larger when the other is present than when it is not. Cell win rates: ' +
+          `both ${round(pair.winRateTogether * 100, 1)}%, ` +
+          `${pair.cardA} only ${round(pair.winRateAOnly * 100, 1)}%, ` +
+          `${pair.cardB} only ${round(pair.winRateBOnly * 100, 1)}%, ` +
+          `neither ${round(pair.winRateNeither * 100, 1)}%. ` +
+          'This is an **association** in decks a search chose, not an assignment experiment.',
+        evidence: {
+          interaction: pair.interaction,
+          together: pair.winRateTogether,
+          aOnly: pair.winRateAOnly,
+          bOnly: pair.winRateBOnly,
+          neither: pair.winRateNeither,
+          supportBoth: pair.support,
+          supportAOnly: pair.supportAOnly,
+          supportBOnly: pair.supportBOnly,
+          supportNeither: pair.supportNeither,
+          liftOverBestSingle: pair.liftOverBestSingle,
+          effectSize: pair.effectSize,
+          strata: pair.strata,
+        },
+        sampleSize: pair.support,
+        interval: { low: pair.low, high: pair.high },
+        threshold: { name: 'autoIncludeWinRateLift', value: settings.autoIncludeWinRateLift },
+      });
+    }
+  }
+
+  return flags;
 }
 
 /* ------------------------------------------------------------- replacement */
@@ -450,12 +582,16 @@ function clusterFlags(inputs: FlagInputs): Flag[] {
         reason: 'single_narrow_counter',
         subject: cluster.id,
         message:
-          `"${cluster.label}" loses only to ${only.opponentClusterId}. A single narrow answer is a ` +
-          'fragile counter relationship: if that one strategy is unpopular, this one has none.',
+          `"${cluster.label}" loses to only one other **strategic cluster**, ` +
+          `${only.opponentClusterId}. That is cluster matchup breadth, not card-level counter ` +
+          'availability: it does not name a card anyone could add to answer this, and it cannot ' +
+          'tell a broadly playable answer from a silver bullet. Run a replacement experiment with ' +
+          '`counterTargetDeckIds` set to this cluster for the card-level question.',
         evidence: {
           label: cluster.label,
           onlyCounter: only.opponentClusterId,
           rate: only.rate.point,
+          measure: 'cluster_matchup_breadth',
         },
         sampleSize: cluster.matches,
         interval: { low: only.rate.low, high: only.rate.high },
@@ -486,43 +622,160 @@ function clusterFlags(inputs: FlagInputs): Flag[] {
   return flags;
 }
 
+/* -------------------------------------------- opponent-field sensitivity (§10.1) */
+
+function sensitivityFlags(inputs: FlagInputs): Flag[] {
+  const { sensitivity, settings } = inputs;
+  if (!sensitivity) return [];
+
+  return sensitivity
+    .filter((entry) => entry.status === 'sensitive')
+    .map((entry) => ({
+      level: 'review_recommended' as const,
+      reason: 'opponent_field_sensitivity' as const,
+      subject: entry.subject,
+      message: `${entry.subject}: ${entry.note}`,
+      evidence: {
+        best: entry.best?.opponentClusterId ?? '',
+        bestRate: entry.best?.winRate ?? 0,
+        bestMatches: entry.best?.matches ?? 0,
+        worst: entry.worst?.opponentClusterId ?? '',
+        worstRate: entry.worst?.winRate ?? 0,
+        worstMatches: entry.worst?.matches ?? 0,
+        spread: entry.spread,
+        supportedFields: entry.fields.length,
+        droppedFields: entry.droppedFields.length,
+      },
+      sampleSize: entry.totalMatches,
+      interval:
+        entry.best && entry.worst
+          ? { low: round(entry.worst.low), high: round(entry.best.high) }
+          : null,
+      threshold: { name: 'opponentFieldSpread', value: settings.opponentFieldSpread },
+    }));
+}
+
 /* ------------------------------------------------------------ displacement */
 
 /**
- * Did the candidate environment's new cards push comparable old cards out of
- * successful decks? (CLAUDE.md §13.11.)
+ * Did the candidate environment's cards push comparable old cards out of
+ * successful decks? (CLAUDE.md §13.11, PHASE4_HARDENING §11.)
+ *
+ * Every criterion — normalized shares, replicate count, between-replicate
+ * variation, pool-legality separation — is decided in `analyzeDisplacement`.
+ * A card whose disappearance is unstable arrives here as `insufficient_evidence`
+ * and is reported as such, so "we cannot tell" stays visible instead of looking
+ * like a confirmed finding or like nothing at all.
  */
 function displacementFlags(inputs: FlagInputs): Flag[] {
-  const { baselineInclusion, candidateInclusion, candidateCardIds } = inputs;
-  if (!baselineInclusion || !candidateInclusion || !candidateCardIds) return [];
+  const { displacement, settings } = inputs;
+  if (!displacement) return [];
 
   const flags: Flag[] = [];
-  const dropped: { cardId: string; before: number; after: number }[] = [];
 
-  for (const [cardId, before] of [...baselineInclusion].sort((a, b) => a[0].localeCompare(b[0]))) {
-    if (candidateCardIds.includes(cardId)) continue;
-    const after = candidateInclusion.get(cardId) ?? 0;
-    if (before >= 3 && after <= before / 2) dropped.push({ cardId, before, after });
-  }
-
-  if (dropped.length > 0) {
+  for (const entry of displacement.filter((item) => item.status === 'displaced')) {
     flags.push({
       level: 'review_recommended',
       reason: 'candidate_displacement',
-      subject: candidateCardIds.join('+') || 'candidate',
-      message:
-        `${dropped.length} card(s) at least halved their inclusion in successful decks after the change: ` +
-        `${dropped.map((entry) => `${entry.cardId} (${entry.before}→${entry.after})`).join(', ')}.`,
-      evidence: Object.fromEntries(
-        dropped.map((entry) => [entry.cardId, entry.after - entry.before]),
-      ),
-      sampleSize: dropped.length,
+      subject: entry.definitionId,
+      message: entry.note,
+      evidence: {
+        baselineMeanShare: entry.baselineMeanShare,
+        candidateMeanShare: entry.candidateMeanShare,
+        shareDelta: entry.shareDelta,
+        relativeDrop: entry.relativeDrop,
+        betweenReplicateVariation: entry.betweenReplicateVariation,
+        replicates: entry.replicates,
+        likelyReplacedBy: entry.likelyReplacedBy.map((item) => item.definitionId).join(', '),
+      },
+      sampleSize: entry.replicates,
       interval: null,
-      threshold: { name: 'displacementHalving', value: 0.5 },
+      threshold: { name: 'displacementShareDrop', value: settings.displacementShareDrop },
+    });
+  }
+
+  // Only surfaced for cards that actually fell — an `insufficient_evidence` row
+  // for every card in the pool would bury the report.
+  for (const entry of displacement.filter(
+    (item) => item.status === 'insufficient_evidence' && item.shareDelta < 0,
+  )) {
+    flags.push({
+      level: 'insufficient_data',
+      reason: 'candidate_displacement',
+      subject: entry.definitionId,
+      message: entry.note,
+      evidence: {
+        baselineMeanShare: entry.baselineMeanShare,
+        candidateMeanShare: entry.candidateMeanShare,
+        shareDelta: entry.shareDelta,
+        betweenReplicateVariation: entry.betweenReplicateVariation,
+        replicates: entry.replicates,
+      },
+      sampleSize: entry.replicates,
+      interval: null,
+      threshold: {
+        name: 'minDisplacementReplicates',
+        value: settings.minDisplacementReplicates,
+      },
     });
   }
 
   return flags;
+}
+
+/* --------------------------------------------------- counter breadth (§10.2) */
+
+function counterFlags(inputs: FlagInputs): Flag[] {
+  const { counters } = inputs;
+  if (!counters) return [];
+
+  if (counters.status === 'unavailable') {
+    return [
+      {
+        level: 'insufficient_data',
+        reason: 'single_narrow_counter',
+        subject: counters.targetLabel,
+        message: counters.note,
+        evidence: {
+          counterBreadth: 'unavailable',
+          clusterMatchupBreadth: counters.clusterMatchupBreadth,
+        },
+        sampleSize: 0,
+        interval: null,
+        threshold: null,
+      },
+    ];
+  }
+
+  const practical = counters.counterBreadth ?? 0;
+  if (practical > 1 && (counters.broadAnswers ?? 0) > 0) return [];
+
+  return [
+    {
+      level: 'review_recommended',
+      reason: 'single_narrow_counter',
+      subject: counters.targetLabel,
+      message:
+        practical === 0
+          ? `No tested substitution improved results against ${counters.targetLabel} with an ` +
+            'interval excluding zero. That is a statement about the substitutions tested, not a ' +
+            'proof that no answer exists — but a target with no measured answer is worth a look.'
+          : `${practical} substitution(s) answered ${counters.targetLabel}, of which ` +
+            `${counters.broadAnswers ?? 0} held up against the rest of the field. A counter ` +
+            'relationship resting on one narrow silver bullet is fragile: if that card is not ' +
+            'worth running for any other reason, in practice the answer is not available.',
+      evidence: {
+        counterBreadth: practical,
+        broadAnswers: counters.broadAnswers ?? 0,
+        narrowAnswers: counters.narrowAnswers ?? 0,
+        candidatesTested: counters.candidates.length,
+        clusterMatchupBreadth: counters.clusterMatchupBreadth,
+      },
+      sampleSize: counters.candidates.length,
+      interval: null,
+      threshold: null,
+    },
+  ];
 }
 
 /** Cluster type re-exported so a caller can build `FlagInputs` from one import. */

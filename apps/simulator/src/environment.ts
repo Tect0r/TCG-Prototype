@@ -212,3 +212,174 @@ function diffRecords(
     .filter((key) => canonicalJson(left[key]) !== canonicalJson(right[key]))
     .map((key) => ({ key, before: canonicalJson(left[key]), after: canonicalJson(right[key]) }));
 }
+
+/* ------------------------------------------------------- declared changes */
+
+/**
+ * What a comparison *claims* to change (PHASE4_HARDENING §4).
+ *
+ * A comparison whose prose says "Scorch now deals one more damage" and whose
+ * card pools are identical is worse than no comparison at all: it produces a
+ * plausible-looking report about a change that never happened. The declaration
+ * exists so the tooling can check the claim against the two resolved pools
+ * before spending an hour of CPU measuring nothing.
+ */
+export const declaredChangesSchema = z.strictObject({
+  /** Card IDs the candidate is expected to introduce. */
+  cardsAdded: z.array(cardIdSchema).default([]),
+  /** Card IDs the candidate is expected to remove from the playable pool. */
+  cardsRemoved: z.array(cardIdSchema).default([]),
+  /**
+   * Cards expected to differ, with the exact fields expected to differ.
+   *
+   * Naming the fields is the point: `["effects"]` on a card whose targeting
+   * filter also moved is a declaration that does not match what was run.
+   */
+  cardsChanged: z
+    .array(
+      z.strictObject({
+        cardId: cardIdSchema,
+        fields: z.array(z.string().min(1)).min(1),
+        /** Optional human note; never used to decide whether the diff matches. */
+        note: z.string().max(200).default(''),
+      }),
+    )
+    .default([]),
+  /** Rules-configuration keys expected to differ. */
+  rulesChanged: z.array(z.string().min(1)).default([]),
+  /** Deck-format keys expected to differ. */
+  formatChanged: z.array(z.string().min(1)).default([]),
+  /**
+   * What to do about a difference the declaration did not mention.
+   *
+   * `reject` is the default because an undeclared difference means the
+   * experiment is measuring more than one thing and cannot attribute the result
+   * to the change it names.
+   */
+  onUndeclared: z.enum(['reject', 'warn']).default('reject'),
+});
+export type DeclaredChanges = z.infer<typeof declaredChangesSchema>;
+
+export interface DeclaredDiffCheck {
+  readonly ok: boolean;
+  /** Mismatches that must stop the run. */
+  readonly errors: readonly string[];
+  /** Mismatches the configuration downgraded to a prominent report warning. */
+  readonly warnings: readonly string[];
+  /** The structured diff that was actually verified. */
+  readonly diff: EnvironmentDiff;
+}
+
+/**
+ * Checks a resolved environment diff against what the experiment declared.
+ *
+ * Three failures are distinguished because they mean different things:
+ * a declared change that did not happen (the fixture is a lie), an undeclared
+ * change that did (the experiment is confounded), and a declaration on a card
+ * that is structurally identical in both pools (§4 requirement 5).
+ */
+export function checkDeclaredChanges(
+  diff: EnvironmentDiff,
+  declared: DeclaredChanges,
+): DeclaredDiffCheck {
+  const errors: string[] = [];
+  const undeclared: string[] = [];
+
+  const actualChanged = new Map(diff.cardsChanged.map((entry) => [entry.cardId, entry] as const));
+
+  for (const entry of declared.cardsChanged) {
+    const actual = actualChanged.get(entry.cardId);
+    if (!actual) {
+      errors.push(
+        `The comparison declares that "${entry.cardId}" changes, but its definition is identical ` +
+          'in the baseline and candidate pools. Nothing would be measured.',
+      );
+      continue;
+    }
+    const missing = entry.fields.filter((field) => !actual.fields.includes(field));
+    if (missing.length > 0) {
+      errors.push(
+        `"${entry.cardId}" was declared to change in ${missing.join(', ')}, but ` +
+          `only ${actual.fields.join(', ')} actually differ.`,
+      );
+    }
+    const extra = actual.fields.filter((field) => !entry.fields.includes(field));
+    if (extra.length > 0) {
+      undeclared.push(
+        `"${entry.cardId}" also differs in undeclared field(s): ${extra.join(', ')}.`,
+      );
+    }
+  }
+
+  for (const cardId of declared.cardsAdded) {
+    if (!diff.cardsAdded.includes(cardId)) {
+      errors.push(`"${cardId}" was declared as added, but it is not new in the candidate pool.`);
+    }
+  }
+  for (const cardId of declared.cardsRemoved) {
+    if (!diff.cardsRemoved.includes(cardId)) {
+      errors.push(`"${cardId}" was declared as removed, but it is still in the candidate pool.`);
+    }
+  }
+  for (const key of declared.rulesChanged) {
+    if (!diff.rulesChanged.some((entry) => entry.key === key)) {
+      errors.push(`Rules key "${key}" was declared to change, but both environments agree on it.`);
+    }
+  }
+  for (const key of declared.formatChanged) {
+    if (!diff.formatChanged.some((entry) => entry.key === key)) {
+      errors.push(`Format key "${key}" was declared to change, but both environments agree on it.`);
+    }
+  }
+
+  const declaredChangedIds = new Set(declared.cardsChanged.map((entry) => entry.cardId));
+  for (const entry of diff.cardsChanged) {
+    if (declaredChangedIds.has(entry.cardId)) continue;
+    undeclared.push(`"${entry.cardId}" differs (${entry.fields.join(', ')}) but was not declared.`);
+  }
+  for (const cardId of diff.cardsAdded) {
+    if (!declared.cardsAdded.includes(cardId)) {
+      undeclared.push(`"${cardId}" is new in the candidate pool but was not declared.`);
+    }
+  }
+  for (const cardId of diff.cardsRemoved) {
+    if (!declared.cardsRemoved.includes(cardId)) {
+      undeclared.push(`"${cardId}" was dropped from the candidate pool but was not declared.`);
+    }
+  }
+  for (const entry of diff.rulesChanged) {
+    if (!declared.rulesChanged.includes(entry.key)) {
+      undeclared.push(
+        `Rules key "${entry.key}" differs (${entry.before} → ${entry.after}) but was not declared.`,
+      );
+    }
+  }
+  for (const entry of diff.formatChanged) {
+    if (!declared.formatChanged.includes(entry.key)) {
+      undeclared.push(
+        `Format key "${entry.key}" differs (${entry.before} → ${entry.after}) but was not declared.`,
+      );
+    }
+  }
+
+  const declaresSomething =
+    declared.cardsAdded.length +
+      declared.cardsRemoved.length +
+      declared.cardsChanged.length +
+      declared.rulesChanged.length +
+      declared.formatChanged.length >
+    0;
+
+  if (declaresSomething && diff.identical) {
+    errors.push(
+      'The baseline and candidate environments hash identically. A comparison that declares a ' +
+        'change and resolves to no change measures nothing.',
+    );
+  }
+
+  const warnings: string[] = [];
+  if (declared.onUndeclared === 'reject') errors.push(...undeclared);
+  else warnings.push(...undeclared);
+
+  return { ok: errors.length === 0, errors, warnings, diff };
+}

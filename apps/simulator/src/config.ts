@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { cardIdSchema } from '@tcg/card-data';
-import { pilotSpecSchema } from '@tcg/bot-interface';
-import { environmentConfigSchema } from './environment.js';
+import { perturbationProfileIdSchema, pilotSpecSchema } from '@tcg/bot-interface';
+import { declaredChangesSchema, environmentConfigSchema } from './environment.js';
 import { generatorConfigSchema } from './deck-search/generate.js';
 
 /**
@@ -77,25 +77,88 @@ export type PilotPairing = z.infer<typeof pilotPairingSchema>;
  * see which dial produced a flag (CLAUDE.md §13.11).
  */
 export const analysisSettingsSchema = z.strictObject({
-  /** Minimum matches before any card-level conclusion is drawn at all. */
+  /* --------------------------------------------- minimum evidence (counts) */
+  /** Seat-matches. Minimum before any card-level conclusion is drawn at all. */
   minMatchesPerCard: z.number().int().min(1).default(30),
-  /** Minimum co-occurrences before a card pair is reported. */
+  /** Seat-matches. Minimum co-occurrences before a card pair is reported. */
   minPairSupport: z.number().int().min(1).default(20),
-  /** Minimum matches per deck before a deck win rate is reported. */
+  /**
+   * Seat-matches. Minimum in *each* of the four cells of a synergy contrast
+   * (both cards, A only, B only, neither) before an interaction is estimated.
+   * Separate from `minPairSupport`, which only counts the "both" cell.
+   */
+  minPairCellSupport: z.number().int().min(1).default(15),
+  /** Seat-matches. Minimum per deck before a deck win rate is reported. */
   minMatchesPerDeck: z.number().int().min(1).default(20),
+  /** Complete pairs. Minimum before a paired estimate is trusted. */
+  minPairedGames: z.number().int().min(1).default(20),
+
+  /* ------------------------------------------------------------ intervals */
   /** Confidence level for every interval the analyser prints. */
   confidence: z.number().min(0.5).max(0.999).default(0.95),
-  /** Win-rate lift above which a card is flagged for review. */
+  /** Resamples per bootstrap interval. Deterministic given the analysis seed. */
+  bootstrapIterations: z.number().int().min(200).max(50_000).default(2000),
+
+  /* -------------------------------------------------- card-level thresholds */
+  /** Win-rate points (0–1). Inclusion lift above which a card is flagged. */
   autoIncludeWinRateLift: z.number().min(0).max(1).default(0.08),
-  /** Share of strategic clusters a card must beat to count as cross-cluster. */
-  crossClusterShare: z.number().min(0).max(1).default(0.75),
-  /** Replacement impact, in win-rate points, above which review is recommended. */
+  /** Win-rate points (0–1). Replacement impact above which review is advised. */
   replacementImpact: z.number().min(0).max(1).default(0.06),
-  /** Matchup win rate beyond which a pairing is called polarised. */
-  polarizationThreshold: z.number().min(0.5).max(1).default(0.85),
-  /** Share of copies dead in hand above which an inclusion looks wrong. */
+  /** Share (0–1) of copies dead in hand above which an inclusion looks wrong. */
   deadHandShare: z.number().min(0).max(1).default(0.5),
-  /** Share of matches ending abnormally above which the run is untrustworthy. */
+
+  /* ------------------------------------------- cross-cluster inclusion (§5) */
+  /**
+   * Share (0–1) of a *cluster's* decks that must run a card before that cluster
+   * counts as covered. Deliberately distinct from `crossClusterShare`: this one
+   * is measured within one cluster, that one across clusters.
+   */
+  withinClusterInclusionThreshold: z.number().min(0).max(1).default(0.5),
+  /** Share (0–1) of eligible clusters a card must cover to be cross-cluster. */
+  crossClusterShare: z.number().min(0).max(1).default(0.75),
+  /** Count. Covered clusters required before the cross-cluster flag can raise. */
+  minimumCoveredClusters: z.number().int().min(1).default(3),
+  /** Decks. Minimum size for a cluster to enter the cross-cluster denominator. */
+  minDecksPerCluster: z.number().int().min(1).default(3),
+  /** Seat-matches. Minimum observations for a cluster to be eligible. */
+  minObservationsPerCluster: z.number().int().min(0).default(20),
+  /** Decks. Minimum total decks running the card behind a cross-cluster flag. */
+  minDecksSupportingCard: z.number().int().min(1).default(6),
+  /**
+   * Share (0–1) of *all* decks running a card, reported separately from cluster
+   * coverage under its own name. Never used as a cross-cluster criterion.
+   */
+  deckInclusionShare: z.number().min(0).max(1).default(0.6),
+
+  /* --------------------------------------------------- cluster and matchup */
+  /** Matchup win rate (0–1) beyond which a pairing is called polarised. */
+  polarizationThreshold: z.number().min(0.5).max(1).default(0.85),
+
+  /* ------------------------------------------ opponent-field sensitivity (§10.1) */
+  /** Win-rate points (0–1). Spread across opponent fields above which to flag. */
+  opponentFieldSpread: z.number().min(0).max(1).default(0.2),
+  /** Seat-matches. Minimum per opponent field before that field is used. */
+  minMatchesPerOpponentField: z.number().int().min(1).default(20),
+  /** Count. Opponent fields that must clear the minimum before spread is judged. */
+  minOpponentFields: z.number().int().min(2).default(2),
+
+  /* --------------------------------------------------- displacement (§11) */
+  /** Share (0–1). Relative drop in normalized inclusion share worth reporting. */
+  displacementShareDrop: z.number().min(0).max(1).default(0.5),
+  /** Count. Independent search replicates required before displacement flags. */
+  minDisplacementReplicates: z.number().int().min(1).default(2),
+  /** Decks. Minimum eligible decks per replicate for a displacement claim. */
+  minDecksPerReplicate: z.number().int().min(1).default(8),
+
+  /* -------------------------------------------------- pilot robustness (§10.3) */
+  /**
+   * Share (0–1) of perturbation profiles that must agree with the published
+   * pilot before a conclusion is labelled `stable`.
+   */
+  pilotRobustnessAgreement: z.number().min(0).max(1).default(0.75),
+
+  /* ------------------------------------------------------------ run quality */
+  /** Share (0–1) of matches ending abnormally above which the run is suspect. */
   abnormalShare: z.number().min(0).max(1).default(0.02),
 });
 export type AnalysisSettings = z.infer<typeof analysisSettingsSchema>;
@@ -171,6 +234,14 @@ export const searchConfigSchema = z.strictObject({
   checkpointEvery: z.number().int().min(1).max(100).default(1),
   /** Re-evaluate elites on fresh seeds each generation to blunt overfitting. */
   reevaluateElites: z.boolean().default(true),
+  /**
+   * Independent search runs, each on its own derived seed family.
+   *
+   * One evolutionary run is one sample. Inclusion counts drawn from a single run
+   * fluctuate enough that "6 → 3 copies" is noise, so displacement analysis
+   * needs several replicates before it may say anything (PHASE4_HARDENING §11).
+   */
+  replicates: z.number().int().min(1).max(8).default(1),
 });
 export type SearchConfig = z.infer<typeof searchConfigSchema>;
 
@@ -179,8 +250,34 @@ export const comparisonConfigSchema = z.strictObject({
   kind: z.literal('comparison'),
   baseline: environmentConfigSchema,
   candidate: environmentConfigSchema,
-  /** Decks evaluated unchanged in both environments, where they stay legal. */
+  /**
+   * What this comparison claims to change, checked against the resolved pools
+   * before any match runs (PHASE4_HARDENING §4).
+   *
+   * An empty declaration means "do not check", which is legal for exploratory
+   * work but is reported as a limitation: an unchecked comparison cannot promise
+   * it measured the change its label describes.
+   */
+  declaredChanges: declaredChangesSchema.prefault({}),
+  /**
+   * Decks evaluated unchanged in both environments.
+   *
+   * Resolved exactly once, against the baseline, and then frozen. The identical
+   * deck definitions, seat assignments, pilots and derived seeds are replayed in
+   * the candidate environment (PHASE4_HARDENING §6).
+   */
   referenceDecks: deckSourceSchema,
+  /**
+   * How the reference population is shared between the two environments.
+   *
+   * `shared_legal_reference_population` — the only supported policy — keeps the
+   * decks legal in *both* environments and reports the rest as exclusions with
+   * their legality reasons. Regenerating a population per environment is what
+   * §6 forbids, so there is deliberately no option that does it.
+   */
+  referencePolicy: z
+    .enum(['shared_legal_reference_population'])
+    .default('shared_legal_reference_population'),
   gamesPerPairing: z.number().int().min(1).max(10_000).default(4),
   mirrorSeats: z.boolean().default(true),
   /**
@@ -201,6 +298,8 @@ export const comparisonConfigSchema = z.strictObject({
       opponentsPerEvaluation: z.number().int().min(1).max(32).default(3),
       gamesPerOpponent: z.number().int().min(1).max(50).default(2),
       archiveSize: z.number().int().min(1).max(200).default(12),
+      /** Independent replicates per environment, for stable displacement evidence. */
+      replicates: z.number().int().min(1).max(8).default(2),
     })
     .prefault({}),
 });
@@ -227,14 +326,48 @@ export const replacementConfigSchema = z.strictObject({
   mirrorSeats: z.boolean().default(true),
   /** Also insert the subject into decks that do not run it (CLAUDE.md §13.10). */
   includeInsertion: z.boolean().default(true),
+  /**
+   * The opponent decks a "counter" is supposed to answer (PHASE4_HARDENING §10.2).
+   *
+   * When set, each candidate replacement is measured twice: against this target
+   * subset of the opponent field, and against the rest of it. That is what turns
+   * "this cluster loses to that cluster" into evidence about a *card* — an answer
+   * only counts as practical when it improves the target matchup without
+   * becoming dead against everything else. Empty means counter breadth is
+   * reported as `unavailable` rather than guessed from matchup clusters.
+   */
+  counterTargetDeckIds: z.array(z.string().min(1)).default([]),
 });
 export type ReplacementConfig = z.infer<typeof replacementConfigSchema>;
+
+/**
+ * Pilot-robustness experiment (PHASE4_HARDENING §10.3).
+ *
+ * Runs one bounded, common-seed schedule once per named perturbation profile and
+ * asks whether the conclusions move. It deliberately does not merge the profiles
+ * into one population: a pooled result would hide exactly the sensitivity the
+ * experiment exists to measure.
+ */
+export const robustnessConfigSchema = z.strictObject({
+  ...commonFields,
+  kind: z.literal('robustness'),
+  environment: environmentConfigSchema,
+  decks: deckSourceSchema,
+  /** Profiles to run. `published` is always included as the reference arm. */
+  profiles: z.array(perturbationProfileIdSchema).min(1).default(['published']),
+  gamesPerPairing: z.number().int().min(1).max(10_000).default(4),
+  mirrorSeats: z.boolean().default(true),
+  schedule: z.enum(['round_robin', 'sampled']).default('round_robin'),
+  sampledPairings: z.number().int().min(1).max(100_000).default(50),
+});
+export type RobustnessConfig = z.infer<typeof robustnessConfigSchema>;
 
 export const experimentConfigSchema = z.discriminatedUnion('kind', [
   batchConfigSchema,
   searchConfigSchema,
   comparisonConfigSchema,
   replacementConfigSchema,
+  robustnessConfigSchema,
 ]);
 export type ExperimentConfig = z.infer<typeof experimentConfigSchema>;
 export type ExperimentConfigInput = z.input<typeof experimentConfigSchema>;

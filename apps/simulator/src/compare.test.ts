@@ -1,6 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { CardDefinitionInput } from '@tcg/card-data';
-import { compareEnvironments, comparisonReportSchema } from './analysis/compare.js';
+import {
+  compareEnvironments,
+  comparisonReportSchema,
+  type CompareInputs,
+} from './analysis/compare.js';
 import { diffEnvironments, resolveEnvironment, type Environment } from './environment.js';
 import { runBatch } from './run-batch.js';
 import { buildSchedule } from './schedule.js';
@@ -82,6 +86,9 @@ async function runArm(environment: Environment): Promise<readonly MatchRecord[]>
   });
   const outcome = await runBatch({
     experimentId: 'comparison',
+    experimentKind: 'comparison',
+    configHash: 'compare-test',
+    arm: environment.id,
     environment,
     decks: referenceDecks,
     pilots: [VALUE_PILOT],
@@ -90,10 +97,21 @@ async function runArm(environment: Environment): Promise<readonly MatchRecord[]>
     retention: NO_RETENTION,
     workers: 1,
     failFast: false,
-    outputDir: null,
+    sink: null,
     softwareCommit: null,
   });
   return outcome.records;
+}
+
+/**
+ * Both arms replayed one frozen population, so the hash is the same on both
+ * sides by construction. It is a required input rather than an optional one
+ * precisely so a caller cannot forget to establish that (PHASE4_HARDENING §6).
+ */
+const REFERENCE_POPULATION_HASH = 'frozen-reference-population';
+
+function compare(inputs: Omit<CompareInputs, 'referencePopulationHash'>) {
+  return compareEnvironments({ ...inputs, referencePopulationHash: REFERENCE_POPULATION_HASH });
 }
 
 let baselineRecords: readonly MatchRecord[];
@@ -147,7 +165,7 @@ describe('environment diff', () => {
     const diff = diffEnvironments(baselineEnv, twin);
     expect(diff.identical).toBe(true);
     expect(diff.cardsChanged).toEqual([]);
-    const report = compareEnvironments({
+    const report = compare({
       diff,
       baselineRecords,
       candidateRecords: baselineRecords,
@@ -178,7 +196,7 @@ describe('common-seed pairing', () => {
   });
 
   it('reports full paired coverage when the schedules line up', () => {
-    const report = compareEnvironments({
+    const report = compare({
       diff: diffEnvironments(baselineEnv, candidateEnv),
       baselineRecords,
       candidateRecords,
@@ -189,7 +207,7 @@ describe('common-seed pairing', () => {
   });
 
   it('says so loudly when nothing is paired', () => {
-    const unpaired = compareEnvironments({
+    const unpaired = compare({
       diff: diffEnvironments(baselineEnv, candidateEnv),
       baselineRecords,
       candidateRecords: candidateRecords.map((record) => ({
@@ -212,7 +230,7 @@ describe('common-seed pairing', () => {
 
 describe('comparison report', () => {
   it('validates against its schema', () => {
-    const report = compareEnvironments({
+    const report = compare({
       diff: diffEnvironments(baselineEnv, candidateEnv),
       baselineRecords,
       candidateRecords,
@@ -221,7 +239,7 @@ describe('comparison report', () => {
   });
 
   it('detects that the buffed card made its deck better', () => {
-    const report = compareEnvironments({
+    const report = compare({
       diff: diffEnvironments(baselineEnv, candidateEnv),
       baselineRecords,
       candidateRecords,
@@ -235,7 +253,7 @@ describe('comparison report', () => {
   });
 
   it('leaves decks that do not run the changed card alone', () => {
-    const report = compareEnvironments({
+    const report = compare({
       diff: diffEnvironments(baselineEnv, candidateEnv),
       baselineRecords,
       candidateRecords,
@@ -250,7 +268,7 @@ describe('comparison report', () => {
   });
 
   it('separates the reference comparison from a searched one, and says when there was none', () => {
-    const report = compareEnvironments({
+    const report = compare({
       diff: diffEnvironments(baselineEnv, candidateEnv),
       baselineRecords,
       candidateRecords,
@@ -260,13 +278,11 @@ describe('comparison report', () => {
     expect(report.limitations.join(' ')).toMatch(/No independent deck search/);
   });
 
-  it('reports strategies gained, lost, displaced and newly viable from searched populations', () => {
+  it('reports strategies gained, lost and newly viable from searched populations', () => {
     const onlyInCandidate = fixtureDeck('candidate_only', 'prototype_commander_blue', [
       ['fixture_dominant_unit', 12],
       ['prototype_scout', 12],
     ]);
-    // Two baseline decks run `trench_guard`, and neither survives the change:
-    // displacement needs a card with real support before, and none after.
     const onlyInBaseline = [0, 1].map((index) =>
       fixtureDeck(`baseline_only_${index}`, 'prototype_commander_red', [
         ['trench_guard', 12],
@@ -275,7 +291,7 @@ describe('comparison report', () => {
     );
     const shared = referenceDecks[2] as (typeof referenceDecks)[number];
 
-    const report = compareEnvironments({
+    const report = compare({
       diff: diffEnvironments(baselineEnv, candidateEnv),
       baselineRecords,
       candidateRecords,
@@ -290,17 +306,47 @@ describe('comparison report', () => {
     expect(report.strategiesLost.map((entry) => entry.deckHash)).toEqual(
       onlyInBaseline.map((deck) => deck.hash),
     );
-    expect(report.displacedCards.map((entry) => entry.definitionId)).toContain('trench_guard');
-    expect(report.displacedCards.find((e) => e.definitionId === 'trench_guard')).toMatchObject({
-      before: 2,
-      after: 0,
-    });
     expect(report.newlyViableCards).toContain('fixture_dominant_unit');
     expect(report.limitations.join(' ')).not.toMatch(/No independent deck search/);
   });
 
+  it('never invents displacement evidence from a single search run', () => {
+    // PHASE4_HARDENING §11. A card vanishing between two one-off archives is the
+    // search's own variance. `compareEnvironments` therefore has no displacement
+    // estimator of its own: it reports only what `analyzeDisplacement` supplies,
+    // which is empty unless replicated evidence was computed.
+    const report = compare({
+      diff: diffEnvironments(baselineEnv, candidateEnv),
+      baselineRecords,
+      candidateRecords,
+      baselineSearchDecks: [
+        fixtureDeck('guards', 'prototype_commander_red', [
+          ['trench_guard', 12],
+          ['prototype_guard', 12],
+        ]),
+      ],
+      candidateSearchDecks: [
+        fixtureDeck('scouts_only', 'prototype_commander_blue', [
+          ['prototype_scout', 12],
+          ['prototype_drone', 12],
+        ]),
+      ],
+    });
+    expect(report.displacement).toEqual([]);
+  });
+
+  it('carries the frozen reference-population hash into the report', () => {
+    const report = compare({
+      diff: diffEnvironments(baselineEnv, candidateEnv),
+      baselineRecords,
+      candidateRecords,
+    });
+    expect(report.referencePopulationHash).toBe(REFERENCE_POPULATION_HASH);
+    expect(report.limitations.join(' ')).toMatch(/reference population is frozen/i);
+  });
+
   it('classifies card-level status against the baseline', () => {
-    const report = compareEnvironments({
+    const report = compare({
       diff: diffEnvironments(baselineEnv, candidateEnv),
       baselineRecords,
       candidateRecords,
@@ -320,8 +366,6 @@ describe('comparison report', () => {
       baselineRecords,
       candidateRecords,
     };
-    expect(JSON.stringify(compareEnvironments(inputs))).toBe(
-      JSON.stringify(compareEnvironments(inputs)),
-    );
+    expect(JSON.stringify(compare(inputs))).toBe(JSON.stringify(compare(inputs)));
   });
 });

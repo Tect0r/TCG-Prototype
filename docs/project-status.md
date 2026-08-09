@@ -4,19 +4,25 @@ Where the project actually is, phase by phase. This file is the single place to
 check before starting work: it records what is done, what is deliberately not
 started, and what "done" means for each remaining phase.
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 
-| Phase | Scope                          | Status                  |
-| ----- | ------------------------------ | ----------------------- |
-| 1     | Deck builder                   | **Complete**            |
-| 2A    | Deterministic rules engine     | **Complete**            |
-| 2B    | Online 1v1                     | **Complete**            |
-| 3     | 2–4 player free-for-all        | **Complete**            |
-| 4     | Headless simulator and balance | **Complete**            |
-| 5     | Pseudonymous real-player data  | Not started, contingent |
+| Phase | Scope                          | Status                    |
+| ----- | ------------------------------ | ------------------------- |
+| 1     | Deck builder                   | **Complete**              |
+| 2A    | Deterministic rules engine     | **Complete**              |
+| 2B    | Online 1v1                     | **Complete**              |
+| 3     | 2–4 player free-for-all        | **Complete**              |
+| 4     | Headless simulator and balance | **Hardening in progress** |
+| 5     | Pseudonymous real-player data  | Not started, contingent   |
+
+Phase 4's machinery is built and runs; its analytical contracts are being
+audited and corrected against [PHASE4_HARDENING.md](../PHASE4_HARDENING.md). It
+is deliberately **not** marked complete until that document's definition of done
+holds — a laboratory that runs is not the same as one whose numbers mean what
+they say.
 
 **Verification for the whole monorepo:** `npm run verify` (typecheck → lint →
-test → build). Last run: **544 tests in 35 files, all passing**; typecheck,
+test → build). Last run: **610 tests in 37 files, all passing**; typecheck,
 ESLint, Prettier and the production build all clean.
 
 ---
@@ -241,7 +247,7 @@ as in Phase 2B; a larger table waits for the host to start it, because
 
 ---
 
-## Phase 4 — Simulator and balance laboratory — complete
+## Phase 4 — Simulator and balance laboratory — hardening in progress
 
 `packages/bot-interface` and `apps/simulator`. Everything here runs locally with
 no browser, no server, no database and no wall clock, against the same rules
@@ -263,8 +269,15 @@ engine, card database, deck format and migrations that human matches use.
 | Reporting and CLI      | `simulator/src/reporting/`, `experiment.ts`, `cli.ts`, `benchmark.ts`                                                 |
 | Example configs        | `experiments/*.json`                                                                                                  |
 
-Four experiment kinds run end to end: `batch`, `replacement`, `search` and
-`comparison`.
+Five experiment kinds run end to end: `batch`, `replacement`, `search`,
+`comparison` and `robustness`.
+
+**Status.** The machinery is built and passes its suite. The analytical
+_contracts_ are being audited against
+[PHASE4_HARDENING.md](../PHASE4_HARDENING.md), because a laboratory that runs is
+not the same as a laboratory whose numbers mean what they say. The corrections
+delivered so far are listed below; the phase is not marked complete until every
+item in that document's definition of done holds.
 
 ### Decisions recorded
 
@@ -281,28 +294,75 @@ Four experiment kinds run end to end: `batch`, `replacement`, `search` and
 - [ADR 0012](architecture/0012-experiment-storage-and-checkpointing.md) — one
   directory per experiment, JSONL streaming, resume by content-addressed match
   ID, search checkpoints carrying the already-bred next population.
+- [ADR 0013](architecture/0013-statistical-contracts.md) — paired designs are
+  analysed as paired; synergy is a four-cell difference-in-differences with a
+  bootstrap that propagates every cell; multiplicity is reported and never used
+  to suppress; metric names state their bounds.
+- [ADR 0014](architecture/0014-unified-match-stream-and-reference-populations.md)
+  — every experiment kind streams to one `matches.jsonl` with identity
+  `arm + matchId`; a comparison's reference population is resolved once,
+  content-hashed and replayed unchanged in both environments.
+
+### Hardening — what has been corrected
+
+Each item below is a defect in what the laboratory _claimed_ to measure, not a
+crash. Each has regression tests; the section numbers are
+[PHASE4_HARDENING.md](../PHASE4_HARDENING.md).
+
+| §    | Defect                                                                                                                                            | Correction                                                                                                                                                                                                                                     |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4    | The flagship comparison claimed Scorch 2 → 3 damage while the baseline already dealt 3, and silently dropped its targeting filter.                | The candidate now deals 4, keeps every other field identical, and a `declaredChanges` block is checked against both resolved pools **before any match runs**. Identical or undeclared differences are rejected.                                |
+| 5    | `broad_cross_cluster_inclusion` was raised from the share of individual _decks_ running a card.                                                   | `analysis/inclusion.ts` measures coverage of eligible strategic clusters. Tiny and rarely-observed clusters leave the denominator. Deck share survives as `deckInclusionShare`.                                                                |
+| 6    | Baseline and candidate each generated their _own_ reference population, so deck-level deltas mixed the rules change with two different decklists. | `reference-population.ts` resolves once against the baseline, content-hashes the set, validates against both pools, keeps only decks legal in both, and refuses the comparison if the arms' hashes diverge.                                    |
+| 7    | Batches streamed to `matches.jsonl`; searches and comparisons accumulated in memory and wrote a final array.                                      | `reporting/match-store.ts` is the one raw store. All five kinds stream to it, dedupe by `arm + matchId`, resume behind a drift-checked header, and truncate a damaged tail exactly once.                                                       |
+| 8.1  | `timesPlayed / timesDrawn` was named `playRatePerDrawn` and printed as a percentage, so "112%" was reachable.                                     | `playsPerDraw` (unbounded, printed as a multiplier) plus bounded `drawnCopyPlayConversion` and `gamesDrawnAndPlayedShare`, backed by new per-copy counters.                                                                                    |
+| 8.2  | Dead-hand collapsed strategic non-use into mechanical unusability.                                                                                | Seven categories, split into mechanical and strategic groups, with board capacity and missing targets attributed separately.                                                                                                                   |
+| 9.1  | Paired experiments were analysed with independent-sample intervals.                                                                               | `analysis/paired.ts`: paired binary and paired continuous estimators, discordant counts, exclusions with reasons, stratified bootstrap intervals.                                                                                              |
+| 9.2  | Synergy uncertainty came from the "both" cell alone.                                                                                              | A 2×2 difference-in-differences with a stratified bootstrap over all four cells. Any sparse cell returns insufficient evidence rather than a number.                                                                                           |
+| 9.3  | Long flag lists carried no sense of scan width.                                                                                                   | `describeMultiplicity` reports hypotheses examined and expected false positives; Benjamini–Hochberg is available and never hides unadjusted values.                                                                                            |
+| 10.1 | `opponent_field_sensitivity` was a public reason code nothing could raise.                                                                        | `analysis/sensitivity.ts` implements it, guarded by per-field minimums and non-overlapping intervals, and describes context sensitivity rather than a defect.                                                                                  |
+| 10.2 | Card-level counter availability was inferred from cluster matchup counts.                                                                         | `analysis/counters.ts` requires controlled replacement evidence against a declared target, and reports `unavailable` — not zero — when it has none.                                                                                            |
+| 10.3 | Pilot robustness needed hand-edited weights.                                                                                                      | Versioned perturbation profiles (`bot-interface/src/perturbation.ts`) and a `robustness` experiment kind that runs each profile on common seeds and never pools them.                                                                          |
+| 11   | Displacement was warned from raw archive counts such as `6 → 3`.                                                                                  | `analysis/displacement.ts` compares normalized shares across independent replicates, requires the drop to exceed between-replicate variation, and separates pool illegality from selection.                                                    |
+| 12   | Reports lacked the provenance to audit them.                                                                                                      | `report.md` now leads with limitations, then a provenance table with configuration hash, card-pool hashes, reference-population hash, schema/seed versions, pilot versions, thresholds, and completed/failed/abnormal/excluded/resumed counts. |
+
+### Schema versions changed
+
+| Schema                        | From | To  | Compatibility                                                                                                                                                                             |
+| ----------------------------- | ---- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TELEMETRY_SCHEMA_VERSION`    | 1    | 2   | No migration. v1 records never observed the per-copy counters or the new dead-hand categories, so a v1 file is rejected with a clear message rather than reinterpreted under v2 meanings. |
+| Report / summary / manifest   | 1    | 2   | Renamed metrics and new provenance fields; old readers should not reinterpret them.                                                                                                       |
+| `MATCH_STREAM_HEADER_VERSION` | —    | 1   | New sidecar. A stream without one cannot be resumed.                                                                                                                                      |
+| `ANALYSIS_STATS_VERSION`      | —    | 1   | Pins the resampling procedure, so published intervals reproduce exactly.                                                                                                                  |
 
 ### Verification
 
-`npm run verify` passes for the whole monorepo: **544 tests in 35 files**
-(baseline before Phase 4 was 325 in 23), typecheck, ESLint, Prettier and the
-production build all clean. Phase 1–3 tests are unmodified except for three
-added regression tests (below).
+`npm run verify` passes for the whole monorepo: **610 tests in 37 files**
+(544 in 35 before hardening; 325 in 23 before Phase 4), typecheck, ESLint,
+Prettier and the production build all clean. Phase 1–3 tests are unmodified
+except for the three regression tests noted below.
 
-New suites: `bot-interface/src/contract.test.ts` (23) and eleven simulator
-suites totalling 193 — `hash`, `seed`, `schedule`, `deck-generation`,
-`run-match`, `telemetry`, `run-batch`, `search`, `analysis`, `compare`,
-`experiment`.
+New hardening suites: `hardening-analysis.test.ts` (33) and
+`hardening-experiment.test.ts` (25).
+
+Smoke experiments run end to end against the bundled set, not only fixtures:
+batch across all four pilots (720 matches), the corrected comparison (864),
+controlled replacement (144), evolutionary search with two replicates (1340),
+pilot-perturbation robustness across five profiles (600), an interrupted batch
+resumed from a truncated tail, and the same experiment at one and two workers.
+The resumed run's records and summary were byte-identical to the uninterrupted
+run's, with 7 records resumed and 1 damaged line recovered; the one- and
+two-worker runs were identical.
 
 Benchmark (`npm run bench`, 120 matches over 6 generated decks):
 
 | Workers | Matches/s | Actions/s | Peak heap | Wall clock |
 | ------- | --------- | --------- | --------- | ---------- |
-| 1       | 3.33      | 419       | 123 MB    | 36.0 s     |
-| 2       | 4.30      | 541       | 51 MB     | 27.9 s     |
-| 4       | 8.16      | 1028      | 51 MB     | 14.7 s     |
+| 1       | 3.52      | 443       | 110 MB    | 34.1 s     |
+| 2       | 4.36      | 549       | 54 MB     | 27.5 s     |
+| 4       | 7.95      | 1001      | 52 MB     | 15.1 s     |
 
-2.45× at four workers; results identical across all three worker counts, which
+2.26× at four workers; results identical across all three worker counts, which
 the benchmark asserts rather than reports.
 
 ### An engine bug Phase 4 found
@@ -332,6 +392,32 @@ already over by that point.
 - Card-pair analysis reports pairs only. Triples explode combinatorially and
   cannot clear a support threshold worth having at these sample sizes, so they
   are not attempted rather than reported badly.
+
+### Analytical limitations that remain after hardening
+
+- **Sample sizes are small.** At the scale these experiments run, most card
+  pairs have an empty cell somewhere in the four-cell contrast and correctly
+  come back as `insufficient_evidence`. That is the honest answer, not a bug,
+  but it means the synergy view says little until runs get much larger.
+- **Card-level counter breadth needs a declared target.** Without
+  `counterTargetDeckIds` and a replacement experiment behind it, the analyser
+  reports `unavailable`. Cluster matchup breadth is always available and is
+  never presented as a card-level answer.
+- **Displacement needs replicates.** With one search replicate the analyser
+  reports `insufficient_evidence` for every card, by design. Meaningful
+  displacement evidence costs several full searches per environment.
+- **Opponent-field sensitivity is 1v1 only.** In a free-for-all the field a card
+  faced is a mixture, and attributing the result to whichever opponent sorted
+  first would be worse than saying nothing, so multi-opponent matches are
+  skipped in that view.
+- **Pilot robustness measures the profiles it ships with.** A conclusion labelled
+  `stable` survived a specific, versioned set of bounded re-weightings — not
+  every reasonable pilot, and certainly not a human.
+- **`drawnCopyPlayConversion` can be `unavailable`.** It is `null` for records
+  written before per-copy tracking existed, rather than a fabricated value.
+- **Insertion controls are not built.** `includeInsertion` records a note when a
+  base deck does not run the subject card; it does not yet construct the
+  insertion variant CLAUDE.md §13.10 describes for build-around cards.
 
 ### Things worth knowing before extending it
 

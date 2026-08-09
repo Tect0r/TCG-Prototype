@@ -14,8 +14,8 @@
   },
 
   "subjectCardId": "pyre_champion",
-  "candidateCardIds": [],
-  "copies": "all",
+  "candidateCardIds": ["tide_binder", "cryptic_archivist"],
+  "copies": 1,
 
   "baseDecks": {
     "kind": "inline",
@@ -46,12 +46,93 @@
     ]
   },
 
-  "opponentDecks": { "kind": "generated", "count": 4, "generator": { "minUnits": 12 } },
-  "gamesPerPairing": 3,
+  "opponentDecks": {
+    "kind": "inline",
+    "decks": [
+      {
+        "id": "green_stompy",
+        "label": "Mono-green big bodies — the declared counter target",
+        "commanderId": "prototype_commander_green",
+        "cards": [
+          { "cardId": "root_snare", "quantity": 2 },
+          { "cardId": "thornback_calf", "quantity": 2 },
+          { "cardId": "verdant_ward", "quantity": 2 },
+          { "cardId": "pack_summons", "quantity": 2 },
+          { "cardId": "wildgrowth_shaman", "quantity": 2 },
+          { "cardId": "bramble_titan", "quantity": 2 },
+          { "cardId": "apex_grovekeeper", "quantity": 1 },
+          { "cardId": "prototype_drone", "quantity": 2 },
+          { "cardId": "prototype_scout", "quantity": 2 },
+          { "cardId": "prototype_guard", "quantity": 2 },
+          { "cardId": "trench_guard", "quantity": 2 },
+          { "cardId": "unstable_construct", "quantity": 2 },
+          { "cardId": "surveyors_lens", "quantity": 2 },
+          { "cardId": "energy_font", "quantity": 2 },
+          { "cardId": "field_survey", "quantity": 2 },
+          { "cardId": "worldbreaker_engine", "quantity": 1 }
+        ]
+      },
+      {
+        "id": "orzhov_attrition",
+        "label": "White/black attrition",
+        "commanderId": "prototype_commander_white_black",
+        "cards": [
+          { "cardId": "dawn_conscript", "quantity": 2 },
+          { "cardId": "field_medic", "quantity": 2 },
+          { "cardId": "shieldline_sergeant", "quantity": 2 },
+          { "cardId": "radiant_bulwark", "quantity": 2 },
+          { "cardId": "oathbound_paladin", "quantity": 2 },
+          { "cardId": "sunrise_decree", "quantity": 1 },
+          { "cardId": "grave_rat", "quantity": 2 },
+          { "cardId": "wither_touch", "quantity": 2 },
+          { "cardId": "blood_pact", "quantity": 2 },
+          { "cardId": "bone_harvester", "quantity": 2 },
+          { "cardId": "plague_censer", "quantity": 2 },
+          { "cardId": "dread_sovereign", "quantity": 1 },
+          { "cardId": "dusk_tithe_priest", "quantity": 2 },
+          { "cardId": "prototype_drone", "quantity": 2 },
+          { "cardId": "prototype_scout", "quantity": 2 },
+          { "cardId": "prototype_guard", "quantity": 2 }
+        ]
+      },
+      {
+        "id": "simic_tempo",
+        "label": "Green/blue tempo",
+        "commanderId": "prototype_commander_green_blue",
+        "cards": [
+          { "cardId": "tidepool_apprentice", "quantity": 2 },
+          { "cardId": "mistveil_stalker", "quantity": 2 },
+          { "cardId": "desperate_insight", "quantity": 2 },
+          { "cardId": "arcane_recall", "quantity": 2 },
+          { "cardId": "tide_binder", "quantity": 2 },
+          { "cardId": "cryptic_archivist", "quantity": 1 },
+          { "cardId": "root_snare", "quantity": 2 },
+          { "cardId": "thornback_calf", "quantity": 2 },
+          { "cardId": "verdant_ward", "quantity": 2 },
+          { "cardId": "pack_summons", "quantity": 2 },
+          { "cardId": "wildgrowth_shaman", "quantity": 2 },
+          { "cardId": "tidal_grove_warden", "quantity": 2 },
+          { "cardId": "prototype_scout", "quantity": 2 },
+          { "cardId": "prototype_guard", "quantity": 2 },
+          { "cardId": "trench_guard", "quantity": 2 },
+          { "cardId": "field_survey", "quantity": 1 }
+        ]
+      }
+    ]
+  },
+
+  "counterTargetDeckIds": ["green_stompy"],
+
+  "gamesPerPairing": 8,
   "mirrorSeats": true,
   "includeInsertion": true,
   "limits": { "maxTurns": 150 },
   "retention": { "replaySampleRate": 0 },
-  "analysis": { "minMatchesPerCard": 20, "minPairSupport": 15, "minMatchesPerDeck": 10 },
+  "analysis": {
+    "minMatchesPerCard": 20,
+    "minPairSupport": 15,
+    "minMatchesPerDeck": 10,
+    "minPairedGames": 20
+  },
   "workers": 4
 }

@@ -1,6 +1,11 @@
 # ADR 0012 — Experiment storage, streaming and checkpointing (Phase 4)
 
-**Status:** accepted · **Date:** 2026-08-08
+**Status:** accepted · **Date:** 2026-08-08 · **Amended by:**
+[ADR 0014](0014-unified-match-stream-and-reference-populations.md) — every
+experiment kind now streams to one `matches.jsonl` rather than only batches, and
+a record's resume identity is `arm + matchId` rather than the match ID alone.
+The directory layout and the reasoning below stand; read 0014 for the corrected
+storage contract.
 
 ## Context
 

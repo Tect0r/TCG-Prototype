@@ -301,6 +301,15 @@ pairing, and a population that has collapsed into one cluster.
 to be to count. The tooling reports the shape; nobody has decided what shape is
 healthy.
 
+**Narrowed 2026-08-09.** Two of the measurements behind this question were
+wrong and have been corrected, which does not answer it but does mean the shape
+being reported is now the shape that was asked for. `broad_cross_cluster_inclusion`
+counts _clusters_ a card covers rather than the share of decks running it, and
+card-level counter breadth requires controlled replacement evidence instead of
+being inferred from the cluster matchup matrix — where that evidence is absent
+it reports `unavailable`, and the cluster count is kept under its own name
+(PHASE4_HARDENING §5 and §10.2).
+
 ### Q16. Simulator determinism boundary — **answered 2026-08-08**
 
 Answered by [ADR 0010](architecture/0010-seed-derivation-and-reproducibility.md).
@@ -324,8 +333,18 @@ strong. CLAUDE.md §13.1 rules out machine learning for Phase 4, and the telemet
 is deliberately raw enough to support it later.
 
 **Needed by:** the first finding that hinges on a card the pilots plausibly
-misplay. Perturbing the heuristic weights across runs is the cheap partial
-answer and is already supported.
+misplay.
+
+**Partially addressed 2026-08-09.** The cheap partial answer is now executable
+rather than manual: `experiments/pilot-robustness.json` and the `robustness`
+experiment kind run a bounded common-seed schedule once per named, versioned
+perturbation profile and report whether each conclusion is `stable`,
+`pilot_sensitive` or `insufficient_evidence`
+([ADR 0013](architecture/0013-statistical-contracts.md), PHASE4_HARDENING §10.3).
+Profiles are never pooled. The underlying question — whether better pilots would
+reach different conclusions — is unchanged: a `stable` label means a finding
+survived a specific set of bounded re-weightings, not that it would survive a
+competent human.
 
 ### Q38. When is a multiplayer balance run worth it?
 

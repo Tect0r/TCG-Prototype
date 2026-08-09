@@ -3,10 +3,14 @@
 A standalone, browser-based card-game prototype for testing mechanics, cards and
 balance before the card game is integrated into a larger MMO.
 
-**Current milestone: Phase 4 — complete.** The deck builder (Phase 1), the
-deterministic headless rules engine (Phase 2A), online 1v1 (Phase 2B), the
-two-to-four-player free-for-all (Phase 3) and the local balance laboratory
-(Phase 4) all work.
+**Current milestone: Phase 4 — hardening in progress.** The deck builder
+(Phase 1), the deterministic headless rules engine (Phase 2A), online 1v1
+(Phase 2B), the two-to-four-player free-for-all (Phase 3) and the local balance
+laboratory (Phase 4) all work. Phase 4's analytical contracts are being audited
+and corrected against
+[PHASE4_HARDENING.md](PHASE4_HARDENING.md); see
+[docs/project-status.md](docs/project-status.md) for what is done and what is
+still open.
 
 The laboratory produces reproducible evidence about cards. It does **not** prove
 that anything is balanced, and it is not built to: it runs matches with
@@ -121,18 +125,29 @@ same rules engine, card database and deck format that human matches use.
 ```bash
 npm run simulate -- --config experiments/smoke.json                # ~12 matches
 npm run simulate -- --config experiments/batch.json --workers 8    # a real batch
-npm run simulate -- --config experiments/abuse-search.json         # evolutionary search
+npm run simulate -- --config experiments/abuse-search.json         # evolutionary search, 2 replicates
 npm run simulate -- --config experiments/replacement.json          # controlled substitution
 npm run simulate -- --config experiments/candidate-vs-baseline.json
+npm run simulate -- --config experiments/pilot-robustness.json     # do conclusions survive re-tuning?
 ```
 
 Other flags: `--output <dir>` to place the experiment directory, `--resume` to
 continue an interrupted run, `--quiet` to suppress progress, `--help`.
 
 Each run writes a directory described in
-[ADR 0012](docs/architecture/0012-experiment-storage-and-checkpointing.md):
-`matches.jsonl` is the raw, lossless output, and every number in `summary.json`
-and `report.md` is recomputable from it.
+[ADR 0012](docs/architecture/0012-experiment-storage-and-checkpointing.md) and
+[ADR 0014](docs/architecture/0014-unified-match-stream-and-reference-populations.md).
+**Every** experiment kind — batch, search, replacement, comparison and
+robustness — streams its raw records to one `matches.jsonl`, one
+runtime-validated line per match, and every number in `summary.json` and
+`report.md` is recomputable from it. `--resume` therefore means the same thing
+for a search or a comparison as for a batch: skip what is already committed,
+re-run nothing, and refuse to merge records written under a different
+configuration hash. A run killed mid-write leaves a partial final line, which is
+dropped once, reported in the manifest, and re-run.
+
+A record's identity is `arm + matchId`, so a comparison's two arms, a search's
+generations and a robustness run's profiles share one stream without colliding.
 
 **Four pilots** — `random_legal`, `aggressive`, `defensive`, `value` — play using
 only the redacted view and the legal actions a human client would receive
@@ -153,15 +168,75 @@ sample size and an uncertainty interval. There is deliberately no "overpowered"
 and no "balanced". A finding below the configured minimum sample is downgraded to
 `insufficient_data` rather than dropped, so "we do not know" stays visible.
 
+`report.md` is self-auditing: it opens with limitations, then a provenance table
+carrying the configuration hash, card-pool hashes, frozen reference-population
+hash, schema and seed-derivation versions, pilot versions, every threshold used,
+and the completed / failed / abnormal / excluded / resumed match counts. Worker
+count is printed and explicitly marked non-semantic. The JSON is authoritative;
+Markdown and CSV are views of it, and a regression test checks they agree.
+
+### What the numbers mean
+
+Several metrics say what they measure rather than what is convenient:
+
+- **`playsPerDraw`** is play events over draw events and is **unbounded** — a
+  card returned to hand and replayed exceeds 1. It is printed as a multiplier,
+  never a percentage. The bounded questions have their own names:
+  `drawnCopyPlayConversion` (drawn copies ever played, 0–1) and
+  `gamesDrawnAndPlayedShare` (0–1).
+- **Dead-in-hand** splits into a mechanical half — never affordable, no board
+  capacity, no legal target, no legal window — and a strategic half — legal but
+  unchosen, held at the end. A card the pilots simply did not want is a fact
+  about the pilots, and is never reported as an unplayable card.
+- **`broad_cross_cluster_inclusion`** measures coverage of _strategic clusters_,
+  not the share of decks running a card. Thirty near-identical decks are one
+  strategy counted thirty times. Deck share is kept, separately, as
+  `deckInclusionShare`.
+- **Card-pair synergy** is the 2×2 difference-in-differences over all four cells
+  (both, A only, B only, neither), with a stratified bootstrap interval that
+  propagates every cell. A sparse cell returns _insufficient evidence_, because
+  the contrast is then undefined rather than merely imprecise.
+- **Replacement and baseline/candidate deltas** are analysed as **paired**
+  outcomes, since both arms play the same games on the same seeds. Incomplete
+  pairs are excluded, counted and reported, never quietly pooled.
+- **Displacement** compares normalized inclusion shares across independent
+  search replicates and must clear the between-replicate variation of the same
+  environment. A single run's `6 → 3` is search noise and is reported as such.
+- **Counter breadth** is card-level only when controlled replacement evidence
+  supports it; otherwise it reports `unavailable`, and the cluster matchup count
+  is kept under its own honest name.
+
+The estimators and their guarantees are recorded in
+[ADR 0013](docs/architecture/0013-statistical-contracts.md).
+
+### Reference versus discovery populations
+
+A baseline-versus-candidate comparison answers two different questions and keeps
+them apart:
+
+- **Reference impact** — one population, resolved once against the baseline,
+  content-hashed, and replayed _unchanged_ in both environments on common random
+  numbers. Decks illegal in either environment are excluded from both arms with
+  their reasons, never repaired for one side. The two arms' population hashes
+  must match or the comparison refuses to run.
+- **Discovery impact** — an independent deck search in _each_ environment, which
+  is the only way to see abuse a new card enables, since a reference population
+  by construction cannot contain a card that did not exist when it was built.
+
+A comparison also declares what it changes, and the declaration is checked
+against the two resolved card pools **before any match runs**. A candidate that
+is structurally identical to its baseline, or that differs in a field the
+experiment did not declare, is rejected rather than measured.
+
 Measured on this machine (`npm run bench`, 120 matches, 6 generated decks):
 
 | Workers | Matches/s | Actions/s | Peak heap | Wall clock |
 | ------- | --------- | --------- | --------- | ---------- |
-| 1       | 3.33      | 419       | 123 MB    | 36.0 s     |
-| 2       | 4.30      | 541       | 51 MB     | 27.9 s     |
-| 4       | 8.16      | 1028      | 51 MB     | 14.7 s     |
+| 1       | 3.52      | 443       | 110 MB    | 34.1 s     |
+| 2       | 4.36      | 549       | 54 MB     | 27.5 s     |
+| 4       | 7.95      | 1001      | 52 MB     | 15.1 s     |
 
-2.45× at four workers, with results identical across all three — the benchmark
+2.26× at four workers, with results identical across all three — the benchmark
 asserts that rather than reporting it.
 
 ## Repository layout

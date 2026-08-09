@@ -67,6 +67,9 @@ async function runOnce(workers: number, deckCount: number, games: number): Promi
   const before = performance.now();
   const outcome = await runBatch({
     experimentId: 'benchmark',
+    experimentKind: 'batch',
+    configHash: `benchmark|${deckCount}|${games}`,
+    arm: null,
     environment,
     decks,
     pilots: BENCH_PILOTS,
@@ -75,7 +78,9 @@ async function runOnce(workers: number, deckCount: number, games: number): Promi
     retention: { replaySampleRate: 0, keepLogs: false, keepDecisions: false },
     workers,
     failFast: false,
-    outputDir: null,
+    // The benchmark measures throughput, not storage, so nothing is committed to
+    // a stream. Worker-count equivalence is checked through the fingerprint below.
+    sink: null,
   });
   const elapsedMs = performance.now() - before;
 

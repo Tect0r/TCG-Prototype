@@ -18,6 +18,9 @@ import { matchRecordSchema } from '../telemetry/schema.js';
 
 export const workerSetupSchema = z.strictObject({
   experimentId: z.string(),
+  experimentKind: matchRecordSchema.shape.experimentKind,
+  configHash: z.string(),
+  arm: z.string().nullable(),
   environment: environmentConfigSchema,
   decks: z.array(simDeckSchema),
   pilots: z.array(pilotSpecSchema),

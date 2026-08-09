@@ -16,7 +16,23 @@ import { seedBundleSchema } from '../seed.js';
  * (CLAUDE.md §13.15 item 4).
  */
 
-export const TELEMETRY_SCHEMA_VERSION = 1;
+/**
+ * Version 2 (PHASE4_HARDENING §7, §8.1, §8.2):
+ *
+ * - Records carry their own stream identity — experiment kind, configuration
+ *   hash and arm label — so one `matches.jsonl` can hold every match of a
+ *   comparison or a search and still be deduplicated and resumed safely.
+ * - Per-copy draw/play counters were added, because `timesPlayed / timesDrawn`
+ *   cannot express a bounded conversion rate and was being presented as one.
+ * - The dead-hand vocabulary distinguishes missing targets and board capacity
+ *   from a generic "no legal window", and separates a card still held at the end
+ *   from one that was discarded after being playable.
+ *
+ * Version 1 records cannot be migrated: the new counters were never observed, so
+ * a v1 file is rejected with a clear message rather than read under v2 meanings
+ * (PHASE4_HARDENING §13).
+ */
+export const TELEMETRY_SCHEMA_VERSION = 2;
 
 export const TERMINATION_KINDS = [
   'victory',
@@ -54,15 +70,45 @@ export const DEAD_HAND_CATEGORIES = [
   'unseen',
   /** Reached hand, but the seat never had enough energy for it after a draw. */
   'never_affordable',
-  /** Affordable at some point, but requirements, targets or slots never lined up. */
+  /** Affordable, but every time it was the board or a zone that was full. */
+  'no_capacity',
+  /** Affordable, but every time it was a required target that did not exist. */
+  'no_legal_target',
+  /** Affordable, never legal, and not attributable to capacity or targeting. */
   'no_legal_window',
-  /** The engine offered it at least once and the pilot chose something else. */
+  /** Was offered at least once, was not used, and had left hand by the end. */
   'legal_but_unchosen',
+  /** Was offered at least once and was still sitting in hand when the match ended. */
+  'held_at_end',
   /** Not dead: it was played, activated, or spent as a cost. */
   'used',
 ] as const;
 export const deadHandCategorySchema = z.enum(DEAD_HAND_CATEGORIES);
 export type DeadHandCategory = z.infer<typeof deadHandCategorySchema>;
+
+/**
+ * Categories that mean "the card could not be used" — a fact about the card and
+ * the board — as opposed to "the pilot did not use it", which is a fact about
+ * the pilot. PHASE4_HARDENING §8.2 forbids collapsing the second into the first.
+ */
+export const MECHANICALLY_UNUSABLE_CATEGORIES: readonly DeadHandCategory[] = [
+  'never_affordable',
+  'no_capacity',
+  'no_legal_target',
+  'no_legal_window',
+];
+
+/** Categories that mean the pilot had the option and passed on it. */
+export const STRATEGICALLY_UNUSED_CATEGORIES: readonly DeadHandCategory[] = [
+  'legal_but_unchosen',
+  'held_at_end',
+];
+
+/** Every category that counts as dead in hand. Excludes `unseen` and `used`. */
+export const DEAD_IN_HAND_CATEGORIES: readonly DeadHandCategory[] = [
+  ...MECHANICALLY_UNUSABLE_CATEGORIES,
+  ...STRATEGICALLY_UNUSED_CATEGORIES,
+];
 
 /** Compact board features either side of a card being played, for swing measures. */
 export const playSnapshotSchema = z.strictObject({
@@ -98,6 +144,18 @@ export const cardTelemetrySchema = z.strictObject({
   copiesMulliganedAway: z.number().int().min(0),
 
   timesDrawn: z.number().int().min(0),
+  /**
+   * Distinct copies that ever reached hand, whether drawn or dealt in the
+   * opening hand.
+   *
+   * `timesDrawn` counts draw *events*, so a copy bounced and redrawn counts
+   * twice; this counts the copy once. The two are the denominators of two
+   * different questions, and conflating them is what produced a "play rate" that
+   * could exceed 100% (PHASE4_HARDENING §8.1).
+   */
+  drawnCopies: z.number().int().min(0),
+  /** Of `drawnCopies`, how many were played or activated at least once. */
+  drawnCopiesPlayed: z.number().int().min(0),
   firstSeenTurn: z.number().int().min(0).nullable(),
   /** Summed over every copy: turns spent sitting in hand. */
   turnsHeldInHand: z.number().int().min(0),
@@ -194,6 +252,19 @@ export const matchRecordSchema = z.strictObject({
   orderKey: z.string(),
 
   experimentId: z.string(),
+  /** Which experiment kind produced this record, for a mixed `matches.jsonl`. */
+  experimentKind: z.enum(['batch', 'search', 'comparison', 'replacement', 'robustness']),
+  /** Hash of the normalized experiment configuration. Resume rejects a mismatch. */
+  configHash: z.string(),
+  /**
+   * Which arm of the experiment this match belongs to.
+   *
+   * `baseline` / `candidate` for a comparison, `search:<label>:g<n>` for a search
+   * generation, `profile:<id>` for a robustness profile, `null` for a plain
+   * batch. Part of the deduplication identity, so two arms can share one stream
+   * without colliding (PHASE4_HARDENING §7).
+   */
+  arm: z.string().nullable(),
   environmentId: z.string(),
   environmentHash: z.string(),
   cardPoolHash: z.string(),
@@ -231,6 +302,17 @@ export const matchRecordSchema = z.strictObject({
   replayPath: z.string().nullable(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
+
+/**
+ * The identity a record is deduplicated by when resuming (PHASE4_HARDENING §7).
+ *
+ * `matchId` is already content-derived and unique within an arm; the arm is
+ * included so a comparison's baseline and candidate halves, or two search
+ * generations, can share one stream without either overwriting the other.
+ */
+export function recordIdentity(record: Pick<MatchRecord, 'matchId' | 'arm'>): string {
+  return `${record.arm ?? ''}§${record.matchId}`;
+}
 
 /**
  * A replay bundle: everything needed to re-derive the match exactly.

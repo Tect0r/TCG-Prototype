@@ -1,15 +1,22 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PilotSpec } from '@tcg/bot-interface';
+import { perturbPilot, type PilotSpec } from '@tcg/bot-interface';
 import type {
   BatchConfig,
   ComparisonConfig,
   ExperimentConfig,
   ReplacementConfig,
+  RobustnessConfig,
   SearchConfig,
 } from './config.js';
-import { diffEnvironments, resolveEnvironment, type Environment } from './environment.js';
+import {
+  checkDeclaredChanges,
+  diffEnvironments,
+  resolveEnvironment,
+  type DeclaredDiffCheck,
+  type Environment,
+} from './environment.js';
 import { resolveDeckSource } from './deck-source.js';
 import { buildSchedule } from './schedule.js';
 import { runBatch, type BatchProgress } from './run-batch.js';
@@ -18,20 +25,38 @@ import { generatePopulation } from './deck-search/generate.js';
 import { aggregate, type Aggregate } from './analysis/aggregate.js';
 import { clusterDecks, type ClusteringResult } from './analysis/clusters.js';
 import { cardPairs, type CardPair } from './analysis/pairs.js';
+import { analyzeInclusion, type InclusionAnalysis } from './analysis/inclusion.js';
+import { opponentFieldSensitivity, type OpponentSensitivity } from './analysis/sensitivity.js';
+import { counterBreadth, type CounterBreadth } from './analysis/counters.js';
+import {
+  analyzeDisplacement,
+  type Displacement,
+  type DisplacementReplicate,
+} from './analysis/displacement.js';
+import { analyzeRobustness, type RobustnessReport } from './analysis/robustness.js';
+import { describeMultiplicity, type Multiplicity } from './analysis/paired.js';
 import {
   buildReplacementVariant,
   comparableCards,
   replacementImpact,
   type ReplacementImpact,
+  type ReplacementVariant,
 } from './analysis/replacement.js';
 import { compareEnvironments, type ComparisonReport } from './analysis/compare.js';
 import { computeFlags, type Flag } from './analysis/flags.js';
-import { renderReport } from './reporting/report.js';
+import { REPORT_SCHEMA_VERSION, renderReport } from './reporting/report.js';
 import { experimentPaths, ensureDir, writeCsv, writeJson } from './reporting/sinks.js';
+import { MatchStore } from './reporting/match-store.js';
 import { SEED_DERIVATION_VERSION } from './seed.js';
-import { TELEMETRY_SCHEMA_VERSION, type MatchRecord } from './telemetry/schema.js';
+import { TELEMETRY_SCHEMA_VERSION, isAbnormal, type MatchRecord } from './telemetry/schema.js';
+import {
+  assertSharedPopulation,
+  freezeReferencePopulation,
+  type ReferencePopulation,
+} from './reference-population.js';
 import type { SimDeck } from './deck-search/deck.js';
-import { HASH_VERSION } from './hash.js';
+import { HASH_VERSION, digestOf } from './hash.js';
+import { ANALYSIS_STATS_VERSION } from './analysis/paired.js';
 
 /**
  * Runs a whole experiment and writes its directory (CLAUDE.md §13.13).
@@ -41,6 +66,11 @@ import { HASH_VERSION } from './hash.js';
  * computed from, the CSVs are for eyeballing, and `report.md` is the written
  * interpretation. Deleting `summary.json` and `report.md` and re-deriving them
  * from `matches.jsonl` must reproduce them exactly.
+ *
+ * Every experiment kind — batch, replacement, search, comparison and
+ * robustness — opens exactly one `MatchStore` and streams into it, so all five
+ * are equally resumable and none of them accumulates a whole run in memory just
+ * to write a final array (PHASE4_HARDENING §7).
  */
 
 export interface RunExperimentOptions {
@@ -58,12 +88,19 @@ export interface ExperimentOutcome {
   readonly records: readonly MatchRecord[];
   readonly aggregate: Aggregate;
   readonly clustering: ClusteringResult;
+  readonly inclusion: InclusionAnalysis;
   readonly pairs: readonly CardPair[];
   readonly replacements: readonly ReplacementImpact[];
+  readonly sensitivity: readonly OpponentSensitivity[];
+  readonly displacement: readonly Displacement[];
+  readonly counters: CounterBreadth | null;
+  readonly robustness: RobustnessReport | null;
   readonly flags: readonly Flag[];
   readonly comparison: ComparisonReport | null;
   readonly searchHistory: readonly GenerationReport[];
+  readonly referencePopulation: ReferencePopulation | null;
   readonly report: string;
+  readonly resumedMatches: number;
   readonly elapsedMs: number;
 }
 
@@ -76,6 +113,32 @@ export function detectSoftwareCommit(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Identity of the normalized configuration.
+ *
+ * Everything that changes what an experiment *is* feeds in; nothing that only
+ * changes where or how fast it runs does. That is what lets `--workers 8` resume
+ * a run started with `--workers 1` while a changed seed or threshold is refused.
+ */
+export function configHashOf(config: ExperimentConfig): string {
+  const {
+    workers: _workers,
+    output: _output,
+    ...semantic
+  } = config as ExperimentConfig & {
+    workers: number;
+    output: string;
+  };
+  return digestOf({
+    version: 1,
+    telemetry: TELEMETRY_SCHEMA_VERSION,
+    seeds: SEED_DERIVATION_VERSION,
+    hashes: HASH_VERSION,
+    stats: ANALYSIS_STATS_VERSION,
+    config: semantic,
+  });
 }
 
 export async function runExperiment(
@@ -91,11 +154,27 @@ export async function runExperiment(
       return runSearchExperiment(config, options);
     case 'comparison':
       return runComparisonExperiment(config, options);
+    case 'robustness':
+      return runRobustnessExperiment(config, options);
     default: {
       const never: never = config;
       throw new Error(`Unknown experiment kind: ${JSON.stringify(never)}`);
     }
   }
+}
+
+/** Opens the one raw-record stream this experiment writes into. */
+function openStore(
+  config: ExperimentConfig,
+  outputDir: string,
+  options: RunExperimentOptions,
+): MatchStore {
+  return new MatchStore(outputDir, {
+    experimentId: config.id,
+    experimentKind: config.kind,
+    configHash: configHashOf(config),
+    ...(options.resume === undefined ? {} : { resume: options.resume }),
+  });
 }
 
 /* ------------------------------------------------------------------- batch */
@@ -108,6 +187,7 @@ async function runBatchExperiment(
   const environment = resolveEnvironment(config.environment);
   const outputDir = options.outputDir ?? join(config.output, config.id);
   const workers = options.workers ?? config.workers;
+  const store = openStore(config, outputDir, options);
 
   const resolved = resolveDeckSource(
     config.decks,
@@ -133,6 +213,9 @@ async function runBatchExperiment(
 
   const batch = await runBatch({
     experimentId: config.id,
+    experimentKind: 'batch',
+    configHash: configHashOf(config),
+    arm: null,
     environment,
     decks: resolved.decks,
     pilots: config.pilots,
@@ -142,30 +225,28 @@ async function runBatchExperiment(
     workers,
     failFast: config.failFast,
     softwareCommit: options.softwareCommit ?? detectSoftwareCommit(),
-    outputDir,
-    ...(options.resume === undefined ? {} : { resume: options.resume }),
+    sink: store,
+    replayDir: join(outputDir, 'replays'),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
 
   return finish({
     config,
     outputDir,
+    store,
     environments: [environment],
     decks: resolved.decks,
-    records: batch.records,
     replacements: [],
     comparison: null,
     searchHistory: [],
     workers,
     elapsedMs: Date.now() - started,
+    failedMatches: batch.failures.length,
     extraLimitations: [
       ...resolved.rejected.map(
         (entry) => `Deck "${entry.id}" was rejected as illegal: ${entry.reasons.join('; ')}`,
       ),
       ...batch.failures.map((entry) => `Match ${entry.matchId} failed to run: ${entry.message}`),
-      ...batch.recovered.map(
-        (entry) => `Recovered from a damaged record on line ${entry.line}: ${entry.reason}`,
-      ),
     ],
   });
 }
@@ -181,6 +262,7 @@ async function runReplacementExperiment(
   const outputDir = options.outputDir ?? join(config.output, config.id);
   const workers = options.workers ?? config.workers;
   const configDir = options.configPath ? dirOf(options.configPath) : '.';
+  const store = openStore(config, outputDir, options);
 
   const baseSource = resolveDeckSource(
     config.baseDecks,
@@ -198,10 +280,7 @@ async function runReplacementExperiment(
   requireDecks(opponentSource.decks, 1, opponentSource.rejected);
 
   const notes: string[] = [];
-  const variants: {
-    deck: SimDeck;
-    variant: NonNullable<ReturnType<typeof buildReplacementVariant>['variant']>;
-  }[] = [];
+  const variants: { deck: SimDeck; variant: ReplacementVariant }[] = [];
 
   for (const base of baseSource.decks) {
     if (!base.cards.some((entry) => entry.cardId === config.subjectCardId)) {
@@ -290,6 +369,9 @@ async function runReplacementExperiment(
 
   const batch = await runBatch({
     experimentId: config.id,
+    experimentKind: 'replacement',
+    configHash: configHashOf(config),
+    arm: null,
     environment,
     decks: uniqueDecks,
     pilots: config.pilots,
@@ -299,30 +381,57 @@ async function runReplacementExperiment(
     workers,
     failFast: config.failFast,
     softwareCommit: options.softwareCommit ?? detectSoftwareCommit(),
-    outputDir,
-    ...(options.resume === undefined ? {} : { resume: options.resume }),
+    sink: store,
+    replayDir: join(outputDir, 'replays'),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
 
+  const records = store.all();
   const impacts = variants.map((entry) =>
-    replacementImpact(entry.variant, batch.records, batch.records, {
+    replacementImpact(entry.variant, records, records, {
       confidence: config.analysis.confidence,
       minMatches: config.analysis.minMatchesPerCard,
+      minPairs: config.analysis.minPairedGames,
+      iterations: config.analysis.bootstrapIterations,
+      seed: `${config.seed}|replacement`,
     }),
   );
+
+  // Card-level counter evidence, but only when the experiment actually declared
+  // what the substitutions are supposed to answer (PHASE4_HARDENING §10.2).
+  const targetHashes = opponentSource.decks
+    .filter(
+      (deck) =>
+        config.counterTargetDeckIds.includes(deck.id) ||
+        config.counterTargetDeckIds.includes(deck.label),
+    )
+    .map((deck) => deck.hash);
+
+  if (config.counterTargetDeckIds.length > 0 && targetHashes.length === 0) {
+    notes.push(
+      `None of the declared counter targets (${config.counterTargetDeckIds.join(', ')}) matched an ` +
+        'opponent deck ID or label, so counter breadth is reported as unavailable.',
+    );
+  }
 
   return finish({
     config,
     outputDir,
+    store,
     environments: [environment],
     decks: uniqueDecks,
-    records: batch.records,
     replacements: impacts,
     comparison: null,
     searchHistory: [],
     workers,
     elapsedMs: Date.now() - started,
-    extraLimitations: notes,
+    failedMatches: batch.failures.length,
+    extraLimitations: [
+      ...notes,
+      ...batch.failures.map((entry) => `Match ${entry.matchId} failed to run: ${entry.message}`),
+    ],
+    counterTargets: targetHashes,
+    counterVariants: variants.map((entry) => entry.variant),
   });
 }
 
@@ -337,6 +446,7 @@ async function runSearchExperiment(
   const outputDir = options.outputDir ?? join(config.output, config.id);
   const workers = options.workers ?? config.workers;
   const paths = experimentPaths(outputDir);
+  const store = openStore(config, outputDir, options);
   ensureDir(paths.checkpoints);
 
   const seeded = config.seedDecks
@@ -348,54 +458,78 @@ async function runSearchExperiment(
       ).decks
     : [];
 
-  const generated = generatePopulation(
-    environment,
-    `${config.seed}|population`,
-    Math.max(0, config.populationSize - seeded.length),
-    config.generator,
-  );
-
-  const population = dedupeDecks([...seeded, ...generated.decks]);
-  requireDecks(population, 2, []);
-
   const history: GenerationReport[] = [];
-  const search = await runSearch(population, {
-    experimentId: config.id,
-    experimentSeed: config.seed,
-    environment,
-    pilots: config.pilots,
-    limits: config.limits,
-    retention: config.retention,
-    workers,
-    populationSize: config.populationSize,
-    generations: config.generations,
-    eliteCount: config.eliteCount,
-    mutationStrength: config.mutationStrength,
-    crossoverShare: config.crossoverShare,
-    opponentsPerEvaluation: config.opponentsPerEvaluation,
-    gamesPerOpponent: config.gamesPerOpponent,
-    archiveSize: config.archiveSize,
-    reevaluateElites: config.reevaluateElites,
-    outputDir,
-    checkpointEvery: config.checkpointEvery,
-    onGeneration: (report: GenerationReport, checkpoint: SearchCheckpoint) => {
-      history.push(report);
-      options.onGeneration?.(report);
-      if (report.generation % config.checkpointEvery === 0) {
-        writeJson(
-          join(paths.checkpoints, `generation-${String(report.generation).padStart(3, '0')}.json`),
-          checkpoint,
-        );
-      }
-    },
-  });
+  const replicateResults: DisplacementReplicate[] = [];
+  const allDecks: SimDeck[] = [];
+  const diagnostics: string[] = [];
+
+  // Independent replicates, each on its own seed family. One evolutionary run is
+  // one sample of a stochastic process; replicates are what make the difference
+  // between "this card disappeared" and "this card disappears" (§11).
+  for (let replicate = 0; replicate < config.replicates; replicate += 1) {
+    const label = `r${replicate}`;
+    const replicateSeed = `${config.seed}|replicate:${replicate}`;
+
+    const generated = generatePopulation(
+      environment,
+      `${replicateSeed}|population`,
+      Math.max(0, config.populationSize - seeded.length),
+      config.generator,
+    );
+    diagnostics.push(...generated.diagnostics.map((entry) => `${entry.code}: ${entry.message}`));
+
+    const population = dedupeDecks([...seeded, ...generated.decks]);
+    requireDecks(population, 2, []);
+
+    const search = await runSearch(population, {
+      experimentId: config.replicates > 1 ? `${config.id}:${label}` : config.id,
+      experimentSeed: replicateSeed,
+      experimentKind: 'search',
+      configHash: configHashOf(config),
+      armPrefix: `search:${label}`,
+      sink: store,
+      replayDir: join(outputDir, 'replays'),
+      environment,
+      pilots: config.pilots,
+      limits: config.limits,
+      retention: config.retention,
+      workers,
+      populationSize: config.populationSize,
+      generations: config.generations,
+      eliteCount: config.eliteCount,
+      mutationStrength: config.mutationStrength,
+      crossoverShare: config.crossoverShare,
+      opponentsPerEvaluation: config.opponentsPerEvaluation,
+      gamesPerOpponent: config.gamesPerOpponent,
+      archiveSize: config.archiveSize,
+      reevaluateElites: config.reevaluateElites,
+      outputDir,
+      checkpointEvery: config.checkpointEvery,
+      onGeneration: (report: GenerationReport, checkpoint: SearchCheckpoint) => {
+        history.push(report);
+        options.onGeneration?.(report);
+        if (report.generation % config.checkpointEvery === 0) {
+          writeJson(
+            join(
+              paths.checkpoints,
+              `${label}-generation-${String(report.generation).padStart(3, '0')}.json`,
+            ),
+            checkpoint,
+          );
+        }
+      },
+    });
+
+    replicateResults.push({ label, decks: [...search.archive] });
+    allDecks.push(...search.population, ...search.archive);
+  }
 
   return finish({
     config,
     outputDir,
+    store,
     environments: [environment],
-    decks: dedupeDecks([...search.population, ...search.archive]),
-    records: search.records,
+    decks: dedupeDecks(allDecks),
     replacements: [],
     comparison: null,
     searchHistory: history,
@@ -404,9 +538,16 @@ async function runSearchExperiment(
     extraLimitations: [
       'Search results describe what the pilots could exploit, not what a human could. ' +
         'A discovered deck is a lead to investigate, never a conclusion.',
-      ...generated.diagnostics.map((entry) => `${entry.code}: ${entry.message}`),
+      ...(config.replicates < config.analysis.minDisplacementReplicates
+        ? [
+            `This search ran ${config.replicates} replicate(s). Displacement and obsolescence ` +
+              `claims need ${config.analysis.minDisplacementReplicates}; below that, a change in ` +
+              'inclusion cannot be told apart from the search’s own run-to-run variance.',
+          ]
+        : []),
+      ...diagnostics,
     ],
-    streamRecords: true,
+    searchReplicates: replicateResults,
   });
 }
 
@@ -423,36 +564,63 @@ async function runComparisonExperiment(
   const workers = options.workers ?? config.workers;
   const configDir = options.configPath ? dirOf(options.configPath) : '.';
   const commit = options.softwareCommit ?? detectSoftwareCommit();
+  const hash = configHashOf(config);
+  const store = openStore(config, outputDir, options);
 
   const diff = diffEnvironments(baseline, candidate);
 
+  // Gate the whole run on the declaration *before* spending any CPU. An
+  // experiment whose flagship claim is unverifiable is worse than no experiment:
+  // it produces a plausible report about a change that did not happen (§4).
+  const declaredCheck = checkDeclaredChanges(diff, config.declaredChanges);
+  if (!declaredCheck.ok) {
+    throw new Error(
+      `The comparison "${config.id}" does not measure what it declares:\n` +
+        declaredCheck.errors.map((message) => `  - ${message}`).join('\n') +
+        '\n\nFix `declaredChanges` or the candidate environment so the declaration and the ' +
+        'resolved card pools agree.',
+    );
+  }
+
+  // One population, resolved once, replayed in both environments (§6).
+  const population = freezeReferencePopulation({
+    source: config.referenceDecks,
+    baseline,
+    candidate,
+    seed: `${config.seed}|reference`,
+    configDir,
+  });
+  writeJson(experimentPaths(outputDir).referencePopulation, population);
+
+  const notes: string[] = [
+    ...declaredCheck.warnings.map((message) => `**Undeclared environment difference:** ${message}`),
+    ...population.excluded.map(
+      (entry) =>
+        `Reference deck "${entry.deckId}" was excluded for being illegal in "${entry.environmentId}": ` +
+        `${entry.reasons.join('; ')}`,
+    ),
+  ];
+
+  let failedMatches = 0;
+
   const runReference = async (
     environment: Environment,
-    suffix: string,
-  ): Promise<{ records: readonly MatchRecord[]; decks: readonly SimDeck[]; notes: string[] }> => {
-    const resolved = resolveDeckSource(
-      config.referenceDecks,
-      environment,
-      `${config.seed}|reference`,
-      configDir,
-    );
-    const notes = resolved.rejected.map(
-      (entry) =>
-        `Reference deck "${entry.id}" is illegal in "${environment.id}": ${entry.reasons.join('; ')}`,
-    );
-    if (resolved.decks.length < config.playerCount) {
+    arm: 'baseline' | 'candidate',
+  ): Promise<readonly MatchRecord[]> => {
+    if (population.decks.length < config.playerCount) {
       notes.push(
-        `Only ${resolved.decks.length} reference deck(s) are legal in "${environment.id}"; ` +
-          'the reference comparison for that environment was skipped.',
+        `Only ${population.decks.length} reference deck(s) are legal in both environments, below ` +
+          `the ${config.playerCount} needed for a match. The reference comparison was skipped ` +
+          'entirely — note that this is skipped for *both* arms, so the two remain comparable.',
       );
-      return { records: [], decks: resolved.decks, notes };
+      return [];
     }
 
     const schedule = buildSchedule({
       experimentId: config.id,
       experimentSeed: config.seed,
       environmentId: environment.id,
-      decks: resolved.decks,
+      decks: population.decks,
       pilots: config.pilots,
       pilotPairing: config.pilotPairing,
       playerCount: config.playerCount,
@@ -467,8 +635,11 @@ async function runComparisonExperiment(
 
     const batch = await runBatch({
       experimentId: config.id,
+      experimentKind: 'comparison',
+      configHash: hash,
+      arm,
       environment,
-      decks: resolved.decks,
+      decks: population.decks,
       pilots: config.pilots,
       schedule,
       limits: config.limits,
@@ -476,105 +647,293 @@ async function runComparisonExperiment(
       workers,
       failFast: config.failFast,
       softwareCommit: commit,
-      outputDir: join(outputDir, suffix),
+      sink: store,
+      replayDir: join(outputDir, 'replays'),
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
     });
-    return { records: batch.records, decks: resolved.decks, notes };
+    failedMatches += batch.failures.length;
+    for (const failure of batch.failures) {
+      notes.push(`Match ${failure.matchId} (${arm}) failed to run: ${failure.message}`);
+    }
+    return batch.records;
   };
 
-  const baselineRun = await runReference(baseline, 'baseline');
-  const candidateRun = await runReference(candidate, 'candidate');
+  await runReference(baseline, 'baseline');
+  await runReference(candidate, 'candidate');
+
+  const baselineRecords = store.arm('baseline');
+  const candidateRecords = store.arm('candidate');
+
+  // Both arms were driven from `population`; this checks the invariant held
+  // rather than assuming it (§6 step 6).
+  assertSharedPopulation(
+    populationOf(baselineRecords, population),
+    populationOf(candidateRecords, population),
+    `Comparison "${config.id}"`,
+  );
 
   let baselineSearch: SimDeck[] | undefined;
   let candidateSearch: SimDeck[] | undefined;
   let baselineScores: Map<string, number> | undefined;
   let candidateScores: Map<string, number> | undefined;
-  const searchRecords: MatchRecord[] = [];
   const searchHistory: GenerationReport[] = [];
+  const baselineReplicates: DisplacementReplicate[] = [];
+  const candidateReplicates: DisplacementReplicate[] = [];
 
   if (config.searchBothEnvironments) {
     for (const [environment, label] of [
       [baseline, 'baseline'],
       [candidate, 'candidate'],
     ] as const) {
-      const population = generatePopulation(
-        environment,
-        `${config.seed}|search:${label}`,
-        config.search.populationSize,
-        config.search.generator,
-      );
-      if (population.decks.length < 2) continue;
+      const archives: SimDeck[] = [];
+      for (let replicate = 0; replicate < config.search.replicates; replicate += 1) {
+        const replicateSeed = `${config.seed}|search:${label}:${replicate}`;
+        const generated = generatePopulation(
+          environment,
+          `${replicateSeed}|population`,
+          config.search.populationSize,
+          config.search.generator,
+        );
+        if (generated.decks.length < 2) continue;
 
-      const result = await runSearch(population.decks, {
-        experimentId: `${config.id}:${label}`,
-        experimentSeed: `${config.seed}|search:${label}`,
-        environment,
-        pilots: config.pilots,
-        limits: config.limits,
-        retention: config.retention,
-        workers,
-        populationSize: config.search.populationSize,
-        generations: config.search.generations,
-        eliteCount: config.search.eliteCount,
-        mutationStrength: config.search.mutationStrength,
-        crossoverShare: config.search.crossoverShare,
-        opponentsPerEvaluation: config.search.opponentsPerEvaluation,
-        gamesPerOpponent: config.search.gamesPerOpponent,
-        archiveSize: config.search.archiveSize,
-        reevaluateElites: true,
-        outputDir: null,
-        checkpointEvery: 1,
-        onGeneration: (report) => {
-          searchHistory.push({ ...report, generation: report.generation });
-        },
-      });
+        const result = await runSearch(generated.decks, {
+          experimentId: `${config.id}:${label}:r${replicate}`,
+          experimentSeed: replicateSeed,
+          experimentKind: 'comparison',
+          configHash: hash,
+          armPrefix: `search:${label}:r${replicate}`,
+          sink: store,
+          replayDir: join(outputDir, 'replays'),
+          environment,
+          pilots: config.pilots,
+          limits: config.limits,
+          retention: config.retention,
+          workers,
+          populationSize: config.search.populationSize,
+          generations: config.search.generations,
+          eliteCount: config.search.eliteCount,
+          mutationStrength: config.search.mutationStrength,
+          crossoverShare: config.search.crossoverShare,
+          opponentsPerEvaluation: config.search.opponentsPerEvaluation,
+          gamesPerOpponent: config.search.gamesPerOpponent,
+          archiveSize: config.search.archiveSize,
+          reevaluateElites: true,
+          outputDir: null,
+          checkpointEvery: 1,
+          onGeneration: (report) => {
+            searchHistory.push(report);
+          },
+        });
 
-      searchRecords.push(...result.records);
-      const scores = new Map(result.fitness.map((entry) => [entry.deckHash, entry.score] as const));
-      if (label === 'baseline') {
-        baselineSearch = [...result.archive];
-        baselineScores = scores;
-      } else {
-        candidateSearch = [...result.archive];
-        candidateScores = scores;
+        const replicateLabel = `${label}-r${replicate}`;
+        const bucket = label === 'baseline' ? baselineReplicates : candidateReplicates;
+        bucket.push({ label: replicateLabel, decks: [...result.archive] });
+        archives.push(...result.archive);
+
+        const scores = new Map(
+          result.fitness.map((entry) => [entry.deckHash, entry.score] as const),
+        );
+        if (label === 'baseline') {
+          baselineScores = new Map([...(baselineScores ?? []), ...scores]);
+        } else {
+          candidateScores = new Map([...(candidateScores ?? []), ...scores]);
+        }
       }
+      if (label === 'baseline') baselineSearch = dedupeDecks(archives);
+      else candidateSearch = dedupeDecks(archives);
     }
   }
 
+  const displacement =
+    baselineReplicates.length > 0 && candidateReplicates.length > 0
+      ? analyzeDisplacement({
+          baseline: baselineReplicates,
+          candidate: candidateReplicates,
+          changedCardIds: [...diff.cardsAdded, ...diff.cardsChanged.map((entry) => entry.cardId)],
+          candidatePoolCardIds: candidate.pool.map((card) => card.id),
+          settings: config.analysis,
+        })
+      : [];
+
   const comparison = compareEnvironments({
     diff,
-    baselineRecords: baselineRun.records,
-    candidateRecords: candidateRun.records,
+    declaredDiffCheck: declaredCheck,
+    referencePopulationHash: population.hash,
+    referenceDecksExcluded: population.excluded,
+    baselineRecords,
+    candidateRecords,
     ...(baselineSearch ? { baselineSearchDecks: baselineSearch } : {}),
     ...(candidateSearch ? { candidateSearchDecks: candidateSearch } : {}),
     ...(baselineScores ? { baselineSearchScores: baselineScores } : {}),
     ...(candidateScores ? { candidateSearchScores: candidateScores } : {}),
     confidence: config.analysis.confidence,
     minMatches: config.analysis.minMatchesPerDeck,
+    minPairs: config.analysis.minPairedGames,
+    bootstrapIterations: config.analysis.bootstrapIterations,
+    seed: `${config.seed}|compare`,
+    displacement,
   });
 
   return finish({
     config,
     outputDir,
+    store,
     environments: [baseline, candidate],
     decks: dedupeDecks([
-      ...candidateRun.decks,
-      ...baselineRun.decks,
+      ...population.decks,
       ...(candidateSearch ?? []),
       ...(baselineSearch ?? []),
     ]),
-    records: [...candidateRun.records, ...baselineRun.records, ...searchRecords],
     replacements: [],
     comparison,
     searchHistory,
     diff,
+    declaredCheck,
     workers,
     elapsedMs: Date.now() - started,
-    extraLimitations: [...baselineRun.notes, ...candidateRun.notes],
-    candidateCardIds: [...diff.cardsAdded, ...diff.cardsChanged.map((entry) => entry.cardId)],
-    ...(baselineSearch ? { baselineDecks: baselineSearch } : {}),
-    ...(candidateSearch ? { candidateDecks: candidateSearch } : {}),
-    streamRecords: true,
+    failedMatches,
+    extraLimitations: notes,
+    referencePopulation: population,
+    displacement,
+  });
+}
+
+/** The population identity the records actually exercised. */
+function populationOf(records: readonly MatchRecord[], population: ReferencePopulation): string {
+  if (records.length === 0) return population.hash;
+  const hashes = new Set<string>();
+  for (const record of records) for (const seat of record.seats) hashes.add(seat.deckHash);
+  const known = new Set(population.decks.map((deck) => deck.hash));
+  // Only decks belonging to the frozen population count; a record from a
+  // searched arm is a different question and is filtered out by its arm label
+  // before this point.
+  return [...hashes].every((hash) => known.has(hash)) ? population.hash : 'divergent';
+}
+
+/* -------------------------------------------------------------- robustness */
+
+async function runRobustnessExperiment(
+  config: RobustnessConfig,
+  options: RunExperimentOptions,
+): Promise<ExperimentOutcome> {
+  const started = Date.now();
+  const environment = resolveEnvironment(config.environment);
+  const outputDir = options.outputDir ?? join(config.output, config.id);
+  const workers = options.workers ?? config.workers;
+  const hash = configHashOf(config);
+  const store = openStore(config, outputDir, options);
+
+  const resolved = resolveDeckSource(
+    config.decks,
+    environment,
+    `${config.seed}|decks`,
+    options.configPath ? dirOf(options.configPath) : '.',
+  );
+  requireDecks(resolved.decks, config.playerCount, resolved.rejected);
+
+  // `published` is always the reference arm, whether or not it was listed.
+  const profiles = [...new Set(['published', ...config.profiles])];
+
+  const arms: { profileId: string; records: readonly MatchRecord[] }[] = [];
+  const armNotes: string[] = [];
+  let failedMatches = 0;
+  for (const profileId of profiles) {
+    const pilots: PilotSpec[] = config.pilots.map((pilot) => perturbPilot(pilot, profileId));
+
+    // Identical schedule shape and identical seed path in every arm: the seed
+    // deliberately does not depend on the profile, so every profile plays the
+    // same shuffles and a difference between arms is the pilots and nothing else.
+    const schedule = buildSchedule({
+      experimentId: config.id,
+      experimentSeed: config.seed,
+      environmentId: environment.id,
+      decks: resolved.decks,
+      pilots,
+      pilotPairing: config.pilotPairing,
+      playerCount: config.playerCount,
+      gamesPerPairing: config.gamesPerPairing,
+      mirrorSeats: config.mirrorSeats,
+      schedule: config.schedule,
+      sampledPairings: config.sampledPairings,
+      pairedSeeds: true,
+    });
+
+    const batch = await runBatch({
+      experimentId: `${config.id}:${profileId}`,
+      experimentKind: 'robustness',
+      configHash: hash,
+      arm: `profile:${profileId}`,
+      environment,
+      decks: resolved.decks,
+      pilots,
+      schedule,
+      limits: config.limits,
+      retention: config.retention,
+      workers,
+      failFast: config.failFast,
+      softwareCommit: options.softwareCommit ?? detectSoftwareCommit(),
+      sink: store,
+      replayDir: join(outputDir, 'replays'),
+      ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+    });
+    failedMatches += batch.failures.length;
+    for (const failure of batch.failures) {
+      armNotes.push(
+        `Match ${failure.matchId} (profile ${profileId}) failed to run: ${failure.message}`,
+      );
+    }
+    arms.push({ profileId, records: store.arm(`profile:${profileId}`) });
+  }
+
+  // Each profile is analysed on its own records. Pooling them would average away
+  // the disagreement the experiment exists to find (§10.3).
+  const perProfile = arms.map((arm) => {
+    const agg = aggregate(arm.records, { confidence: config.analysis.confidence });
+    const clustering = clusterDecks(resolved.decks, environment.database, arm.records, {
+      confidence: config.analysis.confidence,
+    });
+    const inclusion = analyzeInclusion(resolved.decks, clustering, arm.records, config.analysis);
+    return {
+      profileId: arm.profileId,
+      aggregate: agg,
+      clustering,
+      flags: computeFlags({
+        aggregate: agg,
+        clustering,
+        pairs: [],
+        replacements: [],
+        settings: config.analysis,
+        inclusion,
+      }),
+    };
+  });
+
+  const robustness = analyzeRobustness(perProfile, config.analysis);
+
+  return finish({
+    config,
+    outputDir,
+    store,
+    environments: [environment],
+    decks: resolved.decks,
+    replacements: [],
+    comparison: null,
+    searchHistory: [],
+    workers,
+    elapsedMs: Date.now() - started,
+    failedMatches,
+    extraLimitations: [
+      'Headline statistics come from the `published` profile alone. The other profiles are ' +
+        'analysed separately in the robustness section and are never pooled into one population, ' +
+        'because a merged population would average away the disagreement being measured.',
+      ...resolved.rejected.map(
+        (entry) => `Deck "${entry.id}" was rejected as illegal: ${entry.reasons.join('; ')}`,
+      ),
+      ...armNotes,
+    ],
+    robustness,
+    /** The reference arm alone, for the headline statistics. */
+    primaryArm: 'profile:published',
   });
 }
 
@@ -583,21 +942,27 @@ async function runComparisonExperiment(
 interface FinishInputs {
   readonly config: ExperimentConfig;
   readonly outputDir: string;
+  readonly store: MatchStore;
   readonly environments: readonly Environment[];
   readonly decks: readonly SimDeck[];
-  readonly records: readonly MatchRecord[];
   readonly replacements: readonly ReplacementImpact[];
   readonly comparison: ComparisonReport | null;
   readonly searchHistory: readonly GenerationReport[];
   readonly workers: number;
   readonly elapsedMs: number;
+  /** Matches whose runner threw outright and produced no record at all. */
+  readonly failedMatches?: number;
   readonly extraLimitations?: readonly string[];
   readonly diff?: ReturnType<typeof diffEnvironments>;
-  readonly candidateCardIds?: readonly string[];
-  readonly baselineDecks?: readonly SimDeck[];
-  readonly candidateDecks?: readonly SimDeck[];
-  /** Write `matches.jsonl` here rather than relying on the batch runner. */
-  readonly streamRecords?: boolean;
+  readonly declaredCheck?: DeclaredDiffCheck;
+  readonly referencePopulation?: ReferencePopulation;
+  readonly displacement?: readonly Displacement[];
+  readonly searchReplicates?: readonly DisplacementReplicate[];
+  readonly robustness?: RobustnessReport;
+  readonly counterTargets?: readonly string[];
+  readonly counterVariants?: readonly ReplacementVariant[];
+  /** Restrict the headline statistics to one arm. Used by robustness runs. */
+  readonly primaryArm?: string;
 }
 
 function finish(inputs: FinishInputs): ExperimentOutcome {
@@ -606,49 +971,132 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   const primary = inputs.environments[0];
   if (!primary) throw new Error('An experiment needs at least one environment.');
 
-  const agg = aggregate(inputs.records, { confidence: config.analysis.confidence });
-  const clustering = clusterDecks(inputs.decks, primary.database, inputs.records, {
-    confidence: config.analysis.confidence,
+  const allRecords = inputs.store.all();
+  const records =
+    inputs.primaryArm === undefined ? allRecords : inputs.store.arm(inputs.primaryArm);
+
+  const settings = config.analysis;
+  const agg = aggregate(records, { confidence: settings.confidence });
+  const clustering = clusterDecks(inputs.decks, primary.database, records, {
+    confidence: settings.confidence,
   });
-  const pairs = cardPairs(inputs.records, {
-    minSupport: config.analysis.minPairSupport,
-    confidence: config.analysis.confidence,
+  const inclusion = analyzeInclusion(inputs.decks, clustering, records, settings);
+  const pairs = cardPairs(records, {
+    minSupport: settings.minPairSupport,
+    minCellSupport: settings.minPairCellSupport,
+    confidence: settings.confidence,
+    iterations: settings.bootstrapIterations,
+    seed: `${config.seed}|pairs`,
   });
+  const sensitivity = opponentFieldSensitivity({ records, clustering, settings });
+
+  const counters =
+    inputs.counterTargets && inputs.counterTargets.length > 0
+      ? counterBreadth({
+          records,
+          clustering,
+          settings,
+          seed: `${config.seed}|counters`,
+          targetDeckHashes: inputs.counterTargets,
+          targetLabel: 'the declared counter target',
+          ...(inputs.counterVariants ? { variants: inputs.counterVariants } : {}),
+        })
+      : null;
+
+  // A search experiment's own replicates feed the same displacement analysis a
+  // comparison uses; with one replicate it correctly returns insufficient evidence.
+  const displacement =
+    inputs.displacement ??
+    (inputs.searchReplicates && inputs.searchReplicates.length > 1
+      ? analyzeDisplacement({
+          baseline: [inputs.searchReplicates[0] as DisplacementReplicate],
+          candidate: inputs.searchReplicates.slice(1),
+          changedCardIds: [],
+          candidatePoolCardIds: primary.pool.map((card) => card.id),
+          settings,
+        })
+      : []);
 
   const flags = computeFlags({
     aggregate: agg,
     clustering,
     pairs,
     replacements: inputs.replacements,
-    settings: config.analysis,
-    ...(inputs.candidateCardIds ? { candidateCardIds: inputs.candidateCardIds } : {}),
-    ...(inputs.baselineDecks ? { baselineInclusion: inclusionOf(inputs.baselineDecks) } : {}),
-    ...(inputs.candidateDecks ? { candidateInclusion: inclusionOf(inputs.candidateDecks) } : {}),
+    settings,
+    inclusion,
+    sensitivity,
+    ...(displacement.length > 0 ? { displacement } : {}),
+    ...(counters ? { counters } : {}),
   });
+
+  // How wide the scan was, so a reader can weigh a long flag list correctly (§9.3).
+  const multiplicity: Multiplicity = describeMultiplicity(
+    agg.cards.length + pairs.length + clustering.clusters.length,
+    flags.filter((flag) => flag.level === 'review_recommended').length,
+    1 - settings.confidence,
+  );
+
+  // Pilot versions come from the records rather than the config, so the report
+  // names the pilot that actually played rather than the one that was requested.
+  const pilotVersions = new Map<string, string>();
+  for (const record of allRecords) {
+    for (const seat of record.seats) {
+      if (!pilotVersions.has(seat.pilotId)) pilotVersions.set(seat.pilotId, seat.pilotVersion);
+    }
+  }
+  const reportPilots = [...new Set(config.pilots.map((pilot: PilotSpec) => pilot.id))]
+    .sort()
+    .map((id) => ({ id, version: pilotVersions.get(id) ?? 'not recorded' }));
+
+  const abnormalMatches = allRecords
+    .filter((record) => isAbnormal(record.termination))
+    .map((record) => ({
+      matchId: record.matchId,
+      termination: record.termination,
+      replayPath: record.replayPath ?? null,
+    }));
 
   const report = renderReport({
     title: config.label || `${config.kind} experiment "${config.id}"`,
     experimentId: config.id,
     kind: config.kind,
     seed: config.seed,
-    softwareCommit: inputs.records[0]?.softwareCommit ?? null,
+    configHash: configHashOf(config),
+    softwareCommit: records[0]?.softwareCommit ?? null,
     rulesVersion: primary.rulesConfig.version,
+    seedDerivationVersion: SEED_DERIVATION_VERSION,
+    telemetrySchemaVersion: TELEMETRY_SCHEMA_VERSION,
+    analysisStatsVersion: ANALYSIS_STATS_VERSION,
     environmentSummaries: inputs.environments.map((environment) => ({
       id: environment.id,
       hash: environment.hash,
+      cardPoolHash: environment.cardPoolHash,
       label: environment.label,
     })),
-    settings: config.analysis,
+    settings,
     aggregate: agg,
     clustering,
+    inclusion,
     pairs,
     replacements: inputs.replacements,
+    sensitivity,
+    displacement,
+    multiplicity,
     flags,
+    matchesPath: 'matches.jsonl',
+    resumedMatches: inputs.store.resumedCount,
+    recoveredLines: inputs.store.recovered.length,
+    failedMatches: inputs.failedMatches ?? 0,
+    abnormalMatches,
+    ...(inputs.counterVariants || counters ? { counters } : {}),
+    ...(inputs.robustness ? { robustness: inputs.robustness } : {}),
     ...(inputs.diff ? { diff: inputs.diff } : {}),
+    ...(inputs.declaredCheck ? { declaredCheck: inputs.declaredCheck } : {}),
+    ...(inputs.referencePopulation ? { referencePopulation: inputs.referencePopulation } : {}),
     ...(inputs.comparison ? { comparison: inputs.comparison } : {}),
     searchHistory: inputs.searchHistory,
     deckCount: inputs.decks.length,
-    pilotIds: config.pilots.map((pilot: PilotSpec) => pilot.id),
+    pilots: reportPilots,
     wallClockMs: inputs.elapsedMs,
     workers: inputs.workers,
     ...(inputs.extraLimitations ? { extraLimitations: inputs.extraLimitations } : {}),
@@ -657,15 +1105,18 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   ensureDir(paths.root);
   writeJson(paths.config, config);
   writeJson(paths.manifest, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     experimentId: config.id,
     kind: config.kind,
     seed: config.seed,
+    configHash: configHashOf(config),
     seedDerivationVersion: SEED_DERIVATION_VERSION,
     hashVersion: HASH_VERSION,
     telemetrySchemaVersion: TELEMETRY_SCHEMA_VERSION,
+    analysisStatsVersion: ANALYSIS_STATS_VERSION,
+    reportSchemaVersion: REPORT_SCHEMA_VERSION,
     rulesVersion: primary.rulesConfig.version,
-    softwareCommit: inputs.records[0]?.softwareCommit ?? null,
+    softwareCommit: records[0]?.softwareCommit ?? null,
     environments: inputs.environments.map((environment) => ({
       id: environment.id,
       label: environment.label,
@@ -674,22 +1125,43 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
       poolSize: environment.pool.length,
       commanders: environment.commanders.length,
     })),
+    ...(inputs.referencePopulation
+      ? {
+          referencePopulationHash: inputs.referencePopulation.hash,
+          referenceDecksKept: inputs.referencePopulation.decks.length,
+          referenceDecksExcluded: inputs.referencePopulation.excluded.length,
+        }
+      : {}),
     deckHashes: inputs.decks.map((deck) => deck.hash).sort(),
-    matches: inputs.records.length,
-    workers: inputs.workers,
-    elapsedMs: inputs.elapsedMs,
+    rawRecordPath: 'matches.jsonl',
+    matches: allRecords.length,
+    abnormalMatches: inputs.store.abnormalCount,
+    abnormalMatchIds: abnormalMatches.map((entry) => entry.matchId),
+    failedMatches: inputs.failedMatches ?? 0,
+    resumedMatches: inputs.store.resumedCount,
+    recoveredLines: inputs.store.recovered,
+    /** Execution settings. Non-semantic: they cannot change any result. */
+    execution: { workers: inputs.workers, elapsedMs: inputs.elapsedMs },
     pilots: config.pilots,
   });
   writeJson(paths.decks, inputs.decks);
   writeJson(paths.summary, {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    configHash: configHashOf(config),
+    thresholds: settings,
     aggregate: agg,
     clusters: clustering.clusters,
     clusterMatchups: clustering.matchups,
+    inclusion,
     pairs,
     replacements: inputs.replacements,
+    sensitivity,
+    displacement,
+    counters,
+    robustness: inputs.robustness ?? null,
     comparison: inputs.comparison,
     searchHistory: inputs.searchHistory,
+    multiplicity,
     flags,
   });
 
@@ -702,12 +1174,20 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     { header: 'win_rate_absent', value: (row) => row.winRateWhenAbsent.point },
     { header: 'inclusion_lift', value: (row) => row.inclusionWinRateLift },
     { header: 'draw_rate', value: (row) => row.drawRate },
-    { header: 'play_rate_per_drawn', value: (row) => row.playRatePerDrawn },
+    { header: 'plays_per_draw', value: (row) => row.playsPerDraw },
+    { header: 'drawn_copy_play_conversion', value: (row) => row.drawnCopyPlayConversion },
+    { header: 'games_drawn_and_played_share', value: (row) => row.gamesDrawnAndPlayedShare },
+    { header: 'games_drawn', value: (row) => row.gamesDrawn },
     { header: 'dead_in_hand_share', value: (row) => row.deadInHandShare },
+    { header: 'mechanically_unusable_share', value: (row) => row.mechanicallyUnusableShare },
+    { header: 'strategically_unused_share', value: (row) => row.strategicallyUnusedShare },
     { header: 'dead_unseen', value: (row) => row.deadHand.unseen ?? 0 },
     { header: 'dead_never_affordable', value: (row) => row.deadHand.never_affordable ?? 0 },
+    { header: 'dead_no_capacity', value: (row) => row.deadHand.no_capacity ?? 0 },
+    { header: 'dead_no_legal_target', value: (row) => row.deadHand.no_legal_target ?? 0 },
     { header: 'dead_no_legal_window', value: (row) => row.deadHand.no_legal_window ?? 0 },
     { header: 'dead_legal_but_unchosen', value: (row) => row.deadHand.legal_but_unchosen ?? 0 },
+    { header: 'dead_held_at_end', value: (row) => row.deadHand.held_at_end ?? 0 },
     { header: 'avg_damage_players', value: (row) => row.averageDamageToPlayers },
     { header: 'avg_damage_units', value: (row) => row.averageDamageToUnits },
     { header: 'avg_healing', value: (row) => row.averageHealing },
@@ -721,22 +1201,51 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   writeCsv(paths.cardPairs, pairs, [
     { header: 'card_a', value: (row) => row.cardA },
     { header: 'card_b', value: (row) => row.cardB },
-    { header: 'support', value: (row) => row.support },
+    { header: 'support_both', value: (row) => row.support },
+    { header: 'support_a_only', value: (row) => row.supportAOnly },
+    { header: 'support_b_only', value: (row) => row.supportBOnly },
+    { header: 'support_neither', value: (row) => row.supportNeither },
     { header: 'win_rate_together', value: (row) => row.winRateTogether },
     { header: 'win_rate_a_only', value: (row) => row.winRateAOnly },
     { header: 'win_rate_b_only', value: (row) => row.winRateBOnly },
-    { header: 'lift', value: (row) => row.lift },
-    { header: 'low', value: (row) => row.low },
-    { header: 'high', value: (row) => row.high },
+    { header: 'win_rate_neither', value: (row) => row.winRateNeither },
+    { header: 'interaction', value: (row) => row.interaction },
+    { header: 'low', value: (row) => (Number.isFinite(row.low) ? row.low : null) },
+    { header: 'high', value: (row) => (Number.isFinite(row.high) ? row.high : null) },
+    { header: 'lift_over_best_single', value: (row) => row.liftOverBestSingle },
     { header: 'effect_size', value: (row) => row.effectSize },
     { header: 'effect_size_label', value: (row) => row.effectSizeLabel },
+    { header: 'insufficient_evidence', value: (row) => row.insufficientEvidence },
+    { header: 'sparse_cells', value: (row) => row.sparseCells.join(' ') },
   ]);
 
-  const errors = inputs.records
+  // The §5 evidence requirement: the qualifying clusters and their individual
+  // inclusion values, in a form a reader can check against `summary.json`.
+  const inclusionRows = inclusion.cards.flatMap((card) =>
+    card.perCluster.map((entry) => ({ card, entry })),
+  );
+  writeCsv(paths.clusterInclusion, inclusionRows, [
+    { header: 'card_id', value: (row) => row.card.definitionId },
+    { header: 'cluster_id', value: (row) => row.entry.clusterId },
+    { header: 'cluster_label', value: (row) => row.entry.clusterLabel },
+    { header: 'decks_in_cluster', value: (row) => row.entry.decksInCluster },
+    { header: 'decks_including', value: (row) => row.entry.decksIncluding },
+    { header: 'cluster_inclusion', value: (row) => row.entry.inclusion },
+    { header: 'observations', value: (row) => row.entry.observations },
+    { header: 'cluster_eligible', value: (row) => row.entry.eligible },
+    { header: 'ineligible_reason', value: (row) => row.entry.ineligibleReason },
+    { header: 'covered', value: (row) => row.entry.covered },
+    { header: 'card_cross_cluster_share', value: (row) => row.card.crossClusterShare },
+    { header: 'card_deck_inclusion_share', value: (row) => row.card.deckInclusionShare },
+    { header: 'card_qualifies', value: (row) => row.card.qualifies },
+  ]);
+
+  const errors = allRecords
     .filter((record) => record.diagnostics.length > 0 || record.botFailures.length > 0)
     .flatMap((record) => [
       ...record.diagnostics.map((message) => ({
         matchId: record.matchId,
+        arm: record.arm ?? '',
         termination: record.termination,
         kind: 'diagnostic',
         message,
@@ -744,6 +1253,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
       })),
       ...record.botFailures.map((failure) => ({
         matchId: record.matchId,
+        arm: record.arm ?? '',
         termination: record.termination,
         kind: `bot_${failure.kind}`,
         message: `${failure.botId} (${failure.playerId}): ${failure.message}`,
@@ -752,42 +1262,39 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     ]);
   writeCsv(paths.errors, errors, [
     { header: 'match_id', value: (row) => row.matchId },
+    { header: 'arm', value: (row) => row.arm },
     { header: 'termination', value: (row) => row.termination },
     { header: 'kind', value: (row) => row.kind },
     { header: 'message', value: (row) => row.message },
     { header: 'replay_path', value: (row) => row.replayPath },
   ]);
 
-  if (inputs.streamRecords) {
-    writeJson(join(paths.root, 'matches.json'), inputs.records);
-  }
-
   writeFileText(paths.report, report);
+  inputs.store.flush();
 
   return {
     outputDir: inputs.outputDir,
-    records: inputs.records,
+    records: allRecords,
     aggregate: agg,
     clustering,
+    inclusion,
     pairs,
     replacements: inputs.replacements,
+    sensitivity,
+    displacement,
+    counters,
+    robustness: inputs.robustness ?? null,
     flags,
     comparison: inputs.comparison,
     searchHistory: inputs.searchHistory,
+    referencePopulation: inputs.referencePopulation ?? null,
     report,
+    resumedMatches: inputs.store.resumedCount,
     elapsedMs: inputs.elapsedMs,
   };
 }
 
 /* ------------------------------------------------------------------ helpers */
-
-function inclusionOf(decks: readonly SimDeck[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const deck of decks) {
-    for (const entry of deck.cards) counts.set(entry.cardId, (counts.get(entry.cardId) ?? 0) + 1);
-  }
-  return counts;
-}
 
 function dedupeDecks(decks: readonly SimDeck[]): SimDeck[] {
   const byHash = new Map<string, SimDeck>();

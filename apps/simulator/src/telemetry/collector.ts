@@ -1,4 +1,4 @@
-import type { CardDatabase, CardId, ZoneId } from '@tcg/card-data';
+import type { CardDatabase, CardDefinition, CardId, ZoneId } from '@tcg/card-data';
 import type {
   Action,
   GameEvent,
@@ -6,6 +6,7 @@ import type {
   MatchState,
   MatchDeck,
   PlayerId,
+  RulesConfig,
 } from '@tcg/rules-engine';
 import { currentAttack, currentHealth, energyCostOf } from '@tcg/rules-engine';
 import type { BotFailure } from '@tcg/bot-interface';
@@ -43,6 +44,14 @@ interface InstanceTrack {
   everLegal: boolean;
   used: boolean;
   /**
+   * Decisions at which this copy was affordable and in hand but not offered,
+   * split by the reason the board gave. Counted rather than latched, so a copy
+   * that was blocked by a full board nine times and by a missing target once is
+   * attributed to the board (PHASE4_HARDENING §8.2).
+   */
+  blockedByCapacity: number;
+  blockedByTarget: number;
+  /**
    * Whether this copy participates in dead-hand accounting.
    *
    * The Commander starts outside the deck and can never be drawn, so calling it
@@ -78,6 +87,7 @@ export interface CollectedTelemetry {
 
 export class TelemetryCollector {
   readonly #database: CardDatabase;
+  readonly #maxRelics: number;
   readonly #seats: readonly SeatSetup[];
   readonly #tracks = new Map<string, InstanceTrack>();
   readonly #cards = new Map<string, CardAccumulator>();
@@ -87,8 +97,14 @@ export class TelemetryCollector {
   #lastTurn = 0;
   #lastActivePlayerId: PlayerId | null = null;
 
-  constructor(database: CardDatabase, seats: readonly SeatSetup[], initial: MatchState) {
+  constructor(
+    database: CardDatabase,
+    seats: readonly SeatSetup[],
+    initial: MatchState,
+    rulesConfig: RulesConfig,
+  ) {
     this.#database = database;
+    this.#maxRelics = rulesConfig.relicSlots;
     this.#seats = seats;
 
     for (const seat of seats) {
@@ -111,6 +127,8 @@ export class TelemetryCollector {
         everAffordable: false,
         everLegal: false,
         used: false,
+        blockedByCapacity: 0,
+        blockedByTarget: 0,
         countable: instance.zone !== 'commander_zone',
       });
       if (instance.zone === 'hand') {
@@ -141,15 +159,31 @@ export class TelemetryCollector {
       if (!definition) continue;
 
       const row = this.#cardRow(playerId, instance.definitionId);
-      if (energyCostOf(player, definition) <= player.energy) {
+      const affordable = energyCostOf(player, definition) <= player.energy;
+      if (affordable) {
         track.everAffordable = true;
         row.affordableOpportunities += 1;
       }
       if (legalIds.has(instanceId)) {
         track.everLegal = true;
         row.playOpportunities += 1;
+      } else if (affordable) {
+        // Affordable, in hand, and still not offered. Recording *why* is what
+        // separates "the board was full" from "the pilot had no target" from a
+        // generic dead card (PHASE4_HARDENING §8.2).
+        if (this.#capacityBlocked(state, playerId, definition)) track.blockedByCapacity += 1;
+        else if (requiresEntityTarget(definition)) track.blockedByTarget += 1;
       }
     }
+  }
+
+  /** Whether the seat has nowhere to put this card, regardless of anything else. */
+  #capacityBlocked(state: MatchState, playerId: PlayerId, definition: CardDefinition): boolean {
+    const player = state.players[playerId];
+    if (!player) return false;
+    if (definition.type === 'unit') return !player.units.includes(null);
+    if (definition.type === 'relic') return player.relics.length >= this.#maxRelics;
+    return false;
   }
 
   /** Called with the accepted action and the state either side of it. */
@@ -373,6 +407,16 @@ export class TelemetryCollector {
       }
 
       if (track.countable) row.deadHand[classify(track)] += 1;
+
+      // Per-copy conversion (PHASE4_HARDENING §8.1). `timesDrawn` counts draw
+      // events, so a copy bounced and redrawn inflates it; these count the copy
+      // once, which is what a bounded 0–1 rate needs as a denominator. A copy in
+      // the opening hand counts as drawn: it came off the top of the deck the
+      // same way, and excluding it would make the rate depend on the mulligan.
+      if (track.countable && track.seenInHand) {
+        row.drawnCopies += 1;
+        if (track.used) row.drawnCopiesPlayed += 1;
+      }
     }
 
     const seats = this.#seats.map((seat) => {
@@ -438,6 +482,8 @@ export class TelemetryCollector {
       everAffordable: false,
       everLegal: false,
       used: true,
+      blockedByCapacity: 0,
+      blockedByTarget: 0,
       countable: true,
     });
   }
@@ -487,19 +533,50 @@ export class TelemetryCollector {
 /* ------------------------------------------------------------ dead-hand rules */
 
 /**
- * Which dead-hand category a copy fell into (CLAUDE.md §13.6).
+ * Which dead-hand category a copy fell into (CLAUDE.md §13.6,
+ * PHASE4_HARDENING §8.2).
  *
- * The order matters and is the point of the categorisation: a card that never
- * left the deck is `unseen`, not dead in hand; a card the pilot could have
- * played and did not is `legal_but_unchosen`, which is a statement about the
- * pilot, not about the card.
+ * The order matters and is the point of the categorisation. A card that never
+ * left the deck is `unseen`, not dead in hand. A card the pilot *could* have
+ * played and did not is `legal_but_unchosen` or `held_at_end`, which are
+ * statements about the pilot; a card that was never offered is
+ * `never_affordable`, `no_capacity`, `no_legal_target` or `no_legal_window`,
+ * which are statements about the card and the board. Collapsing the second group
+ * into the first is the specific mistake §8.2 forbids: it would let a card the
+ * pilot simply never picked look mechanically unusable.
  */
 function classify(track: InstanceTrack): DeadHandCategory {
   if (track.used) return 'used';
   if (!track.seenInHand) return 'unseen';
   if (!track.everAffordable) return 'never_affordable';
-  if (!track.everLegal) return 'no_legal_window';
-  return 'legal_but_unchosen';
+
+  if (track.everLegal) {
+    // It was offered at least once. Whether it is still in hand at the end
+    // distinguishes "declined and then discarded" from "held all match".
+    return track.zone === 'hand' ? 'held_at_end' : 'legal_but_unchosen';
+  }
+
+  // Affordable but never offered. Attribute to whichever obstruction dominated,
+  // and fall back to the generic category on a tie so the attribution is never
+  // decided by a coin flip.
+  if (track.blockedByCapacity > track.blockedByTarget) return 'no_capacity';
+  if (track.blockedByTarget > track.blockedByCapacity) return 'no_legal_target';
+  return 'no_legal_window';
+}
+
+/**
+ * Whether playing this card requires choosing an entity target.
+ *
+ * Read from the authored structured effects, never from rules text. Used only to
+ * explain why a copy was never offered, so an approximation is acceptable: the
+ * cost of getting it wrong is a copy landing in `no_legal_window` instead of
+ * `no_legal_target`, both of which are mechanically-unusable categories.
+ */
+function requiresEntityTarget(definition: CardDefinition): boolean {
+  const targets = definition.effects
+    .map((effect) => (effect as { target?: { kind?: string } }).target)
+    .filter((target): target is { kind?: string } => target !== undefined);
+  return targets.some((target) => target.kind === 'entity');
 }
 
 /* --------------------------------------------------------------- board features */
@@ -571,6 +648,8 @@ function emptyCardRow(playerId: PlayerId, definitionId: CardId): CardAccumulator
     copiesInOpeningHand: 0,
     copiesMulliganedAway: 0,
     timesDrawn: 0,
+    drawnCopies: 0,
+    drawnCopiesPlayed: 0,
     firstSeenTurn: null,
     turnsHeldInHand: 0,
     turnsOnBattlefield: 0,
@@ -601,8 +680,11 @@ function emptyCardRow(playerId: PlayerId, definitionId: CardId): CardAccumulator
     deadHand: {
       unseen: 0,
       never_affordable: 0,
+      no_capacity: 0,
+      no_legal_target: 0,
       no_legal_window: 0,
       legal_but_unchosen: 0,
+      held_at_end: 0,
       used: 0,
     },
     plays: [],

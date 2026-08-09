@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "kind": "comparison",
   "id": "candidate-vs-baseline",
-  "label": "Does making Scorch deal three damage instead of two change the game?",
+  "label": "Does making Scorch deal four damage instead of three change the game?",
   "seed": "compare-2026-08",
   "output": "results",
   "playerCount": 2,
@@ -11,12 +11,12 @@
 
   "baseline": {
     "id": "baseline",
-    "label": "Bundled prototype set, unchanged"
+    "label": "Bundled prototype set, unchanged. Scorch deals 3 damage."
   },
 
   "candidate": {
     "id": "candidate",
-    "label": "Scorch buffed from 2 damage to 3",
+    "label": "Scorch buffed from 3 damage to 4. Nothing else differs.",
     "cardOverrides": [
       {
         "schemaVersion": 2,
@@ -28,22 +28,39 @@
         "role": "removal",
         "powerClass": "standard",
         "tags": ["burn"],
-        "displayText": "Deal 3 damage to target unit.",
+        "displayText": "Deal 4 damage to a unit.",
         "effects": [
           {
             "type": "deal_damage",
-            "amount": 3,
             "target": {
               "kind": "entity",
-              "selector": { "zone": "battlefield", "controller": "any", "count": 1 }
-            }
+              "selector": {
+                "zone": "battlefield",
+                "controller": "any",
+                "filter": { "cardTypes": ["unit", "token"] },
+                "count": 1
+              }
+            },
+            "amount": 4
           }
         ]
       }
     ]
   },
 
+  "declaredChanges": {
+    "cardsChanged": [
+      {
+        "cardId": "scorch",
+        "fields": ["effects", "displayText"],
+        "note": "deal_damage amount 3 -> 4; the targeting filter is deliberately unchanged."
+      }
+    ],
+    "onUndeclared": "reject"
+  },
+
   "referenceDecks": { "kind": "generated", "count": 6, "generator": { "minUnits": 12 } },
+  "referencePolicy": "shared_legal_reference_population",
   "gamesPerPairing": 2,
   "mirrorSeats": true,
   "searchBothEnvironments": true,
@@ -53,10 +70,16 @@
     "eliteCount": 2,
     "opponentsPerEvaluation": 3,
     "gamesPerOpponent": 1,
-    "archiveSize": 10
+    "archiveSize": 10,
+    "replicates": 2
   },
   "limits": { "maxTurns": 150 },
   "retention": { "replaySampleRate": 0 },
-  "analysis": { "minMatchesPerCard": 20, "minPairSupport": 15, "minMatchesPerDeck": 10 },
+  "analysis": {
+    "minMatchesPerCard": 20,
+    "minPairSupport": 15,
+    "minMatchesPerDeck": 10,
+    "minPairedGames": 10
+  },
   "workers": 4
 }

@@ -21,6 +21,9 @@ import {
 
 export interface RunOneOptions {
   readonly experimentId: string;
+  readonly experimentKind: MatchRecord['experimentKind'];
+  readonly configHash: string;
+  readonly arm: string | null;
   readonly environment: Environment;
   readonly decks: readonly SimDeck[];
   readonly pilots: readonly PilotSpec[];
@@ -40,6 +43,9 @@ export async function runOne(options: RunOneOptions): Promise<RunOneResult> {
 
   const outcome = await runMatch({
     experimentId: options.experimentId,
+    experimentKind: options.experimentKind,
+    configHash: options.configHash,
+    arm: options.arm,
     environment: options.environment,
     matchId: job.matchId,
     orderKey: job.orderKey,

@@ -1,60 +1,136 @@
 import type { AnalysisSettings } from '../config.js';
-import type { EnvironmentDiff } from '../environment.js';
+import type { DeclaredDiffCheck, EnvironmentDiff } from '../environment.js';
+import type { ReferencePopulation } from '../reference-population.js';
 import type { Aggregate } from '../analysis/aggregate.js';
 import type { ClusteringResult } from '../analysis/clusters.js';
 import type { CardPair } from '../analysis/pairs.js';
+import type { CounterBreadth } from '../analysis/counters.js';
+import type { Displacement } from '../analysis/displacement.js';
+import type { InclusionAnalysis } from '../analysis/inclusion.js';
+import type { Multiplicity } from '../analysis/paired.js';
 import type { ReplacementImpact } from '../analysis/replacement.js';
+import type { RobustnessReport } from '../analysis/robustness.js';
+import type { OpponentSensitivity } from '../analysis/sensitivity.js';
 import type { ComparisonReport } from '../analysis/compare.js';
 import type { Flag } from '../analysis/flags.js';
 import type { GenerationReport } from '../deck-search/evolve.js';
 import { round } from '../analysis/stats.js';
 
 /**
- * The human-readable report (CLAUDE.md §13.13).
+ * The human-readable report (CLAUDE.md §13.13, PHASE4_HARDENING §12).
  *
- * It leads with limitations, scale and the environment diff, and it labels every
- * section as observation, inference or recommendation. It contains no prose that
- * pretends to certainty: where the evidence is thin, the report says so and
- * prints the sample size instead of a conclusion.
+ * Two properties make this more than prose.
+ *
+ * **Self-auditing.** The provenance section carries everything needed to decide
+ * whether the numbers below it can be believed and to reproduce them: the
+ * configuration hash, the card-pool hashes, the frozen reference-population
+ * hash, the seed-derivation and schema versions, the pilots and their versions,
+ * every threshold that produced a flag, and the completed / failed / abnormal /
+ * excluded / resumed match counts. Worker count is printed too, explicitly
+ * marked as non-semantic, so nobody reads a performance setting as a variable.
+ *
+ * **Derived, never independent.** Every number here is read off the same objects
+ * that are written to `summary.json`, and formatted through the helpers below.
+ * The JSON is authoritative; this file and the CSVs are views of it, and a
+ * regression test checks that they agree.
+ *
+ * The language is calibrated on purpose. Sections are labelled *observation*,
+ * *controlled comparison*, *association* or *review signal*, and the words
+ * `proves`, `causes`, `balanced` and `broken` do not appear about a result.
  */
+
+export const REPORT_SCHEMA_VERSION = 2;
+
+export interface ReportPilot {
+  readonly id: string;
+  readonly version: string;
+}
+
+export interface ReportEnvironment {
+  readonly id: string;
+  readonly hash: string;
+  readonly cardPoolHash: string;
+  readonly label: string;
+}
+
+export interface ReportAbnormal {
+  readonly matchId: string;
+  readonly termination: string;
+  readonly replayPath: string | null;
+}
 
 export interface ReportInputs {
   readonly title: string;
   readonly experimentId: string;
   readonly kind: string;
   readonly seed: string;
+  /** Hash of the normalized configuration. The run's identity. */
+  readonly configHash: string;
   readonly softwareCommit: string | null;
   readonly rulesVersion: string;
-  readonly environmentSummaries: readonly {
-    readonly id: string;
-    readonly hash: string;
-    readonly label: string;
-  }[];
+  readonly seedDerivationVersion: number;
+  readonly telemetrySchemaVersion: number;
+  readonly analysisStatsVersion: number;
+  readonly environmentSummaries: readonly ReportEnvironment[];
   readonly settings: AnalysisSettings;
+
   readonly aggregate: Aggregate;
   readonly clustering: ClusteringResult;
+  readonly inclusion: InclusionAnalysis;
   readonly pairs: readonly CardPair[];
   readonly replacements: readonly ReplacementImpact[];
+  readonly sensitivity: readonly OpponentSensitivity[];
+  readonly displacement: readonly Displacement[];
+  readonly multiplicity: Multiplicity;
   readonly flags: readonly Flag[];
+  readonly counters?: CounterBreadth | null;
+  readonly robustness?: RobustnessReport | null;
+
   readonly diff?: EnvironmentDiff;
+  readonly declaredCheck?: DeclaredDiffCheck;
+  readonly referencePopulation?: ReferencePopulation;
   readonly comparison?: ComparisonReport;
   readonly searchHistory?: readonly GenerationReport[];
+
+  /* ------------------------------------------------------------ provenance */
+  /** Where the raw records this report was derived from actually live. */
+  readonly matchesPath: string;
+  readonly resumedMatches: number;
+  readonly recoveredLines: number;
+  readonly failedMatches: number;
+  readonly abnormalMatches: readonly ReportAbnormal[];
   readonly deckCount: number;
-  readonly pilotIds: readonly string[];
+  readonly pilots: readonly ReportPilot[];
   readonly wallClockMs: number;
   readonly workers: number;
   readonly extraLimitations?: readonly string[];
 }
 
+/* -------------------------------------------------------------- formatting */
+
+/** For values genuinely bounded to 0–1. Never used on an unbounded ratio. */
 const pct = (value: number): string => `${round(value * 100, 1)}%`;
 
-/** How much of the flag list the written report shows before deferring to `summary.json`. */
+/** Win-rate differences, printed in points rather than as a second percentage. */
+const pts = (value: number): string => `${round(value * 100, 1)} pts`;
+
+/** Unbounded ratios such as `playsPerDraw`. Printed as a number, never a %. */
+const ratio = (value: number): string => `${round(value, 3)}×`;
+
+const interval = (low: number, high: number, format: (value: number) => string): string =>
+  Number.isFinite(low) && Number.isFinite(high) ? `${format(low)} … ${format(high)}` : '—';
+
+const orDash = (value: string | number | null | undefined): string =>
+  value === null || value === undefined || value === '' ? '—' : String(value);
+
+/** How much of a long list the written report shows before deferring to JSON. */
 const FLAG_TABLE_LIMIT = 30;
 const FLAG_DETAIL_LIMIT = 15;
+const TABLE_LIMIT = 15;
+const ABNORMAL_LIMIT = 20;
 
 export function renderReport(inputs: ReportInputs): string {
   const lines: string[] = [];
-  const { aggregate: agg, settings } = inputs;
 
   lines.push(`# ${inputs.title}`);
   lines.push('');
@@ -65,110 +141,311 @@ export function renderReport(inputs: ReportInputs): string {
   );
   lines.push('');
 
-  /* ------------------------------------------------------------ limitations */
+  section(lines, limitations(inputs));
+  section(lines, provenance(inputs));
+  section(lines, evidenceLegend());
+  section(lines, thresholds(inputs));
+  section(lines, environmentDiff(inputs));
+  section(lines, referencePopulation(inputs));
+  section(lines, flagSection(inputs));
+  section(lines, outcomes(inputs));
+  section(lines, clusters(inputs));
+  section(lines, cards(inputs));
+  section(lines, crossClusterInclusion(inputs));
+  section(lines, cardPairSection(inputs));
+  section(lines, replacementSection(inputs));
+  section(lines, counterSection(inputs));
+  section(lines, sensitivitySection(inputs));
+  section(lines, displacementSection(inputs));
+  section(lines, robustnessSection(inputs));
+  section(lines, comparisonSection(inputs));
+  section(lines, searchSection(inputs));
+  section(lines, abnormalSection(inputs));
+  section(lines, reproducing(inputs));
 
-  lines.push('## Limitations, first');
+  return lines.join('\n');
+}
+
+function section(lines: string[], block: readonly string[]): void {
+  if (block.length === 0) return;
+  lines.push(...block);
   lines.push('');
-  const limitations = [
-    `Pilots are transparent heuristics, not skilled players: ${inputs.pilotIds.join(', ')}. ` +
+}
+
+/* ------------------------------------------------------------- limitations */
+
+function limitations(inputs: ReportInputs): string[] {
+  const { aggregate: agg, settings } = inputs;
+  const lines = ['## Limitations, first', ''];
+
+  const items = [
+    `Pilots are transparent heuristics, not skilled players: ` +
+      `${inputs.pilots.map((pilot) => `${pilot.id}@${pilot.version}`).join(', ')}. ` +
       'A card that rewards play the pilots cannot perform will look weak here.',
     `${agg.run.usableMatches} usable matches over ${inputs.deckCount} decks. ` +
       `Card conclusions need ${settings.minMatchesPerCard} seat-matches; pair conclusions need ` +
-      `${settings.minPairSupport} co-occurrences.`,
+      `${settings.minPairSupport} co-occurrences in the "both" cell and ` +
+      `${settings.minPairCellSupport} in every contributing cell.`,
     'Individual deck win rates are samples from one opponent field, not a balance model.',
-    'Every threshold in this report is a configurable review dial, printed with each flag.',
+    'Every threshold in this report is a configurable review dial, printed in full below and ' +
+      'alongside each flag.',
+    inputs.multiplicity.note,
     ...(inputs.extraLimitations ?? []),
     ...(inputs.comparison?.limitations ?? []),
   ];
+
   if (agg.run.abnormalMatches > 0) {
-    limitations.push(
+    items.push(
       `${agg.run.abnormalMatches} match(es) ended abnormally and were excluded from every statistic ` +
-        'below. Their replays are in `replays/`.',
+        'below. They are listed with their replay commands at the end of this report.',
     );
   }
-  for (const limitation of limitations) lines.push(`- ${limitation}`);
-  lines.push('');
+  if (inputs.failedMatches > 0) {
+    items.push(
+      `${inputs.failedMatches} match(es) failed to run at all and produced no record. Any ` +
+        'per-deck or per-card denominator below is short by that much.',
+    );
+  }
+  if (inputs.recoveredLines > 0) {
+    items.push(
+      `${inputs.recoveredLines} damaged line(s) were dropped when resuming from ` +
+        `\`${inputs.matchesPath}\`. Those matches were re-run, not lost, but the recovery is ` +
+        'recorded so an unexplained count change is traceable.',
+    );
+  }
+  if (inputs.declaredCheck && inputs.declaredCheck.warnings.length > 0) {
+    items.push(
+      'The candidate environment differs from the baseline in ways the experiment did not ' +
+        'declare, so a difference measured below cannot be attributed to the declared change ' +
+        'alone. The undeclared differences are listed in the environment diff.',
+    );
+  }
 
-  /* ------------------------------------------------------------------ scale */
+  for (const item of items) lines.push(`- ${item}`);
+  return lines;
+}
 
-  lines.push('## Scale and provenance *(observation)*');
-  lines.push('');
+/* -------------------------------------------------------------- provenance */
+
+function provenance(inputs: ReportInputs): string[] {
+  const { aggregate: agg } = inputs;
+  const lines = ['## Provenance and self-audit *(observation)*', ''];
   lines.push('| Field | Value |');
   lines.push('| --- | --- |');
-  lines.push(`| Experiment | \`${inputs.experimentId}\` (${inputs.kind}) |`);
+  lines.push(`| Experiment | \`${inputs.experimentId}\` |`);
+  lines.push(`| Experiment type | ${inputs.kind} |`);
+  lines.push(`| Report schema | v${REPORT_SCHEMA_VERSION} |`);
+  lines.push(`| Configuration hash | \`${inputs.configHash}\` |`);
   lines.push(`| Root seed | \`${inputs.seed}\` |`);
+  lines.push(`| Seed derivation | v${inputs.seedDerivationVersion} |`);
+  lines.push(`| Telemetry schema | v${inputs.telemetrySchemaVersion} |`);
+  lines.push(`| Analysis statistics | v${inputs.analysisStatsVersion} |`);
   lines.push(`| Rules version | ${inputs.rulesVersion} |`);
-  lines.push(`| Software commit | ${inputs.softwareCommit ?? 'not recorded'} |`);
+  lines.push(`| Software commit | ${orDash(inputs.softwareCommit)} |`);
   for (const environment of inputs.environmentSummaries) {
     lines.push(
-      `| Environment \`${environment.id}\` | ${environment.label} — hash \`${environment.hash}\` |`,
+      `| Environment \`${environment.id}\` | ${environment.label} — environment hash ` +
+        `\`${environment.hash}\`, card-pool hash \`${environment.cardPoolHash}\` |`,
     );
   }
-  lines.push(`| Matches | ${agg.run.matches} (${agg.run.usableMatches} usable) |`);
+  if (inputs.referencePopulation) {
+    lines.push(
+      `| Reference population | \`${inputs.referencePopulation.hash}\` ` +
+        `(${inputs.referencePopulation.decks.length} deck(s), policy ` +
+        `\`${inputs.referencePopulation.policy}\`) |`,
+    );
+  }
+  for (const pilot of inputs.pilots) {
+    lines.push(`| Pilot \`${pilot.id}\` | version ${pilot.version} |`);
+  }
+  lines.push(`| Raw records | \`${inputs.matchesPath}\` |`);
+  lines.push(`| Matches completed | ${agg.run.matches} |`);
+  lines.push(`| Matches usable | ${agg.run.usableMatches} |`);
+  lines.push(
+    `| Matches abnormal (excluded from statistics) | ${agg.run.abnormalMatches} ` +
+      `(${pct(agg.run.abnormalShare)}) |`,
+  );
+  lines.push(`| Matches failed (no record) | ${inputs.failedMatches} |`);
+  lines.push(`| Matches resumed from a previous run | ${inputs.resumedMatches} |`);
+  lines.push(`| Damaged lines recovered | ${inputs.recoveredLines} |`);
+  if (inputs.referencePopulation) {
+    lines.push(
+      `| Reference decks excluded as illegal | ${inputs.referencePopulation.excluded.length} |`,
+    );
+  }
   lines.push(`| Decks | ${inputs.deckCount} |`);
-  lines.push(`| Workers | ${inputs.workers} |`);
-  lines.push(`| Wall clock | ${round(inputs.wallClockMs / 1000, 1)} s |`);
+  lines.push(`| Workers *(non-semantic)* | ${inputs.workers} |`);
+  lines.push(`| Wall clock *(non-semantic)* | ${round(inputs.wallClockMs / 1000, 1)} s |`);
   lines.push('');
+  lines.push(
+    'Worker count and wall clock cannot change any number in this report: records are sorted ' +
+      'into a canonical order before anything is aggregated, so the same configuration hash ' +
+      'always produces the same results.',
+  );
+  return lines;
+}
 
-  /* -------------------------------------------------------- environment diff */
+function evidenceLegend(): string[] {
+  return [
+    '## How to read the evidence labels',
+    '',
+    '| Label | What it means | What it does not mean |',
+    '| --- | --- | --- |',
+    '| *observation* | A count or rate read directly off the raw records. | Nothing about cause. |',
+    '| *association* | Two things co-occurred in decks a search or a human chose. | That either caused the other. |',
+    '| *controlled comparison* | One card or rule changed, everything else held fixed on common seeds. | That the effect generalises past these pilots and this field. |',
+    '| *review signal* | A threshold was crossed and a human should look. | That anything is overpowered, broken or balanced. |',
+    '| *insufficient evidence* | The sample was too small or a required group was empty. | That nothing is there. |',
+  ];
+}
 
-  if (inputs.diff) {
-    lines.push('## Environment diff *(observation)*');
-    lines.push('');
-    if (inputs.diff.identical) {
-      lines.push('The two environments are byte-identical. Nothing changed.');
-    } else {
-      if (inputs.diff.cardsAdded.length > 0) {
-        lines.push(`- **Cards added:** ${inputs.diff.cardsAdded.join(', ')}`);
-      }
-      if (inputs.diff.cardsRemoved.length > 0) {
-        lines.push(`- **Cards removed:** ${inputs.diff.cardsRemoved.join(', ')}`);
-      }
-      for (const changed of inputs.diff.cardsChanged) {
-        lines.push(`- **${changed.cardId} changed:** ${changed.fields.join(', ')}`);
-      }
-      for (const rule of inputs.diff.rulesChanged) {
-        lines.push(`- **Rule \`${rule.key}\`:** ${rule.before} → ${rule.after}`);
-      }
-      for (const format of inputs.diff.formatChanged) {
-        lines.push(`- **Format \`${format.key}\`:** ${format.before} → ${format.after}`);
-      }
+function thresholds(inputs: ReportInputs): string[] {
+  const { settings } = inputs;
+  const entries = Object.entries(settings).sort(([left], [right]) => left.localeCompare(right));
+  const lines = ['## Thresholds and minimum-sample rules *(configuration)*', ''];
+  lines.push(
+    'Every one of these is a review dial, not a game rule. They are printed in full so a reader ' +
+      'can see exactly which setting produced which flag, and change one and re-derive.',
+  );
+  lines.push('');
+  lines.push('| Setting | Value |');
+  lines.push('| --- | --- |');
+  for (const [name, value] of entries) lines.push(`| \`${name}\` | ${String(value)} |`);
+  return lines;
+}
+
+/* -------------------------------------------------------- environment diff */
+
+function environmentDiff(inputs: ReportInputs): string[] {
+  if (!inputs.diff) return [];
+  const lines = ['## Environment diff *(observation)*', ''];
+
+  if (inputs.diff.identical) {
+    lines.push('The two environments are byte-identical. Nothing changed, so nothing is measured.');
+  } else {
+    if (inputs.diff.cardsAdded.length > 0) {
+      lines.push(`- **Cards added:** \`${inputs.diff.cardsAdded.join('`, `')}\``);
     }
-    lines.push('');
+    if (inputs.diff.cardsRemoved.length > 0) {
+      lines.push(`- **Cards removed:** \`${inputs.diff.cardsRemoved.join('`, `')}\``);
+    }
+    for (const changed of inputs.diff.cardsChanged) {
+      lines.push(
+        `- **\`${changed.cardId}\` changed** in ${changed.fields.join(', ')}:\n` +
+          `  - baseline: \`${changed.before}\`\n` +
+          `  - candidate: \`${changed.after}\``,
+      );
+    }
+    for (const rule of inputs.diff.rulesChanged) {
+      lines.push(`- **Rule \`${rule.key}\`:** \`${rule.before}\` → \`${rule.after}\``);
+    }
+    for (const format of inputs.diff.formatChanged) {
+      lines.push(`- **Format \`${format.key}\`:** \`${format.before}\` → \`${format.after}\``);
+    }
   }
 
-  /* ------------------------------------------------------------------ flags */
+  if (inputs.declaredCheck) {
+    lines.push('');
+    lines.push('### Declared-change verification');
+    lines.push('');
+    lines.push(
+      inputs.declaredCheck.ok
+        ? 'The structured diff above was checked against what this experiment declared it ' +
+            'changes, **before any match ran**, and they agree.'
+        : 'The declared change and the resolved card pools disagree. This run should not have ' +
+            'started.',
+    );
+    if (inputs.declaredCheck.errors.length > 0) {
+      lines.push('');
+      for (const error of inputs.declaredCheck.errors) lines.push(`- **Error:** ${error}`);
+    }
+    if (inputs.declaredCheck.warnings.length > 0) {
+      lines.push('');
+      lines.push(
+        '**Undeclared differences.** The experiment is changing more than one thing, so a ' +
+          'measured difference cannot be attributed to the declared change alone:',
+      );
+      lines.push('');
+      for (const warning of inputs.declaredCheck.warnings) lines.push(`- ${warning}`);
+    }
+  }
 
-  lines.push('## Strongest evidence *(inference — recommendations to look, not verdicts)*');
+  return lines;
+}
+
+/* ------------------------------------------------- frozen reference population */
+
+function referencePopulation(inputs: ReportInputs): string[] {
+  const population = inputs.referencePopulation;
+  if (!population) return [];
+
+  const lines = ['## Reference population *(observation)*', ''];
+  lines.push(
+    `${population.decks.length} deck(s), resolved **once** against \`${population.resolvedAgainst}\` ` +
+      `and replayed unchanged in both environments. Content hash \`${population.hash}\` ` +
+      `(before legality filtering: \`${population.resolvedHash}\`).`,
+  );
   lines.push('');
+  lines.push(
+    'The identical deck definitions, seat assignments, pilots and derived seeds are used in both ' +
+      'arms. A population that differed between arms would make every deck-level delta a mixture ' +
+      'of the environment change and two different decklists, so the comparison refuses to run ' +
+      'if the two hashes ever diverge.',
+  );
+
+  if (population.excluded.length > 0) {
+    lines.push('');
+    lines.push(
+      `${population.excluded.length} deck(s) were excluded for being illegal in at least one ` +
+        'environment. They are excluded from **both** arms, never repaired for one side:',
+    );
+    lines.push('');
+    lines.push('| Deck | Rejected by | Reasons |');
+    lines.push('| --- | --- | --- |');
+    for (const excluded of population.excluded.slice(0, TABLE_LIMIT)) {
+      lines.push(
+        `| \`${excluded.deckId}\` | \`${excluded.environmentId}\` | ${excluded.reasons.join('; ')} |`,
+      );
+    }
+  }
+
+  return lines;
+}
+
+/* ------------------------------------------------------------------- flags */
+
+function flagSection(inputs: ReportInputs): string[] {
+  const lines = ['## Strongest evidence *(review signals — recommendations to look)*', ''];
+
   const actionable = inputs.flags.filter(
     (flag) => flag.level === 'review_recommended' || flag.level === 'possible_interaction',
   );
+
   if (actionable.length === 0) {
     lines.push(
-      'No flag cleared its configured threshold. That is **not** a statement that the environment is ' +
-        'balanced — with this sample size it most often means there was not enough evidence to say anything.',
+      'No flag cleared its configured threshold. That is **not** a statement that the environment ' +
+        'is healthy — at this sample size it most often means there was not enough evidence to ' +
+        'say anything either way.',
     );
   } else {
-    // A report that prints two hundred flags is a report nobody reads. The full
-    // set is always in `summary.json`; this is the readable head of it.
     const shown = actionable.slice(0, FLAG_TABLE_LIMIT);
     if (actionable.length > shown.length) {
       lines.push(
-        `Showing the ${shown.length} strongest of ${actionable.length} flags. ` +
-          'The complete list, with the evidence behind each one, is in `summary.json`.',
+        `Showing the ${shown.length} strongest of ${actionable.length} flags. The complete list, ` +
+          'with the evidence behind each one, is in `summary.json`.',
       );
       lines.push('');
     }
     lines.push('| Level | Reason | Subject | Sample | Interval | Threshold |');
     lines.push('| --- | --- | --- | --- | --- | --- |');
     for (const flag of shown) {
-      const interval = flag.interval
+      const bounds = flag.interval
         ? `${round(flag.interval.low, 3)} … ${round(flag.interval.high, 3)}`
         : '—';
       const threshold = flag.threshold ? `${flag.threshold.name} = ${flag.threshold.value}` : '—';
       lines.push(
-        `| ${flag.level} | \`${flag.reason}\` | \`${flag.subject}\` | ${flag.sampleSize} | ${interval} | ${threshold} |`,
+        `| ${flag.level} | \`${flag.reason}\` | \`${flag.subject}\` | ${flag.sampleSize} | ` +
+          `${bounds} | ${threshold} |`,
       );
     }
     lines.push('');
@@ -176,32 +453,42 @@ export function renderReport(inputs: ReportInputs): string {
       lines.push(`- **\`${flag.subject}\`** — ${flag.message}`);
     }
   }
+
   lines.push('');
+  lines.push(`*Scan width:* ${inputs.multiplicity.note}`);
 
   const quality = inputs.flags.filter((flag) => flag.level === 'run_quality');
   if (quality.length > 0) {
+    lines.push('');
     lines.push('### Run quality');
     lines.push('');
     for (const flag of quality) lines.push(`- ${flag.message}`);
-    lines.push('');
   }
 
   const unknown = inputs.flags.filter((flag) => flag.level === 'insufficient_data');
   if (unknown.length > 0) {
-    lines.push(`### Not enough data (${unknown.length} subject${unknown.length === 1 ? '' : 's'})`);
     lines.push('');
     lines.push(
-      'Listed so that "we did not measure this" is visible rather than looking like "we found nothing":',
+      `### Insufficient evidence (${unknown.length} subject${unknown.length === 1 ? '' : 's'})`,
+    );
+    lines.push('');
+    lines.push(
+      'Listed so that "we did not measure this" stays visible instead of looking like ' +
+        '"we found nothing":',
     );
     lines.push('');
     lines.push(`\`${unknown.map((flag) => flag.subject).join('`, `')}\``);
-    lines.push('');
   }
 
-  /* ------------------------------------------------------------------- runs */
+  return lines;
+}
 
-  lines.push('## Match outcomes *(observation)*');
-  lines.push('');
+/* ---------------------------------------------------------------- outcomes */
+
+function outcomes(inputs: ReportInputs): string[] {
+  const { aggregate: agg } = inputs;
+  const lines = ['## Match outcomes *(observation)*', ''];
+
   lines.push('| Termination | Matches |');
   lines.push('| --- | --- |');
   for (const [kind, count] of Object.entries(agg.run.terminations).sort()) {
@@ -211,232 +498,722 @@ export function renderReport(inputs: ReportInputs): string {
   lines.push(
     `Turns: mean ${agg.run.turns.mean}, median ${agg.run.turns.median}, ` +
       `p10 ${agg.run.turns.p10}, p90 ${agg.run.turns.p90}, max ${agg.run.turns.max}. ` +
-      `Draws: ${agg.run.draws}. Decisions per match: ${agg.run.decisionsPerMatch}.`,
+      `Draws: ${agg.run.draws}. Decisions per match: ${agg.run.decisionsPerMatch}. ` +
+      `Pilot fallbacks: ${agg.run.botFailures}.`,
   );
-  lines.push('');
 
   if (agg.run.seatWinRates.length > 0) {
+    lines.push('');
     lines.push(
-      '**Seat win rates** (the schedule mirrors seats, so an imbalance here is a rules effect):',
+      '**Seat win rates.** The schedule mirrors seats, so a gap here whose intervals do not ' +
+        'overlap is a rules effect rather than a scheduling artefact:',
     );
     lines.push('');
-    lines.push('| Seat | Win rate | 95% interval | Matches |');
+    lines.push('| Seat | Win rate | Interval | Seat-matches |');
     lines.push('| --- | --- | --- | --- |');
     for (const seat of agg.run.seatWinRates) {
       lines.push(
-        `| ${seat.seatIndex} | ${pct(seat.rate.point)} | ${pct(seat.rate.low)} … ${pct(seat.rate.high)} | ${seat.rate.total} |`,
+        `| ${seat.seatIndex} | ${pct(seat.rate.point)} | ` +
+          `${interval(seat.rate.low, seat.rate.high, pct)} | ${seat.rate.total} |`,
       );
     }
-    lines.push('');
   }
 
   if (agg.run.pilotWinRates.length > 1) {
+    lines.push('');
     lines.push('**Pilot win rates:**');
     lines.push('');
-    lines.push('| Pilot | Win rate | Matches |');
-    lines.push('| --- | --- | --- |');
+    lines.push('| Pilot | Win rate | Interval | Seat-matches |');
+    lines.push('| --- | --- | --- | --- |');
     for (const pilot of agg.run.pilotWinRates) {
-      lines.push(`| ${pilot.pilotId} | ${pct(pilot.rate.point)} | ${pilot.rate.total} |`);
-    }
-    lines.push('');
-  }
-
-  /* --------------------------------------------------------------- clusters */
-
-  if (inputs.clustering.clusters.length > 0) {
-    lines.push('## Strategic clusters *(observation)*');
-    lines.push('');
-    lines.push(
-      'Decks grouped by named, inspectable features — colours, curve, type and role mix, keyword density. ' +
-        'No model, no archetype naming.',
-    );
-    lines.push('');
-    lines.push('| Cluster | Description | Decks | Win rate | Interval | Matches |');
-    lines.push('| --- | --- | --- | --- | --- | --- |');
-    for (const cluster of inputs.clustering.clusters) {
       lines.push(
-        `| ${cluster.id} | ${cluster.label} | ${cluster.deckHashes.length} | ${pct(cluster.winRate.point)} | ` +
-          `${pct(cluster.winRate.low)} … ${pct(cluster.winRate.high)} | ${cluster.matches} |`,
+        `| ${pilot.pilotId} | ${pct(pilot.rate.point)} | ` +
+          `${interval(pilot.rate.low, pilot.rate.high, pct)} | ${pilot.rate.total} |`,
       );
     }
-    lines.push('');
-    lines.push(`Largest cluster holds ${pct(inputs.clustering.largestClusterShare)} of the decks.`);
-    lines.push('');
   }
 
-  /* ------------------------------------------------------------------ cards */
+  return lines;
+}
 
-  lines.push('## Cards *(observation)*');
-  lines.push('');
+/* ---------------------------------------------------------------- clusters */
+
+function clusters(inputs: ReportInputs): string[] {
+  if (inputs.clustering.clusters.length === 0) return [];
+  const lines = ['## Strategic clusters *(observation)*', ''];
   lines.push(
-    'Inclusion win rates are **correlations**: a card is not responsible for a win because it was in the ' +
-      'deck. Use the replacement section for anything causal.',
+    'Decks grouped by named, inspectable features — colours, curve, type and role mix, keyword ' +
+      'density. No model, no archetype naming.',
   );
   lines.push('');
-  const topCards = [...agg.cards]
-    .filter((card) => card.seatMatches >= settings.minMatchesPerCard)
-    .sort((left, right) => right.inclusionWinRateLift - left.inclusionWinRateLift)
-    .slice(0, 15);
-  if (topCards.length === 0) {
-    lines.push(`No card reached ${settings.minMatchesPerCard} seat-matches. Nothing is reported.`);
-  } else {
+  lines.push('| Cluster | Description | Decks | Win rate | Interval | Seat-matches |');
+  lines.push('| --- | --- | --- | --- | --- | --- |');
+  for (const cluster of inputs.clustering.clusters) {
     lines.push(
-      '| Card | Decks | Seat-matches | With | Without | Lift | Play rate | Dead in hand |',
+      `| \`${cluster.id}\` | ${cluster.label} | ${cluster.deckHashes.length} | ` +
+        `${pct(cluster.winRate.point)} | ${interval(cluster.winRate.low, cluster.winRate.high, pct)} | ` +
+        `${cluster.matches} |`,
     );
-    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
-    for (const card of topCards) {
-      lines.push(
-        `| \`${card.definitionId}\` | ${card.decksIncluding} | ${card.seatMatches} | ` +
-          `${pct(card.winRateWhenIncluded.point)} | ${pct(card.winRateWhenAbsent.point)} | ` +
-          `${round(card.inclusionWinRateLift * 100, 1)} pts | ${pct(card.playRatePerDrawn)} | ${pct(card.deadInHandShare)} |`,
-      );
-    }
   }
   lines.push('');
+  lines.push(
+    `Largest cluster holds ${pct(inputs.clustering.largestClusterShare)} of the decks. ` +
+      `${inputs.inclusion.eligibleClusters} cluster(s) met the eligibility minimums; ` +
+      `${inputs.inclusion.ineligibleClusters} did not and are excluded from cross-cluster ` +
+      'denominators.',
+  );
+  return lines;
+}
 
-  /* ------------------------------------------------------------------ pairs */
+/* ------------------------------------------------------------------- cards */
 
-  const reportedPairs = inputs.pairs.filter((pair) => pair.support >= settings.minPairSupport);
-  lines.push('## Card pairs *(inference)*');
+function cards(inputs: ReportInputs): string[] {
+  const { aggregate: agg, settings } = inputs;
+  const lines = ['## Cards *(association)*', ''];
+  lines.push(
+    'Inclusion win rates are **correlations**: a card is not responsible for a win because it was ' +
+      'in the deck. Use the controlled replacement section for anything causal.',
+  );
   lines.push('');
-  if (reportedPairs.length === 0) {
+  lines.push(
+    '`plays/draw` is **unbounded** — a card returned to hand and replayed legitimately exceeds ' +
+      '1×, so it is printed as a multiplier and never as a percentage. `copy conv.` and ' +
+      '`game conv.` are the two bounded conversion measures: the share of drawn copies that were ' +
+      'ever played, and the share of games where a drawn card was also played.',
+  );
+  lines.push('');
+
+  const reported = [...agg.cards]
+    .filter((card) => card.seatMatches >= settings.minMatchesPerCard)
+    .sort(
+      (left, right) =>
+        right.inclusionWinRateLift - left.inclusionWinRateLift ||
+        left.definitionId.localeCompare(right.definitionId),
+    )
+    .slice(0, TABLE_LIMIT);
+
+  if (reported.length === 0) {
+    lines.push(
+      `No card reached ${settings.minMatchesPerCard} seat-matches, so no card-level number is ` +
+        'reported. The raw per-card counts are in `card-usage.csv`.',
+    );
+    return lines;
+  }
+
+  lines.push(
+    '| Card | Decks | Seat-matches | With | Without | Lift | plays/draw | copy conv. | game conv. | Dead in hand |',
+  );
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (const card of reported) {
+    lines.push(
+      `| \`${card.definitionId}\` | ${card.decksIncluding} | ${card.seatMatches} | ` +
+        `${pct(card.winRateWhenIncluded.point)} | ${pct(card.winRateWhenAbsent.point)} | ` +
+        `${pts(card.inclusionWinRateLift)} | ${ratio(card.playsPerDraw)} | ` +
+        `${card.drawnCopyPlayConversion === null ? 'unavailable' : pct(card.drawnCopyPlayConversion)} | ` +
+        `${pct(card.gamesDrawnAndPlayedShare)} | ${pct(card.deadInHandShare)} |`,
+    );
+  }
+
+  lines.push('');
+  lines.push(
+    '**Dead in hand** splits into a mechanical half and a strategic half, because they are ' +
+      'different findings: a card that could not legally be played says something about the card, ' +
+      'and a card that was legal and passed over says something about these pilots.',
+  );
+  lines.push('');
+  lines.push('| Card | Dead | Mechanically unusable | Strategically unused |');
+  lines.push('| --- | --- | --- | --- |');
+  for (const card of reported) {
+    lines.push(
+      `| \`${card.definitionId}\` | ${pct(card.deadInHandShare)} | ` +
+        `${pct(card.mechanicallyUnusableShare)} | ${pct(card.strategicallyUnusedShare)} |`,
+    );
+  }
+
+  return lines;
+}
+
+/* --------------------------------------------- cross-cluster inclusion (§5) */
+
+function crossClusterInclusion(inputs: ReportInputs): string[] {
+  const { inclusion } = inputs;
+  const qualifying = inclusion.cards.filter((card) => card.qualifies);
+  const lines = ['## Cross-cluster inclusion *(review signal)*', ''];
+
+  lines.push(
+    'Coverage of **strategic clusters**, not of individual decks. Thirty near-identical decks all ' +
+      'running the same removal spell are one strategy counted thirty times, so deck share cannot ' +
+      'answer "does every strategy want this card". A cluster only counts when it has at least ' +
+      `${inclusion.thresholds.minDecksPerCluster} deck(s) and ` +
+      `${inclusion.thresholds.minObservationsPerCluster} seat-match(es); a card covers a cluster ` +
+      `when at least ${pct(inclusion.thresholds.withinClusterInclusionThreshold)} of that ` +
+      "cluster's decks run it.",
+  );
+  lines.push('');
+  lines.push(
+    `${inclusion.eligibleClusters} eligible cluster(s), ${inclusion.ineligibleClusters} excluded ` +
+      'as too small or too rarely observed.',
+  );
+
+  if (qualifying.length === 0) {
+    lines.push('');
+    lines.push(
+      'No card met every condition. Deck-level inclusion is reported separately in ' +
+        '`cluster-inclusion.csv` and is **not** the same measure.',
+    );
+    return lines;
+  }
+
+  lines.push('');
+  lines.push(
+    'Broad inclusion is a review signal for **low opportunity cost or broad generic utility**. ' +
+      'It is not evidence that a card is unhealthy: a card every strategy wants may simply be a ' +
+      'good generic card in a small pool.',
+  );
+  lines.push('');
+  lines.push(
+    '| Card | Covered / eligible clusters | Cross-cluster share | Deck share | Supporting seat-matches | Qualifying clusters |',
+  );
+  lines.push('| --- | --- | --- | --- | --- | --- |');
+  for (const card of qualifying.slice(0, TABLE_LIMIT)) {
+    const covered = card.perCluster
+      .filter((entry) => entry.covered)
+      .map(
+        (entry) =>
+          `${entry.clusterId} ${entry.decksIncluding}/${entry.decksInCluster} (${pct(entry.inclusion)})`,
+      )
+      .join('; ');
+    lines.push(
+      `| \`${card.definitionId}\` | ${card.coveredClusters} / ${card.eligibleClusters} | ` +
+        `${pct(card.crossClusterShare)} | ${pct(card.deckInclusionShare)} | ` +
+        `${card.supportingObservations} | ${covered} |`,
+    );
+  }
+
+  return lines;
+}
+
+/* ------------------------------------------------------------------- pairs */
+
+function cardPairSection(inputs: ReportInputs): string[] {
+  const { settings } = inputs;
+  const reported = inputs.pairs.filter((pair) => pair.support >= settings.minPairSupport);
+  const lines = ['## Card pairs *(association)*', ''];
+
+  if (reported.length === 0) {
     lines.push(
       `No card pair reached the minimum support of ${settings.minPairSupport} co-occurrences. ` +
-        'Pairs below that threshold are not reported at all, because at this sample size they are noise.',
+        'Pairs below that are not reported at all, because at this sample size they are noise.',
+    );
+    return lines;
+  }
+
+  lines.push(
+    '**Estimand:** `(win rate with both − win rate with A only) − (win rate with B only − win ' +
+      'rate with neither)`. In words: what the second card adds *on top of* the first, minus what ' +
+      'it adds on its own. Two independently strong cards produce an interaction near zero however ' +
+      'high their joint win rate is — which is the point.',
+  );
+  lines.push('');
+  lines.push(
+    'Intervals come from a stratified bootstrap over seat-matches, so all four cells contribute ' +
+      'their sampling error. A pair with any cell below ' +
+      `${settings.minPairCellSupport} seat-matches returns *insufficient evidence* rather than a ` +
+      'number, because a difference-in-differences over an empty group is undefined, not imprecise.',
+  );
+  lines.push('');
+  lines.push(
+    '| A | B | Both | A only | B only | Neither | Interaction | Interval | Over best single | Effect |',
+  );
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (const pair of reported.slice(0, TABLE_LIMIT)) {
+    const estimate = pair.insufficientEvidence
+      ? `insufficient evidence (${pair.sparseCells.join(', ')})`
+      : pts(pair.interaction);
+    lines.push(
+      `| \`${pair.cardA}\` | \`${pair.cardB}\` | ${pair.support} | ${pair.supportAOnly} | ` +
+        `${pair.supportBOnly} | ${pair.supportNeither} | ${estimate} | ` +
+        `${pair.insufficientEvidence ? '—' : interval(pair.low, pair.high, pts)} | ` +
+        `${pts(pair.liftOverBestSingle)} | ${pair.effectSizeLabel} |`,
+    );
+  }
+  lines.push('');
+  lines.push(
+    'These are observational associations over decks a search chose, never assignment ' +
+      'experiments. The controlled replacement section is the tool for the causal question.',
+  );
+  return lines;
+}
+
+/* ------------------------------------------------------------- replacement */
+
+function replacementSection(inputs: ReportInputs): string[] {
+  if (inputs.replacements.length === 0) return [];
+  const lines = ['## Controlled replacement *(controlled comparison)*', ''];
+  lines.push(
+    'One card changed, everything else held fixed: the same base deck, the same opponents, the ' +
+      'same shuffles and the same pilot streams. Analysed as **paired** outcomes, because the two ' +
+      'arms share their seeds by construction and treating them as independent samples would ' +
+      'discard the design. A positive impact means the deck did worse *without* the subject card.',
+  );
+  lines.push('');
+  lines.push(
+    '| Card | Replaced with | Base | Variant | Impact | Interval | Pairs | Discordant | Excluded | Confounds |',
+  );
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (const impact of inputs.replacements) {
+    const paired = impact.paired as
+      | {
+          candidateOnlyWins: number;
+          baselineOnlyWins: number;
+          excludedPairs: number;
+        }
+      | undefined;
+    const estimate = impact.insufficientData ? 'insufficient evidence' : pts(impact.impact);
+    lines.push(
+      `| \`${impact.subjectCardId}\` | \`${impact.replacementCardId ?? '—'}\` | ` +
+        `${pct(impact.baseWinRate)} | ${pct(impact.variantWinRate)} | ${estimate} | ` +
+        `${interval(impact.low, impact.high, pts)} | ${impact.pairedGames} | ` +
+        `${orDash(
+          paired ? `${paired.candidateOnlyWins}/${paired.baselineOnlyWins}` : null,
+        )} | ${orDash(paired?.excludedPairs ?? null)} | ${impact.confounds.length} |`,
+    );
+  }
+
+  const confounded = inputs.replacements.filter((entry) => entry.confounds.length > 0);
+  if (confounded.length > 0) {
+    lines.push('');
+    for (const impact of confounded) {
+      lines.push(
+        `- \`${impact.subjectCardId}\` → \`${impact.replacementCardId ?? 'nothing'}\` is **not a ` +
+          `clean comparison**: ${impact.confounds.join('; ')}.`,
+      );
+    }
+  }
+
+  lines.push('');
+  lines.push(
+    '*Discordant* is the candidate-only-wins / base-only-wins split. It is the whole sample the ' +
+      'difference is estimated from: two hundred pairs with two discordant ones carry about as ' +
+      'much information as two coin flips.',
+  );
+  return lines;
+}
+
+/* ------------------------------------------------------- counter breadth */
+
+function counterSection(inputs: ReportInputs): string[] {
+  const counters = inputs.counters;
+  if (!counters) return [];
+
+  const lines = ['## Counter breadth *(controlled comparison)*', ''];
+  lines.push(`Target: ${counters.targetLabel} (${counters.targetDeckHashes.length} deck(s)).`);
+  lines.push('');
+  lines.push(
+    `**Cluster matchup breadth:** ${counters.clusterMatchupBreadth} strategic cluster(s) beat the ` +
+      'target in this run' +
+      (counters.clustersBeatingTarget.length > 0
+        ? ` (\`${counters.clustersBeatingTarget.join('`, `')}\`)`
+        : '') +
+      '. That is a statement about strategies, and deliberately not a claim that a *card* answers ' +
+      'the target.',
+  );
+  lines.push('');
+
+  if (counters.status === 'unavailable') {
+    lines.push(`**Card-level counter breadth: unavailable.** ${counters.note}`);
+    return lines;
+  }
+
+  lines.push(
+    `**Card-level counter breadth: ${counters.counterBreadth}** practical answer(s), of which ` +
+      `${counters.broadAnswers} held up against the rest of the field and ` +
+      `${counters.narrowAnswers} did not. ${counters.note}`,
+  );
+  lines.push('');
+  lines.push('| Card | Replaces | vs target | vs rest of field | Practical | Breadth |');
+  lines.push('| --- | --- | --- | --- | --- | --- |');
+  for (const candidate of counters.candidates.slice(0, TABLE_LIMIT)) {
+    lines.push(
+      `| \`${candidate.cardId}\` | \`${candidate.replacedCardId}\` | ${pts(candidate.targetDelta)} | ` +
+        `${pts(candidate.fieldDelta)} | ${candidate.practical ? 'yes' : 'no'} | ` +
+        `${candidate.breadthLabel} |`,
+    );
+  }
+  return lines;
+}
+
+/* ------------------------------------------- opponent-field sensitivity */
+
+function sensitivitySection(inputs: ReportInputs): string[] {
+  const sensitive = inputs.sensitivity.filter((entry) => entry.status === 'sensitive');
+  const measured = inputs.sensitivity.filter((entry) => entry.status !== 'insufficient_evidence');
+  if (inputs.sensitivity.length === 0) return [];
+
+  const lines = ['## Opponent-field sensitivity *(observation)*', ''];
+  lines.push(
+    "How much a card's results depend on which strategic cluster it faced. This is **context " +
+      'sensitivity, not a defect** — soft counter relationships are the shape a healthy plural ' +
+      'meta takes, and a card with no unfavourable field is the more worrying finding. A field is ' +
+      `only used when it reached ${inputs.settings.minMatchesPerOpponentField} seat-matches, and ` +
+      'a spread is only called sensitive when the best and worst intervals do not overlap.',
+  );
+  lines.push('');
+  lines.push(
+    `${measured.length} subject(s) had at least ${inputs.settings.minOpponentFields} supported ` +
+      `field(s); ${sensitive.length} of those showed a spread of at least ` +
+      `${pts(inputs.settings.opponentFieldSpread)} with separated intervals.`,
+  );
+
+  if (sensitive.length === 0) return lines;
+
+  lines.push('');
+  lines.push(
+    '| Subject | Best field | Worst field | Spread | Fields used | Fields dropped | Seat-matches |',
+  );
+  lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+  for (const entry of sensitive.slice(0, TABLE_LIMIT)) {
+    lines.push(
+      `| \`${entry.subject}\` | ${orDash(entry.best?.opponentClusterId)} ` +
+        `${entry.best ? pct(entry.best.winRate) : ''} | ` +
+        `${orDash(entry.worst?.opponentClusterId)} ${entry.worst ? pct(entry.worst.winRate) : ''} | ` +
+        `${pts(entry.spread)} | ${entry.fields.length} | ${entry.droppedFields.length} | ` +
+        `${entry.totalMatches} |`,
+    );
+  }
+  return lines;
+}
+
+/* ------------------------------------------------------------ displacement */
+
+function displacementSection(inputs: ReportInputs): string[] {
+  if (inputs.displacement.length === 0) return [];
+
+  const displaced = inputs.displacement.filter((entry) => entry.status === 'displaced');
+  const poolRemovals = inputs.displacement.filter((entry) => entry.status === 'pool_removal');
+  const unclear = inputs.displacement.filter(
+    (entry) => entry.status === 'insufficient_evidence' && entry.shareDelta < 0,
+  );
+
+  const lines = ['## Displacement *(review signal)*', ''];
+  lines.push(
+    'Whether the change pushed comparable old cards out of the decks a search converged on. ' +
+      'Measured as **normalized inclusion shares across independent search replicates**, not as ' +
+      'raw archive counts: a single evolutionary run is one sample of a stochastic process, and ' +
+      '"6 copies became 3" is well inside its own run-to-run variance. A drop is only reported ' +
+      `when it clears ${pct(inputs.settings.displacementShareDrop)} relative, spans at least ` +
+      `${inputs.settings.minDisplacementReplicates} replicate(s) of ` +
+      `${inputs.settings.minDecksPerReplicate}+ decks, and is larger than the between-replicate ` +
+      'variation of the same environment.',
+  );
+
+  if (displaced.length > 0) {
+    lines.push('');
+    lines.push(
+      '| Card | Baseline share | Candidate share | Relative drop | Between-replicate variation | Replicates | Likely replaced by |',
+    );
+    lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+    for (const entry of displaced.slice(0, TABLE_LIMIT)) {
+      lines.push(
+        `| \`${entry.definitionId}\` | ${pct(entry.baselineMeanShare)} | ` +
+          `${pct(entry.candidateMeanShare)} | ${pct(entry.relativeDrop)} | ` +
+          `${pts(entry.betweenReplicateVariation)} | ${entry.replicates} | ` +
+          `${orDash(entry.likelyReplacedBy.map((item) => item.definitionId).join(', '))} |`,
+      );
+    }
+  } else {
+    lines.push('');
+    lines.push('No card met the displacement criteria.');
+  }
+
+  if (poolRemovals.length > 0) {
+    lines.push('');
+    lines.push(
+      `${poolRemovals.length} card(s) disappeared because the candidate pool no longer contains ` +
+        'them. That is a card-pool change, not evolutionary selection, and is reported separately: ' +
+        `\`${poolRemovals.map((entry) => entry.definitionId).join('`, `')}\``,
+    );
+  }
+
+  if (unclear.length > 0) {
+    lines.push('');
+    lines.push(
+      `${unclear.length} card(s) fell but not by enough to separate from search variance, and are ` +
+        `recorded as *insufficient evidence*: \`${unclear
+          .slice(0, TABLE_LIMIT)
+          .map((entry) => entry.definitionId)
+          .join('`, `')}\``,
+    );
+  }
+
+  return lines;
+}
+
+/* -------------------------------------------------------- pilot robustness */
+
+function robustnessSection(inputs: ReportInputs): string[] {
+  const robustness = inputs.robustness;
+  if (!robustness) return [];
+
+  const lines = ['## Pilot robustness *(controlled comparison)*', ''];
+  lines.push(
+    `Perturbation profile set \`${robustness.profileVersion}\`. Each profile plays the **same** ` +
+      'schedule on the **same** derived seeds, and each is analysed on its own records. The arms ' +
+      'are never pooled: a merged population would average away exactly the disagreement this ' +
+      'experiment exists to expose.',
+  );
+  lines.push('');
+  lines.push('| Profile | Matches | Usable | Review flags | Seat spread |');
+  lines.push('| --- | --- | --- | --- | --- |');
+  for (const arm of robustness.arms) {
+    lines.push(
+      `| \`${arm.profileId}\` | ${arm.matches} | ${arm.usableMatches} | ` +
+        `${arm.reviewSubjects.length} | ${pts(arm.seatSpread)} |`,
+    );
+  }
+
+  if (robustness.conclusions.length > 0) {
+    lines.push('');
+    lines.push('| Conclusion | Kind | Status | Agreement | Disagreeing profiles |');
+    lines.push('| --- | --- | --- | --- | --- |');
+    for (const conclusion of robustness.conclusions) {
+      lines.push(
+        `| \`${conclusion.subject}\` | ${conclusion.kind} | ${conclusion.status} | ` +
+          `${pct(conclusion.agreement)} | ` +
+          `${orDash(conclusion.disagreeingProfiles.join(', '))} |`,
+      );
+    }
+    lines.push('');
+    lines.push(
+      `A conclusion is called *stable* when it survives in at least ${pct(robustness.threshold)} ` +
+        'of the perturbed profiles. A *pilot_sensitive* conclusion is not wrong — it is ' +
+        'conditional, and holds for the pilot that produced it.',
+    );
+  }
+
+  return lines;
+}
+
+/* -------------------------------------------------------------- comparison */
+
+function comparisonSection(inputs: ReportInputs): string[] {
+  const comparison = inputs.comparison;
+  if (!comparison) return [];
+
+  const lines = ['## Baseline versus candidate', ''];
+  lines.push(
+    '**Reference impact** and **discovery impact** answer different questions and are kept apart. ' +
+      'Reference impact is what the change did to decks that already existed; discovery impact is ' +
+      'what the change made newly possible. A reference population cannot contain a card the ' +
+      'candidate added, and a freshly searched candidate population measured against a stale ' +
+      'baseline biases the other way — so both are run.',
+  );
+  lines.push('');
+  lines.push(
+    `Reference population \`${comparison.referencePopulationHash}\`, identical in both arms. ` +
+      `${comparison.pairedGames} paired game(s) (${pct(comparison.pairedCoverage)} of the baseline ` +
+      'run) shared their seeds with the candidate run.',
+  );
+
+  /* --------------------------------------------------------- reference impact */
+
+  lines.push('');
+  lines.push('### Reference impact — existing decks, unchanged *(controlled comparison)*');
+  lines.push('');
+
+  const moved = comparison.referenceDeckDeltas.filter(
+    (delta) => !delta.insufficientEvidence && Math.abs(delta.delta) > 0.02,
+  );
+  const unclear = comparison.referenceDeckDeltas.filter((delta) => delta.insufficientEvidence);
+
+  if (comparison.referenceDeckDeltas.length === 0) {
+    lines.push('No reference deck was played in both arms, so there is no paired estimate.');
+  } else if (moved.length === 0) {
+    lines.push(
+      'No reference deck moved by more than two win-rate points with adequate paired evidence.',
     );
   } else {
-    lines.push('| A | B | Support | Together | Best single | Lift | Effect |');
+    lines.push('| Deck | Baseline | Candidate | Paired delta | Interval | Pairs | Discordant |');
     lines.push('| --- | --- | --- | --- | --- | --- | --- |');
-    for (const pair of reportedPairs.slice(0, 15)) {
+    for (const delta of moved.slice(0, TABLE_LIMIT)) {
+      const paired = delta.paired as
+        { candidateOnlyWins: number; baselineOnlyWins: number } | undefined;
       lines.push(
-        `| \`${pair.cardA}\` | \`${pair.cardB}\` | ${pair.support} | ${pct(pair.winRateTogether)} | ` +
-          `${pct(Math.max(pair.winRateAOnly, pair.winRateBOnly))} | ${round(pair.lift * 100, 1)} pts | ${pair.effectSizeLabel} |`,
+        `| \`${delta.deckId}\` | ${pct(delta.baselineWinRate)} | ${pct(delta.candidateWinRate)} | ` +
+          `${pts(delta.delta)} | ${interval(delta.low, delta.high, pts)} | ${delta.pairedGames} | ` +
+          `${orDash(paired ? `${paired.candidateOnlyWins}/${paired.baselineOnlyWins}` : null)} |`,
       );
     }
+  }
+
+  if (unclear.length > 0) {
+    lines.push('');
+    lines.push(
+      `${unclear.length} reference deck(s) produced too few complete pairs for an estimate and are ` +
+        'marked *insufficient evidence* in `summary.json`. They are excluded here rather than ' +
+        'shown with a number that would be read as a result.',
+    );
+  }
+
+  const length = comparison.matchLengthDelta as
+    | {
+        pairs: number;
+        baselineMean: number;
+        candidateMean: number;
+        meanDifference: number;
+        low: number;
+        high: number;
+        insufficientEvidence: boolean;
+      }
+    | undefined;
+  if (length && length.pairs > 0) {
+    lines.push('');
+    lines.push(
+      `**Match length.** Paired difference over ${length.pairs} game(s): ` +
+        `${length.baselineMean} → ${length.candidateMean} turns, ` +
+        `${length.meanDifference >= 0 ? '+' : ''}${length.meanDifference} ` +
+        `(${round(length.low, 3)} … ${round(length.high, 3)})` +
+        (length.insufficientEvidence ? ', below the configured minimum pairs.' : '.'),
+    );
+  }
+
+  /* --------------------------------------------------------- discovery impact */
+
+  lines.push('');
+  lines.push('### Discovery impact — independently searched decks *(observation)*');
+  lines.push('');
+  lines.push(
+    `Independent search found ${comparison.strategiesGained.length} deck(s) only in the candidate ` +
+      `environment and ${comparison.strategiesLost.length} only in the baseline. These are ` +
+      'separate populations from the reference decks above and are never mixed into the reference ' +
+      'estimate.',
+  );
+
+  if (comparison.newlyViableCards.length > 0) {
+    lines.push('');
+    lines.push(
+      '**Newly viable cards** (appear in searched decks only after the change): ' +
+        `\`${comparison.newlyViableCards.join('`, `')}\``,
+    );
+  }
+
+  const displacement = comparison.displacement as readonly Displacement[];
+  const confirmed = displacement.filter((entry) => entry.status === 'displaced');
+  lines.push('');
+  lines.push(
+    confirmed.length === 0
+      ? 'No card showed replicated, normalized evidence of displacement. See the displacement ' +
+          'section for what was measured and why anything that fell short was downgraded.'
+      : `${confirmed.length} card(s) showed replicated displacement evidence; they are listed in ` +
+          'the displacement section with their between-replicate variation.',
+  );
+
+  return lines;
+}
+
+/* ------------------------------------------------------------ deck search */
+
+function searchSection(inputs: ReportInputs): string[] {
+  const history = inputs.searchHistory ?? [];
+  if (history.length === 0) return [];
+
+  const lines = ['## Deck search *(observation)*', ''];
+  lines.push(
+    '| Gen | Decks | Matches | Best score | Best win rate | Card entropy | Commanders | Mean distance |',
+  );
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (const generation of history) {
+    lines.push(
+      `| ${generation.generation} | ${generation.evaluated} | ${generation.matches} | ` +
+        `${orDash(generation.best?.score)} | ` +
+        `${generation.best ? pct(generation.best.winRate) : '—'} | ` +
+        `${generation.cardEntropy} | ${generation.commanderCount} | ` +
+        `${generation.meanPairwiseDistance} |`,
+    );
+  }
+
+  const notes = history.flatMap((generation) =>
+    generation.notes.map((note) => `- generation ${generation.generation}: ${note}`),
+  );
+  if (notes.length > 0) {
+    lines.push('');
+    lines.push('Diversity and quality notes, reported rather than corrected:');
+    lines.push('');
+    lines.push(...notes);
+  }
+
+  lines.push('');
+  lines.push(
+    'A discovered deck is a lead to investigate, never a conclusion: it describes what these ' +
+      'pilots could exploit, not what a human could.',
+  );
+  return lines;
+}
+
+/* --------------------------------------------------------------- abnormal */
+
+function abnormalSection(inputs: ReportInputs): string[] {
+  if (inputs.abnormalMatches.length === 0) return [];
+
+  const lines = ['## Abnormal matches *(observation)*', ''];
+  lines.push(
+    `${inputs.abnormalMatches.length} match(es) did not end in a normal victory or draw. They are ` +
+      'excluded from every statistic above and never averaged in as though a turn-limit stall ' +
+      'were a long game. Each one has a replay bundle:',
+  );
+  lines.push('');
+  lines.push('| Match | Termination | Replay |');
+  lines.push('| --- | --- | --- |');
+  for (const entry of inputs.abnormalMatches.slice(0, ABNORMAL_LIMIT)) {
+    lines.push(
+      `| \`${entry.matchId}\` | ${entry.termination} | ${
+        entry.replayPath ? `\`${entry.replayPath}\`` : 'not retained'
+      } |`,
+    );
+  }
+  if (inputs.abnormalMatches.length > ABNORMAL_LIMIT) {
+    lines.push('');
+    lines.push(
+      `${inputs.abnormalMatches.length - ABNORMAL_LIMIT} further abnormal match(es) are listed in ` +
+        '`errors.csv` and `manifest.json`.',
+    );
   }
   lines.push('');
-
-  /* ------------------------------------------------------------ replacement */
-
-  if (inputs.replacements.length > 0) {
-    lines.push('## Controlled replacement *(inference — the closest thing here to causal)*');
-    lines.push('');
-    lines.push(
-      '| Card | Replaced with | Base | Variant | Impact | Interval | Paired games | Confounds |',
-    );
-    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
-    for (const impact of inputs.replacements) {
-      lines.push(
-        `| \`${impact.subjectCardId}\` | \`${impact.replacementCardId ?? '—'}\` | ` +
-          `${pct(impact.baseWinRate)} | ${pct(impact.variantWinRate)} | ` +
-          `${round(impact.impact * 100, 1)} pts | ${round(impact.low * 100, 1)} … ${round(impact.high * 100, 1)} | ` +
-          `${impact.pairedGames} | ${impact.confounds.length} |`,
-      );
-    }
-    lines.push('');
-    for (const impact of inputs.replacements.filter((entry) => entry.confounds.length > 0)) {
-      lines.push(
-        `- \`${impact.subjectCardId}\` → \`${impact.replacementCardId ?? 'nothing'}\` is **not a clean ` +
-          `comparison**: ${impact.confounds.join('; ')}.`,
-      );
-    }
-    lines.push('');
-  }
-
-  /* ------------------------------------------------------------- comparison */
-
-  if (inputs.comparison) {
-    lines.push('## Baseline versus candidate *(inference)*');
-    lines.push('');
-    lines.push(
-      `${inputs.comparison.pairedGames} paired games (${pct(inputs.comparison.pairedCoverage)} of the ` +
-        'baseline run) shared their seeds with the candidate run.',
-    );
-    lines.push('');
-
-    const moved = inputs.comparison.referenceDeckDeltas.filter(
-      (delta) => Math.abs(delta.delta) > 0.02,
-    );
-    lines.push('### Existing decks, unchanged');
-    lines.push('');
-    if (moved.length === 0) {
-      lines.push('No reference deck moved by more than two win-rate points.');
-    } else {
-      lines.push('| Deck | Baseline | Candidate | Delta | Interval | Paired games |');
-      lines.push('| --- | --- | --- | --- | --- | --- |');
-      for (const delta of moved.slice(0, 15)) {
-        lines.push(
-          `| ${delta.deckId} | ${pct(delta.baselineWinRate)} | ${pct(delta.candidateWinRate)} | ` +
-            `${round(delta.delta * 100, 1)} pts | ${round(delta.low * 100, 1)} … ${round(delta.high * 100, 1)} | ${delta.pairedGames} |`,
-        );
-      }
-    }
-    lines.push('');
-
-    lines.push('### Newly discovered decks');
-    lines.push('');
-    lines.push(
-      `Independent search found ${inputs.comparison.strategiesGained.length} deck(s) only in the candidate ` +
-        `environment and ${inputs.comparison.strategiesLost.length} only in the baseline.`,
-    );
-    if (inputs.comparison.newlyViableCards.length > 0) {
-      lines.push('');
-      lines.push(
-        `**Newly viable cards** (appear in searched decks only after the change): \`${inputs.comparison.newlyViableCards.join('`, `')}\``,
-      );
-    }
-    if (inputs.comparison.displacedCards.length > 0) {
-      lines.push('');
-      lines.push('**Displaced cards** (at least halved their inclusion in searched decks):');
-      lines.push('');
-      for (const card of inputs.comparison.displacedCards) {
-        lines.push(`- \`${card.definitionId}\`: ${card.before} → ${card.after}`);
-      }
-    }
-    lines.push('');
-  }
-
-  /* ----------------------------------------------------------- deck search */
-
-  if (inputs.searchHistory && inputs.searchHistory.length > 0) {
-    lines.push('## Deck search *(observation)*');
-    lines.push('');
-    lines.push(
-      '| Gen | Decks | Matches | Best score | Best win rate | Card entropy | Commanders | Mean distance |',
-    );
-    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
-    for (const generation of inputs.searchHistory) {
-      lines.push(
-        `| ${generation.generation} | ${generation.evaluated} | ${generation.matches} | ` +
-          `${generation.best?.score ?? '—'} | ${generation.best ? pct(generation.best.winRate) : '—'} | ` +
-          `${generation.cardEntropy} | ${generation.commanderCount} | ${generation.meanPairwiseDistance} |`,
-      );
-    }
-    lines.push('');
-    const notes = inputs.searchHistory.flatMap((generation) =>
-      generation.notes.map((note) => `- generation ${generation.generation}: ${note}`),
-    );
-    if (notes.length > 0) {
-      lines.push('Diversity and quality notes, reported rather than corrected:');
-      lines.push('');
-      lines.push(...notes);
-      lines.push('');
-    }
-  }
-
-  /* ------------------------------------------------------------- provenance */
-
-  lines.push('## Reproducing this');
+  lines.push(
+    'A replay bundle carries the full action log, event log and the seed lineage the match was ' +
+      'derived from, so it reproduces exactly on its own. To re-run the whole experiment and ' +
+      'regenerate them:',
+  );
   lines.push('');
   lines.push('```bash');
-  lines.push(`npm run simulate -- --config <this experiment's config.json>`);
+  lines.push('npm run simulate -- --config config.json');
   lines.push('```');
   lines.push('');
   lines.push(
-    'Raw records are in `matches.jsonl`; every number above is recomputable from them. ' +
-      '`manifest.json` records the exact configuration, seeds and software version this run used.',
+    `The abnormal matches are stable across runs: the same configuration hash \`${inputs.configHash}\` ` +
+      'always produces the same match IDs, so the identifiers above are citable.',
   );
-  lines.push('');
+  return lines;
+}
 
-  return lines.join('\n');
+/* ------------------------------------------------------------- provenance */
+
+function reproducing(inputs: ReportInputs): string[] {
+  return [
+    '## Reproducing this',
+    '',
+    '```bash',
+    'npm run simulate -- --config config.json',
+    '```',
+    '',
+    `Raw records are in \`${inputs.matchesPath}\`, one runtime-validated line per match; every ` +
+      'number above is recomputable from them. `manifest.json` records the configuration hash, ' +
+      'the seeds, the schema versions and the software commit this run used, and `summary.json` ' +
+      'holds the machine-readable form of everything in this document. The JSON is authoritative: ' +
+      'this file and the CSVs are views of it.',
+    '',
+    `Running the same configuration again — at any worker count — reproduces the same records and ` +
+      `the same summary. A resumed run continues from \`${inputs.matchesPath}\` and refuses to ` +
+      'merge records written under a different configuration hash.',
+  ];
 }

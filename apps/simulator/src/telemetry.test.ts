@@ -4,7 +4,12 @@ import { deriveSeedBundle } from './seed.js';
 import { makeDeck, toMatchDeck, type SimDeck } from './deck-search/deck.js';
 import { generateDeck } from './deck-search/generate.js';
 import { runMatch, type RunMatchOptions, type RunMatchResult } from './run-match.js';
-import { DEAD_HAND_CATEGORIES, cardTelemetrySchema } from './telemetry/schema.js';
+import {
+  DEAD_HAND_CATEGORIES,
+  MECHANICALLY_UNUSABLE_CATEGORIES,
+  STRATEGICALLY_UNUSED_CATEGORIES,
+  cardTelemetrySchema,
+} from './telemetry/schema.js';
 import type { Environment } from './environment.js';
 import {
   FAST_LIMITS,
@@ -29,6 +34,9 @@ async function play(
 ): Promise<RunMatchResult> {
   const options: RunMatchOptions = {
     experimentId: 'telemetry',
+    experimentKind: 'batch',
+    configHash: 'telemetry-test',
+    arm: null,
     environment,
     matchId: `m_${seed}`,
     orderKey: seed,
@@ -128,12 +136,14 @@ describe('dead-hand categories', () => {
       // An unseen copy came from the deck and never reached a hand, so it can
       // never be counted against the pilot or against the card's playability.
       expect(row.deadHand.unseen ?? 0).toBeLessThanOrEqual(row.copiesInDeck);
-      const seen =
-        (row.deadHand.never_affordable ?? 0) +
-        (row.deadHand.no_legal_window ?? 0) +
-        (row.deadHand.legal_but_unchosen ?? 0) +
-        (row.deadHand.used ?? 0);
-      expect(seen + (row.deadHand.unseen ?? 0)).toBe(row.copiesInDeck);
+      // Every category partitions the copies exactly once. Summing over the
+      // vocabulary rather than a hand-written list means adding a category
+      // cannot silently break the partition.
+      const total = DEAD_HAND_CATEGORIES.reduce(
+        (sum, category) => sum + (row.deadHand[category] ?? 0),
+        0,
+      );
+      expect(total).toBe(row.copiesInDeck);
     }
   });
 
@@ -180,23 +190,44 @@ describe('dead-hand categories', () => {
     }
   });
 
-  it('counts a card the engine offered and the pilot declined as legal but unchosen', async () => {
-    // A one-cost card in a deck of one-cost cards: some copy will be offered and
-    // passed over, because a hand outruns the energy curve.
+  it('separates a card the pilot declined from one it could not have played', async () => {
+    // PHASE4_HARDENING §8.2. The strategic categories claim the opportunity
+    // existed and the pilot passed; the mechanical ones claim it never existed.
+    // Conflating them would let "the bots do not like this card" masquerade as
+    // "this card cannot be played".
     const env = tinyEnvironment();
     const deck = generateDeck(env, 'unchosen').deck as SimDeck;
-    let found = false;
-    for (let index = 0; index < 8 && !found; index += 1) {
+    let strategic = 0;
+    let checked = 0;
+
+    for (let index = 0; index < 8; index += 1) {
       const { record } = await play(env, deck, deck, `unchosen-${index}`);
-      found = record.cards.some((row) => (row.deadHand.legal_but_unchosen ?? 0) > 0);
-      if (found) {
-        const row = record.cards.find((entry) => (entry.deadHand.legal_but_unchosen ?? 0) > 0)!;
-        // The category makes a claim about the pilot: the opportunity existed.
-        expect(row.playOpportunities).toBeGreaterThan(0);
-        expect(row.affordableOpportunities).toBeGreaterThan(0);
+      for (const row of record.cards) {
+        const declined = STRATEGICALLY_UNUSED_CATEGORIES.reduce(
+          (sum, category) => sum + (row.deadHand[category] ?? 0),
+          0,
+        );
+        const unusable = MECHANICALLY_UNUSABLE_CATEGORIES.reduce(
+          (sum, category) => sum + (row.deadHand[category] ?? 0),
+          0,
+        );
+        if (declined > 0) {
+          strategic += declined;
+          expect(row.playOpportunities).toBeGreaterThan(0);
+          expect(row.affordableOpportunities).toBeGreaterThan(0);
+        }
+        // A copy is only mechanically unusable if it was genuinely never
+        // affordable, and `never_affordable` is the only such category that can
+        // co-exist with an unaffordable opportunity count of zero.
+        if (unusable > 0 && (row.deadHand.never_affordable ?? 0) === unusable) {
+          expect(row.affordableOpportunities).toBe(0);
+        }
+        checked += 1;
       }
     }
-    expect(found).toBe(true);
+
+    expect(checked).toBeGreaterThan(0);
+    expect(strategic).toBeGreaterThan(0);
   });
 
   it('does not count a discarded card as used', async () => {

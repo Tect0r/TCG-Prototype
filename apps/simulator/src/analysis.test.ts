@@ -127,6 +127,9 @@ beforeAll(async () => {
 
   const outcome = await runBatch({
     experimentId: 'analysis',
+    experimentKind: 'replacement',
+    configHash: 'analysis-test',
+    arm: null,
     environment: env,
     decks,
     pilots: [VALUE_PILOT],
@@ -135,14 +138,20 @@ beforeAll(async () => {
     retention: NO_RETENTION,
     workers: 1,
     failFast: false,
-    outputDir: null,
+    sink: null,
     softwareCommit: null,
   });
   records = outcome.records;
 }, 120_000);
 
-function impactOf(target: Arm, minMatches = 10): ReplacementImpact {
-  return replacementImpact(target.variant, records, records, { minMatches });
+/**
+ * `minPairs` is explicit because the estimate is paired: the fixture plays a
+ * handful of games per arm, and the shipped default of 20 complete pairs would
+ * correctly refuse to say anything about it. The default is exercised on its own
+ * below rather than silently lowered everywhere.
+ */
+function impactOf(target: Arm, minMatches = 10, minPairs = 8): ReplacementImpact {
+  return replacementImpact(target.variant, records, records, { minMatches, minPairs });
 }
 
 /* ------------------------------------------------------------------- tests */
@@ -317,6 +326,47 @@ describe('replacement impact', () => {
     // Never a verdict.
     expect(flag?.message).not.toMatch(/overpowered|balanced|broken/i);
   });
+
+  it('reports the paired detail the headline numbers were taken from', () => {
+    // PHASE4_HARDENING §9.1. The discordant counts are the sample the difference
+    // is actually estimated from, and exclusions have to be counted rather than
+    // silently folded in as though everything were independent.
+    const impact = impactOf(stronger);
+    const paired = impact.paired as {
+      pairs: number;
+      delta: number;
+      low: number;
+      high: number;
+      candidateOnlyWins: number;
+      baselineOnlyWins: number;
+      concordantPairs: number;
+      excludedPairs: number;
+      exclusionReasons: Record<string, number>;
+      method: string;
+    };
+    expect(paired.pairs).toBe(impact.pairedGames);
+    expect(paired.delta).toBe(impact.impact);
+    expect(paired.low).toBe(impact.low);
+    expect(paired.high).toBe(impact.high);
+    expect(paired.candidateOnlyWins + paired.baselineOnlyWins + paired.concordantPairs).toBe(
+      paired.pairs,
+    );
+    expect(paired.excludedPairs).toBe(
+      Object.values(paired.exclusionReasons).reduce((sum, value) => sum + value, 0),
+    );
+    expect(paired.method).toMatch(/paired/i);
+  });
+
+  it('refuses a paired estimate when too few complete pairs survive', () => {
+    // The same real, strong effect judged against a pair count the fixture cannot
+    // reach. It must come back as insufficient rather than as a confident number.
+    const impact = replacementImpact(stronger.variant, records, records, {
+      minMatches: 1,
+      minPairs: 10_000,
+    });
+    expect(impact.pairedGames).toBeGreaterThan(0);
+    expect(impact.insufficientData).toBe(true);
+  });
 });
 
 describe('minimum support and uncertainty', () => {
@@ -373,31 +423,53 @@ describe('minimum support and uncertainty', () => {
   });
 
   it('says nothing about two cards that never appear apart', () => {
-    // Without a marginal there is no baseline, and `proportion(0, 0)` would give
-    // one of zero — turning any win rate into a lift the size of itself.
-    const pairs = cardPairs(records, { minSupport: 1 });
-    for (const pair of pairs) {
-      const hasMarginal = pair.winRateAOnly > 0 || pair.winRateBOnly > 0;
-      expect(hasMarginal || pair.lift <= 0).toBe(true);
+    // The estimand is a difference-in-differences over four cells. Without a
+    // marginal cell the contrast is *undefined*, not merely imprecise, so the
+    // pair must come back as insufficient evidence rather than as a number.
+    const pairs = cardPairs(records, { minSupport: 1, minCellSupport: 1 });
+    const withoutMarginal = pairs.filter(
+      (pair) => pair.supportAOnly === 0 || pair.supportBOnly === 0 || pair.supportNeither === 0,
+    );
+    expect(withoutMarginal.length).toBeGreaterThan(0);
+    for (const pair of withoutMarginal) {
+      expect(pair.insufficientEvidence).toBe(true);
+      expect(pair.sparseCells.length).toBeGreaterThan(0);
+      // No interval is invented for a contrast that could not be computed.
+      expect(Number.isFinite(pair.low)).toBe(false);
+      expect(Number.isFinite(pair.high)).toBe(false);
     }
-    // In this run every arm deck shares `prototype_scout`, so pairs involving it
-    // and an arm-only card have no "scout without the other" sample to compare to.
-    expect(
-      pairs.filter(
-        (pair) =>
-          (pair.cardA === 'fixture_dominant_unit' || pair.cardB === 'fixture_dominant_unit') &&
-          pair.lift >= 0.4,
-      ),
-    ).toEqual([]);
   });
 
-  it('measures pair lift against the better single card, not against 50%', () => {
-    const pairs = cardPairs(records, { minSupport: 1 });
+  it('names its estimand and keeps the descriptive lift under its own name', () => {
+    const pairs = cardPairs(records, { minSupport: 1, minCellSupport: 1 });
+    expect(pairs.length).toBeGreaterThan(0);
     for (const pair of pairs) {
-      expect(pair.lift).toBeCloseTo(
+      // `liftOverBestSingle` is the number a reader expects to see, kept but
+      // labelled so it is not mistaken for the synergy estimate.
+      expect(pair.liftOverBestSingle).toBeCloseTo(
         pair.winRateTogether - Math.max(pair.winRateAOnly, pair.winRateBOnly),
         6,
       );
+      // `interaction` is the estimand: what the second card adds on top of the
+      // first, minus what it adds alone.
+      expect(pair.interaction).toBeCloseTo(
+        pair.winRateTogether - pair.winRateAOnly - (pair.winRateBOnly - pair.winRateNeither),
+        6,
+      );
+      expect(pair.estimand).toMatch(/not a causal effect/i);
+    }
+  });
+
+  it('propagates every contributing cell into the interval, not just "both"', () => {
+    const pairs = cardPairs(records, { minSupport: 1, minCellSupport: 1, iterations: 400 });
+    const estimable = pairs.filter((pair) => !pair.insufficientEvidence);
+    // Nothing to assert if this fixture happens to have no four-cell pair; the
+    // dedicated synthetic fixture in the hardening suite covers that case.
+    for (const pair of estimable) {
+      expect(Number.isFinite(pair.low)).toBe(true);
+      expect(Number.isFinite(pair.high)).toBe(true);
+      expect(pair.high).toBeGreaterThanOrEqual(pair.low);
+      expect(pair.strata).toBeGreaterThan(0);
     }
   });
 });
