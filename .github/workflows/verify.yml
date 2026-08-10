@@ -1,0 +1,36 @@
+name: verify
+
+# Clean-checkout verification. This is the authoritative definition of "the
+# repository is green": it installs from the lockfile only, and runs the same
+# `npm run verify` a developer runs locally, on the exact Node version pinned in
+# `.nvmrc`. Nothing here is allowed to diverge from the local command.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Single source of truth for the supported runtime. `package.json`
+          # engines and the README quote the same version.
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify

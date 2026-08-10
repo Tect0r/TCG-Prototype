@@ -45,16 +45,51 @@ export {
 } from './seed.js';
 
 export {
+  cardPatchSchema,
   deckFormatSchema,
   diffEnvironments,
   environmentConfigSchema,
   environmentDiffSchema,
+  environmentSetSchema,
   resolveEnvironment,
+  type CardPatch,
   type Environment,
   type EnvironmentConfig,
   type EnvironmentConfigInput,
   type EnvironmentDiff,
+  type EnvironmentSet,
 } from './environment.js';
+
+export {
+  cardMechanics,
+  cardPilotMetadata,
+  cardPresentation,
+  computeEnvironmentHashes,
+  environmentHashesSchema,
+  snapshotCards,
+  type EnvironmentHashes,
+} from './content-hash.js';
+
+export {
+  formatReplayResult,
+  loadReplayBundle,
+  replayBundle,
+  replayFile,
+  type ReplayDivergence,
+  type ReplayOptions,
+  type ReplayResult,
+} from './replay.js';
+
+export {
+  RESOLVED_ENVIRONMENT_SCHEMA_VERSION,
+  freezeEnvironment,
+  resolvedEnvironmentSchema,
+  restoreEnvironment,
+  serializeSnapshot,
+  snapshotFileName,
+  verifyEnvironmentHashes,
+  type ResolvedEnvironment,
+} from './resolved-environment.js';
 
 export {
   checkDeck,
@@ -186,13 +221,22 @@ export {
 export { cardPairs, cardPairSchema, type CardPair } from './analysis/pairs.js';
 
 export {
+  buildInsertionVariant,
   buildReplacementVariant,
   comparableCards,
+  insertionRemovalCandidates,
   replacementImpact,
   replacementImpactSchema,
   replacementVariantSchema,
+  variantCardChangeSchema,
+  variantDirectionSchema,
+  VARIANT_DIRECTIONS,
+  type InsertionOptions,
+  type RemovalCandidate,
   type ReplacementImpact,
   type ReplacementVariant,
+  type VariantCardChange,
+  type VariantDirection,
   type VariantResult,
 } from './analysis/replacement.js';
 

@@ -83,11 +83,16 @@ export {
 export {
   cardDefinitionSchema,
   cardSetSchema,
+  cardPatchBodySchema,
+  applyCardPatch,
+  PATCHABLE_CARD_FIELDS,
   type CardDefinition,
   type CardDefinitionInput,
+  type CardPatchBody,
   type CardSet,
   type CardSetInput,
   type CardText,
+  type PatchableCardField,
 } from './schema/card.js';
 
 export { CardDatabase } from './database.js';

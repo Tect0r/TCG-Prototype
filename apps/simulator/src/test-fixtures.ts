@@ -140,6 +140,23 @@ export const FIXTURE_COMBO_PAYOFF: CardDefinitionInput = {
   displayText: 'A 1/1 that only matters alongside the enabler.',
 };
 
+/**
+ * A singleton. Exists so an insertion test can prove the builder respects the
+ * *unique* copy limit rather than the ordinary one.
+ *
+ * Deliberately **not** in `FIXTURE_CARDS`: that list is the default pool of
+ * every tiny environment, and adding a card to it changes what deck generation
+ * can roll and therefore every seeded population in the suite. A fixture that
+ * only one test needs is layered on by that test.
+ */
+export const FIXTURE_UNIQUE_UNIT: CardDefinitionInput = {
+  ...FIXTURE_BASELINE_UNIT,
+  id: 'fixture_unique_unit',
+  name: 'Fixture Unique Unit',
+  unique: true,
+  displayText: 'One copy per deck, whatever the ordinary copy limit says.',
+};
+
 export const FIXTURE_CARDS: readonly CardDefinitionInput[] = [
   FIXTURE_BASELINE_UNIT,
   FIXTURE_EQUIVALENT_UNIT,

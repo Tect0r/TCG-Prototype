@@ -4,6 +4,7 @@ import type { MatchLimits } from './run-match.js';
 import { runMatch } from './run-match.js';
 import { toMatchDeck, type SimDeck } from './deck-search/deck.js';
 import type { WorkerJob } from './workers/protocol.js';
+import { freezeEnvironment, type ResolvedEnvironment } from './resolved-environment.js';
 import {
   TELEMETRY_SCHEMA_VERSION,
   type MatchRecord,
@@ -36,6 +37,23 @@ export interface RunOneOptions {
 export interface RunOneResult {
   readonly record: MatchRecord;
   readonly replay: ReplayBundle | null;
+}
+
+/**
+ * One frozen snapshot per environment object, not per replay.
+ *
+ * Freezing walks the whole pool, and the sequential runner and each worker hold
+ * one `Environment` for the life of a batch, so the work is done once and every
+ * bundle embeds the identical (and identically hashed) result.
+ */
+const frozen = new WeakMap<Environment, ResolvedEnvironment>();
+
+function snapshotOf(environment: Environment): ResolvedEnvironment {
+  const cached = frozen.get(environment);
+  if (cached) return cached;
+  const snapshot = freezeEnvironment(environment);
+  frozen.set(environment, snapshot);
+  return snapshot;
 }
 
 export async function runOne(options: RunOneOptions): Promise<RunOneResult> {
@@ -85,7 +103,10 @@ export async function runOne(options: RunOneOptions): Promise<RunOneResult> {
     schemaVersion: TELEMETRY_SCHEMA_VERSION,
     matchId: job.matchId,
     record: { ...outcome.record, replayPath: `replays/${job.matchId}.json` },
-    environment: options.environment.config,
+    // The resolved environment, not the recipe that produced it: a bundle has to
+    // reproduce without the current card database, and a config cannot do that
+    // (readiness §9 G1).
+    environment: snapshotOf(options.environment),
     decks: job.seats.map((seat) => options.decks[seat.deckIndex] ?? null),
     pilots: job.seats.map((seat) => options.pilots[seat.pilotIndex] ?? null),
     actions: [...outcome.actions],

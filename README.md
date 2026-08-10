@@ -24,7 +24,10 @@ The full project specification is in [CLAUDE.md](CLAUDE.md).
 
 ## Requirements
 
-- Node.js **20.11 or newer** (developed on 24)
+- Node.js **24.15.0** — pinned in [`.nvmrc`](.nvmrc) and [`.node-version`](.node-version),
+  enforced by `package.json#engines`, and used by CI. The 24 line is the lowest
+  version `jsdom@30` accepts, so an older Node installs but fails the tests.
+  `nvm use` (or `fnm use`) in the repository root picks it up.
 - npm 10+ (ships with Node)
 
 ## Setup and run
@@ -168,6 +171,55 @@ npm run simulate -- --config experiments/pilot-robustness.json     # do conclusi
 
 Other flags: `--output <dir>` to place the experiment directory, `--resume` to
 continue an interrupted run, `--quiet` to suppress progress, `--help`.
+
+### Replaying one match
+
+```bash
+npm run simulate -- --replay results/<experiment>/replays/<match>.json
+npm run simulate -- --replay results/<experiment>/replays/<match>.json --trace
+```
+
+This re-derives the recorded match and compares the events and the result against
+the bundle. It prints the first divergence — sequence number, the action being
+applied, expected and actual — and exits nonzero, so a change in engine behaviour
+is a build failure rather than a second plausible-looking artefact.
+
+It takes no configuration and never reads the card database. Every bundle embeds
+the **fully resolved** environment it was played under — each card definition in
+full, the rules configuration, and the deck format — so a bundle reproduces even
+after the cards in this repository are renamed, recosted, rewritten, or deleted.
+A bundle whose stored hashes disagree with its own content is a hard error.
+
+Every experiment also writes that snapshot beside its results, as
+`resolved-environment.json` and as a content-addressed copy under
+`environments/`.
+
+### Four hashes, not one
+
+An environment carries four hashes because they answer different questions, and
+a single hash answered none of them precisely:
+
+| Hash               | Answers                                      |
+| ------------------ | -------------------------------------------- |
+| `mechanicsHash`    | Will the engine replay this identically?     |
+| `pilotInputHash`   | Will the same pilot make the same decisions? |
+| `presentationHash` | Has any player-facing text changed?          |
+| `fullContentHash`  | Is this byte-for-byte the same content?      |
+
+So correcting a typo in a card's display text no longer invalidates an
+experiment, while changing its cost, tags or effects does. All four appear in
+`report.md` and `manifest.json`.
+
+For an ordinary balance edit, prefer a card **patch** over duplicating a whole
+definition into `cardOverrides`:
+
+```json
+{ "cardId": "scorch", "note": "one cheaper", "patch": { "cost": 2 } }
+```
+
+A patch changes only the fields it names, is re-validated as a complete card, and
+the environment diff — including the full before and after definitions printed in
+the report — is derived from what actually resolved rather than from the prose.
 
 Each run writes a directory described in
 [ADR 0012](docs/architecture/0012-experiment-storage-and-checkpointing.md) and

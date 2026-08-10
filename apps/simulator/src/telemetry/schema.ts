@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { cardIdSchema } from '@tcg/card-data';
 import { botFailureSchema } from '@tcg/bot-interface';
+import { resolvedEnvironmentSchema } from '../resolved-environment.js';
 import { seedBundleSchema } from '../seed.js';
 
 /**
@@ -319,12 +320,19 @@ export function recordIdentity(record: Pick<MatchRecord, 'matchId' | 'arm'>): st
  *
  * Written for every abnormal match and for a configurable sample of normal ones
  * (CLAUDE.md §13.5).
+ *
+ * `environment` is the *frozen* environment, not the config that produced it
+ * (readiness §9 G1). A bundle carrying the recipe would re-resolve against
+ * whatever card data the checkout holds at replay time, which means an old
+ * artefact quietly reproduces a different match while still displaying its
+ * original hash. Embedding the resolved definitions is what makes "this bundle
+ * reproduces on its own" a true statement rather than a hopeful one.
  */
 export const replayBundleSchema = z.strictObject({
   schemaVersion: z.literal(TELEMETRY_SCHEMA_VERSION),
   matchId: z.string(),
   record: matchRecordSchema,
-  environment: z.unknown(),
+  environment: resolvedEnvironmentSchema,
   decks: z.array(z.unknown()),
   pilots: z.array(z.unknown()),
   actions: z.array(z.unknown()),

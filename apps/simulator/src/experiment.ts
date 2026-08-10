@@ -17,6 +17,7 @@ import {
   type DeclaredDiffCheck,
   type Environment,
 } from './environment.js';
+import { freezeEnvironment, serializeSnapshot, snapshotFileName } from './resolved-environment.js';
 import { resolveDeckSource } from './deck-source.js';
 import { buildSchedule } from './schedule.js';
 import { runBatch, type BatchProgress } from './run-batch.js';
@@ -36,6 +37,7 @@ import {
 import { analyzeRobustness, type RobustnessReport } from './analysis/robustness.js';
 import { describeMultiplicity, type Multiplicity } from './analysis/paired.js';
 import {
+  buildInsertionVariant,
   buildReplacementVariant,
   comparableCards,
   replacementImpact,
@@ -285,9 +287,26 @@ async function runReplacementExperiment(
   for (const base of baseSource.decks) {
     if (!base.cards.some((entry) => entry.cardId === config.subjectCardId)) {
       if (!config.includeInsertion) continue;
-      notes.push(
-        `"${base.id}" does not run ${config.subjectCardId}; it is used as an insertion control only.`,
+      // A card no deck runs cannot be measured by taking it out of one. The
+      // insertion arm is the other half of the controlled experiment: put the
+      // card in, pay for the slots with comparable cards, and replay the same
+      // seeded games (CLAUDE.md §13.10, readiness §3 A1).
+      const inserted = buildInsertionVariant(
+        base,
+        environment,
+        config.subjectCardId,
+        config.insertionCopies,
+        config.insertionRemoveCardIds.length > 0
+          ? { removeCardIds: config.insertionRemoveCardIds }
+          : {},
       );
+      if (!inserted.deck || !inserted.variant) {
+        notes.push(
+          `Could not insert ${config.subjectCardId} into "${base.id}": ${inserted.reasons.join('; ')}`,
+        );
+        continue;
+      }
+      variants.push({ deck: inserted.deck, variant: inserted.variant });
       continue;
     }
     const commander = environment.database.get(base.commanderId);
@@ -971,6 +990,15 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   const primary = inputs.environments[0];
   if (!primary) throw new Error('An experiment needs at least one environment.');
 
+  // Freeze every environment the run used, content-addressed (readiness §9 G1).
+  // `config.json` alone is only a recipe: it resolves against whatever card data
+  // the checkout happens to hold, so an experiment kept for six months would
+  // silently re-resolve to edited cards while still carrying its original hashes.
+  // The snapshots are the record. Computed here so the manifest and the report
+  // can name the files they are about to sit beside.
+  const snapshots = inputs.environments.map((environment) => freezeEnvironment(environment));
+  const snapshotPaths = snapshots.map((snapshot) => `environments/${snapshotFileName(snapshot)}`);
+
   const allRecords = inputs.store.all();
   const records =
     inputs.primaryArm === undefined ? allRecords : inputs.store.arm(inputs.primaryArm);
@@ -1067,11 +1095,13 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     seedDerivationVersion: SEED_DERIVATION_VERSION,
     telemetrySchemaVersion: TELEMETRY_SCHEMA_VERSION,
     analysisStatsVersion: ANALYSIS_STATS_VERSION,
-    environmentSummaries: inputs.environments.map((environment) => ({
+    environmentSummaries: inputs.environments.map((environment, index) => ({
       id: environment.id,
       hash: environment.hash,
       cardPoolHash: environment.cardPoolHash,
+      hashes: environment.hashes,
       label: environment.label,
+      snapshotPath: snapshotPaths[index] ?? null,
     })),
     settings,
     aggregate: agg,
@@ -1104,6 +1134,19 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
 
   ensureDir(paths.root);
   writeJson(paths.config, config);
+
+  ensureDir(paths.environments);
+  for (const snapshot of snapshots) {
+    // Canonical serialization, so a snapshot's file name and its bytes agree:
+    // two runs that resolved the same content produce the same file.
+    writeFileText(
+      join(paths.environments, snapshotFileName(snapshot)),
+      serializeSnapshot(snapshot),
+    );
+  }
+  const primarySnapshot = snapshots[0];
+  if (primarySnapshot) writeJson(paths.resolvedEnvironment, primarySnapshot);
+
   writeJson(paths.manifest, {
     schemaVersion: 2,
     experimentId: config.id,
@@ -1117,13 +1160,19 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     reportSchemaVersion: REPORT_SCHEMA_VERSION,
     rulesVersion: primary.rulesConfig.version,
     softwareCommit: records[0]?.softwareCommit ?? null,
-    environments: inputs.environments.map((environment) => ({
+    environments: inputs.environments.map((environment, index) => ({
       id: environment.id,
       label: environment.label,
       hash: environment.hash,
       cardPoolHash: environment.cardPoolHash,
+      // All four, because each answers a different question and a reader
+      // checking one guarantee should not have to recompute the others (§9 G3).
+      hashes: environment.hashes,
       poolSize: environment.pool.length,
       commanders: environment.commanders.length,
+      formatId: environment.formatId,
+      sets: environment.sets,
+      snapshotPath: snapshotPaths[index] ?? null,
     })),
     ...(inputs.referencePopulation
       ? {

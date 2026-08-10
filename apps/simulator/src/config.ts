@@ -324,8 +324,26 @@ export const replacementConfigSchema = z.strictObject({
   copies: z.union([z.number().int().min(1).max(4), z.literal('all')]).default('all'),
   gamesPerPairing: z.number().int().min(1).max(10_000).default(4),
   mirrorSeats: z.boolean().default(true),
-  /** Also insert the subject into decks that do not run it (CLAUDE.md §13.10). */
+  /**
+   * Also insert the subject into base decks that do not run it (CLAUDE.md
+   * §13.10).
+   *
+   * This builds a real variant: the requested copies go in, an equal number of
+   * copies come out of comparable cards so the deck size is unchanged, and the
+   * two arms replay the same seeded games. It is the only controlled experiment
+   * available for a brand-new card or a build-around no existing deck runs.
+   */
   includeInsertion: z.boolean().default(true),
+  /** Copies inserted per insertion variant; `all` fills to the copy limit. */
+  insertionCopies: z.union([z.number().int().min(1).max(4), z.literal('all')]).default(1),
+  /**
+   * Cards that must pay for an insertion, in priority order.
+   *
+   * Empty means the builder ranks the base deck's own cards by comparability to
+   * the inserted card and cuts round-robin down that ranking. Naming them is for
+   * an experiment that already knows which slots it wants to spend.
+   */
+  insertionRemoveCardIds: z.array(cardIdSchema).default([]),
   /**
    * The opponent decks a "counter" is supposed to answer (PHASE4_HARDENING §10.2).
    *

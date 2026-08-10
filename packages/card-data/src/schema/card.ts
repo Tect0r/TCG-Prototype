@@ -197,6 +197,84 @@ export type CardDefinition = z.infer<typeof cardDefinitionSchema>;
 /** Card shape before schema defaults are applied — what authors write in JSON. */
 export type CardDefinitionInput = z.input<typeof cardDefinitionSchema>;
 
+/**
+ * Fields a card *patch* may change.
+ *
+ * A deliberate allow-list rather than a partial of the whole card. `id` and
+ * `type` are excluded because changing either produces a different card wearing
+ * the old one's identity, and every deck hash, record and replay downstream
+ * would then be quietly wrong about what was played. `schemaVersion` is excluded
+ * because a patch is not a migration.
+ */
+export const PATCHABLE_CARD_FIELDS = [
+  'name',
+  'colorIdentity',
+  'cost',
+  'attack',
+  'health',
+  'unique',
+  'collectible',
+  'tags',
+  'keywords',
+  'role',
+  'powerClass',
+  'effects',
+  'abilities',
+  'activatedAbilities',
+  'staticAbilities',
+  'displayText',
+  'text',
+] as const;
+export type PatchableCardField = (typeof PATCHABLE_CARD_FIELDS)[number];
+
+/**
+ * The body of a card patch: any subset of the patchable fields.
+ *
+ * Deliberately **not** `baseCardSchema.pick(…).partial()`, which is the obvious
+ * construction and the wrong one. `.partial()` makes a field optional but leaves
+ * its `.default()` in place, and a default fires when the key is absent — so
+ * every patch would arrive carrying `tags: []`, `keywords: []` and `effects: []`
+ * whether or not it mentioned them, and `{ "cost": 3 }` would silently delete the
+ * card's rules text along with its cost. A default exists to fill a field an
+ * author left out of a whole card; a patch omitting a field is saying that field
+ * does not move. Stripping the default is what makes those two mean different
+ * things.
+ */
+const patchableCardShape = Object.fromEntries(
+  PATCHABLE_CARD_FIELDS.map((field) => {
+    const base: z.ZodType = baseCardSchema.shape[field];
+    const stripped = base instanceof z.ZodDefault ? (base.unwrap() as z.ZodType) : base;
+    return [field, stripped instanceof z.ZodOptional ? stripped : stripped.optional()];
+  }),
+) as { [K in PatchableCardField]: z.ZodOptional<z.ZodType<CardDefinition[K]>> };
+
+export const cardPatchBodySchema = z.strictObject(patchableCardShape);
+export type CardPatchBody = z.input<typeof cardPatchBodySchema>;
+
+/**
+ * Applies a patch to a resolved card and re-validates the result.
+ *
+ * Re-validating is the point: a patch that sets a Commander's cost or gives a
+ * spell a triggered ability must fail here, exactly as it would if an author had
+ * written the whole card that way. Returns the parse result rather than throwing
+ * so the caller can attach the environment and card the patch came from.
+ *
+ * A patch can only change fields it names. Removing a field entirely is not a
+ * balance edit and is not expressible here — supply the whole definition through
+ * `cardOverrides` instead.
+ */
+export function applyCardPatch(
+  card: CardDefinition,
+  patch: CardPatchBody,
+): ReturnType<typeof cardDefinitionSchema.safeParse> {
+  const merged: Record<string, unknown> = { ...card };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    merged[key] = value;
+  }
+  return cardDefinitionSchema.safeParse(merged);
+}
+
 export const cardSetSchema = z.strictObject({
   schemaVersion: z.number().int().min(1).max(CARD_SCHEMA_VERSION),
   setId: z

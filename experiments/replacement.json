@@ -42,6 +42,28 @@
           { "cardId": "overload_conduit", "quantity": 1 },
           { "cardId": "worldbreaker_engine", "quantity": 1 }
         ]
+      },
+      {
+        "id": "izzet_tempo_no_champion",
+        "label": "Blue/red tempo without Pyre Champion — the insertion arm",
+        "commanderId": "prototype_commander_blue_red",
+        "cards": [
+          { "cardId": "goblin_scout", "quantity": 2 },
+          { "cardId": "scorch", "quantity": 2 },
+          { "cardId": "warband_horn", "quantity": 2 },
+          { "cardId": "powder_keg_runner", "quantity": 2 },
+          { "cardId": "stormforge_adept", "quantity": 2 },
+          { "cardId": "tidepool_apprentice", "quantity": 2 },
+          { "cardId": "mistveil_stalker", "quantity": 2 },
+          { "cardId": "desperate_insight", "quantity": 2 },
+          { "cardId": "arcane_recall", "quantity": 2 },
+          { "cardId": "tide_binder", "quantity": 2 },
+          { "cardId": "prototype_scout", "quantity": 2 },
+          { "cardId": "prototype_guard", "quantity": 2 },
+          { "cardId": "trench_guard", "quantity": 2 },
+          { "cardId": "surveyors_lens", "quantity": 2 },
+          { "cardId": "field_survey", "quantity": 2 }
+        ]
       }
     ]
   },
@@ -126,6 +148,7 @@
   "gamesPerPairing": 8,
   "mirrorSeats": true,
   "includeInsertion": true,
+  "insertionCopies": 2,
   "limits": { "maxTurns": 150 },
   "retention": { "replaySampleRate": 0 },
   "analysis": {

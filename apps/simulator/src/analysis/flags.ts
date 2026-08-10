@@ -494,7 +494,7 @@ function replacementFlags(inputs: FlagInputs): Flag[] {
         reason: 'large_replacement_impact',
         subject: impact.subjectCardId,
         message:
-          `The replacement test for ${impact.subjectCardId} ran ${impact.baseMatches} base and ` +
+          `The ${impact.direction} test for ${impact.subjectCardId} ran ${impact.baseMatches} base and ` +
           `${impact.variantMatches} variant seat-matches, below the configured minimum. Nothing is claimed.`,
         evidence: { base: impact.baseMatches, variant: impact.variantMatches },
         sampleSize: Math.min(impact.baseMatches, impact.variantMatches),
@@ -513,8 +513,11 @@ function replacementFlags(inputs: FlagInputs): Flag[] {
         reason: 'large_replacement_impact',
         subject: impact.subjectCardId,
         message:
-          `Swapping ${impact.subjectCardId} for ` +
-          `${impact.replacementCardId ?? 'nothing'} moved the deck's win rate by ` +
+          (impact.direction === 'insertion'
+            ? `Inserting ${impact.subjectCardId} in place of ` +
+              `${impact.removedCards.map((entry) => `${entry.quantity}× ${entry.cardId}`).join(', ') || 'nothing'}`
+            : `Swapping ${impact.subjectCardId} for ${impact.replacementCardId ?? 'nothing'}`) +
+          ` moved the deck's win rate by ` +
           `${round(impact.impact * 100, 1)} points ` +
           `(${round(impact.low * 100, 1)} to ${round(impact.high * 100, 1)}, ${impact.effectSizeLabel} effect) ` +
           `over ${impact.pairedGames} paired games.` +

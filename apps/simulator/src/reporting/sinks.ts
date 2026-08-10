@@ -148,6 +148,10 @@ export interface ExperimentPaths {
   /** Sidecar identifying which configuration wrote `matches.jsonl`. */
   readonly matchesHeader: string;
   readonly decks: string;
+  /** The primary environment, frozen in full (readiness §9 G1). */
+  readonly resolvedEnvironment: string;
+  /** One content-addressed snapshot per environment the run used, including arms. */
+  readonly environments: string;
   /** The frozen reference population a comparison replayed in both environments. */
   readonly referencePopulation: string;
   readonly cardUsage: string;
@@ -168,6 +172,8 @@ export function experimentPaths(root: string): ExperimentPaths {
     matches: join(root, 'matches.jsonl'),
     matchesHeader: join(root, 'matches.header.json'),
     decks: join(root, 'decks.json'),
+    resolvedEnvironment: join(root, 'resolved-environment.json'),
+    environments: join(root, 'environments'),
     referencePopulation: join(root, 'reference-population.json'),
     cardUsage: join(root, 'card-usage.csv'),
     cardPairs: join(root, 'card-pairs.csv'),

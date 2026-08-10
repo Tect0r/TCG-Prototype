@@ -1,15 +1,18 @@
 import { z } from 'zod';
 import {
   CardDatabase,
+  applyCardPatch,
   cardDefinitionSchema,
   cardIdSchema,
+  cardPatchBodySchema,
   loadBundledCardData,
   type CardDefinition,
   type CardId,
 } from '@tcg/card-data';
 import { DEFAULT_DECK_FORMAT, type DeckFormatConfig } from '@tcg/deck';
 import { DEFAULT_RULES_CONFIG, rulesConfigSchema, type RulesConfig } from '@tcg/rules-engine';
-import { canonicalJson, digestOf } from './hash.js';
+import { computeEnvironmentHashes, snapshotCards, type EnvironmentHashes } from './content-hash.js';
+import { canonicalJson } from './hash.js';
 
 /**
  * An environment: the versioned bundle a set of matches was played under
@@ -34,6 +37,23 @@ export const deckFormatSchema = z.strictObject({
     .default(DEFAULT_DECK_FORMAT.maxCommanderColors),
 });
 
+/**
+ * A small, reviewable balance edit to an existing card.
+ *
+ * The alternative — a complete duplicated `CardDefinition` in `cardOverrides` —
+ * makes an ordinary cost change a forty-line diff in which the one number that
+ * matters is invisible, and lets an unrelated field drift between the two copies
+ * without anybody noticing. A patch states only what moves; the environment diff
+ * is then derived from what actually resolved rather than from the prose.
+ */
+export const cardPatchSchema = z.strictObject({
+  cardId: cardIdSchema,
+  /** Optional human note. Never used to decide whether the patch applied. */
+  note: z.string().max(200).default(''),
+  patch: cardPatchBodySchema,
+});
+export type CardPatch = z.infer<typeof cardPatchSchema>;
+
 export const environmentConfigSchema = z.strictObject({
   /** Stable identifier. Appears in seeds, match IDs and every record. */
   id: z
@@ -45,11 +65,23 @@ export const environmentConfigSchema = z.strictObject({
    * resolved config still re-validates when a worker re-parses it. */
   label: z.string().max(80).default(''),
   /**
-   * Card definitions layered over the bundled set. A definition whose ID already
-   * exists *replaces* it — that is how a candidate environment changes a card's
-   * numbers without editing the shipped data files.
+   * Named content sets to load, in place of the default format's selection.
+   *
+   * Empty means "whatever the named format selects", and no format means the
+   * repository's default playtest format. Prototype fixture cards are only ever
+   * present when a set or format explicitly asks for them (readiness §4 B4).
+   */
+  sets: z.array(z.string().min(1)).default([]),
+  /** Named format manifest to select sets and cards by. `null` uses the default. */
+  format: z.string().min(1).nullable().default(null),
+  /**
+   * Whole card definitions layered over the selected sets. A definition whose ID
+   * already exists *replaces* it. Use this to add a card that does not exist yet;
+   * use `cardPatches` for an ordinary balance edit to one that does.
    */
   cardOverrides: z.array(cardDefinitionSchema).default([]),
+  /** Field-level edits to cards that already exist. Applied after overrides. */
+  cardPatches: z.array(cardPatchSchema).default([]),
   /** When set, only these IDs may appear in a generated or accepted deck. */
   allowCardIds: z.array(cardIdSchema).nullable().default(null),
   banCardIds: z.array(cardIdSchema).default([]),
@@ -59,19 +91,47 @@ export const environmentConfigSchema = z.strictObject({
 export type EnvironmentConfig = z.infer<typeof environmentConfigSchema>;
 export type EnvironmentConfigInput = z.input<typeof environmentConfigSchema>;
 
+/**
+ * A content set an environment drew cards from, at the version it was read at.
+ *
+ * Empty until sets are explicit source manifests (readiness §5 C1); the field
+ * exists now so a snapshot written today keeps the same shape once they are.
+ */
+export const environmentSetSchema = z.strictObject({
+  setId: z.string().min(1),
+  name: z.string(),
+  version: z.number().int().min(1),
+  status: z.string(),
+  contentHash: z.string(),
+});
+export type EnvironmentSet = z.infer<typeof environmentSetSchema>;
+
 export interface Environment {
   readonly id: string;
   readonly label: string;
-  /** Content hash of the whole bundle. Two equal hashes are the same rules. */
+  /**
+   * Identity of the whole resolved bundle — the `fullContentHash`. Two equal
+   * hashes are byte-identical content, including player-facing text.
+   */
   readonly hash: string;
-  /** Content hash of just the playable card pool and its definitions. */
+  /**
+   * Identity of what the *engine* executes — the `mechanicsHash`. This is the
+   * hash a replay equivalence claim rests on, and the one that deliberately does
+   * not move when a card's flavour text is corrected.
+   */
   readonly cardPoolHash: string;
+  /** All four hashes, separated by what they actually guarantee (§9 G3). */
+  readonly hashes: EnvironmentHashes;
   readonly database: CardDatabase;
   readonly deckFormat: DeckFormatConfig;
   readonly rulesConfig: RulesConfig;
   /** Deckable, collectible, allowed cards — the pool deck generation draws from. */
   readonly pool: readonly CardDefinition[];
   readonly commanders: readonly CardDefinition[];
+  /** Content sets the cards came from. Empty means "the bundled prototype data". */
+  readonly sets: readonly EnvironmentSet[];
+  /** Format manifest this environment was selected by, when it had one. */
+  readonly formatId: string | null;
   readonly config: EnvironmentConfig;
 }
 
@@ -89,7 +149,29 @@ export function resolveEnvironment(input: EnvironmentConfigInput): Environment {
       .all()
       .map((card) => [card.id, card]),
   );
+
+  // Overrides first, patches second: a patch edits the definition the experiment
+  // actually runs, which may itself have been supplied by an override.
   for (const override of config.cardOverrides) byId.set(override.id, override);
+  for (const entry of config.cardPatches) {
+    const base = byId.get(entry.cardId);
+    if (!base) {
+      throw new Error(
+        `Environment "${config.id}" patches "${entry.cardId}", which does not exist in the ` +
+          'resolved card pool. A patch edits a card; use `cardOverrides` to add one.',
+      );
+    }
+    const patched = applyCardPatch(base, entry.patch);
+    if (!patched.success) {
+      throw new Error(
+        `Environment "${config.id}" patches "${entry.cardId}" into an invalid card:\n` +
+          patched.error.issues
+            .map((issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`)
+            .join('\n'),
+      );
+    }
+    byId.set(entry.cardId, patched.data);
+  }
   const database = new CardDatabase([...byId.values()]);
 
   const banned = new Set(config.banCardIds);
@@ -106,23 +188,33 @@ export function resolveEnvironment(input: EnvironmentConfigInput): Environment {
   });
   const deckFormat: DeckFormatConfig = { ...config.deckFormat };
 
-  // Only the cards that can actually appear in a match contribute to the pool
-  // hash, so banning a card nobody could play does not invalidate a comparison.
-  const cardPoolHash = digestOf({
-    pool: pool.map((card) => card),
-    commanders: commanders.map((card) => card),
+  // Hashed over exactly the card set a snapshot will later freeze — the playable
+  // cards plus the tokens they reach — so a frozen environment's hashes equal the
+  // live one's rather than merely resembling them. Cards nobody could play are
+  // excluded, so banning an unreachable card does not invalidate a comparison.
+  const hashes = computeEnvironmentHashes({
+    cards: snapshotCards(pool, commanders, database),
+    rulesConfig,
+    deckFormat,
+    poolCardIds: pool.map((card) => card.id),
+    commanderCardIds: commanders.map((card) => card.id),
   });
 
   return {
     id: config.id,
     label: config.label || config.id,
-    hash: digestOf({ cardPoolHash, rulesConfig, deckFormat }),
-    cardPoolHash,
+    hash: hashes.fullContentHash,
+    // Every seed and match ID derives from `environmentId`, never from a hash, so
+    // repointing these at the separated hashes moves no seed and renames no match.
+    cardPoolHash: hashes.mechanicsHash,
+    hashes,
     database,
     deckFormat,
     rulesConfig,
     pool,
     commanders,
+    sets: [],
+    formatId: config.format,
     config,
   };
 }

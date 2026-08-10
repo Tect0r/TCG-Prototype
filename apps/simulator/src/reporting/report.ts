@@ -1,4 +1,5 @@
 import type { AnalysisSettings } from '../config.js';
+import type { EnvironmentHashes } from '../content-hash.js';
 import type { DeclaredDiffCheck, EnvironmentDiff } from '../environment.js';
 import type { ReferencePopulation } from '../reference-population.js';
 import type { Aggregate } from '../analysis/aggregate.js';
@@ -51,6 +52,10 @@ export interface ReportEnvironment {
   readonly hash: string;
   readonly cardPoolHash: string;
   readonly label: string;
+  /** The four separated hashes, when the caller resolved a full environment. */
+  readonly hashes?: EnvironmentHashes;
+  /** Where the frozen snapshot for this environment was written. */
+  readonly snapshotPath?: string | null;
 }
 
 export interface ReportAbnormal {
@@ -244,9 +249,21 @@ function provenance(inputs: ReportInputs): string[] {
   lines.push(`| Software commit | ${orDash(inputs.softwareCommit)} |`);
   for (const environment of inputs.environmentSummaries) {
     lines.push(
-      `| Environment \`${environment.id}\` | ${environment.label} — environment hash ` +
-        `\`${environment.hash}\`, card-pool hash \`${environment.cardPoolHash}\` |`,
+      `| Environment \`${environment.id}\` | ${environment.label} — content \`${environment.hash}\` |`,
     );
+    if (environment.hashes) {
+      // Separated by what each one actually guarantees (§9 G3), so a reader can
+      // tell "this replays identically" from "this reads identically".
+      lines.push(
+        `| ⤷ \`${environment.id}\` hashes | mechanics (replay equivalence) ` +
+          `\`${environment.hashes.mechanicsHash}\`, pilot input \`${environment.hashes.pilotInputHash}\`, ` +
+          `presentation \`${environment.hashes.presentationHash}\`, full content ` +
+          `\`${environment.hashes.fullContentHash}\` |`,
+      );
+    }
+    if (environment.snapshotPath) {
+      lines.push(`| ⤷ \`${environment.id}\` frozen as | \`${environment.snapshotPath}\` |`);
+    }
   }
   if (inputs.referencePopulation) {
     lines.push(
@@ -749,18 +766,27 @@ function cardPairSection(inputs: ReportInputs): string[] {
 
 function replacementSection(inputs: ReportInputs): string[] {
   if (inputs.replacements.length === 0) return [];
-  const lines = ['## Controlled replacement *(controlled comparison)*', ''];
+  const lines = ['## Controlled replacement and insertion *(controlled comparison)*', ''];
   lines.push(
     'One card changed, everything else held fixed: the same base deck, the same opponents, the ' +
       'same shuffles and the same pilot streams. Analysed as **paired** outcomes, because the two ' +
       'arms share their seeds by construction and treating them as independent samples would ' +
-      'discard the design. A positive impact means the deck did worse *without* the subject card.',
+      'discard the design. A positive impact always means the deck did worse *without* the ' +
+      'subject card, in both directions.',
   );
   lines.push('');
   lines.push(
-    '| Card | Replaced with | Base | Variant | Impact | Interval | Pairs | Discordant | Excluded | Confounds |',
+    '`removal` takes the card out of a deck that ran it. `insertion` puts it into a deck that did ' +
+      'not, cutting comparable cards to hold the deck size — the only controlled experiment ' +
+      'available for a new card or a build-around no deck runs yet. An insertion into a deck with ' +
+      'no support for the card is a **stress test**, and a poor result there is evidence about ' +
+      'that pairing, not about the card.',
   );
-  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+  lines.push('');
+  lines.push(
+    '| Card | Direction | Swapped for / paid by | Base | Variant | Impact | Interval | Pairs | Discordant | Excluded | Confounds |',
+  );
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const impact of inputs.replacements) {
     const paired = impact.paired as
       | {
@@ -770,8 +796,13 @@ function replacementSection(inputs: ReportInputs): string[] {
         }
       | undefined;
     const estimate = impact.insufficientData ? 'insufficient evidence' : pts(impact.impact);
+    const paidBy =
+      impact.direction === 'insertion'
+        ? impact.removedCards.map((entry) => `${entry.quantity}× \`${entry.cardId}\``).join(', ') ||
+          '—'
+        : `\`${impact.replacementCardId ?? '—'}\``;
     lines.push(
-      `| \`${impact.subjectCardId}\` | \`${impact.replacementCardId ?? '—'}\` | ` +
+      `| \`${impact.subjectCardId}\` | ${impact.direction} | ${paidBy} | ` +
         `${pct(impact.baseWinRate)} | ${pct(impact.variantWinRate)} | ${estimate} | ` +
         `${interval(impact.low, impact.high, pts)} | ${impact.pairedGames} | ` +
         `${orDash(
@@ -784,10 +815,11 @@ function replacementSection(inputs: ReportInputs): string[] {
   if (confounded.length > 0) {
     lines.push('');
     for (const impact of confounded) {
-      lines.push(
-        `- \`${impact.subjectCardId}\` → \`${impact.replacementCardId ?? 'nothing'}\` is **not a ` +
-          `clean comparison**: ${impact.confounds.join('; ')}.`,
-      );
+      const label =
+        impact.direction === 'insertion'
+          ? `inserting \`${impact.subjectCardId}\``
+          : `\`${impact.subjectCardId}\` → \`${impact.replacementCardId ?? 'nothing'}\``;
+      lines.push(`- ${label} is **not a clean comparison**: ${impact.confounds.join('; ')}.`);
     }
   }
 

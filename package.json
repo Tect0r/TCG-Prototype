@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Standalone browser card-game prototype: deck builder now, rules engine / multiplayer / simulator later.",
+  "description": "Standalone browser card-game prototype: deck builder, deterministic rules engine, authoritative 2-4 player online matches, and a local headless balance laboratory.",
   "engines": {
-    "node": ">=20.11"
+    "node": ">=24.15.0 <25"
   },
   "workspaces": [
     "packages/*",
@@ -25,7 +25,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "validate:content": "vite-node packages/help-content/src/cli.ts",
-    "verify": "npm run typecheck && npm run lint && npm run validate:content && npm run test && npm run build",
+    "content:build": "vite-node packages/card-data/src/content/cli.ts --",
+    "content:check": "vite-node packages/card-data/src/content/cli.ts -- --check",
+    "cards:new": "vite-node scripts/new-card.ts --",
+    "verify": "npm run content:check && npm run typecheck && npm run lint && npm run format:check && npm run validate:content && npm run test && npm run build",
     "gen:placeholder-art": "node scripts/generate-placeholder-art.mjs",
     "simulate": "vite-node apps/simulator/src/cli.ts --",
     "bench": "vite-node apps/simulator/src/benchmark.ts --"

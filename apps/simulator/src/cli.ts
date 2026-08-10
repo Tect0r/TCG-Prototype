@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseExperimentConfig } from './config.js';
 import { runExperiment, detectSoftwareCommit } from './experiment.js';
+import { formatReplayResult, replayFile } from './replay.js';
 import { experimentPaths } from './reporting/sinks.js';
 
 /**
@@ -16,7 +17,12 @@ import { experimentPaths } from './reporting/sinks.js';
  * npm run simulate -- --config experiments/candidate-vs-baseline.json
  * npm run simulate -- --config experiments/pilot-robustness.json
  * npm run simulate -- --config experiments/batch.json --resume
+ * npm run simulate -- --replay results/<experiment>/replays/<match>.json
  * ```
+ *
+ * `--replay` is the one mode that takes no configuration: a replay bundle carries
+ * its own frozen environment, so it reproduces without the experiment that wrote
+ * it and without the card data currently in the checkout (readiness §9 G2).
  *
  * Every experiment kind streams its raw records to one `matches.jsonl`, so
  * `--resume` means the same thing for a search or a comparison as it does for a
@@ -29,6 +35,8 @@ import { experimentPaths } from './reporting/sinks.js';
 
 interface CliArgs {
   readonly config: string;
+  readonly replay: string | null;
+  readonly trace: boolean;
   readonly workers: number | null;
   readonly output: string | null;
   readonly resume: boolean;
@@ -37,6 +45,8 @@ interface CliArgs {
 
 function parseArgs(argv: readonly string[]): CliArgs {
   let config = '';
+  let replay: string | null = null;
+  let trace = false;
   let workers: number | null = null;
   let output: string | null = null;
   let resume = false;
@@ -48,6 +58,12 @@ function parseArgs(argv: readonly string[]): CliArgs {
       case '--config':
       case '-c':
         config = argv[++index] ?? '';
+        break;
+      case '--replay':
+        replay = argv[++index] ?? '';
+        break;
+      case '--trace':
+        trace = true;
         break;
       case '--workers':
       case '-w':
@@ -75,7 +91,10 @@ function parseArgs(argv: readonly string[]): CliArgs {
     }
   }
 
-  if (!config) {
+  if (replay !== null) {
+    if (!replay) throw new Error('--replay needs a path to a replay bundle.');
+    if (config) throw new Error('--replay and --config are separate modes; pass only one.');
+  } else if (!config) {
     printUsage();
     throw new Error('An experiment needs --config <path>.');
   }
@@ -83,16 +102,20 @@ function parseArgs(argv: readonly string[]): CliArgs {
     throw new Error('--workers must be a positive integer.');
   }
 
-  return { config, workers, output, resume, quiet };
+  return { config, replay, trace, workers, output, resume, quiet };
 }
 
 function printUsage(): void {
   console.log(
     [
       'Usage: npm run simulate -- --config <path> [options]',
+      '       npm run simulate -- --replay <bundle.json> [--trace]',
       '',
       'Options:',
-      '  -c, --config <path>   Experiment configuration file (required).',
+      '  -c, --config <path>   Experiment configuration file.',
+      '      --replay <path>   Re-derive one recorded match from its replay bundle',
+      '                        and compare. Exits nonzero on any divergence.',
+      '      --trace           With --replay, print the replayed event log.',
       '  -w, --workers <n>     Worker threads. Results are identical at any count.',
       '  -o, --output <dir>    Override the output directory.',
       '      --resume          Skip matches already present in matches.jsonl.',
@@ -111,6 +134,17 @@ function formatDuration(ms: number): string {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+
+  if (args.replay !== null) {
+    const result = replayFile(resolve(args.replay), { trace: args.trace });
+    if (args.trace) for (const line of result.trace) console.log(line);
+    console.log(formatReplayResult(result));
+    // A divergence is a failure, not a finding: the artefact claimed something
+    // that is no longer true, and CI has to be able to notice.
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+
   const configPath = resolve(args.config);
   const raw: unknown = JSON.parse(readFileSync(configPath, 'utf8'));
   const config = parseExperimentConfig(raw);
