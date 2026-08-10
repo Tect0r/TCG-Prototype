@@ -1,29 +1,34 @@
 import type {
   EffectDefinition,
   PlayerSelector,
+  SignedValueExpression,
   TargetDefinition,
   TargetSelector,
+  ValueExpression,
   ZoneId,
 } from '@tcg/card-data';
 import { emit, type MatchContext } from './context.js';
 import { addDamageShield, damagePlayer, damageUnit, healPlayer, healUnit } from './damage.js';
 import {
+  commanderDeployCost,
   definitionOf,
   findInstance,
-  freeUnitSlots,
   hasKeyword,
   matchesCardFilter,
   playerOf,
 } from './derive.js';
 import {
   autoSelect,
+  expandTokenGroup,
   legalTargets,
   playerCandidates,
   requestedCount,
   resolvePlayerSelector,
   type TargetScope,
 } from './targeting.js';
+import { counterTarget } from './reactions.js';
 import { enqueue } from './triggers.js';
+import { evaluateCondition, evaluateSignedValue, evaluateValue } from './values.js';
 import { createInstance, discardCard, drawCards, moveToZone, shuffleDeck } from './zones.js';
 import type { ChoiceReason, ChoiceType, PendingChoice } from './schema/choice.js';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
@@ -37,13 +42,20 @@ import type { ResolutionItem } from './schema/state.js';
  */
 export type EffectOutcome =
   | { readonly kind: 'resolved' }
-  | { readonly kind: 'fizzled'; readonly reason: 'no_legal_target' | 'unsupported' }
+  | {
+      readonly kind: 'fizzled';
+      readonly reason: 'no_legal_target' | 'unsupported' | 'condition_unmet';
+    }
   | { readonly kind: 'awaiting_choice'; readonly choice: PendingChoice };
 
 const RESOLVED: EffectOutcome = { kind: 'resolved' };
 
 function scopeOf(item: ResolutionItem): TargetScope {
-  return { controllerId: item.controllerId, sourceInstanceId: item.sourceInstanceId };
+  return {
+    controllerId: item.controllerId,
+    sourceInstanceId: item.sourceInstanceId,
+    triggerSubjectInstanceId: item.triggerSubjectInstanceId,
+  };
 }
 
 export function nextChoiceId(ctx: MatchContext): string {
@@ -194,11 +206,17 @@ function resolveTargets(
 
   const candidates = legalTargets(ctx, target, scopeOf(item));
   const stored = item.selections[String(effectIndex)];
+  // A Token-group target reaches every Token sharing the chosen one's
+  // definition and controller. Expanded here, after the choice, because the
+  // group is a consequence of naming one Token rather than a wider option set
+  // (rule adjustment §8).
+  const group = (ids: readonly InstanceId[]): InstanceId[] =>
+    target.kind === 'entity' ? expandTokenGroup(ctx, target.selector, ids) : [...ids];
 
   if (stored !== undefined) {
-    return { kind: 'entities', ids: stored.filter((id) => candidates.includes(id)) };
+    return { kind: 'entities', ids: group(stored.filter((id) => candidates.includes(id))) };
   }
-  if (target.kind === 'source') {
+  if (target.kind === 'source' || target.kind === 'trigger_subject') {
     return candidates.length > 0 ? { kind: 'entities', ids: candidates } : { kind: 'fizzle' };
   }
 
@@ -223,7 +241,7 @@ function resolveTargets(
     };
   }
 
-  return { kind: 'entities', ids: autoSelect(ctx, selector, candidates) };
+  return { kind: 'entities', ids: group(autoSelect(ctx, selector, candidates)) };
 }
 
 /**
@@ -241,12 +259,26 @@ export function executeEffect(
   effectIndex: number,
 ): EffectOutcome {
   const key = String(effectIndex);
+  const scope = scopeOf(item);
+
+  // An instruction's own `if` is checked here, at resolution, not when its card
+  // was played (ruleset update §15). A skipped instruction is not a failure: the
+  // rest of the card still resolves, which is what "Draw a card. If …, draw
+  // another" means.
+  if (effect.condition && !evaluateCondition(ctx, effect.condition, scope)) {
+    return { kind: 'fizzled', reason: 'condition_unmet' };
+  }
+
+  /** Resolves an amount that may be a count of the board rather than a number. */
+  const value = (expression: ValueExpression): number => evaluateValue(ctx, expression, scope);
+  const signed = (expression: SignedValueExpression): number =>
+    evaluateSignedValue(ctx, expression, scope);
 
   switch (effect.type) {
     case 'draw': {
       const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
       if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
-      for (const playerId of players.ids) drawCards(ctx, playerId, effect.amount);
+      for (const playerId of players.ids) drawCards(ctx, playerId, value(effect.amount));
       return RESOLVED;
     }
 
@@ -269,7 +301,7 @@ export function executeEffect(
         }
 
         const hand = playerOf(ctx.state, playerId).hand;
-        const amount = Math.min(effect.amount, hand.length);
+        const amount = Math.min(value(effect.amount), hand.length);
         if (amount === 0) {
           item.selections[playerKey] = [];
           continue;
@@ -309,7 +341,9 @@ export function executeEffect(
 
       if (resolution.kind === 'players') {
         for (const playerId of resolution.ids) {
-          damagePlayer(ctx, playerId, effect.amount, { sourceInstanceId: item.sourceInstanceId });
+          damagePlayer(ctx, playerId, value(effect.amount), {
+            sourceInstanceId: item.sourceInstanceId,
+          });
         }
         return RESOLVED;
       }
@@ -321,7 +355,7 @@ export function executeEffect(
         source !== undefined && hasKeyword(source, definitionOf(ctx.database, source), 'venom');
 
       for (const targetId of resolution.ids) {
-        damageUnit(ctx, targetId, effect.amount, {
+        damageUnit(ctx, targetId, value(effect.amount), {
           sourceInstanceId: item.sourceInstanceId,
           lethal,
         });
@@ -335,10 +369,10 @@ export function executeEffect(
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
       if (resolution.kind === 'players') {
-        for (const playerId of resolution.ids) healPlayer(ctx, playerId, effect.amount);
+        for (const playerId of resolution.ids) healPlayer(ctx, playerId, value(effect.amount));
         return RESOLVED;
       }
-      for (const targetId of resolution.ids) healUnit(ctx, targetId, effect.amount);
+      for (const targetId of resolution.ids) healUnit(ctx, targetId, value(effect.amount));
       return RESOLVED;
     }
 
@@ -351,8 +385,8 @@ export function executeEffect(
         const instance = findInstance(ctx.state, targetId);
         if (!instance) continue;
         instance.statModifiers.push({
-          attack: effect.attack,
-          health: effect.health,
+          attack: signed(effect.attack),
+          health: signed(effect.health),
           duration: effect.duration,
           sourceInstanceId: item.sourceInstanceId,
           appliedOnTurn: ctx.state.turn,
@@ -360,8 +394,8 @@ export function executeEffect(
         emit(ctx, {
           type: 'stats_modified',
           instanceId: targetId,
-          attack: effect.attack,
-          health: effect.health,
+          attack: signed(effect.attack),
+          health: signed(effect.health),
           duration: effect.duration,
         });
       }
@@ -410,31 +444,34 @@ export function executeEffect(
       const definition = ctx.database.get(effect.tokenCardId);
       if (!definition) return { kind: 'fizzled', reason: 'unsupported' };
 
+      const tokenCount = value(effect.amount);
       for (const playerId of players.ids) {
-        for (let i = 0; i < effect.amount; i += 1) {
+        const created: InstanceId[] = [];
+        for (let i = 0; i < tokenCount; i += 1) {
           const player = playerOf(ctx.state, playerId);
-          const slot = freeUnitSlots(player)[0];
-          if (slot === undefined) {
-            // The battlefield is full: the token is simply never created.
-            emit(ctx, {
-              type: 'token_creation_failed',
-              playerId,
-              definitionId: definition.id,
-              reason: 'no_free_slot',
-            });
-            break;
-          }
+          // Every requested token is created. There is no battlefield limit to
+          // run out of, so the old "not created at all" outcome is gone
+          // (ruleset update §7).
           const token = createInstance(ctx, definition.id, playerId, 'battlefield', {
             isToken: true,
-            slot,
           });
-          player.units[slot] = token.instanceId;
+          player.units.push(token.instanceId);
+          created.push(token.instanceId);
           emit(ctx, {
             type: 'token_created',
             playerId,
             instanceId: token.instanceId,
             definitionId: definition.id,
-            slot,
+          });
+          // A token arrives on the battlefield without being deployed: it was
+          // never played and never paid for, so it fires the entry event and not
+          // the deployment one (rule adjustment §7).
+          emit(ctx, {
+            type: 'unit_entered_battlefield',
+            playerId,
+            instanceId: token.instanceId,
+            definitionId: definition.id,
+            method: 'token_created',
           });
 
           // A token entering play resolves its own deploy effects, exactly as a
@@ -453,6 +490,20 @@ export function executeEffect(
               completesSpell: false,
             });
           }
+        }
+
+        // One event for the whole batch, after every token has arrived. "Whenever
+        // you create one or more Tokens" fires once for a five-token instruction,
+        // not five times, and the ability that reacts sees the finished board
+        // rather than a partly-built one (ruleset update §13).
+        if (created.length > 0) {
+          emit(ctx, {
+            type: 'tokens_created',
+            playerId,
+            definitionId: definition.id,
+            instanceIds: created,
+            count: created.length,
+          });
         }
       }
       return RESOLVED;
@@ -475,6 +526,49 @@ export function executeEffect(
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
       for (const targetId of resolution.ids) moveToZone(ctx, targetId, 'hand');
+      return RESOLVED;
+    }
+
+    case 'counter': {
+      const entry = counterTarget(ctx);
+      // Nothing left to counter: everything above this Reaction already
+      // resolved, and there was nothing underneath it. The Reaction still goes
+      // to the discard — a countered card and a card that found no target both
+      // cost their controller the card.
+      if (!entry || entry.instanceId === item.sourceInstanceId) {
+        return { kind: 'fizzled', reason: 'no_legal_target' };
+      }
+
+      if (effect.unlessPays > 0) {
+        const stored = item.selections[key];
+        const controller = playerOf(ctx.state, entry.controllerId);
+
+        if (stored === undefined) {
+          // A controller who cannot pay is never asked: the offer would have
+          // exactly one legal answer, and pausing the queue for it would be a
+          // choice in name only.
+          if (controller.energy >= effect.unlessPays) {
+            return {
+              kind: 'awaiting_choice',
+              choice: buildChoice(ctx, item, effectIndex, {
+                playerId: entry.controllerId,
+                type: 'confirm',
+                reason: 'pay_additional_cost',
+                zone: null,
+                minimum: 1,
+                maximum: 1,
+                validEntityIds: ['yes', 'no'],
+              }),
+            };
+          }
+        } else if (stored[0] === 'yes' && controller.energy >= effect.unlessPays) {
+          controller.energy -= effect.unlessPays;
+          return RESOLVED;
+        }
+      }
+
+      entry.countered = true;
+      entry.counteredByInstanceId = item.sourceInstanceId;
       return RESOLVED;
     }
 
@@ -514,12 +608,24 @@ export function executeEffect(
       if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
       if (resolution.kind === 'players') {
         for (const playerId of resolution.ids) {
-          addDamageShield(ctx, { playerId }, effect.amount, effect.duration);
+          addDamageShield(
+            ctx,
+            { playerId },
+            value(effect.amount),
+            effect.duration,
+            item.sourceInstanceId,
+          );
         }
         return RESOLVED;
       }
       for (const targetId of resolution.ids) {
-        addDamageShield(ctx, { instanceId: targetId }, effect.amount, effect.duration);
+        addDamageShield(
+          ctx,
+          { instanceId: targetId },
+          value(effect.amount),
+          effect.duration,
+          item.sourceInstanceId,
+        );
       }
       return RESOLVED;
     }
@@ -551,9 +657,61 @@ export function executeEffect(
       const searcher = players.ids[0];
       if (searcher === undefined) return RESOLVED;
 
+      // The window the search sees: the whole zone, or only the top few cards
+      // when the card says "look at the top N" (ruleset update §16).
+      const window = zoneContents(ctx, searcher, effect.zone);
+      const looked = effect.fromTop === undefined ? window : window.slice(0, effect.fromTop);
+
+      /**
+       * Puts the cards that were looked at but not taken on the bottom, in the
+       * order they were in.
+       *
+       * Deliberately not followed by a shuffle. A full-zone search shuffles
+       * because it reordered a hidden zone by rummaging through it; a
+       * look-at-the-top effect has *told* the player what is now on the bottom,
+       * and shuffling it away would make the card say something it does not do.
+       */
+      const settleRemainder = (taken: readonly InstanceId[]): void => {
+        // A look-at-the-top effect never shuffles, whatever the remainder rule
+        // says. Shuffling exists because a full-zone search rummaged through a
+        // hidden zone; looking at three cards told the player what is there, and
+        // hiding it again would make the card say something it does not do.
+        if (effect.fromTop !== undefined) {
+          if (effect.remainder !== 'bottom') return;
+          for (const instanceId of looked) {
+            if (taken.includes(instanceId)) continue;
+            // Already in the deck: move it within the zone, to the bottom.
+            const player = playerOf(ctx.state, searcher);
+            const index = player.deck.indexOf(instanceId);
+            if (index >= 0) {
+              player.deck.splice(index, 1);
+              player.deck.push(instanceId);
+            }
+          }
+          return;
+        }
+        // Searching a hidden zone reorders it, so it is shuffled afterwards.
+        if (effect.zone === 'deck') shuffleDeck(ctx, searcher);
+      };
+
       const stored = item.selections[key];
       if (stored !== undefined) {
-        for (const instanceId of stored) moveToZone(ctx, instanceId, effect.destination);
+        for (const instanceId of stored) {
+          // "Put one on the bottom" keeps the card in the zone it came from, so
+          // there is no zone change for `moveToZone` to make — it would see
+          // deck-to-deck and return without doing anything. Reordering within
+          // the zone is the whole effect here, so it is done directly.
+          if (effect.destination === effect.zone && effect.zone === 'deck') {
+            const player = playerOf(ctx.state, searcher);
+            const index = player.deck.indexOf(instanceId);
+            if (index >= 0) {
+              player.deck.splice(index, 1);
+              player.deck.push(instanceId);
+            }
+            continue;
+          }
+          moveToZone(ctx, instanceId, effect.destination);
+        }
         if (effect.reveal && stored.length > 0) {
           emit(ctx, {
             type: 'cards_revealed',
@@ -564,12 +722,11 @@ export function executeEffect(
             ),
           });
         }
-        // Searching a hidden zone reorders it, so it is shuffled afterwards.
-        if (effect.zone === 'deck') shuffleDeck(ctx, searcher);
+        settleRemainder(stored);
         return RESOLVED;
       }
 
-      const candidates = zoneContents(ctx, searcher, effect.zone).filter((instanceId) => {
+      const candidates = looked.filter((instanceId) => {
         if (!effect.filter) return true;
         const instance = findInstance(ctx.state, instanceId);
         if (!instance) return false;
@@ -577,14 +734,20 @@ export function executeEffect(
       });
 
       if (candidates.length === 0) {
-        if (effect.zone === 'deck') shuffleDeck(ctx, searcher);
+        // Nothing matched, but the cards were still looked at, so the remainder
+        // clause still applies.
+        settleRemainder([]);
         return RESOLVED;
       }
 
       const maximum = Math.min(effect.amount, candidates.length);
-      // Searching a *public* zone is mandatory when a legal result exists;
-      // a hidden zone may always legally find nothing (CLAUDE.md §17 Q25).
-      const mandatory = PUBLIC_ZONES.has(effect.zone) && !effect.upTo;
+      // Searching a *public* zone is mandatory when a legal result exists; a
+      // hidden zone may always legally find nothing (CLAUDE.md §17 Q25). A
+      // look-at-the-top effect counts as public for this purpose: the cards were
+      // shown to the chooser, so "put one on the bottom" with no "may" is a
+      // decision they can and must make.
+      const revealedByLooking = effect.fromTop !== undefined;
+      const mandatory = (PUBLIC_ZONES.has(effect.zone) || revealedByLooking) && !effect.upTo;
 
       return {
         kind: 'awaiting_choice',
@@ -671,7 +834,45 @@ export function defeatUnit(
     controllerId: instance.controller,
     reason: cause === 'destroy' ? 'destroyed' : 'sacrificed',
   });
-  moveToZone(ctx, instanceId, 'discard', { silent: true });
+  restDefeated(ctx, instanceId);
+}
+
+/**
+ * Puts a defeated permanent wherever it belongs.
+ *
+ * Ordinary cards go to the discard pile. A Commander goes back to its **Command
+ * Zone** instead, its defeat count goes up by one, and its next deployment
+ * therefore costs more (rule adjustment §2). That is the whole of the Commander
+ * lifecycle: there is no Recovery Zone, no replay tax beyond the cost, and no
+ * Commander-defeat loss condition.
+ *
+ * One function rather than a branch at each defeat site, because there are four
+ * routes to a defeat — lethal damage, a state-based zero-Health check, `destroy`
+ * and `sacrifice` — and a Commander that came back from three of them would be
+ * worse than one that came back from none.
+ */
+export function restDefeated(ctx: MatchContext, instanceId: InstanceId): void {
+  const instance = findInstance(ctx.state, instanceId);
+  if (!instance) return;
+
+  const owner = playerOf(ctx.state, instance.owner);
+  if (owner.commanderInstanceId !== instanceId) {
+    moveToZone(ctx, instanceId, 'discard', { silent: true });
+    return;
+  }
+
+  owner.commanderDefeats += 1;
+  moveToZone(ctx, instanceId, 'commander_zone', { silent: true });
+
+  const definition = ctx.database.get(instance.definitionId);
+  emit(ctx, {
+    type: 'commander_returned',
+    playerId: instance.owner,
+    instanceId,
+    definitionId: instance.definitionId,
+    defeatCount: owner.commanderDefeats,
+    deploymentCost: definition ? (commanderDeployCost(owner, definition, ctx.config) ?? 0) : 0,
+  });
 }
 
 /** Zones every player can already see, where a search cannot be declined. */
@@ -687,7 +888,7 @@ export function zoneContents(ctx: MatchContext, playerId: PlayerId, zone: ZoneId
     case 'discard':
       return [...player.discard];
     case 'battlefield':
-      return [...player.units.filter((id): id is InstanceId => id !== null), ...player.relics];
+      return [...player.units, ...player.relics];
     case 'commander_zone':
       return [player.commanderInstanceId];
     default:

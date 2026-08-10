@@ -1,0 +1,25 @@
+{
+  "id": "overload_conduit",
+  "name": "Overload Conduit",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 4,
+  "unique": true,
+  "role": "build_around",
+  "powerClass": "major",
+  "tags": ["burn", "plan"],
+  "effects": [
+    {
+      "type": "modify_cost",
+      "player": "self",
+      "delta": -2,
+      "duration": "end_of_turn"
+    },
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    }
+  ],
+  "displayText": "Your cards cost 2 less this turn. Draw a card."
+}

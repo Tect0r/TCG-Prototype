@@ -1,0 +1,26 @@
+{
+  "id": "verdant_ward",
+  "name": "Verdant Ward",
+  "type": "spell",
+  "colorIdentity": ["green"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "minor",
+  "tags": ["growth"],
+  "effects": [
+    {
+      "type": "prevent_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "count": 1
+        }
+      },
+      "amount": 3,
+      "duration": "end_of_turn"
+    }
+  ],
+  "displayText": "Prevent the next 3 damage that would be dealt to a friendly unit this turn."
+}

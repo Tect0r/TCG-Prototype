@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { loadBundledCardData } from '@tcg/card-data';
+import { formatDatabase } from '@tcg/card-data';
 import { DECK_SCHEMA_VERSION, DECK_STORAGE_KEY, MemoryStore, type SavedDeck } from '@tcg/deck';
 import { DEFAULT_RULES_CONFIG } from '@tcg/rules-engine';
 import {
@@ -38,7 +38,7 @@ import {
  * about what the server actually sends, not about a hand-built fixture.
  */
 
-const { database } = loadBundledCardData();
+const database = formatDatabase('development');
 
 function deckFor(commanderId: string, cardId: string): MatchDeck {
   return { commanderId, cards: [{ cardId, quantity: 30 }] };
@@ -229,7 +229,7 @@ describe('lobby rulebook', () => {
     expect(within(dialog).getByText('Summoning sickness')).toBeInTheDocument();
     // Keywords the engine ignores are labelled, not described as if they worked.
     const guardian = within(dialog).getByText('Guardian').parentElement;
-    expect(guardian?.textContent).toContain('no effect yet');
+    expect(guardian?.textContent).toContain('attacker may not be left unblocked');
   });
 
   it('filters the table of contents by search', async () => {

@@ -1,0 +1,31 @@
+{
+  "id": "unearth_the_remains",
+  "name": "Unearth the Remains",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Recovery",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "search_zone",
+      "player": "self",
+      "zone": "discard",
+      "filter": {
+        "cardTypes": ["unit"],
+        "cost": {
+          "max": 2
+        }
+      },
+      "amount": 1,
+      "destination": "hand",
+      "reveal": true
+    }
+  ],
+  "displayText": "Return a Unit costing 2 or less from your discard pile to your hand."
+}

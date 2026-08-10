@@ -1,0 +1,18 @@
+{
+  "id": "gate_sentinel",
+  "name": "Gate Sentinel",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "attack": 1,
+  "health": 6,
+  "keywords": ["guardian"],
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Durable Defender",
+    "power": "medium"
+  },
+  "displayText": "Guardian."
+}

@@ -28,7 +28,7 @@ function fingerprint(state: MatchState): string {
       player.hand.length,
       player.deck.length,
       player.discard.length,
-      player.units.filter((slot) => slot !== null).length,
+      player.units.length,
     );
   }
   return parts.join('|');

@@ -1,0 +1,16 @@
+{
+  "id": "veteran_guard",
+  "name": "Veteran Guard",
+  "type": "unit",
+  "colorIdentity": [],
+  "cost": 3,
+  "attack": 2,
+  "health": 5,
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "neutral",
+    "identity": "Neutral Unit — Defensive",
+    "power": "low"
+  }
+}

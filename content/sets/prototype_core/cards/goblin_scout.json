@@ -1,0 +1,13 @@
+{
+  "id": "goblin_scout",
+  "name": "Goblin Scout",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 1,
+  "attack": 1,
+  "health": 1,
+  "role": "attacker",
+  "powerClass": "minor",
+  "tags": ["goblin", "scout"],
+  "keywords": ["swift"]
+}

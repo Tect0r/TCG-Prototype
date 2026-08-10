@@ -1,0 +1,22 @@
+{
+  "id": "reconstruct_the_theory",
+  "name": "Reconstruct the Theory",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 5,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Card Advantage",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 3
+    }
+  ],
+  "displayText": "Draw three cards."
+}

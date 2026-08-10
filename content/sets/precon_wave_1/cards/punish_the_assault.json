@@ -1,0 +1,37 @@
+{
+  "id": "punish_the_assault",
+  "name": "Punish the Assault",
+  "type": "reaction",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Reaction — Retaliation",
+    "power": "high"
+  },
+  "displayText": "Play after combat. Deal 2 damage to an enemy Unit that attacked that combat.",
+  "reaction": {
+    "windows": ["after_combat", "after_combat_damage"]
+  },
+  "effects": [
+    {
+      "type": "deal_damage",
+      "amount": 2,
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "attacking": true
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      }
+    }
+  ]
+}

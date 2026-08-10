@@ -18,6 +18,12 @@ import { CARD_SCHEMA_VERSION } from './schema/primitives.js';
  *    structured `costs` array (Q3/Q27);
  *  - renames the `all` player selector to `all_players` and drops the
  *    never-implemented `target_player`.
+ *
+ * v2 → v3 (Precon Wave 1) renames the `swift` keyword to `rush` everywhere it
+ * can appear.
+ *
+ * v3 → v4 (rule adjustments) stamps an explicit `activeZone` on every triggered
+ * and activated ability, and gives an untimed Reaction every window.
  */
 
 type Json = Record<string, unknown>;
@@ -113,8 +119,113 @@ function migrateSetV1toV2(set: Json): Json {
   };
 }
 
+/**
+ * v2 → v3 renames the `swift` keyword to `rush`.
+ *
+ * Ruleset update §9 refuses to leave both names exposed for one behaviour, so
+ * this is a rename rather than an alias: the ID moves everywhere it can appear
+ * — printed keywords, `grant_keyword` / `remove_keyword` effects, card filters,
+ * and static abilities — and no card can still say `swift` afterwards.
+ */
+const RENAMED_KEYWORDS: Readonly<Record<string, string>> = { swift: 'rush' };
+
+function renameKeyword(value: unknown): unknown {
+  return typeof value === 'string' ? (RENAMED_KEYWORDS[value] ?? value) : value;
+}
+
+function renameKeywordsDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(renameKeywordsDeep);
+  if (!isObject(value)) return value;
+
+  const next: Json = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === 'keyword') {
+      next[key] = renameKeyword(entry);
+    } else if (key === 'keywords' && Array.isArray(entry)) {
+      next[key] = entry.map(renameKeyword);
+    } else {
+      next[key] = renameKeywordsDeep(entry);
+    }
+  }
+  return next;
+}
+
+function migrateSetV2toV3(set: Json): Json {
+  return {
+    ...(renameKeywordsDeep(set) as Json),
+    schemaVersion: 3,
+    cards: Array.isArray(set['cards'])
+      ? set['cards'].map((card) =>
+          isObject(card) ? { ...(renameKeywordsDeep(card) as Json), schemaVersion: 3 } : card,
+        )
+      : set['cards'],
+  };
+}
+
+/**
+ * v3 → v4 writes down the ability zone every card was already assuming.
+ *
+ * Rule adjustment §3 makes the active zone explicit data and forbids inferring
+ * it from prose, so a card that says nothing has to be given the default the
+ * update prescribes: **battlefield-only**, including on a Commander.
+ *
+ * There is exactly one exception, and it is not a hedge. A Commander with
+ * `cost: null` is the older zone-only Commander — it can never be deployed, so
+ * an activated ability printed on it could only ever have meant "from the
+ * Command Zone". Defaulting those to `battlefield` would not enforce a new rule;
+ * it would silently delete an ability from a card that has no other way to use
+ * it. Deployable Commanders (`cost` set) take the prescribed default and must
+ * say so in their data if they mean otherwise.
+ */
+function migrateAbilityZones(card: Json): Json {
+  const zoneOnlyCommander = card['type'] === 'commander' && card['cost'] === null;
+  const fallback = zoneOnlyCommander ? 'commander_zone' : 'battlefield';
+
+  const withZone = (value: unknown): unknown => {
+    if (!isObject(value) || value['activeZone'] !== undefined) return value;
+    return { ...value, activeZone: fallback };
+  };
+
+  const next: Json = { ...card, schemaVersion: 4 };
+  if (Array.isArray(next['abilities'])) next['abilities'] = next['abilities'].map(withZone);
+  if (Array.isArray(next['activatedAbilities'])) {
+    next['activatedAbilities'] = next['activatedAbilities'].map(withZone);
+  }
+  return next;
+}
+
+/**
+ * A Reaction authored before timing existed can only mean "whenever a window is
+ * open": there was no field in which to say anything narrower, so narrowing it
+ * here would be inventing a restriction its author never wrote.
+ */
+const ALL_REACTION_WINDOWS = [
+  'after_attackers_declared',
+  'before_blockers_declared',
+  'after_blockers_declared',
+  'after_combat_damage',
+  'after_combat',
+  'when_opponent_plays_spell',
+] as const;
+
+function migrateSetV3toV4(set: Json): Json {
+  const cards = Array.isArray(set['cards'])
+    ? set['cards'].map((card) => {
+        if (!isObject(card)) return card;
+        const next = migrateAbilityZones(card);
+        if (next['type'] === 'reaction' && next['reaction'] === undefined) {
+          next['reaction'] = { windows: [...ALL_REACTION_WINDOWS] };
+        }
+        return next;
+      })
+    : set['cards'];
+  return { ...set, schemaVersion: 4, cards };
+}
+
 const STEPS: Record<number, (set: Json) => Json> = {
   1: migrateSetV1toV2,
+  2: migrateSetV2toV3,
+  3: migrateSetV3toV4,
 };
 
 /**

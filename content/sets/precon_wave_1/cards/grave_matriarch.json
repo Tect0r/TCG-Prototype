@@ -1,0 +1,49 @@
+{
+  "id": "grave_matriarch",
+  "name": "Grave Matriarch",
+  "type": "commander",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "attack": 2,
+  "health": 6,
+  "unique": true,
+  "tags": ["commander"],
+  "role": "build_around",
+  "powerClass": "centerpiece",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Commander — Outlet and Card Advantage",
+    "power": "high"
+  },
+  "activatedAbilities": [
+    {
+      "id": "matriarch_rite",
+      "name": "Matriarch's Rite",
+      "costs": [
+        {
+          "type": "energy",
+          "amount": 1
+        },
+        {
+          "type": "exhaust_source"
+        },
+        {
+          "type": "sacrifice",
+          "amount": 1,
+          "filter": {
+            "cardTypes": ["unit"]
+          }
+        }
+      ],
+      "usageLimit": "once_per_turn",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "Pay 1 Energy and Exhaust — Sacrifice another Unit. Draw a card. Activate only once each turn."
+}

@@ -1,0 +1,18 @@
+{
+  "id": "thrall_token",
+  "name": "Thrall Token",
+  "type": "token",
+  "colorIdentity": ["black"],
+  "cost": null,
+  "attack": 1,
+  "health": 1,
+  "collectible": false,
+  "tags": ["thrall"],
+  "role": "token",
+  "powerClass": "minor",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Token Unit",
+    "power": "low"
+  }
+}

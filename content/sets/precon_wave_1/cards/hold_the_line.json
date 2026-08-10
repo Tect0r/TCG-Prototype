@@ -1,0 +1,39 @@
+{
+  "id": "hold_the_line",
+  "name": "Hold the Line",
+  "type": "reaction",
+  "colorIdentity": ["white"],
+  "cost": 1,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Reaction — Combat Protection",
+    "power": "medium"
+  },
+  "displayText": "Play after blockers are declared. A blocking Unit gains +0/+3 for that combat.",
+  "reaction": {
+    "windows": ["after_blockers_declared"]
+  },
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "blocking": true
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      },
+      "attack": 0,
+      "health": 3,
+      "duration": "end_of_combat"
+    }
+  ]
+}

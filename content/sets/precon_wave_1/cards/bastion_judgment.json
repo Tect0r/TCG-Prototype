@@ -1,0 +1,35 @@
+{
+  "id": "bastion_judgment",
+  "name": "Bastion Judgment",
+  "type": "spell",
+  "colorIdentity": ["white"],
+  "cost": 4,
+  "role": "removal",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Spell — Removal",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "destroy",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"],
+            "exhausted": true,
+            "health": {
+              "max": 4
+            }
+          },
+          "count": 1
+        }
+      }
+    }
+  ],
+  "displayText": "Defeat an Exhausted enemy Unit with 4 Health or less."
+}

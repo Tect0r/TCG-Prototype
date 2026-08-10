@@ -1,0 +1,36 @@
+{
+  "id": "bastion_armorer",
+  "name": "Bastion Armorer",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Protection",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "grant_keyword",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"],
+            "keywords": ["guardian"]
+          },
+          "count": 1
+        }
+      },
+      "keyword": "barrier",
+      "duration": "permanent"
+    }
+  ],
+  "displayText": "When deployed, a friendly Guardian gains Barrier."
+}

@@ -9,12 +9,20 @@ how to tell when you cannot.
 
 ## The short version
 
-1. Copy a template from [`templates/cards/`](templates/cards) into
-   `packages/card-data/src/data/prototype_core.json`'s `cards` array.
-2. Give it a permanent `id`.
-3. Fill in its type, cost, colours, stats and structured `effects`.
-4. Optionally drop `assets/card-art/<your_card_id>.png` into place.
+1. Scaffold the file:
+   `npm run cards:new -- --set <setId> --type <type> --id <card_id>`.
+   It copies the right template from [`templates/cards/`](templates/cards) into
+   `content/sets/<setId>/cards/<card_id>.json` (or `tokens/` for a token), and
+   refuses to overwrite an existing card.
+2. Fill in its name, cost, colours, stats and structured `effects`.
+   Do **not** add a `schemaVersion` — the set's `set.json` owns it.
+3. Optionally drop `assets/card-art/<your_card_id>.png` into place.
+4. Run `npm run content:build` to regenerate the shipped bundle, and commit it.
 5. Run `npm run validate:content`, then `npm test`.
+
+One card per file. The filename and the permanent card ID must agree — the
+content build enforces it, and every validation error names the file it came
+from.
 
 ## 1. Choosing an ID
 

@@ -5,18 +5,21 @@ import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
 import { createContext, emit, type MatchContext } from './context.js';
 import { engineError, type EngineError } from './errors.js';
 import {
+  commanderDeployCost,
   definitionOf,
   energyCostOf,
   findInstance,
-  freeUnitSlots,
   hasKeyword,
+  isNewlyDeployed,
   isSummoningSick,
+  isUnitInPlay,
   livingOpponents,
   matchesCardFilter,
   playerOf,
 } from './derive.js';
 import { defeatUnit } from './effects.js';
 import { advance, resolveMulligans, setPhase } from './flow.js';
+import { handlePassReaction, handlePlayReaction, openReactionWindow } from './reactions.js';
 import { settle } from './queue.js';
 import { legalTargets, playerCandidates } from './targeting.js';
 import { enqueue } from './triggers.js';
@@ -121,7 +124,7 @@ function dispatch(ctx: MatchContext, action: Action): EngineError | null {
     case 'submit_choice':
       return handleSubmitChoice(ctx, action.playerId, action.choiceId, action.selectedIds);
     case 'play_card':
-      return handlePlayCard(ctx, action.playerId, action.instanceId, action.slot);
+      return handlePlayCard(ctx, action.playerId, action.instanceId);
     case 'activate_ability':
       return handleActivateAbility(ctx, action.playerId, action.sourceInstanceId, action.abilityId);
     case 'pass_phase':
@@ -130,6 +133,18 @@ function dispatch(ctx: MatchContext, action: Action): EngineError | null {
       return handleDeclareAttackers(ctx, action.playerId, action.attacks);
     case 'assign_blockers':
       return handleAssignBlockers(ctx, action.playerId, action.blocks);
+    case 'play_reaction': {
+      const problem = handlePlayReaction(ctx, action.playerId, action.instanceId);
+      if (problem) return problem;
+      advance(ctx);
+      return null;
+    }
+    case 'pass_reaction': {
+      const problem = handlePassReaction(ctx, action.playerId);
+      if (problem) return problem;
+      advance(ctx);
+      return null;
+    }
     default:
       return engineError('engine/invalid_action', 'Unrecognised action.');
   }
@@ -350,7 +365,6 @@ function handlePlayCard(
   ctx: MatchContext,
   playerId: PlayerId,
   instanceId: InstanceId,
-  slot: number | null,
 ): EngineError | null {
   const phaseProblem = requireMainPhase(ctx, playerId);
   if (phaseProblem) return phaseProblem;
@@ -360,11 +374,21 @@ function handlePlayCard(
   if (!instance) {
     return engineError('engine/unknown_instance', 'No such card in this match.', { instanceId });
   }
+
+  const definition = definitionOf(ctx.database, instance);
+
+  // A Commander is played out of its own zone rather than out of hand, and is
+  // never drawn (rule adjustment §2). Everything after this point — cost,
+  // deployment, Newly Deployed, triggers — is the same as for any other unit,
+  // which is what "a deployed Commander behaves as a Unit" has to mean.
+  if (definition.type === 'commander') {
+    return handleDeployCommander(ctx, playerId, instance, definition);
+  }
+
   if (!player.hand.includes(instanceId)) {
     return engineError('engine/wrong_zone', 'That card is not in your hand.', { instanceId });
   }
 
-  const definition = definitionOf(ctx.database, instance);
   if (definition.type !== 'unit' && definition.type !== 'spell' && definition.type !== 'relic') {
     return engineError('engine/invalid_action', `A ${definition.type} cannot be played.`, {
       instanceId,
@@ -381,35 +405,16 @@ function handlePlayCard(
     );
   }
 
-  let targetSlot: number | null = null;
-  if (definition.type === 'unit') {
-    const free = freeUnitSlots(player);
-    if (slot === null) {
-      const first = free[0];
-      if (first === undefined) {
-        return engineError('engine/no_free_slot', 'You have no free unit slot.', {
-          instanceId,
-          slots: player.units.length,
-        });
-      }
-      targetSlot = first;
-    } else {
-      if (slot >= player.units.length) {
-        return engineError('engine/no_free_slot', 'That unit slot does not exist.', { slot });
-      }
-      if (!free.includes(slot)) {
-        return engineError('engine/slot_occupied', 'That unit slot is already occupied.', { slot });
-      }
-      targetSlot = slot;
-    }
-  }
+  // A unit is never refused for lack of room: the battlefield is unbounded, and
+  // energy is the only intended constraint (ruleset update §7).
 
-  if (definition.type === 'relic' && player.relics.length >= ctx.config.relicSlots) {
-    return engineError(
-      'engine/relic_limit',
-      `You already control ${ctx.config.relicSlots} relics.`,
-      { instanceId, limit: ctx.config.relicSlots },
-    );
+  // A relic at the limit is *replaced*, not refused (ruleset update §12), so the
+  // only unplayable case left is a format that allows no relics at all.
+  if (definition.type === 'relic' && ctx.config.relicSlots < 1) {
+    return engineError('engine/relic_limit', 'Relics cannot be played in this format.', {
+      instanceId,
+      limit: ctx.config.relicSlots,
+    });
   }
 
   if (definition.type === 'spell' && !spellHasLegalTargets(ctx, definition, instance)) {
@@ -437,24 +442,42 @@ function handlePlayCard(
     // its instructions have resolved, so it cannot target itself mid-resolution.
     const index = player.hand.indexOf(instanceId);
     if (index >= 0) player.hand.splice(index, 1);
-    enqueue(ctx, {
-      kind: 'card_effects',
-      sourceInstanceId: instanceId,
-      sourceDefinitionId: definition.id,
-      controllerId: playerId,
-      abilityId: null,
-      effects: [...definition.effects],
-      causeSequence: ctx.state.sequence,
-      completesSpell: true,
+
+    // An opponent may answer it. When a window opens, the spell waits at the
+    // bottom of that window's pending queue instead of being enqueued now —
+    // that is what makes countering it possible, and what makes the answering
+    // Reaction resolve first (rule adjustment §5.6).
+    const answered = openReactionWindow(ctx, {
+      windows: ['when_opponent_plays_spell'],
+      resumePhase: ctx.state.phase,
+      subject: { instanceId, definitionId: definition.id, controllerId: playerId },
     });
+    if (!answered) {
+      enqueue(ctx, {
+        kind: 'card_effects',
+        sourceInstanceId: instanceId,
+        sourceDefinitionId: definition.id,
+        controllerId: playerId,
+        abilityId: null,
+        effects: [...definition.effects],
+        causeSequence: ctx.state.sequence,
+        completesSpell: true,
+      });
+    }
   } else if (definition.type === 'unit') {
-    moveToZone(ctx, instanceId, 'battlefield', { slot: targetSlot ?? 0, silent: true });
+    moveToZone(ctx, instanceId, 'battlefield', { row: 'units', silent: true, entry: 'suppress' });
     emit(ctx, {
       type: 'unit_deployed',
       playerId,
       instanceId,
       definitionId: definition.id,
-      slot: targetSlot ?? 0,
+    });
+    emit(ctx, {
+      type: 'unit_entered_battlefield',
+      playerId,
+      instanceId,
+      definitionId: definition.id,
+      method: 'deployed',
     });
     if (definition.effects.length > 0) {
       enqueue(ctx, {
@@ -469,8 +492,16 @@ function handlePlayCard(
       });
     }
   } else {
-    moveToZone(ctx, instanceId, 'battlefield', { silent: true });
+    replaceActiveRelics(ctx, playerId, instance, definition.id);
+    moveToZone(ctx, instanceId, 'battlefield', { row: 'relics', silent: true, entry: 'suppress' });
     emit(ctx, { type: 'relic_deployed', playerId, instanceId, definitionId: definition.id });
+    emit(ctx, {
+      type: 'unit_entered_battlefield',
+      playerId,
+      instanceId,
+      definitionId: definition.id,
+      method: 'deployed',
+    });
     if (definition.effects.length > 0) {
       enqueue(ctx, {
         kind: 'card_effects',
@@ -490,6 +521,146 @@ function handlePlayCard(
   settle(ctx, before);
   advance(ctx);
   return null;
+}
+
+/**
+ * Deploys a Commander from its Command Zone (rule adjustment §2).
+ *
+ * The escalating cost is the whole mechanic: defeat sends the Commander home
+ * rather than to a discard pile, and the only lasting consequence is that the
+ * next deployment costs more. Nothing else about the card changes — once it is
+ * on the battlefield it is a Unit for ready/exhaust, combat, targeting, damage
+ * and activation costs, which is why this shares the deploy path rather than
+ * inventing a parallel one.
+ */
+function handleDeployCommander(
+  ctx: MatchContext,
+  playerId: PlayerId,
+  instance: CardInstance,
+  definition: CardDefinition,
+): EngineError | null {
+  const player = playerOf(ctx.state, playerId);
+  if (instance.instanceId !== player.commanderInstanceId) {
+    return engineError('engine/not_your_card', 'That is not your Commander.', {
+      instanceId: instance.instanceId,
+    });
+  }
+  if (instance.zone !== 'commander_zone') {
+    return engineError('engine/wrong_zone', 'Your Commander is not in the Command Zone.', {
+      instanceId: instance.instanceId,
+      zone: instance.zone,
+    });
+  }
+
+  const cost = commanderDeployCost(player, definition, ctx.config);
+  if (cost === null) {
+    return engineError(
+      'engine/commander_not_deployable',
+      `"${definition.name}" has no printed cost and stays in the Command Zone.`,
+      { instanceId: instance.instanceId },
+    );
+  }
+  if (cost > player.energy) {
+    return engineError(
+      'engine/insufficient_energy',
+      `Deploying "${definition.name}" costs ${cost} energy; you have ${player.energy}.`,
+      { instanceId: instance.instanceId, cost, energy: player.energy },
+    );
+  }
+
+  // ---- committed
+  const before = ctx.events.length;
+  player.energy -= cost;
+
+  emit(ctx, {
+    type: 'card_played',
+    playerId,
+    instanceId: instance.instanceId,
+    definitionId: definition.id,
+    energySpent: cost,
+  });
+  moveToZone(ctx, instance.instanceId, 'battlefield', {
+    row: 'units',
+    silent: true,
+    entry: 'suppress',
+  });
+  emit(ctx, {
+    type: 'commander_deployed',
+    playerId,
+    instanceId: instance.instanceId,
+    definitionId: definition.id,
+    energySpent: cost,
+    defeatCount: player.commanderDefeats,
+  });
+  emit(ctx, {
+    type: 'unit_deployed',
+    playerId,
+    instanceId: instance.instanceId,
+    definitionId: definition.id,
+  });
+  emit(ctx, {
+    type: 'unit_entered_battlefield',
+    playerId,
+    instanceId: instance.instanceId,
+    definitionId: definition.id,
+    method: 'deployed',
+  });
+
+  if (definition.effects.length > 0) {
+    enqueue(ctx, {
+      kind: 'card_effects',
+      sourceInstanceId: instance.instanceId,
+      sourceDefinitionId: definition.id,
+      controllerId: playerId,
+      abilityId: null,
+      effects: [...definition.effects],
+      causeSequence: ctx.state.sequence,
+      completesSpell: false,
+    });
+  }
+
+  settle(ctx, before);
+  advance(ctx);
+  return null;
+}
+
+/**
+ * Makes room for a relic about to be played, by replacing the ones already out.
+ *
+ * Replacement is a **rules action** (ruleset update §12, ADR 0016 §3): the old
+ * relic moves to its owner's discard, and that is all. It is not destruction and
+ * not a sacrifice, so it fires neither `on_defeated` nor `on_sacrifice` — which
+ * is exactly why the move is silent and the only event emitted is
+ * `relic_replaced`.
+ *
+ * Written as a loop over "however many are one too many" rather than "the one",
+ * so raising `relicSlots` above 1 stays a config change. The oldest goes first,
+ * because `relics` is in arrival order and a player who has been at the limit
+ * all game should not have their choice of relic silently reshuffled.
+ */
+function replaceActiveRelics(
+  ctx: MatchContext,
+  playerId: PlayerId,
+  incoming: CardInstance,
+  incomingDefinitionId: string,
+): void {
+  const player = playerOf(ctx.state, playerId);
+  const surplus = player.relics.length - ctx.config.relicSlots + 1;
+  if (surplus <= 0) return;
+
+  for (const replacedId of player.relics.slice(0, surplus)) {
+    const replaced = findInstance(ctx.state, replacedId);
+    if (!replaced) continue;
+    emit(ctx, {
+      type: 'relic_replaced',
+      playerId,
+      instanceId: replacedId,
+      definitionId: replaced.definitionId,
+      replacedByInstanceId: incoming.instanceId,
+      replacedByDefinitionId: incomingDefinitionId,
+    });
+    moveToZone(ctx, replacedId, 'discard', { silent: true });
+  }
 }
 
 function handleActivateAbility(
@@ -512,14 +683,6 @@ function handleActivateAbility(
       sourceInstanceId,
     });
   }
-  if (instance.zone !== 'battlefield' && instance.zone !== 'commander_zone') {
-    return engineError(
-      'engine/wrong_zone',
-      'Abilities may only be activated from the battlefield or the Commander zone.',
-      { sourceInstanceId, zone: instance.zone },
-    );
-  }
-
   const definition = definitionOf(ctx.database, instance);
   const ability = definition.activatedAbilities.find((entry) => entry.id === abilityId);
   if (!ability) {
@@ -527,6 +690,19 @@ function handleActivateAbility(
       sourceInstanceId,
       abilityId,
     });
+  }
+
+  // The zone is the ability's own data, never inferred from where the card
+  // happens to be or from what its rules text says (rule adjustment §3). A
+  // Commander ability is battlefield-only unless its definition says
+  // `commander_zone`, which is what makes deploying the Commander mean
+  // something.
+  if (instance.zone !== ability.activeZone) {
+    return engineError(
+      'engine/wrong_zone',
+      `"${ability.name}" can only be activated from the ${ability.activeZone.replace('_', ' ')}.`,
+      { sourceInstanceId, zone: instance.zone, requiredZone: ability.activeZone },
+    );
   }
 
   const usedKey = `used:${abilityId}`;
@@ -618,6 +794,20 @@ function planCosts(
             sourceInstanceId: source.instanceId,
           });
         }
+        // A Newly Deployed card cannot pay an Exhaust cost unless it has Rush
+        // (rule adjustment §4). This is the same restriction that stops it
+        // attacking, and it was missing here: Rush was widened to cover
+        // activation costs but nothing was checking them.
+        if (isNewlyDeployed(source)) {
+          const sourceDefinition = definitionOf(ctx.database, source);
+          if (!hasKeyword(source, sourceDefinition, 'rush')) {
+            return engineError(
+              'engine/cost_unpayable',
+              `"${sourceDefinition.name}" is Newly Deployed and cannot pay an Exhaust cost.`,
+              { sourceInstanceId: source.instanceId },
+            );
+          }
+        }
         plan.exhaustSource = true;
         break;
       }
@@ -637,7 +827,7 @@ function planCosts(
 
       case 'sacrifice': {
         const available = player.units
-          .filter((id): id is InstanceId => id !== null && !plan.sacrifices.includes(id))
+          .filter((id) => !plan.sacrifices.includes(id))
           .filter((id) => {
             if (!cost.filter) return true;
             const instance = findInstance(ctx.state, id);
@@ -769,10 +959,18 @@ function handleDeclareAttackers(
   ctx.state.combat.submissions = [];
 
   // Skip blocker assignment entirely when nobody is being attacked (CLAUDE.md §4).
-  setPhase(
-    ctx,
-    ctx.state.combat.awaitingDefenders.length === 0 ? 'resolve_combat' : 'assign_blockers',
-  );
+  const next =
+    ctx.state.combat.awaitingDefenders.length === 0 ? 'resolve_combat' : 'assign_blockers';
+
+  // "Play after attackers are declared" and "play before blockers are declared"
+  // name the same moment in the phase machine, so they share one window rather
+  // than two consecutive ones that nothing could tell apart.
+  const opened = openReactionWindow(ctx, {
+    windows: ['after_attackers_declared', 'before_blockers_declared'],
+    resumePhase: next,
+  });
+  if (!opened) setPhase(ctx, next);
+
   advance(ctx);
   return null;
 }
@@ -791,7 +989,7 @@ function validateAttacker(
       instanceId,
     });
   }
-  if (instance.slot === null) {
+  if (!isUnitInPlay(ctx.state, instance)) {
     return engineError('engine/illegal_attacker', 'Relics cannot attack.', { instanceId });
   }
   if (instance.exhausted) {
@@ -800,7 +998,7 @@ function validateAttacker(
     });
   }
   const definition = definitionOf(ctx.database, instance);
-  if (isSummoningSick(instance, ctx.state) && !hasKeyword(instance, definition, 'swift')) {
+  if (isSummoningSick(instance, ctx.state) && !hasKeyword(instance, definition, 'rush')) {
     return engineError(
       'engine/illegal_attacker',
       `"${definition.name}" entered play this turn and cannot attack.`,
@@ -818,6 +1016,55 @@ function validateAttacker(
  * submission is stored privately; nothing becomes public and no damage happens
  * until every attacked player has answered.
  */
+/**
+ * Enforces the Guardian must-block rule for one defender's submission.
+ *
+ * The obligation is expressed as a *count*, not as a per-attacker requirement:
+ * `min(ready Guardians, attackers aimed at this defender)` attacks must be
+ * blocked, and any legal blocker may satisfy any of them. That is what keeps
+ * "the defender chooses which Guardian blocks it" true while still making
+ * Guardian compulsory. Evasive attackers are excluded because no Guardian could
+ * legally block them in the first place.
+ */
+function validateGuardianObligation(
+  ctx: MatchContext,
+  playerId: PlayerId,
+  blocks: readonly { readonly attackerInstanceId: InstanceId }[],
+): EngineError | null {
+  const player = playerOf(ctx.state, playerId);
+
+  const readyGuardians = player.units.filter((id) => {
+    const instance = findInstance(ctx.state, id);
+    if (!instance || instance.exhausted) return false;
+    return hasKeyword(instance, definitionOf(ctx.database, instance), 'guardian');
+  });
+  if (readyGuardians.length === 0) return null;
+
+  const blockableAttackers = ctx.state.combat.attacks
+    .filter((attack) => attack.defenderPlayerId === playerId)
+    .map((attack) => attack.attackerInstanceId)
+    .filter((instanceId) => {
+      const instance = findInstance(ctx.state, instanceId);
+      if (!instance) return false;
+      return !hasKeyword(instance, definitionOf(ctx.database, instance), 'evasive');
+    });
+
+  const required = Math.min(readyGuardians.length, blockableAttackers.length);
+  const blocked = new Set(
+    blocks
+      .map((block) => block.attackerInstanceId)
+      .filter((instanceId) => blockableAttackers.includes(instanceId)),
+  );
+
+  if (blocked.size >= required) return null;
+
+  return engineError(
+    'engine/guardian_must_block',
+    `You control ${readyGuardians.length} ready Guardian(s), so at least ${required} attacker(s) must be blocked; you blocked ${blocked.size}.`,
+    { required, blocked: blocked.size, guardians: readyGuardians.length },
+  );
+}
+
 function handleAssignBlockers(
   ctx: MatchContext,
   playerId: PlayerId,
@@ -886,6 +1133,13 @@ function handleAssignBlockers(
     if (problem) return problem;
   }
 
+  // Guardian: a ready Guardian may not stand by while an attacker goes
+  // unblocked. Each Guardian can only cover one attack, so the obligation is
+  // capped by whichever there are fewer of; which Guardian blocks which
+  // attacker stays the defender's choice (ruleset update §9).
+  const guardianProblem = validateGuardianObligation(ctx, playerId, blocks);
+  if (guardianProblem) return guardianProblem;
+
   // ---- committed
   ctx.state.combat.submissions.push({
     defenderPlayerId: playerId,
@@ -920,7 +1174,7 @@ function validateBlocker(
       blockerInstanceId,
     });
   }
-  if (blocker.controller !== playerId || blocker.zone !== 'battlefield' || blocker.slot === null) {
+  if (blocker.controller !== playerId || !isUnitInPlay(ctx.state, blocker)) {
     return engineError('engine/illegal_blocker', 'That is not one of your units in play.', {
       blockerInstanceId,
     });

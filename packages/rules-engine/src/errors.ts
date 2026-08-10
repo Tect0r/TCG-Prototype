@@ -17,8 +17,9 @@ export const ENGINE_ERROR_CODES = [
   'engine/wrong_zone',
   'engine/not_your_card',
   'engine/insufficient_energy',
-  'engine/no_free_slot',
-  'engine/slot_occupied',
+  // There is deliberately no `no_free_slot` / `slot_occupied` pair: the
+  // battlefield is unbounded, so a unit is never refused for want of room
+  // (ruleset update §7). Reintroducing either code would mean a cap came back.
   'engine/relic_limit',
   'engine/no_legal_target',
   'engine/illegal_attacker',
@@ -29,6 +30,16 @@ export const ENGINE_ERROR_CODES = [
   'engine/duplicate_attacker',
   'engine/duplicate_blocker',
   'engine/blocker_limit',
+  /** A ready Guardian may not stand by while an attacker is left unblocked. */
+  'engine/guardian_must_block',
+  /** No Reaction window is open, so a Reaction action has nothing to act in. */
+  'engine/no_reaction_window',
+  /** That card's printed timing does not admit the open window. */
+  'engine/illegal_reaction',
+  /** This player has already played their Reaction for this window. */
+  'engine/reaction_limit',
+  /** A Commander with no printed cost stays in its zone and cannot be deployed. */
+  'engine/commander_not_deployable',
   'engine/unknown_card_definition',
   'engine/mulligan_already_submitted',
   'engine/invalid_action',

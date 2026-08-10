@@ -511,9 +511,7 @@ describe('free-for-all match board', () => {
         },
       },
       players: base.players.map((player) =>
-        player.playerId === 'player_1'
-          ? { ...player, units: [attacker, null, null, null, null] }
-          : player,
+        player.playerId === 'player_1' ? { ...player, units: [attacker] } : player,
       ),
       instances: {
         ...base.instances,
@@ -523,7 +521,6 @@ describe('free-for-all match board', () => {
           owner: 'player_1',
           controller: 'player_1',
           zone: 'battlefield',
-          slot: 0,
           attack: 2,
           health: 1,
           markedDamage: 0,

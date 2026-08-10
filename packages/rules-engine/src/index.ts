@@ -64,6 +64,8 @@ export {
   matchStateSchema,
   playerStateSchema,
   resolutionItemSchema,
+  pendingReactionSchema,
+  reactionWindowStateSchema,
   EMPTY_COMBAT,
   MATCH_END_REASONS,
   type AttackDeclaration,
@@ -76,7 +78,9 @@ export {
   type MatchEndReason,
   type MatchResult,
   type MatchState,
+  type PendingReaction,
   type PlayerState,
+  type ReactionWindowState,
   type ResolutionItem,
   type StatModifier,
 } from './schema/state.js';
@@ -143,6 +147,13 @@ export {
   type PlayerViewSummary,
 } from './view.js';
 
+export {
+  reactionCostOf,
+  reactionPriorityHolder,
+  playableReactions,
+  type ReactionCost,
+} from './reactions.js';
+
 export { serializeMatchState, deserializeMatchState, parseMatchState } from './serialize.js';
 
 export {
@@ -154,7 +165,9 @@ export {
   energyCostOf,
   hasKeyword,
   isAlive,
+  isNewlyDeployed,
   isSummoningSick,
+  commanderDeployCost,
   livingOpponents,
   livingPlayers,
   nextLivingPlayer,

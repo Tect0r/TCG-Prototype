@@ -47,8 +47,8 @@ const RAW_GLOSSARY = {
       id: 'battlefield',
       term: 'Battlefield',
       definition:
-        'Where units fight. Each player has {matchConfig.unitSlots} unit slots of their own; units are never shared and never move to another player’s battlefield.',
-      seeAlso: ['unit_slot', 'relic_zone'],
+        'Where units fight. Each player has their own; units are never shared and never move to another player’s battlefield. There is no limit on how many units you may have out — energy is the only thing that holds you back.',
+      seeAlso: ['relic_zone'],
       relatedRuleSections: ['card_types', 'combat'],
     },
     {
@@ -66,6 +66,14 @@ const RAW_GLOSSARY = {
         'The player who currently decides what a card does. Usually the same as its owner. Ownership and control are tracked separately so a card can be returned to the right player when its controller is eliminated.',
       seeAlso: ['owner'],
       relatedRuleSections: ['multiplayer'],
+    },
+    {
+      id: 'duration',
+      term: 'Duration',
+      definition:
+        'How long a bonus or penalty lasts. Permanent lasts for the rest of the match. Until end of turn is removed when the current turn finishes. For that combat is shorter still — it is gone once combat damage has been dealt, before the second Main Phase. Until the beginning of your next turn is longer, and is the only one that covers your opponents’ turns in between. While the source is in play ends the moment the card that granted it leaves the battlefield. Whichever boundary applies, if the bonus was extra Health, losing it can defeat the unit straight away.',
+      seeAlso: ['state_based_check', 'marked_damage'],
+      relatedRuleSections: ['choices_and_targets'],
     },
     {
       id: 'discard_pile',
@@ -87,7 +95,7 @@ const RAW_GLOSSARY = {
       id: 'exhausted',
       term: 'Exhausted',
       definition:
-        'A unit that has already attacked, or that an effect has exhausted. Exhausted units cannot attack. They ready again at the start of their controller’s next turn.',
+        'A unit that has already attacked or blocked, or that an effect has exhausted. Exhausted units cannot attack or block, and cannot pay a cost that asks them to exhaust. They ready again at the start of their controller’s next turn.',
       seeAlso: ['ready', 'summoning_sickness'],
       relatedRuleSections: ['combat'],
     },
@@ -135,7 +143,7 @@ const RAW_GLOSSARY = {
       id: 'relic_zone',
       term: 'Relic zone',
       definition:
-        'A separate row for relics. Relics do not use unit slots and each player may control up to {matchConfig.relicSlots}.',
+        'A separate row for relics. Relics are never units, and each player may control up to {matchConfig.relicSlots} at a time. Playing another relic replaces the one you have: the old one goes to your discard pile without being destroyed or sacrificed, so nothing that watches for a relic dying will fire.',
       seeAlso: ['battlefield'],
       relatedRuleSections: ['card_types'],
     },
@@ -187,14 +195,9 @@ const RAW_GLOSSARY = {
       seeAlso: ['resolution_queue'],
       relatedRuleSections: ['choices_and_targets'],
     },
-    {
-      id: 'unit_slot',
-      term: 'Unit slot',
-      definition:
-        'One of the {matchConfig.unitSlots} places on your battlefield a unit can occupy. A unit cannot be played with no free slot, and a token with nowhere to go is simply never created.',
-      seeAlso: ['battlefield'],
-      relatedRuleSections: ['playing_cards'],
-    },
+    // The `unit_slot` term was removed rather than reworded: the battlefield has
+    // no slots to explain (ruleset update §7). Nothing in the game refers to a
+    // position on the battlefield any more.
     {
       id: 'valid_target',
       term: 'Valid target',

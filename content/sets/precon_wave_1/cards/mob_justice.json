@@ -1,0 +1,41 @@
+{
+  "id": "mob_justice",
+  "name": "Mob Justice",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 5,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Interaction",
+    "power": "high"
+  },
+  "displayText": "Deal damage to target Unit equal to the number of Goblins you control.",
+  "effects": [
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1
+        }
+      },
+      "amount": {
+        "kind": "count",
+        "count": {
+          "subject": "units",
+          "controller": "self",
+          "filter": {
+            "tags": ["goblin"]
+          }
+        }
+      }
+    }
+  ]
+}

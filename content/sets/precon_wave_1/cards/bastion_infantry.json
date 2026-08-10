@@ -1,0 +1,18 @@
+{
+  "id": "bastion_infantry",
+  "name": "Bastion Infantry",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 2,
+  "attack": 2,
+  "health": 3,
+  "keywords": ["guardian"],
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Simple Defender",
+    "power": "low"
+  },
+  "displayText": "Guardian."
+}

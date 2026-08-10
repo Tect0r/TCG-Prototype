@@ -1,0 +1,35 @@
+{
+  "id": "goblin_breeder",
+  "name": "Goblin Breeder",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "attack": 1,
+  "health": 3,
+  "tags": ["goblin"],
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Generator",
+    "power": "medium"
+  },
+  "displayText": "At the beginning of your turn, if this Unit is Ready, create one Goblin Token.",
+  "abilities": [
+    {
+      "id": "breed",
+      "trigger": "on_turn_start",
+      "condition": {
+        "kind": "source_state",
+        "state": "ready"
+      },
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "goblin_token",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

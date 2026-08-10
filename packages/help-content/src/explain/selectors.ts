@@ -1,11 +1,13 @@
 import {
   KEYWORD_REGISTRY,
   type CardFilter,
+  type CardFilterAlternative,
   type CardType,
   type NumericRange,
   type PlayerSelector,
   type TargetDefinition,
   type TargetSelector,
+  type TriggerScope,
   type ZoneId,
 } from '@tcg/card-data';
 import { article, humanise, list, numberWord, plural, quantify } from './grammar.js';
@@ -34,6 +36,7 @@ const ZONE_NAMES: Readonly<Record<ZoneId, string>> = {
 const CARD_TYPE_NOUNS: Readonly<Record<CardType, string>> = {
   unit: 'unit',
   spell: 'spell',
+  reaction: 'Reaction',
   relic: 'relic',
   commander: 'Commander',
   token: 'token',
@@ -81,6 +84,24 @@ export function filterPhrases(filter: CardFilter | undefined): FilterPhrases {
   if (filter.exhausted === false) before.push('ready');
   if (filter.unique === true) before.push('unique');
   if (filter.unique === false) before.push('non-unique');
+  if (filter.newlyDeployed === true) before.push('newly deployed');
+  if (filter.attacking === true) before.push('attacking');
+  if (filter.blocking === true) before.push('blocking');
+  // The negatives go after the noun instead: "friendly units not currently
+  // attacking" reads as English at any count, where an adjective form would
+  // have to pick between "is not" and "are not".
+  // Not an adjective in either direction: "survived combat as a blocker" is a
+  // clause about what the unit did, and shortening it would lose the "as a
+  // blocker" that is the whole condition.
+  if (filter.survivedAsBlocker === true) {
+    after.push('that survived combat as blockers since your previous turn');
+  }
+  if (filter.survivedAsBlocker === false) {
+    after.push('that did not survive combat as blockers since your previous turn');
+  }
+  if (filter.newlyDeployed === false) after.push('not newly deployed');
+  if (filter.attacking === false) after.push('not currently attacking');
+  if (filter.blocking === false) after.push('not currently blocking');
   if (filter.colors && filter.colors.length > 0) {
     before.push(list(filter.colors.map(humanise), 'or'));
   }
@@ -123,7 +144,60 @@ export function filterPhrases(filter: CardFilter | undefined): FilterPhrases {
     if (phrase) after.push(phrase);
   }
 
+  if (filter.anyOf && filter.anyOf.length > 0) {
+    after.push(`matching ${list(filter.anyOf.map(alternativePhrase), 'or')}`);
+  }
+
   return { before, after, noun, nounPlural };
+}
+
+/**
+ * The thing a scoped trigger is watching: "another friendly goblin unit".
+ *
+ * A scope is not a target — nobody chooses it and nothing is pointed at — so it
+ * gets its own phrase rather than reusing `describeSelector`. What it shares is
+ * `filterPhrases`, so a Goblin filter reads the same here as anywhere else.
+ *
+ * `excludeSelfCaused` is deliberately not worded: it is a loop guard, not a
+ * rule a player can observe, and spelling it out would put a sentence on the
+ * card about something that never visibly happens.
+ */
+export function describeTriggerScope(scope: TriggerScope): string {
+  const phrases = filterPhrases(scope.filter);
+  const owner =
+    scope.controller === 'self'
+      ? 'friendly'
+      : scope.controller === 'opponent'
+        ? "an opponent's"
+        : null;
+  const head = [
+    scope.excludeSource ? 'another' : null,
+    owner,
+    ...phrases.before,
+    phrases.noun ?? 'unit',
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' ');
+  // "another …" and "an opponent's …" are already determined; anything else
+  // needs an article so the sentence reads "when a friendly unit is defeated".
+  const determined = scope.excludeSource || scope.controller === 'opponent';
+  const opener = determined ? head : `${article(head)} ${head}`;
+  return [opener, ...phrases.after].join(' ');
+}
+
+/**
+ * One `anyOf` alternative as a noun phrase: "a relic", "a unit with Guardian".
+ *
+ * Built by running the alternative back through `filterPhrases` itself. An
+ * alternative cannot contain another `anyOf`, so the recursion is exactly one
+ * level deep by construction, and every predicate is worded by the same code
+ * that words it at the top level — a second description table would be free to
+ * drift from the first.
+ */
+function alternativePhrase(alternative: CardFilterAlternative): string {
+  const { before, after, noun } = filterPhrases(alternative);
+  const head = [...before, noun ?? 'card'].join(' ');
+  return [article(head), head, ...after].join(' ');
 }
 
 /** Whose cards a selector may reach, as an adjective. */
@@ -215,6 +289,10 @@ export function describeTarget(target: TargetDefinition, sourceNoun = 'this card
   switch (target.kind) {
     case 'source':
       return sourceNoun;
+    case 'trigger_subject':
+      // Named by what it is rather than by a pronoun: "it" would be ambiguous
+      // in a sentence that has already mentioned the card the ability is on.
+      return 'the card that triggered this';
     case 'entity':
       return describeSelector(target.selector);
     case 'player':
@@ -228,6 +306,7 @@ export function describeTarget(target: TargetDefinition, sourceNoun = 'this card
 export function targetIsPlural(target: TargetDefinition): boolean {
   switch (target.kind) {
     case 'source':
+    case 'trigger_subject':
       return false;
     case 'entity':
       return target.selector.count === 'all' || target.selector.count > 1;

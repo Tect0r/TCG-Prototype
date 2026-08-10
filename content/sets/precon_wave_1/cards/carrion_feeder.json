@@ -1,0 +1,19 @@
+{
+  "id": "carrion_feeder",
+  "name": "Carrion Feeder",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "attack": 1,
+  "health": 3,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Outlet",
+    "power": "medium"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
+  "displayText": "Once each turn, you may sacrifice another Unit. If you do, this Unit gains +2 ATK this turn."
+}

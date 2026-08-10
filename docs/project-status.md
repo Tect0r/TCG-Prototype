@@ -20,7 +20,7 @@ started, and what "done" means for each remaining phase.
 | Help      | Player help and content system | **Complete** |
 
 Phase 4's machinery is built and runs; its analytical contracts are being
-audited and corrected against [PHASE4_HARDENING.md](../PHASE4_HARDENING.md). It
+audited and corrected against [PHASE4_HARDENING.md](PHASE4_HARDENING.md). It
 is deliberately **not** marked complete until that document's definition of done
 holds — a laboratory that runs is not the same as one whose numbers mean what
 they say.
@@ -279,7 +279,7 @@ Five experiment kinds run end to end: `batch`, `replacement`, `search`,
 
 **Status.** The machinery is built and passes its suite. The analytical
 _contracts_ are being audited against
-[PHASE4_HARDENING.md](../PHASE4_HARDENING.md), because a laboratory that runs is
+[PHASE4_HARDENING.md](PHASE4_HARDENING.md), because a laboratory that runs is
 not the same as a laboratory whose numbers mean what they say. The corrections
 delivered so far are listed below; the phase is not marked complete until every
 item in that document's definition of done holds.
@@ -312,7 +312,7 @@ item in that document's definition of done holds.
 
 Each item below is a defect in what the laboratory _claimed_ to measure, not a
 crash. Each has regression tests; the section numbers are
-[PHASE4_HARDENING.md](../PHASE4_HARDENING.md).
+[PHASE4_HARDENING.md](PHASE4_HARDENING.md).
 
 | §    | Defect                                                                                                                                            | Correction                                                                                                                                                                                                                                     |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

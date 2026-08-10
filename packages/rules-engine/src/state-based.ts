@@ -9,7 +9,10 @@ import {
   livingPlayers,
   playerOf,
 } from './derive.js';
+import { restDefeated } from './effects.js';
+import { removeFromReactionWindow } from './reactions.js';
 import { moveToZone } from './zones.js';
+import type { ZoneId } from '@tcg/card-data';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
 import type { MatchEndReason, MatchResult } from './schema/state.js';
 import type { LossReason } from './schema/primitives.js';
@@ -44,8 +47,10 @@ export function runStateBasedChecks(ctx: MatchContext): void {
   if (ctx.state.status === 'complete') return;
 
   for (let pass = 0; pass < 64; pass += 1) {
-    // Continuous effects first: losing a Health-granting lord has to be visible
-    // to the very next lethal-damage check (CLAUDE.md §17 Q2).
+    // Source-bound modifiers first, then continuous effects: both can take a
+    // unit's Health away, and both have to be visible to the very next
+    // lethal-damage check in this same pass (CLAUDE.md §17 Q2).
+    const sourcesExpired = expireSourceBoundModifiers(ctx);
     const continuousChanged = recalculateContinuous(ctx);
     const eliminated = runEliminations(ctx);
     const defeated = findDefeatedUnits(ctx);
@@ -53,7 +58,7 @@ export function runStateBasedChecks(ctx: MatchContext): void {
     if (defeated.length > 0) {
       // Damage is already marked; defeat is simultaneous, and the resulting
       // events are emitted in a deterministic order (active player first, then
-      // clockwise, then slot order).
+      // clockwise, then arrival order on each battlefield).
       for (const instanceId of defeated) {
         const instance = findInstance(ctx.state, instanceId);
         if (!instance) continue;
@@ -71,9 +76,9 @@ export function runStateBasedChecks(ctx: MatchContext): void {
         });
       }
       for (const instanceId of defeated) {
-        if (findInstance(ctx.state, instanceId)) {
-          moveToZone(ctx, instanceId, 'discard', { silent: true });
-        }
+        // A Commander goes home to its Command Zone rather than to a discard
+        // pile, and gets more expensive (rule adjustment §2).
+        if (findInstance(ctx.state, instanceId)) restDefeated(ctx, instanceId);
       }
     }
 
@@ -87,10 +92,103 @@ export function runStateBasedChecks(ctx: MatchContext): void {
     }
 
     if (concludeIfOver(ctx)) return;
-    if (defeated.length === 0 && !lossFound && eliminated.length === 0 && !continuousChanged) {
+    if (
+      defeated.length === 0 &&
+      !lossFound &&
+      eliminated.length === 0 &&
+      !continuousChanged &&
+      !sourcesExpired
+    ) {
       return;
     }
   }
+}
+
+/* --------------------------------------------- source-bound modifier expiry */
+
+/**
+ * Zones a source still counts as "present" from.
+ *
+ * The battlefield is the obvious one. The Commander zone is included because a
+ * Commander's printed abilities function from it (CLAUDE.md §4), so a modifier
+ * a Commander ability applied should not evaporate the instant it resolves.
+ * Everything else — hand, deck, discard, removed — is gone as far as a
+ * continuous grant is concerned.
+ */
+const SOURCE_PRESENT_ZONES = new Set<ZoneId>(['battlefield', 'commander_zone']);
+
+/** Whether the instance that applied a modifier is still around to sustain it. */
+function sourceIsPresent(ctx: MatchContext, sourceInstanceId: InstanceId | null): boolean {
+  // A modifier with no recorded source was applied by the engine itself rather
+  // than by a card, and has nothing to outlive. Treating it as absent would
+  // delete it the moment it was created.
+  if (sourceInstanceId === null) return true;
+  const source = findInstance(ctx.state, sourceInstanceId);
+  if (!source) return false;
+  return SOURCE_PRESENT_ZONES.has(source.zone);
+}
+
+/**
+ * Removes every `while_source_present` modifier whose source has left.
+ *
+ * `while_source_present` was in the `DURATIONS` vocabulary and explained to
+ * players, but nothing ever expired it, so in practice it meant `permanent`
+ * (readiness gate B1). It exists because `staticAbilities` cannot express "the
+ * *chosen* unit gets +2/+0 while this relic is out": a static ability applies to
+ * everything matching a filter, not to one unit somebody picked.
+ *
+ * Applied to all four modifier lists — stats, granted keywords, removed
+ * keywords and damage prevention — plus the per-player cost modifiers, because
+ * a duration that works on one of them and silently doesn't on another is worse
+ * than not having it.
+ *
+ * Returns true when anything was removed, so the caller keeps looping: losing a
+ * Health bonus can be lethal, and the defeat has to happen in the same
+ * stabilisation rather than a step later.
+ */
+function expireSourceBoundModifiers(ctx: MatchContext): boolean {
+  let changed = false;
+  const bound = <T extends { duration: string; sourceInstanceId: InstanceId | null }>(
+    entry: T,
+  ): boolean =>
+    entry.duration !== 'while_source_present' || sourceIsPresent(ctx, entry.sourceInstanceId);
+
+  for (const instance of Object.values(ctx.state.instances)) {
+    const before =
+      instance.statModifiers.length +
+      instance.grantedKeywords.length +
+      instance.removedKeywords.length +
+      instance.damageShields.length;
+
+    instance.statModifiers = instance.statModifiers.filter(bound);
+    instance.grantedKeywords = instance.grantedKeywords.filter(bound);
+    instance.removedKeywords = instance.removedKeywords.filter(bound);
+    instance.damageShields = instance.damageShields.filter(bound);
+
+    const after =
+      instance.statModifiers.length +
+      instance.grantedKeywords.length +
+      instance.removedKeywords.length +
+      instance.damageShields.length;
+    if (after === before) continue;
+
+    changed = true;
+    emit(ctx, {
+      type: 'modifiers_expired',
+      instanceId: instance.instanceId,
+      count: before - after,
+    });
+  }
+
+  for (const playerId of ctx.state.seatOrder) {
+    const player = playerOf(ctx.state, playerId);
+    const before = player.costModifiers.length + player.damageShields.length;
+    player.costModifiers = player.costModifiers.filter(bound);
+    player.damageShields = player.damageShields.filter(bound);
+    if (player.costModifiers.length + player.damageShields.length !== before) changed = true;
+  }
+
+  return changed;
 }
 
 /* --------------------------------------------------------------- elimination */
@@ -117,8 +215,10 @@ function runEliminations(ctx: MatchContext): PlayerId[] {
     // 6. Cancel an unresolved choice assigned to them, and 3. drop queued work
     //    they control, before anything else can try to resume it.
     cancelWorkOwnedBy(ctx, playerId);
-    // 7. Attacks aimed at them, and blocks they had committed.
+    // 7. Attacks aimed at them, and blocks they had committed — and any
+    //    priority or pending Reaction they were holding in an open window.
     removeFromCombat(ctx, playerId);
+    removeFromReactionWindow(ctx, playerId);
     // 2/4/5. Every card, wherever it is and whoever controls it.
     clearCardsOf(ctx, playerId);
 
@@ -196,7 +296,6 @@ function findDefeatedUnits(ctx: MatchContext): InstanceId[] {
   for (const playerId of activeFirstOrder(ctx.state, false)) {
     const player = playerOf(ctx.state, playerId);
     for (const instanceId of player.units) {
-      if (instanceId === null) continue;
       const instance = findInstance(ctx.state, instanceId);
       if (!instance) continue;
       const health = currentHealth(instance, definitionOf(ctx.database, instance));

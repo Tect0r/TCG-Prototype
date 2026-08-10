@@ -1,0 +1,16 @@
+{
+  "id": "veil_skirmisher",
+  "name": "Veil Skirmisher",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "attack": 3,
+  "health": 2,
+  "role": "attacker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Simple",
+    "power": "low"
+  }
+}

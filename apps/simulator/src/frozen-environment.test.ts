@@ -199,7 +199,7 @@ describe('card patches (C5)', () => {
       cardOverrides: [
         {
           ...EPHEMERAL_UNIT,
-          keywords: ['swift'],
+          keywords: ['rush'],
           effects: [{ type: 'draw', player: 'self', amount: 1 }],
         },
       ] as never,
@@ -209,7 +209,7 @@ describe('card patches (C5)', () => {
     const card = withRules.database.get('fixture_ephemeral_unit');
     expect(card?.cost).toBe(4);
     expect(card?.tags).toEqual(['fixture']);
-    expect(card?.keywords).toEqual(['swift']);
+    expect(card?.keywords).toEqual(['rush']);
     expect(card?.effects).toHaveLength(1);
     expect(card?.collectible).toBe(true);
   });

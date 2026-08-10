@@ -1,0 +1,27 @@
+{
+  "id": "inventory_audit",
+  "name": "Inventory Audit",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Card Selection",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 2
+    },
+    {
+      "type": "discard",
+      "player": "self",
+      "amount": 1
+    }
+  ],
+  "displayText": "Draw two cards, then discard a card."
+}

@@ -1,0 +1,40 @@
+{
+  "id": "fortress_gate",
+  "name": "Fortress Gate",
+  "type": "relic",
+  "colorIdentity": ["white"],
+  "cost": 4,
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Relic — Defensive Engine",
+    "power": "high"
+  },
+  "displayText": "At the beginning of your turn, if you control fewer than two Guard Tokens, create one Guard Token.",
+  "abilities": [
+    {
+      "id": "raise_the_gate",
+      "trigger": "on_turn_start",
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "units",
+          "controller": "self",
+          "filter": {
+            "cardIds": ["guard_token"]
+          }
+        },
+        "comparison": "at_most",
+        "value": 1
+      },
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "guard_token",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

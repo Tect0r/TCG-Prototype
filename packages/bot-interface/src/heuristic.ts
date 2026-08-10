@@ -107,6 +107,13 @@ export function scoreCandidate(
       return scoreMulligan(observation, candidate.action, weights);
     case 'submit_choice':
       return scoreChoice(observation, candidate.action, weights);
+    case 'play_reaction':
+      return scoreReaction(observation, candidate.action, weights);
+    case 'pass_reaction':
+      // The baseline a Reaction has to beat. Deliberately above zero: holding a
+      // Reaction for a better window is usually right, and a pilot that spent
+      // one on the first window it saw would misprice every card in the class.
+      return weights.passBaseline;
     case 'concede':
       // Only ever reachable when conceding is the sole candidate.
       return -Infinity;
@@ -128,8 +135,80 @@ function scorePlayCard(
 
   return (
     cardValue(definition, weights, observation.database) +
-    weights.energyEfficiency * playable.energyCost
+    weights.energyEfficiency * playable.energyCost -
+    replacedRelicCost(observation, definition, weights)
   );
+}
+
+/**
+ * What playing a Reaction into the open window is worth.
+ *
+ * Priced like any other card, plus one thing no ordinary card has: a Reaction
+ * that **counters** is worth what it denies, and what it denies is only knowable
+ * from the window. The engine names the Spell being answered, so the pilot can
+ * value countering a five-cost bomb above countering a cantrip instead of
+ * treating every counter as interchangeable.
+ *
+ * This is an approximate valuation and is labelled as one: a pilot cannot see
+ * whether holding the Reaction for a later window would be better, because it
+ * cannot see the future. Reaction-heavy decks are exactly the case readiness
+ * gate F4 says needs archetype-aware pilots before a balance conclusion is
+ * drawn from them.
+ */
+function scoreReaction(
+  observation: BotObservation,
+  action: Extract<Action, { type: 'play_reaction' }>,
+  weights: BotWeights,
+): number {
+  const window = observation.legal.reaction;
+  const playable = window?.playableCards.find((card) => card.instanceId === action.instanceId);
+  const definition = playable ? observation.database.get(playable.definitionId) : undefined;
+  if (!definition || !playable || !window) return 0;
+
+  let score = cardValue(definition, weights, observation.database);
+  score += weights.energyEfficiency * playable.energyCost;
+
+  const counters = definition.effects.some((effect) => effect.type === 'counter');
+  if (counters) {
+    const subjectId = window.subjectInstanceId;
+    const subject = subjectId ? observation.view.instances[subjectId] : undefined;
+    const subjectDefinition = subject ? observation.database.get(subject.definitionId) : undefined;
+    // Countering is worth roughly what the answered card is worth. Without a
+    // subject — a counter played into a combat window, where it will fizzle —
+    // it is worth nothing at all, which is what stops a pilot burning one.
+    score += subjectDefinition
+      ? cardValue(subjectDefinition, weights, observation.database)
+      : -weights.passBaseline;
+  }
+
+  return score;
+}
+
+/**
+ * What playing this card costs in relics you already control.
+ *
+ * A player may hold only one active relic; playing another *replaces* it rather
+ * than being refused (ruleset update §12). That makes a second relic a genuine
+ * trade, and a pilot that ignored it would happily overwrite a strong relic with
+ * a weak one for the pleasure of spending energy. Zero for every other card
+ * type, and zero when there is room.
+ */
+function replacedRelicCost(
+  observation: BotObservation,
+  definition: CardDefinition,
+  weights: BotWeights,
+): number {
+  if (definition.type !== 'relic') return 0;
+  const mine = selfSummary(observation.view).relics;
+  const surplus = mine.length - observation.rulesConfig.relicSlots + 1;
+  if (surplus <= 0) return 0;
+
+  // The engine replaces the oldest first, so value exactly those.
+  return mine.slice(0, surplus).reduce((sum, instanceId) => {
+    const instance = observation.view.instances[instanceId];
+    const replaced = instance ? observation.database.get(instance.definitionId) : undefined;
+    return replaced ? sum + cardValue(replaced, weights, observation.database) : sum;
+  }, 0);
 }
 
 function scoreActivate(
@@ -250,6 +329,18 @@ function scoreBlock(
   for (const instanceId of outcome.blockersLost) {
     const unit = view.instances[instanceId];
     if (unit) score -= weights.blockTradeLoss * unitBoardValue(unit, weights, database);
+  }
+
+  // Blocking exhausts the blocker (ruleset update §8), so a unit that survives
+  // the block is still spent: it cannot attack on this player's own next turn.
+  // Without this the pilot treats defence as free and chump-blocks with bodies
+  // it wanted to swing with. A blocker that dies is already priced by
+  // `blockTradeLoss`, so only the survivors are charged here.
+  const lost = new Set(outcome.blockersLost);
+  for (const block of action.blocks) {
+    if (lost.has(block.blockerInstanceId)) continue;
+    const unit = view.instances[block.blockerInstanceId];
+    if (unit && !unit.exhausted) score -= weights.readyBlockerValue;
   }
 
   // Surviving beats every trade. The bonus is capped at the damage that

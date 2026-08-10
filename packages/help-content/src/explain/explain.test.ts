@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DURATIONS,
   EFFECT_TYPES,
   TRIGGER_IDS,
   cardDefinitionSchema,
   loadBundledCardData,
   type CardDefinition,
   type CardDefinitionInput,
+  type Duration,
   type EffectDefinition,
   type EffectType,
 } from '@tcg/card-data';
@@ -55,7 +57,7 @@ const SAMPLE_EFFECTS: { readonly [T in EffectType]: Extract<EffectDefinition, { 
   grant_keyword: {
     type: 'grant_keyword',
     target: { kind: 'source' },
-    keyword: 'swift',
+    keyword: 'rush',
     duration: 'permanent',
   },
   remove_keyword: {
@@ -105,11 +107,12 @@ const SAMPLE_EFFECTS: { readonly [T in EffectType]: Extract<EffectDefinition, { 
     type: 'search_zone',
     player: 'self',
     zone: 'deck',
-    filter: { cardTypes: ['unit'], keywords: ['swift'] },
+    filter: { cardTypes: ['unit'], keywords: ['rush'] },
     amount: 1,
     destination: 'hand',
     reveal: true,
     upTo: true,
+    remainder: 'unchanged',
   },
   reorder_zone: { type: 'reorder_zone', player: 'self', zone: 'deck', amount: 3 },
   modify_cost: {
@@ -143,6 +146,7 @@ const SAMPLE_EFFECTS: { readonly [T in EffectType]: Extract<EffectDefinition, { 
   },
   ready: { type: 'ready', target: { kind: 'source' } },
   move_card: { type: 'move_card', target: { kind: 'source' }, toZone: 'hand' },
+  counter: { type: 'counter', unlessPays: 2 },
 };
 
 describe('effect explanations', () => {
@@ -203,10 +207,68 @@ describe('effect explanations', () => {
     const explanation = explainEffect({
       type: 'grant_keyword',
       target: { kind: 'source' },
-      keyword: 'guardian',
+      keyword: 'resilient',
       duration: 'permanent',
     });
     expect(explanation.notes.join(' ')).toMatch(/no effect in the rules engine/i);
+  });
+
+  it('names the boundary of every duration a modifier can carry', () => {
+    const clause = (duration: Duration): string =>
+      explainEffect({
+        type: 'modify_stats',
+        target: { kind: 'source' },
+        attack: 1,
+        health: 0,
+        duration,
+      }).text;
+
+    // The two narrow boundaries are the ones a player can misjudge: neither
+    // means "until end of turn", and one of them deliberately outlasts it.
+    expect(clause('end_of_combat')).toContain('for that combat');
+    expect(clause('until_your_next_turn')).toContain('until the beginning of your next turn');
+    for (const duration of DURATIONS) expect(clause(duration)).not.toBe('');
+  });
+
+  it('spells out every alternative of an "X or Y" filter', () => {
+    const explanation = explainEffect({
+      type: 'search_zone',
+      player: 'self',
+      zone: 'deck',
+      fromTop: 4,
+      filter: { anyOf: [{ tags: ['goblin'] }, { cardTypes: ['relic'] }] },
+      amount: 1,
+      destination: 'hand',
+      reveal: false,
+      upTo: true,
+      remainder: 'bottom',
+    });
+
+    // A dropped alternative would read as a strictly narrower card than the one
+    // that was authored, which is the failure this layer exists to prevent.
+    expect(explanation.text).toContain('goblin');
+    expect(explanation.text).toContain('relic');
+    expect(explanation.text).toMatch(/\bor\b/);
+  });
+
+  it('does not offer to decline a look-at-the-top search that has no "may"', () => {
+    // The engine treats a look-at-the-top effect as public, because the cards
+    // were shown to the chooser. Saying otherwise would promise a choice
+    // `applyAction` will reject.
+    const explanation = explainEffect({
+      type: 'search_zone',
+      player: 'self',
+      zone: 'deck',
+      fromTop: 3,
+      amount: 1,
+      destination: 'hand',
+      reveal: false,
+      upTo: false,
+      remainder: 'bottom',
+    });
+
+    expect(explanation.notes.join(' ')).toMatch(/must be taken/);
+    expect(explanation.notes.join(' ')).not.toMatch(/may legally find nothing/);
   });
 });
 
@@ -234,6 +296,104 @@ describe('card explanations', () => {
         }
       }
     }
+  });
+
+  it('describes a computed amount rather than printing a number it cannot know', () => {
+    // Ruleset update §15. An inspector that showed "deal 0 damage" for "damage
+    // equal to the number of Goblins you control" would be actively misleading.
+    const explanation = explainCard(
+      card({
+        type: 'spell',
+        attack: undefined,
+        health: undefined,
+        effects: [
+          {
+            type: 'deal_damage',
+            target: { kind: 'player', relation: 'opponent' },
+            amount: {
+              kind: 'count',
+              count: { subject: 'units', controller: 'self', filter: { tags: ['goblin'] } },
+            },
+          },
+        ],
+      }),
+      { database },
+    );
+    const steps = explanation.sections.flatMap((section) => section.steps.map((step) => step.text));
+    expect(steps.join(' ')).toMatch(/the number of goblin units you control/i);
+    expect(steps.join(' ')).not.toMatch(/deal zero damage/i);
+  });
+
+  it('spells out an instruction’s condition instead of dropping it', () => {
+    const explanation = explainCard(
+      card({
+        type: 'spell',
+        attack: undefined,
+        health: undefined,
+        effects: [
+          {
+            type: 'draw',
+            player: 'self',
+            amount: 1,
+            condition: {
+              kind: 'count',
+              count: { subject: 'units_defeated_this_turn', controller: 'self' },
+              comparison: 'at_least',
+              value: 2,
+            },
+          },
+        ],
+      }),
+      { database },
+    );
+    const steps = explanation.sections.flatMap((section) => section.steps.map((step) => step.text));
+    // Ownership binds to the noun and the subject's time clause trails it, so
+    // this reads "units you control defeated this turn" rather than the
+    // garbled "units defeated this turn you control".
+    expect(steps.join(' ')).toMatch(
+      /only if there are at least two units you control defeated this turn/i,
+    );
+  });
+
+  it('says a source-bound modifier lasts only while the source is in play', () => {
+    // Readiness gate B1: the sentence was already written, but nothing expired
+    // the modifier, so it was a promise the engine did not keep. It does now —
+    // this pins the wording to the behaviour rather than the other way round.
+    const explanation = explainCard(
+      card({
+        type: 'relic',
+        attack: undefined,
+        health: undefined,
+        effects: [
+          {
+            type: 'modify_stats',
+            target: {
+              kind: 'entity',
+              selector: { zone: 'battlefield', controller: 'self', count: 1 },
+            },
+            attack: 2,
+            health: 0,
+            duration: 'while_source_present',
+          },
+        ],
+      }),
+      { database },
+    );
+    const steps = explanation.sections.flatMap((section) => section.steps.map((step) => step.text));
+    expect(steps.join(' ')).toMatch(/as long as the source remains in play/);
+  });
+
+  it('tells a relic’s owner that the next relic replaces it', () => {
+    // Ruleset update §12. The distinction that matters to a player is that the
+    // old relic is *not* destroyed: a card watching for a relic dying will not
+    // fire, so the note has to say so rather than just "it goes away".
+    const explanation = explainCard(
+      card({ type: 'relic', attack: undefined, health: undefined, effects: [] }),
+      { database },
+    );
+    const notes = explanation.notes.join(' ');
+    expect(notes).toMatch(/replaces this one/i);
+    expect(notes).toMatch(/not as a destruction or a sacrifice/i);
   });
 
   it('preserves effect order', () => {
@@ -332,6 +492,73 @@ describe('card explanations', () => {
     expect(curated.sections[0]?.steps[0]?.curated).toBe('Two cards, one at a time.');
     expect(curated.sections[0]?.steps[0]?.text).toMatch(/draw/i);
     expect(curated.notes).toContain('Your maximum hand size is 10.');
+  });
+
+  it('says what a scoped trigger is actually watching', () => {
+    // Regression: every scoped ability used to render the registry's bare
+    // clause, so a card that watches the whole board read as one that watches
+    // only itself — "When this unit is defeated" for an ability that never
+    // fires on its own death.
+    const explanation = explainCard(
+      card({
+        abilities: [
+          {
+            id: 'watch',
+            trigger: 'on_defeated',
+            scope: { controller: 'self', excludeSource: true, filter: { tags: ['goblin'] } },
+            effects: [{ type: 'draw', player: 'self', amount: 1 }],
+          },
+        ],
+      }),
+      { database },
+    );
+
+    const title = explanation.sections.find((section) => section.kind === 'triggered')?.title ?? '';
+    expect(title).toMatch(/another/i);
+    expect(title).toMatch(/goblin/i);
+    expect(title).not.toBe('When this unit is defeated');
+  });
+
+  it('says a throttled trigger only fires once a turn', () => {
+    const explanation = explainCard(
+      card({
+        abilities: [
+          {
+            id: 'once',
+            trigger: 'on_defeated',
+            scope: { controller: 'self' },
+            limit: 'each_turn',
+            effects: [{ type: 'draw', player: 'self', amount: 1 }],
+          },
+        ],
+      }),
+      { database },
+    );
+
+    const section = explanation.sections.find((s) => s.kind === 'triggered');
+    expect(section?.title).toMatch(/first time/i);
+    expect(section?.title).toMatch(/each turn/i);
+    // Also structured, so a UI can show the throttle without parsing the title.
+    expect(section?.limit).toBe('Once each turn.');
+  });
+
+  it('spells out a condition that gates the trigger itself', () => {
+    const explanation = explainCard(
+      card({
+        abilities: [
+          {
+            id: 'gated',
+            trigger: 'on_turn_end',
+            condition: { kind: 'active_turn', expected: true },
+            effects: [{ type: 'draw', player: 'self', amount: 1 }],
+          },
+        ],
+      }),
+      { database },
+    );
+
+    const title = explanation.sections.find((s) => s.kind === 'triggered')?.title ?? '';
+    expect(title).toMatch(/only if it is your turn/i);
   });
 
   it('resolves configuration references rather than hard-coding numbers', () => {

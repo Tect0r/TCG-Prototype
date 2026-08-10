@@ -1,0 +1,35 @@
+{
+  "id": "sound_the_warhorn",
+  "name": "Sound the Warhorn",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 4,
+  "role": "finisher",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Finisher",
+    "power": "high"
+  },
+  "displayText": "Newly Deployed Goblins you control gain Rush this turn.",
+  "effects": [
+    {
+      "type": "grant_keyword",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "tags": ["goblin"],
+            "newlyDeployed": true
+          },
+          "count": "all",
+          "selection": "automatic"
+        }
+      },
+      "keyword": "rush",
+      "duration": "end_of_turn"
+    }
+  ]
+}

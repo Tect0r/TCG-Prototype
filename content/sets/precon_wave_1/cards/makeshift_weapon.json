@@ -1,0 +1,34 @@
+{
+  "id": "makeshift_weapon",
+  "name": "Makeshift Weapon",
+  "type": "spell",
+  "colorIdentity": [],
+  "cost": 2,
+  "role": "attacker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "neutral",
+    "identity": "Neutral Spell — Combat",
+    "power": "low"
+  },
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1
+        }
+      },
+      "attack": 2,
+      "health": 0,
+      "duration": "end_of_turn"
+    }
+  ],
+  "displayText": "Target Unit gains +2 ATK this turn."
+}

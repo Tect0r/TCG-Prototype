@@ -1,0 +1,17 @@
+{
+  "id": "feed_the_pit",
+  "name": "Feed the Pit",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "role": "removal",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Removal",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
+  "displayText": "As an additional cost, sacrifice a Unit. Defeat an enemy Unit costing 3 or less."
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 2,
+  "setId": "prototype_core",
+  "name": "Prototype Core Set",
+  "status": "development",
+  "description": "Development fixture set. Intentionally rough balance, placeholder colour identity and inert keywords; not part of any playtest format."
+}

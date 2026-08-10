@@ -19,6 +19,7 @@
     "@tcg/deck": "*",
     "@tcg/rules-engine": "*",
     "@tcg/shared": "*",
+    "@tcg/spectator": "*",
     "zod": "^4.0.0"
   }
 }

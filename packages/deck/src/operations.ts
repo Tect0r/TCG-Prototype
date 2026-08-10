@@ -87,6 +87,7 @@ export function copyLimitFor(
   card: CardDefinition,
   format: DeckFormatConfig = DEFAULT_DECK_FORMAT,
 ): number {
+  if (format.singleton) return 1;
   return card.unique ? format.uniqueCopyLimit : format.copyLimit;
 }
 

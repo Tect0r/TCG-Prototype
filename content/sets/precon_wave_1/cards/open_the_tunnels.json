@@ -1,0 +1,22 @@
+{
+  "id": "open_the_tunnels",
+  "name": "Open the Tunnels",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Generator",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "goblin_token",
+      "amount": 2
+    }
+  ],
+  "displayText": "Create two Goblin Tokens."
+}

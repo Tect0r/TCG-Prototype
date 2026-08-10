@@ -1,0 +1,24 @@
+{
+  "id": "refuge_warden",
+  "name": "Refuge Warden",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 4,
+  "attack": 2,
+  "health": 5,
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Token Generator",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "guard_token",
+      "amount": 2
+    }
+  ],
+  "displayText": "When deployed, create two Guard Tokens."
+}

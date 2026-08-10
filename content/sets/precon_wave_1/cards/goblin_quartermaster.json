@@ -1,0 +1,17 @@
+{
+  "id": "goblin_quartermaster",
+  "name": "Goblin Quartermaster",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "attack": 3,
+  "health": 4,
+  "tags": ["goblin"],
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Simple",
+    "power": "low"
+  }
+}

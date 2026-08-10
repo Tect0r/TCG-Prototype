@@ -1,0 +1,33 @@
+{
+  "id": "forced_recall",
+  "name": "Forced Recall",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 4,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Tempo",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "return_to_hand",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit"],
+            "exhausted": true
+          },
+          "count": 2,
+          "optional": true
+        }
+      }
+    }
+  ],
+  "displayText": "Return up to two Exhausted Units to their owners' hands."
+}

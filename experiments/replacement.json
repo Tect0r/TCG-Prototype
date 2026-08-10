@@ -100,7 +100,7 @@
         "commanderId": "prototype_commander_white_black",
         "cards": [
           { "cardId": "dawn_conscript", "quantity": 2 },
-          { "cardId": "field_medic", "quantity": 2 },
+          { "cardId": "prototype_field_medic", "quantity": 2 },
           { "cardId": "shieldline_sergeant", "quantity": 2 },
           { "cardId": "radiant_bulwark", "quantity": 2 },
           { "cardId": "oathbound_paladin", "quantity": 2 },

@@ -1,0 +1,34 @@
+{
+  "id": "seal_the_rift",
+  "name": "Seal the Rift",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 4,
+  "role": "removal",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Narrow Removal",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "destroy",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"],
+            "attack": {
+              "min": 4
+            }
+          },
+          "count": 1
+        }
+      }
+    }
+  ],
+  "displayText": "Defeat an enemy Unit with 4 ATK or more."
+}

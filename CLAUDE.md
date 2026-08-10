@@ -12,7 +12,14 @@ The application should grow in this order:
 4. Local, headless AI simulations and card-balance analysis
 5. Optional analysis of pseudonymous real-player match data
 
-Phases 1–3 are complete: the deck builder, deterministic headless rules engine, authoritative online matches, and two-to-four-player free-for-all all work. **Phase 4 — local headless simulation, automated deck search, and card-balance analysis — is implemented**: the simulator, the four pilots, batch execution, telemetry, deck generation, evolutionary search, replacement experiments, comparisons and reporting all run. The active milestone is the correctness and trustworthiness pass over that laboratory defined in `PHASE4_HARDENING.md`; §18 below describes how Phase 4 was built and remains the reference for its structure. Preserve all working behavior, protocol validation, replay determinism, hidden-information guarantees, and saved-data compatibility while extending the project.
+Phases 1–3 are complete: the deck builder, deterministic headless rules engine, authoritative online matches, and two-to-four-player free-for-all all work. **Phase 4 — local headless simulation, automated deck search, and card-balance analysis — is implemented**: the simulator, the four pilots, batch execution, telemetry, deck generation, evolutionary search, replacement experiments, comparisons and reporting all run. §18 below describes how Phase 4 was built and remains the reference for its structure. Preserve all working behavior, protocol validation, replay determinism, hidden-information guarantees, and saved-data compatibility while extending the project.
+
+> **Active milestone: Precon Wave 1.** `CLAUDE_RULESET_UPDATE.md` is the authoritative specification for the current work, and it **supersedes several rules that this file previously stated as confirmed**. Every superseded rule below has been rewritten in place and carries a status marker. [`REMAINING_WORK.md`](REMAINING_WORK.md) tracks exactly what is built and what is not, for this milestone and every other; [ADR 0016](docs/architecture/0016-precon-wave-1-ruleset.md) records the decisions. Roughly a third of that update is implemented — the data, format and keyword layer — so **do not assume a rule marked `pending` below works in the engine.**
+
+Status markers used throughout §4:
+
+- **(implemented)** — built, tested, and live in the engine.
+- **(pending)** — the confirmed rule, not yet built. Implementing it is in scope; contradicting it is not.
 
 ## 2. Core design principles
 
@@ -62,15 +69,17 @@ Structural rules below are confirmed. Numeric values marked **provisional** are 
 - The Commander has a color identity containing one or more colors.
 - A card is legal only when every color in its color identity is included in the Commander's color identity.
 - Neutral/colorless cards may be used by any Commander.
-- Initial prototype target: 30 cards per deck.
-- Initial copy limit: two copies of a regular card and one copy of a unique card.
+- A legal deck contains exactly 40 cards **(implemented)**.
+- The format is **singleton**: no card ID may appear more than once in a deck **(implemented)**. Validation rejects a duplicate even when an import splits the same ID across separate entries, so `singleton` is a distinct flag and not `copyLimit: 1`.
+- Deck-construction rules are versioned data (`content/formats/*.json`), not a constant. `DEFAULT_DECK_FORMAT` is `precon_wave_1`. `DEVELOPMENT_DECK_FORMAT` keeps the old 30-card/two-copy rules **only** so Phase 1–4 regression fixtures keep exercising what they were written against; it is not the game's format.
+- Tokens are not deckable and do not count toward deck size.
 - Begin with single-color and two-color Commanders.
 - All cards are unlocked; there is no collection, account progression, or monetization system.
 
 ### Match setup
 
 - Initial mode: online 1v1.
-- Each player brings one server-validated 30-card deck and its external Commander.
+- Each player brings one server-validated 40-card singleton deck and its external Commander.
 - Starting player is selected using the match's seeded random-number generator.
 - Both players draw five cards (**provisional**).
 - Use one free opening-hand redraw (**provisional**): a player may return any number of opening cards, draw the same number, then the returned cards are shuffled into the deck. Both players submit or keep before either result is revealed.
@@ -84,17 +93,22 @@ Structural rules below are confirmed. Numeric values marked **provisional** are 
 - Universal energy increases automatically; there are no land or colored-resource cards.
 - Each player starts with 1 maximum energy on their first turn (**provisional**).
 - At the start of that player's turn, maximum energy increases by 1 up to a maximum of 10 (**provisional**), then current energy refills to maximum.
-- Unspent energy does not carry over.
-- Costs are paid before a card or activated ability enters the resolution queue.
+- Unspent energy **remains available through opponents' turns** so it can pay for Reactions, and is then replaced — not topped up — by the normal refill on the player's next turn. It never accumulates above maximum energy. The engine already behaves this way because nothing zeroes energy at turn end, but it becomes observable only once Reactions exist **(pending: the test that pins it)**.
+- Costs are validated and paid atomically before a card or activated ability enters the resolution queue.
+- Cost reductions cannot reduce a cost below the minimum printed by the effect, normally 1 where one is specified **(pending)**.
+- Additional costs such as sacrifice are paid even if the effect is later countered **(pending)**.
+- If all required costs cannot be paid, the action is illegal.
 
 ### Battlefield and units
 
-- Each player has five unit slots (**provisional**).
-- A unit cannot be played if no friendly slot is available unless the play itself legally frees or replaces a slot.
-- Units enter ready but have summoning sickness: they cannot attack on the turn they enter unless they have a keyword that permits it.
+- **There is no unit limit** **(pending)**. The five-slot restriction is removed from deck play, token creation, state, UI, bot logic, and simulator assumptions, and must not be replaced by another hidden cap. Energy is the intended constraint; §17's telemetry exists to judge whether it is sufficient. Large boards are not automatically a failure. The engine still uses a fixed-length slot array, so this is unbuilt.
+- Units keep individual game-object identity with stable instance IDs. Identical tokens may be **visually** stacked to reduce clutter, but a stack is presentation only: each token attacks, blocks, exhausts, readies, is sacrificed, takes damage, receives buffs, and is targeted individually **(pending)**.
+- An effect affects one individual unit unless it explicitly says every unit in a token stack or every matching unit.
+- Returning a token to hand or moving it to any non-battlefield zone makes it cease to exist after the relevant leave/defeat events have been emitted.
+- Units enter ready unless an effect says they enter exhausted, and are **`Newly Deployed`** for the relevant turn-cycle duration **(implemented)**. A Newly Deployed unit cannot attack or pay an `Exhaust this source` activation cost unless it has Rush. It **may** block (ADR 0016 Q-C). The state clears at its controller's next Ready Step (ADR 0016 Q-B) and is stored on the instance, never derived from a turn-number comparison. Tokens are Newly Deployed when created, as is a unit returned from discard directly to the battlefield.
 - A ready unit may attack once per turn and becomes exhausted when declared as an attacker.
-- Exhausted units ready at the start of their controller's turn.
-- Exhausted units cannot attack but may block (**provisional**).
+- A unit **must be ready to block**, and declaring it as a blocker exhausts it **(pending)**. Exhausted units cannot attack, block, or pay an exhaust-source cost. This replaces the earlier provisional rule that exhausted units may block; the engine's `exhaustedUnitsMayBlock` still defaults to `true`, so the config and the rule currently disagree.
+- Exhausted units ready at the start of their controller's turn unless an effect prevents that ready event.
 - A unit can block at most one attacker; each attacker can initially receive at most one blocker (**provisional**). Model blocker assignment so multiple blockers can be added later without rewriting combat state.
 - Units retain marked damage across turns. A unit is defeated when marked damage is greater than or equal to its current Health.
 - Temporary Attack/Health changes expire at the documented duration boundary, normally turn end. Removing a Health bonus may defeat a damaged unit during the following state-based check.
@@ -106,57 +120,75 @@ Structural rules below are confirmed. Numeric values marked **provisional** are 
 - The attacker declares attackers.
 - The defending player assigns blockers.
 - Blocked units deal combat damage simultaneously unless an effect says otherwise.
-- No opponent-turn spells, priority system, or MTG-style stack in the initial ruleset.
-- Units, relics, and normal spells may be played only during either Main Phase while the effect queue is empty and no choice is pending.
-- Phase 2 has no reactions, interrupts, instants, or player-controlled trigger ordering.
+- **Reactions are opponent-turn cards played inside bounded windows (pending).** This replaces the earlier blanket ban. There is still **no priority system and no MTG-style stack**: the engine opens deterministic, bounded windows around the required events and nothing else. A Reaction is legal only in its structured timing window or in response to the structured event printed on it. Countering a card means it has no effect and moves to its owner's discard; a countered permanent never enters the battlefield.
+- The provisional chaining policy — versioned, documented in `docs/rules/open-decisions.md`, and deliberately replaceable — is: one window per triggering event, in seat order starting from the non-active player; each eligible player may play at most one Reaction per window; a Reaction cannot be responded to; the window closes when every eligible player has acted or declined. The final policy is an open §18 item.
+- Units, relics, Commanders, and normal spells may be played only during the active player's Main Phases while the effect queue is empty and no choice is pending.
 - Activated abilities may only be used during the controller's Main Phase unless their definition explicitly uses an automatic trigger.
 - Multiplayer later means a genuine Commander-style free-for-all for two to four players, not parallel 1v1 games.
 
 ### Current provisional turn phases
 
 ```text
-Turn Start
+Turn Start / Ready
 Draw
 Main Phase
 Declare Attackers
+Reaction Window: After Attackers      (pending)
 Assign Blockers
+Reaction Window: After Blockers       (pending)
 Resolve Combat
+Reaction Window: After Combat         (pending)
 Second Main Phase
 Turn End
 ```
 
-Treat these as explicit state-machine states. Do not rely on UI flow to enforce phase legality. Skip `Assign Blockers` when no legal attacker was declared. Players explicitly pass each Main Phase and confirm attackers/blockers.
+Treat these as explicit state-machine states. Do not rely on UI flow to enforce phase or window legality. Skip `Assign Blockers` when no attacker remains eligible for combat. Players explicitly pass each Main Phase and confirm attackers/blockers.
+
+The three Reaction windows and the spell-response window are **not yet in `MATCH_PHASES`** (`packages/rules-engine/src/schema/primitives.ts`). Activated abilities default to the controller's Main Phase unless their structured timing says otherwise.
 
 ### Combat
 
-- An attacker chooses any ready, non-summoning-sick friendly unit and targets the opposing player in 1v1.
+- An attacker chooses any ready, non-Newly-Deployed friendly unit and targets the opposing player in 1v1, or an explicitly selected living opponent in multiplayer. Units are never attacked directly.
 - Declared attackers exhaust immediately.
 - The defender may assign legal blockers or decline to block.
 - An unblocked attacker deals damage equal to its Attack to the defending player.
 - A blocked attacker and its blocker deal damage to each other simultaneously.
-- If the blocker leaves play before combat damage, the attacker remains blocked and deals no player damage unless it has a future piercing/overrun keyword (**provisional**).
+- If the blocker leaves play before combat damage, the attacker remains blocked and deals no player damage unless it has **Overwhelm**.
 - Negative Attack is treated as 0 when dealing damage.
 - After simultaneous damage is marked, run state-based checks and defeat all lethally damaged units simultaneously. Then emit defeat events in deterministic order.
-- No default excess damage reaches the defending player.
+- No excess combat damage reaches the defending player unless the attacker has **Overwhelm** **(implemented)**. Per ADR 0016 Q-D, Overwhelm assigns damage equal to the blocker's **current Health** to the blocker and deals the remainder to the defending player; Barrier then prevents the blocker's share only, and does not prevent the overflow. ADR 0016 flags where this diverges from the update's "remaining lethal requirement" wording — the two differ only when the blocker is already damaged.
+
+### Keywords
+
+Keywords are engine behavior, never reminder-text parsing, and are never special-cased by card ID. The registry is shared between `card-data` (player-facing text) and `rules-engine` (engine notes).
+
+- **Rush (implemented)** — a Newly Deployed unit may attack and pay its own `Exhaust this source` activation costs. Rush does not ready an exhausted unit. Migrated from `swift` by the v2→v3 card migration; `swift` no longer exists as a separate keyword.
+- **Guardian (implemented)** — while the defending player controls a ready Guardian able to block an attacker, that attacker may not be left unblocked. The defender chooses which legal Guardian blocks it. A Guardian covers at most one attacker, so with more attackers than Guardians only that many blocks are compulsory. `LegalActions.blocking` publishes `guardianInstanceIds` and `mustBlockCount`; the engine rejects a plan that ignores them.
+- **Barrier (implemented)** — prevents the next damage event that would damage the unit, then is removed. A zero-damage event does not consume it. Instances do not stack. Tracked as `barrierSpent` on the instance so re-granting works.
+- **Overwhelm (implemented)** — see Combat above.
+- **Untargetable by opponents (implemented)** — removed from any legal target set computed for an opposing chooser. Non-targeting effects such as "every unit", combat, and its controller's own effects still reach it.
+- **Evasive, Armored, Siphon, Venom, Quick Strike, Resilient** — pre-existing keywords kept data-compatible. The final fate of keywords the precons do not use, especially `resilient`, is an open §18 item.
 
 ### Relics and spells
 
 - Spells resolve their structured effects in order and then move to discard.
 - A spell with no legal required target cannot be played.
 - If a target becomes invalid before its effect resolves, that target is ignored; other valid targets and later instructions still resolve unless the effect definition says all targets are required.
-- Relics occupy a separate persistent battlefield zone and do not consume unit slots.
-- Each player may control up to three relics (**provisional**).
-- A relic remains in play until destroyed, sacrificed, or moved by an effect.
-- Phase 2 does not implement hidden traps, equipment attachment, or opponent-turn activations.
+- Relics occupy a separate persistent battlefield zone and are not units.
+- **A player may control only one active relic (pending).** Playing a relic while controlling one **replaces** it: the previous relic moves to its owner's discard as a rules action. That is neither destruction nor sacrifice, so it triggers neither `on_defeated` nor `on_sacrifice`, and it emits its own `relic_replaced` event so a future card can key off it without reinterpreting discard events. The engine still enforces `relicSlots: 3` and rejects the fourth instead of replacing.
+- "The active relic" means the single relic controlled by the relevant player. An effect that can refer to either player's relic must make the controller explicit in its structured target.
+- A relic remains active until destroyed, replaced, sacrificed, or moved by an effect.
+- Hidden traps and equipment attachment remain out of scope.
 
 ### Commander
 
-- The Commander begins outside the 30-card deck in the Commander zone.
-- A Commander has a structured passive ability and may have one activated ability. It is not automatically a unit.
-- Commander passives function from the Commander zone unless the card explicitly states another zone.
-- Phase 2 does not summon Commanders as combat units (**provisional simplification**).
+- The Commander begins outside the 40-card deck in the Commander zone, and is never drawn.
+- **Commanders are deployable (pending).** Playing a Commander pays its printed cost, moves it from the Commander zone to the battlefield, and marks it Newly Deployed. This replaces the earlier simplification that Commanders are never summoned. A deployed Commander behaves as a unit for ready/exhaust, combat, targeting, damage, and activated-ability costs unless a rule explicitly excludes Commanders. "Non-Commander unit" excludes them; "unit or Commander" includes them. The schema accepts a Commander cost; the engine cannot yet play one.
+- A Commander's `cost` is nullable. A printed cost means deployable; `null` means the older zone-only Commander, which is what the eight `prototype_core` fixture Commanders still are.
+- Commander static/passive text functions only in its documented active zone. Do not assume every printed ability functions from the Commander zone.
 - An activated Commander ability has structured timing, costs, targets, and either `once_per_match` or a documented reusable restriction.
-- Commander defeat and three-turn recovery are deferred until Commanders can enter the battlefield. Do not invent that subsystem in Phase 2.
+- Card text naming "the enemy Commander" as a damage or heal target resolves to the opposing **player's** Health, and "your Commander" to the controller's own (ADR 0016 Q-A). A deployed Commander's printed Health and its controller's 20 Health are separate pools.
+- **Commander lifecycle after battlefield defeat is unresolved. Do not invent a recovery duration, replay tax, or Commander-defeat loss condition.** Model the zones and events cleanly and isolate the policy behind versioned configuration.
 
 ### Trigger ordering and resolution
 
@@ -216,15 +248,15 @@ Implement this phase first.
   "name": "Prototype Deck",
   "commanderId": "prototype_commander_blue_red",
   "cards": [
-    { "cardId": "prototype_scout", "quantity": 2 },
-    { "cardId": "prototype_guard", "quantity": 2 }
+    { "cardId": "prototype_scout", "quantity": 1 },
+    { "cardId": "prototype_guard", "quantity": 1 }
   ],
   "createdAt": "2026-08-07T12:00:00.000Z",
   "updatedAt": "2026-08-07T12:00:00.000Z"
 }
 ```
 
-Dates and generated deck IDs may change without affecting card identity. Add migrations when the save schema changes.
+Dates and generated deck IDs may change without affecting card identity. Add migrations when the save schema changes. The `quantity` field is retained under singleton — where every quantity is 1 — because the deck format is data and a future format may allow copies again. Decks saved under the old 30-card format keep loading and are reported as illegal in `precon_wave_1` rather than silently rewritten.
 
 ## 6. Card identity and artwork
 
@@ -457,7 +489,7 @@ Do not expose raw authoritative `MatchState` directly to clients. Derive a `Play
 The engine—not the UI—must generate or validate all legal actions. Phase 2A must support:
 
 - Opening-hand keep and partial redraw
-- Playing a unit into a selected free slot
+- Playing a unit into a selected free slot (slot selection disappears once §4's unlimited battlefield lands)
 - Playing a spell and selecting all required legal targets/choices
 - Playing a relic
 - Activating a supported Commander ability
@@ -511,14 +543,14 @@ In addition to unit tests, add deterministic scenario tests covering:
 
 1. Full setup, seeded shuffle, simultaneous mulligan decisions, and first turn.
 2. Energy growth/refill and first-player skipped draw.
-3. Unit play, slot limit, summoning sickness, ready/exhaust behavior.
+3. Unit play, slot limit, summoning sickness, ready/exhaust behavior. (The slot-limit and summoning-sickness cases are superseded by the unlimited battlefield and `Newly Deployed`; retarget these tests when §4's battlefield change lands rather than deleting the coverage.)
 4. Unblocked combat damage.
 5. Blocked simultaneous combat with zero, one, and both units defeated.
 6. Persistent damage and healing across turns.
 7. Spell requiring a target and rejection when no legal target exists.
 8. Discard-then-draw pausing for a player choice and resuming correctly.
 9. Deploy, defeat, turn-start, and turn-end triggers in deterministic order.
-10. Token creation when slots are available and when the battlefield is full.
+10. Token creation when slots are available and when the battlefield is full. (Superseded: with no unit limit there is no "full" case, and a token is never silently uncreated.)
 11. Simultaneous player loss resulting in a draw.
 12. Empty-deck loss during a multi-card draw.
 13. Concession and server timeout termination.
@@ -580,7 +612,7 @@ Initial match and lobby state may remain in memory. Process restarts may end mat
 
 ### Match UI requirements
 
-- Show both players, Health, energy, deck/discard counts, Commander, relics, unit slots, active player, current phase, and connection state.
+- Show both players, Health, energy, deck/discard counts, Commander, relics, units, active player, current phase, and connection state. The board must stay legible at arbitrary unit counts and group identical tokens visually without merging their identity.
 - Show only the local player's hand and permitted private information.
 - Highlight legal actions and legal targets using server-derived data.
 - Provide explicit controls for pass phase, confirm attackers, confirm blockers, resolve choices, and concede.
@@ -855,6 +887,10 @@ Every match summary must include:
 - Turns, actions, decisions, and resolution steps
 - Starting and ending health, damage dealt/taken, healing, cards drawn/played/discarded, energy spent/unspent, units/relics deployed, defeats, and choice counts per player
 - Any safeguard, error, fallback, or diagnostic
+
+**Unlimited-battlefield telemetry (pending).** Removing the unit cap is a decision to be judged on evidence, so every match must also record, and every report must surface: unit count per player at the end of each round; highest unit count, highest non-token unit count, highest token count, and largest visual token-stack size per player; longest turn and longest combat resolution; declared attackers and blockers in the largest combat; triggers and choices in the busiest turn; whether the match reached a board stall; and how the largest board was reduced or answered.
+
+Treat as failure signals: turns or combats that are regularly excessively long, players missing or misunderstanding triggers, a UI that cannot present legal choices clearly, several rounds where nobody wants to attack, wide boards universally dominating, or state/payload size becoming operationally unsafe. **Do not restore a unit cap merely because boards get large.** Evaluate token grouping, anti-wide interaction, sweepers, upkeep pressure, and engine/UI performance first; a hard limit returns only on playtest evidence that the soft energy constraint is insufficient.
 
 Per card definition and per copy, track where applicable:
 
@@ -1135,18 +1171,21 @@ Update `docs/open-questions.md`, `docs/rules/open-decisions.md`, schemas, migrat
 
 The following remain genuine game-design or playtest decisions:
 
-Do not block Phase 4 on these unless implementation reveals a structural dependency:
+Several entries that used to appear here were **resolved by `CLAUDE_RULESET_UPDATE.md` and must not be reopened as design questions**: deck size and copy limits (40-card singleton), the battlefield slot count (no limit), the relic limit (one active), whether exhausted units may block (they may not), Guardian's exact behavior, Commander summoning, and whether reaction-speed cards exist (they do, in bounded windows). Four more were answered by the project owner on 2026-08-10 and are recorded in [ADR 0016](docs/architecture/0016-precon-wave-1-ruleset.md): the meaning of "the enemy Commander" as a target, the `Newly Deployed` duration boundary, whether a Newly Deployed unit may block, and the Barrier/Overwhelm ordering.
 
-- Final starting Health, hand size, battlefield slots, relic limit, and energy curve
-- Whether exhausted units may block
+These remain genuinely open. Do not block work on them unless implementation reveals a structural dependency:
+
+- Final starting Health, hand size, and energy curve
 - Whether multiple units may block one attacker
 - Final mulligan system
 - Final empty-deck/fatigue rule
-- Commander summoning, combat stats, defeat, additional cost, and recovery
-- Reaction-speed cards, opponent-turn actions, and any future priority system
-- Piercing/overrun and other expanded keywords
+- Commander lifecycle after battlefield defeat: recovery-zone duration, replay cost or tax, and whether Commander defeat can itself lose the game
+- The exact Reaction chaining and multiplayer-ordering policy, including more than one Reaction to the same event; a minimal versioned policy is in use and is deliberately replaceable
+- Whether Barrier is consumed before or after other prevention and reduction effects
+- Final multiplayer-specific rule values
+- Final faction/color names and the mechanical color pie
+- The fate of keywords the precons do not use, especially `resilient`
 - Phase timers beyond disconnect recovery
-- Exact keyword behavior, especially `guardian`, `armored`, and `resilient`
 - Alternate victory conditions
 - Whether server-restart match persistence is ever needed
 - Main-phase and pending-choice timers beyond disconnect recovery

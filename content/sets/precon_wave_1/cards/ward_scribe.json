@@ -1,0 +1,18 @@
+{
+  "id": "ward_scribe",
+  "name": "Ward Scribe",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 4,
+  "attack": 3,
+  "health": 4,
+  "keywords": ["barrier"],
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Defensive",
+    "power": "medium"
+  },
+  "displayText": "Barrier."
+}

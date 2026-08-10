@@ -1,0 +1,16 @@
+{
+  "id": "containment_guard",
+  "name": "Containment Guard",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "attack": 1,
+  "health": 4,
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Simple Defender",
+    "power": "low"
+  }
+}

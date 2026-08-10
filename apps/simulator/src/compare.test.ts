@@ -38,7 +38,7 @@ const BUFFED: CardDefinitionInput = {
   cost: 1,
   attack: 9,
   health: 9,
-  keywords: ['swift'],
+  keywords: ['rush'],
 };
 
 /**

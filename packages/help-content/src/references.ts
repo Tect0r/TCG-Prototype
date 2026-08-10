@@ -36,9 +36,23 @@ export interface ResolvedReference {
   readonly display: string;
 }
 
-/** The in-turn phases, in order, excluding the pre-game and terminal states. */
+/**
+ * The in-turn phases, in order, excluding the pre-game and terminal states.
+ *
+ * `reaction_window` is excluded as well, and not because it is unimportant. It
+ * is not a *step* in the turn: it is a bounded interruption that can open at
+ * four different points and then hands the turn back where it left off.
+ * Printing it after "Turn End" — where the enum happens to put it — would
+ * describe a turn that does not exist. Reaction windows are explained in their
+ * own right instead; `PHASE_NAMES` still covers it so any UI showing the
+ * current phase has a real name to show.
+ */
 export const TURN_PHASES: readonly string[] = MATCH_PHASES.filter(
-  (phase) => phase !== 'setup' && phase !== 'mulligan' && phase !== 'complete',
+  (phase) =>
+    phase !== 'setup' &&
+    phase !== 'mulligan' &&
+    phase !== 'complete' &&
+    phase !== 'reaction_window',
 );
 
 /** Player-facing name for a phase of the turn state machine. */
@@ -53,6 +67,7 @@ export const PHASE_NAMES: Readonly<Record<string, string>> = {
   resolve_combat: 'Resolve Combat',
   main_2: 'Second Main Phase',
   turn_end: 'Turn End',
+  reaction_window: 'Reaction Window',
   complete: 'Match Over',
 };
 
@@ -71,6 +86,8 @@ export const PHASE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   main_2: 'A second main phase, identical to the first.',
   turn_end:
     'Turn-end abilities trigger, end-of-turn effects expire, and the active player discards down to the maximum hand size.',
+  reaction_window:
+    'A bounded window in which players may play Reactions. Priority goes round the table starting with the active player; each player may play at most one Reaction, and the window closes once everybody has passed in a row. The cards played then resolve in reverse order — the last one played resolves first — and the turn carries on from where it paused.',
 };
 
 function displayOf(value: ReferenceValue): string {

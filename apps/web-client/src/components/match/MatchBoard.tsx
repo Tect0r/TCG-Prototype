@@ -280,12 +280,10 @@ function OpponentBoard({
         </button>
       )}
       <div className="board__units">
-        {player.units.map((instanceId, index) => {
-          const instance = instanceId ? view.instances[instanceId] : undefined;
-          const defenderId = instanceId ? attacksOnMe.get(instanceId) : undefined;
-          const blockable =
-            instanceId !== null &&
-            (legal.blocking?.attackerInstanceIds.includes(instanceId) ?? false);
+        {player.units.map((instanceId) => {
+          const instance = view.instances[instanceId];
+          const defenderId = attacksOnMe.get(instanceId);
+          const blockable = legal.blocking?.attackerInstanceIds.includes(instanceId) ?? false;
           // An attacker is only clickable once one of our blockers is picked.
           // In Help mode the inspect handler replaces it entirely, so a click
           // can never assign a blocker while the player is reading.
@@ -294,7 +292,7 @@ function OpponentBoard({
             ? inspect
               ? () => onInspect(inspect)
               : undefined
-            : blockable && pendingBlocker !== null && !locked && instanceId !== null
+            : blockable && pendingBlocker !== null && !locked
               ? () => onAssignBlock(instanceId)
               : undefined;
 
@@ -307,7 +305,7 @@ function OpponentBoard({
 
           return (
             <UnitCard
-              key={index}
+              key={instanceId}
               instance={instance}
               database={database}
               highlighted={blockable && pendingBlocker !== null}
@@ -561,23 +559,19 @@ export function MatchBoard() {
           })}
         </div>
         <div className="board__units">
-          {me?.units.map((instanceId, index) => {
-            const instance = instanceId ? view.instances[instanceId] : undefined;
-            const canAttack = instanceId
-              ? (legal.attacking?.legalAttackers.includes(instanceId) ?? false)
-              : false;
-            const canBlock = instanceId
-              ? (legal.blocking?.blockerInstanceIds.includes(instanceId) ?? false)
-              : false;
+          {me?.units.map((instanceId) => {
+            const instance = view.instances[instanceId];
+            const canAttack = legal.attacking?.legalAttackers.includes(instanceId) ?? false;
+            const canBlock = legal.blocking?.blockerInstanceIds.includes(instanceId) ?? false;
             const assigned = blocks.find((block) => block.blockerInstanceId === instanceId);
-            const target = instanceId ? attacks[instanceId] : undefined;
+            const target = attacks[instanceId];
 
             const inspectCard = inspectable(view, instanceId, 'Your board');
             let onClick: (() => void) | undefined;
             // Help mode short-circuits the whole attacker/blocker branch below.
             if (inspect && inspectCard) {
               onClick = () => inspect(inspectCard);
-            } else if (!inspect && !locked && instanceId !== null) {
+            } else if (!inspect && !locked) {
               if (canAttack) {
                 // Click to pick an attacker, then click an opponent to aim it.
                 // Clicking an already-aimed attacker clears its target, so a
@@ -602,7 +596,7 @@ export function MatchBoard() {
 
             return (
               <UnitCard
-                key={index}
+                key={instanceId}
                 instance={instance}
                 database={database}
                 highlighted={canAttack || canBlock}
@@ -813,12 +807,7 @@ export function MatchBoard() {
                   return;
                 }
                 if (!option) return;
-                client.sendAction({
-                  type: 'play_card',
-                  playerId: view.viewerId,
-                  instanceId,
-                  slot: option.freeSlots[0] ?? null,
-                });
+                client.sendAction({ type: 'play_card', playerId: view.viewerId, instanceId });
               }}
             >
               <span className="hand__name">{definition?.name ?? instanceId}</span>

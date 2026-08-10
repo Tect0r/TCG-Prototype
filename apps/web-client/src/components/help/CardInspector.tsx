@@ -141,7 +141,7 @@ export function CardInspector({
   // being inspected while the match moves on shows the new state rather than a
   // stale snapshot.
   const context = card ? publicCardContext(view, card.instanceId) : null;
-  const status = context && definition ? contextMessages(context, definition) : [];
+  const status = context ? contextMessages(context) : [];
 
   if (!card || !definition || !explanation) return null;
 

@@ -1,0 +1,17 @@
+{
+  "id": "goblin_sneak",
+  "name": "Goblin Sneak",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 1,
+  "attack": 1,
+  "health": 2,
+  "tags": ["goblin"],
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Simple",
+    "power": "low"
+  }
+}

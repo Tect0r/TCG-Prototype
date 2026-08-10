@@ -25,7 +25,11 @@ const ACTION_PRIORITY: Record<Action['type'], number> = {
   activate_ability: 3,
   declare_attackers: 4,
   assign_blockers: 5,
-  pass_phase: 6,
+  // A Reaction window pre-empts the rest of the turn, and the scripted pilot
+  // answers it the simplest legal way: it declines, so a window always closes.
+  play_reaction: 6,
+  pass_reaction: 7,
+  pass_phase: 8,
   concede: 98,
   server_timeout: 99,
 };

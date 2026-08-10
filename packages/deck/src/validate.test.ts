@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateDeck, deckStats, commanderColorIdentity } from './validate.js';
-import { DEFAULT_DECK_FORMAT } from './format.js';
+import { DEVELOPMENT_DECK_FORMAT } from './format.js';
 import { setCardQuantity, setCommander } from './operations.js';
 import { database, deckWith, fixedClock, legalDeck } from './test-fixtures.js';
 import type { Issue } from '@tcg/shared';
@@ -9,29 +9,37 @@ const codes = (issues: readonly Issue[]) => issues.map((i) => i.code);
 
 describe('validateDeck', () => {
   it('accepts a complete, legal deck', () => {
-    const report = validateDeck(legalDeck(), database);
+    const report = validateDeck(legalDeck(), database, DEVELOPMENT_DECK_FORMAT);
     expect(codes(report.issues.filter((i) => i.severity === 'error'))).toEqual([]);
     expect(report.legal).toBe(true);
   });
 
   it('requires a Commander', () => {
-    const report = validateDeck(deckWith([], null), database);
+    const report = validateDeck(deckWith([], null), database, DEVELOPMENT_DECK_FORMAT);
     expect(codes(report.issues)).toContain('deck/commander_missing');
     expect(report.legal).toBe(false);
   });
 
   it('reports a Commander that no longer exists', () => {
-    const report = validateDeck(deckWith([], 'deleted_commander'), database);
+    const report = validateDeck(
+      deckWith([], 'deleted_commander'),
+      database,
+      DEVELOPMENT_DECK_FORMAT,
+    );
     expect(codes(report.issues)).toContain('deck/commander_unresolved');
   });
 
   it('rejects a non-Commander card in the Commander slot', () => {
-    const report = validateDeck(deckWith([], 'goblin_scout'), database);
+    const report = validateDeck(deckWith([], 'goblin_scout'), database, DEVELOPMENT_DECK_FORMAT);
     expect(codes(report.issues)).toContain('deck/commander_wrong_type');
   });
 
   it('rejects cards outside the Commander colour identity', () => {
-    const report = validateDeck(deckWith([['bramble_titan', 1]]), database);
+    const report = validateDeck(
+      deckWith([['bramble_titan', 1]]),
+      database,
+      DEVELOPMENT_DECK_FORMAT,
+    );
     const issue = report.issues.find((i) => i.code === 'deck/color_identity');
     expect(issue?.message).toMatch(/Bramble Titan/);
     expect(issue?.message).toMatch(/Arc Tactician/);
@@ -46,7 +54,11 @@ describe('validateDeck', () => {
   });
 
   it('accepts a two-colour card only when both colours are covered', () => {
-    const underBlueRed = validateDeck(deckWith([['stormforge_adept', 1]]), database);
+    const underBlueRed = validateDeck(
+      deckWith([['stormforge_adept', 1]]),
+      database,
+      DEVELOPMENT_DECK_FORMAT,
+    );
     expect(codes(underBlueRed.issues)).not.toContain('deck/color_identity');
 
     const underBlue = validateDeck(
@@ -57,19 +69,27 @@ describe('validateDeck', () => {
   });
 
   it('enforces the regular copy limit', () => {
-    const report = validateDeck(deckWith([['goblin_scout', 3]]), database);
+    const report = validateDeck(deckWith([['goblin_scout', 3]]), database, DEVELOPMENT_DECK_FORMAT);
     const issue = report.issues.find((i) => i.code === 'deck/copy_limit');
     expect(issue?.context).toMatchObject({ cardId: 'goblin_scout', quantity: 3, limit: 2 });
   });
 
   it('enforces the single-copy limit for unique cards', () => {
-    const report = validateDeck(deckWith([['overload_conduit', 2]]), database);
+    const report = validateDeck(
+      deckWith([['overload_conduit', 2]]),
+      database,
+      DEVELOPMENT_DECK_FORMAT,
+    );
     const issue = report.issues.find((i) => i.code === 'deck/copy_limit');
     expect(issue?.message).toMatch(/limited to 1 copy/);
   });
 
   it('allows one copy of a unique card', () => {
-    const report = validateDeck(deckWith([['overload_conduit', 1]]), database);
+    const report = validateDeck(
+      deckWith([['overload_conduit', 1]]),
+      database,
+      DEVELOPMENT_DECK_FORMAT,
+    );
     expect(codes(report.issues)).not.toContain('deck/copy_limit');
   });
 
@@ -87,27 +107,37 @@ describe('validateDeck', () => {
   });
 
   it('rejects tokens and Commanders in the deck list', () => {
-    const tokens = validateDeck(deckWith([['prototype_spark_token', 1]]), database);
+    const tokens = validateDeck(
+      deckWith([['prototype_spark_token', 1]]),
+      database,
+      DEVELOPMENT_DECK_FORMAT,
+    );
     expect(codes(tokens.issues)).toContain('deck/card_not_deckable');
 
-    const commander = validateDeck(deckWith([['prototype_commander_blue', 1]]), database);
+    const commander = validateDeck(
+      deckWith([['prototype_commander_blue', 1]]),
+      database,
+      DEVELOPMENT_DECK_FORMAT,
+    );
     expect(codes(commander.issues)).toContain('deck/card_not_deckable');
   });
 
   it('reports deck size in both directions', () => {
-    const short = validateDeck(deckWith([['goblin_scout', 2]]), database);
+    const short = validateDeck(deckWith([['goblin_scout', 2]]), database, DEVELOPMENT_DECK_FORMAT);
     expect(short.issues.find((i) => i.code === 'deck/size')?.message).toMatch(/add 28 more/);
 
     const long = setCardQuantity(legalDeck(), 'prototype_drone', 3, { clock: fixedClock });
     expect(
-      validateDeck(long, database).issues.find((i) => i.code === 'deck/size')?.message,
+      validateDeck(long, database, DEVELOPMENT_DECK_FORMAT).issues.find(
+        (i) => i.code === 'deck/size',
+      )?.message,
     ).toMatch(/3 over/);
   });
 
   it('honours a custom format configuration', () => {
     const deck = deckWith([['goblin_scout', 4]]);
     const report = validateDeck(deck, database, {
-      ...DEFAULT_DECK_FORMAT,
+      ...DEVELOPMENT_DECK_FORMAT,
       deckSize: 4,
       copyLimit: 4,
     });
@@ -116,7 +146,7 @@ describe('validateDeck', () => {
 
   it('rejects a Commander with more colours than the format allows', () => {
     const report = validateDeck(deckWith([], 'prototype_commander_blue_red'), database, {
-      ...DEFAULT_DECK_FORMAT,
+      ...DEVELOPMENT_DECK_FORMAT,
       maxCommanderColors: 1,
     });
     expect(codes(report.issues)).toContain('deck/commander_too_many_colors');
@@ -127,14 +157,14 @@ describe('validateDeck', () => {
       ['scorch', 2],
       ['desperate_insight', 2],
     ]);
-    const report = validateDeck(spellsOnly, database);
+    const report = validateDeck(spellsOnly, database, DEVELOPMENT_DECK_FORMAT);
     const noUnits = report.issues.find((i) => i.code === 'deck/no_units');
     expect(noUnits?.severity).toBe('warning');
   });
 
   it('warns when a Commander colour is unused', () => {
     const monoRed = deckWith([['goblin_scout', 2]]);
-    const report = validateDeck(monoRed, database);
+    const report = validateDeck(monoRed, database, DEVELOPMENT_DECK_FORMAT);
     expect(report.issues.find((i) => i.code === 'deck/unused_commander_color')?.severity).toBe(
       'warning',
     );
@@ -146,7 +176,9 @@ describe('validateDeck', () => {
       ...deck,
       cards: [...deck.cards, { cardId: 'goblin_scout', quantity: 1 }],
     };
-    expect(codes(validateDeck(withDuplicate, database).issues)).toContain('deck/duplicate_entry');
+    expect(codes(validateDeck(withDuplicate, database, DEVELOPMENT_DECK_FORMAT).issues)).toContain(
+      'deck/duplicate_entry',
+    );
   });
 });
 

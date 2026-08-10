@@ -1,0 +1,24 @@
+{
+  "id": "desperate_insight",
+  "name": "Desperate Insight",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "role": "enabler",
+  "powerClass": "minor",
+  "tags": ["plan"],
+  "effects": [
+    {
+      "type": "discard",
+      "player": "self",
+      "amount": 1,
+      "selection": "player_choice"
+    },
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    }
+  ],
+  "displayText": "Discard a card, then draw a card."
+}

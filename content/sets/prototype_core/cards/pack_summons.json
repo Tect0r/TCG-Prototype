@@ -1,0 +1,18 @@
+{
+  "id": "pack_summons",
+  "name": "Pack Summons",
+  "type": "spell",
+  "colorIdentity": ["green"],
+  "cost": 3,
+  "role": "enabler",
+  "powerClass": "standard",
+  "tags": ["growth", "beast"],
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "prototype_beast_token",
+      "amount": 1
+    }
+  ],
+  "displayText": "Create a 3/3 Beast token."
+}

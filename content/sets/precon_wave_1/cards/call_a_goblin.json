@@ -1,0 +1,22 @@
+{
+  "id": "call_a_goblin",
+  "name": "Call a Goblin",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 1,
+  "role": "enabler",
+  "powerClass": "minor",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Generator",
+    "power": "low"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "goblin_token",
+      "amount": 1
+    }
+  ],
+  "displayText": "Create one Goblin Token."
+}

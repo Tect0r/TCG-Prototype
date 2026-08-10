@@ -1,0 +1,18 @@
+{
+  "id": "wall_initiate",
+  "name": "Wall Initiate",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 1,
+  "attack": 0,
+  "health": 3,
+  "keywords": ["guardian"],
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Defender",
+    "power": "low"
+  },
+  "displayText": "Guardian."
+}

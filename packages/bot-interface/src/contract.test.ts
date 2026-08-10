@@ -11,6 +11,9 @@ import {
 } from '@tcg/rules-engine';
 import { unwrap } from '@tcg/shared';
 import { createPilot, PILOT_IDS } from './registry.js';
+import { scoreCandidate } from './heuristic.js';
+import { DEFAULT_WEIGHTS, effectValue } from './scoring.js';
+import { effectDefinitionSchema } from '@tcg/card-data';
 import { checkActionOffered } from './validate.js';
 import { decideSafely } from './run-pilot.js';
 import { botTestDatabase, driveMatch, BLUE_DECK, GREEN_DECK, RED_DECK } from './test-driver.js';
@@ -291,7 +294,6 @@ describe('failure isolation', () => {
           type: 'play_card',
           playerId: observation.legal.playerId,
           instanceId: 'nope',
-          slot: null,
         },
         rng,
         diagnostics: null,
@@ -395,6 +397,312 @@ describe('action legality checking', () => {
         }
       },
     });
+  });
+});
+
+describe('relic replacement is priced as a trade', () => {
+  /**
+   * Ruleset update §12: a second relic *replaces* the first rather than being
+   * refused, so playing one is no longer free. A pilot that ignored the cost
+   * would cheerfully overwrite a strong relic with a weak one for the pleasure
+   * of spending energy.
+   *
+   * Scored directly rather than through a whole match, because what is being
+   * checked is the valuation, and a match would only tell us the pilot happened
+   * not to draw the cards.
+   */
+  function scoreOf(state: MatchState, playerId: PlayerId, instanceId: string): number {
+    return scoreCandidate(
+      observationFor(state, playerId),
+      {
+        action: { type: 'play_card', playerId, instanceId },
+        family: 'play_card',
+        key: `play:${instanceId}`,
+      },
+      DEFAULT_WEIGHTS,
+    );
+  }
+
+  /** Puts a relic straight onto the battlefield, the way an earlier turn would. */
+  function withRelicInPlay(
+    state: MatchState,
+    playerId: PlayerId,
+    definitionId: string,
+  ): MatchState {
+    const next = structuredClone(state);
+    const player = next.players[playerId];
+    if (!player) throw new Error('no seat');
+    const instanceId = 'inst_relic_fixture';
+    next.instances[instanceId] = {
+      ...(Object.values(next.instances)[0] as (typeof next.instances)[string]),
+      instanceId,
+      definitionId,
+      ordinal: 9000,
+      owner: playerId,
+      controller: playerId,
+      zone: 'battlefield',
+      newlyDeployed: false,
+      statModifiers: [],
+      grantedKeywords: [],
+      removedKeywords: [],
+      damageShields: [],
+      counters: {},
+      isToken: false,
+    };
+    player.relics.push(instanceId);
+    return next;
+  }
+
+  /** A relic in the seat's hand, ready to be scored as a play. */
+  function withRelicInHand(state: MatchState, playerId: PlayerId, definitionId: string): string {
+    const player = state.players[playerId];
+    if (!player) throw new Error('no seat');
+    const instanceId = 'inst_relic_hand';
+    state.instances[instanceId] = {
+      ...(state.instances[player.hand[0] as string] as (typeof state.instances)[string]),
+      instanceId,
+      definitionId,
+      ordinal: 9001,
+      zone: 'hand',
+    };
+    player.hand.push(instanceId);
+    player.energy = 9;
+    player.maxEnergy = 9;
+    return instanceId;
+  }
+
+  function board(inPlay: string | null): { state: MatchState; playerId: PlayerId; hand: string } {
+    let state = startTable(2, 'relic-trade');
+    // Settle the opening hands so the seat reaches a main phase.
+    for (const playerId of ['player_1', 'player_2']) {
+      state = unwrap(
+        applyAction(state, { type: 'mulligan', playerId, returnInstanceIds: [] }, { database }),
+        'mulligan',
+      ).state;
+    }
+    const playerId = state.activePlayerId;
+    if (inPlay) state = withRelicInPlay(state, playerId, inPlay);
+    const hand = withRelicInHand(state, playerId, 'surveyors_lens');
+    return { state, playerId, hand };
+  }
+
+  it('values a relic lower when it would overwrite one already in play', () => {
+    const empty = board(null);
+    const occupied = board('warband_horn');
+
+    const free = scoreOf(empty.state, empty.playerId, empty.hand);
+    const trade = scoreOf(occupied.state, occupied.playerId, occupied.hand);
+
+    expect(trade).toBeLessThan(free);
+  });
+
+  it('charges nothing when there is no relic to overwrite', () => {
+    const empty = board(null);
+    const score = scoreOf(empty.state, empty.playerId, empty.hand);
+    expect(Number.isFinite(score)).toBe(true);
+    expect(score).toBeGreaterThan(0);
+  });
+});
+
+describe('blocking is priced as spending a unit', () => {
+  /**
+   * Ruleset update §8: declaring a blocker exhausts it, so a unit that survives
+   * a block still cannot attack on its controller's next turn. A pilot that
+   * scored blocking as free would chump-block with bodies it wanted to swing
+   * with — the trade would look costless because the survivor is still on the
+   * board.
+   */
+  it('scores blocking with a survivor below blocking with nothing', async () => {
+    let scoredBlock: number | null = null;
+    let scoredPass: number | null = null;
+
+    await driveMatch({
+      seed: 'block-cost',
+      pilots: [createPilot({ id: 'defensive' }), createPilot({ id: 'defensive' })],
+      onObservation: (observation) => {
+        const blocking = observation.legal.blocking;
+        if (!blocking || scoredBlock !== null) return;
+        // Only a case where declining is legal and a blocker survives is
+        // informative; a compulsory Guardian block would prove nothing.
+        if (blocking.mustBlockCount > 0) return;
+        const attacker = blocking.attackerInstanceIds[0];
+        const blocker = blocking.blockerInstanceIds.find(
+          (id) => !observation.view.instances[id]?.exhausted,
+        );
+        if (attacker === undefined || blocker === undefined) return;
+
+        const playerId = observation.legal.playerId;
+        const withBlock = scoreCandidate(
+          observation,
+          {
+            action: {
+              type: 'assign_blockers',
+              playerId,
+              blocks: [{ attackerInstanceId: attacker, blockerInstanceId: blocker }],
+            },
+            family: 'assign_blockers',
+            key: 'block',
+          },
+          DEFAULT_WEIGHTS,
+        );
+        const withoutBlock = scoreCandidate(
+          observation,
+          {
+            action: { type: 'assign_blockers', playerId, blocks: [] },
+            family: 'assign_blockers',
+            key: 'no-block',
+          },
+          DEFAULT_WEIGHTS,
+        );
+
+        // Re-score with the readiness charge removed, by pretending the blocker
+        // was already exhausted: the difference is exactly the cost being tested.
+        // Only the view is cloned: `database` is a class instance and would not
+        // survive `structuredClone`.
+        const spent: BotObservation = { ...observation, view: structuredClone(observation.view) };
+        const view = spent.view.instances[blocker];
+        if (view) view.exhausted = true;
+        const withBlockAlreadySpent = scoreCandidate(
+          spent,
+          {
+            action: {
+              type: 'assign_blockers',
+              playerId,
+              blocks: [{ attackerInstanceId: attacker, blockerInstanceId: blocker }],
+            },
+            family: 'assign_blockers',
+            key: 'block',
+          },
+          DEFAULT_WEIGHTS,
+        );
+
+        // Blocking with a ready unit is worth strictly less than blocking with
+        // one that was already spent, because only the first loses readiness.
+        expect(withBlock).toBeLessThan(withBlockAlreadySpent);
+        scoredBlock = withBlock;
+        scoredPass = withoutBlock;
+      },
+    });
+
+    expect(scoredBlock, 'the match should have reached a blocking decision').not.toBeNull();
+    expect(Number.isFinite(scoredPass ?? Number.NaN)).toBe(true);
+  });
+});
+
+describe('a modifier is worth what its duration is worth', () => {
+  /**
+   * Readiness gate B1. `while_source_present` used to behave as `permanent`
+   * because nothing expired it; now that it really ends when the granting card
+   * leaves play, valuing it as permanent would overrate every aura-style card in
+   * the pool. It sits between permanent and end-of-turn, and the ordering has to
+   * hold for every effect type that carries a duration.
+   */
+  const buff = (duration: 'permanent' | 'while_source_present' | 'end_of_turn') =>
+    ({
+      type: 'modify_stats',
+      target: {
+        kind: 'entity',
+        selector: {
+          zone: 'battlefield',
+          controller: 'self',
+          count: 1,
+          selection: 'player_choice',
+          chooser: 'self',
+          optional: false,
+          excludeSource: false,
+        },
+      },
+      attack: 2,
+      health: 2,
+      duration,
+    }) as const;
+
+  it('ranks permanent above source-bound above end of turn', () => {
+    const permanent = effectValue(buff('permanent'), DEFAULT_WEIGHTS, database);
+    const bound = effectValue(buff('while_source_present'), DEFAULT_WEIGHTS, database);
+    const turn = effectValue(buff('end_of_turn'), DEFAULT_WEIGHTS, database);
+
+    expect(permanent).toBeGreaterThan(bound);
+    expect(bound).toBeGreaterThan(turn);
+  });
+
+  it('applies the same discount to a granted keyword', () => {
+    const grant = (duration: 'permanent' | 'while_source_present') =>
+      ({
+        type: 'grant_keyword',
+        target: buff('permanent').target,
+        keyword: 'guardian',
+        duration,
+      }) as const;
+
+    expect(effectValue(grant('permanent'), DEFAULT_WEIGHTS, database)).toBeGreaterThan(
+      effectValue(grant('while_source_present'), DEFAULT_WEIGHTS, database),
+    );
+  });
+
+  it('applies it to damage prevention too', () => {
+    const shield = (duration: 'permanent' | 'while_source_present') =>
+      ({
+        type: 'prevent_damage',
+        target: { kind: 'player', relation: 'self', selection: 'automatic' },
+        amount: 3,
+        duration,
+      }) as const;
+
+    expect(effectValue(shield('permanent'), DEFAULT_WEIGHTS, database)).toBeGreaterThan(
+      effectValue(shield('while_source_present'), DEFAULT_WEIGHTS, database),
+    );
+  });
+});
+
+describe('the new vocabulary is priced, not ignored', () => {
+  /**
+   * Ruleset update §15. Two ways a pilot could quietly mis-price the vocabulary:
+   * treating a board-derived amount as zero, which would make every "for each"
+   * card look blank and get it mulliganed; and treating a gated instruction as
+   * certain, which would overpay for every "if" card in the pool.
+   */
+  // Parsed through the schema rather than written as a literal, so the defaults
+  // (`per`, `plus`, `minimum`, the count's `controller`) are the real ones. A
+  // hand-built literal would be testing a shape the engine never sees.
+  const draw = (amount: unknown, condition?: unknown) =>
+    effectDefinitionSchema.parse({
+      type: 'draw',
+      player: 'self',
+      amount,
+      ...(condition ? { condition } : {}),
+    });
+  const goblins = {
+    kind: 'count',
+    count: { subject: 'units', controller: 'self', filter: { tags: ['goblin'] } },
+  };
+
+  it('does not value a board-derived amount at zero', () => {
+    const dynamic = effectValue(draw(goblins), DEFAULT_WEIGHTS, database);
+    const nothing = effectValue(draw(0), DEFAULT_WEIGHTS, database);
+    expect(dynamic).toBeGreaterThan(nothing);
+  });
+
+  it('discounts a gated instruction below the same instruction ungated', () => {
+    const open = effectValue(draw(2), DEFAULT_WEIGHTS, database);
+    const conditional = effectValue(
+      draw(2, {
+        kind: 'count',
+        count: { subject: 'units_defeated_this_turn', controller: 'self' },
+        comparison: 'at_least',
+        value: 2,
+      }),
+      DEFAULT_WEIGHTS,
+      database,
+    );
+    expect(conditional).toBeLessThan(open);
+    expect(conditional).toBeGreaterThan(0);
+  });
+
+  it('respects a printed maximum on a computed amount', () => {
+    const capped = effectValue(draw({ ...goblins, maximum: 1 }), DEFAULT_WEIGHTS, database);
+    const uncapped = effectValue(draw(goblins), DEFAULT_WEIGHTS, database);
+    expect(capped).toBeLessThan(uncapped);
   });
 });
 

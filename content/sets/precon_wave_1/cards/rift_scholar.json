@@ -1,0 +1,29 @@
+{
+  "id": "rift_scholar",
+  "name": "Rift Scholar",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Card Selection",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    },
+    {
+      "type": "discard",
+      "player": "self",
+      "amount": 1
+    }
+  ],
+  "displayText": "When deployed, draw a card, then discard a card."
+}

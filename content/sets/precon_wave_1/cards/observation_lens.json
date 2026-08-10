@@ -1,0 +1,42 @@
+{
+  "id": "observation_lens",
+  "name": "Observation Lens",
+  "type": "relic",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Relic — Filtering",
+    "power": "medium"
+  },
+  "displayText": "At the end of your turn, if you deployed no Units that turn, look at the top two cards of your deck. You may put one on the bottom.",
+  "abilities": [
+    {
+      "id": "observe",
+      "trigger": "on_turn_end",
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "units_deployed_this_turn",
+          "controller": "self"
+        },
+        "comparison": "exactly",
+        "value": 0
+      },
+      "effects": [
+        {
+          "type": "search_zone",
+          "player": "self",
+          "zone": "deck",
+          "fromTop": 2,
+          "amount": 1,
+          "destination": "deck",
+          "upTo": true,
+          "remainder": "unchanged"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "id": "soul_furnace",
+  "name": "Soul Furnace",
+  "type": "relic",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Relic — Damage Payoff",
+    "power": "high"
+  },
+  "displayText": "The first time a friendly Unit is defeated each turn, deal 1 damage to an opponent.",
+  "abilities": [
+    {
+      "id": "stoke_the_furnace",
+      "trigger": "on_defeated",
+      "scope": {
+        "controller": "self"
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "kind": "player",
+            "relation": "opponent"
+          },
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

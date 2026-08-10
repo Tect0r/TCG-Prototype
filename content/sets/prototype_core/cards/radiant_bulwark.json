@@ -1,0 +1,27 @@
+{
+  "id": "radiant_bulwark",
+  "name": "Radiant Bulwark",
+  "type": "relic",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": ["artifact"],
+  "displayText": "While this relic is in play, your units have Armored.",
+  "staticAbilities": [
+    {
+      "id": "bulwark_aura",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "self",
+        "filter": {
+          "cardTypes": ["unit"]
+        }
+      },
+      "effect": {
+        "type": "grant_keyword",
+        "keyword": "armored"
+      }
+    }
+  ]
+}

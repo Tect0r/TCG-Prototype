@@ -1,0 +1,26 @@
+{
+  "id": "unstable_construct",
+  "name": "Unstable Construct",
+  "type": "unit",
+  "colorIdentity": [],
+  "cost": 4,
+  "attack": 4,
+  "health": 4,
+  "role": "attacker",
+  "powerClass": "standard",
+  "tags": ["construct"],
+  "abilities": [
+    {
+      "id": "scatter_parts",
+      "trigger": "on_defeated",
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "prototype_scrap_token",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "displayText": "When this unit is defeated, create two 1/1 Scrap tokens."
+}

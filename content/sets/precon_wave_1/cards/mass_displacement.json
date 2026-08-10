@@ -1,0 +1,36 @@
+{
+  "id": "mass_displacement",
+  "name": "Mass Displacement",
+  "type": "reaction",
+  "colorIdentity": ["blue"],
+  "cost": 5,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Reaction — Anti-swarm",
+    "power": "high"
+  },
+  "displayText": "Play after attackers are declared. Return every Newly Deployed attacking Unit to its owner's hand.",
+  "reaction": {
+    "windows": ["after_attackers_declared", "before_blockers_declared"]
+  },
+  "effects": [
+    {
+      "type": "return_to_hand",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "attacking": true,
+            "newlyDeployed": true
+          },
+          "count": "all",
+          "selection": "automatic"
+        }
+      }
+    }
+  ]
+}

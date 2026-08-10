@@ -1,0 +1,36 @@
+{
+  "id": "quick_study",
+  "name": "Quick Study",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 1,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Filtering",
+    "power": "medium"
+  },
+  "displayText": "Draw a card, then put a card from your hand on the bottom of your deck.",
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    },
+    {
+      "type": "move_card",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "hand",
+          "controller": "self",
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      },
+      "toZone": "deck"
+    }
+  ]
+}

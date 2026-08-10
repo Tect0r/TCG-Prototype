@@ -1,0 +1,31 @@
+{
+  "id": "arcane_snare",
+  "name": "Arcane Snare",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Exhaustion",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "exhaust",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1
+        }
+      }
+    }
+  ],
+  "displayText": "Exhaust a Unit."
+}

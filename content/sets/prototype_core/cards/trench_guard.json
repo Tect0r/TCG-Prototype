@@ -1,0 +1,13 @@
+{
+  "id": "trench_guard",
+  "name": "Trench Guard",
+  "type": "unit",
+  "colorIdentity": [],
+  "cost": 3,
+  "attack": 1,
+  "health": 5,
+  "role": "blocker",
+  "powerClass": "standard",
+  "tags": ["soldier"],
+  "keywords": ["guardian", "armored"]
+}

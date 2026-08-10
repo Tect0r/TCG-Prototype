@@ -1,0 +1,13 @@
+{
+  "id": "mistveil_stalker",
+  "name": "Mistveil Stalker",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "attack": 3,
+  "health": 2,
+  "role": "attacker",
+  "powerClass": "standard",
+  "tags": ["rogue"],
+  "keywords": ["evasive"]
+}

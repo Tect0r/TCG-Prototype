@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "id": "template_commander",
+  "name": "Template Commander",
+  "type": "commander",
+  "colorIdentity": ["blue"],
+  "cost": null,
+  "attack": 2,
+  "health": 6,
+  "unique": true,
+  "role": "support",
+  "powerClass": "centerpiece",
+  "tags": ["commander"],
+  "keywords": [],
+  "activatedAbilities": [
+    {
+      "id": "template_commander_ability",
+      "name": "Template Ability",
+      "costs": [{ "type": "energy", "amount": 2 }],
+      "usageLimit": "once_per_turn",
+      "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
+    }
+  ],
+  "displayText": "Pay 2 Energy: draw a card. Activate only once each turn.",
+  "text": {
+    "flavor": "A Commander starts outside the deck, in the Commander zone."
+  }
+}

@@ -4,6 +4,7 @@ import {
   clockwiseFrom,
   definitionOf,
   findInstance,
+  hasKeyword,
   isAlive,
   livingOpponents,
   matchesCardFilter,
@@ -12,11 +13,30 @@ import {
 import { nextInt } from './rng.js';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
 
+/**
+ * Whether an instance is attacking or blocking in the current combat.
+ *
+ * Read from `state.combat` rather than stored on the instance: combat
+ * membership belongs to the combat, and a stored flag would need clearing at
+ * four different places.
+ */
+export function combatRoleOf(
+  ctx: MatchContext,
+  instanceId: InstanceId,
+): { attacking: boolean; blocking: boolean } {
+  return {
+    attacking: ctx.state.combat.attacks.some((attack) => attack.attackerInstanceId === instanceId),
+    blocking: ctx.state.combat.blocks.some((block) => block.blockerInstanceId === instanceId),
+  };
+}
+
 export interface TargetScope {
   /** Player the effect belongs to: resolves `self` / `opponent`. */
   readonly controllerId: PlayerId;
   /** The instance whose text this is, for `source` and `excludeSource`. */
   readonly sourceInstanceId: InstanceId | null;
+  /** The card a triggered ability fired about, for `trigger_subject` targets. */
+  readonly triggerSubjectInstanceId?: InstanceId | null;
 }
 
 /**
@@ -33,7 +53,7 @@ function instancesInZone(
   const player = playerOf(ctx.state, playerId);
   switch (zone) {
     case 'battlefield':
-      return [...player.units.filter((id): id is InstanceId => id !== null), ...player.relics];
+      return [...player.units, ...player.relics];
     case 'hand':
       return [...player.hand];
     case 'deck':
@@ -43,8 +63,9 @@ function instancesInZone(
     case 'commander_zone':
       return [player.commanderInstanceId];
     case 'recovery':
-      // The recovery zone exists in the schema but nothing enters it: Commander
-      // defeat and recovery are deferred past Phase 3 (CLAUDE.md §12).
+      // Nothing ever enters the recovery zone. A defeated Commander goes
+      // straight back to its Command Zone (rule adjustment §2), so the only
+      // thing this zone would have held now has a home.
       return [];
     case 'removed':
       // Terminal by definition. Nothing may target it (CLAUDE.md §12).
@@ -112,6 +133,16 @@ export function legalTargets(
   target: TargetDefinition,
   scope: TargetScope,
 ): InstanceId[] {
+  if (target.kind === 'trigger_subject') {
+    // The subject may have left play — a defeat trigger's subject always has —
+    // so it is only a legal target while it is still somewhere the effect can
+    // reach. Nothing is invented when it is gone: the instruction fizzles.
+    const subject = scope.triggerSubjectInstanceId
+      ? findInstance(ctx.state, scope.triggerSubjectInstanceId)
+      : undefined;
+    return subject && subject.zone === 'battlefield' ? [subject.instanceId] : [];
+  }
+
   if (target.kind === 'source') {
     const source = scope.sourceInstanceId
       ? findInstance(ctx.state, scope.sourceInstanceId)
@@ -127,9 +158,30 @@ export function legalTargets(
       if (selector.excludeSource && instanceId === scope.sourceInstanceId) continue;
       const instance = findInstance(ctx.state, instanceId);
       if (!instance) continue;
-      if (selector.filter) {
-        const definition = definitionOf(ctx.database, instance);
-        if (!matchesCardFilter(definition, instance, selector.filter)) continue;
+      const definition = definitionOf(ctx.database, instance);
+
+      // "Untargetable by opponents" removes the unit from any legal set being
+      // computed *for* someone who does not control it. It is applied here, in
+      // the one place legality is decided, so it covers spells, abilities and
+      // pending choices alike — and only here, so non-targeting effects
+      // ("every unit", combat, sweepers) are untouched (ruleset update §9).
+      if (
+        instance.controller !== scope.controllerId &&
+        hasKeyword(instance, definition, 'untargetable_by_opponents')
+      ) {
+        continue;
+      }
+
+      if (
+        selector.filter &&
+        !matchesCardFilter(
+          definition,
+          instance,
+          selector.filter,
+          combatRoleOf(ctx, instance.instanceId),
+        )
+      ) {
+        continue;
       }
       candidates.push(instanceId);
     }
@@ -152,6 +204,54 @@ function playersFor(
   if (controller === 'self') return [self];
   if (controller === 'opponent') return opponents;
   return [self, ...opponents];
+}
+
+/**
+ * Expands each chosen Token into every Token of the same definition controlled
+ * by the same player (rule adjustment §8).
+ *
+ * Applied after selection rather than inside `legalTargets`, and that ordering
+ * is the rule: the player targets **one** Token — which is what identifies the
+ * player and the definition — and the group is a consequence of the choice, not
+ * a larger option set. Doing it the other way round would let the chooser pick a
+ * member of a group they never named.
+ *
+ * Non-Token units pass through untouched. The result is identical whether or not
+ * a client stacks Tokens visually, which is the whole requirement.
+ */
+export function expandTokenGroup(
+  ctx: MatchContext,
+  selector: TargetSelector,
+  chosen: readonly InstanceId[],
+): InstanceId[] {
+  if (selector.groupByTokenDefinition !== true) return [...chosen];
+
+  const expanded: InstanceId[] = [];
+  const seen = new Set<InstanceId>();
+
+  for (const instanceId of chosen) {
+    const instance = findInstance(ctx.state, instanceId);
+    if (!instance) continue;
+    if (!instance.isToken) {
+      if (!seen.has(instanceId)) {
+        seen.add(instanceId);
+        expanded.push(instanceId);
+      }
+      continue;
+    }
+    // Walked in the controller's arrival order so the group is deterministic,
+    // which matters for anything that resolves per member.
+    for (const siblingId of instancesInZone(ctx, instance.controller, selector.zone)) {
+      const sibling = findInstance(ctx.state, siblingId);
+      if (!sibling || !sibling.isToken) continue;
+      if (sibling.definitionId !== instance.definitionId) continue;
+      if (sibling.controller !== instance.controller) continue;
+      if (seen.has(siblingId)) continue;
+      seen.add(siblingId);
+      expanded.push(siblingId);
+    }
+  }
+  return expanded;
 }
 
 /** How many entities a selector wants, given what is actually available. */

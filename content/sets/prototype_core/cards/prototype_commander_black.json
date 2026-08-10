@@ -1,0 +1,38 @@
+{
+  "id": "prototype_commander_black",
+  "name": "Grave Quartermaster",
+  "type": "commander",
+  "colorIdentity": ["black"],
+  "cost": null,
+  "attack": 3,
+  "health": 12,
+  "unique": true,
+  "role": "payoff",
+  "powerClass": "centerpiece",
+  "tags": ["undead", "commander"],
+  "keywords": ["siphon"],
+  "abilities": [
+    {
+      "id": "grim_dividend",
+      "trigger": "on_attack",
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "self",
+              "count": 1,
+              "selection": "player_choice"
+            }
+          },
+          "attack": 1,
+          "health": 0,
+          "duration": "end_of_turn"
+        }
+      ]
+    }
+  ],
+  "displayText": "Whenever this Commander attacks, a friendly unit gets +1/+0 until end of turn."
+}

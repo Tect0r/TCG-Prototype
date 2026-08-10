@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import type { CardDatabase, CardDefinition, EffectDefinition, KeywordId } from '@tcg/card-data';
+import type {
+  CardDatabase,
+  CardDefinition,
+  Duration,
+  EffectDefinition,
+  KeywordId,
+  SignedValueExpression,
+  ValueExpression,
+} from '@tcg/card-data';
 import type { CardInstanceView, PlayerView, PlayerViewSummary } from '@tcg/rules-engine';
 
 /**
@@ -178,7 +186,85 @@ function keywordCount(keywords: readonly KeywordId[]): number {
  * whose value genuinely depends on board state are handled by the callers that
  * have that state.
  */
+/**
+ * How much of a modifier's value survives its duration.
+ *
+ * `permanent` is the yardstick. `end_of_turn` is worth roughly half, because it
+ * buys one turn of tempo and nothing after it. `while_source_present` sits
+ * between the two: it lasts indefinitely, but only while the granting card is
+ * on the battlefield, so an opponent holding removal can end it — which is a
+ * real discount now that the duration actually expires rather than quietly
+ * behaving as `permanent` (readiness gate B1).
+ *
+ * Coarse on purpose, and hard-coded for the same reason the rest of
+ * `effectValue` is: these are shape factors, not tunable balance. The named
+ * `BotWeights` remain the tunable surface.
+ */
+function durationScale(duration: Duration): number {
+  switch (duration) {
+    case 'permanent':
+      return 1;
+    case 'while_source_present':
+      return 0.8;
+    case 'until_your_next_turn':
+      // Above `end_of_turn` because it covers the opponents' turns in between,
+      // which is when a defensive buff actually has to hold; below `permanent`
+      // for the same reason `end_of_turn` is — it buys a round, not a board.
+      return 0.65;
+    case 'end_of_turn':
+      return 0.5;
+    case 'end_of_combat':
+      // The narrowest boundary in the vocabulary: one combat, and usually only
+      // the half of it the granting card was played into. Priced below
+      // `end_of_turn`, which at least survives to the second Main Phase.
+      return 0.35;
+  }
+}
+
+/**
+ * What a dynamic amount is worth to a pilot deciding whether to play a card.
+ *
+ * `effectValue` prices a card *in the abstract* — it is used to rank a hand
+ * before anything is on the board — so it cannot ask the board how many Goblins
+ * are out. It has to assume something, and the honest assumption is a small
+ * number rather than zero or a fantasy: zero would make "deal damage equal to
+ * the number of Goblins you control" look like a blank card and get it
+ * mulliganed away, and a large guess would make it look unconditionally strong.
+ *
+ * Two boards' worth of matches, capped by whatever ceiling the card prints, is
+ * the estimate. Callers that *do* have the board — the ones scoring a specific
+ * decision — should evaluate the count for real instead.
+ */
+const ASSUMED_MATCH_COUNT = 2;
+
+function estimateValue(value: ValueExpression | SignedValueExpression): number {
+  if (typeof value === 'number') return value;
+  const sign = 'sign' in value ? value.sign : 1;
+  const raw = sign * Math.floor(ASSUMED_MATCH_COUNT / value.per) + value.plus;
+  const capped = value.maximum === undefined ? raw : Math.min(raw, value.maximum);
+  return Math.max(value.minimum, capped);
+}
+
+/**
+ * How much a condition discounts an instruction.
+ *
+ * A gated instruction may simply not happen, and a pilot that priced it as
+ * certain would overpay for every "if" card in the pool. Flat rather than
+ * clever: predicting whether a board condition will hold is exactly the kind of
+ * guess this scorer is documented not to make.
+ */
+const CONDITION_DISCOUNT = 0.6;
+
 export function effectValue(
+  effect: EffectDefinition,
+  weights: BotWeights,
+  database: CardDatabase,
+): number {
+  const gross = ungatedEffectValue(effect, weights, database);
+  return effect.condition ? gross * CONDITION_DISCOUNT : gross;
+}
+
+function ungatedEffectValue(
   effect: EffectDefinition,
   weights: BotWeights,
   database: CardDatabase,
@@ -186,82 +272,84 @@ export function effectValue(
   switch (effect.type) {
     case 'draw':
       return effect.player === 'self'
-        ? weights.cardDraw * effect.amount
-        : -weights.cardDraw * effect.amount;
+        ? weights.cardDraw * estimateValue(effect.amount)
+        : -weights.cardDraw * estimateValue(effect.amount);
     case 'discard':
       return effect.player === 'self'
-        ? -weights.discardCard * effect.amount
-        : weights.discardCard * effect.amount;
+        ? -weights.discardCard * estimateValue(effect.amount)
+        : weights.discardCard * estimateValue(effect.amount);
     case 'deal_damage': {
       if (effect.target.kind === 'player') {
         return effect.target.relation === 'self'
-          ? -weights.faceDamage * effect.amount
-          : weights.faceDamage * effect.amount;
+          ? -weights.faceDamage * estimateValue(effect.amount)
+          : weights.faceDamage * estimateValue(effect.amount);
       }
       if (effect.target.kind === 'players') {
-        return weights.faceDamage * effect.amount;
+        return weights.faceDamage * estimateValue(effect.amount);
       }
-      if (effect.target.kind === 'source') return -weights.unitDamage * effect.amount;
-      const controller = effect.target.selector.controller;
-      const sign = controller === 'self' ? -1 : 1;
-      const count = effect.target.selector.count === 'all' ? 2 : effect.target.selector.count;
-      return sign * weights.unitDamage * effect.amount * count;
+      if (effect.target.kind !== 'entity') {
+        // `source` and `trigger_subject` both aim at a card on our own side.
+        return -weights.unitDamage * estimateValue(effect.amount);
+      }
+      const selector = effect.target.selector;
+      const sign = selector.controller === 'self' ? -1 : 1;
+      const count = selector.count === 'all' ? 2 : selector.count;
+      return sign * weights.unitDamage * estimateValue(effect.amount) * count;
     }
     case 'heal': {
       if (effect.target.kind === 'player') {
         return effect.target.relation === 'self'
-          ? weights.healing * effect.amount
-          : -weights.healing * effect.amount;
+          ? weights.healing * estimateValue(effect.amount)
+          : -weights.healing * estimateValue(effect.amount);
       }
       if (effect.target.kind === 'players') return 0;
-      return weights.healing * effect.amount;
+      return weights.healing * estimateValue(effect.amount);
     }
     case 'modify_stats': {
-      const magnitude = effect.attack + effect.health;
-      const scale = effect.duration === 'end_of_turn' ? 0.5 : 1;
+      const magnitude = estimateValue(effect.attack) + estimateValue(effect.health);
       const sign =
         effect.target.kind === 'entity' && effect.target.selector.controller === 'opponent'
           ? -1
           : 1;
-      return sign * weights.buffValue * magnitude * scale;
+      return sign * weights.buffValue * magnitude * durationScale(effect.duration);
     }
     case 'grant_keyword':
-      return weights.keywordBonus;
+      return weights.keywordBonus * durationScale(effect.duration);
     case 'remove_keyword':
-      return weights.keywordBonus * 0.5;
+      return weights.keywordBonus * 0.5 * durationScale(effect.duration);
     case 'create_token': {
       const token = database.get(effect.tokenCardId);
       const body = token
         ? (token.attack ?? 0) * weights.unitAttack + (token.health ?? 0) * weights.unitHealth
         : 1;
-      return weights.tokenValue * body * effect.amount;
+      return weights.tokenValue * body * estimateValue(effect.amount);
     }
     case 'destroy': {
-      const sign =
-        effect.target.kind === 'entity' && effect.target.selector.controller === 'self' ? -1 : 1;
-      const count =
-        effect.target.kind === 'entity' && effect.target.selector.count === 'all'
-          ? 2
-          : effect.target.kind === 'entity'
-            ? (effect.target.selector.count as number)
-            : 1;
+      const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
+      // `source` and `trigger_subject` both point at one of our own cards, so
+      // destroying through either is a cost, not a gain.
+      const sign = selector === null || selector.controller === 'self' ? -1 : 1;
+      const count = selector === null ? 1 : selector.count === 'all' ? 2 : selector.count;
       return sign * weights.removalBonus * count;
     }
     case 'sacrifice':
       return -weights.removalBonus * 0.6;
     case 'return_to_hand': {
-      const sign =
-        effect.target.kind === 'entity' && effect.target.selector.controller === 'self' ? -0.2 : 1;
-      return sign * weights.bounceValue;
+      const ours = effect.target.kind !== 'entity' || effect.target.selector.controller === 'self';
+      return (ours ? -0.2 : 1) * weights.bounceValue;
     }
     case 'search_zone':
       return weights.cardDraw * effect.amount * 1.1;
     case 'reorder_zone':
       return weights.cardDraw * 0.25;
     case 'modify_cost':
-      return effect.player === 'self' ? -effect.delta * weights.energyEfficiency : 0;
+      return effect.player === 'self'
+        ? -effect.delta * weights.energyEfficiency * durationScale(effect.duration)
+        : 0;
     case 'prevent_damage':
-      return weights.preventionValue * effect.amount;
+      return (
+        weights.preventionValue * estimateValue(effect.amount) * durationScale(effect.duration)
+      );
     case 'exhaust':
       return weights.tapValue;
     case 'ready':

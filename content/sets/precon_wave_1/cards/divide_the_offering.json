@@ -1,0 +1,36 @@
+{
+  "id": "divide_the_offering",
+  "name": "Divide the Offering",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Fodder Conversion",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "sacrifice",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1
+        }
+      }
+    },
+    {
+      "type": "create_token",
+      "tokenCardId": "thrall_token",
+      "amount": 2
+    }
+  ],
+  "displayText": "Sacrifice a Unit. Create two Thrall Tokens."
+}

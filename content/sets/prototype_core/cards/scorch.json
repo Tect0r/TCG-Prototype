@@ -1,0 +1,28 @@
+{
+  "id": "scorch",
+  "name": "Scorch",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 1,
+  "role": "removal",
+  "powerClass": "standard",
+  "tags": ["burn"],
+  "effects": [
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1
+        }
+      },
+      "amount": 3
+    }
+  ],
+  "displayText": "Deal 3 damage to a unit."
+}

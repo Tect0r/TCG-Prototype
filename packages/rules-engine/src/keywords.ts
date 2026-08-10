@@ -31,7 +31,21 @@ export interface KeywordBehaviour {
 
 /** Developer notes, keyed by keyword. Merged with the registry below. */
 const ENGINE_NOTES: Readonly<Record<KeywordId, string>> = {
-  swift: 'derive.isSummoningSick bypass in legal-actions.ts. Open question Q4.',
+  rush:
+    'derive.isNewlyDeployed bypass in legal-actions.ts, for both attack declaration and ' +
+    '`exhaust_source` activation costs. Renamed from `swift` by the v2 → v3 card migration.',
+  guardian:
+    'legal-actions.ts requires every attacker a ready Guardian could block to be blocked ' +
+    'before blockers may be confirmed. ADR 0016 §5.',
+  barrier:
+    'damage.ts prevents the first non-zero damage event to the unit and clears the flag. ' +
+    'Ordered after Overwhelm assignment — ADR 0016 Q-D.',
+  overwhelm:
+    "combat.ts assigns damage equal to the blocker's current health to the blocker and the " +
+    'remainder to the defending player. ADR 0016 Q-D.',
+  untargetable_by_opponents:
+    'targeting.ts drops the unit from any legal target set computed for an opposing chooser. ' +
+    'Non-targeting effects are unaffected.',
   evasive: 'Filtered out of `blocking.attackerInstanceIds` in legal-actions.ts. Open question Q4.',
   armored:
     'damage.ts reduces each instance by `RulesConfig.armoredReduction` before shields. ' +
@@ -42,11 +56,7 @@ const ENGINE_NOTES: Readonly<Record<KeywordId, string>> = {
   resilient:
     'INERT. Candidate readings (clear damage at end of turn / survive lethal damage once ' +
     'per turn) differ sharply in power and interact with the "damage persists between ' +
-    'turns" rule. Awaiting open-questions.md Q4.',
-  guardian:
-    'INERT. Taunt-style semantics have no meaning in the Phase 2 combat model, because ' +
-    'attackers target the opposing player and never choose a unit to attack. Awaiting ' +
-    'open-questions.md Q4 and Q10.',
+    'turns" rule. Awaiting open-questions.md Q4. No Precon Wave 1 card prints it.',
 };
 
 export const KEYWORD_BEHAVIOUR: Readonly<Record<KeywordId, KeywordBehaviour>> = Object.freeze(

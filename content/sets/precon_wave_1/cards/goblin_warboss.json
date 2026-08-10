@@ -1,0 +1,49 @@
+{
+  "id": "goblin_warboss",
+  "name": "Goblin Warboss",
+  "type": "commander",
+  "colorIdentity": ["red"],
+  "cost": 4,
+  "attack": 2,
+  "health": 5,
+  "unique": true,
+  "tags": ["goblin", "commander"],
+  "role": "build_around",
+  "powerClass": "centerpiece",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Commander — Generator",
+    "power": "high"
+  },
+  "displayText": "Exhaust — Create Goblin Tokens equal to the number of other Goblins you control. Activate only once each turn.",
+  "activatedAbilities": [
+    {
+      "id": "muster_the_mob",
+      "name": "Muster the Mob",
+      "costs": [
+        {
+          "type": "exhaust_source"
+        }
+      ],
+      "usageLimit": "once_per_turn",
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "goblin_token",
+          "amount": {
+            "kind": "count",
+            "count": {
+              "subject": "units",
+              "controller": "self",
+              "filter": {
+                "tags": ["goblin"]
+              },
+              "excludeSource": true
+            },
+            "minimum": 0
+          }
+        }
+      ]
+    }
+  ]
+}

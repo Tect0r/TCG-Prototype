@@ -1,0 +1,36 @@
+{
+  "id": "bone_harvest",
+  "name": "Bone Harvest",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Card Advantage",
+    "power": "medium"
+  },
+  "displayText": "Draw a card. If at least two friendly Units were defeated this turn, draw another card.",
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    },
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1,
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "units_defeated_this_turn",
+          "controller": "self"
+        },
+        "comparison": "at_least",
+        "value": 2
+      }
+    }
+  ]
+}

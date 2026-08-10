@@ -1,0 +1,18 @@
+{
+  "id": "surveyors_lens",
+  "name": "Surveyor's Lens",
+  "type": "relic",
+  "colorIdentity": [],
+  "cost": 2,
+  "role": "enabler",
+  "powerClass": "minor",
+  "tags": ["artifact"],
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    }
+  ],
+  "displayText": "When this relic is deployed, draw a card."
+}

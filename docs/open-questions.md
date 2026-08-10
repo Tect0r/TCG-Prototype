@@ -33,6 +33,20 @@ an answer. See [project-status.md](project-status.md) for phase definitions.
 > is what CLAUDE.md §18 asks for; the values remain playtest decisions. Two new
 > questions: **Q37** (how good do the pilots need to be?) and **Q38** (when is a
 > multiplayer balance run worth its cost?).
+>
+> **⚠ Staleness warning, 2026-08-10.** Several entries below describe a
+> codebase that no longer exists, because the Precon Wave 1 ruleset update and
+> the readiness gates landed without this file being swept. Specifically: **Q4**
+> (`guardian` is now real engine behaviour — only `resilient` is inert), **Q5**
+> (Commanders are now deployable; only the post-defeat lifecycle is open),
+> **Q19** (30 cards / 2 copies is superseded by 40-card singleton, and the
+> format is data rather than a constant), and **Q1, Q2, Q3, Q23, Q25, Q27, Q29**
+> in [Answered](#answered), all of which say "not yet implemented" and are now
+> implemented. Rewriting them is tracked as item G2 in
+> [`REMAINING_WORK.md`](../REMAINING_WORK.md); the new questions the update
+> raised are in [its own section](#raised-by-the-precon-wave-1-ruleset-update)
+> below — **Q39–Q45, plus sharpened restatements of Q4 and Q5, are waiting on
+> your answers.**
 
 ---
 
@@ -412,6 +426,203 @@ carry a `reason` code, and the client turns it into a sentence.
 
 The spec's value, marked revisable. Nothing so far suggests changing it. Revisit
 only if real art shows a problem.
+
+---
+
+## Raised by the Precon Wave 1 ruleset update
+
+Found on 2026-08-10 while auditing the code against every root specification
+(see [`REMAINING_WORK.md`](../REMAINING_WORK.md)). Each one blocks a specific
+item there, and each is genuinely yours to decide — I did not want to bury a
+provisional answer as a permanent rule.
+
+Answer them inline underneath each question; nothing is waiting on all of them
+at once, so partial answers are useful.
+
+### Q39. What is the final Reaction chaining and ordering policy?
+
+**Blocks:** REMAINING_WORK A2 (Reactions), and 10 cards — `calculated_response`,
+`emergency_interposition`, `hold_the_line`, `mass_displacement`, `narrow_denial`,
+`orderly_withdrawal`, `phase_withdrawal`, `punish_the_assault`, `scatter`,
+`unbreakable_formation`.
+
+Ruleset update §11 confirms Reactions exist in bounded windows and explicitly
+leaves the chaining policy open. A minimal versioned policy is already written
+down (CLAUDE.md §4): **one window per triggering event, in seat order starting
+from the non-active player; each eligible player plays at most one Reaction per
+window; a Reaction cannot be responded to; the window closes when everyone has
+acted or declined.**
+
+The decision is whether to build that, or something with more depth. The three
+options, cheapest first:
+
+1. **The minimal policy above.** No responding to a Reaction at all. Simple,
+   bounded, deterministic, and it makes `calculated_response` — which creates a
+   pay-or-counter choice for the _spell's_ controller — the only thing resembling
+   interaction. Risk: Reactions feel like they cannot be played around.
+2. **One counter-response.** The same, plus the original card's controller gets
+   exactly one chance to respond to a Reaction aimed at them. Bounded depth of
+   two. Costs a nested window and a second choice surface.
+3. **Repeat until all pass**, MTG-style but still without a general priority
+   system. Genuinely unbounded in principle; needs a loop safeguard and makes the
+   UI, the protocol and every pilot substantially harder.
+
+I would build (1) first and treat (2) as an additive change, because the window
+machinery is the same and only the closing condition differs. But that shapes how
+the cards feel, so it is your call.
+
+**Related, and cheaper to answer at the same time:** in a 3–4 player free-for-all,
+does the window run through _every_ living player in clockwise order from the
+non-active seat, or only players actually affected by the event?
+
+---
+
+### Q40. Should `cards.json` and `precons.json` be deleted from the repo root?
+
+**Blocks:** nothing. Purely cleanup.
+
+They are verifiably fully migrated into `content/`: all 155 card IDs present, all
+four precon lists and Commanders identical, and **zero** drift between
+`rulesText` and the migrated `displayText`. Keeping them means two sources of
+truth for card text, which is the drift risk `CLAUDE_RULESET_UPDATE.md` §1 warns
+about — and the 78 unimplemented cards will be edited in `content/` as they get
+built, so the root files will start lying.
+
+Against deleting: they are **untracked in git**, so this is irreversible, and
+`CLAUDE_RULESET_UPDATE.md` names them as its accompanying input files.
+
+Options: delete them; move them to `docs/design/` as a dated historical record;
+or keep them as-is. I left them alone rather than make an irreversible call.
+
+---
+
+### Q41. Are unimplemented cards visible in the deck builder, and is there a format picker?
+
+**Blocks:** REMAINING_WORK C1 and C2 (the builder shows the wrong pool and has no
+precon UI).
+
+78 of the 155 catalog cards are `implemented: false` and `validateDeck` already
+refuses a deck containing one. Three things follow that nobody has decided:
+
+1. **Are they shown at all?** Hidden entirely (the builder looks small and
+   coherent, but a player wonders where a card from the precon list went), or
+   shown and clearly marked "not yet playable" (honest about the prototype's
+   state, and useful for you as the designer, but frustrating to a playtester).
+2. **Can the player choose a format?** `development` (the 56 fixture cards, 30
+   cards, 2 copies) is not a real format — it exists so Phase 1–4 regression
+   tests keep working. Should it be visible in the UI at all, or should
+   `precon_wave_1` be the only pool a human ever sees?
+3. Right now neither is decided _and_ the client is wrong anyway: it loads the
+   entire card universe (both sets, 211 cards) rather than a format-scoped pool.
+   That gets fixed either way; the question is what it gets fixed _to_.
+
+My recommendation: show unimplemented cards greyed with the reason on hover, and
+hide `development` from the UI entirely (tests address it directly).
+
+---
+
+### Q42. What makes two Tokens "identical" for visual stacking?
+
+**Blocks:** REMAINING_WORK C3 (token grouping), and 2 cards —
+`containment_pulse`, `total_recall`.
+
+Ruleset update §7 says identical Tokens may be visually stacked while each keeps
+individual identity, and §7 also says an effect affects one individual Unit
+"unless it explicitly says every Unit in a Token stack". So a stack is
+presentation _and_ an addressable group, which means "identical" needs a rule:
+
+- **Same definition only** — three Goblin Tokens stack even if one is damaged,
+  one is exhausted and one has +2/+0. Simplest, cleanest board, but the stack
+  badge hides real tactical differences.
+- **Same definition and same state** — damage, exhaustion, keywords and
+  modifiers must all match. Honest, but a stack splits and re-forms constantly
+  during combat, which is visually noisy and is the opposite of what grouping is
+  for.
+- **Same definition, with state shown as sub-badges** — one stack, annotated.
+  More UI work.
+
+Whichever you pick also decides what a card that targets "a Token stack" actually
+hits.
+
+---
+
+### Q43. What counts as a board stall?
+
+**Blocks:** REMAINING_WORK D2 (unlimited-board telemetry).
+
+Ruleset update §17 requires every match to record "whether the match reached a
+board stall" and lists "neither player wants to attack for multiple rounds" as a
+failure signal for the unlimited battlefield. It does not define either.
+
+This needs a number, because it is a recorded metric rather than a rule: how many
+consecutive rounds with **zero declared attackers** while both players control at
+least one ready unit constitutes a stall? Three? Five? And does a round where
+someone attacks with a single token break the streak?
+
+Any threshold is defensible; the point is that it must be one explicit,
+configurable, versioned number rather than a judgement made in the reporting
+layer. Suggest 3 rounds, configurable, unless you have an intuition.
+
+---
+
+### Q44. Do you want multiple blockers per attacker, and if so, when?
+
+**Blocks:** nothing today, but it shapes REMAINING_WORK A3/A6 (the battlefield
+and blocking rework), and reworking combat state twice is the expensive outcome.
+
+`blockersPerAttacker` is already a config value defaulting to `1`, and CLAUDE.md
+§4 explicitly says to model blocker assignment so multiple blockers can be added
+later without rewriting combat state. Ruleset update §18 keeps it open.
+
+The reason it comes up now: A6 flips `exhaustedUnitsMayBlock` to `false` and A3
+removes the unit cap, and both touch the same blocker-assignment code. If
+multi-blocking is wanted eventually, doing it in the same pass is much cheaper
+than a third rewrite. If it is a definite no, the combat state can stay simple.
+
+Not asking you to design it — only "eventually yes", "probably never", or "keep
+it open and I will pay for the rewrite later".
+
+---
+
+### Q45. Is Barrier consumed before or after other prevention and reduction?
+
+**Blocks:** part of REMAINING_WORK A1 — specifically the `prevent_damage` work
+and `shield_formation`, and it interacts with the existing `armored` reduction.
+
+ADR 0016 Q-D settled Barrier **against Overwhelm** (Overwhelm splits first,
+Barrier saves only the blocker's share). It did not settle Barrier against the
+other reducers, and the engine currently has `armored` (flat reduction) plus
+`prevent_damage` shields.
+
+For a 5-damage hit on a unit with Barrier and Armored 1:
+
+- **Barrier first** — Barrier eats the whole 5, Armored does nothing, unit takes
+  0 and has spent its Barrier.
+- **Reduction first** — Armored makes it 4, Barrier eats the 4, same visible
+  outcome here but different when a shield has a fixed capacity.
+- The cases genuinely diverge once a `prevent_damage` shield with a **capped
+  amount** exists, which A1 will add.
+
+Ruleset update §9 says a zero-damage event does not consume Barrier, which is the
+one piece already fixed: if reduction takes a hit to 0, Barrier must survive.
+That leans toward reduction-first. Confirm or overrule.
+
+---
+
+### Q4 and Q5 — sharpened, still yours
+
+Both entries above are stale in their wording but still open in substance:
+
+- **Q4** is now only about **`resilient`**: every other keyword is implemented.
+  Does it clear marked damage at end of turn, survive lethal damage once, or get
+  dropped from the vocabulary entirely? No authored precon card uses it, so
+  dropping it is genuinely on the table — ruleset update §18 lists exactly that.
+- **Q5** is now specifically the **post-battlefield-defeat** lifecycle, because
+  Commanders became deployable. Does a defeated Commander return to the Commander
+  zone, and after how long? Is there a replay tax? Can Commander defeat itself
+  lose the game? REMAINING_WORK A5 builds the zones and events without answering
+  this and isolates the policy behind versioned config, so A5 is not blocked —
+  but it cannot be finished without you.
 
 ---
 

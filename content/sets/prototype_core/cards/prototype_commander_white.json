@@ -1,0 +1,28 @@
+{
+  "id": "prototype_commander_white",
+  "name": "Bulwark Marshal",
+  "type": "commander",
+  "colorIdentity": ["white"],
+  "cost": null,
+  "attack": 2,
+  "health": 14,
+  "unique": true,
+  "role": "blocker",
+  "powerClass": "centerpiece",
+  "tags": ["soldier", "commander"],
+  "keywords": ["guardian"],
+  "abilities": [
+    {
+      "id": "muster",
+      "trigger": "on_turn_start",
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "prototype_soldier_token",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "At the start of your turn, create a 1/1 Soldier token."
+}

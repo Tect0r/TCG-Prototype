@@ -18,6 +18,13 @@ export {
   zoneIdSchema,
   TARGETABLE_ZONE_IDS,
   DECKABLE_CARD_TYPES,
+  REACTION_WINDOWS,
+  reactionWindowSchema,
+  type ReactionWindow,
+  SET_STATUSES,
+  setStatusSchema,
+  STRICT_SET_STATUSES,
+  type SetStatus,
   type CardId,
   type ColorId,
   type CardType,
@@ -45,6 +52,7 @@ export {
   PLAYER_SELECTORS,
   SELECTION_MODES,
   type CardFilter,
+  type CardFilterAlternative,
   type Controller,
   type Duration,
   type NumericRange,
@@ -65,9 +73,13 @@ export {
   continuousScopeSchema,
   staticAbilityDefinitionSchema,
   triggerIdSchema,
+  triggerScopeSchema,
+  triggerLimitSchema,
   ABILITY_USAGE_LIMITS,
+  CARD_SCOPED_TRIGGERS,
   EFFECT_TYPES,
   TRIGGER_IDS,
+  TRIGGER_LIMITS,
   type AbilityCost,
   type AbilityDefinition,
   type ActivatedAbilityDefinition,
@@ -78,12 +90,47 @@ export {
   type EntityTarget,
   type StaticAbilityDefinition,
   type TriggerId,
+  type TriggerLimit,
+  type TriggerScope,
 } from './schema/effect.js';
+
+export {
+  conditionSchema,
+  countQuerySchema,
+  comparisonSchema,
+  countSubjectSchema,
+  sourceStateSchema,
+  valueExpressionSchema,
+  signedValueExpressionSchema,
+  isFixedValue,
+  COMPARISONS,
+  COUNT_SUBJECTS,
+  SOURCE_STATES,
+  type Comparison,
+  type ConditionDefinition,
+  type CountQuery,
+  type CountSubject,
+  type SignedValueExpression,
+  type SourceState,
+  type ValueExpression,
+} from './schema/condition.js';
+
+export {
+  FORMAT_SCHEMA_VERSION,
+  formatIdSchema,
+  deckConstructionSchema,
+  playFormatSchema,
+  type DeckConstruction,
+  type PlayFormat,
+  type PlayFormatInput,
+} from './schema/format.js';
 
 export {
   cardDefinitionSchema,
   cardSetSchema,
+  setIdSchema,
   cardPatchBodySchema,
+  reactionTimingSchema,
   applyCardPatch,
   PATCHABLE_CARD_FIELDS,
   type CardDefinition,
@@ -93,12 +140,29 @@ export {
   type CardSetInput,
   type CardText,
   type PatchableCardField,
+  type ReactionTiming,
 } from './schema/card.js';
 
 export { CardDatabase } from './database.js';
 export { loadCardSets, zodIssuesToIssues, type LoadedCardData } from './loader.js';
 export { migrateCardSet, canMigrateCardSet } from './migrate.js';
-export { BUNDLED_CARD_SETS, loadBundledCardData } from './default-set.js';
+export {
+  PRECON_SCHEMA_VERSION,
+  preconDefinitionSchema,
+  type PreconDefinition,
+} from './schema/precon.js';
+
+export {
+  BUNDLED_CARD_SETS,
+  BUNDLED_FORMATS,
+  BUNDLED_PRECONS,
+  bundledPrecon,
+  DEFAULT_FORMAT_ID,
+  bundledFormat,
+  formatCardPool,
+  formatDatabase,
+  loadBundledCardData,
+} from './default-set.js';
 export { compareCards, isColorIdentityLegal, matchesQuery, type CardQuery } from './query.js';
 export {
   artworkSources,

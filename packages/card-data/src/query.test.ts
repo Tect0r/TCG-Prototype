@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { loadBundledCardData } from './default-set.js';
+import { formatDatabase } from './default-set.js';
 import { isColorIdentityLegal, matchesQuery } from './query.js';
 import type { CardDefinition } from './schema/card.js';
 
-const { database } = loadBundledCardData();
+// Scoped to the development pool: these assertions are about the prototype
+// fixture set, and the bundled database is now the whole card universe.
+const database = formatDatabase('development');
 const ids = (cards: readonly CardDefinition[]) => cards.map((c) => c.id);
 
 describe('isColorIdentityLegal', () => {
@@ -68,7 +70,7 @@ describe('matchesQuery', () => {
 
   it('filters by keyword and tag', () => {
     expect(matchesQuery(bramble, { keywords: ['armored'] })).toBe(true);
-    expect(matchesQuery(bramble, { keywords: ['swift'] })).toBe(false);
+    expect(matchesQuery(bramble, { keywords: ['rush'] })).toBe(false);
     expect(matchesQuery(bramble, { tags: ['beast'] })).toBe(true);
     expect(matchesQuery(bramble, { tags: ['goblin'] })).toBe(false);
   });

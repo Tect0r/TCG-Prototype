@@ -1,0 +1,36 @@
+{
+  "id": "powder_keg_runner",
+  "name": "Powder Keg Runner",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "attack": 3,
+  "health": 1,
+  "role": "attacker",
+  "powerClass": "standard",
+  "tags": ["goblin"],
+  "abilities": [
+    {
+      "id": "final_blast",
+      "trigger": "on_defeated",
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": 1
+            }
+          },
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "displayText": "When this unit is defeated, deal 2 damage to an enemy unit."
+}

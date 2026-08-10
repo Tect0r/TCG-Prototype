@@ -1,0 +1,62 @@
+{
+  "id": "goblin_drummer",
+  "name": "Goblin Drummer",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "attack": 3,
+  "health": 3,
+  "tags": ["goblin"],
+  "role": "payoff",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Payoff",
+    "power": "medium"
+  },
+  "displayText": "Whenever at least three Goblins attack, one attacking Goblin gains +2 ATK this turn.",
+  "abilities": [
+    {
+      "id": "drum_the_charge",
+      "trigger": "on_attack",
+      "scope": {
+        "controller": "self",
+        "filter": {
+          "tags": ["goblin"]
+        }
+      },
+      "limit": "each_turn",
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "attacking_units",
+          "controller": "self",
+          "filter": {
+            "tags": ["goblin"]
+          }
+        },
+        "comparison": "at_least",
+        "value": 3
+      },
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "self",
+              "filter": {
+                "tags": ["goblin"],
+                "attacking": true
+              }
+            }
+          },
+          "attack": 2,
+          "health": 0,
+          "duration": "end_of_turn"
+        }
+      ]
+    }
+  ]
+}

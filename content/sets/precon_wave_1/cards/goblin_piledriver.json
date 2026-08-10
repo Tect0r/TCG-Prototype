@@ -1,0 +1,45 @@
+{
+  "id": "goblin_piledriver",
+  "name": "Goblin Piledriver",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "attack": 1,
+  "health": 4,
+  "tags": ["goblin"],
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Payoff",
+    "power": "high"
+  },
+  "displayText": "Whenever this Unit attacks, it gains +1 ATK this turn for each other attacking Goblin.",
+  "abilities": [
+    {
+      "id": "pile_in",
+      "trigger": "on_attack",
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "source"
+          },
+          "attack": {
+            "kind": "count",
+            "count": {
+              "subject": "attacking_units",
+              "controller": "self",
+              "filter": {
+                "tags": ["goblin"]
+              },
+              "excludeSource": true
+            }
+          },
+          "health": 0,
+          "duration": "end_of_turn"
+        }
+      ]
+    }
+  ]
+}

@@ -4,8 +4,11 @@ import {
   type Duration,
   type EffectDefinition,
   type EffectType,
+  type SignedValueExpression,
+  type ValueExpression,
 } from '@tcg/card-data';
 import { humanise, numberWord, plural, quantify, sentence } from './grammar.js';
+import { conditionClause, describeValue, nominalValue, valueIsFixed } from './values.js';
 import {
   describePlayerSelector,
   describeSelector,
@@ -50,14 +53,30 @@ function durationClause(duration: Duration): string {
       return 'permanently';
     case 'end_of_turn':
       return 'until the end of the turn';
+    case 'end_of_combat':
+      return 'for that combat';
+    case 'until_your_next_turn':
+      // "Your" is the controller's, and the phrase has to name the *beginning*
+      // of that turn: the modifier is gone before the Ready Step, so a player
+      // reading it cannot expect one more turn of it.
+      return 'until the beginning of your next turn';
     case 'while_source_present':
       return 'for as long as the source remains in play';
   }
 }
 
-function statChange(attack: number, health: number): string {
-  const sign = (value: number): string => (value >= 0 ? `+${value}` : String(value));
-  return `${sign(attack)}/${sign(health)}`;
+function statChange(attack: SignedValueExpression, health: SignedValueExpression): string {
+  const part = (value: SignedValueExpression, other: SignedValueExpression): string => {
+    if (typeof value !== 'number') return `+${describeValue(value)}`;
+    void other;
+    return value >= 0 ? `+${value}` : String(value);
+  };
+  return `${part(attack, health)}/${part(health, attack)}`;
+}
+
+/** An amount as a phrase: a word for a printed number, a clause for a count. */
+function amountPhrase(value: ValueExpression): string {
+  return valueIsFixed(value) ? numberWord(nominalValue(value)) : describeValue(value);
 }
 
 type Renderer<T extends EffectType> = (
@@ -71,9 +90,9 @@ const RENDERERS: RendererTable = {
   draw: (effect) => ({
     text: `${describePlayerSelector(effect.player)} ${
       playerSelectorIsPlural(effect.player) ? 'draw' : effect.player === 'self' ? 'draw' : 'draws'
-    } ${quantify(effect.amount, 'card')}`,
+    } ${valueIsFixed(effect.amount) ? quantify(nominalValue(effect.amount), 'card') : `${describeValue(effect.amount)} cards`}${conditionClause(effect.condition)}`,
     notes:
-      effect.amount > 1
+      !valueIsFixed(effect.amount) || nominalValue(effect.amount) > 1
         ? ['cards are drawn one at a time, so an empty deck ends the match mid-draw']
         : [],
   }),
@@ -90,7 +109,7 @@ const RENDERERS: RendererTable = {
           ? 'at random'
           : `from the front of ${whose} hand`;
     return {
-      text: `${who} ${verb} ${quantify(effect.amount, 'card')} ${how}`,
+      text: `${who} ${verb} ${valueIsFixed(effect.amount) ? quantify(nominalValue(effect.amount), 'card') : `${describeValue(effect.amount)} cards`} ${how}${conditionClause(effect.condition)}`,
       notes: ['a player holding fewer cards than that discards their whole hand'],
     };
   },
@@ -98,7 +117,7 @@ const RENDERERS: RendererTable = {
   deal_damage: (effect, options) => {
     const target = describeTarget(effect.target, options.sourceNoun);
     return {
-      text: `deal ${numberWord(effect.amount)} damage to ${target}`,
+      text: `deal ${amountPhrase(effect.amount)} damage to ${target}${conditionClause(effect.condition)}`,
       notes: targetNotes(effect.target),
     };
   },
@@ -108,8 +127,8 @@ const RENDERERS: RendererTable = {
     const isPlayerTarget = effect.target.kind === 'player' || effect.target.kind === 'players';
     return {
       text: isPlayerTarget
-        ? `restore ${numberWord(effect.amount)} health to ${target}`
-        : `heal ${target}, removing up to ${numberWord(effect.amount)} marked damage${
+        ? `restore ${amountPhrase(effect.amount)} health to ${target}`
+        : `heal ${target}, removing up to ${amountPhrase(effect.amount)} marked damage${
             targetIsPlural(effect.target) ? ' from each' : ''
           }`,
       notes: targetNotes(effect.target),
@@ -120,14 +139,17 @@ const RENDERERS: RendererTable = {
     text: `give ${describeTarget(effect.target, options.sourceNoun)} ${statChange(
       effect.attack,
       effect.health,
-    )} ${durationClause(effect.duration)}`,
+    )} ${durationClause(effect.duration)}${conditionClause(effect.condition)}`,
     notes: [
       ...targetNotes(effect.target),
-      ...(effect.health < 0
+      ...(nominalValue(effect.health) < 0
         ? ['losing health can defeat an already-damaged unit in the next state-based check']
         : []),
-      ...(effect.duration === 'end_of_turn' && effect.health > 0
+      ...(effect.duration === 'end_of_turn' && nominalValue(effect.health) > 0
         ? ['when the bonus expires, a damaged unit may be defeated immediately']
+        : []),
+      ...(!valueIsFixed(effect.attack) || !valueIsFixed(effect.health)
+        ? ['the amount is counted when the effect resolves, not when the card was played']
         : []),
     ],
   }),
@@ -160,13 +182,16 @@ const RENDERERS: RendererTable = {
         ? ` ${definition.attack}/${definition.health}`
         : '';
     const controller = describePlayerSelector(effect.controller);
+    const noun = `${stats.trim()} ${name} token`.trim();
+    const howMany = valueIsFixed(effect.amount)
+      ? quantify(nominalValue(effect.amount), noun)
+      : `${describeValue(effect.amount)} ${noun}s`;
     return {
       text:
-        effect.controller === 'self'
-          ? `create ${quantify(effect.amount, `${stats.trim()} ${name} token`.trim())}`
-          : `${controller} creates ${quantify(effect.amount, `${stats.trim()} ${name} token`.trim())}`,
+        (effect.controller === 'self' ? `create ${howMany}` : `${controller} creates ${howMany}`) +
+        conditionClause(effect.condition),
       notes: [
-        'a token with no free unit slot is not created at all',
+        'tokens are always created — the battlefield has no size limit',
         ...(definition && definition.effects.length > 0
           ? ['the token resolves its own deploy effects as it arrives']
           : []),
@@ -206,20 +231,48 @@ const RENDERERS: RendererTable = {
       ...phrases.after,
     ].join(' ');
     const who = describePlayerSelector(effect.player);
-    const mandatory = !effect.upTo && (effect.zone === 'discard' || effect.zone === 'battlefield');
+    const whose = effect.player === 'self' ? 'your' : 'their';
+    const looksAtTop = effect.fromTop !== undefined;
+    // Mirrors `effects.ts#search_zone`: a look-at-the-top effect counts as
+    // public, because the cards were shown to the chooser. Wording it as a
+    // hidden search would tell the player they may decline a choice the engine
+    // will not let them decline.
+    const publicToChooser =
+      effect.zone === 'discard' || effect.zone === 'battlefield' || looksAtTop;
+    const mandatory = !effect.upTo && publicToChooser;
+    // "Look at the top three" and "search your whole deck" are the same
+    // decision to the engine and completely different to a player, so the
+    // sentence changes shape rather than gaining a clause.
+    const opening = looksAtTop
+      ? `${who} ${effect.player === 'self' ? 'look' : 'looks'} at the top ${numberWord(
+          effect.fromTop as number,
+        )} ${plural(effect.fromTop as number, 'card')} of ${whose} ${zoneName(effect.zone)} and ${
+          effect.upTo ? 'may take ' : effect.player === 'self' ? 'take ' : 'takes '
+        }${quantify(effect.amount, qualifiers, qualifiersPlural)}`
+      : `${who} ${effect.player === 'self' ? 'search' : 'searches'} ${whose} ${zoneName(
+          effect.zone,
+        )} for ${effect.upTo ? 'up to ' : ''}${quantify(effect.amount, qualifiers, qualifiersPlural)}`;
+    // Taking a card back to the zone it came from is not a move at all: the
+    // engine reorders it to the bottom instead. "Putting it into your deck"
+    // would describe a card that does nothing.
+    const landing =
+      effect.destination === effect.zone
+        ? `on the bottom of ${whose} ${zoneName(effect.zone)}`
+        : `into ${whose} ${zoneName(effect.destination)}`;
     return {
-      text: `${who} ${effect.player === 'self' ? 'search' : 'searches'} ${
-        effect.player === 'self' ? 'your' : 'their'
-      } ${zoneName(effect.zone)} for ${effect.upTo ? 'up to ' : ''}${quantify(
-        effect.amount,
-        qualifiers,
-        qualifiersPlural,
-      )} and ${effect.amount === 1 ? 'puts it' : 'puts them'} into ${
-        effect.player === 'self' ? 'your' : 'their'
-      } ${zoneName(effect.destination)}`,
+      text: `${opening}, ${effect.amount === 1 ? 'putting it' : 'putting them'} ${landing}`,
       notes: [
         ...(effect.reveal ? ['what is found is revealed to everyone'] : []),
-        ...(effect.zone === 'deck' ? ['the deck is shuffled afterwards'] : []),
+        ...(effect.remainder === 'bottom'
+          ? [
+              'the cards that were looked at and not taken go to the bottom of the deck, in the order they were in — the deck is not shuffled',
+            ]
+          : effect.zone === 'deck'
+            ? ['the deck is shuffled afterwards']
+            : []),
+        ...(looksAtTop
+          ? ['only those cards are seen; the rest of the deck stays hidden even from you']
+          : []),
         mandatory
           ? 'this zone is public, so a legal card must be taken if one exists'
           : 'searching a hidden zone may legally find nothing',
@@ -252,7 +305,7 @@ const RENDERERS: RendererTable = {
   },
 
   prevent_damage: (effect, options) => ({
-    text: `prevent the next ${numberWord(effect.amount)} damage dealt to ${describeTarget(
+    text: `prevent the next ${amountPhrase(effect.amount)} damage dealt to ${describeTarget(
       effect.target,
       options.sourceNoun,
     )} ${durationClause(effect.duration)}`,
@@ -277,6 +330,17 @@ const RENDERERS: RendererTable = {
       effect.toZone === 'hand' ? 'its owner’s' : 'the'
     } ${zoneName(effect.toZone)}`,
     notes: targetNotes(effect.target),
+  }),
+
+  counter: (effect) => ({
+    text:
+      effect.unlessPays > 0
+        ? `counter the card this answers unless its controller pays ${effect.unlessPays} additional Energy`
+        : 'counter the card this answers',
+    notes: [
+      'a countered card has no effect and goes to its owner’s discard pile',
+      'Energy and any additional costs already paid for the countered card are not refunded',
+    ],
   }),
 };
 

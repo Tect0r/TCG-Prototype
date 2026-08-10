@@ -3,17 +3,20 @@ import type { AbilityCost, CardDatabase } from '@tcg/card-data';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
 import { createContext, type MatchContext } from './context.js';
 import {
+  commanderDeployCost,
   definitionOf,
   energyCostOf,
   findInstance,
-  freeUnitSlots,
   hasKeyword,
+  isNewlyDeployed,
   isSummoningSick,
   livingOpponents,
   matchesCardFilter,
   playerOf,
 } from './derive.js';
 import { spellHasLegalTargets } from './engine.js';
+import { playableReactions } from './reactions.js';
+import { reactionWindowSchema } from '@tcg/card-data';
 import {
   MAIN_PHASES,
   instanceIdSchema,
@@ -51,12 +54,15 @@ export const legalActionsSchema = z.strictObject({
       maxReturn: z.number().int().min(0),
     })
     .nullable(),
+  /**
+   * Carries no slot information: the battlefield is unbounded, so "where does
+   * it go" is not a decision anyone makes (ruleset update §7).
+   */
   playableCards: z.array(
     z.strictObject({
       instanceId: instanceIdSchema,
       definitionId: z.string(),
       energyCost: z.number().int().min(0),
-      freeSlots: z.array(z.number().int().min(0)),
     }),
   ),
   activatableAbilities: z.array(
@@ -86,6 +92,38 @@ export const legalActionsSchema = z.strictObject({
     .strictObject({
       attackerInstanceIds: z.array(instanceIdSchema),
       blockerInstanceIds: z.array(instanceIdSchema),
+      /** This defender's ready Guardians, a subset of `blockerInstanceIds`. */
+      guardianInstanceIds: z.array(instanceIdSchema).default([]),
+      /**
+       * How many attackers this defender is *obliged* to block, because they
+       * control that many ready Guardians. The defender still picks which
+       * attacker each Guardian blocks (ruleset update §9).
+       */
+      mustBlockCount: z.number().int().min(0).default(0),
+    })
+    .nullable(),
+  /**
+   * The open Reaction window as this seat may act in it, populated only while
+   * this player holds priority (rule adjustment §5).
+   *
+   * `canPass` is always true when the block is present: declining is how a
+   * window closes, so a seat that has been offered priority can always give it
+   * back. The playable list is the engine's, never the client's — the timing
+   * window, the subject filter and the per-turn discount are all engine rules.
+   */
+  reaction: z
+    .strictObject({
+      windowId: z.string(),
+      windows: z.array(reactionWindowSchema),
+      subjectInstanceId: instanceIdSchema.nullable(),
+      playableCards: z.array(
+        z.strictObject({
+          instanceId: instanceIdSchema,
+          definitionId: z.string(),
+          energyCost: z.number().int().min(0),
+        }),
+      ),
+      canPass: z.boolean(),
     })
     .nullable(),
   /** Defenders the match is still waiting on, without revealing their choices. */
@@ -120,6 +158,7 @@ export function legalActions(
     canPassPhase: false,
     attacking: null,
     blocking: null,
+    reaction: null,
     awaitingDefenders: [...state.combat.awaitingDefenders],
     pendingChoice:
       state.pendingChoice?.playerId === playerId ? structuredClone(state.pendingChoice) : null,
@@ -142,11 +181,29 @@ export function legalActions(
     };
   }
 
+  // A Reaction window pre-empts everything else: while one is open the only
+  // legal moves are playing a Reaction or passing priority, and only for the
+  // seat that holds it (rule adjustment §5).
+  const window = state.reactionWindow;
+  if (window !== null && !window.closed) {
+    if (window.priorityOrder[window.priorityIndex] !== playerId) return empty;
+    return {
+      ...empty,
+      reaction: {
+        windowId: window.id,
+        windows: [...window.windows],
+        subjectInstanceId: window.pending.find((entry) => entry.isSubject)?.instanceId ?? null,
+        playableCards: playableReactions(ctx, playerId, window),
+        canPass: true,
+      },
+    };
+  }
+  if (window !== null) return empty;
+
   const isActive = state.activePlayerId === playerId;
 
   if (isActive && MAIN_PHASES.includes(state.phase) && state.queue.length === 0) {
     const playableCards: PlayableCard[] = [];
-    const free = freeUnitSlots(player);
 
     for (const instanceId of player.hand) {
       const instance = findInstance(state, instanceId);
@@ -157,31 +214,43 @@ export function legalActions(
 
       const cost = energyCostOf(player, definition);
       if (cost > player.energy) continue;
-      if (definition.type === 'unit' && free.length === 0) continue;
-      if (definition.type === 'relic' && player.relics.length >= config.relicSlots) continue;
+      // A relic at the limit is playable: it replaces the current one rather
+      // than being refused (ruleset update §12). Only a format that allows no
+      // relics at all makes one unplayable.
+      if (definition.type === 'relic' && config.relicSlots < 1) continue;
       // A spell with no legal target for a required target cannot be played at
       // all, so it must not be offered (CLAUDE.md §4).
       if (definition.type === 'spell' && !spellHasLegalTargets(ctx, definition, instance)) continue;
 
-      playableCards.push({
-        instanceId,
-        definitionId: definition.id,
-        energyCost: cost,
-        freeSlots: definition.type === 'unit' ? [...free] : [],
-      });
+      playableCards.push({ instanceId, definitionId: definition.id, energyCost: cost });
+    }
+
+    // The Commander is played out of its own zone rather than out of hand, so
+    // it is offered alongside the hand rather than found in it (rule adjustment
+    // §2). A Commander with no printed cost is not deployable and never appears.
+    const commander = findInstance(state, player.commanderInstanceId);
+    if (commander && commander.zone === 'commander_zone') {
+      const definition = definitionOf(options.database, commander);
+      const cost = commanderDeployCost(player, definition, config);
+      if (cost !== null && cost <= player.energy) {
+        playableCards.push({
+          instanceId: commander.instanceId,
+          definitionId: definition.id,
+          energyCost: cost,
+        });
+      }
     }
 
     const activatableAbilities: ActivatableAbility[] = [];
-    const sources = [
-      ...player.units.filter((id): id is InstanceId => id !== null),
-      ...player.relics,
-      player.commanderInstanceId,
-    ];
+    const sources = [...player.units, ...player.relics, player.commanderInstanceId];
     for (const sourceInstanceId of sources) {
       const instance = findInstance(state, sourceInstanceId);
       if (!instance) continue;
       const definition = definitionOf(options.database, instance);
       for (const ability of definition.activatedAbilities) {
+        // The ability's own declared zone, never where the card happens to be
+        // (rule adjustment §3).
+        if (instance.zone !== ability.activeZone) continue;
         if (
           ability.usageLimit === 'once_per_match' &&
           (instance.counters[`used:${ability.id}`] ?? 0) > 0
@@ -205,14 +274,12 @@ export function legalActions(
   }
 
   if (isActive && state.phase === 'declare_attackers') {
-    const legalAttackers = player.units
-      .filter((id): id is InstanceId => id !== null)
-      .filter((instanceId) => {
-        const instance = findInstance(state, instanceId);
-        if (!instance || instance.exhausted) return false;
-        const definition = definitionOf(options.database, instance);
-        return !isSummoningSick(instance, state) || hasKeyword(instance, definition, 'swift');
-      });
+    const legalAttackers = player.units.filter((instanceId) => {
+      const instance = findInstance(state, instanceId);
+      if (!instance || instance.exhausted) return false;
+      const definition = definitionOf(options.database, instance);
+      return !isSummoningSick(instance, state) || hasKeyword(instance, definition, 'rush');
+    });
     return {
       ...empty,
       attacking: { legalAttackers, legalDefenders: livingOpponents(state, playerId) },
@@ -231,14 +298,33 @@ export function legalActions(
         if (!instance) return false;
         return !hasKeyword(instance, definitionOf(options.database, instance), 'evasive');
       });
-    const blockerInstanceIds = player.units
-      .filter((id): id is InstanceId => id !== null)
-      .filter((instanceId) => {
-        const instance = findInstance(state, instanceId);
-        if (!instance) return false;
-        return config.exhaustedUnitsMayBlock || !instance.exhausted;
-      });
-    return { ...empty, blocking: { attackerInstanceIds, blockerInstanceIds } };
+    const blockerInstanceIds = player.units.filter((instanceId) => {
+      const instance = findInstance(state, instanceId);
+      if (!instance) return false;
+      return config.exhaustedUnitsMayBlock || !instance.exhausted;
+    });
+
+    // Guardian: while this defender controls a *ready* Guardian that could block
+    // an attacker, that attacker may not be left unblocked. Each Guardian
+    // covers at most one attack, so with more attackers than Guardians only
+    // that many blocks are compulsory — the defender still chooses which
+    // Guardian blocks which attacker (ruleset update §9).
+    const readyGuardians = blockerInstanceIds.filter((instanceId) => {
+      const instance = findInstance(state, instanceId);
+      if (!instance || instance.exhausted) return false;
+      return hasKeyword(instance, definitionOf(options.database, instance), 'guardian');
+    });
+    const mustBlockCount = Math.min(readyGuardians.length, attackerInstanceIds.length);
+
+    return {
+      ...empty,
+      blocking: {
+        attackerInstanceIds,
+        blockerInstanceIds,
+        guardianInstanceIds: readyGuardians,
+        mustBlockCount,
+      },
+    };
   }
 
   return empty;
@@ -271,16 +357,21 @@ function costsPayable(
         energy += cost.amount;
         if (energy > player.energy) return false;
         break;
-      case 'exhaust_source':
+      case 'exhaust_source': {
         if (source.exhausted) return false;
+        // Newly Deployed blocks an Exhaust cost exactly as it blocks an attack,
+        // unless the card has Rush (rule adjustment §4).
+        if (isNewlyDeployed(source)) {
+          if (!hasKeyword(source, definitionOf(ctx.database, source), 'rush')) return false;
+        }
         break;
+      }
       case 'discard':
         discards += cost.amount;
         if (discards > player.hand.length) return false;
         break;
       case 'sacrifice': {
-        const available = player.units.filter((id): id is InstanceId => {
-          if (id === null) return false;
+        const available = player.units.filter((id) => {
           if (!cost.filter) return true;
           const instance = findInstance(ctx.state, id);
           if (!instance) return false;
@@ -300,8 +391,7 @@ function costsPayable(
 /**
  * A concrete, finite list of actions — enough for a random-legal bot or a
  * scripted test to drive a match without understanding the game. Deliberately
- * conservative: units go into the first free slot, and attacks are "all legal"
- * or "none" rather than every subset.
+ * conservative: attacks are "all legal" or "none" rather than every subset.
  */
 export function enumerateActions(
   state: MatchState,
@@ -335,13 +425,18 @@ export function enumerateActions(
     return actions;
   }
 
+  if (legal.reaction) {
+    // Passing is listed first, and always: it is the only answer that is legal
+    // in every window, and it is what closes one.
+    actions.push({ type: 'pass_reaction', playerId });
+    for (const card of legal.reaction.playableCards) {
+      actions.push({ type: 'play_reaction', playerId, instanceId: card.instanceId });
+    }
+    return actions;
+  }
+
   for (const card of legal.playableCards) {
-    actions.push({
-      type: 'play_card',
-      playerId,
-      instanceId: card.instanceId,
-      slot: card.freeSlots[0] ?? null,
-    });
+    actions.push({ type: 'play_card', playerId, instanceId: card.instanceId });
   }
   for (const ability of legal.activatableAbilities) {
     actions.push({
@@ -371,7 +466,19 @@ export function enumerateActions(
   }
 
   if (legal.blocking) {
-    actions.push({ type: 'assign_blockers', playerId, blocks: [] });
+    // Blocking nothing is only legal when no ready Guardian obliges a block.
+    // Where one does, the minimum legal answer puts Guardians in front of the
+    // first attackers, which is also the simplest deterministic assignment
+    // (ruleset update §9).
+    const blocking = legal.blocking;
+    const blocks: { attackerInstanceId: InstanceId; blockerInstanceId: InstanceId }[] = [];
+    for (let index = 0; index < blocking.mustBlockCount; index += 1) {
+      const attackerInstanceId = blocking.attackerInstanceIds[index];
+      const blockerInstanceId = blocking.guardianInstanceIds[index];
+      if (attackerInstanceId === undefined || blockerInstanceId === undefined) break;
+      blocks.push({ attackerInstanceId, blockerInstanceId });
+    }
+    actions.push({ type: 'assign_blockers', playerId, blocks });
   }
 
   return actions;

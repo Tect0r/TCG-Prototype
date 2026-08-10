@@ -1,0 +1,19 @@
+{
+  "id": "fading_wisp",
+  "name": "Fading Wisp",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 1,
+  "attack": 1,
+  "health": 1,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Recurring Fodder",
+    "power": "medium"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs delayed end-of-turn effects (ruleset update §15)",
+  "displayText": "When you sacrifice this Unit, return it to your hand at the end of the turn."
+}

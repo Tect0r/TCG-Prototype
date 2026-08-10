@@ -66,7 +66,7 @@ describe('rulebook content', () => {
   it('follows a changed configuration everywhere it is quoted', () => {
     const houseRules: HelpConfig = {
       ...DEFAULT_HELP_CONFIG,
-      matchConfig: { ...DEFAULT_HELP_CONFIG.matchConfig, startingHealth: 45, unitSlots: 9 },
+      matchConfig: { ...DEFAULT_HELP_CONFIG.matchConfig, startingHealth: 45, relicSlots: 9 },
       deckRules: { ...DEFAULT_HELP_CONFIG.deckRules, deckSize: 60 },
     };
     const modified = loadRulebook(houseRules);
@@ -79,10 +79,11 @@ describe('rulebook content', () => {
     const deckBuilding = modified.sections.find((section) => section.id === 'deck_building');
     expect(deckBuilding?.searchText).toContain('60');
 
-    // The glossary quotes the unit-slot count in prose, through the same
-    // reference mechanism.
+    // The glossary quotes the relic limit in prose, through the same reference
+    // mechanism. (It used to quote the unit-slot count; there are no slots to
+    // quote now — ruleset update §7.)
     const glossary = modified.sections.find((section) => section.id === 'glossary');
-    expect(glossary?.searchText).toContain('9 unit slots');
+    expect(glossary?.searchText).toContain('control up to 9');
   });
 
   it('builds the keyword index from the shared registry', () => {

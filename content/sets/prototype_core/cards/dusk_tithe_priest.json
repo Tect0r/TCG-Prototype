@@ -1,0 +1,26 @@
+{
+  "id": "dusk_tithe_priest",
+  "name": "Dusk Tithe Priest",
+  "type": "unit",
+  "colorIdentity": ["white", "black"],
+  "cost": 4,
+  "attack": 3,
+  "health": 4,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": ["cleric"],
+  "abilities": [
+    {
+      "id": "last_rites",
+      "trigger": "on_defeated",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "When this unit is defeated, draw a card."
+}

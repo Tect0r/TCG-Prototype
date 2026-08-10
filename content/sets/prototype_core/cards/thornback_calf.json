@@ -1,0 +1,12 @@
+{
+  "id": "thornback_calf",
+  "name": "Thornback Calf",
+  "type": "unit",
+  "colorIdentity": ["green"],
+  "cost": 2,
+  "attack": 2,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "minor",
+  "tags": ["beast"]
+}

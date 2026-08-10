@@ -1,0 +1,25 @@
+{
+  "id": "goblin_siege_leader",
+  "name": "Goblin Siege Leader",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 5,
+  "attack": 4,
+  "health": 4,
+  "tags": ["goblin"],
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Generator",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "goblin_token",
+      "amount": 3
+    }
+  ],
+  "displayText": "When this Unit enters the battlefield, create three Goblin Tokens."
+}

@@ -1,0 +1,36 @@
+{
+  "id": "strength_in_numbers",
+  "name": "Strength in Numbers",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Payoff",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"],
+            "tags": ["goblin"]
+          },
+          "count": "all",
+          "selection": "automatic"
+        }
+      },
+      "attack": 1,
+      "health": 0,
+      "duration": "end_of_turn"
+    }
+  ],
+  "displayText": "Goblins you control gain +1 ATK this turn."
+}

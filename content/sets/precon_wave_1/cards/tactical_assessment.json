@@ -1,0 +1,34 @@
+{
+  "id": "tactical_assessment",
+  "name": "Tactical Assessment",
+  "type": "spell",
+  "colorIdentity": ["white"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Spell — Consistency",
+    "power": "medium"
+  },
+  "displayText": "Look at the top four cards of your deck. You may reveal a Unit with Guardian or a Reaction Spell and put it into your hand. Put the others on the bottom.",
+  "effects": [
+    {
+      "type": "search_zone",
+      "player": "self",
+      "zone": "deck",
+      "fromTop": 4,
+      "filter": {
+        "anyOf": [
+          { "cardTypes": ["unit"], "keywords": ["guardian"] },
+          { "cardTypes": ["reaction"] }
+        ]
+      },
+      "amount": 1,
+      "destination": "hand",
+      "reveal": true,
+      "upTo": true,
+      "remainder": "bottom"
+    }
+  ]
+}

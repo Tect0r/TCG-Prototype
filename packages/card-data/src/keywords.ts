@@ -61,29 +61,74 @@ export const keywordDefinitionSchema = z.strictObject({
 export type KeywordDefinition = z.infer<typeof keywordDefinitionSchema>;
 
 export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = Object.freeze({
-  swift: {
+  rush: {
     schemaVersion: 1,
-    id: 'swift',
-    name: 'Swift',
+    id: 'rush',
+    name: 'Rush',
     category: 'timing',
-    shortDefinition: 'Can attack the turn it is deployed.',
+    shortDefinition: 'Can attack and use its Exhaust abilities the turn it is deployed.',
     fullDefinition:
-      'This unit ignores summoning sickness. It may be declared as an attacker on the same turn it enters the battlefield, instead of having to wait for your next turn.',
+      'A Newly Deployed unit normally cannot attack, and cannot pay an "Exhaust this unit" activation cost. Rush lifts both restrictions on the turn it arrives. Rush does not ready an already-exhausted unit.',
     implemented: true,
     relatedRuleSections: ['playing_cards', 'combat'],
-    examples: ['Deploy a Swift unit on turn four and attack with it immediately.'],
+    examples: [
+      'Deploy a Rush unit on turn four and attack with it immediately.',
+      'A Newly Deployed unit with Rush can pay "Exhaust: create a token" the turn it arrives.',
+    ],
   },
   guardian: {
     schemaVersion: 1,
     id: 'guardian',
     name: 'Guardian',
     category: 'combat',
-    shortDefinition: 'No effect yet — this keyword is not implemented.',
+    shortDefinition: 'Attackers cannot be left unblocked while you have a Guardian able to block.',
     fullDefinition:
-      'Guardian currently does nothing. Attackers choose an opposing player rather than a unit to attack, so there is no attack for a Guardian to intercept, and inventing one would settle a design decision that has not been made. It is printed on cards so the card pool is ready when the rule is confirmed.',
-    implemented: false,
+      'While the defending player controls a ready Guardian that could legally block an attacker, that attacker may not be left unblocked. The defender still chooses which legal Guardian blocks it. Guardian does not let one unit block more than one attacker: with more attackers than ready Guardians, each Guardian covers one attack and the rest may be blocked normally or left unblocked.',
+    implemented: true,
     relatedRuleSections: ['combat'],
-    examples: [],
+    examples: [
+      'You attack with two units into one ready Guardian. One attack must be blocked by it; the other may go through.',
+    ],
+  },
+  barrier: {
+    schemaVersion: 1,
+    id: 'barrier',
+    name: 'Barrier',
+    category: 'damage',
+    shortDefinition: 'Prevents the next damage dealt to this unit, then goes away.',
+    fullDefinition:
+      'The next damage event that would deal damage to this unit is prevented entirely, and Barrier is then removed. A zero-damage event does not consume it. Multiple instances of Barrier do not stack — a unit either has it or does not.',
+    implemented: true,
+    relatedRuleSections: ['damage_and_defeat'],
+    examples: [
+      'A 2/2 with Barrier blocks a 5/5, takes no damage, and loses Barrier. The next hit kills it.',
+    ],
+  },
+  overwhelm: {
+    schemaVersion: 1,
+    id: 'overwhelm',
+    name: 'Overwhelm',
+    category: 'combat',
+    shortDefinition: 'Excess combat damage carries through to the defending player.',
+    fullDefinition:
+      "When this unit is blocked, damage equal to the blocker's current health is assigned to the blocker and the rest is dealt to the defending player. Barrier on the blocker prevents only the damage assigned to the blocker; the overflow still reaches the player.",
+    implemented: true,
+    relatedRuleSections: ['combat', 'damage_and_defeat'],
+    examples: ['A 7/7 with Overwhelm blocked by a 2/2 deals 2 to the blocker and 5 to the player.'],
+  },
+  untargetable_by_opponents: {
+    schemaVersion: 1,
+    id: 'untargetable_by_opponents',
+    name: 'Untargetable by opponents',
+    category: 'lifecycle',
+    shortDefinition: 'Opponents cannot choose this unit as a target.',
+    fullDefinition:
+      'An opposing player may not choose this unit as the target of a card or ability. It can still be affected by effects that do not target — "every unit", sweepers, combat damage — and its own controller may still target it.',
+    implemented: true,
+    relatedRuleSections: ['playing_cards'],
+    examples: [
+      'A unit made untargetable cannot be picked by enemy removal, but still takes damage from "deal 2 damage to every unit".',
+    ],
   },
   evasive: {
     schemaVersion: 1,

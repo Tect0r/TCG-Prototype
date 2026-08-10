@@ -43,13 +43,13 @@ export function describeEvent(
     case 'card_played':
       return `${playerName(event.playerId)} played ${cardName(event.definitionId)} for ${event.energySpent} energy.`;
     case 'unit_deployed':
-      return `${cardName(event.definitionId)} enters slot ${event.slot + 1}.`;
+      return `${cardName(event.definitionId)} enters the battlefield.`;
     case 'relic_deployed':
       return `${cardName(event.definitionId)} is deployed.`;
+    case 'relic_replaced':
+      return `${cardName(event.replacedByDefinitionId)} replaces ${cardName(event.definitionId)}, which goes to the discard pile.`;
     case 'token_created':
       return `${playerName(event.playerId)} creates ${cardName(event.definitionId)}.`;
-    case 'token_creation_failed':
-      return `${playerName(event.playerId)} has no room for ${cardName(event.definitionId)}.`;
     case 'attackers_declared': {
       if (event.attacks.length === 0) return `${playerName(event.playerId)} declines to attack.`;
       // Who each attacker chose matters in a free-for-all, so the log says so.

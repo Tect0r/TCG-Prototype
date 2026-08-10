@@ -1,0 +1,31 @@
+{
+  "id": "wildgrowth_shaman",
+  "name": "Wildgrowth Shaman",
+  "type": "unit",
+  "colorIdentity": ["green"],
+  "cost": 3,
+  "attack": 2,
+  "health": 4,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": ["druid"],
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "count": "all",
+          "selection": "automatic",
+          "excludeSource": true
+        }
+      },
+      "attack": 1,
+      "health": 1,
+      "duration": "permanent"
+    }
+  ],
+  "displayText": "When this unit is deployed, your other units get +1/+1."
+}

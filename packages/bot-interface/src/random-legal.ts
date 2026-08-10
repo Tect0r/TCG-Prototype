@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { nextInt, type Action, type RngState } from '@tcg/rules-engine';
 import type { BotDecision, BotObservation, BotPolicy, DecisionFamily } from './types.js';
+import { satisfyGuardianObligation } from './candidates.js';
 
 /**
  * The baseline pilot: a uniform (or explicitly weighted) draw from the legal
@@ -98,6 +99,32 @@ export function createRandomLegalPilot(input: RandomLegalConfigInput = {}): BotP
         );
       }
 
+      // A Reaction window pre-empts the rest of the turn, so it is answered
+      // before anything else — as the engine requires, and before the family
+      // weights below, which describe a Main Phase and have nothing to say
+      // about priority.
+      if (legal.reaction) {
+        const playable = [...legal.reaction.playableCards].sort((a, b) =>
+          a.instanceId.localeCompare(b.instanceId),
+        );
+        // Passing is one of the options, always: a window that nobody ever
+        // declined would never close.
+        const roll = pickInt(playable.length + 1);
+        const choice = playable[roll];
+        if (choice === undefined) {
+          return finish(
+            { type: 'pass_reaction', playerId },
+            'pass_reaction',
+            'random:reaction_pass',
+          );
+        }
+        return finish(
+          { type: 'play_reaction', playerId, instanceId: choice.instanceId },
+          'play_reaction',
+          `random:reaction_play_${choice.definitionId}`,
+        );
+      }
+
       if (legal.blocking) {
         const attackers = [...legal.blocking.attackerInstanceIds].sort((a, b) =>
           a.localeCompare(b),
@@ -114,10 +141,13 @@ export function createRandomLegalPilot(input: RandomLegalConfigInput = {}): BotP
           if (blockerInstanceId === undefined) break;
           blocks.push({ attackerInstanceId, blockerInstanceId });
         }
+        // Guardian is compulsory, so a random plan still has to be topped up
+        // to the obligation before it is a legal action at all.
+        const legalBlocks = satisfyGuardianObligation(legal.blocking, blocks);
         return finish(
-          { type: 'assign_blockers', playerId, blocks },
+          { type: 'assign_blockers', playerId, blocks: legalBlocks },
           'assign_blockers',
-          `random:block_${blocks.length}`,
+          `random:block_${legalBlocks.length}`,
         );
       }
 
@@ -144,12 +174,7 @@ export function createRandomLegalPilot(input: RandomLegalConfigInput = {}): BotP
       )) {
         families.push({
           family: 'play_card',
-          build: () => ({
-            type: 'play_card',
-            playerId,
-            instanceId: card.instanceId,
-            slot: card.freeSlots.length > 0 ? (pick(card.freeSlots) as number) : null,
-          }),
+          build: () => ({ type: 'play_card', playerId, instanceId: card.instanceId }),
         });
       }
       for (const ability of [...legal.activatableAbilities].sort((a, b) =>

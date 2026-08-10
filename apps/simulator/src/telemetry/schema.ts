@@ -33,7 +33,7 @@ import { seedBundleSchema } from '../seed.js';
  * a v1 file is rejected with a clear message rather than read under v2 meanings
  * (PHASE4_HARDENING §13).
  */
-export const TELEMETRY_SCHEMA_VERSION = 2;
+export const TELEMETRY_SCHEMA_VERSION = 3;
 
 export const TERMINATION_KINDS = [
   'victory',
@@ -175,6 +175,18 @@ export const cardTelemetrySchema = z.strictObject({
   timesDefeated: z.number().int().min(0),
   timesRemoved: z.number().int().min(0),
   timesReturnedToHand: z.number().int().min(0),
+  /**
+   * Copies that left the battlefield because their controller played another
+   * relic over them.
+   *
+   * Its own counter rather than folding into `timesDefeated` or
+   * `timesDiscarded`: replacement is a rules action, not destruction and not a
+   * discard from hand (ruleset update §12), and a relic that was replaced tells
+   * a completely different balance story from one that was answered. It is also
+   * the *cost* half of playing a second relic, which readiness gate H1 asks to
+   * be recorded rather than inferred from the final board.
+   */
+  timesReplaced: z.number().int().min(0),
 
   energySpent: z.number().int().min(0),
   attacksMade: z.number().int().min(0),
@@ -235,6 +247,8 @@ export const seatTelemetrySchema = z.strictObject({
   energyUnspentAtTurnEnd: z.number().int().min(0),
   unitsDeployed: z.number().int().min(0),
   relicsDeployed: z.number().int().min(0),
+  /** Own relics that a later relic replaced. Never more than `relicsDeployed`. */
+  relicsReplaced: z.number().int().min(0),
   tokensCreated: z.number().int().min(0),
   unitsLost: z.number().int().min(0),
   attacksDeclared: z.number().int().min(0),

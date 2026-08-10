@@ -1,0 +1,20 @@
+{
+  "id": "goblin_warhorn_captain",
+  "name": "Goblin Warhorn Captain",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 5,
+  "attack": 4,
+  "health": 5,
+  "tags": ["goblin"],
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Payoff",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
+  "displayText": "Goblin Tokens you create during your turn have Rush until the end of that turn."
+}

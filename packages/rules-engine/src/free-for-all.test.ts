@@ -192,7 +192,7 @@ describe('2. stable circular turns, skipping eliminated seats', () => {
     let state = keepAllHands(startTable(3));
     const attacker = state.activePlayerId;
     state = deployUnit(state, attacker, 'prototype_scout', { summoningSick: false }).state;
-    const unit = state.players[attacker]?.units.find((id) => id !== null) as string;
+    const unit = state.players[attacker]?.units[0] as string;
     const defender = clockwiseFrom(state, attacker)[0] as PlayerId;
 
     state = toDeclareAttackers(state);
@@ -748,7 +748,7 @@ describe('9. elimination cleanup', () => {
 
     // 2. every card they own is gone from play, into a terminal zone.
     expect(instanceIn(after, victimUnit.instanceId).zone).toBe('removed');
-    expect(after.players[victim]?.units.every((slot) => slot === null)).toBe(true);
+    expect(after.players[victim]?.units).toEqual([]);
     expect(after.players[victim]?.hand).toHaveLength(0);
     expect(after.players[victim]?.deck).toHaveLength(0);
     expect(after.players[victim]?.removed.length).toBeGreaterThan(0);

@@ -20,12 +20,16 @@ export const actionSchema = z.discriminatedUnion('type', [
     playerId: playerIdSchema,
     returnInstanceIds: z.array(instanceIdSchema),
   }),
+  /**
+   * Deliberately carries no slot. The battlefield is unbounded (ruleset update
+   * §7), so a unit has nowhere to be placed *to* — it simply joins the
+   * controller's unit list. Sending a slot is a schema error rather than an
+   * ignored field, so a stale client is told rather than silently misread.
+   */
   z.strictObject({
     type: z.literal('play_card'),
     playerId: playerIdSchema,
     instanceId: instanceIdSchema,
-    /** Unit slot to deploy into. `null` lets the engine take the lowest free slot. */
-    slot: z.number().int().min(0).nullable().default(null),
   }),
   z.strictObject({
     type: z.literal('activate_ability'),
@@ -67,6 +71,25 @@ export const actionSchema = z.discriminatedUnion('type', [
         blockerInstanceId: instanceIdSchema,
       }),
     ),
+  }),
+  /**
+   * Plays a Reaction into the open window (rule adjustment §5).
+   *
+   * A separate action from `play_card` rather than a special case of it: every
+   * check differs. `play_card` requires the active player, a Main Phase and an
+   * empty queue; this one requires priority in a window, which is normally
+   * somebody else's turn and normally has work pending. Folding the two together
+   * would mean one handler carrying two disjoint sets of preconditions.
+   */
+  z.strictObject({
+    type: z.literal('play_reaction'),
+    playerId: playerIdSchema,
+    instanceId: instanceIdSchema,
+  }),
+  /** Declines to act with priority in the open Reaction window. */
+  z.strictObject({
+    type: z.literal('pass_reaction'),
+    playerId: playerIdSchema,
   }),
   z.strictObject({
     type: z.literal('submit_choice'),

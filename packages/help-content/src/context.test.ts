@@ -115,7 +115,7 @@ describe('public card context', () => {
 
     const context = publicCardContext(view, instanceId);
     expect(context?.playableForEnergy).toBeNull();
-    const messages = contextMessages(context!, database.get('goblin_scout'));
+    const messages = contextMessages(context!);
     expect(messages.join(' ')).toMatch(/only be played during your own Main Phase/);
   });
 
@@ -132,8 +132,8 @@ describe('public card context', () => {
     if (unplayable === undefined) return;
 
     const context = publicCardContext(view, unplayable);
-    const messages = contextMessages(context!, database.get('goblin_scout'));
-    expect(messages.join(' ')).toMatch(/not offering this card as playable|Main Phase|full/);
+    const messages = contextMessages(context!);
+    expect(messages.join(' ')).toMatch(/not offering this card as playable|Main Phase/);
   });
 
   it('reads a deployed unit’s state straight from the view', () => {
@@ -146,12 +146,7 @@ describe('public card context', () => {
     state = unwrap(
       applyAction(
         state,
-        {
-          type: 'play_card',
-          playerId: active,
-          instanceId: playable!.instanceId,
-          slot: playable!.freeSlots[0] ?? null,
-        },
+        { type: 'play_card', playerId: active, instanceId: playable!.instanceId },
         { database },
       ),
       'play card',

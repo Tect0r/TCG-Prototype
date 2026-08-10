@@ -1,0 +1,41 @@
+{
+  "id": "goblin_instigator",
+  "name": "Goblin Instigator",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "attack": 2,
+  "health": 2,
+  "tags": ["goblin"],
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Generator",
+    "power": "medium"
+  },
+  "activatedAbilities": [
+    {
+      "id": "instigate",
+      "name": "Instigate",
+      "costs": [
+        {
+          "type": "energy",
+          "amount": 1
+        },
+        {
+          "type": "exhaust_source"
+        }
+      ],
+      "usageLimit": "unlimited",
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "goblin_token",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "Pay 1 Energy and Exhaust — Create one Goblin Token."
+}

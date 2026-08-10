@@ -1,0 +1,29 @@
+{
+  "id": "senior_researcher",
+  "name": "Senior Researcher",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 5,
+  "attack": 3,
+  "health": 5,
+  "role": "blocker",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Card Advantage",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 2
+    },
+    {
+      "type": "discard",
+      "player": "self",
+      "amount": 1
+    }
+  ],
+  "displayText": "When deployed, draw two cards, then discard a card."
+}

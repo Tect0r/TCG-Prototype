@@ -1,0 +1,53 @@
+{
+  "id": "prototype_commander_blue",
+  "name": "Tidecaller Archivist",
+  "type": "commander",
+  "colorIdentity": ["blue"],
+  "cost": null,
+  "attack": 1,
+  "health": 13,
+  "unique": true,
+  "role": "enabler",
+  "powerClass": "centerpiece",
+  "tags": ["mage", "commander"],
+  "abilities": [
+    {
+      "id": "steady_study",
+      "trigger": "on_turn_end",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "activatedAbilities": [
+    {
+      "id": "tidal_insight",
+      "name": "Tidal Insight",
+      "usageLimit": "once_per_turn",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        },
+        {
+          "type": "discard",
+          "player": "self",
+          "amount": 1,
+          "selection": "player_choice"
+        }
+      ],
+      "costs": [
+        {
+          "type": "energy",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "displayText": "At the end of your turn, draw a card. 2 energy, once per turn: draw a card, then discard a card."
+}

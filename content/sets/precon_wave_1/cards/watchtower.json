@@ -1,0 +1,42 @@
+{
+  "id": "watchtower",
+  "name": "Watchtower",
+  "type": "relic",
+  "colorIdentity": ["white"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Relic — Card Selection",
+    "power": "medium"
+  },
+  "displayText": "At the end of each opponent's turn, if a friendly Unit survived combat as a blocker that turn, look at the top two cards of your deck. You may put one on the bottom.",
+  "abilities": [
+    {
+      "id": "keep_watch",
+      "trigger": "on_opponent_turn_end",
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "units_survived_as_blocker_this_turn",
+          "controller": "self"
+        },
+        "comparison": "at_least",
+        "value": 1
+      },
+      "effects": [
+        {
+          "type": "search_zone",
+          "player": "self",
+          "zone": "deck",
+          "fromTop": 2,
+          "amount": 1,
+          "destination": "deck",
+          "upTo": true,
+          "remainder": "unchanged"
+        }
+      ]
+    }
+  ]
+}

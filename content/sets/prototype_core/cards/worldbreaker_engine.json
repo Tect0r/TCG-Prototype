@@ -1,0 +1,33 @@
+{
+  "id": "worldbreaker_engine",
+  "name": "Worldbreaker Engine",
+  "type": "relic",
+  "colorIdentity": [],
+  "cost": 8,
+  "unique": true,
+  "role": "build_around",
+  "powerClass": "centerpiece",
+  "tags": ["artifact", "finisher"],
+  "abilities": [
+    {
+      "id": "overwhelming_barrage",
+      "trigger": "on_turn_start",
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "count": "all",
+              "selection": "automatic"
+            }
+          },
+          "amount": 3
+        }
+      ]
+    }
+  ],
+  "displayText": "At the start of your turn, deal 3 damage to each enemy unit."
+}

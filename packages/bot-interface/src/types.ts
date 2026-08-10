@@ -25,6 +25,9 @@ export const DECISION_FAMILIES = [
   'pass_phase',
   'declare_attackers',
   'assign_blockers',
+  /** Answering an open Reaction window (rule adjustment §5). */
+  'play_reaction',
+  'pass_reaction',
   'submit_choice',
   'concede',
 ] as const;

@@ -1,0 +1,13 @@
+{
+  "id": "tidal_grove_warden",
+  "name": "Tidal Grove Warden",
+  "type": "unit",
+  "colorIdentity": ["green", "blue"],
+  "cost": 4,
+  "attack": 3,
+  "health": 5,
+  "role": "blocker",
+  "powerClass": "standard",
+  "tags": ["druid", "beast"],
+  "keywords": ["evasive"]
+}

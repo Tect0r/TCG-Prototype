@@ -1,0 +1,34 @@
+{
+  "id": "return_to_the_veil",
+  "name": "Return to the Veil",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "role": "removal",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Removal",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "return_to_hand",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"],
+            "cost": {
+              "max": 3
+            }
+          },
+          "count": 1
+        }
+      }
+    }
+  ],
+  "displayText": "Return an enemy Unit costing 3 or less to its owner's hand."
+}

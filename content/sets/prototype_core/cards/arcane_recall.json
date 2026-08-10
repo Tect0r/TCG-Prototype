@@ -1,0 +1,24 @@
+{
+  "id": "arcane_recall",
+  "name": "Arcane Recall",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "role": "enabler",
+  "powerClass": "standard",
+  "tags": ["plan"],
+  "effects": [
+    {
+      "type": "search_zone",
+      "player": "self",
+      "zone": "deck",
+      "filter": {
+        "cardTypes": ["spell"]
+      },
+      "amount": 1,
+      "destination": "hand",
+      "reveal": true
+    }
+  ],
+  "displayText": "Search your deck for a spell, reveal it, and put it into your hand."
+}

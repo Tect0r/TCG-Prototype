@@ -207,7 +207,6 @@ function newInstance(
   definitionId: CardId,
   owner: PlayerId,
   zone: ZoneId,
-  slot: number | null,
 ): CardInstance {
   const ordinal = state.nextInstanceOrdinal;
   state.nextInstanceOrdinal += 1;
@@ -219,10 +218,12 @@ function newInstance(
     owner,
     controller: owner,
     zone,
-    slot,
     markedDamage: 0,
     exhausted: false,
     enteredZoneOnTurn: 0,
+    newlyDeployed: false,
+    survivedAsBlocker: false,
+    barrierSpent: false,
     statModifiers: [],
     grantedKeywords: [],
     removedKeywords: [],
@@ -245,7 +246,7 @@ export function giveCard(state: MatchState, playerId: PlayerId, definitionId: Ca
   const next = clone(state);
   const player = next.players[playerId];
   if (!player) throw new Error(`No player ${playerId}`);
-  const instance = newInstance(next, definitionId, playerId, 'hand', null);
+  const instance = newInstance(next, definitionId, playerId, 'hand');
   player.hand.push(instance.instanceId);
   return { state: next, instanceId: instance.instanceId };
 }
@@ -256,7 +257,6 @@ export function deployUnit(
   playerId: PlayerId,
   definitionId: CardId,
   options: {
-    readonly slot?: number;
     readonly exhausted?: boolean;
     readonly summoningSick?: boolean;
   } = {},
@@ -265,16 +265,12 @@ export function deployUnit(
   const player = next.players[playerId];
   if (!player) throw new Error(`No player ${playerId}`);
 
-  const slot = options.slot ?? player.units.findIndex((occupant) => occupant === null);
-  if (slot < 0 || player.units[slot] !== null) {
-    throw new Error(`Unit slot ${slot} is not free for ${playerId}`);
-  }
-
-  const instance = newInstance(next, definitionId, playerId, 'battlefield', slot);
+  const instance = newInstance(next, definitionId, playerId, 'battlefield');
   instance.exhausted = options.exhausted ?? false;
   // Entering "last turn" is the default so the unit can attack immediately.
   instance.enteredZoneOnTurn = options.summoningSick ? next.turn : Math.max(0, next.turn - 1);
-  player.units[slot] = instance.instanceId;
+  instance.newlyDeployed = options.summoningSick === true;
+  player.units.push(instance.instanceId);
   return { state: next, instanceId: instance.instanceId };
 }
 
@@ -286,8 +282,9 @@ export function deployRelic(
   const next = clone(state);
   const player = next.players[playerId];
   if (!player) throw new Error(`No player ${playerId}`);
-  const instance = newInstance(next, definitionId, playerId, 'battlefield', null);
+  const instance = newInstance(next, definitionId, playerId, 'battlefield');
   instance.enteredZoneOnTurn = Math.max(0, next.turn - 1);
+  instance.newlyDeployed = false;
   player.relics.push(instance.instanceId);
   return { state: next, instanceId: instance.instanceId };
 }
@@ -302,7 +299,7 @@ export function stackDeck(
   const player = next.players[playerId];
   if (!player) throw new Error(`No player ${playerId}`);
   const added = definitionIds.map(
-    (definitionId) => newInstance(next, definitionId, playerId, 'deck', null).instanceId,
+    (definitionId) => newInstance(next, definitionId, playerId, 'deck').instanceId,
   );
   player.deck = [...added, ...player.deck];
   return next;
@@ -361,13 +358,12 @@ export function moveInstance(
   const owner = next.players[instance.owner];
   if (!controller || !owner) throw new Error('Instance has no player');
 
-  const slot = controller.units.indexOf(instanceId);
-  if (slot >= 0) controller.units[slot] = null;
+  const unitIndex = controller.units.indexOf(instanceId);
+  if (unitIndex >= 0) controller.units.splice(unitIndex, 1);
   const relicIndex = controller.relics.indexOf(instanceId);
   if (relicIndex >= 0) controller.relics.splice(relicIndex, 1);
 
   instance.zone = toZone;
-  instance.slot = null;
   owner[toZone].push(instanceId);
   return next;
 }

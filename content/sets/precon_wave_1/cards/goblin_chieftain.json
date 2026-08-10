@@ -1,0 +1,37 @@
+{
+  "id": "goblin_chieftain",
+  "name": "Goblin Chieftain",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 4,
+  "attack": 3,
+  "health": 4,
+  "tags": ["goblin"],
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Tribal Engine",
+    "power": "high"
+  },
+  "staticAbilities": [
+    {
+      "id": "chieftain_buff",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "self",
+        "filter": {
+          "tags": ["goblin"]
+        },
+        "excludeSource": true
+      },
+      "effect": {
+        "type": "modify_stats",
+        "attack": 1,
+        "health": 0
+      }
+    }
+  ],
+  "displayText": "Other Goblins you control have +1 ATK."
+}

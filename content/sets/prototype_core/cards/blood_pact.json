@@ -1,0 +1,32 @@
+{
+  "id": "blood_pact",
+  "name": "Blood Pact",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "role": "enabler",
+  "powerClass": "standard",
+  "tags": ["curse"],
+  "effects": [
+    {
+      "type": "sacrifice",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1
+        }
+      }
+    },
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 2
+    }
+  ],
+  "displayText": "Sacrifice a friendly unit, then draw 2 cards."
+}

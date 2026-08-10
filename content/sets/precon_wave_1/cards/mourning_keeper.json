@@ -1,0 +1,39 @@
+{
+  "id": "mourning_keeper",
+  "name": "Mourning Keeper",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "attack": 2,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Sustain",
+    "power": "medium"
+  },
+  "displayText": "The first time another friendly Unit is defeated each turn, restore 1 Health to your Commander.",
+  "abilities": [
+    {
+      "id": "mourn",
+      "trigger": "on_defeated",
+      "scope": {
+        "controller": "self",
+        "excludeSource": true
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "heal",
+          "target": {
+            "kind": "player",
+            "relation": "self",
+            "selection": "automatic"
+          },
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

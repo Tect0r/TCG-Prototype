@@ -1,0 +1,38 @@
+{
+  "id": "goblin_tallykeeper",
+  "name": "Goblin Tallykeeper",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "tags": ["goblin"],
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Multiplier",
+    "power": "high"
+  },
+  "displayText": "Whenever you create one or more Goblin Tokens, create one additional Token. This does not trigger from Tokens created by this effect.",
+  "abilities": [
+    {
+      "id": "tally",
+      "trigger": "on_tokens_created",
+      "scope": {
+        "controller": "self",
+        "filter": {
+          "tags": ["goblin"]
+        },
+        "excludeSelfCaused": true
+      },
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "goblin_token",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

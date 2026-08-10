@@ -1,0 +1,27 @@
+{
+  "id": "root_snare",
+  "name": "Root Snare",
+  "type": "spell",
+  "colorIdentity": ["green"],
+  "cost": 1,
+  "role": "removal",
+  "powerClass": "minor",
+  "tags": ["growth"],
+  "effects": [
+    {
+      "type": "exhaust",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1
+        }
+      }
+    }
+  ],
+  "displayText": "Exhaust an enemy unit."
+}

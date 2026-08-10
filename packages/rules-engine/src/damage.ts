@@ -62,6 +62,26 @@ export function damageUnit(
     prevented += reduced;
   }
 
+  // Barrier prevents the whole of the next non-zero damage event and is then
+  // spent. It is checked after `armored` (which only reduces) and before
+  // numeric shields, so a Barrier is never wasted soaking damage a shield would
+  // have absorbed anyway. A zero-damage event does not consume it.
+  //
+  // With Overwhelm this runs on the blocker's *share* only: `combat.ts` has
+  // already split the attack, so the overflow dealt to the player is a separate
+  // event that Barrier never sees (ruleset update §9, ADR 0016 Q-D).
+  if (incoming > 0 && !target.barrierSpent && hasKeyword(target, definition, 'barrier')) {
+    target.barrierSpent = true;
+    emit(ctx, {
+      type: 'damage_prevented',
+      targetInstanceId,
+      targetPlayerId: null,
+      amount: prevented + incoming,
+    });
+    emit(ctx, { type: 'barrier_consumed', instanceId: targetInstanceId });
+    return 0;
+  }
+
   const shielded = applyShields(target.damageShields, incoming);
   incoming = shielded.remaining;
   prevented += shielded.prevented;
@@ -171,9 +191,15 @@ export function addDamageShield(
   target: { readonly instanceId: InstanceId } | { readonly playerId: PlayerId },
   amount: number,
   duration: DamageShield['duration'],
+  sourceInstanceId: InstanceId | null = null,
 ): void {
   if (amount <= 0) return;
-  const shield: DamageShield = { amount, duration, appliedOnTurn: ctx.state.turn };
+  const shield: DamageShield = {
+    amount,
+    duration,
+    sourceInstanceId,
+    appliedOnTurn: ctx.state.turn,
+  };
   if ('instanceId' in target) {
     const instance = findInstance(ctx.state, target.instanceId);
     if (!instance) return;

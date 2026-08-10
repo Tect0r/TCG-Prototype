@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "id": "template_token",
+  "name": "Template Token",
+  "type": "token",
+  "colorIdentity": ["white"],
+  "cost": null,
+  "attack": 1,
+  "health": 1,
+  "collectible": false,
+  "role": "token",
+  "powerClass": "minor",
+  "tags": [],
+  "keywords": [],
+  "displayText": "A 1/1 token with no special rules.",
+  "text": {
+    "flavor": "Tokens are created by effects, never put into a deck."
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "border_recruit",
+  "name": "Border Recruit",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 1,
+  "attack": 2,
+  "health": 1,
+  "role": "attacker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Simple",
+    "power": "low"
+  }
+}

@@ -3,12 +3,14 @@ import type { ReactNode } from 'react';
 import type { CardDatabase, CardId } from '@tcg/card-data';
 import {
   createDeck,
+  DEFAULT_DECK_FORMAT,
   DeckRepository,
   duplicateDeck,
   MemoryStore,
   parseDecksFromJson,
   prepareImportedDeck,
   renameDeck,
+  type DeckFormatConfig,
   type KeyValueStore,
   type SavedDeck,
 } from '@tcg/deck';
@@ -34,6 +36,7 @@ export interface AppActions {
 
 interface AppContextValue {
   readonly database: CardDatabase;
+  readonly deckFormat: DeckFormatConfig;
   readonly state: AppState;
   readonly actions: AppActions;
   readonly deck: SavedDeck | undefined;
@@ -56,11 +59,18 @@ function resolveStore(): KeyValueStore {
 interface AppProviderProps {
   readonly database: CardDatabase;
   readonly children: ReactNode;
+  /**
+   * Deck-construction rules for the pool in `database`. Supplied explicitly so
+   * the builder and its tests always agree on which format they are in; a
+   * format picker will make this a user choice (ruleset update §3).
+   */
+  readonly deckFormat?: DeckFormatConfig;
   /** Injected in tests; defaults to browser local storage. */
   readonly store?: KeyValueStore;
 }
 
-export function AppProvider({ database, children, store }: AppProviderProps) {
+export function AppProvider({ database, children, deckFormat, store }: AppProviderProps) {
+  const format = deckFormat ?? DEFAULT_DECK_FORMAT;
   const repository = useMemo(() => new DeckRepository(store ?? resolveStore()), [store]);
   const [state, dispatch] = useReducer(appReducer, initialAppState);
 
@@ -144,8 +154,8 @@ export function AppProvider({ database, children, store }: AppProviderProps) {
   );
 
   const value = useMemo<AppContextValue>(
-    () => ({ database, state, actions, deck }),
-    [database, state, actions, deck],
+    () => ({ database, deckFormat: format, state, actions, deck }),
+    [database, format, state, actions, deck],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
@@ -158,6 +168,8 @@ function useApp(): AppContextValue {
 }
 
 export const useCardDatabase = (): CardDatabase => useApp().database;
+/** The active format's deck-construction rules. */
+export const useDeckFormat = (): DeckFormatConfig => useApp().deckFormat;
 export const useAppState = (): AppState => useApp().state;
 export const useAppActions = (): AppActions => useApp().actions;
 export const useActiveDeck = (): SavedDeck | undefined => useApp().deck;

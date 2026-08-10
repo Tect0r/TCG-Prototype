@@ -26,7 +26,23 @@ import { canonicalJson } from './hash.js';
  */
 
 export const deckFormatSchema = z.strictObject({
+  /**
+   * The content format these limits describe. Recorded for provenance, never
+   * used to look a format up: an experiment states its construction rules
+   * outright so a later edit to `content/formats` cannot silently redefine a
+   * finished run.
+   */
+  formatId: z.string().min(1).max(40).default('custom'),
   deckSize: z.number().int().min(1).max(200).default(DEFAULT_DECK_FORMAT.deckSize),
+  /**
+   * One copy of each card ID, enforced by identity rather than by copy count.
+   *
+   * Defaults to `false` rather than to the active format's value. An experiment
+   * that omits it is saying "ordinary copy limits", and inheriting singleton
+   * from whatever format happens to be current would silently change what every
+   * existing config means.
+   */
+  singleton: z.boolean().default(false),
   copyLimit: z.number().int().min(1).max(20).default(DEFAULT_DECK_FORMAT.copyLimit),
   uniqueCopyLimit: z.number().int().min(1).max(20).default(DEFAULT_DECK_FORMAT.uniqueCopyLimit),
   maxCommanderColors: z

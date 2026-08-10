@@ -1,0 +1,39 @@
+{
+  "id": "blood_scribe",
+  "name": "Blood Scribe",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "attack": 1,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Filtering",
+    "power": "medium"
+  },
+  "displayText": "The first time you sacrifice a Unit each turn, look at the top two cards of your deck. You may put one on the bottom.",
+  "abilities": [
+    {
+      "id": "scribe",
+      "trigger": "on_sacrifice",
+      "scope": {
+        "controller": "self"
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "search_zone",
+          "player": "self",
+          "zone": "deck",
+          "fromTop": 2,
+          "amount": 1,
+          "destination": "deck",
+          "upTo": true,
+          "remainder": "unchanged"
+        }
+      ]
+    }
+  ]
+}

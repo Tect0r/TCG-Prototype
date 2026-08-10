@@ -178,10 +178,13 @@ describe('on_survive_combat with a source target', () => {
 });
 
 describe('inert keywords', () => {
-  it('records guardian and resilient as authored but not executed', () => {
-    expect(INERT_KEYWORDS).toEqual(expect.arrayContaining(['guardian', 'resilient']));
-    expect(KEYWORD_BEHAVIOUR.guardian.implemented).toBe(false);
+  it('records resilient as authored but not executed', () => {
+    // Guardian left this list when the Precon Wave 1 ruleset gave it real
+    // must-block behaviour (ADR 0016). Resilient is still an open design
+    // decision and no Precon Wave 1 card prints it.
+    expect(INERT_KEYWORDS).toEqual(['resilient']);
     expect(KEYWORD_BEHAVIOUR.resilient.implemented).toBe(false);
+    expect(KEYWORD_BEHAVIOUR.guardian.implemented).toBe(true);
   });
 
   it('gives a guardian blocker no mechanical advantage yet', () => {

@@ -1,0 +1,32 @@
+{
+  "id": "bone_altar",
+  "name": "Bone Altar",
+  "type": "relic",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Relic — Fodder Engine",
+    "power": "high"
+  },
+  "displayText": "The first time you sacrifice a Unit each turn, create one Thrall Token.",
+  "abilities": [
+    {
+      "id": "first_offering",
+      "trigger": "on_sacrifice",
+      "scope": {
+        "controller": "self"
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "thrall_token",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

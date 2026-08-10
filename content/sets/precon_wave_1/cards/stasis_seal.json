@@ -1,0 +1,17 @@
+{
+  "id": "stasis_seal",
+  "name": "Stasis Seal",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "role": "removal",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Lockdown",
+    "power": "medium"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
+  "displayText": "Exhaust a Unit. It does not Ready during its controller's next Ready Step."
+}

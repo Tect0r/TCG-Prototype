@@ -18,6 +18,7 @@ import {
   instanceIn,
   keepBothHands,
   makeDeck,
+  moveInstance,
   setDeckSize,
   setEnergy,
   setHealth,
@@ -162,8 +163,8 @@ describe('2. energy growth and the first-player skipped draw', () => {
   });
 });
 
-describe('3. playing units, slot limits, summoning sickness and exhaustion', () => {
-  it('deploys a unit into the first free slot and spends energy', () => {
+describe('3. playing units, an unbounded battlefield, summoning sickness and exhaustion', () => {
+  it('deploys a unit onto the battlefield and spends energy', () => {
     const start = keepBothHands(startMatch());
     const active = start.activePlayerId;
     const placed = giveCard(start, active, 'prototype_drone');
@@ -179,20 +180,39 @@ describe('3. playing units, slot limits, summoning sickness and exhaustion', () 
     expect(eventsOfType(after, 'unit_deployed')).toHaveLength(1);
   });
 
-  it('refuses a unit when every slot is occupied', () => {
+  // Retargeted from "refuses a unit when every slot is occupied". The unit cap
+  // was removed rather than raised (ruleset update §7, ADR 0016 §2), so the
+  // coverage now pins the *absence* of a limit — including that no hidden cap
+  // crept back in at some larger number.
+  it('never refuses a unit for want of room, however wide the board is', () => {
     let state = keepBothHands(startMatch());
     const active = state.activePlayerId;
-    for (let slot = 0; slot < DEFAULT_RULES_CONFIG.unitSlots; slot += 1) {
-      state = deployUnit(state, active, 'prototype_drone', { slot }).state;
+    const WIDE = 40;
+    for (let index = 0; index < WIDE; index += 1) {
+      state = deployUnit(state, active, 'prototype_drone').state;
     }
-    const placed = giveCard(state, active, 'prototype_drone');
+    const placed = giveCard(setEnergy(state, active, 5), active, 'prototype_drone');
 
-    const error = expectRejected(placed.state, {
+    const after = apply(placed.state, {
       type: 'play_card',
       playerId: active,
       instanceId: placed.instanceId,
     });
-    expect(error.code).toBe('engine/no_free_slot');
+
+    expect(after.players[active]?.units).toHaveLength(WIDE + 1);
+    expect(instanceIn(after, placed.instanceId).zone).toBe('battlefield');
+  });
+
+  it('keeps the unit list dense, so a defeat does not leave a gap behind', () => {
+    const start = keepBothHands(startMatch());
+    const active = start.activePlayerId;
+    const first = deployUnit(start, active, 'prototype_drone');
+    const second = deployUnit(first.state, active, 'prototype_scout');
+    const third = deployUnit(second.state, active, 'prototype_drone');
+
+    const after = moveInstance(third.state, second.instanceId, 'discard');
+
+    expect(after.players[active]?.units).toEqual([first.instanceId, third.instanceId]);
   });
 
   it('rejects an attack by a unit that entered play this turn, unless it is swift', () => {
@@ -389,7 +409,7 @@ describe('6. damage persists across turns and healing removes it', () => {
     expect(instanceIn(state, blocker.instanceId).markedDamage).toBe(1);
 
     // Its controller deploys a Field Medic, which heals *another* friendly unit.
-    const medic = giveCard(setEnergy(state, other, 5), other, 'field_medic');
+    const medic = giveCard(setEnergy(state, other, 5), other, 'prototype_field_medic');
     const played = apply(medic.state, {
       type: 'play_card',
       playerId: other,
@@ -621,8 +641,8 @@ describe('9. triggers fire in a deterministic order', () => {
   });
 });
 
-describe('10. token creation respects the battlefield', () => {
-  it('creates a token when a slot is free', () => {
+describe('10. token creation always succeeds', () => {
+  it('creates a token', () => {
     const start = keepBothHands(startMatch());
     const active = start.activePlayerId;
     const placed = giveCard(setEnergy(start, active, 5), active, 'pack_summons');
@@ -637,11 +657,15 @@ describe('10. token creation respects the battlefield', () => {
     expect(tokens[0]?.definitionId).toBe('prototype_beast_token');
   });
 
-  it('silently fails to create a token when the battlefield is full', () => {
+  // Retargeted from "silently fails to create a token when the battlefield is
+  // full". There is no full any more, and a token that was asked for is always
+  // created (ruleset update §7) — the old `token_creation_failed` event no
+  // longer exists in the union at all.
+  it('still creates a token on a board that would once have been full', () => {
     let state = keepBothHands(startMatch());
     const active = state.activePlayerId;
-    for (let slot = 0; slot < DEFAULT_RULES_CONFIG.unitSlots; slot += 1) {
-      state = deployUnit(state, active, 'prototype_drone', { slot }).state;
+    for (let index = 0; index < 12; index += 1) {
+      state = deployUnit(state, active, 'prototype_drone').state;
     }
     const placed = giveCard(setEnergy(state, active, 5), active, 'pack_summons');
 
@@ -650,8 +674,8 @@ describe('10. token creation respects the battlefield', () => {
       playerId: active,
       instanceId: placed.instanceId,
     });
-    expect(eventsOfType(after, 'token_created')).toHaveLength(0);
-    expect(eventsOfType(after, 'token_creation_failed')).toHaveLength(1);
+    expect(eventsOfType(after, 'token_created')).toHaveLength(1);
+    expect(after.players[active]?.units).toHaveLength(13);
   });
 });
 

@@ -1,0 +1,36 @@
+{
+  "id": "ossuary_captain",
+  "name": "Ossuary Captain",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "attack": 3,
+  "health": 5,
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Token Payoff",
+    "power": "high"
+  },
+  "staticAbilities": [
+    {
+      "id": "ossuary_buff",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "self",
+        "filter": {
+          "tags": ["thrall"]
+        },
+        "excludeSource": true
+      },
+      "effect": {
+        "type": "modify_stats",
+        "attack": 1,
+        "health": 0
+      }
+    }
+  ],
+  "displayText": "Thrall Tokens you control have +1 ATK."
+}

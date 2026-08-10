@@ -1,0 +1,43 @@
+{
+  "id": "goblin_powder_runner",
+  "name": "Goblin Powder Runner",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "attack": 2,
+  "health": 1,
+  "tags": ["goblin"],
+  "role": "attacker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Interaction",
+    "power": "medium"
+  },
+  "displayText": "When this Unit is defeated, deal 1 damage to an enemy Unit or Commander.",
+  "abilities": [
+    {
+      "id": "powder_blast",
+      "trigger": "on_defeated",
+      "effects": [
+        {
+          "type": "deal_damage",
+          "amount": 1,
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "filter": {
+                "cardTypes": ["unit", "token", "commander"]
+              },
+              "count": 1,
+              "selection": "player_choice",
+              "chooser": "self"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

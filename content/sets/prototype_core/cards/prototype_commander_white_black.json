@@ -1,0 +1,29 @@
+{
+  "id": "prototype_commander_white_black",
+  "name": "Tithe Warden",
+  "type": "commander",
+  "colorIdentity": ["white", "black"],
+  "cost": null,
+  "attack": 2,
+  "health": 13,
+  "unique": true,
+  "role": "support",
+  "powerClass": "centerpiece",
+  "tags": ["cleric", "commander"],
+  "abilities": [
+    {
+      "id": "final_tithe",
+      "trigger": "on_survive_combat",
+      "effects": [
+        {
+          "type": "heal",
+          "target": {
+            "kind": "source"
+          },
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "displayText": "Whenever this Commander survives combat, heal it 2."
+}

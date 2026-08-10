@@ -1,0 +1,37 @@
+{
+  "id": "nullmage_apprentice",
+  "name": "Nullmage Apprentice",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Reaction Engine",
+    "power": "high"
+  },
+  "displayText": "While this Unit is Ready, your Reaction Spells cost 1 less, to a minimum of 1.",
+  "staticAbilities": [
+    {
+      "id": "null_field",
+      "activeZone": "battlefield",
+      "sourceState": "ready",
+      "affects": {
+        "zone": "hand",
+        "controller": "self",
+        "filter": {
+          "cardTypes": ["reaction"]
+        }
+      },
+      "effect": {
+        "type": "reaction_discount",
+        "amount": 1,
+        "minimum": 1,
+        "limit": "unlimited"
+      }
+    }
+  ]
+}

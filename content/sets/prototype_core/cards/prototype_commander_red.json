@@ -1,0 +1,38 @@
+{
+  "id": "prototype_commander_red",
+  "name": "Emberline Captain",
+  "type": "commander",
+  "colorIdentity": ["red"],
+  "cost": null,
+  "attack": 4,
+  "health": 11,
+  "unique": true,
+  "role": "attacker",
+  "powerClass": "centerpiece",
+  "tags": ["warrior", "commander"],
+  "keywords": ["swift"],
+  "abilities": [
+    {
+      "id": "opening_volley",
+      "trigger": "on_attack",
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "filter": {
+                "cardTypes": ["unit", "token"]
+              },
+              "count": 1
+            }
+          },
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "Whenever this Commander attacks, deal 1 damage to an enemy unit."
+}

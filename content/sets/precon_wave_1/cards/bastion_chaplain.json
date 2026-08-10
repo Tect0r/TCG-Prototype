@@ -1,0 +1,34 @@
+{
+  "id": "bastion_chaplain",
+  "name": "Bastion Chaplain",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 4,
+  "attack": 2,
+  "health": 5,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Recovery",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "heal",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 2
+        }
+      },
+      "amount": 2
+    }
+  ],
+  "displayText": "When deployed, restore 2 Health to each of up to two friendly Units."
+}

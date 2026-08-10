@@ -1,0 +1,22 @@
+{
+  "id": "funeral_march",
+  "name": "Funeral March",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Fodder Generator",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "thrall_token",
+      "amount": 3
+    }
+  ],
+  "displayText": "Create three Thrall Tokens."
+}

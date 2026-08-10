@@ -1,0 +1,39 @@
+{
+  "id": "death_witness",
+  "name": "Death Witness",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Consistency Engine",
+    "power": "medium"
+  },
+  "displayText": "The first time you sacrifice a Unit each turn, draw a card, then discard a card.",
+  "abilities": [
+    {
+      "id": "witness",
+      "trigger": "on_sacrifice",
+      "scope": {
+        "controller": "self"
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        },
+        {
+          "type": "discard",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

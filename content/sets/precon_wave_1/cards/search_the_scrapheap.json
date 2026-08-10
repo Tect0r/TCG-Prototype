@@ -1,0 +1,30 @@
+{
+  "id": "search_the_scrapheap",
+  "name": "Search the Scrapheap",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Consistency",
+    "power": "medium"
+  },
+  "displayText": "Look at the top four cards of your deck. Put one Goblin or Relic card into your hand. Put the others on the bottom.",
+  "effects": [
+    {
+      "type": "search_zone",
+      "player": "self",
+      "zone": "deck",
+      "fromTop": 4,
+      "filter": {
+        "anyOf": [{ "tags": ["goblin"] }, { "cardTypes": ["relic"] }]
+      },
+      "amount": 1,
+      "destination": "hand",
+      "upTo": false,
+      "remainder": "bottom"
+    }
+  ]
+}

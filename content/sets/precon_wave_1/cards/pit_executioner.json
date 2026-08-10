@@ -1,0 +1,19 @@
+{
+  "id": "pit_executioner",
+  "name": "Pit Executioner",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "attack": 4,
+  "health": 4,
+  "role": "removal",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Removal",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
+  "displayText": "When deployed, you may sacrifice another Unit. If you do, defeat an enemy Unit costing 2 or less."
+}

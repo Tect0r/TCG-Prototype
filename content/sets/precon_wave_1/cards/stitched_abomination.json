@@ -1,0 +1,20 @@
+{
+  "id": "stitched_abomination",
+  "name": "Stitched Abomination",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 6,
+  "attack": 7,
+  "health": 7,
+  "keywords": ["overwhelm"],
+  "role": "finisher",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Finisher",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs a cost reduction computed from board state, applied to the card while it is still in hand (ruleset update §15)",
+  "displayText": "Overwhelm. This card costs 1 less for each friendly Unit defeated this turn, to a minimum cost of 3."
+}

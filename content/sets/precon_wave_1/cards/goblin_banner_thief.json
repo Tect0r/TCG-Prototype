@@ -1,0 +1,48 @@
+{
+  "id": "goblin_banner_thief",
+  "name": "Goblin Banner Thief",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "attack": 2,
+  "health": 2,
+  "tags": ["goblin"],
+  "role": "attacker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Aggression",
+    "power": "medium"
+  },
+  "displayText": "Whenever this Unit attacks alongside another Goblin, it gains +1 ATK this turn.",
+  "abilities": [
+    {
+      "id": "rally_the_banner",
+      "trigger": "on_attack",
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "attacking_units",
+          "controller": "self",
+          "filter": {
+            "tags": ["goblin"]
+          },
+          "excludeSource": true
+        },
+        "comparison": "at_least",
+        "value": 1
+      },
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "source"
+          },
+          "attack": 1,
+          "health": 0,
+          "duration": "end_of_turn"
+        }
+      ]
+    }
+  ]
+}

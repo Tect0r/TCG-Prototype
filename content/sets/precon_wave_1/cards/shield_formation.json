@@ -1,0 +1,36 @@
+{
+  "id": "shield_formation",
+  "name": "Shield Formation",
+  "type": "spell",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Spell — Formation Payoff",
+    "power": "high"
+  },
+  "displayText": "Friendly Guardians gain +0/+2 until the beginning of your next turn.",
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"],
+            "keywords": ["guardian"]
+          },
+          "count": "all",
+          "selection": "automatic"
+        }
+      },
+      "attack": 0,
+      "health": 2,
+      "duration": "until_your_next_turn"
+    }
+  ]
+}

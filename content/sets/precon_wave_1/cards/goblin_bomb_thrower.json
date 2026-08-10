@@ -1,0 +1,35 @@
+{
+  "id": "goblin_bomb_thrower",
+  "name": "Goblin Bomb Thrower",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "attack": 3,
+  "health": 2,
+  "tags": ["goblin"],
+  "role": "attacker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Interaction",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1
+        }
+      },
+      "amount": 2
+    }
+  ],
+  "displayText": "When this Unit enters the battlefield, deal 2 damage to an enemy Unit."
+}

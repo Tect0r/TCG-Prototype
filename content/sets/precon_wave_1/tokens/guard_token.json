@@ -1,0 +1,20 @@
+{
+  "id": "guard_token",
+  "name": "Guard Token",
+  "type": "token",
+  "colorIdentity": ["white"],
+  "cost": null,
+  "attack": 0,
+  "health": 2,
+  "collectible": false,
+  "tags": ["guard"],
+  "keywords": ["guardian"],
+  "role": "token",
+  "powerClass": "minor",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Token Unit",
+    "power": "low"
+  },
+  "displayText": "Guardian."
+}

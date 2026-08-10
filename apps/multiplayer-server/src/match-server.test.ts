@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  DECKABLE_CARD_TYPES,
+  formatCardPool,
   isColorIdentityLegal,
   loadBundledCardData,
   type CardDatabase,
   type CardId,
 } from '@tcg/card-data';
-import { DECK_SCHEMA_VERSION, type SavedDeck } from '@tcg/deck';
+import { DECK_SCHEMA_VERSION, DEVELOPMENT_DECK_FORMAT, type SavedDeck } from '@tcg/deck';
 import {
   CURRENT_VERSIONS,
   encode,
@@ -28,8 +30,8 @@ const database: CardDatabase = loadBundledCardData().database;
 /** A legal 30-card deck built from whatever the bundled set offers. */
 function legalDeckFor(commanderId: CardId, name: string): SavedDeck {
   const commander = database.getOrThrow(commanderId);
-  const pool = database
-    .deckable()
+  const pool = formatCardPool('development')
+    .filter((card) => DECKABLE_CARD_TYPES.includes(card.type) && card.collectible)
     .filter((card) => isColorIdentityLegal(card.colorIdentity, commander.colorIdentity));
 
   const cards: { cardId: CardId; quantity: number }[] = [];
@@ -115,6 +117,7 @@ function createHarness(): Harness {
 
   const server = new MatchServer({
     database,
+    deckFormat: DEVELOPMENT_DECK_FORMAT,
     random: sequenceRandom(),
     schedule,
     seedFor: () => 'fixed-server-seed',
@@ -581,7 +584,18 @@ describe('match termination', () => {
         return true;
       }
       if (legal.blocking) {
-        act(harness, connection, { type: 'assign_blockers', playerId: me, blocks: [] });
+        // Guardian makes some blocks compulsory, and the server says how many
+        // and with which units — so a client that knows no rules can still
+        // comply by reading `mustBlockCount` and `guardianInstanceIds`.
+        const blocking = legal.blocking;
+        const blocks = Array.from({ length: blocking.mustBlockCount }, (_, index) => ({
+          attackerInstanceId: blocking.attackerInstanceIds[index],
+          blockerInstanceId: blocking.guardianInstanceIds[index],
+        })).filter(
+          (block): block is { attackerInstanceId: string; blockerInstanceId: string } =>
+            block.attackerInstanceId !== undefined && block.blockerInstanceId !== undefined,
+        );
+        act(harness, connection, { type: 'assign_blockers', playerId: me, blocks });
         return true;
       }
       const card = legal.playableCards[0];
@@ -590,7 +604,6 @@ describe('match termination', () => {
           type: 'play_card',
           playerId: me,
           instanceId: card.instanceId,
-          slot: card.freeSlots[0] ?? null,
         });
         return true;
       }
@@ -641,6 +654,7 @@ function createTable(seatCount: number): Table {
 
   const server = new MatchServer({
     database,
+    deckFormat: DEVELOPMENT_DECK_FORMAT,
     random: sequenceRandom(),
     schedule,
     seedFor: () => 'fixed-table-seed',

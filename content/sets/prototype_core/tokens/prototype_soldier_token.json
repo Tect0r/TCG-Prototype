@@ -1,0 +1,13 @@
+{
+  "id": "prototype_soldier_token",
+  "name": "Soldier",
+  "type": "token",
+  "colorIdentity": ["white"],
+  "cost": null,
+  "attack": 1,
+  "health": 1,
+  "collectible": false,
+  "role": "token",
+  "powerClass": "minor",
+  "tags": ["soldier"]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "bonepile_guardian",
+  "name": "Bonepile Guardian",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "attack": 2,
+  "health": 5,
+  "keywords": ["guardian"],
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Guardian",
+    "power": "medium"
+  },
+  "displayText": "Guardian."
+}

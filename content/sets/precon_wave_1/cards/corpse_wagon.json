@@ -1,0 +1,37 @@
+{
+  "id": "corpse_wagon",
+  "name": "Corpse Wagon",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 5,
+  "attack": 4,
+  "health": 5,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Fodder Generator",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "thrall_token",
+      "amount": 2
+    }
+  ],
+  "abilities": [
+    {
+      "id": "wagon_death",
+      "trigger": "on_defeated",
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "thrall_token",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "When deployed, create two Thrall Tokens. When this Unit is defeated, create another Thrall Token."
+}

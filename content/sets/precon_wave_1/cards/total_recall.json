@@ -1,0 +1,32 @@
+{
+  "id": "total_recall",
+  "name": "Total Recall",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 8,
+  "role": "removal",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Battlefield Reset",
+    "power": "high"
+  },
+  "displayText": "Return every non-Commander Unit to its owner's hand. Tokens cease existing.",
+  "effects": [
+    {
+      "type": "return_to_hand",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": "all",
+          "selection": "automatic"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "id": "apex_grovekeeper",
+  "name": "Apex Grovekeeper",
+  "type": "unit",
+  "colorIdentity": ["green"],
+  "cost": 5,
+  "attack": 4,
+  "health": 6,
+  "unique": true,
+  "role": "payoff",
+  "powerClass": "major",
+  "tags": ["druid", "beast"],
+  "abilities": [
+    {
+      "id": "grove_renewal",
+      "trigger": "on_turn_end",
+      "effects": [
+        {
+          "type": "heal",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "self",
+              "count": "all",
+              "selection": "automatic"
+            }
+          },
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "At the end of your turn, heal each friendly unit 1."
+}

@@ -192,6 +192,20 @@ function validateEntries(
       return;
     }
 
+    // A card whose printed behaviour is not yet expressed in structured data
+    // cannot be played faithfully, so a deck containing one is not legal. The
+    // card is deliberately still in the database and still shows its real
+    // identity — see `implemented` in the card schema, ruleset update §1.
+    if (!card.implemented) {
+      issues.push(
+        error(
+          'deck/card_not_implemented',
+          `"${card.name}" is not playable yet: ${card.unsupportedReason}`,
+          { path, context: { cardId: card.id } },
+        ),
+      );
+    }
+
     if (commander && !isColorIdentityLegal(card.colorIdentity, commanderColors)) {
       const offending = card.colorIdentity.filter((c) => !commanderColors.includes(c));
       issues.push(
@@ -201,6 +215,19 @@ function validateEntries(
           { path, context: { cardId: card.id, colors: offending } },
         ),
       );
+    }
+
+    if (format.singleton) {
+      if (entry.quantity > 1) {
+        issues.push(
+          error(
+            'deck/singleton',
+            `"${card.name}" appears ${entry.quantity} times. This is a singleton format: one copy of each card.`,
+            { path, context: { cardId: card.id, quantity: entry.quantity } },
+          ),
+        );
+      }
+      return;
     }
 
     const limit = card.unique ? format.uniqueCopyLimit : format.copyLimit;

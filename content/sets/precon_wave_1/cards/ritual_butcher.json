@@ -1,0 +1,57 @@
+{
+  "id": "ritual_butcher",
+  "name": "Ritual Butcher",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Outlet and Interaction",
+    "power": "high"
+  },
+  "activatedAbilities": [
+    {
+      "id": "butcher",
+      "name": "Ritual Butchery",
+      "costs": [
+        {
+          "type": "energy",
+          "amount": 1
+        },
+        {
+          "type": "exhaust_source"
+        },
+        {
+          "type": "sacrifice",
+          "amount": 1,
+          "filter": {
+            "cardTypes": ["unit"]
+          }
+        }
+      ],
+      "usageLimit": "unlimited",
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "filter": {
+                "cardTypes": ["unit"]
+              },
+              "count": 1
+            }
+          },
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "displayText": "Pay 1 Energy and Exhaust — Sacrifice another Unit and deal 2 damage to an enemy Unit."
+}

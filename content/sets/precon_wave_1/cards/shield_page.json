@@ -1,0 +1,36 @@
+{
+  "id": "shield_page",
+  "name": "Shield Page",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 1,
+  "attack": 1,
+  "health": 1,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Protection",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "grant_keyword",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1,
+          "excludeSource": true
+        }
+      },
+      "keyword": "barrier",
+      "duration": "permanent"
+    }
+  ],
+  "displayText": "When deployed, another friendly Unit gains Barrier."
+}

@@ -1,0 +1,45 @@
+{
+  "id": "stand_united",
+  "name": "Stand United",
+  "type": "spell",
+  "colorIdentity": ["white"],
+  "cost": 4,
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Spell — Counterattack Payoff",
+    "power": "high"
+  },
+  "displayText": "Friendly Units gain +1 ATK this turn for each friendly Unit that survived combat as a blocker since your previous turn, to a maximum of +3 ATK.",
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": "all",
+          "selection": "automatic"
+        }
+      },
+      "attack": {
+        "kind": "count",
+        "count": {
+          "subject": "units",
+          "controller": "self",
+          "filter": {
+            "survivedAsBlocker": true
+          }
+        },
+        "maximum": 3
+      },
+      "health": 0,
+      "duration": "end_of_turn"
+    }
+  ]
+}

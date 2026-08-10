@@ -1,0 +1,17 @@
+{
+  "id": "goblin_shieldbearer",
+  "name": "Goblin Shieldbearer",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 1,
+  "attack": 0,
+  "health": 3,
+  "tags": ["goblin"],
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Simple",
+    "power": "low"
+  }
+}

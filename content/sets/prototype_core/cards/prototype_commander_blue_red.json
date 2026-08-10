@@ -1,0 +1,33 @@
+{
+  "id": "prototype_commander_blue_red",
+  "name": "Arc Tactician",
+  "type": "commander",
+  "colorIdentity": ["blue", "red"],
+  "cost": null,
+  "attack": 3,
+  "health": 12,
+  "unique": true,
+  "role": "build_around",
+  "powerClass": "centerpiece",
+  "tags": ["mage", "commander"],
+  "abilities": [
+    {
+      "id": "arcing_plan",
+      "trigger": "on_turn_start",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        },
+        {
+          "type": "discard",
+          "player": "self",
+          "amount": 1,
+          "selection": "player_choice"
+        }
+      ]
+    }
+  ],
+  "displayText": "At the start of your turn, draw a card, then discard a card."
+}

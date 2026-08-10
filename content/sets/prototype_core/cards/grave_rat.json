@@ -1,0 +1,12 @@
+{
+  "id": "grave_rat",
+  "name": "Grave Rat",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 1,
+  "attack": 2,
+  "health": 1,
+  "role": "attacker",
+  "powerClass": "minor",
+  "tags": ["vermin", "undead"]
+}

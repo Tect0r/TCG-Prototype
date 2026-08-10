@@ -1,0 +1,33 @@
+{
+  "id": "retaliating_guard",
+  "name": "Retaliating Guard",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "attack": 3,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Counterattack",
+    "power": "medium"
+  },
+  "displayText": "After this Unit survives combat as a blocker, deal 1 damage to an opponent.",
+  "abilities": [
+    {
+      "id": "retaliate",
+      "trigger": "on_survive_combat_as_blocker",
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "kind": "player",
+            "relation": "opponent"
+          },
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "id": "dismantle_the_device",
+  "name": "Dismantle the Device",
+  "type": "spell",
+  "colorIdentity": [],
+  "cost": 3,
+  "role": "removal",
+  "powerClass": "standard",
+  "design": {
+    "faction": "neutral",
+    "identity": "Neutral Spell — Relic Removal",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "destroy",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["relic"]
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      }
+    }
+  ],
+  "displayText": "Defeat the active Relic.",
+  "text": {
+    "summary": "Answers whichever Relic is on the table.",
+    "notes": [
+      "\"The active Relic\" is a well-defined phrase because a player controls at most one (ruleset update §12). It needs no target primitive of its own: a battlefield selector filtered to relics *is* the active relic, and building a second way to say the same thing would give the rule two places to drift.",
+      "`controller` is stated explicitly rather than left to the default, because §12 requires an effect that could reach either player's Relic to say so. `any` is the literal reading of the unqualified card text, so the caster chooses — including, legally, their own.",
+      "The spell cannot be played at all when no Relic is in play: the target is required, and the engine refuses a spell with no legal target."
+    ]
+  }
+}

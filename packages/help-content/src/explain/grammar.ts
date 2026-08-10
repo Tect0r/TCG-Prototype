@@ -54,7 +54,16 @@ export function list(parts: readonly string[], conjunction = 'and'): string {
   return `${parts.slice(0, -1).join(', ')} ${conjunction} ${parts[parts.length - 1]!}`;
 }
 
+/**
+ * "a" or "an", by sound rather than by spelling where the two disagree.
+ *
+ * The only disagreement this vocabulary actually produces is a leading `uni-`,
+ * which is pronounced "yoo": "a unit", "a unique relic". Handled as a named
+ * exception rather than by a pronunciation model — one narrow rule that is
+ * right is worth more here than a general one that is nearly right.
+ */
 export function article(word: string): string {
+  if (/^uni/i.test(word)) return 'a';
   return /^[aeiou]/i.test(word) ? 'an' : 'a';
 }
 

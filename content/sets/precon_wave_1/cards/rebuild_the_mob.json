@@ -1,0 +1,51 @@
+{
+  "id": "rebuild_the_mob",
+  "name": "Rebuild the Mob",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 6,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Recovery",
+    "power": "high"
+  },
+  "displayText": "Create five Goblin Tokens. If you controlled no Goblins when you played this card, create seven instead.",
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "goblin_token",
+      "amount": 5,
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "units",
+          "controller": "self",
+          "filter": {
+            "tags": ["goblin"]
+          }
+        },
+        "comparison": "at_least",
+        "value": 1
+      }
+    },
+    {
+      "type": "create_token",
+      "tokenCardId": "goblin_token",
+      "amount": 7,
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "units",
+          "controller": "self",
+          "filter": {
+            "tags": ["goblin"]
+          }
+        },
+        "comparison": "exactly",
+        "value": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "id": "banner_keeper",
+  "name": "Banner Keeper",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "attack": 2,
+  "health": 4,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Filtering Engine",
+    "power": "medium"
+  },
+  "displayText": "The first time a friendly Guardian blocks each turn, draw a card, then discard a card.",
+  "abilities": [
+    {
+      "id": "keep_the_banner",
+      "trigger": "on_block",
+      "scope": {
+        "controller": "self",
+        "filter": {
+          "keywords": ["guardian"]
+        }
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        },
+        {
+          "type": "discard",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

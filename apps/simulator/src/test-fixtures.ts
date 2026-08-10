@@ -65,7 +65,7 @@ export const FIXTURE_STRONG_UNIT: CardDefinitionInput = {
   name: 'Fixture Strong Unit',
   attack: 9,
   health: 9,
-  keywords: ['swift'],
+  keywords: ['rush'],
   powerClass: 'centerpiece',
   displayText: 'Deliberately over the top, so a test can prove the analyser notices.',
 };
@@ -88,7 +88,7 @@ export const FIXTURE_DOMINANT_UNIT: CardDefinitionInput = {
   cost: 1,
   attack: 9,
   health: 9,
-  keywords: ['swift'],
+  keywords: ['rush'],
   role: 'finisher',
   powerClass: 'centerpiece',
   tags: ['fixture'],

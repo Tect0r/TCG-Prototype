@@ -366,7 +366,7 @@ function progressSignature(state: MatchState, playerId: PlayerId, action: Action
     .map((id) => {
       const player = state.players[id];
       if (!player) return '';
-      const units = player.units.map((slot) => slot ?? '-').join(',');
+      const units = player.units.join(',');
       return `${id}:${player.health}:${player.hand.length}:${player.deck.length}:${units}`;
     })
     .join('|');

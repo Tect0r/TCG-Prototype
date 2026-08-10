@@ -1,0 +1,31 @@
+{
+  "id": "dread_sovereign",
+  "name": "Dread Sovereign",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 7,
+  "attack": 7,
+  "health": 7,
+  "unique": true,
+  "role": "finisher",
+  "powerClass": "centerpiece",
+  "tags": ["undead", "noble"],
+  "keywords": ["venom", "resilient"],
+  "displayText": "When this unit is deployed, destroy an enemy unit.",
+  "effects": [
+    {
+      "type": "destroy",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1
+        }
+      }
+    }
+  ]
+}

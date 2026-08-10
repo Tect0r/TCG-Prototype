@@ -6,7 +6,12 @@ import { engineError, type EngineError } from './errors.js';
 import { createRngState, nextInt, shuffle } from './rng.js';
 import { MATCH_SCHEMA_VERSION, MAX_PLAYERS, MIN_PLAYERS } from './schema/primitives.js';
 import type { GameEvent } from './schema/event.js';
-import { EMPTY_COMBAT, type MatchState, type PlayerState } from './schema/state.js';
+import {
+  EMPTY_COMBAT,
+  freshTurnEvents,
+  type MatchState,
+  type PlayerState,
+} from './schema/state.js';
 import { createInstance, drawCards, shuffleDeck } from './zones.js';
 
 /**
@@ -48,7 +53,7 @@ export interface MatchStart {
   readonly events: readonly GameEvent[];
 }
 
-function emptyPlayer(seat: MatchSeat, config: RulesConfig, unitSlots: number): PlayerState {
+function emptyPlayer(seat: MatchSeat, config: RulesConfig): PlayerState {
   return {
     playerId: seat.playerId,
     name: seat.name,
@@ -61,9 +66,11 @@ function emptyPlayer(seat: MatchSeat, config: RulesConfig, unitSlots: number): P
     hand: [],
     discard: [],
     removed: [],
-    units: Array.from({ length: unitSlots }, () => null),
+    units: [],
     relics: [],
     commanderInstanceId: '',
+    commanderDefeats: 0,
+    reactionDiscountSpent: false,
     mulligan: { status: 'pending', returnedInstanceIds: [], redrawsUsed: 0 },
     costModifiers: [],
     damageShields: [],
@@ -127,7 +134,7 @@ export function createMatch(options: CreateMatchOptions): Result<MatchStart, Eng
 
   const players: Record<string, PlayerState> = {};
   for (const seat of options.seats) {
-    players[seat.playerId] = emptyPlayer(seat, config, config.unitSlots);
+    players[seat.playerId] = emptyPlayer(seat, config);
   }
 
   const firstSeat = options.seats[0];
@@ -155,6 +162,9 @@ export function createMatch(options: CreateMatchOptions): Result<MatchStart, Eng
     pendingChoice: null,
     nextChoiceOrdinal: 0,
     combat: { ...EMPTY_COMBAT },
+    reactionWindow: null,
+    nextReactionWindowOrdinal: 0,
+    turnEvents: freshTurnEvents(),
     result: null,
     sequence: 0,
     log: [],

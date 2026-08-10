@@ -1,0 +1,39 @@
+{
+  "id": "grave_prophet",
+  "name": "Grave Prophet",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 5,
+  "attack": 3,
+  "health": 6,
+  "role": "blocker",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Card Advantage",
+    "power": "high"
+  },
+  "displayText": "At the end of your turn, if at least two friendly Units were defeated that turn, draw a card.",
+  "abilities": [
+    {
+      "id": "read_the_bones",
+      "trigger": "on_turn_end",
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "units_defeated_this_turn",
+          "controller": "self"
+        },
+        "comparison": "at_least",
+        "value": 2
+      },
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

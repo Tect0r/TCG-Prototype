@@ -1,0 +1,16 @@
+{
+  "id": "hired_mercenary",
+  "name": "Hired Mercenary",
+  "type": "unit",
+  "colorIdentity": [],
+  "cost": 2,
+  "attack": 2,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "neutral",
+    "identity": "Neutral Unit — Simple",
+    "power": "low"
+  }
+}

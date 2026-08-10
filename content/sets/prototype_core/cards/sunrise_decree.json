@@ -1,0 +1,29 @@
+{
+  "id": "sunrise_decree",
+  "name": "Sunrise Decree",
+  "type": "spell",
+  "colorIdentity": ["white"],
+  "cost": 5,
+  "unique": true,
+  "role": "payoff",
+  "powerClass": "major",
+  "tags": ["decree"],
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "count": "all",
+          "selection": "automatic"
+        }
+      },
+      "attack": 2,
+      "health": 2,
+      "duration": "permanent"
+    }
+  ],
+  "displayText": "Your units get +2/+2."
+}

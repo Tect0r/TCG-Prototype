@@ -1,0 +1,32 @@
+{
+  "id": "crude_bomb",
+  "name": "Crude Bomb",
+  "type": "spell",
+  "colorIdentity": [],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "neutral",
+    "identity": "Neutral Spell — Interaction",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1
+        }
+      },
+      "amount": 3
+    }
+  ],
+  "displayText": "Deal 3 damage to a Unit."
+}

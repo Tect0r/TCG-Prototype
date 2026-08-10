@@ -1,0 +1,33 @@
+{
+  "id": "field_analyst",
+  "name": "Field Analyst",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "attack": 1,
+  "health": 2,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Consistency",
+    "power": "medium"
+  },
+  "displayText": "When deployed, look at the top three cards of your deck. You may reveal a Spell or Relic and put it into your hand. Put the others on the bottom.",
+  "effects": [
+    {
+      "type": "search_zone",
+      "player": "self",
+      "zone": "deck",
+      "fromTop": 3,
+      "filter": {
+        "cardTypes": ["spell", "relic"]
+      },
+      "amount": 1,
+      "destination": "hand",
+      "upTo": true,
+      "reveal": true,
+      "remainder": "bottom"
+    }
+  ]
+}

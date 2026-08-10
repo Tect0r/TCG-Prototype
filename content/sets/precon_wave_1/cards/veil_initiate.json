@@ -1,0 +1,16 @@
+{
+  "id": "veil_initiate",
+  "name": "Veil Initiate",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 1,
+  "attack": 1,
+  "health": 2,
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Simple",
+    "power": "low"
+  }
+}

@@ -1,4 +1,10 @@
-export { DEFAULT_DECK_FORMAT, type DeckFormatConfig } from './format.js';
+export {
+  DEFAULT_DECK_FORMAT,
+  DEVELOPMENT_DECK_FORMAT,
+  PRECON_WAVE_1_DECK_FORMAT,
+  deckFormatOf,
+  type DeckFormatConfig,
+} from './format.js';
 export {
   DECK_SCHEMA_VERSION,
   deckEntrySchema,
@@ -47,3 +53,10 @@ export {
   type KeyValueStore,
   type LoadDecksResult,
 } from './repository.js';
+export {
+  validatePrecon,
+  preconToDeck,
+  preconFormat,
+  preconDatabase,
+  type PreconValidation,
+} from './precon.js';

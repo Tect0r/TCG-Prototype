@@ -1,0 +1,24 @@
+{
+  "id": "calculated_response",
+  "name": "Calculated Response",
+  "type": "reaction",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Reaction — Counter",
+    "power": "high"
+  },
+  "displayText": "Play when an opponent plays a Spell. Counter it unless its controller pays 2 additional Energy.",
+  "reaction": {
+    "windows": ["when_opponent_plays_spell"]
+  },
+  "effects": [
+    {
+      "type": "counter",
+      "unlessPays": 2
+    }
+  ]
+}

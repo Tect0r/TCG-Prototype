@@ -1,0 +1,16 @@
+{
+  "id": "archive_acolyte",
+  "name": "Archive Acolyte",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 1,
+  "attack": 0,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Simple Defender",
+    "power": "low"
+  }
+}

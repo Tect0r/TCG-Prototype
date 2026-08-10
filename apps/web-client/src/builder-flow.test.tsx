@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { loadBundledCardData } from '@tcg/card-data';
+import { formatDatabase } from '@tcg/card-data';
 import {
   DECK_STORAGE_KEY,
   MemoryStore,
@@ -11,15 +11,16 @@ import {
   addCard,
 } from '@tcg/deck';
 import { App } from './App.js';
+import { DEVELOPMENT_DECK_FORMAT } from '@tcg/deck';
 import { AppProvider } from './state/AppContext.js';
 
-const { database } = loadBundledCardData();
+const database = formatDatabase('development');
 
 function renderApp() {
   const store = new MemoryStore();
   const user = userEvent.setup();
   render(
-    <AppProvider database={database} store={store}>
+    <AppProvider database={database} deckFormat={DEVELOPMENT_DECK_FORMAT} store={store}>
       <App />
     </AppProvider>,
   );
@@ -179,7 +180,7 @@ describe('deck builder flow', () => {
 
     const user = userEvent.setup();
     render(
-      <AppProvider database={database} store={store}>
+      <AppProvider database={database} deckFormat={DEVELOPMENT_DECK_FORMAT} store={store}>
         <App />
       </AppProvider>,
     );
@@ -208,7 +209,7 @@ describe('deck builder flow', () => {
 
     const user = userEvent.setup();
     render(
-      <AppProvider database={database} store={store}>
+      <AppProvider database={database} deckFormat={DEVELOPMENT_DECK_FORMAT} store={store}>
         <App />
       </AppProvider>,
     );

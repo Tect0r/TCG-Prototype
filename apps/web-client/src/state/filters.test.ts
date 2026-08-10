@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { loadBundledCardData } from '@tcg/card-data';
+import { formatDatabase } from '@tcg/card-data';
 import { emptyFilters, isFilterActive, toCardQuery, toggle } from './filters.js';
 
-const { database } = loadBundledCardData();
+const database = formatDatabase('development');
 
 describe('toggle', () => {
   it('adds and removes values', () => {

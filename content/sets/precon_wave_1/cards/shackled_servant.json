@@ -1,0 +1,16 @@
+{
+  "id": "shackled_servant",
+  "name": "Shackled Servant",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 1,
+  "attack": 0,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Simple Defender",
+    "power": "low"
+  }
+}

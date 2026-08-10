@@ -1,0 +1,48 @@
+{
+  "id": "phase_withdrawal",
+  "name": "Phase Withdrawal",
+  "type": "reaction",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Reaction — Protection",
+    "power": "medium"
+  },
+  "displayText": "Return a Unit you control to your hand. Draw a card.",
+  "reaction": {
+    "windows": [
+      "after_attackers_declared",
+      "before_blockers_declared",
+      "after_blockers_declared",
+      "after_combat_damage",
+      "after_combat",
+      "when_opponent_plays_spell"
+    ]
+  },
+  "effects": [
+    {
+      "type": "return_to_hand",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      }
+    },
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    }
+  ]
+}

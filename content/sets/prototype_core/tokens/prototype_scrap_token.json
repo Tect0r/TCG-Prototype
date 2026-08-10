@@ -1,0 +1,13 @@
+{
+  "id": "prototype_scrap_token",
+  "name": "Scrap",
+  "type": "token",
+  "colorIdentity": [],
+  "cost": null,
+  "attack": 1,
+  "health": 1,
+  "collectible": false,
+  "role": "token",
+  "powerClass": "minor",
+  "tags": ["construct"]
+}

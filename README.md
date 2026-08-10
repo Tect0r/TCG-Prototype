@@ -8,7 +8,7 @@ balance before the card game is integrated into a larger MMO.
 (Phase 2B), the two-to-four-player free-for-all (Phase 3) and the local balance
 laboratory (Phase 4) all work. Phase 4's analytical contracts are being audited
 and corrected against
-[PHASE4_HARDENING.md](PHASE4_HARDENING.md); see
+[docs/PHASE4_HARDENING.md](docs/PHASE4_HARDENING.md); see
 [docs/project-status.md](docs/project-status.md) for what is done and what is
 still open.
 
@@ -382,7 +382,11 @@ readable text-only frame. See
 
 ## Adding or editing cards
 
-Cards live in `packages/card-data/src/data/prototype_core.json`. Every card
+Cards live one-per-file under `content/sets/<setId>/`, and are compiled into
+`packages/card-data/src/data/generated/content-bundle.json` by
+`npm run content:build` (`npm run content:check` fails the build when the bundle
+is stale). Scaffold a new one with
+`npm run cards:new -- --set <setId> --type <type> --id <card_id>`. Every card
 needs a permanent `lowercase_snake_case` ID that must never change once it has
 shipped. Run `npm test` after editing — the card database is validated by the
 test suite, and the bundled set is asserted to load with zero warnings.

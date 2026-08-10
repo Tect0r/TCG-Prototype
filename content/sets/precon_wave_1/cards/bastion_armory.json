@@ -1,0 +1,37 @@
+{
+  "id": "bastion_armory",
+  "name": "Bastion Armory",
+  "type": "relic",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Relic — Protection Engine",
+    "power": "high"
+  },
+  "displayText": "The first Guardian you deploy each turn gains Barrier.",
+  "abilities": [
+    {
+      "id": "issue_barrier",
+      "trigger": "on_deployed",
+      "scope": {
+        "controller": "self",
+        "filter": {
+          "keywords": ["guardian"]
+        }
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "grant_keyword",
+          "target": {
+            "kind": "trigger_subject"
+          },
+          "keyword": "barrier"
+        }
+      ]
+    }
+  ]
+}

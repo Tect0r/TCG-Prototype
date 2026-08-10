@@ -1,0 +1,29 @@
+{
+  "id": "prototype_field_medic",
+  "name": "Field Medic",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 2,
+  "attack": 1,
+  "health": 3,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": ["soldier", "healer"],
+  "effects": [
+    {
+      "type": "heal",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "count": 1,
+          "excludeSource": true,
+          "optional": true
+        }
+      },
+      "amount": 2
+    }
+  ],
+  "displayText": "When this unit is deployed, heal another friendly unit 2."
+}

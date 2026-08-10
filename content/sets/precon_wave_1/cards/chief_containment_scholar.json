@@ -1,0 +1,38 @@
+{
+  "id": "chief_containment_scholar",
+  "name": "Chief Containment Scholar",
+  "type": "commander",
+  "colorIdentity": ["blue"],
+  "cost": 4,
+  "attack": 2,
+  "health": 6,
+  "unique": true,
+  "tags": ["commander"],
+  "role": "build_around",
+  "powerClass": "centerpiece",
+  "design": {
+    "faction": "control",
+    "identity": "Control Commander — Reaction Support",
+    "power": "high"
+  },
+  "displayText": "While this Commander is on the battlefield, the first Reaction Spell you play after the beginning of each of your turns costs 1 less, to a minimum of 1.",
+  "staticAbilities": [
+    {
+      "id": "containment_study",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "hand",
+        "controller": "self",
+        "filter": {
+          "cardTypes": ["reaction"]
+        }
+      },
+      "effect": {
+        "type": "reaction_discount",
+        "amount": 1,
+        "minimum": 1,
+        "limit": "first_each_turn"
+      }
+    }
+  ]
+}

@@ -10,8 +10,10 @@ import {
 } from './derive.js';
 import { nextChoiceId } from './effects.js';
 import { pumpQueue, settle } from './queue.js';
+import { openReactionWindow, resumeReactionWindow } from './reactions.js';
 import { shuffleDeck } from './zones.js';
 import { drawOne } from './zones.js';
+import { freshTurnEvents } from './schema/state.js';
 import type { MatchPhase, PlayerId } from './schema/primitives.js';
 
 /**
@@ -71,13 +73,31 @@ export function beginTurn(ctx: MatchContext, playerId: PlayerId, turn: number): 
   ctx.state.activePlayerId = playerId;
   ctx.state.phase = 'turn_start';
   clearCombat(ctx);
+  // "… this turn" starts counting again from here (ruleset update §15).
+  ctx.state.turnEvents = freshTurnEvents();
+
+  // "Until the beginning of your next turn" ends here, and only for this
+  // player — that is exactly what makes it outlast the opponents' turns that
+  // came between (ruleset update §15).
+  expireModifiers(ctx, NEXT_TURN_DURATIONS, playerId);
 
   const player = playerOf(ctx.state, playerId);
 
-  for (const instanceId of player.units) {
-    if (instanceId === null) continue;
+  // "The first Reaction Spell you play after the beginning of each of your
+  // turns" (rule adjustment §6). Reset here and nowhere else, which is exactly
+  // what makes the discount survive every opponent's turn in between — the
+  // turns on which a Reaction is actually played.
+  player.reactionDiscountSpent = false;
+
+  // The Ready Step is also where `Newly Deployed` ends: the state lasts through
+  // opponents' turns and clears when its controller's own turn begins
+  // (ADR 0016 Q-B). Relics are included because a Commander or relic can carry
+  // the state too.
+  for (const instanceId of [...player.units, ...player.relics]) {
     const instance = findInstance(ctx.state, instanceId);
-    if (!instance || !instance.exhausted) continue;
+    if (!instance) continue;
+    instance.newlyDeployed = false;
+    if (!instance.exhausted) continue;
     instance.exhausted = false;
     emit(ctx, { type: 'unit_readied', instanceId });
   }
@@ -115,28 +135,44 @@ function performDraw(ctx: MatchContext): void {
   settle(ctx, before);
 }
 
-/** Removes everything that lasts "until end of turn". */
-function expireEndOfTurnEffects(ctx: MatchContext): void {
+/**
+ * Removes every modifier whose duration boundary has just been reached.
+ *
+ * One function for three boundaries rather than three near-identical ones,
+ * because they differ only in *which* durations they clear and every one of
+ * them has to be followed by a state-based check — losing a Health bonus can be
+ * lethal (CLAUDE.md §4).
+ *
+ * `until_your_next_turn` is cleared only for the player whose turn is starting,
+ * which is what makes it outlast the opponents' turns in between.
+ */
+function expireModifiers(
+  ctx: MatchContext,
+  durations: ReadonlySet<string>,
+  onlyFor: PlayerId | null = null,
+): void {
   const before = ctx.events.length;
+  const expired = <T extends { duration: string }>(entry: T): boolean =>
+    !durations.has(entry.duration);
 
   for (const instance of Object.values(ctx.state.instances)) {
+    if (onlyFor !== null && instance.controller !== onlyFor) continue;
     const sizeBefore =
       instance.statModifiers.length +
       instance.grantedKeywords.length +
       instance.removedKeywords.length +
       instance.damageShields.length;
 
-    instance.statModifiers = instance.statModifiers.filter((m) => m.duration !== 'end_of_turn');
-    instance.grantedKeywords = instance.grantedKeywords.filter((m) => m.duration !== 'end_of_turn');
-    instance.removedKeywords = instance.removedKeywords.filter((m) => m.duration !== 'end_of_turn');
-    instance.damageShields = instance.damageShields.filter((s) => s.duration !== 'end_of_turn');
+    instance.statModifiers = instance.statModifiers.filter(expired);
+    instance.grantedKeywords = instance.grantedKeywords.filter(expired);
+    instance.removedKeywords = instance.removedKeywords.filter(expired);
+    instance.damageShields = instance.damageShields.filter(expired);
 
     const sizeAfter =
       instance.statModifiers.length +
       instance.grantedKeywords.length +
       instance.removedKeywords.length +
       instance.damageShields.length;
-
     if (sizeAfter !== sizeBefore) {
       emit(ctx, {
         type: 'modifiers_expired',
@@ -147,13 +183,33 @@ function expireEndOfTurnEffects(ctx: MatchContext): void {
   }
 
   for (const playerId of ctx.state.seatOrder) {
+    if (onlyFor !== null && playerId !== onlyFor) continue;
     const player = playerOf(ctx.state, playerId);
-    player.costModifiers = player.costModifiers.filter((m) => m.duration !== 'end_of_turn');
-    player.damageShields = player.damageShields.filter((s) => s.duration !== 'end_of_turn');
+    player.costModifiers = player.costModifiers.filter(expired);
+    player.damageShields = player.damageShields.filter(expired);
   }
 
-  // Losing a temporary Health bonus can be lethal to an already damaged unit.
   settle(ctx, before);
+}
+
+const END_OF_TURN_DURATIONS: ReadonlySet<string> = new Set(['end_of_turn']);
+const END_OF_COMBAT_DURATIONS: ReadonlySet<string> = new Set(['end_of_combat']);
+const NEXT_TURN_DURATIONS: ReadonlySet<string> = new Set(['until_your_next_turn']);
+
+/**
+ * "For that combat" ends when combat resolution does (ruleset update §15).
+ *
+ * The boundary is *after* the survive-combat triggers, not before them: a trick
+ * that granted +2/+2 is the reason a unit survived, and a trigger asking about
+ * that unit's stats should still see the combat it was fought with.
+ */
+function expireEndOfCombatEffects(ctx: MatchContext): void {
+  expireModifiers(ctx, END_OF_COMBAT_DURATIONS);
+}
+
+/** Removes everything that lasts "until end of turn". */
+function expireEndOfTurnEffects(ctx: MatchContext): void {
+  expireModifiers(ctx, END_OF_TURN_DURATIONS);
 }
 
 /**
@@ -195,6 +251,14 @@ function performTurnEnd(ctx: MatchContext): boolean {
   expireEndOfTurnEffects(ctx);
   if (isMatchOver(ctx.state)) return false;
 
+  // "Survived combat as a blocker since your previous turn" resets here, at the
+  // end of the controller's own turn, so the `on_turn_start` cards that read it
+  // still have something to read. Nothing can be added during your own turn:
+  // blocking only ever happens on the turn of whoever declared the attack.
+  for (const instance of Object.values(ctx.state.instances)) {
+    if (instance.controller === ctx.state.activePlayerId) instance.survivedAsBlocker = false;
+  }
+
   // An eliminated seat is skipped without renumbering or reordering the rest,
   // so the circle stays exactly as it was dealt (CLAUDE.md §12).
   const next = nextLivingPlayer(ctx.state, ctx.state.activePlayerId);
@@ -221,6 +285,23 @@ function finalizeBlockers(ctx: MatchContext): void {
   combat.blocks = bySeat.flatMap((entry) => entry.blocks.map((block) => ({ ...block })));
 
   const before = ctx.events.length;
+
+  // Declaring a unit as a blocker exhausts it (ruleset update §8).
+  //
+  // Done here, at the moment the merged list becomes public, rather than when
+  // each defender submits. `exhausted` is visible in every seat's view, so
+  // exhausting on submission would tell the attacker and the other defenders
+  // exactly who had been committed while submissions are still meant to be
+  // hidden (CLAUDE.md §12). Exhaustion does not stop the blocker dealing its
+  // own combat damage; it is what stops it blocking again next turn without
+  // readying.
+  for (const block of combat.blocks) {
+    const blocker = findInstance(ctx.state, block.blockerInstanceId);
+    if (!blocker || blocker.exhausted) continue;
+    blocker.exhausted = true;
+    emit(ctx, { type: 'unit_exhausted', instanceId: block.blockerInstanceId });
+  }
+
   emit(ctx, {
     type: 'blockers_assigned',
     playerId: null,
@@ -229,7 +310,12 @@ function finalizeBlockers(ctx: MatchContext): void {
   // `on_block` triggers resolve before combat damage.
   settle(ctx, before);
 
-  setPhase(ctx, 'resolve_combat');
+  // The last chance to change a combat before damage (rule adjustment §5).
+  const opened = openReactionWindow(ctx, {
+    windows: ['after_blockers_declared'],
+    resumePhase: 'resolve_combat',
+  });
+  if (!opened) setPhase(ctx, 'resolve_combat');
 }
 
 /**
@@ -286,10 +372,29 @@ export function advance(ctx: MatchContext): void {
         setPhase(ctx, 'main_1');
         break;
 
-      case 'resolve_combat':
+      case 'resolve_combat': {
         resolveCombat(ctx);
         if (isMatchOver(ctx.state)) return;
-        setPhase(ctx, 'main_2');
+        // Losing a combat-only Health bonus here can defeat an already-damaged
+        // unit, so this runs before the phase advances rather than lazily at
+        // turn end.
+        expireEndOfCombatEffects(ctx);
+        if (isMatchOver(ctx.state)) return;
+        // "After combat damage" and "after combat" are the same moment once
+        // damage and its defeats have settled, so one window admits both. The
+        // combat state is still populated, which is what lets a Reaction ask
+        // about "a Unit that attacked that combat".
+        const opened = openReactionWindow(ctx, {
+          windows: ['after_combat_damage', 'after_combat'],
+          resumePhase: 'main_2',
+        });
+        if (!opened) setPhase(ctx, 'main_2');
+        break;
+      }
+
+      case 'reaction_window':
+        // Priority is still going round: the window is waiting on a player.
+        if (!resumeReactionWindow(ctx)) return;
         break;
 
       case 'turn_end':

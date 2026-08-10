@@ -1,0 +1,30 @@
+{
+  "id": "doomed_acolyte",
+  "name": "Doomed Acolyte",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 1,
+  "attack": 1,
+  "health": 1,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Fodder",
+    "power": "medium"
+  },
+  "abilities": [
+    {
+      "id": "doomed_death",
+      "trigger": "on_defeated",
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "thrall_token",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "When this Unit is defeated, create one Thrall Token."
+}

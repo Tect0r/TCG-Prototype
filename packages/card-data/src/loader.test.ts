@@ -60,9 +60,30 @@ describe('bundled card data', () => {
     expect([...present].sort()).toEqual([...CARD_TYPES].sort());
   });
 
-  it('covers every keyword', () => {
-    const present = new Set(loaded.database.all().flatMap((c) => c.keywords));
+  it('covers every keyword, printed or granted', () => {
+    // A keyword need not be printed on a card to be real: `untargetable_by_
+    // opponents` only ever arrives through a `grant_keyword` effect. What must
+    // never happen is a keyword no card can produce at all.
+    const present = new Set<string>();
+    for (const card of loaded.database.all()) {
+      for (const keyword of card.keywords) present.add(keyword);
+      const effects = [
+        ...card.effects,
+        ...card.abilities.flatMap((a) => a.effects),
+        ...card.activatedAbilities.flatMap((a) => a.effects),
+      ];
+      for (const effect of effects) {
+        if (effect.type === 'grant_keyword') present.add(effect.keyword);
+      }
+      for (const ability of card.staticAbilities) {
+        if (ability.effect.type === 'grant_keyword') present.add(ability.effect.keyword);
+      }
+    }
+    // Every keyword now reaches the board somewhere. `untargetable_by_opponents`
+    // was the last exception, and it arrived with Scatter once Reaction timing
+    // windows made that card playable (rule adjustment §5).
     expect([...KEYWORD_IDS].filter((k) => !present.has(k))).toEqual([]);
+    expect(loaded.database.getOrThrow('scatter').implemented).toBe(true);
   });
 
   it('covers every role and power class', () => {
@@ -165,18 +186,56 @@ describe('loadCardSets validation', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('rejects a Commander with an energy cost', () => {
-    const result = loadCardSets([
+  it('accepts a Commander with an energy cost, which makes it deployable', () => {
+    // Reversed by the Precon Wave 1 ruleset: a Commander's printed cost is what
+    // moves it from the Commander zone onto the battlefield (ADR 0016 §4). A
+    // null cost still means the older, undeployable model.
+    const deployable = loadCardSets([
       minimalSet([
         {
           schemaVersion: 1,
-          id: 'bad_commander',
-          name: 'Bad Commander',
+          id: 'deployable_commander',
+          name: 'Deployable Commander',
           type: 'commander',
           colorIdentity: ['red'],
           cost: 3,
           attack: 2,
           health: 10,
+        },
+      ]),
+    ]);
+    expect(deployable.ok).toBe(true);
+
+    const zoneOnly = loadCardSets([
+      minimalSet([
+        {
+          schemaVersion: 1,
+          id: 'zone_only_commander',
+          name: 'Zone Only Commander',
+          type: 'commander',
+          colorIdentity: ['red'],
+          cost: null,
+          attack: 2,
+          health: 10,
+        },
+      ]),
+    ]);
+    expect(zoneOnly.ok).toBe(true);
+  });
+
+  it('still rejects a token that costs energy', () => {
+    const result = loadCardSets([
+      minimalSet([
+        {
+          schemaVersion: 1,
+          id: 'priced_token',
+          name: 'Priced Token',
+          type: 'token',
+          colorIdentity: ['red'],
+          cost: 3,
+          attack: 1,
+          health: 1,
+          collectible: false,
         },
       ]),
     ]);

@@ -1,0 +1,19 @@
+{
+  "id": "formation_tactician",
+  "name": "Formation Tactician",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "attack": 3,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Defensive Utility",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs an optional \"you may\" instruction — a yes/no choice with no cost attached (ruleset update §15); the blocker-scoped trigger it also needs now exists",
+  "displayText": "Once each turn, after another friendly Guardian survives combat, you may Ready that Guardian. It cannot retroactively block another attacker from the same attack declaration."
+}

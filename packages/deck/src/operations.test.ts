@@ -1,3 +1,4 @@
+import { DEVELOPMENT_DECK_FORMAT } from './format.js';
 import { describe, expect, it } from 'vitest';
 import {
   addCard,
@@ -122,7 +123,8 @@ describe('duplicateDeck', () => {
 
 describe('copyLimitFor', () => {
   it('is 1 for unique cards and 2 for regular cards by default', () => {
-    expect(copyLimitFor(database.getOrThrow('overload_conduit'))).toBe(1);
-    expect(copyLimitFor(database.getOrThrow('goblin_scout'))).toBe(2);
+    const format = DEVELOPMENT_DECK_FORMAT;
+    expect(copyLimitFor(database.getOrThrow('overload_conduit'), format)).toBe(1);
+    expect(copyLimitFor(database.getOrThrow('goblin_scout'), format)).toBe(2);
   });
 });

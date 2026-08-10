@@ -1,0 +1,32 @@
+{
+  "id": "plague_censer",
+  "name": "Plague Censer",
+  "type": "relic",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "role": "removal",
+  "powerClass": "standard",
+  "tags": ["artifact"],
+  "abilities": [
+    {
+      "id": "creeping_miasma",
+      "trigger": "on_turn_end",
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "battlefield",
+              "controller": "opponent",
+              "count": "all",
+              "selection": "automatic"
+            }
+          },
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "At the end of your turn, deal 1 damage to each enemy unit."
+}

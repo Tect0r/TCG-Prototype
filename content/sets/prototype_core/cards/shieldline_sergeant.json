@@ -1,0 +1,21 @@
+{
+  "id": "shieldline_sergeant",
+  "name": "Shieldline Sergeant",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 3,
+  "attack": 2,
+  "health": 4,
+  "role": "blocker",
+  "powerClass": "standard",
+  "tags": ["soldier"],
+  "keywords": ["guardian"],
+  "displayText": "When this unit is deployed, create a 1/1 Soldier token.",
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "prototype_soldier_token",
+      "amount": 1
+    }
+  ]
+}

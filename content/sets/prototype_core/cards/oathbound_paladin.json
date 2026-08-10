@@ -1,0 +1,13 @@
+{
+  "id": "oathbound_paladin",
+  "name": "Oathbound Paladin",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 5,
+  "attack": 4,
+  "health": 5,
+  "role": "finisher",
+  "powerClass": "major",
+  "tags": ["soldier", "knight"],
+  "keywords": ["siphon", "guardian"]
+}

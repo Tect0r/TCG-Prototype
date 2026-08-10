@@ -1,0 +1,36 @@
+{
+  "id": "rift_displacer",
+  "name": "Rift Displacer",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 4,
+  "attack": 3,
+  "health": 3,
+  "role": "removal",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Removal",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "return_to_hand",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"],
+            "cost": {
+              "max": 2
+            }
+          },
+          "count": 1
+        }
+      }
+    }
+  ],
+  "displayText": "When deployed, return an enemy Unit costing 2 or less to its owner's hand."
+}

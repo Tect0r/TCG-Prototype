@@ -1,0 +1,21 @@
+{
+  "id": "bastion_commander",
+  "name": "Bastion Commander",
+  "type": "commander",
+  "colorIdentity": ["white"],
+  "cost": 4,
+  "attack": 3,
+  "health": 6,
+  "unique": true,
+  "tags": ["commander"],
+  "role": "build_around",
+  "powerClass": "centerpiece",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Commander — Defensive Engine",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs a value derived from the target’s own statline (\"Health equal to its ATK\") (ruleset update §15); the \"for that combat\" duration it also needs now exists",
+  "displayText": "The first friendly Unit that blocks each turn gains Health equal to its ATK for that combat."
+}

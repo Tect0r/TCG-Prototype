@@ -1,0 +1,34 @@
+{
+  "id": "goblin_lookout",
+  "name": "Goblin Lookout",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "tags": ["goblin"],
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Consistency",
+    "power": "medium"
+  },
+  "displayText": "When this Unit enters the battlefield, look at the top three cards of your deck. You may put a Goblin card into your hand. Put the others on the bottom.",
+  "effects": [
+    {
+      "type": "search_zone",
+      "player": "self",
+      "zone": "deck",
+      "fromTop": 3,
+      "amount": 1,
+      "destination": "hand",
+      "upTo": true,
+      "reveal": false,
+      "remainder": "bottom",
+      "filter": {
+        "tags": ["goblin"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "id": "probe_the_future",
+  "name": "Probe the Future",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Consistency",
+    "power": "medium"
+  },
+  "displayText": "Look at the top five cards of your deck. You may reveal a Reaction Spell and put it into your hand. Put the others on the bottom.",
+  "effects": [
+    {
+      "type": "search_zone",
+      "player": "self",
+      "zone": "deck",
+      "fromTop": 5,
+      "amount": 1,
+      "destination": "hand",
+      "upTo": true,
+      "reveal": true,
+      "remainder": "bottom",
+      "filter": {
+        "cardTypes": ["reaction"]
+      }
+    }
+  ]
+}

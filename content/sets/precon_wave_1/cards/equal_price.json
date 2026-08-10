@@ -1,0 +1,17 @@
+{
+  "id": "equal_price",
+  "name": "Equal Price",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "role": "removal",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Symmetrical Removal",
+    "power": "medium"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs \"each player chooses\" simultaneous selection (ruleset update §16)",
+  "displayText": "Each player chooses and sacrifices one Unit they control."
+}

@@ -1,4 +1,4 @@
-import type { CardDefinition, ZoneId } from '@tcg/card-data';
+import type { ZoneId } from '@tcg/card-data';
 import type { PlayerView } from '@tcg/rules-engine';
 import { numberWord, plural, sentence } from './explain/grammar.js';
 
@@ -34,8 +34,13 @@ export interface PublicCardContext {
   readonly activatableAbilityIds: readonly string[];
   /** The viewer may act at all — their turn, a main phase, nothing resolving. */
   readonly viewerMayPlayCards: boolean;
-  /** Free unit slots the viewer has, or null when it is not their board. */
-  readonly viewerFreeUnitSlots: number | null;
+  /**
+   * Units the viewer controls, or null when it is not their board.
+   *
+   * Reported for context, never as a limit: there is no cap to be near
+   * (ruleset update §7).
+   */
+  readonly viewerUnitCount: number | null;
   readonly viewerEliminated: boolean;
   /** A choice is pending, so ordinary actions are refused. */
   readonly choicePending: boolean;
@@ -75,10 +80,7 @@ export function publicCardContext(view: PlayerView, instanceId: string): PublicC
     // "Can play cards at all right now" is exactly what the engine reports by
     // offering a pass-phase action during a main phase.
     viewerMayPlayCards: legal.canPassPhase && legal.mulligan === null,
-    viewerFreeUnitSlots:
-      instance.controller === view.viewerId && me
-        ? me.units.filter((slot) => slot === null).length
-        : null,
+    viewerUnitCount: instance.controller === view.viewerId && me ? me.units.length : null,
     viewerEliminated: legal.eliminated,
     choicePending: legal.pendingChoice !== null || view.awaitingChoiceFrom !== null,
   };
@@ -87,13 +89,12 @@ export function publicCardContext(view: PlayerView, instanceId: string): PublicC
 /**
  * Turns the context into sentences a player can read.
  *
- * `definition` is optional and only ever used to word the message better —
- * never to decide legality.
+ * Deliberately takes no card definition. Every sentence here is derived from
+ * the seat's own redacted view and the engine's legality report, never from the
+ * card's printed data — which is what stops the help text from claiming
+ * something the server has not actually offered.
  */
-export function contextMessages(
-  context: PublicCardContext,
-  definition?: CardDefinition,
-): readonly string[] {
+export function contextMessages(context: PublicCardContext): readonly string[] {
   const messages: string[] = [];
 
   if (context.zone === 'battlefield') {
@@ -131,13 +132,9 @@ export function contextMessages(
       messages.push('A choice is being resolved, so no cards can be played until it is answered.');
     } else if (!context.viewerMayPlayCards) {
       messages.push('Cards can only be played during your own Main Phase.');
-    } else if (
-      definition?.type === 'unit' &&
-      context.viewerFreeUnitSlots !== null &&
-      context.viewerFreeUnitSlots === 0
-    ) {
-      messages.push('Your battlefield is full, so no unit can be deployed.');
     } else {
+      // "Your battlefield is full" used to be a branch here. It cannot happen
+      // any more: the battlefield is unbounded (ruleset update §7).
       // Several rules could each be the reason, and the view does not say which.
       // Guessing is worse than admitting it.
       messages.push(

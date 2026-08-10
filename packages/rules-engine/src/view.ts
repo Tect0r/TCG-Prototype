@@ -45,7 +45,6 @@ export const cardInstanceViewSchema = z.strictObject({
   owner: playerIdSchema,
   controller: playerIdSchema,
   zone: zoneIdSchema,
-  slot: z.number().int().min(0).nullable(),
   /** Derived, not printed: includes every active modifier. */
   attack: z.number().int(),
   health: z.number().int(),
@@ -68,7 +67,8 @@ export const playerViewSummarySchema = z.strictObject({
   handCount: z.number().int().min(0),
   deckCount: z.number().int().min(0),
   discard: z.array(instanceIdSchema),
-  units: z.array(instanceIdSchema.nullable()),
+  /** Dense and unbounded; position is arrival order, not a slot. */
+  units: z.array(instanceIdSchema),
   relics: z.array(instanceIdSchema),
   commanderInstanceId: instanceIdSchema,
   mulliganStatus: mulliganStatusSchema,
@@ -174,7 +174,6 @@ function instanceView(
     owner: instance.owner,
     controller: instance.controller,
     zone: instance.zone,
-    slot: instance.slot,
     attack: currentAttack(instance, definition),
     health: currentHealth(instance, definition),
     markedDamage: instance.markedDamage,
@@ -201,15 +200,14 @@ export function playerView(
 ): PlayerView {
   const visible: Record<InstanceId, CardInstanceView> = {};
 
-  const reveal = (instanceId: InstanceId | null): void => {
-    if (instanceId === null) return;
+  const reveal = (instanceId: InstanceId): void => {
     const view = instanceView(state, database, instanceId);
     if (view) visible[instanceId] = view;
   };
 
   for (const playerId of state.seatOrder) {
     const player = playerOf(state, playerId);
-    for (const slot of player.units) reveal(slot);
+    for (const unit of player.units) reveal(unit);
     for (const relic of player.relics) reveal(relic);
     for (const card of player.discard) reveal(card);
     reveal(player.commanderInstanceId);

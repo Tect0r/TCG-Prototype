@@ -1,0 +1,35 @@
+{
+  "id": "laboratory_familiar",
+  "name": "Laboratory Familiar",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 1,
+  "attack": 1,
+  "health": 1,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Filtering",
+    "power": "medium"
+  },
+  "displayText": "When this Unit is defeated, look at the top two cards of your deck. Put one on the bottom.",
+  "abilities": [
+    {
+      "id": "last_experiment",
+      "trigger": "on_defeated",
+      "effects": [
+        {
+          "type": "search_zone",
+          "player": "self",
+          "zone": "deck",
+          "fromTop": 2,
+          "amount": 1,
+          "destination": "deck",
+          "upTo": false,
+          "remainder": "unchanged"
+        }
+      ]
+    }
+  ]
+}

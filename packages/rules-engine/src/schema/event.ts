@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { cardIdSchema, durationSchema, keywordIdSchema, zoneIdSchema } from '@tcg/card-data';
+import {
+  cardIdSchema,
+  durationSchema,
+  keywordIdSchema,
+  reactionWindowSchema,
+  zoneIdSchema,
+} from '@tcg/card-data';
 import {
   instanceIdSchema,
   lossReasonSchema,
@@ -88,32 +94,112 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     definitionId: cardIdSchema,
     energySpent: z.number().int().min(0),
   }),
+  /**
+   * A card was **played** onto the battlefield by paying its deployment cost —
+   * from hand, or from the Command Zone (rule adjustment §7).
+   *
+   * Deliberately narrower than `unit_entered_battlefield`, which fires for any
+   * arrival at all. Keeping the two apart is the whole point: the update
+   * forbids reinterpreting existing "When deployed" cards as "when this enters
+   * the battlefield", so the engine has to be able to tell a deployment from a
+   * revival rather than treating every arrival alike.
+   */
   event('unit_deployed', {
     playerId: playerIdSchema,
     instanceId: instanceIdSchema,
     definitionId: cardIdSchema,
-    slot: z.number().int().min(0),
+  }),
+  /**
+   * A card arrived on a battlefield by any route: deployment, token creation,
+   * revival, or an effect that simply put it there.
+   *
+   * A normal deployment emits `unit_deployed` **then** this, in that order, so a
+   * log reads "played, and therefore arrived" rather than the reverse.
+   */
+  event('unit_entered_battlefield', {
+    playerId: playerIdSchema,
+    instanceId: instanceIdSchema,
+    definitionId: cardIdSchema,
+    /** How it got there. `deployed` is the only one that also emits the above. */
+    method: z.enum(['deployed', 'token_created', 'returned', 'effect']),
+  }),
+  /** A Commander was deployed from its Command Zone (rule adjustment §2). */
+  event('commander_deployed', {
+    playerId: playerIdSchema,
+    instanceId: instanceIdSchema,
+    definitionId: cardIdSchema,
+    energySpent: z.number().int().min(0),
+    /** Defeats already suffered, i.e. the surcharge included in `energySpent`. */
+    defeatCount: z.number().int().min(0),
+  }),
+  /**
+   * A defeated Commander went back to its Command Zone instead of the discard
+   * pile, and its future deployment cost went up (rule adjustment §2).
+   *
+   * Its own event rather than a `card_moved`, because the cost change is the
+   * part a player and a replay both need to see, and reconstructing it from a
+   * move plus a defeat would mean re-deriving a rule from two unrelated records.
+   */
+  event('commander_returned', {
+    playerId: playerIdSchema,
+    instanceId: instanceIdSchema,
+    definitionId: cardIdSchema,
+    defeatCount: z.number().int().min(0),
+    /** The new total deployment cost, after the cap has been applied. */
+    deploymentCost: z.number().int().min(0),
   }),
   event('relic_deployed', {
     playerId: playerIdSchema,
     instanceId: instanceIdSchema,
     definitionId: cardIdSchema,
   }),
+  /**
+   * The previous active relic left because a new one was played.
+   *
+   * Its own event rather than a `card_moved` or a `unit_defeated`: replacement
+   * is a **rules action**, not destruction and not a sacrifice, so it fires
+   * neither `on_defeated` nor `on_sacrifice` (ruleset update §12, ADR 0016 §3).
+   * A future card that cares about relics being replaced can key off this
+   * without having to reinterpret discard events.
+   */
+  event('relic_replaced', {
+    playerId: playerIdSchema,
+    /** The relic that left play. */
+    instanceId: instanceIdSchema,
+    definitionId: cardIdSchema,
+    /** The relic being played, which is not yet on the battlefield. */
+    replacedByInstanceId: instanceIdSchema,
+    replacedByDefinitionId: cardIdSchema,
+  }),
   event('spell_resolved', {
     playerId: playerIdSchema,
     instanceId: instanceIdSchema,
     definitionId: cardIdSchema,
   }),
+  /**
+   * There is deliberately no companion `token_creation_failed`. With no unit
+   * limit a requested token is always created (ruleset update §7); the old
+   * "battlefield is full, so nothing happens" outcome no longer exists and must
+   * not be reintroduced.
+   */
   event('token_created', {
     playerId: playerIdSchema,
     instanceId: instanceIdSchema,
     definitionId: cardIdSchema,
-    slot: z.number().int().min(0),
   }),
-  event('token_creation_failed', {
+  /**
+   * Every token one instruction created for one player, as a batch.
+   *
+   * Emitted once after the last of them arrives, alongside the per-token
+   * `token_created` events. "Whenever you create one or more Tokens" keys off
+   * this rather than counting the singular events, so it fires once for a
+   * five-token instruction and sees the finished board (ruleset update §13).
+   */
+  event('tokens_created', {
     playerId: playerIdSchema,
     definitionId: cardIdSchema,
-    reason: z.enum(['no_free_slot']),
+    instanceIds: z.array(instanceIdSchema),
+    count: z.number().int().min(1),
   }),
 
   event('attackers_declared', {
@@ -146,8 +232,62 @@ export const gameEventSchema = z.discriminatedUnion('type', [
       }),
     ),
   }),
+  /* ------------------------------------------------------- reaction windows */
+  event('reaction_window_opened', {
+    windowId: z.string(),
+    windows: z.array(reactionWindowSchema),
+    /** Priority order: active player first, then clockwise (rule adjustment §5.3). */
+    priorityOrder: z.array(playerIdSchema),
+    /** The Spell the window is about, when it is about one. */
+    subjectInstanceId: instanceIdSchema.nullable(),
+  }),
+  /**
+   * A player declined with priority.
+   *
+   * Emitted individually rather than as a batch so replay data records every
+   * pass, as required — the spectator log collapses runs of them by default,
+   * which is a presentation decision and must not cost the record.
+   */
+  event('reaction_passed', { windowId: z.string(), playerId: playerIdSchema }),
+  event('reaction_played', {
+    windowId: z.string(),
+    playerId: playerIdSchema,
+    instanceId: instanceIdSchema,
+    definitionId: cardIdSchema,
+    energySpent: z.number().int().min(0),
+    /** Set when the per-turn Reaction discount paid for part of it. */
+    discountApplied: z.number().int().min(0),
+  }),
+  /** Everyone has passed consecutively; the pending queue now resolves LIFO. */
+  event('reaction_window_closed', {
+    windowId: z.string(),
+    /** Instance IDs in the order they will resolve. */
+    resolutionOrder: z.array(instanceIdSchema),
+  }),
+  /**
+   * A card was countered: it has no effect and moves to its owner's discard. A
+   * countered permanent never enters the battlefield.
+   */
+  event('card_countered', {
+    instanceId: instanceIdSchema,
+    definitionId: cardIdSchema,
+    playerId: playerIdSchema,
+    counteredByInstanceId: instanceIdSchema.nullable(),
+  }),
+
   event('combat_damage_step', { step: z.enum(['quick_strike', 'regular']) }),
-  event('combat_survived', { instanceId: instanceIdSchema, definitionId: cardIdSchema }),
+  event('combat_survived', {
+    instanceId: instanceIdSchema,
+    definitionId: cardIdSchema,
+    /**
+     * Whether it survived while *blocking*, as opposed to while attacking.
+     *
+     * Carried on the event rather than reconstructed later: by the time a
+     * trigger asks, combat has been cleared, and "survived as a blocker" is a
+     * fact about the combat that just happened (ruleset update §15).
+     */
+    asBlocker: z.boolean(),
+  }),
 
   event('damage_dealt', {
     ...damageTarget,
@@ -159,6 +299,8 @@ export const gameEventSchema = z.discriminatedUnion('type', [
   event('damage_prevented', { ...damageTarget, amount: z.number().int().min(0) }),
   event('healed', { ...damageTarget, amount: z.number().int().min(0) }),
   event('damage_shield_added', { ...damageTarget, amount: z.number().int().min(0) }),
+  /** A unit's Barrier absorbed a hit and is now spent (ruleset update §9). */
+  event('barrier_consumed', { instanceId: instanceIdSchema }),
 
   event('stats_modified', {
     instanceId: instanceIdSchema,
@@ -226,7 +368,7 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     resolutionId: z.string(),
     effectType: z.string(),
     effectIndex: z.number().int().min(0),
-    reason: z.enum(['no_legal_target', 'unsupported']),
+    reason: z.enum(['no_legal_target', 'unsupported', 'condition_unmet']),
   }),
 
   event('choice_requested', {

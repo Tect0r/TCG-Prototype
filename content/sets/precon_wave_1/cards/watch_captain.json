@@ -1,0 +1,36 @@
+{
+  "id": "watch_captain",
+  "name": "Watch Captain",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 4,
+  "attack": 4,
+  "health": 4,
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Tribal Payoff",
+    "power": "high"
+  },
+  "staticAbilities": [
+    {
+      "id": "watch_captain_buff",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "self",
+        "filter": {
+          "keywords": ["guardian"]
+        },
+        "excludeSource": true
+      },
+      "effect": {
+        "type": "modify_stats",
+        "attack": 1,
+        "health": 0
+      }
+    }
+  ],
+  "displayText": "Other friendly Guardians have +1 ATK."
+}

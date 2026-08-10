@@ -1,0 +1,29 @@
+{
+  "id": "tide_binder",
+  "name": "Tide Binder",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 4,
+  "attack": 2,
+  "health": 5,
+  "role": "removal",
+  "powerClass": "standard",
+  "tags": ["mage"],
+  "effects": [
+    {
+      "type": "return_to_hand",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1
+        }
+      }
+    }
+  ],
+  "displayText": "When this unit is deployed, return an enemy unit to its owner's hand."
+}

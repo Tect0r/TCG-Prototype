@@ -99,7 +99,7 @@ export const EFFECT_REGISTRY: Readonly<Record<EffectType, EffectTypeInfo>> = Obj
     type: 'create_token',
     label: 'Create token',
     description:
-      'Puts newly created units onto the battlefield. Tokens need a free unit slot and are not created at all when the battlefield is full.',
+      'Puts newly created units onto the battlefield. Every requested token is created: the battlefield has no size limit.',
     category: 'board',
     parameters: ['tokenCardId', 'amount', 'controller'],
     pausesForChoiceWhen: 'controller is "opponent" and more than one opponent is alive',
@@ -186,6 +186,16 @@ export const EFFECT_REGISTRY: Readonly<Record<EffectType, EffectTypeInfo>> = Obj
     category: 'zones',
     parameters: ['target', 'toZone'],
     pausesForChoiceWhen: 'the target is chosen by a player',
+  },
+  counter: {
+    type: 'counter',
+    label: 'Counter',
+    description:
+      'Cancels the card this Reaction was played in answer to. The countered card has no effect and goes to its owner’s discard pile; a countered permanent never reaches the battlefield.',
+    category: 'zones',
+    parameters: ['unlessPays'],
+    pausesForChoiceWhen:
+      'unlessPays is above zero and the countered card’s controller can afford the additional Energy',
   },
 });
 

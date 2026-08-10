@@ -1,6 +1,7 @@
 import {
   KEYWORD_REGISTRY,
   type AbilityCost,
+  type AbilityDefinition,
   type ActivatedAbilityDefinition,
   type CardDatabase,
   type CardDefinition,
@@ -11,7 +12,8 @@ import { DEFAULT_HELP_CONFIG, resolveTemplate, type HelpConfig } from '../refere
 import { DEPLOY_TRIGGER, TRIGGER_REGISTRY } from '../registries/triggers.js';
 import { capitalise, humanise, list, numberWord, quantify, sentence } from './grammar.js';
 import { explainEffect, type EffectExplanation } from './effects.js';
-import { describeSelector, filterPhrases, zoneName } from './selectors.js';
+import { describeSelector, describeTriggerScope, filterPhrases, zoneName } from './selectors.js';
+import { conditionClause } from './values.js';
 import type { PublicCardContext } from '../context.js';
 import { contextMessages } from '../context.js';
 
@@ -89,6 +91,8 @@ function sourceNounFor(card: CardDefinition): string {
       return 'this relic';
     case 'spell':
       return 'this spell';
+    case 'reaction':
+      return 'this Reaction';
     case 'commander':
       return 'your Commander';
   }
@@ -128,8 +132,51 @@ function describeLimit(ability: ActivatedAbilityDefinition): string {
   }
 }
 
+/**
+ * When a triggered ability happens, as one sentence.
+ *
+ * Three things the trigger registry's bare `clause` cannot say, and every one
+ * of them changes what the card does:
+ *
+ *  - **scope** — "when *another friendly* unit is defeated" is a different card
+ *    from "when this unit is defeated", and the registry clause only knows how
+ *    to say the second;
+ *  - **the throttle** — "the first time … each turn";
+ *  - **the condition** — an ability that only fires on your own turn.
+ *
+ * An unscoped, unthrottled, unconditional ability keeps the registry clause
+ * verbatim, which is both the common case and the wording players already see.
+ */
+function triggeredTitle(ability: AbilityDefinition): string {
+  const trigger = TRIGGER_REGISTRY[ability.trigger];
+  const condition = conditionClause(ability.condition);
+
+  if (!ability.scope && !ability.limit) return `${trigger.clause}${condition}`;
+
+  const event = trigger.event(ability.scope ? describeTriggerScope(ability.scope) : 'this card');
+  const timing = ability.limit === 'each_turn' ? `The first time ${event} each turn` : null;
+  // `capitalise`, not `sentence`: a title carries no full stop — the registry
+  // clauses have none — and a condition clause may still be appended after it.
+  return `${timing ?? capitalise(`when ${event}`)}${condition}`;
+}
+
 function describeStatic(ability: StaticAbilityDefinition, sourceNoun: string): string {
   const scope = ability.affects;
+
+  // A Reaction discount gets its own sentence rather than being squeezed into
+  // the "your <cards> <change>" shape below. What it reduces is the *next*
+  // Reaction its controller plays, and the "first one after your turn begins"
+  // window is the whole card — a scope phrase has nowhere to put either.
+  if (ability.effect.type === 'reaction_discount') {
+    const which =
+      ability.effect.limit === 'first_each_turn'
+        ? 'The first Reaction you play after the beginning of each of your turns'
+        : 'Reactions you play';
+    const narrowed = filterPhrases(scope.filter).noun;
+    return sentence(
+      `${narrowed ? `${which} (${narrowed})` : which} costs ${ability.effect.amount} less, to a minimum of ${ability.effect.minimum}`,
+    );
+  }
   const phrases = filterPhrases(scope.filter);
   const defaultNoun = scope.zone === 'battlefield' ? 'units' : 'cards';
   const noun = phrases.noun ? `${phrases.noun}s` : defaultNoun;
@@ -245,15 +292,27 @@ function generatedNotes(card: CardDefinition): readonly string[] {
     notes.push('Unique: your deck may contain only one copy.');
   }
   if (card.type === 'relic') {
-    notes.push('Relics sit in their own row and never take up a unit slot.');
+    notes.push(
+      'Relics sit in their own row and are never units. Playing another relic replaces this one — it goes to your discard pile as a rules action, not as a destruction or a sacrifice.',
+    );
   }
   if (card.type === 'commander') {
     notes.push(
-      'Your Commander stays in the Commander zone for the whole match and is never deployed as a unit.',
+      'Your Commander starts in the Commander zone. Playing it pays its printed cost and puts it onto the battlefield, where it behaves as a unit.',
     );
   }
-  if (card.type === 'unit' && card.keywords.every((id) => id !== 'swift')) {
-    notes.push('Like any unit without Swift, it cannot attack on the turn it is deployed.');
+  if (card.type === 'reaction') {
+    notes.push(
+      'A Reaction can only be played inside its printed timing window, not during your Main Phase.',
+    );
+  }
+  if (
+    (card.type === 'unit' || card.type === 'commander') &&
+    card.keywords.every((id) => id !== 'rush')
+  ) {
+    notes.push(
+      'Like any unit without Rush, it cannot attack, or pay an "Exhaust this unit" cost, on the turn it is deployed.',
+    );
   }
   return notes;
 }
@@ -269,7 +328,7 @@ export function explainCard(
   const sections: ExplanationSection[] = [];
 
   if (card.effects.length > 0) {
-    const deploy = DEPLOY_TRIGGER[card.type === 'commander' ? 'relic' : card.type];
+    const deploy = DEPLOY_TRIGGER[card.type === 'commander' ? 'unit' : card.type];
     sections.push({
       id: 'resolve',
       kind: 'resolve',
@@ -286,10 +345,10 @@ export function explainCard(
     sections.push({
       id: `trigger:${ability.id}`,
       kind: 'triggered',
-      title: trigger.clause,
+      title: triggeredTitle(ability),
       timing: trigger.description,
       costs: [],
-      limit: null,
+      limit: ability.limit === 'each_turn' ? 'Once each turn.' : null,
       steps: stepsFor(ability.effects, options, sourceNoun, undefined),
     });
   }

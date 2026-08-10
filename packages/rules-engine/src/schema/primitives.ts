@@ -6,8 +6,26 @@ import { z } from 'zod';
  *
  * v2 (Phase 3) added the stable seat order, the terminal `removed` zone, the
  * derived continuous-effect layer on every instance, and per-defender combat.
+ *
+ * v3 (Precon Wave 1) removed the unit-slot model: `PlayerState.units` became a
+ * dense list with no fixed length, and `CardInstance.slot` disappeared entirely
+ * (ruleset update §7, ADR 0016 §2). There is no v2→v3 migration function
+ * because a `MatchState` is never persisted between processes — lobbies and
+ * matches live in memory and a server restart ends them (CLAUDE.md §11). A v2
+ * document therefore fails validation loudly instead of being silently
+ * reinterpreted, which is the correct outcome for a shape whose only writers
+ * are same-version processes and whose replay bundles are regenerated.
+ *
+ * v4 (Precon Wave 1) added the two "survived combat as a blocker" records: the
+ * `survivedAsBlocker` flag on `CardInstance` and the matching turn-history list
+ * (ruleset update §15). No migration, for the reason given for v3.
+ *
+ * v5 (rule adjustments) added `MatchState.reactionWindow`, the `reaction_window`
+ * phase, and the two per-player Commander/Reaction records
+ * (`commanderDefeats`, `reactionDiscountSpent`). No migration, for the reason
+ * given for v3.
  */
-export const MATCH_SCHEMA_VERSION = 2;
+export const MATCH_SCHEMA_VERSION = 5;
 
 /** Seats a single match may hold. Two is 1v1; three and four are free-for-all. */
 export const MIN_PLAYERS = 2;
@@ -42,6 +60,16 @@ export const MATCH_PHASES = [
   'resolve_combat',
   'main_2',
   'turn_end',
+  /**
+   * A bounded Reaction window is open (rule adjustment §5).
+   *
+   * One phase rather than one per window: *which* window it is, whose priority
+   * it is, and what the window is about are all facts about the window and live
+   * on `MatchState.reactionWindow`, which also records the phase to return to.
+   * Splitting it into six phases would put the same information in two places
+   * and make every exhaustive phase switch six cases longer for no rule.
+   */
+  'reaction_window',
   'complete',
 ] as const;
 export const matchPhaseSchema = z.enum(MATCH_PHASES);

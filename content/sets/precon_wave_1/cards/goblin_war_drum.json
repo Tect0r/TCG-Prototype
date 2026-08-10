@@ -1,0 +1,36 @@
+{
+  "id": "goblin_war_drum",
+  "name": "Goblin War Drum",
+  "type": "relic",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Relic — Generator",
+    "power": "high"
+  },
+  "displayText": "The first time each turn you create one or more Goblin Tokens, create one additional Token.",
+  "abilities": [
+    {
+      "id": "multiply_the_mob",
+      "trigger": "on_tokens_created",
+      "scope": {
+        "controller": "self",
+        "filter": {
+          "tags": ["goblin"]
+        },
+        "excludeSelfCaused": true
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "create_token",
+          "tokenCardId": "goblin_token",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

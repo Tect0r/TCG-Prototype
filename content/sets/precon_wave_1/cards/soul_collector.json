@@ -1,0 +1,38 @@
+{
+  "id": "soul_collector",
+  "name": "Soul Collector",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "attack": 3,
+  "health": 5,
+  "role": "payoff",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Combat Payoff",
+    "power": "medium"
+  },
+  "displayText": "Whenever another Unit is defeated, this Unit gains +1 ATK this turn.",
+  "abilities": [
+    {
+      "id": "collect",
+      "trigger": "on_defeated",
+      "scope": {
+        "controller": "any",
+        "excludeSource": true
+      },
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "source"
+          },
+          "attack": 1,
+          "health": 0,
+          "duration": "end_of_turn"
+        }
+      ]
+    }
+  ]
+}

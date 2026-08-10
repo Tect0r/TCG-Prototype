@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { parseExperimentConfig } from './config.js';
 import { runExperiment, detectSoftwareCommit } from './experiment.js';
 import { formatReplayResult, replayFile } from './replay.js';
+import { runSpectate } from './spectate.js';
 import { experimentPaths } from './reporting/sinks.js';
 
 /**
@@ -19,6 +20,17 @@ import { experimentPaths } from './reporting/sinks.js';
  * npm run simulate -- --config experiments/batch.json --resume
  * npm run simulate -- --replay results/<experiment>/replays/<match>.json
  * ```
+ *
+ * `--spectate` runs one AI-spectator match — two to four bots on the shipped
+ * precons — and prints its board-size, Commander and Reaction telemetry:
+ *
+ * ```bash
+ * npm run simulate -- --spectate --seed my-seed --players 4 -o replay.json
+ * ```
+ *
+ * It writes the same replay format the browser's AI Spectator reads, so a match
+ * produced here can be loaded and watched, and one recorded there can be checked
+ * from a terminal.
  *
  * `--replay` is the one mode that takes no configuration: a replay bundle carries
  * its own frozen environment, so it reproduces without the experiment that wrote
@@ -41,6 +53,11 @@ interface CliArgs {
   readonly output: string | null;
   readonly resume: boolean;
   readonly quiet: boolean;
+  readonly spectate: boolean;
+  readonly seed: string | null;
+  readonly players: number;
+  readonly precons: readonly string[] | null;
+  readonly pilots: readonly string[] | null;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -51,6 +68,11 @@ function parseArgs(argv: readonly string[]): CliArgs {
   let output: string | null = null;
   let resume = false;
   let quiet = false;
+  let spectate = false;
+  let seed: string | null = null;
+  let players = 4;
+  let precons: string[] | null = null;
+  let pilots: string[] | null = null;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -79,6 +101,21 @@ function parseArgs(argv: readonly string[]): CliArgs {
       case '--quiet':
         quiet = true;
         break;
+      case '--spectate':
+        spectate = true;
+        break;
+      case '--seed':
+        seed = argv[++index] ?? null;
+        break;
+      case '--players':
+        players = Number.parseInt(argv[++index] ?? '4', 10);
+        break;
+      case '--precons':
+        precons = (argv[++index] ?? '').split(',').filter(Boolean);
+        break;
+      case '--pilots':
+        pilots = (argv[++index] ?? '').split(',').filter(Boolean);
+        break;
       case '--help':
       case '-h':
         printUsage();
@@ -91,7 +128,15 @@ function parseArgs(argv: readonly string[]): CliArgs {
     }
   }
 
-  if (replay !== null) {
+  if (spectate) {
+    if (config || replay !== null) {
+      throw new Error('--spectate is its own mode; do not pass --config or --replay.');
+    }
+    if (!seed) throw new Error('--spectate needs --seed <string> so the match is reproducible.');
+    if (!Number.isInteger(players) || players < 2 || players > 4) {
+      throw new Error('--players must be 2, 3 or 4.');
+    }
+  } else if (replay !== null) {
     if (!replay) throw new Error('--replay needs a path to a replay bundle.');
     if (config) throw new Error('--replay and --config are separate modes; pass only one.');
   } else if (!config) {
@@ -102,7 +147,20 @@ function parseArgs(argv: readonly string[]): CliArgs {
     throw new Error('--workers must be a positive integer.');
   }
 
-  return { config, replay, trace, workers, output, resume, quiet };
+  return {
+    config,
+    replay,
+    trace,
+    workers,
+    output,
+    resume,
+    quiet,
+    spectate,
+    seed,
+    players,
+    precons,
+    pilots,
+  };
 }
 
 function printUsage(): void {
@@ -110,6 +168,7 @@ function printUsage(): void {
     [
       'Usage: npm run simulate -- --config <path> [options]',
       '       npm run simulate -- --replay <bundle.json> [--trace]',
+      '       npm run simulate -- --spectate --seed <string> [--players 2..4]',
       '',
       'Options:',
       '  -c, --config <path>   Experiment configuration file.',
@@ -120,6 +179,11 @@ function printUsage(): void {
       '  -o, --output <dir>    Override the output directory.',
       '      --resume          Skip matches already present in matches.jsonl.',
       '      --quiet           Suppress progress output.',
+      '      --spectate        Run one AI-spectator match and print its telemetry.',
+      '      --seed <string>   Seed for --spectate. The same seed reproduces the match.',
+      '      --players <n>     Seats for --spectate: 2, 3 or 4. Default 4.',
+      '      --precons <list>  Comma-separated precon IDs, one per seat.',
+      '      --pilots <list>   Comma-separated pilot IDs, one per seat.',
       '  -h, --help            Show this message.',
     ].join('\n'),
   );
@@ -134,6 +198,21 @@ function formatDuration(ms: number): string {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+
+  if (args.spectate) {
+    const result = await runSpectate({
+      seed: args.seed ?? '',
+      players: args.players,
+      ...(args.precons ? { precons: args.precons } : {}),
+      ...(args.pilots ? { pilots: args.pilots as never } : {}),
+      output: args.output,
+    });
+    console.log(result.summary);
+    if (result.outputPath)
+      console.log(`
+replay written to ${result.outputPath}`);
+    return;
+  }
 
   if (args.replay !== null) {
     const result = replayFile(resolve(args.replay), { trace: args.trace });

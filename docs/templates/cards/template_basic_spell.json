@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "id": "template_basic_spell",
+  "name": "Template Basic Spell",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "role": "removal",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "effects": [
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": { "cardTypes": ["unit"] },
+          "count": 1
+        }
+      },
+      "amount": 2
+    }
+  ],
+  "displayText": "Deal 2 damage to an enemy unit.",
+  "text": {
+    "flavor": "A spell resolves its effects in order, then goes to the discard pile."
+  }
+}

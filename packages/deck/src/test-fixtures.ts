@@ -1,6 +1,6 @@
 import { loadBundledCardData, type CardDatabase } from '@tcg/card-data';
 import type { IdSources } from '@tcg/shared';
-import { DEFAULT_DECK_FORMAT } from './format.js';
+import { DEVELOPMENT_DECK_FORMAT } from './format.js';
 import { addCard, createDeck } from './operations.js';
 import type { SavedDeck } from './schema.js';
 
@@ -34,8 +34,13 @@ export function deckWith(
 }
 
 /**
- * A deck that is legal under `DEFAULT_DECK_FORMAT`: exactly 30 cards, all
+ * A deck that is legal under `DEVELOPMENT_DECK_FORMAT`: exactly 30 cards, all
  * inside Arc Tactician's blue/red identity, respecting copy limits.
+ *
+ * Deliberately pinned to the development format rather than the active one.
+ * These fixtures exist to exercise deck operations, persistence and migration,
+ * and `prototype_core` cannot build a legal 40-card singleton deck for this
+ * Commander anyway — there are not enough legal blue/red cards in it.
  */
 export function legalDeck(): SavedDeck {
   const entries: Array<readonly [string, number]> = [
@@ -56,8 +61,10 @@ export function legalDeck(): SavedDeck {
     ['pyre_champion', 2],
   ];
   const total = entries.reduce((sum, [, quantity]) => sum + quantity, 0);
-  if (total !== DEFAULT_DECK_FORMAT.deckSize) {
-    throw new Error(`Fixture deck has ${total} cards, expected ${DEFAULT_DECK_FORMAT.deckSize}`);
+  if (total !== DEVELOPMENT_DECK_FORMAT.deckSize) {
+    throw new Error(
+      `Fixture deck has ${total} cards, expected ${DEVELOPMENT_DECK_FORMAT.deckSize}`,
+    );
   }
   return deckWith(entries);
 }

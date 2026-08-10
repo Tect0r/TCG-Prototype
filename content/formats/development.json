@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "formatId": "development",
+  "name": "Development Fixtures",
+  "description": "The prototype_core fixture set under the pre-ruleset-update 30-card format. Exists so Phase 1-4 regression tests keep exercising the old construction rules; not a playtest format.",
+  "setIds": ["prototype_core"],
+  "bannedCardIds": [],
+  "deck": {
+    "size": 30,
+    "singleton": false,
+    "copyLimit": 2,
+    "uniqueCopyLimit": 1,
+    "maxCommanderColors": 2,
+    "commanderOutsideDeck": true
+  }
+}

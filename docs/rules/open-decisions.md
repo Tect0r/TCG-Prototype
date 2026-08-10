@@ -23,20 +23,26 @@ placeholder was ratified, nothing to do), or **confirmed — not implemented**
 
 ## Deck construction
 
-| Decision             | Current value | Where it lives                           |
-| -------------------- | ------------- | ---------------------------------------- |
-| Deck size            | 30            | `DEFAULT_DECK_FORMAT.deckSize`           |
-| Copies of a card     | 2             | `DEFAULT_DECK_FORMAT.copyLimit`          |
-| Copies of a unique   | 1             | `DEFAULT_DECK_FORMAT.uniqueCopyLimit`    |
-| Commander colour cap | 2             | `DEFAULT_DECK_FORMAT.maxCommanderColors` |
+**Superseded 2026-08-10** by the Precon Wave 1 ruleset (ADR 0016). Deck
+construction is no longer a constant: it is declared per format in
+`content/formats/*.json` and flattened by `deckFormatOf`.
 
-`validateDeck(deck, database, format)` takes the format as an argument, so an
-experiment only needs a different config object — no code change. The
-multiplayer server validates every submitted deck with the same function.
+| Format          | Size | Copies                | Commander colours | Pool             |
+| --------------- | ---- | --------------------- | ----------------- | ---------------- |
+| `precon_wave_1` | 40   | singleton (1 each ID) | 2                 | `precon_wave_1`  |
+| `development`   | 30   | 2 (1 for unique)      | 2                 | `prototype_core` |
 
-**Needs playtesting:** whether 30 cards gives enough consistency without making
-every deck the same, and whether the two-colour Commander cap should open up to
-three once the colour pie exists.
+`DEFAULT_DECK_FORMAT` is `precon_wave_1`. `DEVELOPMENT_DECK_FORMAT` is what the
+Phase 1–4 regression fixtures use, and callers that mean the old rules now say
+so explicitly rather than relying on a default.
+
+`validateDeck(deck, database, format)` still takes the format as an argument, so
+an experiment only needs a different config object. The multiplayer server
+validates every submitted deck with the same function.
+
+**Needs playtesting:** whether 40-card singleton gives enough consistency, and
+whether the two-colour Commander cap should open up to three once the colour pie
+exists.
 
 ---
 
@@ -300,3 +306,48 @@ analyser never converts a threshold into a verdict: it produces
 `review_recommended`, `possible_interaction`, `insufficient_data` or
 `run_quality`, always with the evidence, the sample size and the interval
 attached, so the number can be argued with.
+
+---
+
+## Precon Wave 1 decisions (2026-08-10)
+
+Four of `CLAUDE_RULESET_UPDATE.md` §18's open items were forced by the authored
+card catalog and were answered by the project owner rather than assumed. They
+are **provisional playtest rules**, recorded in full in
+[ADR 0016](../architecture/0016-precon-wave-1-ruleset.md).
+
+| Question                              | Answer                                                 | State                       |
+| ------------------------------------- | ------------------------------------------------------ | --------------------------- |
+| What does "the enemy Commander" mean? | The opposing **player's** Health                       | confirmed — not implemented |
+| How long does `Newly Deployed` last?  | Until its controller's next Ready Step                 | confirmed — implemented     |
+| May a Newly Deployed Unit block?      | Yes                                                    | confirmed — implemented     |
+| Barrier vs Overwhelm ordering         | Overwhelm splits first; Barrier saves only the blocker | confirmed — implemented     |
+
+### ⚠ Flagged divergence in the Overwhelm split
+
+The answer specifies "damage equal to the blocker's **current Health**". Update
+§9 says "up to the blocker's **remaining lethal requirement** … account for
+marked damage". These differ whenever the blocker is already damaged. The
+implemented rule is the answer as given; `combat.ts#buildHits` carries the note
+and it is a one-line change to switch. **Open:** which of the two was intended.
+
+### Reaction chaining policy — provisional, versioned
+
+Recorded here because §18 leaves it open and §11 requires a documented minimal
+policy rather than a hidden one:
+
+- one window per triggering event, in seat order from the non-active player;
+- each eligible player may play **at most one** Reaction per window;
+- a Reaction cannot be responded to by another Reaction;
+- the window closes when every eligible player has acted or declined.
+
+**Not yet implemented** — the ten authored Reactions are inventoried as
+unsupported until the windows exist.
+
+### Still open from §18
+
+Commander lifecycle after battlefield defeat; the relationship between a
+deployed Commander's printed Health and its controller's Health beyond the
+targeting answer above; whether several blockers may block one attacker; final
+Health / hand size / mulligan / Energy curve / deck-out; final faction names and
+colour pie; the fate of `resilient`; alternate victory conditions; phase timers.

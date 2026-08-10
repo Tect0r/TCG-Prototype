@@ -1,0 +1,29 @@
+{
+  "id": "back_to_the_warrens",
+  "name": "Back to the Warrens",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Recovery",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "search_zone",
+      "player": "self",
+      "zone": "discard",
+      "filter": {
+        "cardTypes": ["unit"],
+        "tags": ["goblin"]
+      },
+      "amount": 1,
+      "destination": "hand",
+      "reveal": true
+    }
+  ],
+  "displayText": "Return a Goblin Unit card from your discard pile to your hand."
+}

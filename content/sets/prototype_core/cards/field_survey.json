@@ -1,0 +1,19 @@
+{
+  "id": "field_survey",
+  "name": "Field Survey",
+  "type": "spell",
+  "colorIdentity": [],
+  "cost": 1,
+  "role": "enabler",
+  "powerClass": "minor",
+  "tags": ["plan"],
+  "effects": [
+    {
+      "type": "reorder_zone",
+      "player": "self",
+      "zone": "deck",
+      "amount": 3
+    }
+  ],
+  "displayText": "Look at the top 3 cards of your deck and put them back in any order."
+}

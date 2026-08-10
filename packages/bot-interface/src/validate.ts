@@ -55,13 +55,8 @@ export function checkActionOffered(
     case 'play_card': {
       const card = legal.playableCards.find((entry) => entry.instanceId === action.instanceId);
       if (!card) return fail(`"${action.instanceId}" is not playable right now`);
-      if (
-        action.slot !== null &&
-        card.freeSlots.length > 0 &&
-        !card.freeSlots.includes(action.slot)
-      ) {
-        return fail(`slot ${action.slot} is not free`);
-      }
+      // Nothing else to check: with an unbounded battlefield, "is this card
+      // playable" is the whole question (ruleset update §7).
       return OK;
     }
 
@@ -76,6 +71,23 @@ export function checkActionOffered(
 
     case 'pass_phase':
       return legal.canPassPhase ? OK : fail('this seat cannot pass a phase right now');
+
+    case 'pass_reaction':
+      // Declining is legal whenever this seat has been offered priority, and
+      // only then: a window is not something a seat can opt into.
+      return legal.reaction?.canPass === true
+        ? OK
+        : fail('this seat does not hold priority in a Reaction window');
+
+    case 'play_reaction': {
+      if (!legal.reaction) return fail('no Reaction window is open for this seat');
+      const card = legal.reaction.playableCards.find(
+        (entry) => entry.instanceId === action.instanceId,
+      );
+      // The engine has already applied the timing window, the subject filter
+      // and the discount, so membership of this list is the whole question.
+      return card ? OK : fail(`"${action.instanceId}" cannot be played into this window`);
+    }
 
     case 'declare_attackers': {
       if (!legal.attacking) return fail('this seat is not declaring attackers');

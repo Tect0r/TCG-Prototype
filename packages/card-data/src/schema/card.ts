@@ -6,7 +6,9 @@ import {
   colorIdentitySchema,
   keywordIdSchema,
   powerClassSchema,
+  reactionWindowSchema,
   roleSchema,
+  setStatusSchema,
   tagSchema,
 } from './primitives.js';
 import {
@@ -15,6 +17,28 @@ import {
   effectDefinitionSchema,
   staticAbilityDefinitionSchema,
 } from './effect.js';
+import { cardFilterSchema } from './target.js';
+
+/**
+ * When a Reaction may be played, as structured data.
+ *
+ * A list rather than a single window because several authored Reactions are
+ * plain instants — "Return a Unit you control to your hand. Draw a card." names
+ * no moment at all — and the honest encoding of that is "every window", not a
+ * magic `any` value the engine would have to special-case.
+ *
+ * `subjectFilter` restricts what the Reaction may answer: it is matched against
+ * the card the window is *about*, which today means the Spell that a
+ * `when_opponent_plays_spell` window opened for. "Play when an opponent plays a
+ * Spell costing 2 or less" is `{ cost: { max: 2 } }` and nothing else — the
+ * restriction is timing, not a target, so it lives here rather than on the
+ * counter instruction.
+ */
+export const reactionTimingSchema = z.strictObject({
+  windows: z.array(reactionWindowSchema).min(1),
+  subjectFilter: cardFilterSchema.optional(),
+});
+export type ReactionTiming = z.infer<typeof reactionTimingSchema>;
 
 const uniqueArray = <T extends z.ZodTypeAny>(item: T, label: string) =>
   z.array(item).refine((values) => new Set(values).size === values.length, {
@@ -49,6 +73,29 @@ const cardTextSchema = z.strictObject({
 });
 export type CardText = z.infer<typeof cardTextSchema>;
 
+/**
+ * Design metadata: what the card is *for*, as its designer described it.
+ *
+ * Never executed and never consulted by the rules engine. It exists so the
+ * authored catalog's own vocabulary survives import (ruleset update §2), and so
+ * deck generation, archetype grouping and simulator provenance have something
+ * better than free-form tags to group on.
+ *
+ * Kept separate from `tags` on purpose: `tags` are **mechanical** — `CardFilter`
+ * matches on them, so "Goblins you control" is a tag — while everything here is
+ * pilot-and-analysis input only. Putting a faction name in `tags` would make it
+ * targetable by a card filter, which is exactly wrong for a design label.
+ */
+export const cardDesignSchema = z.strictObject({
+  /** Faction/archetype family, e.g. `goblin`, `control`. Design label, not a subtype. */
+  faction: tagSchema.optional(),
+  /** The designer's one-line statement of role, e.g. "Swarm Unit — Multiplier". */
+  identity: z.string().min(1).max(120).optional(),
+  /** Expected playtest strength. Not rarity, and not a progression tier. */
+  power: z.enum(['low', 'medium', 'high']).optional(),
+});
+export type CardDesign = z.infer<typeof cardDesignSchema>;
+
 const baseCardSchema = z.strictObject({
   schemaVersion: z.number().int().min(1),
   id: cardIdSchema,
@@ -67,6 +114,8 @@ const baseCardSchema = z.strictObject({
   keywords: uniqueArray(keywordIdSchema, 'keywords').default([]),
   role: roleSchema.optional(),
   powerClass: powerClassSchema.optional(),
+  /** Design labels. Presentation and analysis only; never a game rule. */
+  design: cardDesignSchema.optional(),
   /**
    * Effects resolved when the card is played: spell resolution, and unit/relic
    * deploy resolution. The single authoring form for deploy behaviour — there is
@@ -79,6 +128,21 @@ const baseCardSchema = z.strictObject({
   activatedAbilities: z.array(activatedAbilityDefinitionSchema).default([]),
   /** Continuous effects, recomputed from state rather than applied once. */
   staticAbilities: z.array(staticAbilityDefinitionSchema).default([]),
+  /** Required on a `reaction`, and meaningless on anything else. */
+  reaction: reactionTimingSchema.optional(),
+  /**
+   * Whether this card's printed behaviour is fully expressed in structured data.
+   *
+   * Ruleset update §1 forbids silently weakening or approximating a card whose
+   * mechanic the schema cannot yet express — the only honest alternatives are to
+   * extend the schema or to *report* the card as unsupported. This flag is that
+   * report. An unsupported card still has real identity, stats and cost, so the
+   * catalog stays complete and reviewable, but it is excluded from playable
+   * formats and rejected outright in a `playtest`/`active` set.
+   */
+  implemented: z.boolean().default(true),
+  /** Required when `implemented` is false: exactly which primitive is missing. */
+  unsupportedReason: z.string().min(1).max(300).optional(),
   /** Presentation only. Never executed, never parsed for behaviour. */
   displayText: z.string().max(400).optional(),
   /** Optional curated help. Supplements generated explanations; never behaviour. */
@@ -123,15 +187,23 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
     }
   }
 
-  if (card.type === 'commander' || card.type === 'token') {
+  // Tokens are created by effects and are never paid for.
+  //
+  // A Commander's cost is nullable, and the two cases mean different things.
+  // A printed cost makes it *deployable*: playing it moves the Commander from
+  // the Commander zone onto the battlefield (ruleset update §10, ADR 0016).
+  // `null` is the older model — a Commander that stays in its zone and can
+  // never be deployed. Keeping both is what lets the `prototype_core` fixtures
+  // go on meaning exactly what they meant, without inventing costs for them.
+  if (card.type === 'token') {
     if (card.cost !== null) {
       ctx.addIssue({
         code: 'custom',
         path: ['cost'],
-        message: `A ${card.type} is never paid for from hand and must have cost null.`,
+        message: 'A token is created by an effect and must have cost null.',
       });
     }
-  } else if (card.cost === null) {
+  } else if (card.cost === null && card.type !== 'commander') {
     ctx.addIssue({
       code: 'custom',
       path: ['cost'],
@@ -172,11 +244,103 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
     });
   }
 
-  if (card.type === 'spell' && card.effects.length === 0) {
+  // An unsupported card is allowed to be behaviourally empty — that is the
+  // point of the flag — but it must say precisely what is missing, so the gap is
+  // an inventory item rather than a mystery.
+  if (!card.implemented && card.unsupportedReason === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['unsupportedReason'],
+      message:
+        'A card marked `implemented: false` must state which mechanic or primitive it is waiting on.',
+    });
+  }
+  if (card.implemented && card.unsupportedReason !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['unsupportedReason'],
+      message: 'Remove `unsupportedReason` once the card is implemented.',
+    });
+  }
+
+  if (
+    card.implemented &&
+    (card.type === 'spell' || card.type === 'reaction') &&
+    card.effects.length === 0
+  ) {
     ctx.addIssue({
       code: 'custom',
       path: ['effects'],
-      message: 'A spell must define at least one effect.',
+      message: `An implemented ${card.type} must define at least one effect.`,
+    });
+  }
+
+  // A Reaction with no timing is a card the engine could never legally offer:
+  // every window it may be played in is data, never inferred from "Play when …"
+  // in the rules text (rule adjustment §5).
+  if (card.type === 'reaction' && card.implemented && card.reaction === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['reaction'],
+      message: 'A Reaction must declare the timing window(s) it may be played in.',
+    });
+  }
+  if (card.type !== 'reaction' && card.reaction !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['reaction'],
+      message: `A ${card.type} is not played inside a Reaction window; remove \`reaction\`.`,
+    });
+  }
+
+  // Countering is a Reaction's privilege. The only counterable card is the one
+  // whose window the Reaction was played in, and no other card type is ever
+  // played inside a window — so a `counter` anywhere else could never resolve.
+  if (card.type !== 'reaction') {
+    card.effects.forEach((effect, index) => {
+      if (effect.type !== 'counter') return;
+      ctx.addIssue({
+        code: 'custom',
+        path: ['effects', index, 'type'],
+        message: 'Only a Reaction can counter; nothing else is played inside a Reaction window.',
+      });
+    });
+  }
+
+  // Reactions resolve and leave play exactly as spells do.
+  if (card.type === 'reaction' && card.abilities.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['abilities'],
+      message: 'Reactions resolve and leave play; use `effects` instead of triggered abilities.',
+    });
+  }
+  if (card.type === 'reaction' && card.staticAbilities.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['staticAbilities'],
+      message: 'Reactions resolve and leave play; they cannot carry a continuous effect.',
+    });
+  }
+
+  // `while_source_present` needs a source that persists. A spell or reaction
+  // moves to its owner's discard the moment it finishes resolving, so a
+  // modifier bound to it would expire in the same breath it was applied — the
+  // card would read as a lasting buff and behave as nothing at all.
+  //
+  // Rejected rather than silently reinterpreted as `permanent`: guessing which
+  // one the author meant is exactly the "silently approximate a card" failure
+  // ruleset update §1 forbids. Units, tokens, relics and Commanders can all
+  // sustain it; a triggered or activated ability on any of them can too, since
+  // the card is still in play.
+  if (card.type === 'spell' || card.type === 'reaction') {
+    card.effects.forEach((effect, index) => {
+      if (!('duration' in effect) || effect.duration !== 'while_source_present') return;
+      ctx.addIssue({
+        code: 'custom',
+        path: ['effects', index, 'duration'],
+        message: `A ${card.type} leaves play as it resolves, so it cannot sustain a \`while_source_present\` modifier. Use \`end_of_turn\` or \`permanent\`.`,
+      });
     });
   }
 
@@ -218,10 +382,12 @@ export const PATCHABLE_CARD_FIELDS = [
   'keywords',
   'role',
   'powerClass',
+  'design',
   'effects',
   'abilities',
   'activatedAbilities',
   'staticAbilities',
+  'reaction',
   'displayText',
   'text',
 ] as const;
@@ -275,14 +441,19 @@ export function applyCardPatch(
   return cardDefinitionSchema.safeParse(merged);
 }
 
+export const setIdSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/, 'Set IDs must be lowercase_snake_case.');
+
 export const cardSetSchema = z.strictObject({
   schemaVersion: z.number().int().min(1).max(CARD_SCHEMA_VERSION),
-  setId: z
-    .string()
-    .min(1)
-    .max(40)
-    .regex(/^[a-z][a-z0-9_]*$/, 'Set IDs must be lowercase_snake_case.'),
+  setId: setIdSchema,
   name: z.string().min(1).max(80),
+  /** Decides how strictly the set's cards are validated. See `SET_STATUSES`. */
+  status: setStatusSchema.default('development'),
+  description: z.string().min(1).max(400).optional(),
   cards: z.array(cardDefinitionSchema).min(1),
 });
 

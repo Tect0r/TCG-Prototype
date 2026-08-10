@@ -71,5 +71,69 @@ export function emit(ctx: MatchContext, draft: EventDraft): GameEvent {
   } as GameEvent;
   ctx.state.log.push(event);
   ctx.events.push(event);
+  recordEventDerivedState(ctx, event);
   return event;
+}
+
+/**
+ * Keeps the state a card can *ask about what has happened* in step with the log.
+ *
+ * That is `state.turnEvents` plus the one instance flag with the same
+ * character, `survivedAsBlocker`. Driven off the emitted event rather than
+ * written at each call site, for the same reason the simulator's telemetry is:
+ * there are four ways a unit can be defeated and one of them is a state-based
+ * check, so any hand-maintained tally would eventually disagree with the log a
+ * replay produces. Cheap enough to run on every event — it is one switch and,
+ * for a handful of event types, one push or one assignment.
+ */
+function recordEventDerivedState(ctx: MatchContext, event: GameEvent): void {
+  switch (event.type) {
+    case 'unit_defeated': {
+      const entry = {
+        instanceId: event.instanceId,
+        definitionId: event.definitionId,
+        controller: event.controllerId,
+      };
+      ctx.state.turnEvents.defeated.push(entry);
+      // A sacrifice is also a defeat (CLAUDE.md §17 Q24), so it lands in both
+      // lists and "Units defeated this turn" includes it.
+      if (event.reason === 'sacrificed') ctx.state.turnEvents.sacrificed.push(entry);
+      break;
+    }
+    case 'unit_deployed':
+      ctx.state.turnEvents.deployed.push({
+        instanceId: event.instanceId,
+        definitionId: event.definitionId,
+        controller: event.playerId,
+      });
+      break;
+    case 'token_created': {
+      const entry = {
+        instanceId: event.instanceId,
+        definitionId: event.definitionId,
+        controller: event.playerId,
+      };
+      // A token arriving *is* a deployment, so it counts for both. Keeping the
+      // narrower list as well is what lets a card ask about tokens specifically.
+      ctx.state.turnEvents.deployed.push(entry);
+      ctx.state.turnEvents.tokensCreated.push(entry);
+      break;
+    }
+    case 'combat_survived': {
+      if (!event.asBlocker) break;
+      const instance = ctx.state.instances[event.instanceId];
+      if (!instance) break;
+      // Two windows, one event. The list answers "…that turn"; the flag answers
+      // "…since your previous turn" and is cleared on a different boundary.
+      ctx.state.turnEvents.survivedAsBlocker.push({
+        instanceId: event.instanceId,
+        definitionId: event.definitionId,
+        controller: instance.controller,
+      });
+      instance.survivedAsBlocker = true;
+      break;
+    }
+    default:
+      break;
+  }
 }

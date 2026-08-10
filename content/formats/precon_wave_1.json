@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "formatId": "precon_wave_1",
+  "name": "Precon Wave 1",
+  "description": "40-card singleton with one external Commander, over the first authored card catalog (ruleset update §2).",
+  "setIds": ["precon_wave_1"],
+  "bannedCardIds": [],
+  "deck": {
+    "size": 40,
+    "singleton": true,
+    "copyLimit": 1,
+    "uniqueCopyLimit": 1,
+    "maxCommanderColors": 2,
+    "commanderOutsideDeck": true
+  }
+}

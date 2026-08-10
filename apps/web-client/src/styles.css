@@ -888,10 +888,21 @@ code {
   gap: 0.4rem;
 }
 
+/*
+ * The battlefield has no unit limit (ruleset update §7), so the row must stay
+ * legible at any width. `auto-fill` wraps instead of squeezing, and the minimum
+ * track keeps a card readable however many arrive — a fixed five-column grid
+ * would shrink every card to nothing on a wide board.
+ */
 .board__units {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
   gap: 0.5rem;
+}
+
+/* Nothing to render is a legitimate state now that empty slots do not exist. */
+.board__units:empty {
+  display: none;
 }
 
 .board__relics {
@@ -1486,4 +1497,391 @@ code {
   .inspector {
     width: 100%;
   }
+}
+
+/* ------------------------------------------------------------ AI spectator */
+/* Deliberately plain, like the rest of this stylesheet: the spectator's job is
+   to make a match legible, not to look finished. Highlights and clear state
+   transitions are the whole visual budget the MVP asks for. */
+
+.spectator {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.spectator-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 46rem;
+  margin: 1.5rem auto;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.spectator-setup__lede {
+  margin: 0.35rem 0 0;
+  color: var(--text-dim);
+}
+
+.spectator-setup__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.spectator-setup__row input {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+}
+
+.spectator-setup__seats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spectator-setup__seat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.spectator-setup__seat-label {
+  min-width: 4rem;
+  font-weight: 600;
+}
+
+.spectator-setup__field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-dim);
+}
+
+.spectator-setup__note,
+.spectator-setup__problems {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.spectator-setup__problems {
+  color: var(--danger);
+}
+
+.spectator-setup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.spectator-setup__start {
+  border-color: var(--accent);
+  padding: 0.5rem 1.2rem;
+  font-weight: 600;
+}
+
+.spectator-setup__load {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.spectator-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.spectator-controls__field {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.spectator-controls__position {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.spectator-controls__spacer {
+  flex: 1 1 auto;
+}
+
+.spectator__status {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.spectator__caption {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  background: var(--surface-raised);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+}
+
+.spectator-board {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+}
+
+.spectator-seat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.spectator-seat--active {
+  border-color: var(--accent);
+}
+
+.spectator-seat--priority {
+  box-shadow: inset 0 0 0 1px var(--warning);
+}
+
+.spectator-seat--out {
+  opacity: 0.55;
+}
+
+.spectator-seat__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.spectator-seat__header h3 {
+  font-size: 0.95rem;
+}
+
+.spectator-seat__pilot,
+.spectator-seat__commander,
+.spectator-seat__empty {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.spectator-seat__commander {
+  margin: 0;
+}
+
+.spectator-seat__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.spectator-seat__stats div {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.spectator-seat__stats dt {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.spectator-seat__stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.spectator-seat__row,
+.spectator-seat__hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  min-height: 1.6rem;
+}
+
+.spectator-seat__hand {
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--border);
+}
+
+.spectator-seat__hand-label {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.spectator-seat__eliminated {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.spectator-unit,
+.spectator-relic,
+.spectator-hand-card {
+  display: inline-flex;
+  flex-direction: column;
+  padding: 0.2rem 0.4rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.spectator-relic,
+.spectator-hand-card {
+  flex-direction: row;
+}
+
+.spectator-unit--exhausted {
+  opacity: 0.55;
+}
+
+.spectator-unit--new {
+  border-style: dashed;
+}
+
+.spectator-unit--highlight {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 1px var(--warning);
+}
+
+.spectator-unit__count {
+  margin-left: 0.25rem;
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.spectator-unit__stats {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.spectator__decision {
+  padding: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+
+.spectator__decision p {
+  margin: 0.3rem 0;
+}
+
+.spectator__scores,
+.spectator__notes {
+  margin: 0.3rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--text-dim);
+}
+
+.spectator__scores .is-chosen {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.spectator__log {
+  max-height: 14rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.5rem 0.5rem 0.5rem 1.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+}
+
+.spectator__log .is-current {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.spectator__log li {
+  color: var(--text-dim);
+}
+
+.spectator-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.spectator-summary__reason,
+.spectator-summary__caption,
+.spectator-summary__caveat {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+.spectator-summary__caption {
+  text-align: left;
+  padding-bottom: 0.3rem;
+}
+
+.spectator-summary__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.spectator-summary__table th,
+.spectator-summary__table td {
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+
+.spectator-summary__table th:nth-child(2),
+.spectator-summary__table td:nth-child(2),
+.spectator-summary__rounds td:first-child,
+.spectator-summary__rounds th:first-child {
+  text-align: left;
+}
+
+.spectator-summary__facts,
+.spectator-summary__diagnostics ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-dim);
+  font-size: 0.82rem;
 }

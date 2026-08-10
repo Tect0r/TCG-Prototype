@@ -53,7 +53,7 @@ function scopeContents(
   const player = playerOf(state, playerId);
   switch (scope.zone) {
     case 'battlefield':
-      return [...player.units.filter((id): id is InstanceId => id !== null), ...player.relics];
+      return [...player.units, ...player.relics];
     case 'hand':
       return [...player.hand];
     case 'discard':
@@ -98,13 +98,42 @@ function activeSources(
   return sources;
 }
 
+/**
+ * Whether a static ability is switched on right now.
+ *
+ * Two gates, both facts about the source itself: the zone it has to be in, and
+ * optionally the state it has to be in ("while this Unit is Ready"). Exported
+ * because the Reaction discount is read at cost time rather than accumulated
+ * into the continuous layer, and it must answer this question the same way.
+ */
+export function staticAbilityActive(
+  source: CardInstance,
+  ability: StaticAbilityDefinition,
+): boolean {
+  if (source.zone !== ability.activeZone) return false;
+  switch (ability.sourceState) {
+    case undefined:
+      return true;
+    case 'ready':
+      return !source.exhausted;
+    case 'exhausted':
+      return source.exhausted;
+    case 'newly_deployed':
+      return source.newlyDeployed;
+  }
+}
+
 function applyAbility(
   ctx: MatchContext,
   source: CardInstance,
   ability: StaticAbilityDefinition,
   into: Map<InstanceId, ContinuousLayer>,
 ): void {
-  if (source.zone !== ability.activeZone) return;
+  if (!staticAbilityActive(source, ability)) return;
+  // A Reaction discount is a fact about its controller's next Reaction, not a
+  // modifier on any card, so it contributes nothing here. `reactions.ts` reads
+  // it directly at the moment a cost is computed.
+  if (ability.effect.type === 'reaction_discount') return;
 
   for (const playerId of playersInScope(ctx.state, source.controller, ability.affects)) {
     for (const instanceId of scopeContents(ctx.state, playerId, ability.affects)) {
@@ -128,7 +157,7 @@ function applyAbility(
       if (ability.effect.type === 'modify_stats') {
         current.attack += ability.effect.attack;
         current.health += ability.effect.health;
-      } else {
+      } else if (ability.effect.type === 'grant_keyword') {
         const keyword: KeywordId = ability.effect.keyword;
         if (!current.grantedKeywords.includes(keyword)) current.grantedKeywords.push(keyword);
       }

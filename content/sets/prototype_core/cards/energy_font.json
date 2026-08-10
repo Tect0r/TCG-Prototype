@@ -1,0 +1,28 @@
+{
+  "id": "energy_font",
+  "name": "Energy Font",
+  "type": "relic",
+  "colorIdentity": [],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": ["artifact"],
+  "abilities": [
+    {
+      "id": "channel",
+      "trigger": "on_turn_start",
+      "effects": [
+        {
+          "type": "modify_cost",
+          "player": "self",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "delta": -1,
+          "duration": "end_of_turn"
+        }
+      ]
+    }
+  ],
+  "displayText": "At the start of your turn, your units cost 1 less this turn."
+}

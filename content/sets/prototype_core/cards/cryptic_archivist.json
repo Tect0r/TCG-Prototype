@@ -1,0 +1,27 @@
+{
+  "id": "cryptic_archivist",
+  "name": "Cryptic Archivist",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 6,
+  "attack": 4,
+  "health": 6,
+  "unique": true,
+  "role": "payoff",
+  "powerClass": "major",
+  "tags": ["mage"],
+  "abilities": [
+    {
+      "id": "endless_notes",
+      "trigger": "on_turn_start",
+      "effects": [
+        {
+          "type": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "displayText": "At the start of your turn, draw a card."
+}

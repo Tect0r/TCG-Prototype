@@ -1,0 +1,17 @@
+{
+  "id": "temporal_anchor",
+  "name": "Temporal Anchor",
+  "type": "relic",
+  "colorIdentity": ["blue"],
+  "cost": 4,
+  "role": "enabler",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Relic — Exhaustion Engine",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
+  "displayText": "Once each turn, when an enemy Unit would become Ready, you may pay 1 Energy. If you do, it remains Exhausted."
+}

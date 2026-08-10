@@ -1,0 +1,36 @@
+{
+  "id": "static_adept",
+  "name": "Static Adept",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "attack": 1,
+  "health": 3,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Disruption",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "exhaust",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"],
+            "attack": {
+              "max": 2
+            }
+          },
+          "count": 1
+        }
+      }
+    }
+  ],
+  "displayText": "When deployed, Exhaust an enemy Unit with 2 ATK or less."
+}

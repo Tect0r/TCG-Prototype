@@ -34,6 +34,16 @@ export const CHOICE_TYPES = [
   'select_units',
   'select_players',
   'order_cards',
+  /**
+   * A yes/no answer. `validEntityIds` is exactly `['yes', 'no']` and the
+   * selection is one of them.
+   *
+   * The option IDs are literals rather than instance IDs because the answer is
+   * not about an entity — "will you pay 2 more Energy?" points at nothing on the
+   * board. Modelling it as a one-of-two card selection is what would have forced
+   * a fake entity into the option set.
+   */
+  'confirm',
 ] as const;
 export const choiceTypeSchema = z.enum(CHOICE_TYPES);
 export type ChoiceType = z.infer<typeof choiceTypeSchema>;
@@ -50,9 +60,15 @@ export const CHOICE_REASONS = [
   'search_zone',
   'reorder_zone',
   'hand_size_discard',
-  'unit_slot',
+  // No `unit_slot`: with an unbounded battlefield there is no position to
+  // choose, so the choice cannot arise (ruleset update §7).
   /** Which living opponent an `opponent` target means (CLAUDE.md §12). */
   'select_opponent',
+  /**
+   * "…unless its controller pays N additional Energy" — offered to the
+   * controller of a card a Reaction is countering (rule adjustment §5).
+   */
+  'pay_additional_cost',
 ] as const;
 export const choiceReasonSchema = z.enum(CHOICE_REASONS);
 export type ChoiceReason = z.infer<typeof choiceReasonSchema>;

@@ -1,0 +1,19 @@
+{
+  "id": "stasis_keeper",
+  "name": "Stasis Keeper",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "attack": 2,
+  "health": 4,
+  "role": "attacker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Combat Disruption",
+    "power": "medium"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
+  "displayText": "Units blocked by this Unit do not Ready during their controller's next Ready Step."
+}

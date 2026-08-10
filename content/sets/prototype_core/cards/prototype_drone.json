@@ -1,0 +1,12 @@
+{
+  "id": "prototype_drone",
+  "name": "Salvage Drone",
+  "type": "unit",
+  "colorIdentity": [],
+  "cost": 0,
+  "attack": 0,
+  "health": 1,
+  "role": "support",
+  "powerClass": "minor",
+  "tags": ["construct"]
+}

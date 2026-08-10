@@ -1,0 +1,25 @@
+{
+  "id": "goblin_mob_caller",
+  "name": "Goblin Mob Caller",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 4,
+  "attack": 3,
+  "health": 3,
+  "tags": ["goblin"],
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Generator",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "goblin_token",
+      "amount": 2
+    }
+  ],
+  "displayText": "When this Unit enters the battlefield, create two Goblin Tokens."
+}

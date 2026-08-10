@@ -1,0 +1,17 @@
+{
+  "id": "marked_for_death",
+  "name": "Marked for Death",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Combat and Fodder",
+    "power": "medium"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs delayed end-of-turn effects (ruleset update §15)",
+  "displayText": "Target friendly Unit gains +3 ATK this turn. When it is defeated this turn, create two Thrall Tokens."
+}

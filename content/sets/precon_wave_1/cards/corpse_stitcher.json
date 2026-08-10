@@ -1,0 +1,19 @@
+{
+  "id": "corpse_stitcher",
+  "name": "Corpse Stitcher",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "attack": 2,
+  "health": 4,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Graveyard Conversion",
+    "power": "medium"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs a remove-from-game zone transition (ruleset update §15)",
+  "displayText": "Pay 1 Energy and Exhaust — Remove a Unit card in your discard pile from the game. Create two Thrall Tokens."
+}

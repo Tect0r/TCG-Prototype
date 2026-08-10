@@ -6,7 +6,7 @@
 ## Context
 
 Two persisted-data defects were found in the Phase 4 audit
-([PHASE4_HARDENING.md](../../PHASE4_HARDENING.md) §6 and §7). Both are the kind
+([PHASE4_HARDENING.md](../PHASE4_HARDENING.md) §6 and §7). Both are the kind
 that produce a plausible report rather than an error.
 
 **Only batches streamed.** ADR 0012 chose `matches.jsonl` as the primary raw

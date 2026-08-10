@@ -1,5 +1,11 @@
 import type { CardDatabase, CardDefinition } from '@tcg/card-data';
-import type { CardInstanceView, PendingChoice, PlayerView } from '@tcg/rules-engine';
+import type {
+  BlockAssignment,
+  CardInstanceView,
+  LegalActions,
+  PendingChoice,
+  PlayerView,
+} from '@tcg/rules-engine';
 import type { ActionCandidate, BotObservation } from './types.js';
 import {
   boardValueOf,
@@ -45,6 +51,10 @@ export function candidateActions(
 
   if (legal.pendingChoice) return choiceCandidates(observation, legal.pendingChoice, options);
   if (legal.mulligan) return mulliganCandidates(observation);
+  // A Reaction window pre-empts everything else, exactly as it does in the
+  // engine: while one is open the only legal moves are answering it or handing
+  // priority back (rule adjustment §5).
+  if (legal.reaction) return reactionCandidates(observation);
   if (legal.blocking) return blockCandidates(observation);
   if (legal.attacking) return attackCandidates(observation, options);
 
@@ -53,14 +63,9 @@ export function candidateActions(
 
   for (const card of legal.playableCards) {
     candidates.push({
-      action: {
-        type: 'play_card',
-        playerId,
-        instanceId: card.instanceId,
-        // Unit slots carry no positional rules in the current ruleset, so the
-        // lowest free slot is a complete and deterministic slot selection.
-        slot: card.freeSlots[0] ?? null,
-      },
+      // No slot to choose: the battlefield is unbounded and a unit simply joins
+      // the controller's list (ruleset update §7).
+      action: { type: 'play_card', playerId, instanceId: card.instanceId },
       family: 'play_card',
       key: `play:${card.definitionId}:${card.instanceId}`,
     });
@@ -91,6 +96,38 @@ export function candidateActions(
     candidates.push({ action: { type: 'concede', playerId }, family: 'concede', key: 'concede' });
   }
 
+  return candidates.sort(byKey);
+}
+
+/* ------------------------------------------------------------- reactions */
+
+/**
+ * Answering an open Reaction window.
+ *
+ * Passing is always offered, and offered *first*, because it is the only answer
+ * that is legal in every window and the only one that can close one. A pilot
+ * that could never decline would hold a window open until it ran out of cards.
+ *
+ * Each playable Reaction is one candidate. There is nothing to enumerate beyond
+ * that: the engine has already applied the timing window, the subject filter and
+ * the per-turn discount, so every entry here is a move the engine will accept.
+ */
+function reactionCandidates(observation: BotObservation): ActionCandidate[] {
+  const reaction = observation.legal.reaction;
+  if (!reaction) return [];
+  const playerId = observation.legal.playerId;
+
+  const candidates: ActionCandidate[] = [
+    { action: { type: 'pass_reaction', playerId }, family: 'pass_reaction', key: 'reaction:pass' },
+  ];
+
+  for (const card of reaction.playableCards) {
+    candidates.push({
+      action: { type: 'play_reaction', playerId, instanceId: card.instanceId },
+      family: 'play_reaction',
+      key: `reaction:play:${card.definitionId}:${card.instanceId}`,
+    });
+  }
   return candidates.sort(byKey);
 }
 
@@ -236,6 +273,40 @@ function readyBlockersOf(view: PlayerView, playerId: string): CardInstanceView[]
 
 /* ---------------------------------------------------------------- blocks */
 
+/**
+ * Tops a block plan up until it satisfies the Guardian obligation.
+ *
+ * Guardian is compulsory: a defender controlling ready Guardians must block at
+ * least `mustBlockCount` attackers (ruleset update §9). A pilot is free to
+ * choose *which* attackers those are, but "block nothing" simply is not a legal
+ * action while a ready Guardian is on the board, so every plan a pilot proposes
+ * has to be repaired rather than offered and rejected.
+ *
+ * Deterministic by construction: unblocked attackers and spare Guardians are
+ * both consumed in the order the engine listed them.
+ */
+export function satisfyGuardianObligation(
+  blocking: NonNullable<LegalActions['blocking']>,
+  blocks: readonly BlockAssignment[],
+): BlockAssignment[] {
+  const result: BlockAssignment[] = [...blocks];
+  const blockedAttackers = new Set(result.map((block) => block.attackerInstanceId));
+  if (blockedAttackers.size >= blocking.mustBlockCount) return result;
+
+  const usedBlockers = new Set(result.map((block) => block.blockerInstanceId));
+  const spareGuardians = blocking.guardianInstanceIds.filter((id) => !usedBlockers.has(id));
+  const openAttackers = blocking.attackerInstanceIds.filter((id) => !blockedAttackers.has(id));
+
+  for (const attackerInstanceId of openAttackers) {
+    if (blockedAttackers.size >= blocking.mustBlockCount) break;
+    const blockerInstanceId = spareGuardians.shift();
+    if (blockerInstanceId === undefined) break;
+    result.push({ attackerInstanceId, blockerInstanceId });
+    blockedAttackers.add(attackerInstanceId);
+  }
+  return result;
+}
+
 /** Named blocking strategies: nothing, value-only, everything, and chump-to-survive. */
 function blockCandidates(observation: BotObservation): ActionCandidate[] {
   const blocking = observation.legal.blocking;
@@ -243,11 +314,17 @@ function blockCandidates(observation: BotObservation): ActionCandidate[] {
   const playerId = observation.legal.playerId;
   const { view } = observation;
 
+  // "Block nothing" is only on the table when no ready Guardian obliges a
+  // block; otherwise the minimum legal plan is the Guardian obligation itself.
   const candidates: ActionCandidate[] = [
     {
-      action: { type: 'assign_blockers', playerId, blocks: [] },
+      action: {
+        type: 'assign_blockers',
+        playerId,
+        blocks: satisfyGuardianObligation(blocking, []),
+      },
       family: 'assign_blockers',
-      key: 'block:none',
+      key: blocking.mustBlockCount > 0 ? 'block:guardian_minimum' : 'block:none',
     },
   ];
 
@@ -271,7 +348,11 @@ function blockCandidates(observation: BotObservation): ActionCandidate[] {
     });
     if (blocks.length === 0) continue;
     candidates.push({
-      action: { type: 'assign_blockers', playerId, blocks },
+      action: {
+        type: 'assign_blockers',
+        playerId,
+        blocks: satisfyGuardianObligation(blocking, blocks),
+      },
       family: 'assign_blockers',
       key: plan.key,
     });
@@ -364,10 +445,9 @@ export interface RankedOption {
 /**
  * Values every option of a pending choice, best first.
  *
- * Options can be card instances, unit instances, players or — for reasons the
- * engine does not currently raise — slot indices. Anything unrecognised is
- * valued at zero and ordered by ID, which keeps an unfamiliar choice type
- * deterministic instead of throwing.
+ * Options can be card instances, unit instances or players. Anything
+ * unrecognised is valued at zero and ordered by ID, which keeps an unfamiliar
+ * choice type deterministic instead of throwing.
  */
 export function rankChoiceOptions(
   observation: BotObservation,

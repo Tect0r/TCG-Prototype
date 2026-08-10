@@ -1,0 +1,17 @@
+{
+  "id": "containment_array",
+  "name": "Containment Array",
+  "type": "relic",
+  "colorIdentity": ["blue"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Relic — Tempo",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
+  "displayText": "The first enemy Unit deployed each turn enters Exhausted."
+}

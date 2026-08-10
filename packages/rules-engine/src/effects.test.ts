@@ -201,8 +201,8 @@ describe('return_to_hand', () => {
 
     const bounced = instanceIn(state, victim.instanceId);
     expect(bounced.zone).toBe('hand');
-    expect(bounced.slot).toBeNull();
     expect(bounced.exhausted).toBe(false);
+    expect(state.players[other]?.units).not.toContain(victim.instanceId);
     expect(state.players[other]?.hand).toContain(victim.instanceId);
   });
 });

@@ -1,0 +1,17 @@
+{
+  "id": "grave_reassembly",
+  "name": "Grave Reassembly",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 5,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Mass Recovery",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs returning a card from discard directly to the battlefield (ruleset update §15)",
+  "displayText": "Return up to two Unit cards costing 3 or less from your discard pile to the battlefield Exhausted. They are Newly Deployed."
+}

@@ -10,6 +10,7 @@ import {
   STRATEGICALLY_UNUSED_CATEGORIES,
   cardTelemetrySchema,
 } from './telemetry/schema.js';
+import type { PilotSpec } from '@tcg/bot-interface';
 import type { Environment } from './environment.js';
 import {
   FAST_LIMITS,
@@ -31,6 +32,7 @@ async function play(
   left: SimDeck,
   right: SimDeck,
   seed = 'telemetry',
+  pilots: readonly [PilotSpec, PilotSpec] = [VALUE_PILOT, AGGRESSIVE_PILOT],
 ): Promise<RunMatchResult> {
   const options: RunMatchOptions = {
     experimentId: 'telemetry',
@@ -52,14 +54,14 @@ async function play(
         deckId: left.id,
         deckHash: left.hash,
         deck: toMatchDeck(left),
-        pilot: VALUE_PILOT,
+        pilot: pilots[0],
       },
       {
         playerId: 'player_2',
         deckId: right.id,
         deckHash: right.hash,
         deck: toMatchDeck(right),
-        pilot: AGGRESSIVE_PILOT,
+        pilot: pilots[1],
       },
     ],
   };
@@ -326,20 +328,80 @@ describe('source attribution', () => {
   });
 
   it('credits a triggered ability to its source even after the source dies', async () => {
-    const env = tinyEnvironment({ extraCardIds: ['powder_keg_runner'] });
-    const deck = fixtureDeck('triggers', 'prototype_commander_red', [
-      ['powder_keg_runner', 2],
+    // A card engineered to die on schedule: a one-energy 0/1 Guardian. Guardian
+    // is a *rule*, not a preference — while its controller has one ready, the
+    // engine refuses a blocker plan that leaves an attacker unblocked (ruleset
+    // update §9) — so the body is pushed in front of an attacker and dies to
+    // anything with one Attack. Nothing here depends on a pilot choosing to
+    // trade.
+    //
+    // The previous version used `powder_keg_runner` and searched seeds until one
+    // happened to kill it. That made the assertion hostage to the pilots' RNG
+    // stream: the unrelated removal of the unit-slot choice (ruleset update §7)
+    // shifted every draw and the probe stopped finding a match within its bound.
+    // Construct the situation instead of hunting for it.
+    const fragile: CardDefinitionInput = {
+      schemaVersion: 2,
+      id: 'telemetry_dying_guardian',
+      name: 'Telemetry Dying Guardian',
+      type: 'unit',
+      colorIdentity: [],
+      cost: 1,
+      attack: 0,
+      health: 1,
+      keywords: ['guardian'],
+      role: 'blocker',
+      powerClass: 'minor',
+      tags: ['fixture'],
+      abilities: [
+        {
+          id: 'parting_shot',
+          trigger: 'on_defeated',
+          effects: [
+            {
+              type: 'deal_damage',
+              target: {
+                kind: 'entity',
+                selector: {
+                  zone: 'battlefield',
+                  controller: 'opponent',
+                  filter: { cardTypes: ['unit', 'token'] },
+                  count: 1,
+                },
+              },
+              amount: 1,
+            },
+          ],
+        },
+      ],
+      displayText: 'When this unit is defeated, deal 1 damage to an enemy unit.',
+    };
+    const env = tinyEnvironment({ id: 'tiny_triggers', cardOverrides: [fragile] });
+    const deck = fixtureDeck('triggers', 'prototype_commander_blue', [
+      ['telemetry_dying_guardian', 2],
       ['prototype_drone', 2],
       ['prototype_scout', 2],
       ['prototype_guard', 2],
       ['trench_guard', 2],
-      ['unstable_construct', 2],
+      ['surveyors_lens', 2],
     ]);
+
+    // Both seats attack: a pilot that never swings never kills anything, and the
+    // whole point is to get this body into combat and lose it.
+    //
+    // The loop is a small allowance for draw luck — two copies in twelve cards
+    // are usually but not always drawn — not a search for a lucky game. Seed 0
+    // alone is enough today; a bound this tight is deliberate, so a real
+    // regression in Guardian or in attribution fails here instead of being
+    // absorbed by more attempts.
     let fired = false;
-    for (let index = 0; index < 10 && !fired; index += 1) {
-      const { record } = await play(env, deck, deck, `triggers-${index}`);
+    for (let index = 0; index < 4 && !fired; index += 1) {
+      const { record } = await play(env, deck, deck, `triggers-${index}`, [
+        AGGRESSIVE_PILOT,
+        AGGRESSIVE_PILOT,
+      ]);
       const row = record.cards.find(
-        (card) => card.definitionId === 'powder_keg_runner' && card.triggersFired > 0,
+        (card) => card.definitionId === 'telemetry_dying_guardian' && card.triggersFired > 0,
       );
       if (row) {
         fired = true;
@@ -347,6 +409,7 @@ describe('source attribution', () => {
         // the unit survived the event that fired it.
         expect(row.triggersFired).toBeGreaterThan(0);
         expect(row.timesPlayed).toBeGreaterThan(0);
+        expect(row.timesDefeated).toBeGreaterThan(0);
       }
     }
     expect(fired).toBe(true);
@@ -375,6 +438,68 @@ describe('aggregate reconciliation', () => {
         expect(rows.reduce((sum, row) => sum + row.blocksMade, 0)).toBe(seat.blocksAssigned);
       }
     }
+  });
+
+  it('counts a replaced relic as replaced, not as defeated or discarded', async () => {
+    // Ruleset update §12: playing a second relic replaces the first as a *rules
+    // action*. Folding that into `timesDefeated` would make relics look like
+    // they were being answered by opponents; folding it into `timesDiscarded`
+    // would make them look like hand-size chaff. It gets its own counter, and
+    // the seat total has to agree with the rows that compose it.
+    // Two relics with a clear ordering: a pilot that has already played the
+    // cheap one should still play the better one over it, because replacing is
+    // a trade rather than a refusal. A pair of equally good relics would leave
+    // the pilot rightly declining the second, and prove nothing.
+    const scrap: CardDefinitionInput = {
+      schemaVersion: 2,
+      id: 'telemetry_scrap_relic',
+      name: 'Telemetry Scrap Relic',
+      type: 'relic',
+      colorIdentity: [],
+      cost: 1,
+      tags: ['fixture'],
+      displayText: 'Does nothing at all.',
+    };
+    const engine: CardDefinitionInput = {
+      schemaVersion: 2,
+      id: 'telemetry_engine_relic',
+      name: 'Telemetry Engine Relic',
+      type: 'relic',
+      colorIdentity: [],
+      cost: 2,
+      tags: ['fixture'],
+      effects: [{ type: 'draw', player: 'self', amount: 2 }],
+      displayText: 'When this relic arrives, draw two cards.',
+    };
+    const env = tinyEnvironment({ id: 'tiny_relics', cardOverrides: [scrap, engine] });
+    const relicHeavy = fixtureDeck('relics', 'prototype_commander_blue', [
+      ['telemetry_scrap_relic', 2],
+      ['telemetry_engine_relic', 2],
+      ['prototype_drone', 2],
+      ['prototype_scout', 2],
+      ['prototype_guard', 2],
+      ['trench_guard', 2],
+    ]);
+
+    let sawReplacement = false;
+    for (let index = 0; index < 8; index += 1) {
+      const { record } = await play(env, relicHeavy, relicHeavy, `relics-${index}`);
+      for (const seat of record.seats) {
+        const rows = record.cards.filter((row) => row.playerId === seat.playerId);
+        expect(rows.reduce((sum, row) => sum + row.timesReplaced, 0)).toBe(seat.relicsReplaced);
+        // You cannot replace more relics than you deployed.
+        expect(seat.relicsReplaced).toBeLessThanOrEqual(seat.relicsDeployed);
+        if (seat.relicsReplaced > 0) {
+          sawReplacement = true;
+          for (const row of rows.filter((entry) => entry.timesReplaced > 0)) {
+            // The same copy is not also counted as killed or pitched.
+            expect(row.timesDefeated).toBe(0);
+            expect(row.timesDiscarded).toBe(0);
+          }
+        }
+      }
+    }
+    expect(sawReplacement, 'a relic-heavy deck should replace a relic at least once').toBe(true);
   });
 
   it('reconciles decision counts across seats', async () => {

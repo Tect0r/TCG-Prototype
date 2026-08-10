@@ -1,0 +1,41 @@
+{
+  "id": "orderly_withdrawal",
+  "name": "Orderly Withdrawal",
+  "type": "reaction",
+  "colorIdentity": ["white"],
+  "cost": 2,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Reaction — Protection",
+    "power": "medium"
+  },
+  "displayText": "Play after combat damage. Return a surviving friendly blocker to your hand. Draw a card.",
+  "reaction": {
+    "windows": ["after_combat_damage", "after_combat"]
+  },
+  "effects": [
+    {
+      "type": "return_to_hand",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "survivedAsBlocker": true
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      }
+    },
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    }
+  ]
+}

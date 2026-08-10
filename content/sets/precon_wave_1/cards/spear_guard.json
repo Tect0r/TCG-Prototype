@@ -1,0 +1,34 @@
+{
+  "id": "spear_guard",
+  "name": "Spear Guard",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 2,
+  "attack": 2,
+  "health": 2,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Retaliation",
+    "power": "medium"
+  },
+  "displayText": "When this Unit blocks, it gains +1 ATK for that combat.",
+  "abilities": [
+    {
+      "id": "brace",
+      "trigger": "on_block",
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "source"
+          },
+          "attack": 1,
+          "health": 0,
+          "duration": "end_of_combat"
+        }
+      ]
+    }
+  ]
+}

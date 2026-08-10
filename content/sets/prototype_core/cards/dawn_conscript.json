@@ -1,0 +1,12 @@
+{
+  "id": "dawn_conscript",
+  "name": "Dawn Conscript",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 1,
+  "attack": 2,
+  "health": 1,
+  "role": "attacker",
+  "powerClass": "minor",
+  "tags": ["soldier"]
+}

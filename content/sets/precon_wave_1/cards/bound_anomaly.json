@@ -1,0 +1,18 @@
+{
+  "id": "bound_anomaly",
+  "name": "Bound Anomaly",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 7,
+  "attack": 7,
+  "health": 8,
+  "keywords": ["barrier", "overwhelm"],
+  "role": "finisher",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Finisher",
+    "power": "high"
+  },
+  "displayText": "Barrier. Overwhelm."
+}

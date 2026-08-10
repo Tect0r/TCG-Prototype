@@ -1,0 +1,19 @@
+{
+  "id": "goblin_torchrunner",
+  "name": "Goblin Torchrunner",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 1,
+  "attack": 1,
+  "health": 1,
+  "tags": ["goblin"],
+  "keywords": ["rush"],
+  "role": "attacker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Aggression",
+    "power": "medium"
+  },
+  "displayText": "Rush."
+}

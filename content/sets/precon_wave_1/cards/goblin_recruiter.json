@@ -1,0 +1,25 @@
+{
+  "id": "goblin_recruiter",
+  "name": "Goblin Recruiter",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "attack": 1,
+  "health": 2,
+  "tags": ["goblin"],
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Generator",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "goblin_token",
+      "amount": 1
+    }
+  ],
+  "displayText": "When this Unit enters the battlefield, create one Goblin Token."
+}

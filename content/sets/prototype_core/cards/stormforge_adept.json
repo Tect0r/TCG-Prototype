@@ -1,0 +1,36 @@
+{
+  "id": "stormforge_adept",
+  "name": "Stormforge Adept",
+  "type": "unit",
+  "colorIdentity": ["blue", "red"],
+  "cost": 3,
+  "attack": 3,
+  "health": 3,
+  "role": "enabler",
+  "powerClass": "standard",
+  "tags": ["mage"],
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    },
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1,
+          "optional": true
+        }
+      },
+      "amount": 1
+    }
+  ],
+  "displayText": "When this unit is deployed, draw a card and deal 1 damage to an enemy unit."
+}

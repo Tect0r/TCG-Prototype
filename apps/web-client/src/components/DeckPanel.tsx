@@ -8,7 +8,6 @@ import {
 } from '@tcg/card-data';
 import {
   copyLimitFor,
-  DEFAULT_DECK_FORMAT,
   removeUnresolvedCards,
   setCardQuantity,
   setCommander,
@@ -16,6 +15,7 @@ import {
   type SavedDeck,
 } from '@tcg/deck';
 import { errorsOf, warningsOf } from '@tcg/shared';
+import { useDeckFormat } from '../state/AppContext.js';
 import { CommanderPicker } from './CommanderPicker.js';
 import { IssueList } from './IssueList.js';
 
@@ -32,7 +32,8 @@ interface ResolvedRow {
 }
 
 export function DeckPanel({ deck, database, onChange }: DeckPanelProps) {
-  const report = useMemo(() => validateDeck(deck, database), [deck, database]);
+  const format = useDeckFormat();
+  const report = useMemo(() => validateDeck(deck, database, format), [deck, database, format]);
 
   const rows = useMemo<ResolvedRow[]>(
     () =>
@@ -66,10 +67,10 @@ export function DeckPanel({ deck, database, onChange }: DeckPanelProps) {
 
       <div className="deck-panel__summary">
         <p
-          className={`deck-panel__size${stats.totalCards === DEFAULT_DECK_FORMAT.deckSize ? ' is-complete' : ''}`}
+          className={`deck-panel__size${stats.totalCards === format.deckSize ? ' is-complete' : ''}`}
           data-testid="deck-size"
         >
-          <strong>{stats.totalCards}</strong> / {DEFAULT_DECK_FORMAT.deckSize} cards
+          <strong>{stats.totalCards}</strong> / {format.deckSize} cards
         </p>
         <p className="deck-panel__identity">
           {stats.colorIdentity.length === 0 ? (
@@ -149,11 +150,11 @@ export function DeckPanel({ deck, database, onChange }: DeckPanelProps) {
               <button
                 type="button"
                 aria-label={`Increase copies of ${row.card?.name ?? row.cardId}`}
-                disabled={!row.card || row.quantity >= copyLimitFor(row.card)}
+                disabled={!row.card || row.quantity >= copyLimitFor(row.card, format)}
                 onClick={() =>
                   onChange(
                     setCardQuantity(deck, row.cardId, row.quantity + 1, {
-                      ...(row.card ? { limit: copyLimitFor(row.card) } : {}),
+                      ...(row.card ? { limit: copyLimitFor(row.card, format) } : {}),
                     }),
                   )
                 }

@@ -1,0 +1,18 @@
+{
+  "id": "goblin_token",
+  "name": "Goblin Token",
+  "type": "token",
+  "colorIdentity": ["red"],
+  "cost": null,
+  "attack": 1,
+  "health": 1,
+  "collectible": false,
+  "tags": ["goblin"],
+  "role": "token",
+  "powerClass": "minor",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Token Unit",
+    "power": "low"
+  }
+}

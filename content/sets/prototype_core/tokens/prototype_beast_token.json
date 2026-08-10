@@ -1,0 +1,13 @@
+{
+  "id": "prototype_beast_token",
+  "name": "Beast",
+  "type": "token",
+  "colorIdentity": ["green"],
+  "cost": null,
+  "attack": 3,
+  "health": 3,
+  "collectible": false,
+  "role": "token",
+  "powerClass": "minor",
+  "tags": ["beast"]
+}

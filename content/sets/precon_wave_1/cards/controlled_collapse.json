@@ -1,0 +1,32 @@
+{
+  "id": "controlled_collapse",
+  "name": "Controlled Collapse",
+  "type": "spell",
+  "colorIdentity": ["blue"],
+  "cost": 5,
+  "role": "removal",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Spell — Battlefield Clearing",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": "all"
+        }
+      },
+      "amount": 2
+    }
+  ],
+  "displayText": "Deal 2 damage to every Unit."
+}

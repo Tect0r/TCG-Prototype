@@ -29,7 +29,7 @@ export function createInstance(
   definitionId: CardId,
   owner: PlayerId,
   zone: ZoneId,
-  options: { readonly isToken?: boolean; readonly slot?: number | null } = {},
+  options: { readonly isToken?: boolean } = {},
 ): CardInstance {
   const instanceId = nextInstanceId(ctx);
   const instance: CardInstance = {
@@ -39,10 +39,12 @@ export function createInstance(
     owner,
     controller: owner,
     zone,
-    slot: options.slot ?? null,
     markedDamage: 0,
     exhausted: false,
     enteredZoneOnTurn: ctx.state.turn,
+    newlyDeployed: zone === 'battlefield',
+    survivedAsBlocker: false,
+    barrierSpent: false,
     statModifiers: [],
     grantedKeywords: [],
     removedKeywords: [],
@@ -60,11 +62,13 @@ function detach(ctx: MatchContext, instance: CardInstance): void {
   const owner = playerOf(ctx.state, instance.owner);
 
   if (instance.zone === 'battlefield') {
+    // Spliced out rather than blanked: the unit list is dense, and the survivors
+    // keep their relative arrival order, which is what every deterministic
+    // tiebreak walks (ruleset update §7).
     const index = controller.units.indexOf(instance.instanceId);
-    if (index >= 0) controller.units[index] = null;
+    if (index >= 0) controller.units.splice(index, 1);
     const relicIndex = controller.relics.indexOf(instance.instanceId);
     if (relicIndex >= 0) controller.relics.splice(relicIndex, 1);
-    instance.slot = null;
     return;
   }
 
@@ -84,19 +88,39 @@ function resetPermanentState(instance: CardInstance): void {
   instance.removedKeywords = [];
   instance.damageShields = [];
   instance.counters = {};
-  instance.slot = null;
   // The continuous layer is derived, so it is rebuilt on the next
   // recalculation rather than carried into the new zone.
   instance.continuous = { attack: 0, health: 0, grantedKeywords: [], removedKeywords: [] };
 }
 
+/** Which battlefield list a permanent joins. Relics are never units. */
+export type BattlefieldRow = 'units' | 'relics';
+
 export interface MoveOptions {
   /** Deck insertions default to the bottom; set for "put on top". */
   readonly toTop?: boolean;
-  /** Battlefield unit slot. Ignored for other zones. */
-  readonly slot?: number;
+  /**
+   * Which battlefield list to join. Ignored for other zones, and defaulted from
+   * the card's own type, so nothing lands in the wrong row by omission.
+   */
+  readonly row?: BattlefieldRow;
   /** Suppress the `card_moved` event when a more specific event is emitted. */
   readonly silent?: boolean;
+  /**
+   * How a card arriving on the battlefield got there (rule adjustment §7).
+   *
+   * `suppress` is for callers that emit the entry event themselves because they
+   * have to order it after something else — a deployment emits `unit_deployed`
+   * first, and the move happens before that. Everything else defaults to
+   * `effect`, which is the honest answer for "an effect put it there": it is an
+   * arrival, but it is not a deployment and must not be reported as one.
+   */
+  readonly entry?: 'deployed' | 'returned' | 'effect' | 'suppress';
+}
+
+/** The battlefield list a definition belongs in, when the caller did not say. */
+function defaultRow(ctx: MatchContext, instance: CardInstance): BattlefieldRow {
+  return ctx.database.get(instance.definitionId)?.type === 'relic' ? 'relics' : 'units';
 }
 
 /**
@@ -140,15 +164,18 @@ export function moveToZone(
   const owner = playerOf(ctx.state, instance.owner);
   instance.zone = toZone;
   instance.enteredZoneOnTurn = ctx.state.turn;
+  // Arriving on the battlefield always makes a permanent Newly Deployed —
+  // including a unit returned there from the discard pile (ruleset update §9).
+  instance.newlyDeployed = toZone === 'battlefield';
+  // A unit that leaves play and comes back is a fresh object as far as Barrier
+  // is concerned; a spent Barrier must not follow it into the next life.
+  if (toZone === 'battlefield') instance.barrierSpent = false;
 
   if (toZone === 'battlefield') {
     const controller = playerOf(ctx.state, instance.controller);
-    if (options.slot === undefined) {
-      controller.relics.push(instanceId);
-    } else {
-      controller.units[options.slot] = instanceId;
-      instance.slot = options.slot;
-    }
+    // Appended: with no slots, arrival order *is* the position, and there is no
+    // ceiling to check (ruleset update §7).
+    controller[options.row ?? defaultRow(ctx, instance)].push(instanceId);
   } else {
     resetPermanentState(instance);
     instance.controller = instance.owner;
@@ -166,6 +193,19 @@ export function moveToZone(
       playerId: instance.owner,
       fromZone,
       toZone,
+    });
+  }
+
+  // Every arrival on a battlefield is reported, whatever put it there. A
+  // revival emits only this; a deployment emits `unit_deployed` first and
+  // suppresses this so it can control the order.
+  if (toZone === 'battlefield' && fromZone !== 'battlefield' && options.entry !== 'suppress') {
+    emit(ctx, {
+      type: 'unit_entered_battlefield',
+      playerId: instance.controller,
+      instanceId,
+      definitionId: instance.definitionId,
+      method: options.entry ?? 'effect',
     });
   }
 }

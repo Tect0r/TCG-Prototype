@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 2,
+  "id": "template_activated_unit",
+  "name": "Template Activated Unit",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "role": "enabler",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "activatedAbilities": [
+    {
+      "id": "template_activation",
+      "name": "Template Activation",
+      "costs": [{ "type": "energy", "amount": 1 }, { "type": "exhaust_source" }],
+      "usageLimit": "once_per_turn",
+      "effects": [{ "type": "draw", "player": "self", "amount": 1 }]
+    }
+  ],
+  "displayText": "Pay 1 Energy and Exhaust: draw a card. Activate only once each turn.",
+  "text": {
+    "flavor": "Costs are validated and paid atomically before the ability is queued."
+  }
+}

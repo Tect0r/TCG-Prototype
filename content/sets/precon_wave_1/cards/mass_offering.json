@@ -1,0 +1,17 @@
+{
+  "id": "mass_offering",
+  "name": "Mass Offering",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 5,
+  "role": "finisher",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Spell — Finisher",
+    "power": "high"
+  },
+  "implemented": false,
+  "unsupportedReason": "needs \"divide N damage among targets\" selection (ruleset update §16)",
+  "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or Commander. The damage may be divided among targets."
+}

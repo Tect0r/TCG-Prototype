@@ -1,0 +1,16 @@
+{
+  "id": "ashen_vermin",
+  "name": "Ashen Vermin",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 1,
+  "attack": 2,
+  "health": 1,
+  "role": "attacker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Simple",
+    "power": "low"
+  }
+}

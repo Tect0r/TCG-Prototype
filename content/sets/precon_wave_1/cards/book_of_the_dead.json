@@ -1,0 +1,46 @@
+{
+  "id": "book_of_the_dead",
+  "name": "Book of the Dead",
+  "type": "relic",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "role": "support",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Relic — Card Advantage",
+    "power": "high"
+  },
+  "displayText": "At the end of your turn, if a friendly Unit was defeated that turn, look at the top two cards of your deck. You may reveal a Unit and put it into your hand. Put the remaining cards on the bottom.",
+  "abilities": [
+    {
+      "id": "read_the_book",
+      "trigger": "on_turn_end",
+      "condition": {
+        "kind": "count",
+        "count": {
+          "subject": "units_defeated_this_turn",
+          "controller": "self"
+        },
+        "comparison": "at_least",
+        "value": 1
+      },
+      "effects": [
+        {
+          "type": "search_zone",
+          "player": "self",
+          "zone": "deck",
+          "fromTop": 2,
+          "amount": 1,
+          "destination": "hand",
+          "upTo": true,
+          "reveal": true,
+          "remainder": "bottom",
+          "filter": {
+            "cardTypes": ["unit"]
+          }
+        }
+      ]
+    }
+  ]
+}

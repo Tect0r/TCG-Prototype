@@ -1,0 +1,35 @@
+{
+  "id": "living_bulwark",
+  "name": "Living Bulwark",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 7,
+  "attack": 6,
+  "health": 10,
+  "keywords": ["guardian", "overwhelm"],
+  "role": "finisher",
+  "powerClass": "major",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Finisher",
+    "power": "high"
+  },
+  "displayText": "Guardian. Overwhelm. Whenever this Unit survives combat as a blocker, it gains +2 ATK permanently.",
+  "abilities": [
+    {
+      "id": "grow",
+      "trigger": "on_survive_combat_as_blocker",
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "source"
+          },
+          "attack": 2,
+          "health": 0,
+          "duration": "permanent"
+        }
+      ]
+    }
+  ]
+}

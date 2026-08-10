@@ -1,0 +1,16 @@
+{
+  "id": "standfast_cadet",
+  "name": "Standfast Cadet",
+  "type": "unit",
+  "colorIdentity": ["white"],
+  "cost": 2,
+  "attack": 3,
+  "health": 2,
+  "role": "attacker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Unit — Simple",
+    "power": "low"
+  }
+}

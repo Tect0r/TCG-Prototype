@@ -177,13 +177,17 @@ export class TelemetryCollector {
     }
   }
 
-  /** Whether the seat has nowhere to put this card, regardless of anything else. */
-  #capacityBlocked(state: MatchState, playerId: PlayerId, definition: CardDefinition): boolean {
-    const player = state.players[playerId];
-    if (!player) return false;
-    if (definition.type === 'unit') return !player.units.includes(null);
-    if (definition.type === 'relic') return player.relics.length >= this.#maxRelics;
-    return false;
+  /**
+   * Whether the seat has nowhere to put this card, regardless of anything else.
+   *
+   * Almost never, now. Units can never be capacity-blocked because the
+   * battlefield is unbounded (ruleset update §7), and a relic at the limit is
+   * *replaced* rather than refused (§12) — so the only remaining case is a
+   * format configured to allow no relics at all. Reporting anything else here
+   * would attribute a pilot's choice to a limit that does not exist.
+   */
+  #capacityBlocked(_state: MatchState, _playerId: PlayerId, definition: CardDefinition): boolean {
+    return definition.type === 'relic' && this.#maxRelics < 1;
   }
 
   /** Called with the accepted action and the state either side of it. */
@@ -293,6 +297,18 @@ export class TelemetryCollector {
         this.#moveInstance(event.instanceId, 'battlefield', state);
         this.#seatStats.get(event.playerId)?.tallyRelicDeployed();
         break;
+
+      case 'relic_replaced': {
+        // Counted before the move, and deliberately not as a defeat, a discard
+        // or a removal: replacement is a rules action (ruleset update §12). The
+        // credit goes to the relic that *left*, which is the cost the player
+        // paid; the relic that arrived is credited by `relic_deployed`.
+        const track = this.#tracks.get(event.instanceId);
+        if (track) this.#cardRow(track.owner, track.definitionId).timesReplaced += 1;
+        this.#moveInstance(event.instanceId, 'discard', state);
+        this.#seatStats.get(event.playerId)?.tallyRelicReplaced();
+        break;
+      }
 
       case 'token_created': {
         this.#registerInstance(event.instanceId, event.definitionId, event.playerId, 'battlefield');
@@ -662,6 +678,7 @@ function emptyCardRow(playerId: PlayerId, definitionId: CardId): CardAccumulator
     timesDefeated: 0,
     timesRemoved: 0,
     timesReturnedToHand: 0,
+    timesReplaced: 0,
     energySpent: 0,
     attacksMade: 0,
     blocksMade: 0,
@@ -699,6 +716,7 @@ class SeatAccumulator {
   energyUnspentAtTurnEnd = 0;
   unitsDeployed = 0;
   relicsDeployed = 0;
+  relicsReplaced = 0;
   tokensCreated = 0;
   unitsLost = 0;
   attacksDeclared = 0;
@@ -741,6 +759,9 @@ class SeatAccumulator {
   }
   tallyRelicDeployed(): void {
     this.relicsDeployed += 1;
+  }
+  tallyRelicReplaced(): void {
+    this.relicsReplaced += 1;
   }
   tallyToken(): void {
     this.tokensCreated += 1;
@@ -799,6 +820,7 @@ class SeatAccumulator {
       energyUnspentAtTurnEnd: this.energyUnspentAtTurnEnd,
       unitsDeployed: this.unitsDeployed,
       relicsDeployed: this.relicsDeployed,
+      relicsReplaced: this.relicsReplaced,
       tokensCreated: this.tokensCreated,
       unitsLost: this.unitsLost,
       attacksDeclared: this.attacksDeclared,

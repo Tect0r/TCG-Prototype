@@ -1,6 +1,13 @@
 import { emit, type MatchContext } from './context.js';
 import { damagePlayer, damageUnit, healPlayer } from './damage.js';
-import { currentAttack, definitionOf, findInstance, hasKeyword, isAlive } from './derive.js';
+import {
+  currentAttack,
+  currentHealth,
+  definitionOf,
+  findInstance,
+  hasKeyword,
+  isAlive,
+} from './derive.js';
 import { settle } from './queue.js';
 import { EMPTY_COMBAT, type CardInstance } from './schema/state.js';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
@@ -69,6 +76,47 @@ function buildHits(ctx: MatchContext, step: DamageStep): CombatHit[] {
         siphon: hasKeyword(attacker, definition, 'siphon'),
         controllerId: attacker.controller,
       });
+      continue;
+    }
+
+    // Overwhelm splits the attack before any prevention is considered: each
+    // blocker is assigned damage equal to its *current* Health, and whatever is
+    // left over is dealt to the defending player. Barrier on the blocker
+    // prevents only the blocker's share, because the overflow is a separate
+    // damage event aimed at the player (ADR 0016 Q-D).
+    //
+    // Note this uses current Health rather than "remaining lethal requirement",
+    // so damage already marked on the blocker does *not* increase the overflow.
+    // That is the decided rule; ADR 0016 records where it diverges from §9.
+    if (hasKeyword(attacker, definition, 'overwhelm') && livingBlockers.length > 0) {
+      let remaining = amount;
+      for (const blocker of livingBlockers) {
+        const share = Math.min(
+          remaining,
+          currentHealth(blocker, definitionOf(ctx.database, blocker)),
+        );
+        remaining -= share;
+        hits.push({
+          sourceInstanceId: attack.attackerInstanceId,
+          targetInstanceId: blocker.instanceId,
+          targetPlayerId: null,
+          amount: share,
+          lethal: hasKeyword(attacker, definition, 'venom'),
+          siphon: hasKeyword(attacker, definition, 'siphon'),
+          controllerId: attacker.controller,
+        });
+      }
+      if (remaining > 0) {
+        hits.push({
+          sourceInstanceId: attack.attackerInstanceId,
+          targetInstanceId: null,
+          targetPlayerId: attack.defenderPlayerId,
+          amount: remaining,
+          lethal: false,
+          siphon: hasKeyword(attacker, definition, 'siphon'),
+          controllerId: attacker.controller,
+        });
+      }
       continue;
     }
 
@@ -157,6 +205,10 @@ export function resolveCombat(ctx: MatchContext): void {
 
   if (ctx.state.status !== 'complete') {
     const before = ctx.events.length;
+    // Who blocked is read from the combat that just resolved, before it is
+    // cleared: "survived combat as a blocker" is a fact about this combat, and
+    // nothing downstream could reconstruct it later (ruleset update §15).
+    const blockers = new Set(ctx.state.combat.blocks.map((block) => block.blockerInstanceId));
     for (const instanceId of ctx.state.combat.combatantInstanceIds) {
       const instance = livingCombatant(ctx, instanceId);
       if (!instance) continue;
@@ -164,6 +216,7 @@ export function resolveCombat(ctx: MatchContext): void {
         type: 'combat_survived',
         instanceId,
         definitionId: instance.definitionId,
+        asBlocker: blockers.has(instanceId),
       });
     }
     settle(ctx, before);

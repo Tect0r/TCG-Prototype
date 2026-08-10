@@ -1,0 +1,45 @@
+{
+  "id": "scatter",
+  "name": "Scatter",
+  "type": "reaction",
+  "colorIdentity": ["red"],
+  "cost": 2,
+  "role": "blocker",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Reaction — Protection",
+    "power": "medium"
+  },
+  "displayText": "Target Goblin you control becomes Untargetable by opponents until the end of the turn.",
+  "reaction": {
+    "windows": [
+      "after_attackers_declared",
+      "before_blockers_declared",
+      "after_blockers_declared",
+      "after_combat_damage",
+      "after_combat",
+      "when_opponent_plays_spell"
+    ]
+  },
+  "effects": [
+    {
+      "type": "grant_keyword",
+      "keyword": "untargetable_by_opponents",
+      "duration": "end_of_turn",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "tags": ["goblin"]
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      }
+    }
+  ]
+}

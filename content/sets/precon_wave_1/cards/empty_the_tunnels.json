@@ -1,0 +1,22 @@
+{
+  "id": "empty_the_tunnels",
+  "name": "Empty the Tunnels",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 4,
+  "role": "enabler",
+  "powerClass": "standard",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Spell — Generator",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "goblin_token",
+      "amount": 4
+    }
+  ],
+  "displayText": "Create four Goblin Tokens."
+}

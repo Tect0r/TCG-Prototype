@@ -161,24 +161,19 @@
         {
           "type": "bulletList",
           "items": [
-            "Unit — goes onto your battlefield into a free slot and stays there. It can attack and block. It resolves its own effects as it arrives.",
+            "Unit — goes onto your battlefield and stays there. It can attack and block. It resolves its own effects as it arrives.",
             "Spell — resolves its effects immediately, then goes to your discard pile. It never stays in play.",
-            "Relic — goes into a separate row and stays until something removes it. Relics do not use unit slots and cannot attack or block.",
+            "Relic — goes into a separate row and stays until something removes it. Relics are not units and cannot attack or block.",
             "Commander — starts outside your deck in the Commander zone and stays there all match.",
             "Token — a unit created by an effect. Tokens are never in a deck, and a token that leaves play stops existing entirely."
           ]
-        },
-        {
-          "type": "configValue",
-          "label": "Unit slots per player",
-          "source": "matchConfig.unitSlots"
         },
         { "type": "configValue", "label": "Relics per player", "source": "matchConfig.relicSlots" },
         {
           "type": "callout",
           "tone": "info",
-          "title": "A full battlefield blocks deployment",
-          "text": "You cannot play a unit with no free slot. An effect that would create a token with no free slot simply does not create it — nothing is destroyed to make room."
+          "title": "There is no limit on units",
+          "text": "You can have as many units on your battlefield as you can afford to play. Nothing is refused for lack of room, and a token that an effect creates is always created. Energy is the only thing that limits how fast a board grows."
         }
       ]
     },
@@ -244,7 +239,7 @@
       "id": "playing_cards",
       "title": "Playing cards and using abilities",
       "order": 80,
-      "searchTerms": ["deploy", "cast", "activate", "summoning sickness", "slot", "ability"],
+      "searchTerms": ["deploy", "cast", "activate", "summoning sickness", "ability"],
       "blocks": [
         {
           "type": "paragraph",
@@ -254,8 +249,8 @@
         {
           "type": "bulletList",
           "items": [
-            "A unit needs a free slot on your battlefield.",
-            "It arrives ready but summoning sick: it cannot attack this turn unless it has Swift.",
+            "A unit needs only its energy cost: your battlefield has no size limit.",
+            "It arrives ready but summoning sick: it cannot attack this turn unless it has Rush.",
             "It can block on the turn it arrives.",
             "Its own effects resolve as it enters play."
           ]
@@ -266,6 +261,15 @@
           "items": [
             "A spell resolves its effects in the order they are written, then goes to your discard pile.",
             "A spell that requires a target cannot be played at all when no legal target exists — it will not even be offered."
+          ]
+        },
+        { "type": "heading", "text": "Relics" },
+        {
+          "type": "bulletList",
+          "items": [
+            "A relic goes into its own row and stays there until something removes it.",
+            "You may control {matchConfig.relicSlots} at a time. Playing another does not fail — it replaces the one you have.",
+            "The replaced relic goes to your discard pile as a rules action. It is not destroyed and not sacrificed, so nothing that watches for a relic dying will fire."
           ]
         },
         { "type": "heading", "text": "Activated abilities" },
@@ -301,6 +305,8 @@
           "type": "bulletList",
           "items": [
             "Only the player being attacked may block, and only against attacks aimed at them. You cannot block to protect somebody else.",
+            "A blocker must be ready. Blocking exhausts it, so a unit that attacked on your turn cannot block on the next one, and a blocker stays exhausted until your own turn starts.",
+            "A unit that arrived this turn may still block. Summoning sickness stops attacking, not blocking.",
             "One blocker per attacker, and each blocker blocks at most one attacker.",
             "Attackers with Evasive cannot be blocked at all.",
             "When several players are attacked at once, each answers separately and nobody sees anyone else's blocks until every defender has submitted."
@@ -494,7 +500,7 @@
           "steps": [
             "Turn Start: your maximum energy becomes {matchConfig.startingMaxEnergy} and refills. Nothing is exhausted yet.",
             "Draw: you skip it, because you are the player going first.",
-            "Main Phase: you have {matchConfig.startingMaxEnergy} energy, so you play a one-cost unit into an empty slot. It arrives summoning sick.",
+            "Main Phase: you have {matchConfig.startingMaxEnergy} energy, so you play a one-cost unit onto your battlefield. It arrives summoning sick.",
             "Declare Attackers: your only unit is summoning sick, so you confirm with nobody attacking.",
             "Assign Blockers is skipped, because there were no attacks.",
             "Second Main Phase: you have no energy left, so you pass.",

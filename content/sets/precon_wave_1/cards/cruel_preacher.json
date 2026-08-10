@@ -1,0 +1,40 @@
+{
+  "id": "cruel_preacher",
+  "name": "Cruel Preacher",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "attack": 1,
+  "health": 5,
+  "role": "payoff",
+  "powerClass": "major",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Defeat Payoff",
+    "power": "high"
+  },
+  "displayText": "Whenever another friendly Unit is defeated during your turn, deal 1 damage to an opponent.",
+  "abilities": [
+    {
+      "id": "harvest_the_fallen",
+      "trigger": "on_defeated",
+      "scope": {
+        "controller": "self",
+        "excludeSource": true
+      },
+      "condition": {
+        "kind": "active_turn"
+      },
+      "effects": [
+        {
+          "type": "deal_damage",
+          "target": {
+            "kind": "player",
+            "relation": "opponent"
+          },
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

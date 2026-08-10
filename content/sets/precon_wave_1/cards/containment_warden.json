@@ -1,0 +1,33 @@
+{
+  "id": "containment_warden",
+  "name": "Containment Warden",
+  "type": "unit",
+  "colorIdentity": ["blue"],
+  "cost": 5,
+  "attack": 3,
+  "health": 7,
+  "role": "blocker",
+  "powerClass": "major",
+  "design": {
+    "faction": "control",
+    "identity": "Control Unit — Battlefield Control",
+    "power": "high"
+  },
+  "effects": [
+    {
+      "type": "exhaust",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 2
+        }
+      }
+    }
+  ],
+  "displayText": "When deployed, Exhaust up to two enemy Units."
+}

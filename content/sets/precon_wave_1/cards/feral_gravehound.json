@@ -1,0 +1,16 @@
+{
+  "id": "feral_gravehound",
+  "name": "Feral Gravehound",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "attack": 3,
+  "health": 2,
+  "role": "attacker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "sacrifice",
+    "identity": "Sacrifice Unit — Simple Attacker",
+    "power": "low"
+  }
+}

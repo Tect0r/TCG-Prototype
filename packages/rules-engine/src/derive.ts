@@ -170,25 +170,66 @@ export function hasKeyword(
 }
 
 /**
- * A unit entering play is ready but summoning sick: it cannot attack this turn
- * unless a keyword permits it (CLAUDE.md §4).
+ * `Newly Deployed`: a unit that has not yet been through its controller's Ready
+ * Step. It enters ready, and may block, but it cannot attack or pay an
+ * `Exhaust this source` activation cost unless it has Rush (ruleset update §8,
+ * ADR 0016 Q-B/Q-C).
+ *
+ * `state` is accepted but unused: the state now lives on the instance, and
+ * keeping the signature lets every existing call site stay put.
  */
-export function isSummoningSick(instance: CardInstance, state: MatchState): boolean {
-  return instance.enteredZoneOnTurn === state.turn;
+export function isNewlyDeployed(instance: CardInstance, _state?: MatchState): boolean {
+  return instance.newlyDeployed;
 }
+
+/** @deprecated Renamed to `isNewlyDeployed` to match the ruleset's vocabulary. */
+export const isSummoningSick = isNewlyDeployed;
 
 function costModifierApplies(modifier: CostModifier, definition: CardDefinition): boolean {
   if (modifier.filter === null) return true;
   return matchesCardFilter(definition, null, modifier.filter);
 }
 
-/** Printed cost after every applicable cost modifier. Never below zero. */
-export function energyCostOf(player: PlayerState, definition: CardDefinition): number {
+/**
+ * Printed cost after every applicable cost modifier.
+ *
+ * `floor` is the "to a minimum of N" clause a reducing effect may print
+ * (ruleset update §5). It defaults to zero — a reduction with no printed
+ * minimum really can make a card free — and a floor never *raises* a cost that
+ * was already below it, which is why it is clamped against the printed cost
+ * rather than applied unconditionally. Additional costs are unaffected either
+ * way: they are paid even when the card is later countered.
+ */
+export function energyCostOf(player: PlayerState, definition: CardDefinition, floor = 0): number {
   const printed = definition.cost ?? 0;
   const delta = player.costModifiers
     .filter((modifier) => costModifierApplies(modifier, definition))
     .reduce((sum, modifier) => sum + modifier.delta, 0);
-  return Math.max(0, printed + delta);
+  const reduced = printed + delta;
+  const minimum = Math.min(floor, printed);
+  return Math.max(0, minimum, reduced);
+}
+
+/**
+ * What deploying this player's Commander costs right now (rule adjustment §2).
+ *
+ * `min(base + defeats × perDefeat, cap)`. The cap applies to the **total**, not
+ * to the surcharge — a Commander defeated eight times costs the cap, not the
+ * cap plus its printed cost — which is the difference between "expensive" and
+ * "unplayable", and the whole reason the value is capped at all.
+ *
+ * Returns `null` for a Commander with no printed cost: that is the older
+ * zone-only Commander, which is not deployable at all rather than free.
+ */
+export function commanderDeployCost(
+  player: PlayerState,
+  definition: CardDefinition,
+  config: Pick<RulesConfig, 'commanderCostPerDefeat' | 'commanderCostCap'>,
+): number | null {
+  if (definition.cost === null) return null;
+  const base = energyCostOf(player, definition);
+  const surcharge = player.commanderDefeats * config.commanderCostPerDefeat;
+  return Math.min(base + surcharge, config.commanderCostCap);
 }
 
 function inRange(value: number, range: NumericRange | undefined): boolean {
@@ -207,6 +248,13 @@ export function matchesCardFilter(
   definition: CardDefinition,
   instance: CardInstance | null,
   filter: CardFilter,
+  /**
+   * Combat membership, when the caller has it. Passed in rather than read from
+   * the instance because "is attacking" is a fact about the current combat, not
+   * about the card, and `derive.ts` is deliberately free of match-state lookups
+   * beyond the instance it was handed.
+   */
+  combat?: { readonly attacking: boolean; readonly blocking: boolean },
 ): boolean {
   if (filter.cardTypes && !filter.cardTypes.includes(definition.type)) return false;
   if (filter.cardIds && !filter.cardIds.includes(definition.id)) return false;
@@ -229,33 +277,69 @@ export function matchesCardFilter(
     if (!inRange(currentHealth(instance, definition), filter.health)) return false;
     if (filter.damaged !== undefined && instance.markedDamage > 0 !== filter.damaged) return false;
     if (filter.exhausted !== undefined && instance.exhausted !== filter.exhausted) return false;
+    if (filter.newlyDeployed !== undefined && instance.newlyDeployed !== filter.newlyDeployed) {
+      return false;
+    }
+    if (
+      filter.survivedAsBlocker !== undefined &&
+      instance.survivedAsBlocker !== filter.survivedAsBlocker
+    ) {
+      return false;
+    }
   } else {
     if (!inRange(definition.attack ?? 0, filter.attack)) return false;
     if (!inRange(definition.health ?? 0, filter.health)) return false;
     if (filter.damaged !== undefined && filter.damaged) return false;
     if (filter.exhausted !== undefined && filter.exhausted) return false;
+    if (filter.newlyDeployed !== undefined && filter.newlyDeployed) return false;
+    // A card with no instance has no history, so it cannot have survived
+    // anything. Asking for `false` still matches it.
+    if (filter.survivedAsBlocker !== undefined && filter.survivedAsBlocker) return false;
+  }
+
+  // Combat membership is unknowable without the combat state, so a filter that
+  // asks for it fails closed when the caller could not supply it. Answering
+  // "yes" would let an out-of-combat query silently match every unit.
+  if (filter.attacking !== undefined && (combat?.attacking ?? false) !== filter.attacking) {
+    return false;
+  }
+  if (filter.blocking !== undefined && (combat?.blocking ?? false) !== filter.blocking) {
+    return false;
+  }
+
+  // "X or Y": at least one alternative must hold, *in addition to* whatever the
+  // predicates above already required. An alternative cannot itself contain an
+  // `anyOf`, so this recursion is exactly one level deep by construction.
+  if (filter.anyOf) {
+    const matchesAny = filter.anyOf.some((alternative) =>
+      matchesCardFilter(definition, instance, alternative, combat),
+    );
+    if (!matchesAny) return false;
   }
 
   return true;
 }
 
-/** Unit instances the player controls, in slot order. */
+/** Unit instances the player controls, in arrival order. */
 export function unitsOf(state: MatchState, playerId: PlayerId): CardInstance[] {
-  return playerOf(state, playerId)
-    .units.filter((id): id is InstanceId => id !== null)
-    .map((id) => instanceOf(state, id));
+  return playerOf(state, playerId).units.map((id) => instanceOf(state, id));
 }
 
 export function relicsOf(state: MatchState, playerId: PlayerId): CardInstance[] {
   return playerOf(state, playerId).relics.map((id) => instanceOf(state, id));
 }
 
-export function freeUnitSlots(player: PlayerState): number[] {
-  const slots: number[] = [];
-  player.units.forEach((occupant, index) => {
-    if (occupant === null) slots.push(index);
-  });
-  return slots;
+/**
+ * Whether this instance is a unit standing on the battlefield, as opposed to a
+ * relic in the same zone.
+ *
+ * The controller's `units` list is the authority rather than a flag on the
+ * instance: with no slots there is no index to store, and one source of truth
+ * cannot drift from another. Answers `false` for anything off the battlefield.
+ */
+export function isUnitInPlay(state: MatchState, instance: CardInstance): boolean {
+  if (instance.zone !== 'battlefield') return false;
+  return playerOf(state, instance.controller).units.includes(instance.instanceId);
 }
 
 export function isMatchOver(state: MatchState): boolean {

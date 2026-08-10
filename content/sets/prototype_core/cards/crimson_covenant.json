@@ -1,0 +1,30 @@
+{
+  "id": "crimson_covenant",
+  "name": "Crimson Covenant",
+  "type": "spell",
+  "colorIdentity": ["black", "red"],
+  "cost": 3,
+  "unique": true,
+  "role": "removal",
+  "powerClass": "major",
+  "tags": ["curse", "burn"],
+  "effects": [
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": "all",
+          "selection": "automatic"
+        }
+      },
+      "amount": 2
+    }
+  ],
+  "displayText": "Deal 2 damage to each unit."
+}

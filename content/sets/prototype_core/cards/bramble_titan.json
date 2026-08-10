@@ -1,0 +1,13 @@
+{
+  "id": "bramble_titan",
+  "name": "Bramble Titan",
+  "type": "unit",
+  "colorIdentity": ["green"],
+  "cost": 6,
+  "attack": 7,
+  "health": 7,
+  "role": "finisher",
+  "powerClass": "major",
+  "tags": ["beast"],
+  "keywords": ["armored"]
+}

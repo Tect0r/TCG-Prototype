@@ -1,0 +1,22 @@
+{
+  "id": "call_the_watch",
+  "name": "Call the Watch",
+  "type": "spell",
+  "colorIdentity": ["white"],
+  "cost": 1,
+  "role": "enabler",
+  "powerClass": "minor",
+  "design": {
+    "faction": "guardian",
+    "identity": "Guardian Spell — Token Generator",
+    "power": "low"
+  },
+  "effects": [
+    {
+      "type": "create_token",
+      "tokenCardId": "guard_token",
+      "amount": 1
+    }
+  ],
+  "displayText": "Create one Guard Token."
+}

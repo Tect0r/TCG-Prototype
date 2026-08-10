@@ -1,0 +1,30 @@
+{
+  "id": "bone_harvester",
+  "name": "Bone Harvester",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 3,
+  "attack": 3,
+  "health": 3,
+  "role": "payoff",
+  "powerClass": "standard",
+  "tags": ["undead"],
+  "abilities": [
+    {
+      "id": "feast_on_remains",
+      "trigger": "on_survive_combat",
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "source"
+          },
+          "attack": 1,
+          "health": 0,
+          "duration": "permanent"
+        }
+      ]
+    }
+  ],
+  "displayText": "Whenever this unit survives combat, it gets +1/+0 permanently."
+}

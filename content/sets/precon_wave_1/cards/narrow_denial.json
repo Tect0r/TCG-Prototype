@@ -1,0 +1,28 @@
+{
+  "id": "narrow_denial",
+  "name": "Narrow Denial",
+  "type": "reaction",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "control",
+    "identity": "Control Reaction — Counter",
+    "power": "medium"
+  },
+  "displayText": "Play when an opponent plays a Spell costing 2 or less. Counter that Spell.",
+  "reaction": {
+    "windows": ["when_opponent_plays_spell"],
+    "subjectFilter": {
+      "cost": {
+        "max": 2
+      }
+    }
+  },
+  "effects": [
+    {
+      "type": "counter"
+    }
+  ]
+}

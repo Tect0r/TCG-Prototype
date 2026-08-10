@@ -1,0 +1,32 @@
+{
+  "id": "throwing_knife",
+  "name": "Throwing Knife",
+  "type": "spell",
+  "colorIdentity": [],
+  "cost": 1,
+  "role": "support",
+  "powerClass": "standard",
+  "design": {
+    "faction": "neutral",
+    "identity": "Neutral Spell — Interaction",
+    "power": "medium"
+  },
+  "effects": [
+    {
+      "type": "deal_damage",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "any",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1
+        }
+      },
+      "amount": 2
+    }
+  ],
+  "displayText": "Deal 2 damage to a Unit."
+}

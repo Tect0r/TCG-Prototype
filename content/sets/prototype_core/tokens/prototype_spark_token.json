@@ -1,0 +1,14 @@
+{
+  "id": "prototype_spark_token",
+  "name": "Spark",
+  "type": "token",
+  "colorIdentity": ["red"],
+  "cost": null,
+  "attack": 1,
+  "health": 1,
+  "collectible": false,
+  "role": "token",
+  "powerClass": "minor",
+  "tags": ["elemental"],
+  "keywords": ["swift"]
+}

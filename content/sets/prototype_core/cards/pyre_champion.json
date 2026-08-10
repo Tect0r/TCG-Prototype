@@ -1,0 +1,13 @@
+{
+  "id": "pyre_champion",
+  "name": "Pyre Champion",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 5,
+  "attack": 6,
+  "health": 4,
+  "role": "finisher",
+  "powerClass": "major",
+  "tags": ["warrior"],
+  "keywords": ["quick_strike"]
+}

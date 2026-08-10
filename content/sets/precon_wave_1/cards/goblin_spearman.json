@@ -1,0 +1,17 @@
+{
+  "id": "goblin_spearman",
+  "name": "Goblin Spearman",
+  "type": "unit",
+  "colorIdentity": ["red"],
+  "cost": 1,
+  "attack": 2,
+  "health": 1,
+  "tags": ["goblin"],
+  "role": "attacker",
+  "powerClass": "minor",
+  "design": {
+    "faction": "goblin",
+    "identity": "Swarm Unit — Simple",
+    "power": "low"
+  }
+}

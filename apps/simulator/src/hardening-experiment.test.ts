@@ -137,7 +137,7 @@ describe('declared environment changes', () => {
     const alsoRetargeted: CardDefinitionInput = {
       ...buffed,
       // The undeclared second change: a different keyword set.
-      keywords: ['swift'],
+      keywords: ['rush'],
     };
     const candidate = tinyEnvironment({
       id: 'declared_confounded',

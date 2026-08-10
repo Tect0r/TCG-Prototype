@@ -5,7 +5,7 @@
 ## Context
 
 Phase 4 shipped a laboratory that ran. An audit against
-[PHASE4_HARDENING.md](../../PHASE4_HARDENING.md) found that several of its
+[PHASE4_HARDENING.md](../PHASE4_HARDENING.md) found that several of its
 headline numbers did not measure what their names said, in ways that a passing
 test suite could not catch:
 
