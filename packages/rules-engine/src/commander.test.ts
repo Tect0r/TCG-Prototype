@@ -17,7 +17,7 @@ import {
   type StartOptions,
 } from './test-fixtures.js';
 import type { CardDefinitionInput } from '@tcg/card-data';
-import type { MatchState } from './schema/state.js';
+import type { MatchState, PlayerState } from './schema/state.js';
 
 /**
  * Deployable Commanders, and what happens when one dies (rule adjustment §2/§3).
@@ -250,17 +250,19 @@ describe('Commander defeat', () => {
   });
 
   it('raises the deployment cost by exactly one per defeat, and caps the total', () => {
-    const player = { ...(startMatch({ database }).players['player_1'] as never) } as {
-      commanderDefeats: number;
-      costModifiers: never[];
-    };
+    const seated = startMatch({ database }).players['player_1'];
+    if (!seated) throw new Error('player_1 was not seated');
+    // A real PlayerState, minus any cost modifiers: this is testing the
+    // defeat surcharge, and a stray reduction would silently absorb it.
+    const player: PlayerState = { ...seated, costModifiers: [] };
     const definition = database.getOrThrow('test_field_marshal');
 
-    const costAt = (defeats: number): number | null => {
-      player.commanderDefeats = defeats;
-      player.costModifiers = [];
-      return commanderDeployCost(player as never, definition, DEFAULT_RULES_CONFIG);
-    };
+    const costAt = (defeats: number): number | null =>
+      commanderDeployCost(
+        { ...player, commanderDefeats: defeats },
+        definition,
+        DEFAULT_RULES_CONFIG,
+      );
 
     expect(costAt(0)).toBe(2);
     expect(costAt(1)).toBe(3);

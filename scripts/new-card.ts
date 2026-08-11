@@ -18,6 +18,7 @@ const TEMPLATE_DIR = join(ROOT, 'docs/templates/cards');
 const DEFAULT_TEMPLATE: Record<CardType, string> = {
   unit: 'template_basic_unit',
   spell: 'template_basic_spell',
+  reaction: 'template_basic_reaction',
   relic: 'template_static_relic',
   commander: 'template_commander',
   token: 'template_token',

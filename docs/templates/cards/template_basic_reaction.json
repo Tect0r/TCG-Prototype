@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 2,
+  "id": "template_basic_reaction",
+  "name": "Template Basic Reaction",
+  "type": "reaction",
+  "colorIdentity": ["blue"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "reaction": {
+    "windows": ["after_attackers_declared", "before_blockers_declared"]
+  },
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": { "cardTypes": ["unit"] },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      },
+      "attack": 0,
+      "health": 2,
+      "duration": "end_of_combat"
+    }
+  ],
+  "displayText": "Play after attackers are declared. A friendly unit gets +0/+2 for that combat.",
+  "text": {
+    "flavor": "A Reaction is legal only inside one of the windows it lists. Narrow the windows to the moments the card is actually about — listing every window makes the card playable at times its text does not describe."
+  }
+}

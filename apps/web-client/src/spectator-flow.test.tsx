@@ -69,7 +69,7 @@ describe('AI Spectator', () => {
 
     const controls = screen.getByRole('group', { name: 'Playback controls' });
     expect(within(controls).getByRole('button', { name: 'Play' })).toBeTruthy();
-    
+
     expect(within(controls).getByRole('button', { name: 'Step' })).toBeTruthy();
     expect(within(controls).getByRole('button', { name: 'Restart' })).toBeTruthy();
     expect(within(controls).getByLabelText('Playback speed')).toBeTruthy();
@@ -103,9 +103,7 @@ describe('AI Spectator', () => {
     }
 
     await user.selectOptions(within(controls).getByLabelText('Information mode'), 'analysis');
-    await waitFor(() =>
-      expect(document.querySelectorAll('.spectator-seat__hand').length).toBe(4),
-    );
+    await waitFor(() => expect(document.querySelectorAll('.spectator-seat__hand').length).toBe(4));
     expect(document.querySelectorAll('.spectator-hand-card').length).toBeGreaterThan(0);
 
     await user.selectOptions(within(controls).getByLabelText('Information mode'), 'normal');
@@ -148,7 +146,11 @@ describe('AI Spectator', () => {
     const controls = screen.getByRole('group', { name: 'Playback controls' });
     await user.click(within(controls).getByRole('button', { name: 'Skip to result' }));
 
-    const summary = await screen.findByRole('region', { name: 'Match result' }, { timeout: 20_000 });
+    const summary = await screen.findByRole(
+      'region',
+      { name: 'Match result' },
+      { timeout: 20_000 },
+    );
     expect(within(summary).getByText(/Peak units/)).toBeTruthy();
     expect(within(summary).getByText(/Largest stack/)).toBeTruthy();
     expect(within(summary).getByText(/Cmdr defeats/)).toBeTruthy();

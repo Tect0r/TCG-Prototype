@@ -1,19 +1,23 @@
 # Remaining work
 
 The single list of what is still unbuilt, verified against the code on
-**2026-08-10**.
+**2026-08-11**.
 
 This file replaces two working documents that were deleted when it was written,
 `RULESET_UPDATE_PROGRESS.md` and `READINESS_PROGRESS.md`. Everything in them
 that was still true is carried below.
 
-Two specification files survive because they describe work that is genuinely
+Three specification files survive because they describe work that is genuinely
 unbuilt and this file only summarises them:
 
 - **`CLAUDE_RULESET_UPDATE.md`** — authoritative for the active milestone
-  (Precon Wave 1). The data, format, keyword, battlefield, Relic, blocking and
-  duration layers are built, plus the first three tranches of the effect
-  vocabulary.
+  (Precon Wave 1). The data, format, keyword, battlefield, Relic, blocking,
+  duration, Reaction and Commander layers are built, plus five tranches of the
+  effect vocabulary.
+- **`CLAUDE_AI_SPECTATOR_AND_RULE_ADJUSTMENTS.md`** — the later update that
+  **supersedes** parts of the ruleset update and of ADR 0016. Part 1's rule
+  adjustments are built in full; Part 2's AI spectator mode is built as an MVP.
+  Where the two specs disagree, this one wins.
 - **`PRE_CARD_AND_AGENT_TESTING_READINESS.md`** — the gate list for trusting
   automated balance findings. Gates A/B1/B4/C1/C2/C4/C5/G are done; B2, C3, E,
   F and H are not.
@@ -37,17 +41,23 @@ Design questions that must be answered before some of this can be built are in
 `npm run verify` **passes** end to end: `content:check` → `typecheck` → `lint` →
 `format:check` → `validate:content` → `test` → `build`.
 
-**860 tests across 53 files.** Production build clean. Run and confirmed on
-2026-08-10 after group A (A3, A4, A6, A9 and the first three tranches of A1), not
-quoted from an older log. The pre-milestone baseline was 780 in 47.
+**929 tests across 59 files.** Production build clean. Run and confirmed on
+2026-08-11, not quoted from an older log. The pre-milestone baseline was 780 in
+47; it was 860 in 53 after the first three tranches of A1.
+
+Worth recording, because it is the failure mode this file exists to prevent: the
+tree as committed **did not** pass `verify`. One `never`-typed spread in
+`commander.test.ts` failed `typecheck` and one unformatted spectator test failed
+`format:check`. Both are fixed. Neither was a behaviour bug, and neither would
+have been caught by running only `npm test`.
 
 ### 1.2 Content
 
 | Thing                        | Count | Note                                                      |
 | ---------------------------- | ----: | --------------------------------------------------------- |
 | `precon_wave_1` set cards    |   155 | status `draft`; includes 4 Commanders and 3 Tokens        |
-| — fully structured, playable |   122 | executable effects                                        |
-| — `implemented: false`       |    33 | each names the exact missing primitive                    |
+| — fully structured, playable |   137 | executable effects                                        |
+| — `implemented: false`       |    18 | each names the exact missing primitive                    |
 | `prototype_core` set cards   |    56 | status `development`; Phase 1–4 regression fixtures only  |
 | Precons                      |     4 | all 40 cards, all load and validate                       |
 | Formats                      |     2 | `precon_wave_1` (40/singleton), `development` (30/2-copy) |
@@ -97,6 +107,46 @@ Q-D split), **Untargetable by opponents** (in `targeting.ts` only, so
 non-targeting effects still reach it), **Newly Deployed** (a stored instance
 flag cleared at the controller's Ready Step, never a turn-number comparison).
 
+**Rule adjustments done** — every confirmed rule in
+`CLAUDE_AI_SPECTATOR_AND_RULE_ADJUSTMENTS.md` Part 1.
+
+- **§1 player vs Commander damage.** No card says "the enemy Commander" any
+  more; the ones that meant the opposing player say so. A deployed Commander's
+  Health and its controller's 20 are separate pools, and defeating the Commander
+  does not touch the player.
+- **§2 Commander defeat, return and escalating cost.** A defeated Commander goes
+  straight back to the Command Zone, `commanderDefeats` increments, and
+  `derive.ts#commanderDeployCost` charges `min(base + defeats × perDefeat, cap)`
+  — the cap on the **total**, which is the difference between "expensive" and
+  "unplayable". Both numbers are config dials (`commanderCostPerDefeat: 1`,
+  `commanderCostCap: 10`); the cap-of-11 experiment the spec names is
+  deliberately **not** enabled.
+- **§3 Commander ability zones.** `activeZone` on triggered, activated and static
+  abilities, defaulting to `battlefield`. The engine reads the field and never
+  the prose, and a Command-Zone ability has to say so in its data.
+- **§4 Newly Deployed.** Confirmed against the built behaviour, including
+  "becoming Ready does not remove it" and the Exhaust-cost half of the Rush
+  exemption, which `planCosts` was not checking before.
+- **§5 Reaction windows** and **§6 the per-turn Reaction discount** — see A2.
+- **§7 `deployed` vs `entersBattlefield`.** Two distinct triggers, deployment
+  firing both in a documented order and revival firing only the second. Nothing
+  was converted in bulk, as the spec requires; `npm run report:triggers` lists
+  every card using either form — including the 27 permanents whose top-level
+  `effects` are _implicit_ deploy behaviour — so the card-by-card review has a
+  worklist.
+- **§8 Token group targeting.** `groupByTokenDefinition` on a target selector:
+  the player picks a player and a Token definition, and every matching Token is
+  affected. It is a rules concept, not a UI one, so it behaves identically with
+  visual grouping switched off (which is still C3, unbuilt).
+
+**AI spectator mode done (MVP)** — `packages/spectator` plus the client screen.
+Deterministic 2–4 bot matches from a seed, event grouping, playback controls with
+the specified speed presets and an `Instant` option, Normal/Analysis information
+modes confined to spectator sessions, board-size and Commander/Reaction
+telemetry, and replay save/load with version identifiers. `apps/simulator`'s
+`spectate` command runs the same match headlessly. Playback timing lives in the
+presentation layer only — no delay reaches the engine, the bots or the telemetry.
+
 **Decisions already taken — do not re-litigate.** ADR 0016 records four answers
 from the project owner: "the enemy Commander" as a target means the opposing
 **player's** Health; `Newly Deployed` lasts until its controller's next Ready
@@ -123,10 +173,10 @@ worth doing first.
 
 ### A. Rules engine — the Precon Wave 1 ruleset
 
-#### A1. Effect and trigger vocabulary — **in progress: 45 of 78 cards done**
+#### A1. Effect and trigger vocabulary — **in progress: 60 of 78 cards done**
 
 `CLAUDE_RULESET_UPDATE.md` §15/§16 and readiness gates E1/E2. The foundation
-layer is built and the cards it unlocks are authored; the 33 that remain each
+layer is built and the cards it unlocks are authored; the 18 that remain each
 name a primitive that is still missing.
 
 **Built (2026-08-10, first tranche).**
@@ -271,24 +321,38 @@ rather than a "replace the amount" primitive. Exactly one ever resolves, because
 the first either creates five Goblins or creates nothing, and that decides the
 second's condition.
 
-**Still missing, 33 cards.** Regenerated from the content bundle so it cannot
+**Built (2026-08-10/11, fourth and fifth tranches).** The Reaction, Commander and
+entry-event layers, plus token group targeting — all four are rule-adjustment
+work and are described in §1.3 rather than repeated here. Between them they
+cleared 15 of the 33 cards this table used to list: the ten Reactions, the two
+Reactions-plus-cost-floor cards, the two token-stack cards, and
+`goblin_powder_runner`.
+
+**Still missing, 18 cards.** Regenerated from the content bundle so it cannot
 drift:
 
-| Cards | Missing primitive                                                   | Card IDs                                                                                                                                                                                                    |
-| ----: | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    10 | Reaction timing windows + the **counter** primitive (§11) — see A2  | `calculated_response`, `emergency_interposition`, `hold_the_line`, `mass_displacement`, `narrow_denial`, `orderly_withdrawal`, `phase_withdrawal`, `punish_the_assault`, `scatter`, `unbreakable_formation` |
-|     5 | **replacement effects** (enters Exhausted / prevent a Ready) (§15)  | `containment_array`, `goblin_warhorn_captain`, `stasis_keeper`, `stasis_seal`, `temporal_anchor`                                                                                                            |
-|     5 | optional "you may" instructions, with and without a cost (§15)      | `carrion_feeder`, `feed_the_pit`, `forbidden_offering`, `formation_tactician`, `pit_executioner`                                                                                                            |
-|     2 | Reaction cards plus the cost-reduction floor (§5, §11) — see A2/A8  | `chief_containment_scholar`, `nullmage_apprentice`                                                                                                                                                          |
-|     2 | Token-stack **group targeting** (§7) — ⚠ blocked on Q42             | `containment_pulse`, `total_recall`                                                                                                                                                                         |
-|     2 | delayed end-of-turn effects (§15)                                   | `fading_wisp`, `marked_for_death`                                                                                                                                                                           |
-|     1 | a value derived from the target's own statline (§15)                | `bastion_commander` — the "for that combat" half it also needed now exists                                                                                                                                  |
-|     1 | remove-from-game zone transition (§15)                              | `corpse_stitcher`                                                                                                                                                                                           |
-|     1 | "each player chooses" simultaneous selection (§16)                  | `equal_price`                                                                                                                                                                                               |
-|     1 | a target spanning Units and players in one selection (§16)          | `goblin_powder_runner` — "the enemy Commander" resolves to the opposing player per ADR 0016 Q-A                                                                                                             |
-|     1 | returning a card from discard **directly to the battlefield** (§15) | `grave_reassembly`                                                                                                                                                                                          |
-|     1 | "divide N damage among targets" selection (§16)                     | `mass_offering`                                                                                                                                                                                             |
-|     1 | a cost reduction computed from board state, applied in hand (§15)   | `stitched_abomination`                                                                                                                                                                                      |
+| Cards | Missing primitive                                                   | Card IDs                                                                                         |
+| ----: | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+|     5 | **replacement effects** (enters Exhausted / prevent a Ready) (§15)  | `containment_array`, `goblin_warhorn_captain`, `stasis_keeper`, `stasis_seal`, `temporal_anchor` |
+|     5 | optional "you may" instructions, with and without a cost (§15)      | `carrion_feeder`, `feed_the_pit`, `forbidden_offering`, `formation_tactician`, `pit_executioner` |
+|     2 | delayed end-of-turn effects (§15)                                   | `fading_wisp`, `marked_for_death`                                                                |
+|     1 | a value derived from the target's own statline (§15)                | `bastion_commander` — the "for that combat" half it also needed now exists                       |
+|     1 | remove-from-game zone transition (§15)                              | `corpse_stitcher`                                                                                |
+|     1 | "each player chooses" simultaneous selection (§16)                  | `equal_price`                                                                                    |
+|     1 | returning a card from discard **directly to the battlefield** (§15) | `grave_reassembly`                                                                               |
+|     1 | "divide N damage among targets" selection (§16)                     | `mass_offering`                                                                                  |
+|     1 | a cost reduction computed from board state, applied in hand (§15)   | `stitched_abomination`                                                                           |
+
+Two of those rows are one decision apart from each other. The five "you may"
+cards split into **an optional instruction** (a yes/no the chooser answers when
+the instruction resolves) and **an additional cost on the card itself** — "As an
+additional cost, sacrifice a Unit" on `feed_the_pit` and `forbidden_offering`,
+which is paid before the card is queued and is **not** refunded if the card is
+countered (§5). The second half is the harder one: `planCosts` currently picks
+what to sacrifice deterministically rather than asking, which is defensible for
+an activated ability and materially wrong for a card whose whole decision is
+_which_ unit you feed it. Making it interactive means a pending choice **before**
+the card commits, not a new cost type.
 
 Every new mechanic must ship the full readiness gate E3 contract, not just the
 engine half: schema + migration, engine resolution, legal-action/choice
@@ -298,28 +362,41 @@ simulator provenance/hash support, rules tests, explanation tests, pilot
 decision tests, telemetry reconciliation tests, glossary update, authoring
 template.
 
-#### A2. Reactions and bounded timing windows
+#### A2. Reactions and bounded timing windows — **done (2026-08-10)**
 
-Ruleset update §11. The card type and the window vocabulary **exist in the
-schema** — `CARD_TYPES` includes `reaction` and `REACTION_WINDOWS` lists
-`after_attackers_declared`, `before_blockers_declared`,
-`after_blockers_declared`, `after_combat_damage`, `after_combat`,
-`when_opponent_plays_spell`
-(`packages/card-data/src/schema/primitives.ts:57,65`).
+Ruleset update §11, superseded in its chaining details by rule adjustment §5/§6.
+`packages/rules-engine/src/reactions.ts`, 613 lines of tests in
+`reactions.test.ts`.
 
-The engine has none of it. `MATCH_PHASES`
-(`packages/rules-engine/src/schema/primitives.ts:34`) is still
-`setup, mulligan, turn_start, draw, main_1, declare_attackers, assign_blockers,
-resolve_combat, main_2, turn_end, complete` — no Reaction windows. No Reaction is
-playable, and the counter primitive does not exist. Countering must mean the card
-has no effect and moves to its owner's discard; a countered permanent never
-enters the battlefield.
+It is deliberately **not** a priority system and **not** a stack:
 
-The chaining policy is deliberately minimal, versioned and replaceable: one
-window per triggering event, in seat order starting from the non-active player;
-each eligible player plays at most one Reaction per window; a Reaction cannot be
-responded to; the window closes when everyone has acted or declined. **⚠ The
-final policy is an open decision — see Q39.**
+- **A window opens only when somebody could actually use it.** Eligibility is a
+  pure function of state — whose turn it is, who holds what, what they can pay —
+  which keeps it deterministic and replayable, and keeps a match containing no
+  Reactions running the exact phase machine it ran before Reactions existed.
+- **Priority goes clockwise from the active player**, which is rule adjustment
+  §5.3 overruling the ruleset update's "non-active player first". Each player may
+  play at most one Reaction per window, validated independently per window, and a
+  player who has acted is not offered priority again.
+- **Closing and resolving are separate states**, because a counter has to be able
+  to name what is still waiting beneath it. The pending queue drains LIFO, so a
+  counter played on top of a Spell resolves before the Spell it answers.
+- **Countering** means the card has no effect and moves to its owner's discard; a
+  countered permanent never enters the battlefield. `unlessPays` is offered to
+  the countered card's controller as an explicit `pay_additional_cost` choice,
+  and a controller who cannot afford it is never asked.
+- **The §6 discount** is a static ability (`reaction_discount`) rather than a
+  trigger, because it has to be true at the moment a cost is computed on a turn
+  that is usually not its controller's. `reactionDiscountSpent` resets at its
+  controller's own turn start and survives every opponent turn in between.
+
+`MATCH_PHASES` gained `reaction_window`, and `PendingReaction` /
+`ReactionWindowState` are in match state, so a window survives serialisation and
+reconnection like anything else.
+
+**Still open:** whether this is the _final_ chaining policy — Q39. The
+implementation is versioned and deliberately replaceable; it is not a
+constraint on the answer.
 
 #### A3. Unlimited battlefield — **done (2026-08-10)**
 
@@ -410,16 +487,30 @@ generated card notes say the replaced relic is not destroyed; the match log
 renders `relic_replaced`; and `#capacityBlocked` no longer reports a relic at
 the limit as blocked, because it is not.
 
-#### A5. Deployable Commanders
+#### A5. Deployable Commanders — **done (2026-08-10)**
 
-Ruleset update §10. The schema accepts a Commander `cost`; the engine cannot play
-one onto the battlefield. Playing a Commander pays its printed cost, moves it
-from the Commander zone to the battlefield, and marks it Newly Deployed. A
-deployed Commander behaves as a Unit for ready/exhaust, combat, targeting,
-damage and activated-ability costs unless a rule explicitly excludes Commanders.
+Ruleset update §10 plus rule adjustment §2/§3. 473 lines of tests in
+`commander.test.ts`.
 
-**Do not invent the defeat/recovery policy.** Model the zones and events cleanly
-and isolate the policy behind versioned configuration. ⚠ Still open — Q5.
+Playing a Commander pays its current deployment cost, moves it from the Command
+Zone to the battlefield and marks it Newly Deployed; from there it is a Unit for
+ready/exhaust, combat, targeting, damage and activated-ability costs. A
+Commander with `cost: null` is the older zone-only model and is rejected with
+`engine/commander_not_deployable` — the eight `prototype_core` Commanders are
+still that.
+
+**The lifecycle question Q5 was open in this file for a reason, and it has since
+been answered by rule adjustment §2 — not invented here.** A defeated Commander
+returns to the Command Zone immediately (not the discard, not a recovery zone),
+`commanderDefeats` increments, and the next deployment costs
+`min(base + defeats × commanderCostPerDefeat, commanderCostCap)`. The count
+persists for the match; moving the Commander between zones for any other reason
+does not increment it. Both numbers are dials. There is no Commander-defeat loss
+condition and none was added.
+
+The cap-of-11 experiment §2 mentions — which would make a Commander unplayable
+under a 10-Energy maximum — is reachable by config and is deliberately **not**
+enabled.
 
 #### A6. Exhausted Units must not block — **done (2026-08-10)**
 
@@ -445,20 +536,33 @@ would move every combat fixture was wrong — not because the change is small, b
 because nothing was pinning either half of the rule. `blocking.test.ts` (7 tests)
 exists as much to stop the old behaviour drifting back as to prove the new one.
 
-#### A7. Energy carryover needs a test
+#### A7. Energy carryover — **done (2026-08-11)**
 
-Ruleset update §5. Unspent Energy must survive opponents' turns so it can pay for
-Reactions, then be _replaced_ — not topped up — by the normal refill. The engine
-already behaves this way by omission: `flow.ts` only refills at the controller's
-own turn start and nothing zeroes Energy at turn end. **No test pins it.** Add
-the test alongside A2, when it first becomes observable.
+Ruleset update §5. Unspent Energy survives opponents' turns so it can pay for
+Reactions, then is _replaced_ — not topped up — by the normal refill. The engine
+already behaved this way by omission: `flow.ts` refills only at the controller's
+own turn start and nothing zeroes Energy at turn end.
 
-#### A8. Cost-reduction floor, and costs paid on counter
+`energy.test.ts` pins it in three tests, which is the whole point — a rule that
+holds because no code contradicts it is one deletion away from being wrong. The
+third test is the one that could not have been written before A2: a player
+answers an opponent's Spell with a Reaction paid for entirely out of Energy left
+over from their own previous turn, and the window opens **because** they can
+afford it.
 
-Ruleset update §5. Reductions must not take a cost below its printed minimum
-(normally 1 where one is specified), and additional costs such as sacrifice are
-paid even when the effect is later countered. Both become reachable only once
-cost reduction and countering exist — i.e. after A1 and A2.
+#### A8. Cost-reduction floor, and costs paid on counter — **partly done**
+
+Ruleset update §5.
+
+- **The floor is built.** `derive.ts#energyCostOf` takes a `floor` and applies
+  `Math.max(0, Math.min(floor, printed), reduced)` — so a reduction cannot take a
+  cost below its printed minimum, and a floor never _raises_ a cost that was
+  already cheaper. The §6 Reaction discount uses it.
+- **Costs paid on counter** is satisfied for the costs that exist: countering
+  refunds nothing, including a `unlessPays` payment. It is not fully exercised,
+  because the only additional cost a card can currently print is Energy — the
+  sacrifice half arrives with the two `feed_the_pit`-style cards in A1, and the
+  test belongs with them.
 
 #### A9. `while_source_present` — readiness gate B1 — **done (2026-08-10)**
 
@@ -529,13 +633,15 @@ validates against the universe rather than a format-scoped pool.
 `builder-flow.test.tsx` pins `DEVELOPMENT_DECK_FORMAT` — so the tests do not
 exercise the shipping configuration.
 
-#### C2. Precons are not surfaced anywhere in the UI
+#### C2. Precons are not surfaced in the **deck builder**
 
 Ruleset update §3 requires the deck builder to show precons as named starting
 points, let a user inspect one, copy it into an editable saved deck, and start a
-match with it. `grep -ri precon apps/web-client/src` returns **nothing**. The
-loader, validator and copy-to-deck logic all exist in `packages/deck/src/precon.ts`
-with 19 tests; only the UI is missing. There is also no format picker.
+match with it. The loader, validator and copy-to-deck logic all exist in
+`packages/deck/src/precon.ts` with 19 tests, and the **AI spectator setup screen
+now picks precons per seat** — so the data path is proven end to end in the
+client. The deck builder itself still has no precon browser, no "copy to my
+decks" action and no format picker.
 
 #### C3. Token visual grouping
 
@@ -547,28 +653,44 @@ must not touch engine state.** Becomes urgent with A3.
 
 ### D. Simulator and telemetry
 
-#### D1. The simulator cannot address a precon
+#### D1. The simulator addresses precons only through `spectate`
 
-Ruleset update §3 and §20. `grep -r precon apps/simulator/src` returns **zero
-matches**. §3 requires addressing a precon by permanent precon ID and adding
-simulator-source tests; §20 requires running every ordered precon matchup
-deterministically from a seed. D2 and F3 both depend on this.
+Ruleset update §3 and §20, **partly done**. `npm run simulate -- spectate
+--precons a,b,c,d` seats a precon per seat by permanent precon ID and runs the
+match deterministically from a seed, via `packages/spectator`'s
+`resolveSpectatorSetup`. §3's "address a precon by ID" is therefore satisfied for
+that one entry point.
+
+Still missing: an **experiment config** cannot name a precon, so batch runs, deck
+search and baseline-vs-candidate comparisons still cannot use them; and §20's
+"run every ordered precon matchup deterministically" has no runner and no test
+(that is F3).
 
 #### D2. Unlimited-board telemetry
 
-Ruleset update §17 and `CLAUDE.md` §13.6. None of it exists — the collector only
-computes `ownUnitsBefore` / `ownUnitsAfter`
-(`apps/simulator/src/telemetry/collector.ts:599-630`). Every match must record,
-and every report must surface:
+Ruleset update §17 and `CLAUDE.md` §13.6, **built in the wrong half of the
+codebase**. `packages/spectator/src/telemetry.ts` computes the whole list:
 
 - Unit count per player at the end of every round;
 - highest Unit count, highest non-Token Unit count, highest Token count, and
-  largest visual Token-stack size, per player;
+  largest visual Token-stack size, per player, plus Token count by definition;
 - longest turn and longest combat resolution;
 - declared attackers and blockers in the largest combat;
 - triggers and choices in the busiest turn;
 - whether the match reached a board stall;
-- how the largest board was reduced or answered.
+- how the largest board was reduced or answered
+  (`unitsLostAfterPeak` / `lossReasonsAfterPeak`).
+
+But it runs only for a **spectator** match. `apps/simulator`'s own collector
+still computes just `ownUnitsBefore` / `ownUnitsAfter`
+(`apps/simulator/src/telemetry/collector.ts:599-630`), so no batch experiment,
+deck search or comparison report carries any of it — and §13.6 says _every_ match
+records it and _every_ report surfaces it.
+
+The remaining work is therefore not "write the metrics" but "move them behind a
+shared collector both paths use", which is the version worth doing anyway: two
+implementations of "peak board size" would eventually disagree, and the whole
+point of the number is that it settles an argument.
 
 Removing the unit cap is a decision to be judged on evidence, and this is the
 evidence. **Do not restore a unit cap merely because boards get large** — evaluate
@@ -670,7 +792,9 @@ C1 shows the two ends really can diverge on which _pool_ they validate against.
 #### F3. Precon matchup smoke tests
 
 Ruleset update §19.14: all ordered pairs of the four precons across fixed seeds.
-Blocked on A1–A5 and D1.
+A2–A5 have landed and D1's `spectate` path can seat a precon per seat, so the
+only remaining blocker is A1: 18 cards in the four precons still do nothing, and
+a smoke matrix run against decks with holes in them measures the holes.
 
 #### F4. Text-vs-behaviour validation — §19.7, partly done
 
@@ -682,11 +806,12 @@ matches structured behaviour, and unimplemented cards are skipped entirely.
 
 #### G1. `README.md` and `docs/project-status.md`
 
-Neither has been updated for the ruleset update. `project-status.md` still says
-**"Phase 4 — Hardening in progress"** and quotes **679 tests in 42 files**; the
-real numbers are 780 in 47, and every hardening correction is implemented
-(§1.3). Readiness gate A2 is exactly this. `README.md` does not mention precons,
-the 40-card singleton format, or the two-format split.
+Neither has been updated for the ruleset update or the rule adjustments.
+`project-status.md` still says **"Phase 4 — Hardening in progress"** and quotes
+**679 tests in 42 files**; the real numbers are 929 in 59, and every hardening
+correction is implemented (§1.3). Readiness gate A2 is exactly this. `README.md`
+does not mention precons, the 40-card singleton format, the two-format split, AI
+spectator mode, or the `report:triggers` command.
 
 #### G2. `docs/open-questions.md` is stale
 
@@ -707,6 +832,24 @@ corrected warnings, remaining analytical limitations, and unresolved designer
 decisions. Fold it into `project-status.md` as part of G1 rather than reviving the
 deleted file.
 
+#### G5. `scripts/` is not type-checked by `verify`
+
+`npm run typecheck` is `--workspaces --if-present`, and the repository root is
+not a workspace — so the root `tsconfig.json`, whose only job is to cover
+`vitest.config.ts`, `eslint.config.js` and `scripts/**/*`, is never run. Running
+it by hand reports **10 errors**, one of which was a real defect:
+`new-card.ts`'s `DEFAULT_TEMPLATE` had no entry for the `reaction` card type, so
+`npm run cards:new --type reaction` would have read
+`docs/templates/cards/undefined.json`. That is fixed, and
+`template_basic_reaction.json` now exists.
+
+The rest are `noUncheckedIndexedAccess` and inference complaints in `new-card.ts`
+plus one in `report-triggers.ts` where `BUNDLED_CARD_SETS` resolves as `unknown[]`
+from the root project but correctly from the packages. Fixing them and adding
+the root project to the `typecheck` script is the actual work; it was left out of
+this pass because it is a build-chain change, not a milestone item, and it should
+land on its own.
+
 ---
 
 ## 3. Documentation that is currently wrong
@@ -714,18 +857,18 @@ deleted file.
 Separated from §2 because these are corrections to existing text, not new
 features, and each one actively misleads a reader today.
 
-| File                                                    | Says                                                   | Reality                                                                                                                                                  |
-| ------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/project-status.md`                                | Phase 4 "Hardening in progress"; 679 tests in 42 files | Hardening complete in code; 780 tests in 47 files                                                                                                        |
-| `docs/project-status.md:445`                            | Links `../PLAYER_HELP_AND_CONTENT_SYSTEM.md`           | **Broken link** — that file was deleted when the Help milestone shipped                                                                                  |
-| `docs/project-status.md:186,483`                        | Refers to `prototype_core.json` as the card file       | Replaced by per-card sources under `content/sets/`                                                                                                       |
-| `docs/open-questions.md` Q4                             | `guardian` and `resilient` are "deliberately inert"    | `guardian` is real engine behaviour with tests; only `resilient` is inert                                                                                |
-| `docs/open-questions.md` Q5                             | "Commanders never enter the battlefield"               | Ruleset update §10 makes them deployable; the question is now only the post-defeat lifecycle                                                             |
-| `docs/open-questions.md` Q19                            | "Is 30 cards / 2 copies right?"                        | Superseded — 40-card singleton, and format is data, not a constant                                                                                       |
-| `docs/open-questions.md` Q1, Q2, Q3, Q23, Q25, Q27, Q29 | all marked "not yet implemented"                       | All implemented — `continuous.ts`, `abilityCostSchema`, the discriminated `{kind:'source'}` / `player` / `players` targets, mandatory public-zone search |
-| `packages/help-content` glossary                        | ~~`unit_slot` is a real concept~~                      | ✅ Corrected by A3: the term is deleted and the token sentence now says every token is created                                                           |
-| `PRE_CARD_AND_AGENT_TESTING_READINESS.md` B3            | Commanders stay non-combat, hide their combat stats    | ⛔ **Superseded** by ruleset update §10. Implement §10, not B3.                                                                                          |
-| `PRE_CARD_AND_AGENT_TESTING_READINESS.md` Gate D        | The stop point: decide the first card batch            | ⛔ **Superseded** — the batch was authored directly as `cards.json`. Not a stop point.                                                                   |
+| File                                                    | Says                                                   | Reality                                                                                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/project-status.md`                                | Phase 4 "Hardening in progress"; 679 tests in 42 files | Hardening complete in code; 929 tests in 59 files                                                                                                          |
+| `docs/project-status.md:445`                            | Links `../PLAYER_HELP_AND_CONTENT_SYSTEM.md`           | **Broken link** — that file was deleted when the Help milestone shipped                                                                                    |
+| `docs/project-status.md:186,483`                        | Refers to `prototype_core.json` as the card file       | Replaced by per-card sources under `content/sets/`                                                                                                         |
+| `docs/open-questions.md` Q4                             | `guardian` and `resilient` are "deliberately inert"    | `guardian` is real engine behaviour with tests; only `resilient` is inert                                                                                  |
+| `docs/open-questions.md` Q5                             | "Commanders never enter the battlefield"               | ⛔ **Answered and built.** Deployable per ruleset update §10; the post-defeat lifecycle is rule adjustment §2 — return to Command Zone, +1 cost per defeat |
+| `docs/open-questions.md` Q19                            | "Is 30 cards / 2 copies right?"                        | Superseded — 40-card singleton, and format is data, not a constant                                                                                         |
+| `docs/open-questions.md` Q1, Q2, Q3, Q23, Q25, Q27, Q29 | all marked "not yet implemented"                       | All implemented — `continuous.ts`, `abilityCostSchema`, the discriminated `{kind:'source'}` / `player` / `players` targets, mandatory public-zone search   |
+| `packages/help-content` glossary                        | ~~`unit_slot` is a real concept~~                      | ✅ Corrected by A3: the term is deleted and the token sentence now says every token is created                                                             |
+| `PRE_CARD_AND_AGENT_TESTING_READINESS.md` B3            | Commanders stay non-combat, hide their combat stats    | ⛔ **Superseded** by ruleset update §10. Implement §10, not B3.                                                                                            |
+| `PRE_CARD_AND_AGENT_TESTING_READINESS.md` Gate D        | The stop point: decide the first card batch            | ⛔ **Superseded** — the batch was authored directly as `cards.json`. Not a stop point.                                                                     |
 
 ---
 
@@ -733,6 +876,16 @@ features, and each one actively misleads a reader today.
 
 Carried from the deleted progress logs. Each one cost real debugging time.
 
+- `npm test` passing is not `npm run verify` passing. The tree was committed with
+  a `typecheck` failure and a `format:check` failure and every test green. Run the
+  whole chain before calling a milestone done.
+- A code comment that promises a command is a promise. `effect.ts` cited
+  `npm run report:triggers` as the mechanism satisfying rule adjustment §7 for a
+  whole commit before the script existed; the script exists now.
+- A bundled set's identifier is `setId`, not `id` — `cardSetSchema` names it that
+  way and TypeScript will not stop you reading `set.id` off it, because index
+  access on the parsed object is permissive enough to yield `undefined` at
+  runtime instead.
 - `loadBundledCardData()` is the whole card **universe**, not a legal pool.
   Anything meaning "the cards you may actually play" must go through
   `formatCardPool(formatId)`. Several test failures were only this — and §C1

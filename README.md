@@ -87,6 +87,7 @@ npm run demo:match -- seed  # same match every time, for a given seed
 | `npm run lint`                | ESLint                                        |
 | `npm run format`              | Prettier, writing changes                     |
 | `npm run validate:content`    | Check cards, registries, rulebook, templates  |
+| `npm run report:triggers`     | List every card that acts when it arrives     |
 | `npm run verify`              | typecheck + lint + content + test + build     |
 | `npm run gen:placeholder-art` | Regenerate the placeholder PNGs in `assets/`  |
 
@@ -390,6 +391,14 @@ is stale). Scaffold a new one with
 needs a permanent `lowercase_snake_case` ID that must never change once it has
 shipped. Run `npm test` after editing — the card database is validated by the
 test suite, and the bundled set is asserted to load with zero warnings.
+
+A card that does something when it arrives on the battlefield can say so three
+ways: an explicit `on_deployed` ability (played for its cost), an explicit
+`on_entered_battlefield` ability (any arrival, including revival), or top-level
+`effects` on a permanent, which is implicit deploy behaviour and easy to miss.
+`npm run report:triggers` lists all three, per set, with each card's text — the
+worklist for reviewing which of them revival should re-fire. Nothing is converted
+in bulk; each card is judged on its own intent.
 
 The development set is generic on purpose: it exists to exercise every filter
 and validation path, not to establish lore, factions or art direction.
