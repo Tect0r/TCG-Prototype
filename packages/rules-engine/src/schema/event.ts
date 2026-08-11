@@ -368,7 +368,14 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     resolutionId: z.string(),
     effectType: z.string(),
     effectIndex: z.number().int().min(0),
-    reason: z.enum(['no_legal_target', 'unsupported', 'condition_unmet']),
+    /**
+     * `declined` is an optional instruction its controller said no to. A
+     * separate reason from `condition_unmet` because the two are different
+     * facts about the match — one is a board state, the other is a decision a
+     * player made — and a log that conflated them could not tell a reviewer
+     * whether a card was bad or a pilot was wrong.
+     */
+    reason: z.enum(['no_legal_target', 'unsupported', 'condition_unmet', 'declined']),
   }),
 
   event('choice_requested', {

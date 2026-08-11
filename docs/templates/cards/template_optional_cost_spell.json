@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "id": "template_optional_cost_spell",
+  "name": "Template Optional Cost Spell",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "minor",
+  "tags": ["plan"],
+  "displayText": "As an additional cost, sacrifice a Unit. Draw a card. You may draw a second card; if you do, discard a card.",
+  "additionalCosts": [
+    {
+      "type": "sacrifice",
+      "amount": 1,
+      "filter": {
+        "cardTypes": ["unit"]
+      }
+    }
+  ],
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 1
+    },
+    {
+      "type": "draw",
+      "optional": true,
+      "player": "self",
+      "amount": 1
+    },
+    {
+      "type": "discard",
+      "condition": {
+        "kind": "previous_step"
+      },
+      "player": "self",
+      "amount": 1,
+      "selection": "player_choice"
+    }
+  ],
+  "text": {
+    "summary": "The three ways a card can ask a player something: a cost you pay before it resolves, a step you may decline, and a step that only happens if you did not decline.",
+    "effectExplanations": [
+      "Unconditional, and the baseline the two optional steps are compared against.",
+      "`optional` asks a yes/no when the step resolves. Answer no and the step is skipped; the rest of the card still resolves.",
+      "`previous_step` reads whether the instruction *immediately* before it changed anything. It is the only thing \"if you do\" means, so it can never be the first instruction."
+    ],
+    "notes": [
+      "The sacrifice is an additional cost, not a first instruction, and the difference is the timing: it is paid before an opponent's Reaction window opens, and countering this spell does not give it back.",
+      "A cost with exactly as many legal payers as it needs is settled without asking — an offer with one possible answer is a pause, not a choice."
+    ]
+  }
+}

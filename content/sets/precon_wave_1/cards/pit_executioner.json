@@ -13,7 +13,50 @@
     "identity": "Sacrifice Unit — Removal",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
-  "displayText": "When deployed, you may sacrifice another Unit. If you do, defeat an enemy Unit costing 2 or less."
+  "displayText": "When deployed, you may sacrifice another Unit. If you do, defeat an enemy Unit costing 2 or less.",
+  "effects": [
+    {
+      "type": "sacrifice",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "optional": true,
+          "excludeSource": true
+        }
+      }
+    },
+    {
+      "type": "destroy",
+      "condition": {
+        "kind": "previous_step"
+      },
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"],
+            "cost": {
+              "max": 2
+            }
+          },
+          "count": 1,
+          "selection": "player_choice"
+        }
+      }
+    }
+  ],
+  "text": {
+    "notes": [
+      "Declining is choosing no unit to sacrifice, which is always legal. Feeding the pit and then finding no enemy unit costing 2 or less is not: the sacrifice is already paid, and the second step simply finds nothing."
+    ]
+  }
 }

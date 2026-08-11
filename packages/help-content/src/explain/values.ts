@@ -235,6 +235,10 @@ export function describeCondition(condition: ConditionDefinition): string {
     return condition.expected ? 'it is your turn' : "it is an opponent's turn";
   }
 
+  if (condition.kind === 'previous_step') {
+    return condition.expected ? 'you did' : 'you did not';
+  }
+
   if (condition.kind === 'source_state') {
     const state =
       condition.state === 'newly_deployed' ? 'arrived this turn' : `is ${condition.state}`;
@@ -262,5 +266,12 @@ export function describeCondition(condition: ConditionDefinition): string {
 
 /** The "if …" clause a gated instruction or trigger carries, or nothing. */
 export function conditionClause(condition: ConditionDefinition | undefined): string {
-  return condition ? `, but only if ${describeCondition(condition)}` : '';
+  if (!condition) return '';
+  // "…, but only if you did" is grammatical and reads like a lawyer. The card
+  // idiom this gate exists to express is "If you do, …", so the clause keeps its
+  // own phrasing rather than being forced through the generic one.
+  if (condition.kind === 'previous_step') {
+    return condition.expected ? ', if you did' : ', if you did not';
+  }
+  return `, but only if ${describeCondition(condition)}`;
 }

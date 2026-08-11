@@ -90,7 +90,7 @@ const RENDERERS: RendererTable = {
   draw: (effect) => ({
     text: `${describePlayerSelector(effect.player)} ${
       playerSelectorIsPlural(effect.player) ? 'draw' : effect.player === 'self' ? 'draw' : 'draws'
-    } ${valueIsFixed(effect.amount) ? quantify(nominalValue(effect.amount), 'card') : `${describeValue(effect.amount)} cards`}${conditionClause(effect.condition)}`,
+    } ${valueIsFixed(effect.amount) ? quantify(nominalValue(effect.amount), 'card') : `${describeValue(effect.amount)} cards`}`,
     notes:
       !valueIsFixed(effect.amount) || nominalValue(effect.amount) > 1
         ? ['cards are drawn one at a time, so an empty deck ends the match mid-draw']
@@ -109,7 +109,7 @@ const RENDERERS: RendererTable = {
           ? 'at random'
           : `from the front of ${whose} hand`;
     return {
-      text: `${who} ${verb} ${valueIsFixed(effect.amount) ? quantify(nominalValue(effect.amount), 'card') : `${describeValue(effect.amount)} cards`} ${how}${conditionClause(effect.condition)}`,
+      text: `${who} ${verb} ${valueIsFixed(effect.amount) ? quantify(nominalValue(effect.amount), 'card') : `${describeValue(effect.amount)} cards`} ${how}`,
       notes: ['a player holding fewer cards than that discards their whole hand'],
     };
   },
@@ -117,7 +117,7 @@ const RENDERERS: RendererTable = {
   deal_damage: (effect, options) => {
     const target = describeTarget(effect.target, options.sourceNoun);
     return {
-      text: `deal ${amountPhrase(effect.amount)} damage to ${target}${conditionClause(effect.condition)}`,
+      text: `deal ${amountPhrase(effect.amount)} damage to ${target}`,
       notes: targetNotes(effect.target),
     };
   },
@@ -139,7 +139,7 @@ const RENDERERS: RendererTable = {
     text: `give ${describeTarget(effect.target, options.sourceNoun)} ${statChange(
       effect.attack,
       effect.health,
-    )} ${durationClause(effect.duration)}${conditionClause(effect.condition)}`,
+    )} ${durationClause(effect.duration)}`,
     notes: [
       ...targetNotes(effect.target),
       ...(nominalValue(effect.health) < 0
@@ -187,9 +187,7 @@ const RENDERERS: RendererTable = {
       ? quantify(nominalValue(effect.amount), noun)
       : `${describeValue(effect.amount)} ${noun}s`;
     return {
-      text:
-        (effect.controller === 'self' ? `create ${howMany}` : `${controller} creates ${howMany}`) +
-        conditionClause(effect.condition),
+      text: effect.controller === 'self' ? `create ${howMany}` : `${controller} creates ${howMany}`,
       notes: [
         'tokens are always created — the battlefield has no size limit',
         ...(definition && definition.effects.length > 0
@@ -350,15 +348,45 @@ const RENDERERS: RendererTable = {
  * Deliberately not a `switch` with a default branch: a default is exactly what
  * would let an unhandled effect type render as a plausible-sounding sentence.
  */
+/** Sentence subjects that are somebody other than the player being asked. */
+const THIRD_PARTY_SUBJECT = /^(each |all |your opponent|the opponent)/i;
+
+/**
+ * Says "you may" about an already-rendered instruction.
+ *
+ * Applied once here rather than threaded through twenty renderers — the same
+ * reason `optional` is a field on the gate rather than a wrapper effect. The
+ * modal has to attach to the sentence's subject, and the renderers produce
+ * three shapes:
+ *
+ *  - **"you draw one card"** — the subject is already there, so the modal slots
+ *    in behind it rather than in front of it.
+ *  - **"deal three damage to a unit"** — imperative, and the modal goes in
+ *    front.
+ *  - **"each opponent discards a card"** — a third party. "You may each
+ *    opponent discards" is not English, so the decision is stated after the
+ *    sentence instead of in front of it.
+ */
+function optionalPhrase(text: string): string {
+  if (/^you\s/i.test(text)) return `you may ${text.slice(4)}`;
+  if (THIRD_PARTY_SUBJECT.test(text)) return `${text}, if you choose to`;
+  return `you may ${text}`;
+}
+
 export function explainEffect(
   effect: EffectDefinition,
   options: ExplainOptions = {},
 ): EffectExplanation {
   const render = RENDERERS[effect.type] as Renderer<EffectType>;
   const result = render(effect, options);
+  // Both gates are applied here rather than by each renderer. `condition` used
+  // to be a renderer's own business and only five of the nineteen remembered
+  // it, so fourteen effect types were quietly dropping their "if" from the
+  // generated prose — a card that reads as unconditional and is not.
+  const phrased = effect.optional ? optionalPhrase(result.text) : result.text;
   return {
     type: effect.type,
-    text: sentence(result.text),
+    text: sentence(`${phrased}${conditionClause(effect.condition)}`),
     notes: result.notes ?? [],
   };
 }

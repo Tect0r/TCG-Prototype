@@ -347,6 +347,21 @@ export const resolutionItemSchema = z.strictObject({
    * paused item resumes exactly where it stopped after a JSON round trip.
    */
   selections: z.record(z.string(), z.array(z.string())),
+  /**
+   * Whether the instruction before `effectIndex` actually changed the match.
+   *
+   * The whole of "**If you do**, …". Measured by whether that step emitted an
+   * event, not by whether the engine reached it: a declined "you may
+   * sacrifice", a sacrifice with nothing to sacrifice, and a `ready` on a unit
+   * that was already ready all leave the board untouched, and a player reads
+   * every one of them as "you did not".
+   *
+   * On the item rather than derived from the log because the log is append-only
+   * and shared — asking it "did step 3 of this item do anything" after later
+   * items have written to it would mean scanning backwards for a boundary that
+   * is not recorded.
+   */
+  previousStepActed: z.boolean().default(false),
   /** Sequence number of the event that created this item, for causal logs. */
   causeSequence: z.number().int().min(0).nullable(),
   /**

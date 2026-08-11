@@ -37,6 +37,12 @@ export interface TargetScope {
   readonly sourceInstanceId: InstanceId | null;
   /** The card a triggered ability fired about, for `trigger_subject` targets. */
   readonly triggerSubjectInstanceId?: InstanceId | null;
+  /**
+   * Whether the preceding instruction changed the match, for an "if you do"
+   * gate. Nothing in targeting reads it; it rides along because the same scope
+   * object is handed to the condition evaluator.
+   */
+  readonly previousStepActed?: boolean;
 }
 
 /**

@@ -459,7 +459,7 @@ export function collectTriggers(ctx: MatchContext, events: readonly GameEvent[])
 
 export type EnqueueInput = Omit<
   ResolutionItem,
-  'id' | 'effectIndex' | 'selections' | 'triggerSubjectInstanceId'
+  'id' | 'effectIndex' | 'selections' | 'previousStepActed' | 'triggerSubjectInstanceId'
 > & {
   /** Defaults to `null`: only a triggered ability has a subject. */
   readonly triggerSubjectInstanceId?: InstanceId | null;
@@ -475,6 +475,7 @@ export function enqueue(ctx: MatchContext, input: EnqueueInput): ResolutionItem 
     id,
     effectIndex: 0,
     selections: {},
+    previousStepActed: false,
   };
   ctx.state.queue.push(item);
   return item;

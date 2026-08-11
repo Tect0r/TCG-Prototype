@@ -51,6 +51,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -80,6 +81,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -108,6 +110,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -153,6 +156,7 @@
               "remainder": "unchanged"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -182,6 +186,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "keep_the_banner",
@@ -267,6 +272,7 @@
               "duration": "permanent"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -294,6 +300,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "issue_barrier",
@@ -372,6 +379,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -403,6 +411,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -435,6 +444,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -487,6 +497,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -516,6 +527,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "scribe",
@@ -568,6 +580,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "first_offering",
@@ -624,6 +637,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -672,6 +686,7 @@
               "amount": 1
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -703,6 +718,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -730,6 +746,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "read_the_book",
@@ -793,6 +810,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -824,6 +842,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -856,6 +875,7 @@
               "unlessPays": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -895,6 +915,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -929,6 +950,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -958,12 +980,49 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
-          "activatedAbilities": [],
+          "activatedAbilities": [
+            {
+              "id": "feed",
+              "name": "Feed",
+              "activeZone": "battlefield",
+              "costs": [
+                {
+                  "type": "sacrifice",
+                  "amount": 1,
+                  "filter": {
+                    "cardTypes": [
+                      "unit"
+                    ]
+                  },
+                  "excludeSource": true,
+                  "selection": "player_choice"
+                }
+              ],
+              "usageLimit": "once_per_turn",
+              "timing": "main_phase",
+              "effects": [
+                {
+                  "type": "modify_stats",
+                  "target": {
+                    "kind": "source"
+                  },
+                  "attack": 2,
+                  "health": 0,
+                  "duration": "end_of_turn"
+                }
+              ]
+            }
+          ],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
-          "displayText": "Once each turn, you may sacrifice another Unit. If you do, this Unit gains +2 ATK this turn."
+          "implemented": true,
+          "displayText": "Once each turn, you may sacrifice another Unit. If you do, this Unit gains +2 ATK this turn.",
+          "text": {
+            "notes": [
+              "\"You may\" is the activation itself: nothing happens unless you choose to use the ability, and the sacrifice is its cost. Paying it defeats the unit you pick, so it triggers anything that watches for a friendly unit being sacrificed or defeated."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -990,6 +1049,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [
@@ -1038,6 +1098,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1068,6 +1129,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1116,6 +1178,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1166,6 +1229,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1215,6 +1279,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1244,6 +1309,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1281,6 +1347,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "wagon_death",
@@ -1324,6 +1391,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "counteroffensive",
@@ -1403,6 +1471,7 @@
               "amount": 3
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1432,6 +1501,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "harvest_the_fallen",
@@ -1487,6 +1557,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "witness",
@@ -1558,6 +1629,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1620,6 +1692,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1649,6 +1722,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "doomed_death",
@@ -1735,6 +1809,7 @@
               "duration": "end_of_combat"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1775,6 +1850,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1802,6 +1878,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1832,6 +1909,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1859,12 +1937,48 @@
             "identity": "Sacrifice Spell — Removal",
             "power": "high"
           },
-          "effects": [],
+          "effects": [
+            {
+              "type": "destroy",
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "opponent",
+                  "filter": {
+                    "cardTypes": [
+                      "unit"
+                    ],
+                    "cost": {
+                      "max": 3
+                    }
+                  },
+                  "count": 1,
+                  "selection": "player_choice",
+                  "chooser": "self",
+                  "optional": false,
+                  "excludeSource": false
+                }
+              }
+            }
+          ],
+          "additionalCosts": [
+            {
+              "type": "sacrifice",
+              "amount": 1,
+              "filter": {
+                "cardTypes": [
+                  "unit"
+                ]
+              },
+              "excludeSource": false,
+              "selection": "player_choice"
+            }
+          ],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
+          "implemented": true,
           "displayText": "As an additional cost, sacrifice a Unit. Defeat an enemy Unit costing 3 or less."
         },
         {
@@ -1890,6 +2004,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1936,6 +2051,7 @@
               "remainder": "bottom"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -1965,6 +2081,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "field_dressing",
@@ -2012,12 +2129,30 @@
             "identity": "Sacrifice Spell — Card Advantage",
             "power": "high"
           },
-          "effects": [],
+          "effects": [
+            {
+              "type": "draw",
+              "player": "self",
+              "amount": 2
+            }
+          ],
+          "additionalCosts": [
+            {
+              "type": "sacrifice",
+              "amount": 1,
+              "filter": {
+                "cardTypes": [
+                  "unit"
+                ]
+              },
+              "excludeSource": false,
+              "selection": "player_choice"
+            }
+          ],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
+          "implemented": true,
           "displayText": "As an additional cost, sacrifice a Unit. Draw two cards."
         },
         {
@@ -2063,6 +2198,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -2092,12 +2228,43 @@
             "power": "high"
           },
           "effects": [],
-          "abilities": [],
+          "additionalCosts": [],
+          "abilities": [
+            {
+              "id": "reform",
+              "trigger": "on_survive_combat",
+              "activeZone": "battlefield",
+              "scope": {
+                "controller": "self",
+                "filter": {
+                  "keywords": [
+                    "guardian"
+                  ]
+                },
+                "excludeSource": true,
+                "excludeSelfCaused": false
+              },
+              "limit": "each_turn",
+              "effects": [
+                {
+                  "type": "ready",
+                  "optional": true,
+                  "target": {
+                    "kind": "trigger_subject"
+                  }
+                }
+              ]
+            }
+          ],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs an optional \"you may\" instruction — a yes/no choice with no cost attached (ruleset update §15); the blocker-scoped trigger it also needs now exists",
-          "displayText": "Once each turn, after another friendly Guardian survives combat, you may Ready that Guardian. It cannot retroactively block another attacker from the same attack declaration."
+          "implemented": true,
+          "displayText": "Once each turn, after another friendly Guardian survives combat, you may Ready that Guardian. It cannot retroactively block another attacker from the same attack declaration.",
+          "text": {
+            "notes": [
+              "Readying a Guardian after combat does not put it back into that combat. Blockers were already assigned, and a unit readied afterwards cannot retroactively block another attacker from the same declaration — it is ready for the next one."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -2120,6 +2287,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "raise_the_gate",
@@ -2183,6 +2351,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -2214,6 +2383,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -2245,6 +2415,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "rally_the_banner",
@@ -2330,6 +2501,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -2361,6 +2533,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "breed",
@@ -2411,6 +2584,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -2441,6 +2615,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "caller_death",
@@ -2486,6 +2661,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [
@@ -2537,6 +2713,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "drum_the_charge",
@@ -2628,6 +2805,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "break_the_horde",
@@ -2692,6 +2870,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [
             {
@@ -2765,6 +2944,7 @@
               "remainder": "bottom"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -2803,6 +2983,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -2834,6 +3015,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "pile_in",
@@ -2898,6 +3080,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "powder_blast",
@@ -2960,6 +3143,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -2986,6 +3170,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "raise_the_standard",
@@ -3082,6 +3267,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3113,6 +3299,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "multiply_the_mob",
@@ -3169,6 +3356,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3206,6 +3394,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3237,6 +3426,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3267,6 +3457,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3297,6 +3488,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "tally",
@@ -3352,6 +3544,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3384,6 +3577,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3411,6 +3605,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "multiply_the_mob",
@@ -3468,6 +3663,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [
             {
@@ -3535,6 +3731,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3565,6 +3762,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3595,6 +3793,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [
             {
@@ -3616,7 +3815,9 @@
                     "cardTypes": [
                       "unit"
                     ]
-                  }
+                  },
+                  "excludeSource": false,
+                  "selection": "player_choice"
                 }
               ],
               "usageLimit": "once_per_turn",
@@ -3657,6 +3858,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "read_the_bones",
@@ -3707,6 +3909,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3757,6 +3960,7 @@
               "remainder": "unchanged"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3790,6 +3994,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3817,6 +4022,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3865,6 +4071,7 @@
               "duration": "end_of_combat"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3909,6 +4116,7 @@
               "selection": "player_choice"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3941,6 +4149,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -3970,6 +4179,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "last_experiment",
@@ -4021,6 +4231,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "grow",
@@ -4087,6 +4298,7 @@
               "duration": "end_of_turn"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4114,6 +4326,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4162,6 +4375,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4195,6 +4409,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4261,6 +4476,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4290,6 +4506,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "mourn",
@@ -4345,6 +4562,7 @@
               "unlessPays": 0
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4384,6 +4602,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [
@@ -4437,6 +4656,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4464,6 +4684,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "observe",
@@ -4527,6 +4748,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4578,6 +4800,7 @@
               "amount": 1
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4613,6 +4836,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [
@@ -4679,6 +4903,7 @@
               "remainder": "bottom"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4733,6 +4958,7 @@
               "amount": 1
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4771,13 +4997,66 @@
             "identity": "Sacrifice Unit — Removal",
             "power": "high"
           },
-          "effects": [],
+          "effects": [
+            {
+              "type": "sacrifice",
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "self",
+                  "filter": {
+                    "cardTypes": [
+                      "unit"
+                    ]
+                  },
+                  "count": 1,
+                  "selection": "player_choice",
+                  "chooser": "self",
+                  "optional": true,
+                  "excludeSource": true
+                }
+              }
+            },
+            {
+              "type": "destroy",
+              "condition": {
+                "kind": "previous_step",
+                "expected": true
+              },
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "opponent",
+                  "filter": {
+                    "cardTypes": [
+                      "unit"
+                    ],
+                    "cost": {
+                      "max": 2
+                    }
+                  },
+                  "count": 1,
+                  "selection": "player_choice",
+                  "chooser": "self",
+                  "optional": false,
+                  "excludeSource": false
+                }
+              }
+            }
+          ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
-          "displayText": "When deployed, you may sacrifice another Unit. If you do, defeat an enemy Unit costing 2 or less."
+          "implemented": true,
+          "displayText": "When deployed, you may sacrifice another Unit. If you do, defeat an enemy Unit costing 2 or less.",
+          "text": {
+            "notes": [
+              "Declining is choosing no unit to sacrifice, which is always legal. Feeding the pit and then finding no enemy unit costing 2 or less is not: the sacrifice is already paid, and the second step simply finds nothing."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -4817,6 +5096,7 @@
               "remainder": "bottom"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4864,6 +5144,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4919,6 +5200,7 @@
               "toZone": "deck"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -4953,6 +5235,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5023,6 +5306,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5056,6 +5340,7 @@
               "amount": 3
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5092,6 +5377,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5126,6 +5412,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5155,6 +5442,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "retaliate",
@@ -5223,6 +5511,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5276,6 +5565,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5317,6 +5607,7 @@
               "selection": "player_choice"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5346,6 +5637,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [
             {
@@ -5367,7 +5659,9 @@
                     "cardTypes": [
                       "unit"
                     ]
-                  }
+                  },
+                  "excludeSource": true,
+                  "selection": "player_choice"
                 }
               ],
               "usageLimit": "unlimited",
@@ -5445,6 +5739,7 @@
               "duration": "end_of_turn"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5506,6 +5801,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5559,6 +5855,7 @@
               "remainder": "bottom"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5600,6 +5897,7 @@
               "selection": "player_choice"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5629,6 +5927,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5682,6 +5981,7 @@
               "duration": "until_your_next_turn"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5734,6 +6034,7 @@
               "duration": "permanent"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5763,6 +6064,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [
@@ -5812,6 +6114,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "collect",
@@ -5861,6 +6164,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "stoke_the_furnace",
@@ -5935,6 +6239,7 @@
               "duration": "end_of_turn"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -5964,6 +6269,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "brace",
@@ -6047,6 +6353,7 @@
               "duration": "end_of_turn"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6076,6 +6383,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6104,6 +6412,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6132,6 +6441,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6186,6 +6496,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6217,6 +6528,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6272,6 +6584,7 @@
               "duration": "end_of_turn"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6328,6 +6641,7 @@
               "remainder": "bottom"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6355,6 +6669,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6387,6 +6702,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6433,6 +6749,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6482,6 +6799,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6532,6 +6850,7 @@
               "duration": "end_of_combat"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6584,6 +6903,7 @@
               "remainder": "unchanged"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6613,6 +6933,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6641,6 +6962,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6669,6 +6991,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6695,6 +7018,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6723,6 +7047,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "brace",
@@ -6771,6 +7096,7 @@
             "power": "low"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6802,6 +7128,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -6831,6 +7158,7 @@
             "power": "high"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [
@@ -6878,6 +7206,7 @@
             "power": "medium"
           },
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "keep_watch",
@@ -6943,6 +7272,7 @@
           "role": "payoff",
           "powerClass": "major",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "grove_renewal",
@@ -7007,6 +7337,7 @@
               "remainder": "unchanged"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7058,6 +7389,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7084,6 +7416,7 @@
           "role": "payoff",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "feast_on_remains",
@@ -7129,6 +7462,7 @@
           "role": "finisher",
           "powerClass": "major",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7177,6 +7511,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7203,6 +7538,7 @@
           "role": "payoff",
           "powerClass": "major",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "endless_notes",
@@ -7242,6 +7578,7 @@
           "role": "attacker",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7277,6 +7614,7 @@
               "amount": 1
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7329,6 +7667,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7356,6 +7695,7 @@
           "role": "support",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "last_rites",
@@ -7391,6 +7731,7 @@
           "role": "support",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "channel",
@@ -7439,6 +7780,7 @@
               "amount": 3
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7468,6 +7810,7 @@
           "role": "attacker",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7494,6 +7837,7 @@
           "role": "attacker",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7521,6 +7865,7 @@
           "role": "attacker",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7550,6 +7895,7 @@
           "role": "finisher",
           "powerClass": "major",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7586,6 +7932,7 @@
               "amount": 1
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7618,6 +7965,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7642,6 +7990,7 @@
           "role": "removal",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "creeping_miasma",
@@ -7692,6 +8041,7 @@
           "role": "attacker",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "final_blast",
@@ -7748,6 +8098,7 @@
           "role": "token",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -7776,6 +8127,7 @@
           "role": "payoff",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "grim_dividend",
@@ -7829,6 +8181,7 @@
           "role": "enabler",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "steady_study",
@@ -7897,6 +8250,7 @@
           "role": "build_around",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "arcing_plan",
@@ -7943,6 +8297,7 @@
           "role": "support",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "grove_tending",
@@ -7995,6 +8350,7 @@
           "role": "enabler",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "chart_the_silt",
@@ -8038,6 +8394,7 @@
           "role": "attacker",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "opening_volley",
@@ -8097,6 +8454,7 @@
           "role": "blocker",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "muster",
@@ -8139,6 +8497,7 @@
           "role": "support",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "final_tithe",
@@ -8178,6 +8537,7 @@
           "role": "support",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8221,6 +8581,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8247,6 +8608,7 @@
           "role": "blocker",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8272,6 +8634,7 @@
           "role": "attacker",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8295,6 +8658,7 @@
           "role": "token",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8320,6 +8684,7 @@
           "role": "token",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8347,6 +8712,7 @@
           "role": "token",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8374,6 +8740,7 @@
           "role": "finisher",
           "powerClass": "major",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8397,6 +8764,7 @@
           "role": "support",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [
@@ -8462,6 +8830,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8509,6 +8878,7 @@
               "amount": 3
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8544,6 +8914,7 @@
               "controller": "self"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8599,6 +8970,7 @@
               "amount": 1
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8642,6 +9014,7 @@
               "duration": "permanent"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8670,6 +9043,7 @@
               "amount": 1
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8696,6 +9070,7 @@
           "role": "blocker",
           "powerClass": "minor",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8725,6 +9100,7 @@
           "role": "blocker",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8771,6 +9147,7 @@
               }
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8803,6 +9180,7 @@
               "amount": 1
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8830,6 +9208,7 @@
           "role": "blocker",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8853,6 +9232,7 @@
           "role": "attacker",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "scatter_parts",
@@ -8909,6 +9289,7 @@
               "duration": "end_of_turn"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -8933,6 +9314,7 @@
           "role": "enabler",
           "powerClass": "standard",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "rally_sparks",
@@ -8992,6 +9374,7 @@
               "duration": "permanent"
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -9039,6 +9422,7 @@
               "amount": 2
             }
           ],
+          "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
@@ -9062,6 +9446,7 @@
           "role": "build_around",
           "powerClass": "centerpiece",
           "effects": [],
+          "additionalCosts": [],
           "abilities": [
             {
               "id": "overwhelming_barrage",

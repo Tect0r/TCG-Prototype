@@ -30,7 +30,8 @@
           "amount": 1,
           "filter": {
             "cardTypes": ["unit"]
-          }
+          },
+          "excludeSource": true
         }
       ],
       "usageLimit": "unlimited",

@@ -13,7 +13,33 @@
     "identity": "Guardian Unit — Defensive Utility",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs an optional \"you may\" instruction — a yes/no choice with no cost attached (ruleset update §15); the blocker-scoped trigger it also needs now exists",
-  "displayText": "Once each turn, after another friendly Guardian survives combat, you may Ready that Guardian. It cannot retroactively block another attacker from the same attack declaration."
+  "displayText": "Once each turn, after another friendly Guardian survives combat, you may Ready that Guardian. It cannot retroactively block another attacker from the same attack declaration.",
+  "abilities": [
+    {
+      "id": "reform",
+      "trigger": "on_survive_combat",
+      "scope": {
+        "controller": "self",
+        "excludeSource": true,
+        "filter": {
+          "keywords": ["guardian"]
+        }
+      },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "ready",
+          "optional": true,
+          "target": {
+            "kind": "trigger_subject"
+          }
+        }
+      ]
+    }
+  ],
+  "text": {
+    "notes": [
+      "Readying a Guardian after combat does not put it back into that combat. Blockers were already assigned, and a unit readied afterwards cannot retroactively block another attacker from the same declaration — it is ready for the next one."
+    ]
+  }
 }

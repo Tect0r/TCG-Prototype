@@ -11,7 +11,34 @@
     "identity": "Sacrifice Spell — Removal",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
-  "displayText": "As an additional cost, sacrifice a Unit. Defeat an enemy Unit costing 3 or less."
+  "displayText": "As an additional cost, sacrifice a Unit. Defeat an enemy Unit costing 3 or less.",
+  "additionalCosts": [
+    {
+      "type": "sacrifice",
+      "amount": 1,
+      "filter": {
+        "cardTypes": ["unit"]
+      }
+    }
+  ],
+  "effects": [
+    {
+      "type": "destroy",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit"],
+            "cost": {
+              "max": 3
+            }
+          },
+          "count": 1,
+          "selection": "player_choice"
+        }
+      }
+    }
+  ]
 }

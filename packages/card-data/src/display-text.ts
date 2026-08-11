@@ -63,8 +63,12 @@ function staticEffectTypes(card: CardDefinition): EffectType[] {
  */
 function costEffectTypes(card: CardDefinition): EffectType[] {
   const types: EffectType[] = [];
-  for (const ability of card.activatedAbilities) {
-    for (const cost of ability.costs) {
+  // A card's own "as an additional cost, sacrifice a Unit" reads exactly the
+  // same way, and is paid at a different moment rather than by a different
+  // mechanism — so it is covered here rather than in a second walk.
+  const lists = [card.additionalCosts, ...card.activatedAbilities.map((ability) => ability.costs)];
+  for (const costs of lists) {
+    for (const cost of costs) {
       if (cost.type === 'exhaust_source') types.push('exhaust');
       else if (cost.type === 'sacrifice') types.push('sacrifice');
       else if (cost.type === 'discard') types.push('discard');

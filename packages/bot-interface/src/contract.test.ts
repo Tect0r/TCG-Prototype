@@ -699,10 +699,80 @@ describe('the new vocabulary is priced, not ignored', () => {
     expect(conditional).toBeGreaterThan(0);
   });
 
+  it('does not discount an optional instruction the way it discounts a gated one', () => {
+    // A condition can fail against you; a "you may" cannot, because you are the
+    // one answering it. Pricing them the same would make every card with an
+    // upside clause look worse than the same card without one.
+    const open = effectValue(draw(2), DEFAULT_WEIGHTS, database);
+    const optional = effectValue(
+      effectDefinitionSchema.parse({ type: 'draw', optional: true, player: 'self', amount: 2 }),
+      DEFAULT_WEIGHTS,
+      database,
+    );
+    expect(optional).toBe(open);
+  });
+
   it('respects a printed maximum on a computed amount', () => {
     const capped = effectValue(draw({ ...goblins, maximum: 1 }), DEFAULT_WEIGHTS, database);
     const uncapped = effectValue(draw(goblins), DEFAULT_WEIGHTS, database);
     expect(capped).toBeLessThan(uncapped);
+  });
+});
+
+describe('a "you may" is answered rather than reflexively refused', () => {
+  /**
+   * Ruleset update §15. A `confirm` has no entity behind it, so the
+   * enemy/hostile reasoning every other choice uses has nothing to read — and
+   * because the source of an optional step is routinely a removal card, a pilot
+   * that fell through to that reasoning would score "yes" as hostile and
+   * decline every optional line in the pool. That failure is invisible in a
+   * match result, so it is scored directly.
+   */
+  function confirmScore(state: MatchState, playerId: PlayerId, answer: 'yes' | 'no'): number {
+    const observation = observationFor(state, playerId);
+    const choice = observation.legal.pendingChoice;
+    if (!choice) throw new Error('expected a pending confirm');
+    return scoreCandidate(
+      observation,
+      {
+        action: { type: 'submit_choice', playerId, choiceId: choice.id, selectedIds: [answer] },
+        family: 'submit_choice',
+        key: `choice:${answer}`,
+      },
+      DEFAULT_WEIGHTS,
+    );
+  }
+
+  /** A pending `confirm` for an optional step, written straight into state. */
+  function awaitingConfirm(state: MatchState, playerId: PlayerId): MatchState {
+    const next = structuredClone(state);
+    next.status = 'waiting_for_choice';
+    next.pendingChoice = {
+      id: 'choice_confirm',
+      playerId,
+      type: 'confirm',
+      reason: 'optional_effect',
+      zone: null,
+      minimum: 1,
+      maximum: 1,
+      validEntityIds: ['yes', 'no'],
+      ordered: false,
+      sourceInstanceId: null,
+      continuation: {
+        kind: 'resolution',
+        itemId: 'res_0001',
+        effectIndex: 0,
+        selectionKey: '0:may',
+      },
+    };
+    return next;
+  }
+
+  it('scores yes above no', () => {
+    const state = awaitingConfirm(startTable(2, 'confirm'), 'player_1');
+    expect(confirmScore(state, 'player_1', 'yes')).toBeGreaterThan(
+      confirmScore(state, 'player_1', 'no'),
+    );
   });
 });
 

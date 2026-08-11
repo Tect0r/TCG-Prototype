@@ -1,8 +1,8 @@
-import type { AbilityCost, CardDatabase, CardDefinition } from '@tcg/card-data';
+import type { AbilityCost, CardDatabase, CardDefinition, ZoneId } from '@tcg/card-data';
 import { err, ok, type Result } from '@tcg/shared';
 import { defendersOf } from './combat.js';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
-import { createContext, emit, type MatchContext } from './context.js';
+import { createContext, emit, underCause, type MatchContext } from './context.js';
 import { engineError, type EngineError } from './errors.js';
 import {
   commanderDeployCost,
@@ -17,7 +17,7 @@ import {
   matchesCardFilter,
   playerOf,
 } from './derive.js';
-import { defeatUnit } from './effects.js';
+import { defeatUnit, nextChoiceId } from './effects.js';
 import { advance, resolveMulligans, setPhase } from './flow.js';
 import { handlePassReaction, handlePlayReaction, openReactionWindow } from './reactions.js';
 import { settle } from './queue.js';
@@ -26,6 +26,7 @@ import { enqueue } from './triggers.js';
 import { markLoss, runStateBasedChecks } from './state-based.js';
 import { discardCard, moveToZone } from './zones.js';
 import { actionSchema, type Action, type ActionInput } from './schema/action.js';
+import type { Continuation, PendingChoice } from './schema/choice.js';
 import type { GameEvent } from './schema/event.js';
 import { MAIN_PHASES, type InstanceId, type PlayerId } from './schema/primitives.js';
 import type { AttackDeclaration, CardInstance, MatchState } from './schema/state.js';
@@ -294,6 +295,23 @@ function handleSubmitChoice(
   const continuation = choice.continuation;
   if (continuation.kind === 'turn_end_discard') {
     for (const instanceId of selectedIds) discardCard(ctx, playerId, instanceId);
+  } else if (continuation.kind === 'cost_selection') {
+    // Nothing was spent when the question was asked, so this is not a resume —
+    // it is the original action run again with one more answer in hand. Every
+    // check it made the first time is made again, and a re-run that no longer
+    // validates is rejected as an ordinary illegal action, taking the whole
+    // clone with it (see `applyAction`). Advancing is the re-run's job, so this
+    // path returns straight from it.
+    const paid = { ...continuation.paid, [String(continuation.costIndex)]: [...selectedIds] };
+    return continuation.intent.kind === 'play_card'
+      ? handlePlayCard(ctx, playerId, continuation.intent.instanceId, paid)
+      : handleActivateAbility(
+          ctx,
+          playerId,
+          continuation.intent.instanceId,
+          continuation.intent.abilityId,
+          paid,
+        );
   } else {
     const item = ctx.state.queue.find((entry) => entry.id === continuation.itemId);
     if (item) {
@@ -342,6 +360,10 @@ export function spellHasLegalTargets(
 ): boolean {
   for (const effect of definition.effects) {
     if (!('target' in effect)) continue;
+    // "You may …" is not a required target. A step the controller can decline
+    // outright cannot be the reason a card is unplayable, exactly as a selector
+    // marked optional cannot.
+    if (effect.optional) continue;
     const target = effect.target;
 
     if (target.kind === 'player' || target.kind === 'players') {
@@ -365,6 +387,7 @@ function handlePlayCard(
   ctx: MatchContext,
   playerId: PlayerId,
   instanceId: InstanceId,
+  paid: CostSelections = {},
 ): EngineError | null {
   const phaseProblem = requireMainPhase(ctx, playerId);
   if (phaseProblem) return phaseProblem;
@@ -425,8 +448,22 @@ function handlePlayCard(
     );
   }
 
+  // "As an additional cost, sacrifice a Unit." Planned here, with the rest of
+  // the validation, so a card whose extra cost cannot be paid is refused before
+  // a single point of Energy moves.
+  const payment = planCosts(ctx, playerId, instance, definition.additionalCosts, paid);
+  if ('code' in payment) return payment;
+  if ('needsSelection' in payment) {
+    return requestCostSelection(
+      ctx,
+      payment.needsSelection,
+      { kind: 'play_card', instanceId },
+      paid,
+    );
+  }
+
   // ---- committed from here: everything above is validation only.
-  const before = ctx.events.length;
+  let before = ctx.events.length;
 
   player.energy -= cost;
   emit(ctx, {
@@ -436,6 +473,26 @@ function handlePlayCard(
     definitionId: definition.id,
     energySpent: cost,
   });
+
+  if (definition.additionalCosts.length > 0) {
+    // Stamped with the card being played, so telemetry can attribute the
+    // sacrifice to the card that demanded it rather than to nothing at all
+    // (CLAUDE.md §13.6).
+    underCause(ctx, { sourceInstanceId: instanceId }, () =>
+      payCosts(ctx, playerId, instance, payment),
+    );
+    // An additional cost is paid *before* the card is queued (CLAUDE.md §4), so
+    // whatever it triggers is discovered before the card's own effects join the
+    // queue — "sacrifice a Unit" and a "whenever a Unit is sacrificed" trigger
+    // must not resolve in the other order. Settling here rather than only at the
+    // end is what puts them in that order, and the cursor moves with it so the
+    // final settle does not rediscover the same events.
+    settle(ctx, before);
+    before = ctx.events.length;
+    // Paying the cost can end the match — the sacrifice may have been the last
+    // thing keeping somebody alive — and a completed match takes no more plays.
+    if (ctx.state.status === 'complete') return null;
+  }
 
   if (definition.type === 'spell') {
     // The spell leaves the hand immediately but only reaches the discard once
@@ -668,6 +725,7 @@ function handleActivateAbility(
   playerId: PlayerId,
   sourceInstanceId: InstanceId,
   abilityId: string,
+  paid: CostSelections = {},
 ): EngineError | null {
   const phaseProblem = requireMainPhase(ctx, playerId);
   if (phaseProblem) return phaseProblem;
@@ -723,11 +781,21 @@ function handleActivateAbility(
 
   // Every cost is checked before any of it is paid, so a half-payable ability
   // never leaves the player short (CLAUDE.md §17 Q3).
-  const payment = planCosts(ctx, playerId, instance, ability.costs);
+  const payment = planCosts(ctx, playerId, instance, ability.costs, paid);
   if ('code' in payment) return payment;
+  if ('needsSelection' in payment) {
+    return requestCostSelection(
+      ctx,
+      payment.needsSelection,
+      { kind: 'activate_ability', instanceId: sourceInstanceId, abilityId },
+      paid,
+    );
+  }
 
   // ---- committed: costs are paid atomically before the ability is queued.
-  payCosts(ctx, playerId, instance, payment);
+  // Same provenance stamp as a card's additional cost: what the ability ate is
+  // part of what the ability did.
+  underCause(ctx, { sourceInstanceId }, () => payCosts(ctx, playerId, instance, payment));
   instance.counters[usedKey] = timesUsed + 1;
   instance.counters[turnKey] = ctx.state.turn;
 
@@ -755,25 +823,52 @@ interface CostPlan {
   readonly sacrifices: InstanceId[];
 }
 
+/** Answers already given for the interactive entries of one cost list. */
+export type CostSelections = Readonly<Record<string, readonly InstanceId[]>>;
+
 /**
- * Works out exactly what an activation would cost, or returns why it cannot be
- * paid. Nothing is spent here.
+ * One cost entry the payer still has to choose the victims for.
  *
- * Discards and sacrifices are chosen deterministically rather than by asking:
- * a cost is paid *before* the ability is queued, and the queue is the only
- * thing that can pause for a choice. Making a cost interactive means giving it
- * its own pending-choice state, which no bundled card needs yet.
+ * Returned instead of a plan, so the caller can pause **before** committing.
+ * Everything needed to build the pending choice is here; nothing is spent, and
+ * no choice ordinal has been consumed yet.
+ */
+interface CostSelectionRequest {
+  readonly costIndex: number;
+  readonly chooserId: PlayerId;
+  readonly reason: 'sacrifice_cost' | 'discard_cost';
+  readonly zone: ZoneId;
+  readonly candidates: readonly InstanceId[];
+  readonly amount: number;
+  readonly sourceInstanceId: InstanceId;
+}
+
+/**
+ * Works out exactly what a card or activation would cost, or returns why it
+ * cannot be paid, or asks who should die for it. Nothing is spent here.
+ *
+ * A cost is paid *before* anything is queued, and the resolution queue is the
+ * only thing that can pause for a choice — so an interactive cost cannot be a
+ * paused resolution. It is a paused **action** instead: this returns a
+ * `CostSelectionRequest`, the caller stores the intent in the pending choice,
+ * and answering re-runs the whole action with the answer supplied. That is what
+ * keeps "costs are validated and paid atomically" true (CLAUDE.md §4) while
+ * still letting a player pick which Unit they feed to the pit.
+ *
+ * Nobody is asked when there is only one legal answer: a cost with exactly as
+ * many candidates as it needs is settled here, exactly as `automatic` is.
  */
 function planCosts(
   ctx: MatchContext,
   playerId: PlayerId,
   source: CardInstance,
   costs: readonly AbilityCost[],
-): CostPlan | EngineError {
+  chosen: CostSelections = {},
+): CostPlan | EngineError | { readonly needsSelection: CostSelectionRequest } {
   const player = playerOf(ctx.state, playerId);
   const plan: CostPlan = { energy: 0, exhaustSource: false, discards: [], sacrifices: [] };
 
-  for (const cost of costs) {
+  for (const [costIndex, cost] of costs.entries()) {
     switch (cost.type) {
       case 'energy': {
         const total = plan.energy + cost.amount;
@@ -817,17 +912,36 @@ function planCosts(
         if (available.length < cost.amount) {
           return engineError(
             'engine/cost_unpayable',
-            `That ability costs ${cost.amount} discarded card(s); you have ${available.length}.`,
+            `That costs ${cost.amount} discarded card(s); you have ${available.length}.`,
             { required: cost.amount, available: available.length },
           );
         }
-        plan.discards.push(...available.slice(0, cost.amount));
+        const picked = settleCostEntry(cost, costIndex, available, chosen);
+        if ('code' in picked) return picked;
+        if ('needsSelection' in picked) {
+          return {
+            needsSelection: {
+              costIndex,
+              chooserId: playerId,
+              reason: 'discard_cost',
+              zone: 'hand',
+              candidates: available,
+              amount: cost.amount,
+              sourceInstanceId: source.instanceId,
+            },
+          };
+        }
+        plan.discards.push(...picked.ids);
         break;
       }
 
       case 'sacrifice': {
         const available = player.units
           .filter((id) => !plan.sacrifices.includes(id))
+          // "Sacrifice **another** Unit": the card paying the cost is not one of
+          // the candidates. A no-op for a Spell, which is in hand rather than on
+          // the battlefield and was never in this list.
+          .filter((id) => !(cost.excludeSource && id === source.instanceId))
           .filter((id) => {
             if (!cost.filter) return true;
             const instance = findInstance(ctx.state, id);
@@ -837,11 +951,26 @@ function planCosts(
         if (available.length < cost.amount) {
           return engineError(
             'engine/cost_unpayable',
-            `That ability costs ${cost.amount} sacrificed unit(s); you have ${available.length}.`,
+            `That costs ${cost.amount} sacrificed unit(s); you have ${available.length}.`,
             { required: cost.amount, available: available.length },
           );
         }
-        plan.sacrifices.push(...available.slice(0, cost.amount));
+        const picked = settleCostEntry(cost, costIndex, available, chosen);
+        if ('code' in picked) return picked;
+        if ('needsSelection' in picked) {
+          return {
+            needsSelection: {
+              costIndex,
+              chooserId: playerId,
+              reason: 'sacrifice_cost',
+              zone: 'battlefield',
+              candidates: available,
+              amount: cost.amount,
+              sourceInstanceId: source.instanceId,
+            },
+          };
+        }
+        plan.sacrifices.push(...picked.ids);
         break;
       }
 
@@ -854,6 +983,96 @@ function planCosts(
   }
 
   return plan;
+}
+
+/**
+ * Decides which candidates one cost entry consumes: the answer already given,
+ * a question to ask, or a deterministic pick.
+ *
+ * Shared by the discard and sacrifice entries because the decision is the same
+ * one — "which of these do you spend" — and only the zone differs. A stored
+ * answer is re-validated against the candidate list computed a moment ago, not
+ * against the one that existed when the question was asked: the re-run is a
+ * fresh look at the board, and an answer that has stopped being legal must be
+ * rejected rather than honoured.
+ */
+function settleCostEntry(
+  cost: Extract<AbilityCost, { type: 'discard' | 'sacrifice' }>,
+  costIndex: number,
+  available: readonly InstanceId[],
+  chosen: CostSelections,
+): { readonly ids: InstanceId[] } | EngineError | { readonly needsSelection: true } {
+  const answer = chosen[String(costIndex)];
+  if (answer !== undefined) {
+    if (answer.length !== cost.amount) {
+      return engineError('engine/invalid_selection', `Choose exactly ${cost.amount} to pay this.`, {
+        required: cost.amount,
+        received: answer.length,
+      });
+    }
+    for (const id of answer) {
+      if (available.includes(id)) continue;
+      return engineError('engine/invalid_selection', 'That card can no longer pay this cost.', {
+        instanceId: id,
+      });
+    }
+    return { ids: [...answer] };
+  }
+
+  // Only a genuine decision is worth a pause. With exactly as many candidates as
+  // the cost needs there is one legal answer, so asking would be a pause in
+  // place of a choice — the same rule the Reaction windows follow.
+  if (cost.selection === 'player_choice' && available.length > cost.amount) {
+    return { needsSelection: true };
+  }
+  return { ids: available.slice(0, cost.amount) };
+}
+
+/**
+ * Pauses an action for a cost selection. Nothing has been spent at this point
+ * and nothing is spent here: the choice carries the intent, and answering runs
+ * the action again from the top.
+ */
+function requestCostSelection(
+  ctx: MatchContext,
+  request: CostSelectionRequest,
+  intent: Extract<Continuation, { kind: 'cost_selection' }>['intent'],
+  paid: CostSelections,
+): null {
+  const choice: PendingChoice = {
+    id: nextChoiceId(ctx),
+    playerId: request.chooserId,
+    type: request.zone === 'battlefield' ? 'select_units' : 'select_cards',
+    reason: request.reason,
+    zone: request.zone,
+    minimum: request.amount,
+    maximum: request.amount,
+    validEntityIds: [...request.candidates],
+    ordered: false,
+    sourceInstanceId: request.sourceInstanceId,
+    continuation: {
+      kind: 'cost_selection',
+      intent,
+      // Answers to the earlier entries of the same cost list ride along, so a
+      // card with two interactive costs asks two questions rather than asking
+      // the first one forever.
+      paid: Object.fromEntries(Object.entries(paid).map(([key, ids]) => [key, [...ids]])),
+      costIndex: request.costIndex,
+    },
+  };
+  ctx.state.pendingChoice = choice;
+  ctx.state.status = 'waiting_for_choice';
+  emit(ctx, {
+    type: 'choice_requested',
+    choiceId: choice.id,
+    playerId: choice.playerId,
+    choiceType: choice.type,
+    reason: choice.reason,
+    minimum: choice.minimum,
+    maximum: choice.maximum,
+    validEntityIds: [...choice.validEntityIds],
+  });
+  return null;
 }
 
 /** Spends a validated plan. Only ever called once the plan is known payable. */

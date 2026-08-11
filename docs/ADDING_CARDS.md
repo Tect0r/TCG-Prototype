@@ -68,10 +68,21 @@ There is exactly one authoring form for each kind of behaviour:
 - **Continuously, while it is in play** → `staticAbilities`. These are derived
   from the board on every recalculation, never stamped onto their recipients,
   which is why a lord automatically covers units that arrive later.
+- **Before the card is even queued** → `additionalCosts`, which is "As an
+  additional cost, sacrifice a Unit". See §4a.
 
 The supported effect types are listed in
 `packages/help-content/src/registries/effects.ts`, with a description of each.
-Amounts are fixed integers.
+Amounts may be a fixed integer or a `CountQuery` ("for each Goblin you
+control").
+
+Every instruction may also carry two gates:
+
+- `condition` — an "if" re-checked when that instruction resolves, not when the
+  card was played. A gated instruction that is skipped does not stop the ones
+  after it.
+- `optional` — "you may". The controller is asked yes/no when the instruction
+  resolves; "no" skips that step alone.
 
 ## 4. Targets and choices
 
@@ -95,6 +106,44 @@ worth knowing before you author:
   four player table. Write cards that read sensibly at four seats.
 - A target that becomes illegal before the effect resolves is skipped, and the
   rest of the effect still happens.
+
+## 4a. The three ways to write "you may"
+
+They are not interchangeable, and the difference is _when_ the player is asked.
+[ADR 0017](architecture/0017-optional-instructions-and-interactive-costs.md) has
+the full reasoning; this is the authoring rule.
+
+**If the decision is which card** → `optional: true` on the target **selector**.
+Declining is picking nothing, which is one interaction. This is what
+`pit_executioner` uses for "you may sacrifice another Unit".
+
+**If there is nothing to decline by picking** → `optional: true` on the
+**instruction**. `formation_tactician` readies the unit its trigger was about;
+there is no target to leave empty, so the only decision left is whether to do it,
+and that arrives as a yes/no. Do not use both on the same instruction — you would
+be asking twice for one decision.
+
+**If the player must pay before the card resolves** → `additionalCosts`. This is
+the only form whose timing differs: the cost is paid as the card is played,
+_before_ an opponent's Reaction window opens, so countering the card does not
+refund it. A first instruction would resolve after that window closed and give
+the whole thing back. Only `unit`, `spell` and `relic` may carry one.
+
+`"If you do, …"` is `{ "kind": "previous_step" }` as an instruction's
+`condition`. It is true when the instruction **immediately before it** changed
+something — which covers all three of "the player said no", "there was nothing
+to act on" and "it was already true of the board". It refers to the preceding
+instruction only, so it can never be the first one in a list; the schema rejects
+that rather than leaving a gate that is false forever.
+
+Two things the engine does on your behalf, so do not author around them:
+
+- **Nobody is asked when there is one possible answer.** An optional step with
+  no legal target is skipped silently, and a sacrifice cost with exactly as many
+  candidates as it needs is paid without a prompt.
+- **A sacrifice cost is the player's choice by default.** Set
+  `"selection": "automatic"` only when the victim genuinely does not matter, and
+  `"excludeSource": true` for "sacrifice **another** Unit".
 
 ## 5. Card text, generated and curated
 
@@ -197,13 +246,14 @@ Two more rules worth stating plainly:
 
 ## Templates
 
-| File                                                                                         | Shows                                   |
-| -------------------------------------------------------------------------------------------- | --------------------------------------- |
-| [`template_basic_unit.json`](templates/cards/template_basic_unit.json)                       | The minimum viable card                 |
-| [`template_choice_spell.json`](templates/cards/template_choice_spell.json)                   | A spell that pauses for a player choice |
-| [`template_triggered_unit.json`](templates/cards/template_triggered_unit.json)               | Deploy effects plus a triggered ability |
-| [`template_static_relic.json`](templates/cards/template_static_relic.json)                   | A continuous effect                     |
-| [`template_filtered_target_spell.json`](templates/cards/template_filtered_target_spell.json) | A filtered, required target             |
+| File                                                                                         | Shows                                      |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| [`template_basic_unit.json`](templates/cards/template_basic_unit.json)                       | The minimum viable card                    |
+| [`template_choice_spell.json`](templates/cards/template_choice_spell.json)                   | A spell that pauses for a player choice    |
+| [`template_triggered_unit.json`](templates/cards/template_triggered_unit.json)               | Deploy effects plus a triggered ability    |
+| [`template_static_relic.json`](templates/cards/template_static_relic.json)                   | A continuous effect                        |
+| [`template_filtered_target_spell.json`](templates/cards/template_filtered_target_spell.json) | A filtered, required target                |
+| [`template_optional_cost_spell.json`](templates/cards/template_optional_cost_spell.json)     | An additional cost, "you may", "if you do" |
 
 Every template is validated by `npm run validate:content`, so they cannot fall
 behind the schema.

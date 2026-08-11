@@ -26,6 +26,39 @@ export const continuationSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('turn_end_discard'),
   }),
+  /**
+   * A cost being chosen **before** the thing it pays for commits.
+   *
+   * The resolution queue is the only thing that can pause for a choice, and a
+   * cost is paid before anything is queued — so an interactive cost cannot be a
+   * `resolution` continuation. It is instead a paused *action*: nothing has been
+   * spent, no card has moved, and answering re-runs the original action with the
+   * selection supplied. Re-running rather than resuming halfway is what keeps
+   * the atomicity guarantee (CLAUDE.md §10): every check happens again against
+   * current state, so an answer that has stopped being legal fails as an
+   * ordinary rejected action instead of half-paying.
+   */
+  z.strictObject({
+    kind: z.literal('cost_selection'),
+    intent: z.discriminatedUnion('kind', [
+      z.strictObject({ kind: z.literal('play_card'), instanceId: instanceIdSchema }),
+      z.strictObject({
+        kind: z.literal('activate_ability'),
+        instanceId: instanceIdSchema,
+        abilityId: z.string().min(1),
+      }),
+    ]),
+    /**
+     * Answers already given, keyed by the index of the cost entry they pay.
+     *
+     * A cost list can hold more than one interactive entry, and each is asked
+     * separately; carrying the earlier answers here is what lets the re-run skip
+     * the questions that have already been settled.
+     */
+    paid: z.record(z.string(), z.array(instanceIdSchema)),
+    /** The cost entry this particular question is about. */
+    costIndex: z.number().int().min(0),
+  }),
 ]);
 export type Continuation = z.infer<typeof continuationSchema>;
 
@@ -69,6 +102,16 @@ export const CHOICE_REASONS = [
    * controller of a card a Reaction is countering (rule adjustment §5).
    */
   'pay_additional_cost',
+  /**
+   * "**You may** …" — the yes/no on an optional instruction (ruleset update
+   * §15).
+   *
+   * Distinct from `pay_additional_cost`, which is also a `confirm`: that one
+   * asks whether to spend Energy to save a card somebody is countering, this
+   * one asks whether to carry out a step of your own card. A UI that showed
+   * them with the same wording would be describing a different game.
+   */
+  'optional_effect',
 ] as const;
 export const choiceReasonSchema = z.enum(CHOICE_REASONS);
 export type ChoiceReason = z.infer<typeof choiceReasonSchema>;

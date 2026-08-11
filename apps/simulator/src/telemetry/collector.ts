@@ -354,6 +354,14 @@ export class TelemetryCollector {
           // Already on the battlefield, so it was played or created: `used` is
           // set at that point and dying does not change it.
         }
+        // Outright removal counts toward the source's output, the same way
+        // lethal damage does. Restricted to a defeat the source's owner did not
+        // suffer, so a card that eats one of your own units as a cost is not
+        // credited with having removed something (CLAUDE.md §13.6).
+        if (sourceRow && event.reason === 'destroyed') {
+          const remover = this.#ownerOf(event.cause.sourceInstanceId);
+          if (remover !== undefined && remover !== event.controllerId) sourceRow.unitsRemoved += 1;
+        }
         this.#seatStats.get(event.controllerId)?.tallyUnitLost();
         break;
       }

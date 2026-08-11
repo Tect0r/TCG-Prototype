@@ -14,8 +14,10 @@ import {
 import {
   abilityDefinitionSchema,
   activatedAbilityDefinitionSchema,
+  additionalCostSchema,
   effectDefinitionSchema,
   staticAbilityDefinitionSchema,
+  type EffectDefinition,
 } from './effect.js';
 import { cardFilterSchema } from './target.js';
 
@@ -122,6 +124,16 @@ const baseCardSchema = z.strictObject({
    * no `on_deploy` trigger (CLAUDE.md §17 Q1).
    */
   effects: z.array(effectDefinitionSchema).default([]),
+  /**
+   * "As an additional cost to play this, …" — paid when the card is played,
+   * before it is queued, and never refunded (CLAUDE.md §4).
+   *
+   * Separate from `effects` because the timing is the mechanic: an additional
+   * cost is spent before an opponent's Reaction window can answer the card, so
+   * countering it still costs its controller the sacrifice. A first instruction
+   * would resolve after that window closed and refund the whole thing.
+   */
+  additionalCosts: z.array(additionalCostSchema).max(4).default([]),
   /** Effects resolved when a non-deploy trigger fires while the card is in play. */
   abilities: z.array(abilityDefinitionSchema).default([]),
   /** Abilities the controller chooses to use, paying their costs first. */
@@ -151,6 +163,33 @@ const baseCardSchema = z.strictObject({
 
 /** Card types that carry a combat statline. */
 const STATTED_TYPES = new Set(['unit', 'commander', 'token']);
+
+/** Card types the ordinary play-from-hand path handles, additional costs and all. */
+const PLAYED_FROM_HAND = new Set(['unit', 'spell', 'relic']);
+
+/**
+ * Every effect list on a card, with the path each one lives at.
+ *
+ * "If you do" is a fact about an instruction's position in *its own* list, and a
+ * card has four of them. Walking them together is what keeps the check honest
+ * when an author writes the clause inside an activated ability rather than in
+ * the card's top-level text.
+ */
+function effectLists(
+  card: Pick<CardDefinition, 'effects' | 'abilities' | 'activatedAbilities'>,
+): { path: (string | number)[]; effects: readonly EffectDefinition[] }[] {
+  return [
+    { path: ['effects'], effects: card.effects },
+    ...card.abilities.map((ability, index) => ({
+      path: ['abilities', index, 'effects'],
+      effects: ability.effects,
+    })),
+    ...card.activatedAbilities.map((ability, index) => ({
+      path: ['activatedAbilities', index, 'effects'],
+      effects: ability.effects,
+    })),
+  ];
+}
 
 export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
   const needsStats = STATTED_TYPES.has(card.type);
@@ -344,6 +383,37 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
     });
   }
 
+  // "If you do" needs a preceding instruction to be about. At index 0 there is
+  // none, so the gate could never be satisfied and the instruction would be
+  // dead text — the silent approximation ruleset update §1 forbids. Rejected
+  // rather than reinterpreted, because the author meant one of two different
+  // cards and the schema may not pick.
+  for (const list of effectLists(card)) {
+    list.effects.forEach((effect, index) => {
+      if (effect.condition?.kind !== 'previous_step' || index > 0) return;
+      ctx.addIssue({
+        code: 'custom',
+        path: [...list.path, index, 'condition'],
+        message:
+          'An "if you do" condition refers to the instruction before it; the first instruction has none.',
+      });
+    });
+  }
+
+  // Only the cards the ordinary play-from-hand path handles may print one.
+  // A token is created by an effect and a Commander is deployed through its own
+  // path, so neither has a moment at which a cost list would be read; a
+  // Reaction is played inside a window, where pausing to pick a sacrifice would
+  // interleave a second choice with priority passing. Rejected rather than
+  // ignored — a printed cost the engine skips is a card that lies.
+  if (card.additionalCosts.length > 0 && !PLAYED_FROM_HAND.has(card.type)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['additionalCosts'],
+      message: `A ${card.type} is not played through the ordinary play-from-hand path, so it cannot carry an additional cost.`,
+    });
+  }
+
   // Curated step clarifications are index-aligned with `effects`. More of them
   // than there are steps means the card was edited and the prose was not — the
   // exact drift this metadata is supposed to be safe from.
@@ -384,6 +454,7 @@ export const PATCHABLE_CARD_FIELDS = [
   'powerClass',
   'design',
   'effects',
+  'additionalCosts',
   'abilities',
   'activatedAbilities',
   'staticAbilities',

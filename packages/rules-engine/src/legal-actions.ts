@@ -221,6 +221,10 @@ export function legalActions(
       // A spell with no legal target for a required target cannot be played at
       // all, so it must not be offered (CLAUDE.md §4).
       if (definition.type === 'spell' && !spellHasLegalTargets(ctx, definition, instance)) continue;
+      // "As an additional cost, sacrifice a Unit" with no Unit to sacrifice is
+      // the same kind of unplayable, and would otherwise be offered and then
+      // rejected.
+      if (!costsPayable(ctx, playerId, instance, definition.additionalCosts)) continue;
 
       playableCards.push({ instanceId, definitionId: definition.id, energyCost: cost });
     }
@@ -372,6 +376,9 @@ function costsPayable(
         break;
       case 'sacrifice': {
         const available = player.units.filter((id) => {
+          // Mirrors the engine's own "sacrifice another Unit" exclusion; without
+          // it a lone Carrion Feeder would offer an ability it cannot pay for.
+          if (cost.excludeSource && id === source.instanceId) return false;
           if (!cost.filter) return true;
           const instance = findInstance(ctx.state, id);
           if (!instance) return false;

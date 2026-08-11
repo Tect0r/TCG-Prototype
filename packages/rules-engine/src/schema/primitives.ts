@@ -24,8 +24,13 @@ import { z } from 'zod';
  * phase, and the two per-player Commander/Reaction records
  * (`commanderDefeats`, `reactionDiscountSpent`). No migration, for the reason
  * given for v3.
+ *
+ * v6 (Precon Wave 1) added the two halves of optional instructions and
+ * interactive costs: `ResolutionItem.previousStepActed`, which is what "if you
+ * do" reads, and the `cost_selection` continuation, which is a paused *action*
+ * rather than a paused resolution. No migration, for the reason given for v3.
  */
-export const MATCH_SCHEMA_VERSION = 5;
+export const MATCH_SCHEMA_VERSION = 6;
 
 /** Seats a single match may hold. Two is 1v1; three and four are free-for-all. */
 export const MIN_PLAYERS = 2;

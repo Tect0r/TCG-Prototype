@@ -44,7 +44,7 @@ export type EffectOutcome =
   | { readonly kind: 'resolved' }
   | {
       readonly kind: 'fizzled';
-      readonly reason: 'no_legal_target' | 'unsupported' | 'condition_unmet';
+      readonly reason: 'no_legal_target' | 'unsupported' | 'condition_unmet' | 'declined';
     }
   | { readonly kind: 'awaiting_choice'; readonly choice: PendingChoice };
 
@@ -55,6 +55,7 @@ function scopeOf(item: ResolutionItem): TargetScope {
     controllerId: item.controllerId,
     sourceInstanceId: item.sourceInstanceId,
     triggerSubjectInstanceId: item.triggerSubjectInstanceId,
+    previousStepActed: item.previousStepActed,
   };
 }
 
@@ -99,6 +100,26 @@ function buildChoice(
       selectionKey: options.selectionKey ?? String(effectIndex),
     },
   };
+}
+
+/**
+ * Whether an instruction has anything at all to act on, without asking anyone.
+ *
+ * Only used to decide whether a "you may" is worth offering, so it is a pure
+ * read: it must not build a choice, and must not touch `nextChoiceOrdinal`.
+ * Instructions with no target are always worth offering — a draw or a token
+ * always has a recipient.
+ */
+function hasRecipient(ctx: MatchContext, item: ResolutionItem, effect: EffectDefinition): boolean {
+  if (!('target' in effect)) return true;
+  const target = effect.target;
+  if (target.kind === 'player' || target.kind === 'players') {
+    return playerCandidates(ctx, target, item.controllerId).length > 0;
+  }
+  // An optional selector already means "you may pick nothing", so the set being
+  // empty is a legal outcome rather than a reason to skip the question.
+  if (target.kind === 'entity' && target.selector.optional) return true;
+  return legalTargets(ctx, target, scopeOf(item)).length > 0;
 }
 
 /** Selection key for the answer one specific player gave to one instruction. */
@@ -267,6 +288,34 @@ export function executeEffect(
   // another" means.
   if (effect.condition && !evaluateCondition(ctx, effect.condition, scope)) {
     return { kind: 'fizzled', reason: 'condition_unmet' };
+  }
+
+  // "You may …". Asked after the condition, so a step whose `if` already failed
+  // is never put to a player as a decision they might make (ruleset update
+  // §15).
+  if (effect.optional) {
+    const mayKey = `${effectIndex}:may`;
+    const answer = item.selections[mayKey];
+    if (answer === undefined) {
+      // Nothing to act on means nothing to decide. The same instinct that keeps
+      // a Reaction window shut when nobody can use it: an offer with one
+      // possible outcome is a pause, not a choice.
+      if (!hasRecipient(ctx, item, effect)) return { kind: 'fizzled', reason: 'no_legal_target' };
+      return {
+        kind: 'awaiting_choice',
+        choice: buildChoice(ctx, item, effectIndex, {
+          playerId: item.controllerId,
+          type: 'confirm',
+          reason: 'optional_effect',
+          zone: null,
+          minimum: 1,
+          maximum: 1,
+          validEntityIds: ['yes', 'no'],
+          selectionKey: mayKey,
+        }),
+      };
+    }
+    if (answer[0] !== 'yes') return { kind: 'fizzled', reason: 'declined' };
   }
 
   /** Resolves an amount that may be a count of the board rather than a number. */

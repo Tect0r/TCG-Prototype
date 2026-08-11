@@ -13,7 +13,38 @@
     "identity": "Sacrifice Unit — Outlet",
     "power": "medium"
   },
-  "implemented": false,
-  "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
-  "displayText": "Once each turn, you may sacrifice another Unit. If you do, this Unit gains +2 ATK this turn."
+  "displayText": "Once each turn, you may sacrifice another Unit. If you do, this Unit gains +2 ATK this turn.",
+  "activatedAbilities": [
+    {
+      "id": "feed",
+      "name": "Feed",
+      "costs": [
+        {
+          "type": "sacrifice",
+          "amount": 1,
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "excludeSource": true
+        }
+      ],
+      "usageLimit": "once_per_turn",
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": {
+            "kind": "source"
+          },
+          "attack": 2,
+          "health": 0,
+          "duration": "end_of_turn"
+        }
+      ]
+    }
+  ],
+  "text": {
+    "notes": [
+      "\"You may\" is the activation itself: nothing happens unless you choose to use the ability, and the sacrifice is its cost. Paying it defeats the unit you pick, so it triggers anything that watches for a friendly unit being sacrificed or defeated."
+    ]
+  }
 }

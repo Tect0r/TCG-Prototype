@@ -30,6 +30,30 @@ import { CardInspector, type InspectableCard } from '../help/CardInspector.js';
  * nothing to the server and changes no match state.
  */
 
+/**
+ * What each pending choice is actually asking, in words.
+ *
+ * The engine sends a stable reason code and never display text, so the sentence
+ * is the client's job (see `CHOICE_REASONS`). A reason with no entry falls back
+ * to its humanised code, which is what every reason used to get — so adding a
+ * reason engine-side degrades to the old wording rather than to a blank prompt.
+ */
+const CHOICE_PROMPTS: Readonly<Record<string, string>> = {
+  effect_target: 'Choose a target',
+  discard_effect: 'Discard',
+  sacrifice_cost: 'Choose what to sacrifice to pay for this',
+  discard_cost: 'Choose what to discard to pay for this',
+  search_zone: 'Choose a card',
+  reorder_zone: 'Put these in the order you want',
+  hand_size_discard: 'Discard down to your maximum hand size',
+  select_opponent: 'Choose an opponent',
+  pay_additional_cost: 'Pay the additional cost to stop this being countered?',
+  optional_effect: 'You may do this. Do you want to?',
+};
+
+/** A `confirm` choice's options are the literals `yes` and `no`, not entities. */
+const CONFIRM_LABELS: Readonly<Record<string, string>> = { yes: 'Yes', no: 'No' };
+
 /** Seats map one-to-one onto engine player IDs, so connection state can be keyed by either. */
 function seatIdFor(playerId: string): SeatId | undefined {
   const map: Record<string, SeatId> = {
@@ -721,8 +745,14 @@ export function MatchBoard() {
       {choice && (
         <div className="choice" role="group" aria-label="Pending choice">
           <p className="choice__prompt">
-            {choice.reason.replace(/_/g, ' ')} — choose {choice.minimum}
-            {choice.maximum !== choice.minimum ? `–${choice.maximum}` : ''}
+            {CHOICE_PROMPTS[choice.reason] ?? choice.reason.replace(/_/g, ' ')}
+            {/* A yes/no needs no count: "choose 1" of two buttons reads as a
+                puzzle rather than a question. */}
+            {choice.type === 'confirm'
+              ? ''
+              : ` — choose ${choice.minimum}${
+                  choice.maximum !== choice.minimum ? `–${choice.maximum}` : ''
+                }`}
             {choice.ordered ? ' (click in the order you want them)' : ''}
           </p>
           <div className="choice__options">
@@ -731,9 +761,14 @@ export function MatchBoard() {
               const position = choiceSelection.indexOf(entityId);
               // A `select_players` choice lists player IDs, not instances.
               const optionLabel =
-                choice.type === 'select_players'
-                  ? nameOf(entityId)
-                  : (database.get(instance?.definitionId ?? '')?.name ?? entityId);
+                choice.type === 'confirm'
+                  ? // The engine's option IDs are literally `yes`/`no`; they
+                    // point at nothing on the board, so there is no card name
+                    // to look up.
+                    (CONFIRM_LABELS[entityId] ?? entityId)
+                  : choice.type === 'select_players'
+                    ? nameOf(entityId)
+                    : (database.get(instance?.definitionId ?? '')?.name ?? entityId);
               return (
                 <button
                   key={entityId}

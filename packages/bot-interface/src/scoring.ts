@@ -109,6 +109,20 @@ export const botWeightsSchema = z.strictObject({
   /** Bias toward hitting the opponent with the strongest board. */
   focusBiggestBoard: z.number().default(0),
 
+  /* --------------------------------------------------------------- choices */
+  /**
+   * Value of answering "yes" to a `confirm` choice.
+   *
+   * A confirm has no entity behind it, so the enemy/hostile reasoning every
+   * other choice uses has nothing to read. Both confirms the engine asks are
+   * upside for the player being asked — carrying out a step of your own card,
+   * or paying to save one an opponent is countering — and the engine never asks
+   * when the answer could not be paid, so the default leans yes. It is a weight
+   * rather than a constant because "how eager is a pilot to take an optional
+   * line" is exactly the kind of dial a perturbation run should be able to move.
+   */
+  confirmYes: z.number().default(1.2),
+
   /* -------------------------------------------------------------- mulligan */
   /** Value of one card kept in the opening hand that costs at most `curveTop`. */
   openingCheapCard: z.number().default(1),
@@ -261,6 +275,11 @@ export function effectValue(
   database: CardDatabase,
 ): number {
   const gross = ungatedEffectValue(effect, weights, database);
+  // An optional instruction is *not* discounted, and the asymmetry with
+  // `condition` is deliberate. A condition may fail against the player; a "you
+  // may" cannot, because the player is the one answering it and will say no
+  // whenever the step would hurt them. Discounting it would make every card
+  // carrying an upside clause look worse than the same card without one.
   return effect.condition ? gross * CONDITION_DISCOUNT : gross;
 }
 

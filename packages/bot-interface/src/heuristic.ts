@@ -426,6 +426,15 @@ function scoreChoice(
     }, 0);
   }
 
+  // A confirm has no entity to be for or against. "yes" is not a card that
+  // could belong to an opponent, so the enemy/hostile reasoning below would be
+  // reading a ranked option that means nothing — and, because the source of an
+  // optional step is routinely a removal card, it would score it hostile and
+  // decline every "you may".
+  if (choice.type === 'confirm') {
+    return action.selectedIds.includes('yes') ? weights.confirmYes : 0;
+  }
+
   const sourceDefinition = choice.sourceInstanceId
     ? observation.database.get(
         observation.view.instances[choice.sourceInstanceId]?.definitionId ?? '',

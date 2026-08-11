@@ -188,6 +188,22 @@ const RAW_GLOSSARY = {
       relatedRuleSections: ['choices_and_targets'],
     },
     {
+      id: 'additional_cost',
+      term: 'Additional cost',
+      definition:
+        'Something a card makes you pay on top of its energy cost — sacrificing a unit, for instance. You pay it as you play the card, before an opponent gets a chance to answer it, and you do not get it back if the card is countered.',
+      seeAlso: ['energy', 'optional_effect'],
+      relatedRuleSections: ['energy', 'choices_and_targets'],
+    },
+    {
+      id: 'optional_effect',
+      term: 'You may',
+      definition:
+        'A step of a card you can decline. The game asks you yes or no when the step comes up; saying no skips only that step and the rest of the card still happens. A later step that says "if you do" only happens when the optional step actually changed something.',
+      seeAlso: ['pending_choice', 'additional_cost'],
+      relatedRuleSections: ['choices_and_targets'],
+    },
+    {
       id: 'trigger',
       term: 'Trigger',
       definition:

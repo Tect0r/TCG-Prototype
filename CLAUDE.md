@@ -16,7 +16,7 @@ Phases 1–3 are complete: the deck builder, deterministic headless rules engine
 
 > **Active milestone: Precon Wave 1.** Two specifications govern the current work. `CLAUDE_RULESET_UPDATE.md` came first; `CLAUDE_AI_SPECTATOR_AND_RULE_ADJUSTMENTS.md` came after it and **supersedes** parts of it and of ADR 0016 — where the two disagree, the later one wins. Between them they **supersede several rules that this file previously stated as confirmed**. Every superseded rule below has been rewritten in place and carries a status marker. [`REMAINING_WORK.md`](REMAINING_WORK.md) tracks exactly what is built and what is not, for this milestone and every other; [ADR 0016](docs/architecture/0016-precon-wave-1-ruleset.md) records the decisions.
 >
-> Most of the rules layer is now built — data, formats, keywords, the unlimited battlefield, the single active Relic, blocking, durations, Reaction windows, deployable Commanders and their defeat cycle, and AI spectator mode. What is **not** built is the tail of the effect vocabulary: 18 of the 155 authored cards still carry `implemented: false` and name the exact primitive they are waiting for. **Do not assume a rule marked `pending` below works in the engine.**
+> Most of the rules layer is now built — data, formats, keywords, the unlimited battlefield, the single active Relic, blocking, durations, Reaction windows, deployable Commanders and their defeat cycle, and AI spectator mode. What is **not** built is the tail of the effect vocabulary: 13 of the 155 authored cards still carry `implemented: false` and name the exact primitive they are waiting for. **Do not assume a rule marked `pending` below works in the engine.**
 
 Status markers used throughout §4:
 
@@ -98,7 +98,7 @@ Structural rules below are confirmed. Numeric values marked **provisional** are 
 - Unspent energy **remains available through opponents' turns** so it can pay for Reactions, and is then replaced — not topped up — by the normal refill on the player's next turn. It never accumulates above maximum energy **(implemented)**. The engine always behaved this way because nothing zeroes energy at turn end; `energy.test.ts` pins it now that Reactions make it observable.
 - Costs are validated and paid atomically before a card or activated ability enters the resolution queue.
 - Cost reductions cannot reduce a cost below the minimum printed by the effect, normally 1 where one is specified **(implemented)** — `energyCostOf` takes the printed floor, and a floor never raises a cost that was already cheaper.
-- Additional costs are paid even if the effect is later countered **(implemented for energy; pending for sacrifice)**. Countering refunds nothing, including an `unlessPays` payment; no card can yet print a sacrifice as an additional cost, so that half arrives with the cards that need it.
+- Additional costs are paid even if the effect is later countered **(implemented)**. Countering refunds nothing, including an `unlessPays` payment or a sacrifice paid through a card's `additionalCosts`. That is why an additional cost is a field on the card rather than its first instruction: a first instruction resolves *after* the Reaction window has closed over the card, so countering would give the whole thing back. Where the payer has a real decision — which unit to feed it — the engine pauses for a selection before anything is spent (ADR 0017).
 - If all required costs cannot be paid, the action is illegal.
 
 ### Battlefield and units

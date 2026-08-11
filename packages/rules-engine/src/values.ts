@@ -35,6 +35,13 @@ export interface CountScope {
   readonly controllerId: PlayerId;
   /** The card the ability is printed on, for `excludeSource`. */
   readonly sourceInstanceId: InstanceId | null;
+  /**
+   * Whether the instruction before this one changed the match, for "if you do".
+   *
+   * Absent when there is no preceding instruction to ask about — an
+   * ability-level gate, or a condition evaluated outside a resolution item.
+   */
+  readonly previousStepActed?: boolean;
 }
 
 /** Seats a `controller` relation covers, relative to the asking player. */
@@ -171,6 +178,13 @@ export function evaluateCondition(
 ): boolean {
   if (condition.kind === 'active_turn') {
     return (ctx.state.activePlayerId === scope.controllerId) === condition.expected;
+  }
+
+  if (condition.kind === 'previous_step') {
+    // Absent means there was no preceding instruction — an ability-level gate,
+    // where "if you do" has nothing to refer to. False rather than true: a gate
+    // that cannot be evaluated must not wave the instruction through.
+    return (scope.previousStepActed ?? false) === condition.expected;
   }
 
   if (condition.kind === 'source_state') {

@@ -47,6 +47,12 @@ an answer. See [project-status.md](project-status.md) for phase definitions.
 > raised are in [its own section](#raised-by-the-precon-wave-1-ruleset-update)
 > below — **Q39–Q45, plus sharpened restatements of Q4 and Q5, are waiting on
 > your answers.**
+>
+> **Update, 2026-08-11.** The "you may" tranche of A1 landed (ADR 0017) and
+> raised one new question, **Q46** — whether a Reaction may carry an additional
+> cost. It blocks nothing: the schema rejects it today rather than accepting it
+> and silently not charging it, so the restriction is visible rather than
+> latent.
 
 ---
 
@@ -606,6 +612,37 @@ For a 5-damage hit on a unit with Barrier and Armored 1:
 Ruleset update §9 says a zero-damage event does not consume Barrier, which is the
 one piece already fixed: if reduction takes a hit to 0, Barrier must survive.
 That leans toward reduction-first. Confirm or overrule.
+
+---
+
+### Q46. May a Reaction carry an additional cost?
+
+**Blocks:** nothing today. Raised by, and deliberately left open in,
+[ADR 0017](architecture/0017-optional-instructions-and-interactive-costs.md).
+
+"As an additional cost, sacrifice a Unit" now works on a `unit`, `spell` or
+`relic` — the three types the ordinary play-from-hand path handles. The schema
+**rejects** it on a `reaction`, rather than accepting it and quietly not
+charging it.
+
+The reason is mechanical, not a rules judgement. An additional cost with a real
+decision pauses for a selection before the card commits, and a Reaction is
+played inside a bounded window where priority is passing clockwise. Two
+interleaved pauses — "who has priority" and "which unit do you feed it" — is a
+timing interaction nothing in the current window machinery has been designed
+against, and no authored Reaction asks for one.
+
+Three ways this could go, in increasing cost:
+
+- **Leave it rejected.** Reaction costs stay pure energy. Costs nothing now.
+- **Allow it, non-interactive only.** A Reaction could print a sacrifice cost as
+  long as `selection` is `automatic`, so there is never a second pause inside a
+  window. Cheap, and honest about why it is restricted.
+- **Allow it fully**, which means deciding what happens when a window's priority
+  holder is mid-selection and settling whether that selection can be timed out
+  independently of the window. Only worth doing if a card wants it.
+
+Answer it when a Reaction is authored that needs one, not before.
 
 ---
 

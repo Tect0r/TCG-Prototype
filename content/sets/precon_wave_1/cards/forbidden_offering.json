@@ -11,7 +11,21 @@
     "identity": "Sacrifice Spell — Card Advantage",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs optional \"you may pay\" costs inside an effect (ruleset update §15)",
-  "displayText": "As an additional cost, sacrifice a Unit. Draw two cards."
+  "displayText": "As an additional cost, sacrifice a Unit. Draw two cards.",
+  "additionalCosts": [
+    {
+      "type": "sacrifice",
+      "amount": 1,
+      "filter": {
+        "cardTypes": ["unit"]
+      }
+    }
+  ],
+  "effects": [
+    {
+      "type": "draw",
+      "player": "self",
+      "amount": 2
+    }
+  ]
 }

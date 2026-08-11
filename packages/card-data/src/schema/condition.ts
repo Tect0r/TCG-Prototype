@@ -122,6 +122,30 @@ export const conditionSchema = z.discriminatedUnion('kind', [
     /** False for "during an opponent's turn". */
     expected: z.boolean().default(true),
   }),
+  /**
+   * "**If you do**, …" — the clause that hangs off an optional instruction
+   * (ruleset update §15).
+   *
+   * True when the instruction immediately before this one actually did
+   * something. "Did something" is measured by whether that step changed the
+   * match — it emitted at least one event — not by whether the engine reached
+   * it: a "you may sacrifice a Unit" that the player declined, or that found
+   * nothing to act on, both leave the board exactly as it was, and both must
+   * read as "you did not".
+   *
+   * Deliberately about the *immediately preceding* step rather than an authored
+   * index. Every "if you do" on a card refers to the sentence before it, an
+   * index would have to be re-validated against four separate effect arrays,
+   * and a dangling one would silently gate an instruction off forever.
+   *
+   * Meaningless as an ability-level gate — a trigger has no preceding
+   * instruction — where it evaluates false rather than guessing.
+   */
+  z.strictObject({
+    kind: z.literal('previous_step'),
+    /** False for "if you don't". */
+    expected: z.boolean().default(true),
+  }),
 ]);
 export type ConditionDefinition = z.infer<typeof conditionSchema>;
 

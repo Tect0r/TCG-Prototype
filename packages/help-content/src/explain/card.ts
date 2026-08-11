@@ -115,7 +115,16 @@ function describeCost(cost: AbilityCost, sourceNoun: string): string {
     case 'sacrifice': {
       const phrases = filterPhrases(cost.filter);
       const noun = phrases.noun ?? 'friendly unit';
-      const qualified = [...phrases.before, noun, ...phrases.after].join(' ');
+      // "other" is the whole of `excludeSource`, and a player who does not see it
+      // will read the card as one they can feed to itself. It goes inside the
+      // noun phrase rather than in front of the count, because `quantify` writes
+      // the number: "one other friendly unit", not "another one friendly unit".
+      const qualified = [
+        ...(cost.excludeSource ? ['other'] : []),
+        ...phrases.before,
+        noun,
+        ...phrases.after,
+      ].join(' ');
       return `sacrifice ${quantify(cost.amount, qualified)}`;
     }
   }
@@ -291,6 +300,11 @@ function generatedNotes(card: CardDefinition): readonly string[] {
   if (card.unique) {
     notes.push('Unique: your deck may contain only one copy.');
   }
+  if (card.additionalCosts.length > 0) {
+    notes.push(
+      'The additional cost is paid as you play this, before an opponent can respond. If this card is countered you still paid it — nothing is refunded.',
+    );
+  }
   if (card.type === 'relic') {
     notes.push(
       'Relics sit in their own row and are never units. Playing another relic replaces this one — it goes to your discard pile as a rules action, not as a destruction or a sacrifice.',
@@ -327,14 +341,20 @@ export function explainCard(
 
   const sections: ExplanationSection[] = [];
 
-  if (card.effects.length > 0) {
+  // A card with an additional cost and no deploy effects still has something to
+  // say about being played, so the section is not gated on `effects` alone.
+  if (card.effects.length > 0 || card.additionalCosts.length > 0) {
     const deploy = DEPLOY_TRIGGER[card.type === 'commander' ? 'unit' : card.type];
     sections.push({
       id: 'resolve',
       kind: 'resolve',
       title: deploy.clause,
       timing: deploy.description,
-      costs: [],
+      // An additional cost belongs on the resolve section because that is the
+      // section describing playing the card. It is paid before an opponent can
+      // answer the card, and countering does not give it back — which is worth
+      // saying in `notes`, not in the cost line.
+      costs: card.additionalCosts.map((cost) => describeCost(cost, sourceNoun)),
       limit: null,
       steps: stepsFor(card.effects, options, sourceNoun, card.text?.effectExplanations),
     });

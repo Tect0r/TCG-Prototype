@@ -326,7 +326,14 @@ export function targetNotes(target: TargetDefinition): readonly string[] {
   const selection = describeSelection(selector);
   if (selection !== null) notes.push(selection);
   if (selector.optional) {
-    notes.push('this may resolve with no target at all');
+    // An optional selector a player answers is "you may": declining by picking
+    // nothing is the decision, and a note that only says the step "may resolve
+    // with no target" describes an accident rather than a choice.
+    notes.push(
+      selector.selection === 'player_choice'
+        ? 'picking nothing is a legal answer, and skips this step'
+        : 'this may resolve with no target at all',
+    );
   } else if (selector.count !== 'all') {
     notes.push(
       `${numberWord(selector.count)} legal ${plural(

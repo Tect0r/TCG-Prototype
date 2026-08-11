@@ -41,9 +41,10 @@ Design questions that must be answered before some of this can be built are in
 `npm run verify` **passes** end to end: `content:check` → `typecheck` → `lint` →
 `format:check` → `validate:content` → `test` → `build`.
 
-**929 tests across 59 files.** Production build clean. Run and confirmed on
+**952 tests across 60 files.** Production build clean. Run and confirmed on
 2026-08-11, not quoted from an older log. The pre-milestone baseline was 780 in
-47; it was 860 in 53 after the first three tranches of A1.
+47; it was 860 in 53 after the first three tranches of A1, and 929 in 59 before
+the sixth.
 
 Worth recording, because it is the failure mode this file exists to prevent: the
 tree as committed **did not** pass `verify`. One `never`-typed spread in
@@ -56,8 +57,8 @@ have been caught by running only `npm test`.
 | Thing                        | Count | Note                                                      |
 | ---------------------------- | ----: | --------------------------------------------------------- |
 | `precon_wave_1` set cards    |   155 | status `draft`; includes 4 Commanders and 3 Tokens        |
-| — fully structured, playable |   137 | executable effects                                        |
-| — `implemented: false`       |    18 | each names the exact missing primitive                    |
+| — fully structured, playable |   142 | executable effects                                        |
+| — `implemented: false`       |    13 | each names the exact missing primitive                    |
 | `prototype_core` set cards   |    56 | status `development`; Phase 1–4 regression fixtures only  |
 | Precons                      |     4 | all 40 cards, all load and validate                       |
 | Formats                      |     2 | `precon_wave_1` (40/singleton), `development` (30/2-copy) |
@@ -173,7 +174,7 @@ worth doing first.
 
 ### A. Rules engine — the Precon Wave 1 ruleset
 
-#### A1. Effect and trigger vocabulary — **in progress: 60 of 78 cards done**
+#### A1. Effect and trigger vocabulary — **in progress: 65 of 78 cards done**
 
 `CLAUDE_RULESET_UPDATE.md` §15/§16 and readiness gates E1/E2. The foundation
 layer is built and the cards it unlocks are authored; the 18 that remain each
@@ -328,13 +329,12 @@ cleared 15 of the 33 cards this table used to list: the ten Reactions, the two
 Reactions-plus-cost-floor cards, the two token-stack cards, and
 `goblin_powder_runner`.
 
-**Still missing, 18 cards.** Regenerated from the content bundle so it cannot
+**Still missing, 13 cards.** Regenerated from the content bundle so it cannot
 drift:
 
 | Cards | Missing primitive                                                   | Card IDs                                                                                         |
 | ----: | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 |     5 | **replacement effects** (enters Exhausted / prevent a Ready) (§15)  | `containment_array`, `goblin_warhorn_captain`, `stasis_keeper`, `stasis_seal`, `temporal_anchor` |
-|     5 | optional "you may" instructions, with and without a cost (§15)      | `carrion_feeder`, `feed_the_pit`, `forbidden_offering`, `formation_tactician`, `pit_executioner` |
 |     2 | delayed end-of-turn effects (§15)                                   | `fading_wisp`, `marked_for_death`                                                                |
 |     1 | a value derived from the target's own statline (§15)                | `bastion_commander` — the "for that combat" half it also needed now exists                       |
 |     1 | remove-from-game zone transition (§15)                              | `corpse_stitcher`                                                                                |
@@ -343,16 +343,47 @@ drift:
 |     1 | "divide N damage among targets" selection (§16)                     | `mass_offering`                                                                                  |
 |     1 | a cost reduction computed from board state, applied in hand (§15)   | `stitched_abomination`                                                                           |
 
-Two of those rows are one decision apart from each other. The five "you may"
-cards split into **an optional instruction** (a yes/no the chooser answers when
-the instruction resolves) and **an additional cost on the card itself** — "As an
-additional cost, sacrifice a Unit" on `feed_the_pit` and `forbidden_offering`,
-which is paid before the card is queued and is **not** refunded if the card is
-countered (§5). The second half is the harder one: `planCosts` currently picks
-what to sacrifice deterministically rather than asking, which is defensible for
-an activated ability and materially wrong for a card whose whole decision is
-_which_ unit you feed it. Making it interactive means a pending choice **before**
-the card commits, not a new cost type.
+**Built (2026-08-11, sixth tranche): the five "you may" cards.** They looked
+like one mechanic and were three, separated by _when_ the player is asked —
+[ADR 0017](docs/architecture/0017-optional-instructions-and-interactive-costs.md)
+records the reasoning.
+
+- **`optional` on an instruction** — a `confirm` choice at resolution, beside
+  `condition` on the same gate rather than a wrapper effect. Declining fizzles
+  that step alone, under its own reason `declined`, and nobody is asked when the
+  step has nothing to act on. An optional instruction also cannot make a Spell
+  unplayable, which `spellHasLegalTargets` now knows.
+- **`previous_step`, the "if you do" condition** — true when the instruction
+  immediately before it emitted an event. Measured from the log rather than from
+  the outcome kind, because a declined _optional selector_ still resolves: a gate
+  reading `resolved` would fire the follow-up on a card the player declined.
+  Refers to the preceding step rather than an authored index, and authoring it at
+  index 0 is a schema error rather than a permanently false gate.
+- **Interactive costs, as a paused action rather than a paused resolution.** A
+  cost is paid before anything is queued and the queue is the only thing that can
+  pause, so `planCosts` returns a selection request, the pending choice carries
+  the intent in a new `cost_selection` continuation, and answering **re-runs the
+  whole action** with the answer supplied. Nothing is spent while it waits;
+  re-validating from the top is what keeps atomicity a structural property rather
+  than a second commit path. Nobody is asked when there is one legal answer.
+- **`additionalCosts` on the card**, distinct from a first instruction precisely
+  because of timing: it is paid before an opponent's Reaction window opens, so
+  countering the card does not refund it. Restricted to the three types the
+  ordinary play-from-hand path handles — whether a **Reaction** may carry one is
+  left open as **Q46**, and the schema rejects it rather than accepting it and
+  silently not charging it.
+
+Two pre-existing bugs fell out on the way. `ritual_butcher` printed "Sacrifice
+another Unit" and could eat itself — the `excludeSource` it needed now exists.
+And only five of the nineteen effect renderers appended their `condition` to the
+generated prose, so **fourteen effect types were dropping the "if" from a card's
+explanation**; both gates are applied once in `explainEffect` now. Provenance
+also improved: cost payment is stamped with the card that demanded it, and an
+outright `destroy` credits the source's `unitsRemoved` the way lethal damage
+already did.
+
+`MATCH_SCHEMA_VERSION` → 6. 18 new engine tests in `optional-and-costs.test.ts`,
+3 explanation tests, 2 pilot-valuation tests.
 
 Every new mechanic must ship the full readiness gate E3 contract, not just the
 engine half: schema + migration, engine resolution, legal-action/choice
@@ -793,7 +824,7 @@ C1 shows the two ends really can diverge on which _pool_ they validate against.
 
 Ruleset update §19.14: all ordered pairs of the four precons across fixed seeds.
 A2–A5 have landed and D1's `spectate` path can seat a precon per seat, so the
-only remaining blocker is A1: 18 cards in the four precons still do nothing, and
+only remaining blocker is A1: 13 cards in the four precons still do nothing, and
 a smoke matrix run against decks with holes in them measures the holes.
 
 #### F4. Text-vs-behaviour validation — §19.7, partly done
@@ -813,16 +844,30 @@ correction is implemented (§1.3). Readiness gate A2 is exactly this. `README.md
 does not mention precons, the 40-card singleton format, the two-format split, AI
 spectator mode, or the `report:triggers` command.
 
-#### G2. `docs/open-questions.md` is stale
+#### G2. `docs/open-questions.md` and `docs/rules/open-decisions.md` are stale
 
-Ten entries describe a codebase that no longer exists. Details and the exact
-corrections are in §3 below.
+Ten entries in `open-questions.md` describe a codebase that no longer exists.
+Details and the exact corrections are in §3 below.
+
+**`docs/rules/open-decisions.md` is worse, and was not tracked here until
+2026-08-11.** Its "Match rules — provisional numbers" table still lists
+`unitSlots: 5`, `relicSlots: 3` and `exhaustedUnitsMayBlock: yes`, and its
+Keywords section still calls `guardian` inert and lists `swift` — every one of
+those was superseded by ADR 0016, and two of the fields no longer exist in
+`RulesConfig` at all. A reader who trusts that table is reading the pre-milestone
+game. Only the sections the later tranches touched have been corrected in place
+(the Precon Wave 1 block, the Reaction chaining policy, and the `sacrifice`
+cost-or-effect entry); the rest needs one sweep against `config.ts` and
+`KEYWORD_REGISTRY`, not a rewrite.
 
 #### G3. Missing documents named by the specs
 
 - `docs/testing/FIRST_CARD_BATCH_TEST_PLAN.md` — the seven-stage protocol in
   readiness spec §11. The whole `docs/testing/` directory is absent.
 - ADRs for any new persisted-data or statistical-contract decision made by A1–A5.
+  [ADR 0017](docs/architecture/0017-optional-instructions-and-interactive-costs.md)
+  is the first, covering the `cost_selection` continuation and
+  `previousStepActed`; the remaining A1 tranches still owe theirs.
 
 #### G4. `PHASE4_HARDENING.md` §19 final report
 

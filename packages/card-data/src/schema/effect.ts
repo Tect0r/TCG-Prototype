@@ -58,7 +58,35 @@ export type EntityTarget = z.infer<typeof entityTargetSchema>;
  * card still resolves, which is exactly what "Draw a card. If …, draw another"
  * means.
  */
-const gate = { condition: conditionSchema.optional() } as const;
+const gate = {
+  condition: conditionSchema.optional(),
+  /**
+   * "**You may** …" — a yes/no the instruction's controller answers when it
+   * resolves (ruleset update §15).
+   *
+   * A property of the instruction rather than a wrapper effect, for the same
+   * reason `condition` is: an optional step is still one flat instruction with a
+   * `type`, and every reader of an effect list would otherwise have to learn to
+   * walk into a `maybe` node.
+   *
+   * Distinct from a target selector's `optional`, which is "you may pick
+   * nothing" and is the better encoding whenever the decision *is* the target —
+   * declining by choosing no unit is one interaction where a confirm plus a
+   * target choice is two. `optional` here is for the instructions that have no
+   * target to decline: "you may Ready that Guardian" points at the unit the
+   * trigger was about, and the only decision left is whether to do it at all.
+   *
+   * Declining is not a failure. The rest of the card still resolves, which is
+   * what lets "you may sacrifice … **if you do**, …" work: see the
+   * `previous_step` condition.
+   *
+   * `.optional()` rather than `.default(false)`, matching `condition` beside it
+   * and `groupByTokenDefinition` on the selector: a rare opt-in on a shape that
+   * fixtures and tests write by hand, where a default would make "absent" a type
+   * error in every one of them. Absent means off.
+   */
+  optional: z.boolean().optional(),
+} as const;
 
 export const effectDefinitionSchema = z.discriminatedUnion('type', [
   z.strictObject({
@@ -405,22 +433,66 @@ export type AbilityUsageLimit = z.infer<typeof abilityUsageLimitSchema>;
  * are validated and paid atomically before the ability is queued, and sacrifice
  * is legal as a cost as well as an effect (CLAUDE.md §17 Q3/Q27).
  */
+const discardCostSchema = z.strictObject({
+  type: z.literal('discard'),
+  amount: z.number().int().min(1).max(10),
+  selection: selectionModeSchema.default('player_choice'),
+});
+
+const sacrificeCostSchema = z.strictObject({
+  type: z.literal('sacrifice'),
+  amount: z.number().int().min(1).max(10),
+  /** Restricts which friendly permanents may pay. Defaults to any unit. */
+  filter: cardFilterSchema.optional(),
+  /**
+   * Excludes the card the cost is being paid for. This is the whole of
+   * "sacrifice **another** Unit" on a card that is itself a Unit.
+   *
+   * Never meaningful on a Spell's additional cost — the Spell is in hand, not
+   * on the battlefield, so it was never in the candidate set to begin with.
+   */
+  excludeSource: z.boolean().default(false),
+  /**
+   * Who picks the victim.
+   *
+   * `player_choice` is the default because on the cards that print this, the
+   * whole decision *is* which unit you feed it — an engine that picked for the
+   * player would be choosing the card's most important line. The engine pauses
+   * for a selection before anything is spent (see the `cost_selection`
+   * continuation). `automatic` keeps the older deterministic pick for a cost
+   * where the victim genuinely does not matter, and nothing is ever asked when
+   * there is only one legal answer.
+   */
+  selection: selectionModeSchema.default('player_choice'),
+});
+
 export const abilityCostSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('energy'), amount: z.number().int().min(0).max(20) }),
   z.strictObject({ type: z.literal('exhaust_source') }),
-  z.strictObject({
-    type: z.literal('discard'),
-    amount: z.number().int().min(1).max(10),
-    selection: selectionModeSchema.default('player_choice'),
-  }),
-  z.strictObject({
-    type: z.literal('sacrifice'),
-    amount: z.number().int().min(1).max(10),
-    /** Restricts which friendly permanents may pay. Defaults to any unit. */
-    filter: cardFilterSchema.optional(),
-  }),
+  discardCostSchema,
+  sacrificeCostSchema,
 ]);
 export type AbilityCost = z.infer<typeof abilityCostSchema>;
+
+/**
+ * "**As an additional cost**, sacrifice a Unit."
+ *
+ * Paid when the card is played, before it is queued, and **not refunded if the
+ * card is later countered** (CLAUDE.md §4). That timing is the whole reason it
+ * is a cost rather than a first instruction: a first instruction resolves after
+ * the Reaction window has already closed over the card, so a countered spell
+ * would cost its controller nothing.
+ *
+ * A narrower union than `AbilityCost` on purpose. `energy` is excluded because
+ * a card's energy cost is its printed `cost` and a second, invisible one would
+ * make `energyCostOf` a lie; `exhaust_source` is excluded because a card being
+ * played out of hand has nothing to exhaust.
+ */
+export const additionalCostSchema = z.discriminatedUnion('type', [
+  discardCostSchema,
+  sacrificeCostSchema,
+]);
+export type AdditionalCost = z.infer<typeof additionalCostSchema>;
 
 /**
  * An ability the controller chooses to use. The only legal timing is the

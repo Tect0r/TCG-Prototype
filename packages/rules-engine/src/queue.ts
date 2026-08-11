@@ -173,6 +173,12 @@ export function pumpQueue(ctx: MatchContext): void {
     }
 
     item.effectIndex = effectIndex + 1;
+    // What "If you do" reads. An instruction that emitted nothing changed
+    // nothing, whether it was declined, found no target, or was already true of
+    // the board — and all three answer "you did not". Recorded from the event
+    // log rather than from `outcome.kind`, because `resolved` covers a
+    // sacrifice of zero units just as happily as a sacrifice of one.
+    item.previousStepActed = ctx.events.length > before;
 
     if (outcome.kind === 'fizzled') {
       emit(ctx, {

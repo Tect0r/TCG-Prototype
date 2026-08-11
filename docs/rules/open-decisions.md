@@ -212,14 +212,28 @@ should not be authored until it does.
 
 ### `sacrifice` as cost or effect (Q3)
 
-**Confirmed — not implemented.** The ruling: it may be **either**. A `sacrifice`
-instruction inside `effects` stays an effect, and activated abilities gain a
-structured, extensible `costs` array — energy first, then discard, sacrifice and
-exhaust — validated and paid atomically before the ability is queued.
+**Confirmed — implemented.** The ruling: it may be **either**. A `sacrifice`
+instruction inside `effects` stays an effect, and a cost lives in a structured
+`costs` array — energy, exhaust-source, discard and sacrifice — validated and
+paid atomically before the ability is queued. The `energyCost` field is gone;
+the v1 → v2 card migration converts it.
 
-Today it is only ever an effect, resolving in authored order, and an activation
-cost is the single `energyCost` field on `activatedAbilities`. Closing this needs
-a card migration from `energyCost` to `costs`.
+Three refinements landed with the "you may" cards (ADR 0017), all of them about
+_which_ card pays:
+
+- **A sacrifice cost is the payer's choice by default** (`selection`, defaulting
+  to `player_choice`). Where the decision matters, the engine pauses for a
+  selection **before anything is spent**, then re-runs the whole action with the
+  answer — a cost cannot be a paused resolution, because nothing has been queued
+  yet. `automatic` keeps the older deterministic pick. Nobody is asked when the
+  candidate count equals the cost.
+- **`excludeSource`** is "sacrifice **another** Unit". Before it existed
+  `ritual_butcher` printed "another" and could eat itself.
+- **A card may carry its own `additionalCosts`**, separate from an ability's.
+  The timing is the whole distinction: it is paid before an opponent's Reaction
+  window opens, so countering the card refunds nothing. Restricted to `unit`,
+  `spell` and `relic` — the types the ordinary play-from-hand path handles.
+  Whether a **Reaction** may carry one is Q46.
 
 ### Trigger scope
 

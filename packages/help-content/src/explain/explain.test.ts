@@ -579,6 +579,51 @@ describe('card explanations', () => {
     expect(explainCard(definition, { database })).toEqual(explainCard(definition, { database }));
   });
 
+  it('prefixes an optional instruction with "You may"', () => {
+    const explanation = explainCard(
+      card({ effects: [{ type: 'draw', optional: true, player: 'self', amount: 1 }] }),
+      { database },
+    );
+    const step = explanation.sections.find((s) => s.kind === 'resolve')?.steps[0];
+    expect(step?.text).toMatch(/^You may draw/i);
+  });
+
+  it('reads an "if you do" gate as the card idiom rather than the generic one', () => {
+    const explanation = explainCard(
+      card({
+        effects: [
+          { type: 'draw', optional: true, player: 'self', amount: 1 },
+          {
+            type: 'discard',
+            condition: { kind: 'previous_step' },
+            player: 'self',
+            amount: 1,
+          },
+        ],
+      }),
+      { database },
+    );
+    const steps = explanation.sections.find((s) => s.kind === 'resolve')?.steps ?? [];
+    expect(steps[1]?.text).toMatch(/if you did/i);
+    expect(steps[1]?.text).not.toMatch(/but only if you did/i);
+  });
+
+  it('states an additional cost, and that countering does not refund it', () => {
+    const explanation = explainCard(
+      card({
+        type: 'spell',
+        attack: undefined,
+        health: undefined,
+        additionalCosts: [{ type: 'sacrifice', amount: 1, excludeSource: true }],
+        effects: [{ type: 'draw', player: 'self', amount: 2 }],
+      }),
+      { database },
+    );
+    const section = explanation.sections.find((s) => s.kind === 'resolve');
+    expect(section?.costs).toEqual(['sacrifice one other friendly unit']);
+    expect(explanation.notes.join(' ')).toMatch(/nothing is refunded/i);
+  });
+
   it('exposes keyword definitions from the shared registry', () => {
     const explanation = explainCard(database.getOrThrow('dread_sovereign'), { database });
     expect(explanation.keywords.map((keyword) => keyword.id)).toEqual(['venom', 'resilient']);
