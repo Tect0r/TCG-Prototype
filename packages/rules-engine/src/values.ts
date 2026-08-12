@@ -2,11 +2,15 @@ import type {
   ConditionDefinition,
   CountQuery,
   SignedValueExpression,
+  StatField,
+  StatSubject,
   ValueExpression,
 } from '@tcg/card-data';
-import type { MatchContext } from './context.js';
+import type { ReadContext } from './context.js';
 import {
   clockwiseFrom,
+  currentAttack,
+  currentHealth,
   definitionOf,
   findInstance,
   isNewlyDeployed,
@@ -36,16 +40,39 @@ export interface CountScope {
   /** The card the ability is printed on, for `excludeSource`. */
   readonly sourceInstanceId: InstanceId | null;
   /**
+   * The card a triggered ability fired about, for a value read from
+   * `trigger_subject`.
+   */
+  readonly triggerSubjectInstanceId?: InstanceId | null;
+  /**
+   * The card the instruction is acting on *right now*, for a value read from
+   * `effect_target` (M02.3).
+   *
+   * Supplied per recipient rather than per instruction: "each friendly Unit
+   * gains Health equal to its ATK" reads a different statline for each unit, so
+   * an instruction that resolves against three targets builds three scopes.
+   */
+  readonly targetInstanceId?: InstanceId | null;
+  /**
    * Whether the instruction before this one changed the match, for "if you do".
    *
    * Absent when there is no preceding instruction to ask about — an
    * ability-level gate, or a condition evaluated outside a resolution item.
    */
   readonly previousStepActed?: boolean;
+  /**
+   * How many entities the instruction before this one resolved with, for a
+   * `previous_targets` amount — "for each Unit sacrificed" (M02.5).
+   *
+   * Absent for the same reason `previousStepActed` is: outside a resolution item
+   * there is no preceding instruction, and the card schema already refuses the
+   * one authoring form that could ask here without one.
+   */
+  readonly previousTargetCount?: number;
 }
 
 /** Seats a `controller` relation covers, relative to the asking player. */
-function seatsFor(ctx: MatchContext, query: CountQuery, scope: CountScope): PlayerId[] {
+function seatsFor(ctx: ReadContext, query: CountQuery, scope: CountScope): PlayerId[] {
   switch (query.controller) {
     case 'self':
       return [scope.controllerId];
@@ -60,7 +87,7 @@ function seatsFor(ctx: MatchContext, query: CountQuery, scope: CountScope): Play
 
 /** Whether a card that is still in play satisfies the query. */
 function instanceMatches(
-  ctx: MatchContext,
+  ctx: ReadContext,
   instanceId: InstanceId,
   query: CountQuery,
   scope: CountScope,
@@ -78,7 +105,7 @@ function instanceMatches(
 }
 
 /** Whether a card that has already left play satisfies the query. */
-function entryMatches(ctx: MatchContext, entry: TurnEventEntry, query: CountQuery): boolean {
+function entryMatches(ctx: ReadContext, entry: TurnEventEntry, query: CountQuery): boolean {
   if (!query.filter) return true;
   const definition = ctx.database.get(entry.definitionId);
   if (!definition) return false;
@@ -88,7 +115,7 @@ function entryMatches(ctx: MatchContext, entry: TurnEventEntry, query: CountQuer
 }
 
 function countTurnEntries(
-  ctx: MatchContext,
+  ctx: ReadContext,
   entries: readonly TurnEventEntry[],
   query: CountQuery,
   scope: CountScope,
@@ -102,7 +129,7 @@ function countTurnEntries(
 }
 
 /** Answers one counting question against the current state. */
-export function evaluateCount(ctx: MatchContext, query: CountQuery, scope: CountScope): number {
+export function evaluateCount(ctx: ReadContext, query: CountQuery, scope: CountScope): number {
   const { turnEvents, combat } = ctx.state;
 
   switch (query.subject) {
@@ -172,7 +199,7 @@ export function evaluateCount(ctx: MatchContext, query: CountQuery, scope: Count
 
 /** Whether a gate on a trigger or an instruction is satisfied right now. */
 export function evaluateCondition(
-  ctx: MatchContext,
+  ctx: ReadContext,
   condition: ConditionDefinition,
   scope: CountScope,
 ): boolean {
@@ -220,18 +247,58 @@ export function evaluateCondition(
 }
 
 /**
- * Resolves an amount, which may be a printed number or a count of the board.
+ * Reads one number off a card's statline (M02.3).
+ *
+ * **Derived**, not printed: `currentAttack`/`currentHealth` include every
+ * applied modifier and the continuous layer, so "gains Health equal to its ATK"
+ * on a unit standing next to a lord uses the ATK a player can see. Read at the
+ * moment the instruction resolves, like every other value — a buff that lands
+ * between the trigger firing and the ability resolving is counted.
+ *
+ * Returns `null` when the named card is not there: an ability whose subject has
+ * left play, or an `effect_target` on an instruction acting on a player. The
+ * caller turns that into zero, which is what an unresolvable amount has always
+ * meant here; the schema rejects the *structurally* unresolvable cases at load
+ * time, so this covers only the ones that depend on the board.
+ */
+function readStat(
+  ctx: ReadContext,
+  of: StatSubject,
+  stat: StatField,
+  scope: CountScope,
+): number | null {
+  const instanceId =
+    of === 'source'
+      ? scope.sourceInstanceId
+      : of === 'trigger_subject'
+        ? (scope.triggerSubjectInstanceId ?? null)
+        : (scope.targetInstanceId ?? null);
+  if (!instanceId) return null;
+  const instance = findInstance(ctx.state, instanceId);
+  if (!instance) return null;
+  const definition = definitionOf(ctx.database, instance);
+  return stat === 'attack'
+    ? currentAttack(instance, definition)
+    : currentHealth(instance, definition);
+}
+
+/**
+ * Resolves an amount, which may be a printed number, a count of the board, or a
+ * number read off a card's statline.
  *
  * `per` divides and rounds **down**: "for every three other Goblins" is worth
  * one at three Goblins and one at four, which is what a player reads it as.
  */
-export function evaluateValue(
-  ctx: MatchContext,
-  value: ValueExpression,
-  scope: CountScope,
-): number {
+export function evaluateValue(ctx: ReadContext, value: ValueExpression, scope: CountScope): number {
   if (typeof value === 'number') return value;
-  const raw = Math.floor(evaluateCount(ctx, value.count, scope) / value.per) + value.plus;
+  const raw =
+    value.kind === 'stat'
+      ? (readStat(ctx, value.of, value.stat, scope) ?? 0) + value.plus
+      : value.kind === 'previous_targets'
+        ? // Zero when the step before acted on nothing, which is a legal outcome
+          // of an "up to N" that took none — not a missing answer.
+          (scope.previousTargetCount ?? 0) + value.plus
+        : Math.floor(evaluateCount(ctx, value.count, scope) / value.per) + value.plus;
   const capped = value.maximum === undefined ? raw : Math.min(raw, value.maximum);
   // Never negative: an amount of damage or a number of tokens has no meaning
   // below zero, and the floor is applied after the cap so a `maximum` cannot
@@ -241,13 +308,15 @@ export function evaluateValue(
 
 /** Same, for a value that is allowed to be negative — a stat penalty. */
 export function evaluateSignedValue(
-  ctx: MatchContext,
+  ctx: ReadContext,
   value: SignedValueExpression,
   scope: CountScope,
 ): number {
   if (typeof value === 'number') return value;
   const raw =
-    value.sign * Math.floor(evaluateCount(ctx, value.count, scope) / value.per) + value.plus;
+    value.kind === 'stat'
+      ? value.sign * (readStat(ctx, value.of, value.stat, scope) ?? 0) + value.plus
+      : value.sign * Math.floor(evaluateCount(ctx, value.count, scope) / value.per) + value.plus;
   const capped = value.maximum === undefined ? raw : Math.min(raw, value.maximum);
   return Math.max(value.minimum, capped);
 }
@@ -258,6 +327,6 @@ export function evaluateSignedValue(
  * Re-exported here so a caller that already imports the value evaluator does
  * not need a second import purely to walk seats.
  */
-export function opponentsOf(ctx: MatchContext, playerId: PlayerId): PlayerId[] {
+export function opponentsOf(ctx: ReadContext, playerId: PlayerId): PlayerId[] {
   return clockwiseFrom(ctx.state, playerId);
 }

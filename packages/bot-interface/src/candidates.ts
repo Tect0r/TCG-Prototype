@@ -380,6 +380,10 @@ function choiceCandidates(
   const playerId = observation.legal.playerId;
   const ranked = rankChoiceOptions(observation, choice, options.weights);
 
+  if (choice.type === 'divide_damage') {
+    return divideDamageCandidates(observation, choice, ranked);
+  }
+
   if (choice.ordered) {
     return [
       {
@@ -432,6 +436,64 @@ function choiceCandidates(
   }
 
   return dedupe(candidates).sort(byKey);
+}
+
+/**
+ * Splitting a fixed total of damage across targets (M02.5).
+ *
+ * Its own enumerator because the answer is a multiset — one entry per point —
+ * and the generic path builds sets of distinct options, which for a total larger
+ * than the option count would produce an answer the engine rejects outright.
+ *
+ * Three plans, each one a human would recognise, and no attempt to search the
+ * space: pile it all on the best target, spread it evenly, or spend just enough
+ * on each target to defeat it and dump the remainder on the best one. The scorer
+ * decides between them on the same summed-value basis as every other choice, so
+ * a repeated target genuinely counts twice.
+ */
+function divideDamageCandidates(
+  observation: BotObservation,
+  choice: PendingChoice,
+  ranked: readonly RankedOption[],
+): ActionCandidate[] {
+  const playerId = observation.legal.playerId;
+  // Minimum and maximum are the same number on this choice type: the total.
+  const total = choice.minimum;
+  const options = ranked.map((entry) => entry.id);
+  if (total <= 0 || options.length === 0) return [];
+
+  const submit = (selectedIds: string[], key: string): ActionCandidate => ({
+    action: { type: 'submit_choice', playerId, choiceId: choice.id, selectedIds },
+    family: 'submit_choice',
+    key,
+  });
+
+  const best = options[0] as string;
+  const concentrated = Array.from({ length: total }, () => best);
+
+  const spread = Array.from(
+    { length: total },
+    (_, index) => options[index % options.length] as string,
+  );
+
+  // "Just enough to kill it, then the rest where it counts most." A target whose
+  // remaining health is unknown — anything not on the battlefield — is treated
+  // as needing one point, which is the only non-guessing assumption available.
+  const lethal: string[] = [];
+  for (const id of options) {
+    if (lethal.length >= total) break;
+    const unit = observation.view.instances[id];
+    const needed = unit ? Math.max(1, unit.health - unit.markedDamage) : 1;
+    if (lethal.length + needed > total) continue;
+    for (let i = 0; i < needed; i += 1) lethal.push(id);
+  }
+  while (lethal.length < total) lethal.push(best);
+
+  return dedupe([
+    submit(concentrated, 'divide:concentrate'),
+    submit(spread, 'divide:spread'),
+    submit(lethal, 'divide:finish_off'),
+  ]).sort(byKey);
 }
 
 export interface RankedOption {

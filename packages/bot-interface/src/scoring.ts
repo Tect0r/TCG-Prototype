@@ -1,12 +1,15 @@
 import { z } from 'zod';
+import { isDistributedSelection } from '@tcg/card-data';
 import type {
   CardDatabase,
   CardDefinition,
+  DelayedAbilityDefinition,
   Duration,
   EffectDefinition,
   KeywordId,
   SignedValueExpression,
   ValueExpression,
+  ZoneId,
 } from '@tcg/card-data';
 import type { CardInstanceView, PlayerView, PlayerViewSummary } from '@tcg/rules-engine';
 
@@ -251,10 +254,28 @@ function durationScale(duration: Duration): number {
  */
 const ASSUMED_MATCH_COUNT = 2;
 
+/**
+ * The statline a derived value is assumed to read, for the same reason.
+ *
+ * "Gains Health equal to its ATK" is worth whatever the unit it lands on has,
+ * and a pilot ranking a hand does not know which unit that will be. Three is a
+ * middling Wave 1 ATK — enough that a card built around the clause does not read
+ * as blank, not so much that it reads as a finisher (M02.3).
+ */
+const ASSUMED_STAT = 3;
+
 function estimateValue(value: ValueExpression | SignedValueExpression): number {
   if (typeof value === 'number') return value;
   const sign = 'sign' in value ? value.sign : 1;
-  const raw = sign * Math.floor(ASSUMED_MATCH_COUNT / value.per) + value.plus;
+  const raw =
+    value.kind === 'stat'
+      ? sign * ASSUMED_STAT + value.plus
+      : value.kind === 'previous_targets'
+        ? // How many things the step before it will act on is exactly the sort of
+          // board question `effectValue` cannot ask, so it takes the same
+          // middling assumption every other unknown count takes (M02.5).
+          sign * ASSUMED_MATCH_COUNT + value.plus
+        : sign * Math.floor(ASSUMED_MATCH_COUNT / value.per) + value.plus;
   const capped = value.maximum === undefined ? raw : Math.min(raw, value.maximum);
   return Math.max(value.minimum, capped);
 }
@@ -269,12 +290,40 @@ function estimateValue(value: ValueExpression | SignedValueExpression): number {
  */
 const CONDITION_DISCOUNT = 0.6;
 
+/**
+ * How much of a delayed effect's value survives the delay.
+ *
+ * A `schedule_delayed` is worth what its body is worth, discounted twice over:
+ * the instructions land later in the turn, and — when the entry is a watch — may
+ * never land at all, because the card it is about has to be defeated first. A
+ * pilot that priced a delayed clause as an immediate one would over-pay for
+ * every card carrying one; pricing it at zero would make the delayed half
+ * invisible and mulligan the card away.
+ *
+ * Coarse and hard-coded, exactly like `durationScale` beside it: these are
+ * shape factors, not tunable balance.
+ */
+const DELAYED_BOUNDARY_SCALE = 0.5;
+const DELAYED_WATCH_SCALE = 0.35;
+
+/**
+ * What is left of a symmetrical effect once both sides have paid it.
+ *
+ * An "each player sacrifices one" costs us the same thing it costs an opponent,
+ * so most of its value cancels. The remainder is real but small — we pick the
+ * moment, and we are the one holding the card — and it is a coarse shape factor
+ * exactly like the two scales above, not a tunable balance number.
+ */
+const SYMMETRIC_EFFECT_EDGE = 0.25;
+
 export function effectValue(
   effect: EffectDefinition,
   weights: BotWeights,
   database: CardDatabase,
+  /** The card's delayed bodies, so `schedule_delayed` can be priced honestly. */
+  delayedAbilities: readonly DelayedAbilityDefinition[] = [],
 ): number {
-  const gross = ungatedEffectValue(effect, weights, database);
+  const gross = ungatedEffectValue(effect, weights, database, delayedAbilities);
   // An optional instruction is *not* discounted, and the asymmetry with
   // `condition` is deliberate. A condition may fail against the player; a "you
   // may" cannot, because the player is the one answering it and will say no
@@ -287,6 +336,7 @@ function ungatedEffectValue(
   effect: EffectDefinition,
   weights: BotWeights,
   database: CardDatabase,
+  delayedAbilities: readonly DelayedAbilityDefinition[],
 ): number {
   switch (effect.type) {
     case 'draw':
@@ -312,6 +362,13 @@ function ungatedEffectValue(
       }
       const selector = effect.target.selector;
       const sign = selector.controller === 'self' ? -1 : 1;
+      // A divided amount is a *total* split across the set, not an amount each
+      // member takes, so it must not be multiplied by the size of the set —
+      // that would price "divide five damage" as five damage to every target
+      // (M02.5).
+      if (effect.divided === true) {
+        return sign * weights.unitDamage * estimateValue(effect.amount);
+      }
       const count = selector.count === 'all' ? 2 : selector.count;
       return sign * weights.unitDamage * estimateValue(effect.amount) * count;
     }
@@ -351,8 +408,18 @@ function ungatedEffectValue(
       const count = selector === null ? 1 : selector.count === 'all' ? 2 : selector.count;
       return sign * weights.removalBonus * count;
     }
-    case 'sacrifice':
+    case 'sacrifice': {
+      const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
+      // "Each player sacrifices one" is not a self-cost: we give one up and so
+      // does every opponent, and everybody gives up their worst. What is left
+      // over is the tempo of choosing when it happens, which is small but real
+      // — pricing it as a pure cost would make the pilot mulligan a symmetrical
+      // removal spell away (M02.5).
+      if (selector !== null && isDistributedSelection(selector)) {
+        return weights.removalBonus * 0.6 * SYMMETRIC_EFFECT_EDGE;
+      }
       return -weights.removalBonus * 0.6;
+    }
     case 'return_to_hand': {
       const ours = effect.target.kind !== 'entity' || effect.target.selector.controller === 'self';
       return (ours ? -0.2 : 1) * weights.bounceValue;
@@ -373,8 +440,53 @@ function ungatedEffectValue(
       return weights.tapValue;
     case 'ready':
       return weights.tapValue;
-    case 'move_card':
+    case 'skip_next_ready': {
+      // Costing a unit its next Ready Step is worth more than exhausting it now:
+      // the exhaustion it enforces lasts a whole turn cycle rather than until
+      // the owner's next untap. Aimed at one of our own cards it is a drawback.
+      const ours =
+        // `blocked_by_source` names the attackers we blocked, so it is always
+        // aimed at somebody else's units however the rest of the card reads.
+        effect.target.kind !== 'blocked_by_source' &&
+        (effect.target.kind !== 'entity' || effect.target.selector.controller === 'self');
+      const count =
+        effect.target.kind === 'entity'
+          ? effect.target.selector.count === 'all'
+            ? 2
+            : effect.target.selector.count
+          : 1;
+      return (ours ? -1 : 1) * weights.tapValue * 1.5 * count;
+    }
+    case 'move_card': {
+      const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
+      const count = selector === null ? 1 : selector.count === 'all' ? 2 : selector.count;
+      // Putting a card onto the battlefield is worth more than moving one: the
+      // card arrives in play without being paid for. *Which* card cannot be
+      // known from the definition — it is whatever is in the pile at the time —
+      // so it is priced as a card gained, a little above a draw, and a pilot
+      // that cannot see anything to bring back is corrected where it can see the
+      // board rather than here (see `emptySourceZonePenalty`).
+      if (effect.toZone === 'battlefield') return weights.cardDraw * count * 1.2;
+      // Removing a card from the game. One of ours is a small price paid for
+      // whatever else the instruction list does; one of theirs denies them the
+      // card outright, which is worth about what making them discard it is.
+      if (effect.toZone === 'removed') {
+        const ours = selector === null || selector.controller === 'self';
+        return ours ? -weights.cardDraw * 0.2 * count : weights.discardCard * count;
+      }
       return weights.cardDraw * 0.3;
+    }
+    case 'schedule_delayed': {
+      const ability = delayedAbilities.find((entry) => entry.id === effect.delayedAbilityId);
+      // An unresolvable reference cannot happen on validated card data, and a
+      // caller that did not pass the card's delayed list gets zero rather than
+      // an invented number.
+      if (!ability) return 0;
+      const scale = ability.trigger === undefined ? DELAYED_BOUNDARY_SCALE : DELAYED_WATCH_SCALE;
+      // Nested one level only — the schema forbids a delayed body scheduling
+      // another — so this cannot recur.
+      return effectsValue(ability.effects, weights, database) * scale;
+    }
     default:
       return 0;
   }
@@ -384,8 +496,68 @@ export function effectsValue(
   effects: readonly EffectDefinition[],
   weights: BotWeights,
   database: CardDatabase,
+  delayedAbilities: readonly DelayedAbilityDefinition[] = [],
 ): number {
-  return effects.reduce((sum, effect) => sum + effectValue(effect, weights, database), 0);
+  return effects.reduce(
+    (sum, effect) => sum + effectValue(effect, weights, database, delayedAbilities),
+    0,
+  );
+}
+
+/**
+ * What a card's continuous abilities are worth.
+ *
+ * Priced per ability rather than as `staticAbilities.length × buffValue × 2`,
+ * which is what it used to be. That proxy read every continuous ability as a
+ * lord's aura, and two of the three are not: a Reaction discount and a
+ * `cost_reduction` are worth *energy*, not board presence, and the coarse
+ * proxy over-valued both (M02.3).
+ *
+ * `activeZone` narrows the sum to the abilities that are switched on where the
+ * card currently is. A cost reduction is worth nothing to a unit already
+ * standing on the battlefield: its own `activeZone` is the hand, and the
+ * discount was spent to get it there.
+ */
+function staticAbilitiesValue(
+  definition: CardDefinition,
+  weights: BotWeights,
+  activeZone?: ZoneId,
+): number {
+  return definition.staticAbilities.reduce((sum, ability) => {
+    if (activeZone !== undefined && ability.activeZone !== activeZone) return sum;
+    switch (ability.effect.type) {
+      case 'modify_stats':
+      case 'grant_keyword':
+        return sum + weights.buffValue * 2;
+      case 'reaction_discount':
+        return sum + weights.energyEfficiency * ability.effect.amount;
+      case 'cost_reduction':
+        return sum + weights.energyEfficiency * estimateValue(ability.effect.amount);
+      case 'replace_arrival': {
+        // Two different cards wear this shape. Rewriting an *opponent's* arrival
+        // to be Exhausted is tempo denial, worth about what exhausting a unit is;
+        // handing your own arrivals a keyword is a buff. A "first each turn"
+        // limit halves it, because it reaches one arrival rather than all of
+        // them.
+        const denial =
+          ability.effect.entersExhausted === true
+            ? (ability.affects.controller === 'opponent' ? 1 : -1) * weights.tapValue
+            : 0;
+        const granted = ability.effect.grantKeyword === undefined ? 0 : weights.keywordBonus * 2;
+        const throttle = ability.effect.limit === 'first_each_turn' ? 0.5 : 1;
+        return sum + (denial + granted) * throttle;
+      }
+      case 'replace_ready':
+        // Keeping an enemy unit Exhausted through its Ready Step is worth more
+        // than exhausting one during a turn — it costs the opponent a whole turn
+        // of that unit — but it is paid for, so the Energy comes back off.
+        return (
+          sum +
+          (ability.affects.controller === 'opponent' ? 1 : -1) * weights.tapValue * 1.5 -
+          weights.energyEfficiency * ability.effect.energyCost
+        );
+    }
+  }, 0);
 }
 
 /**
@@ -404,17 +576,18 @@ export function cardValue(
     (definition.health ?? 0) * weights.unitHealth +
     keywordCount(definition.keywords) * weights.keywordBonus;
 
+  const delayed = definition.delayedAbilities;
   const text =
-    effectsValue(definition.effects, weights, database) +
+    effectsValue(definition.effects, weights, database, delayed) +
     definition.abilities.reduce(
-      (sum, ability) => sum + effectsValue(ability.effects, weights, database) * 0.7,
+      (sum, ability) => sum + effectsValue(ability.effects, weights, database, delayed) * 0.7,
       0,
     ) +
     definition.activatedAbilities.reduce(
-      (sum, ability) => sum + effectsValue(ability.effects, weights, database) * 0.5,
+      (sum, ability) => sum + effectsValue(ability.effects, weights, database, delayed) * 0.5,
       0,
     ) +
-    definition.staticAbilities.length * weights.buffValue * 2;
+    staticAbilitiesValue(definition, weights);
 
   const chassis = definition.type === 'relic' ? weights.relicBase : 0;
   return body + text + chassis;
@@ -438,10 +611,10 @@ export function unitBoardValue(
     keywordCount(unit.keywords) * weights.keywordBonus;
   const text = definition
     ? definition.abilities.reduce(
-        (sum, ability) => sum + effectsValue(ability.effects, weights, database) * 0.5,
+        (sum, ability) =>
+          sum + effectsValue(ability.effects, weights, database, definition.delayedAbilities) * 0.5,
         0,
-      ) +
-      definition.staticAbilities.length * weights.buffValue * 2
+      ) + staticAbilitiesValue(definition, weights, 'battlefield')
     : 0;
   const ready = unit.exhausted ? 0 : weights.readyBlockerValue;
   return base + text + ready;

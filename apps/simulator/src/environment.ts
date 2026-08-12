@@ -1,13 +1,17 @@
 import { z } from 'zod';
 import {
+  BUNDLED_FORMATS,
   CardDatabase,
   applyCardPatch,
+  bundledFormat,
   cardDefinitionSchema,
   cardIdSchema,
   cardPatchBodySchema,
+  formatCardPool,
   loadBundledCardData,
   type CardDefinition,
   type CardId,
+  type PlayFormat,
 } from '@tcg/card-data';
 import { DEFAULT_DECK_FORMAT, type DeckFormatConfig } from '@tcg/deck';
 import { DEFAULT_RULES_CONFIG, rulesConfigSchema, type RulesConfig } from '@tcg/rules-engine';
@@ -81,14 +85,28 @@ export const environmentConfigSchema = z.strictObject({
    * resolved config still re-validates when a worker re-parses it. */
   label: z.string().max(80).default(''),
   /**
-   * Named content sets to load, in place of the default format's selection.
+   * Named content sets to load, in place of the format's own selection.
    *
-   * Empty means "whatever the named format selects", and no format means the
-   * repository's default playtest format. Prototype fixture cards are only ever
-   * present when a set or format explicitly asks for them (readiness §4 B4).
+   * Empty means "whatever the named format selects". When both are given, these
+   * sets replace the format's set list and the format's bans still apply, so an
+   * environment can widen a format's content without quietly dropping its ban
+   * list.
    */
   sets: z.array(z.string().min(1)).default([]),
-  /** Named format manifest to select sets and cards by. `null` uses the default. */
+  /**
+   * Named format manifest to select cards by (`content/formats/`).
+   *
+   * `null` means "every bundled set", which is the whole card universe and is
+   * not a legal pool for anything — it exists because the Phase 1–4 experiment
+   * fixtures were written against it and their recorded hashes must not move.
+   * A new experiment names its format, and a precon deck source needs one: a
+   * precon is format-scoped content, and it is refused outright by
+   * `reviewPrecon` when the environment's `deckFormat.formatId` is not the
+   * format it was built to.
+   *
+   * Selecting content is what a format *is* (readiness §4 B4): prototype fixture
+   * cards are present only when a set or format explicitly asks for them.
+   */
   format: z.string().min(1).nullable().default(null),
   /**
    * Whole card definitions layered over the selected sets. A definition whose ID
@@ -157,13 +175,57 @@ function bundledDatabase(): CardDatabase {
   return bundled;
 }
 
+/**
+ * The cards an environment starts from, before its own overrides and bans.
+ *
+ * The one place the "a playable pool comes from a format, never from the whole
+ * bundled universe" rule is applied on the simulator side. An unknown format or
+ * set is a hard error naming the environment: resolving to a smaller pool than
+ * the config declares would reject decks for the wrong reason, and resolving to
+ * the universe instead would run the experiment against content its own
+ * configuration says is out of scope.
+ */
+function selectedCards(config: EnvironmentConfig): readonly CardDefinition[] {
+  const format = config.format === null ? null : requireFormat(config);
+
+  if (config.sets.length > 0) {
+    const available = new Map(loadBundledCardData().sets.map((set) => [set.setId, set]));
+    const missing = config.sets.filter((setId) => !available.has(setId));
+    if (missing.length > 0) {
+      throw new Error(
+        `Environment "${config.id}" names set(s) ${missing.join(', ')}, which are not in the ` +
+          `bundled content. Known sets: ${[...available.keys()].join(', ')}.`,
+      );
+    }
+    const banned = new Set(format?.bannedCardIds ?? []);
+    return config.sets
+      .flatMap((setId) => available.get(setId)?.cards ?? [])
+      .filter((card) => !banned.has(card.id));
+  }
+
+  if (format) return formatCardPool(format.formatId);
+
+  // No format and no sets: the whole bundled universe, as every pre-M03.3
+  // fixture config resolved to. Recorded hashes depend on this, so it stays.
+  return bundledDatabase().all();
+}
+
+function requireFormat(config: EnvironmentConfig): PlayFormat {
+  const format = bundledFormat(config.format ?? '');
+  if (!format) {
+    throw new Error(
+      `Environment "${config.id}" names format "${config.format}", which is not defined in ` +
+        `content/formats. Known formats: ${BUNDLED_FORMATS.map((entry) => entry.formatId).join(', ')}.`,
+    );
+  }
+  return format;
+}
+
 export function resolveEnvironment(input: EnvironmentConfigInput): Environment {
   const config = environmentConfigSchema.parse(input);
 
   const byId = new Map<CardId, CardDefinition>(
-    bundledDatabase()
-      .all()
-      .map((card) => [card.id, card]),
+    selectedCards(config).map((card) => [card.id, card]),
   );
 
   // Overrides first, patches second: a patch edits the definition the experiment

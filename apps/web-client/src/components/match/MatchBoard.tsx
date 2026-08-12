@@ -49,6 +49,13 @@ const CHOICE_PROMPTS: Readonly<Record<string, string>> = {
   select_opponent: 'Choose an opponent',
   pay_additional_cost: 'Pay the additional cost to stop this being countered?',
   optional_effect: 'You may do this. Do you want to?',
+  keep_exhausted: 'Pay to keep one enemy unit Exhausted, or choose nothing',
+  // Every seat is answering this same question, and none of the answers has
+  // happened yet. Saying so is the point: a prompt that read like an ordinary
+  // targeting choice would invite the player to plan around a board that is
+  // about to change under them.
+  each_player_choice: 'Every player is choosing. Pick yours — nothing happens until all are in',
+  divide_damage: 'Split the damage — click a target once for each point',
 };
 
 /** A `confirm` choice's options are the literals `yes` and `no`, not entities. */
@@ -105,7 +112,13 @@ function UnitCard({
       {instance.keywords.length > 0 && (
         <span className="unit__keywords">{instance.keywords.join(' · ')}</span>
       )}
-      {instance.summoningSick && <span className="unit__flag">summoning sick</span>}
+      {/* The view field is still `summoningSick`; the label a player reads is the
+          ruleset's own term (ADR 0016 Q-B). */}
+      {instance.summoningSick && <span className="unit__flag">newly deployed</span>}
+      {/* A pending readiness prevention is public board state, and a player who
+          could not see it would be unable to plan around a unit about to stay
+          down for a whole turn cycle (M02.4). */}
+      {instance.willNotReady && <span className="unit__flag">will not ready</span>}
       {label && <span className="unit__flag">{label}</span>}
     </button>
   );
@@ -127,6 +140,25 @@ function inspectable(
   const instance = view.instances[instanceId];
   if (!instance) return null;
   return { instanceId, definitionId: instance.definitionId, label };
+}
+
+/**
+ * What a card in your hand costs right now, as the player should read it.
+ *
+ * The view's own `energyCost` first: it is the authoritative current cost, and
+ * it is populated for every card in the viewer's hand whether or not the card is
+ * affordable. A card discounted by the board is therefore shown discounted
+ * before it becomes playable, which is the only way the discount is visible at
+ * all (M02.3). The legal-action entry and the printed cost are fallbacks for a
+ * card the view did not describe.
+ */
+function handCostLabel(
+  instance: CardInstanceView | undefined,
+  option: { readonly energyCost: number } | undefined,
+  definition: { readonly cost: number | null } | undefined,
+): string {
+  const cost = instance?.energyCost ?? option?.energyCost ?? definition?.cost ?? null;
+  return cost === null ? '–' : `${cost}⚡`;
 }
 
 function PlayerHeader({
@@ -177,6 +209,11 @@ function PlayerHeader({
           <span className="player-bar__stat">hand {player.handCount}</span>
           <span className="player-bar__stat">deck {player.deckCount}</span>
           <span className="player-bar__stat">discard {player.discard.length}</span>
+          {/* Only shown once something has actually left the game: a permanent
+              "removed 0" would imply a pile that matters in every match. */}
+          {player.removedCount > 0 ? (
+            <span className="player-bar__stat">removed {player.removedCount}</span>
+          ) : null}
           {onInspect && commander ? (
             <button
               type="button"
@@ -750,15 +787,22 @@ export function MatchBoard() {
                 puzzle rather than a question. */}
             {choice.type === 'confirm'
               ? ''
-              : ` — choose ${choice.minimum}${
-                  choice.maximum !== choice.minimum ? `–${choice.maximum}` : ''
-                }`}
+              : choice.type === 'divide_damage'
+                ? // An allocation is not "choose N of these": the count is
+                  // points still to place, not options still to pick.
+                  ` — ${choice.minimum - choiceSelection.length} of ${choice.minimum} left to place`
+                : ` — choose ${choice.minimum}${
+                    choice.maximum !== choice.minimum ? `–${choice.maximum}` : ''
+                  }`}
             {choice.ordered ? ' (click in the order you want them)' : ''}
           </p>
           <div className="choice__options">
             {choice.validEntityIds.map((entityId) => {
               const instance = view.instances[entityId];
               const position = choiceSelection.indexOf(entityId);
+              // On an allocation the same option may be picked several times,
+              // and how many times is the answer.
+              const allocated = choiceSelection.filter((id) => id === entityId).length;
               // A `select_players` choice lists player IDs, not instances.
               const optionLabel =
                 choice.type === 'confirm'
@@ -773,22 +817,45 @@ export function MatchBoard() {
                 <button
                   key={entityId}
                   type="button"
-                  className={`choice__option ${position >= 0 ? 'choice__option--selected' : ''}`}
-                  disabled={locked}
+                  className={`choice__option ${
+                    (choice.type === 'divide_damage' ? allocated > 0 : position >= 0)
+                      ? 'choice__option--selected'
+                      : ''
+                  }`}
+                  disabled={
+                    locked ||
+                    (choice.type === 'divide_damage' && choiceSelection.length >= choice.maximum)
+                  }
                   onClick={() =>
                     setChoiceSelection((current) =>
-                      current.includes(entityId)
-                        ? current.filter((id) => id !== entityId)
-                        : [...current, entityId],
+                      // Allocating adds a point rather than toggling: a target
+                      // named twice takes two damage. "Start over" below is the
+                      // way back, because a toggle here would make it impossible
+                      // to take one point off a target holding three.
+                      choice.type === 'divide_damage'
+                        ? [...current, entityId]
+                        : current.includes(entityId)
+                          ? current.filter((id) => id !== entityId)
+                          : [...current, entityId],
                     )
                   }
                 >
                   {optionLabel}
                   {choice.ordered && position >= 0 ? ` #${position + 1}` : ''}
+                  {choice.type === 'divide_damage' && allocated > 0 ? ` ×${allocated}` : ''}
                 </button>
               );
             })}
           </div>
+          {choice.type === 'divide_damage' && (
+            <button
+              type="button"
+              disabled={locked || choiceSelection.length === 0}
+              onClick={() => setChoiceSelection([])}
+            >
+              Start over
+            </button>
+          )}
           <button
             type="button"
             disabled={
@@ -846,9 +913,15 @@ export function MatchBoard() {
               }}
             >
               <span className="hand__name">{definition?.name ?? instanceId}</span>
-              <span className="hand__cost">
-                {option ? `${option.energyCost}⚡` : (definition?.cost ?? '–')}
-              </span>
+              {/*
+                The engine's current cost, not the printed one. A card whose
+                cost scales with the board is discounted while it is still
+                unaffordable, and showing the printed number until it became
+                playable would hide the whole mechanic (M02.3). `instance` is
+                authoritative for the viewer's own hand; the printed cost is only
+                a fallback for a card the view has not described.
+              */}
+              <span className="hand__cost">{handCostLabel(instance, option, definition)}</span>
               {definition?.displayText && (
                 <span className="hand__text">{definition.displayText}</span>
               )}

@@ -11,9 +11,25 @@ import type { MatchState } from './schema/state.js';
  * "invalid actions never partially mutate match state" is guaranteed
  * structurally rather than by discipline (CLAUDE.md §10).
  */
-export interface MatchContext {
+/**
+ * Everything a *derived* value needs and nothing it may change.
+ *
+ * Counts, conditions, costs and target filters are pure reads of the current
+ * state, and several of their callers have no action in flight at all — the
+ * simulator's telemetry asks what a card in hand would cost, and a client-side
+ * view asks the same question. Cloning a whole match into a `MatchContext` for
+ * a question that mutates nothing would be both wasteful and misleading about
+ * what the caller is allowed to do (M02.3).
+ *
+ * `MatchContext` extends it, so every existing caller keeps working unchanged.
+ */
+export interface ReadContext {
   readonly database: CardDatabase;
   readonly config: RulesConfig;
+  readonly state: MatchState;
+}
+
+export interface MatchContext extends ReadContext {
   /** Mutable draft. Never hand this to a caller before the action succeeds. */
   state: MatchState;
   /** Events produced by this action, in order. */

@@ -36,6 +36,31 @@ export function createDeck(options: CreateDeckOptions): SavedDeck {
 
 const touch = (deck: SavedDeck, clock: Clock): SavedDeck => ({ ...deck, updatedAt: clock() });
 
+/**
+ * A deck name no deck in `existing` is already using.
+ *
+ * Suffixed rather than replaced, and never silently overwritten: two copies of
+ * the same precon, or a re-imported file, must both stay findable in the deck
+ * list. Comparison is case-insensitive because the list is read by a human.
+ */
+export function uniqueDeckName(
+  name: string,
+  existing: readonly SavedDeck[],
+  options: { readonly suffix?: string } = {},
+): string {
+  const used = new Set(existing.map((deck) => deck.name.toLowerCase()));
+  if (!used.has(name.toLowerCase())) return name;
+
+  const suffix = options.suffix ?? 'copy';
+  let candidate = `${name} (${suffix})`;
+  let counter = 2;
+  while (used.has(candidate.toLowerCase())) {
+    candidate = `${name} (${suffix} ${counter})`;
+    counter += 1;
+  }
+  return candidate;
+}
+
 export function renameDeck(deck: SavedDeck, name: string, clock: Clock = systemClock): SavedDeck {
   return touch({ ...deck, name }, clock);
 }

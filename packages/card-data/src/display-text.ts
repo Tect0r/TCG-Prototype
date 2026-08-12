@@ -25,17 +25,74 @@ const PROSE_MARKERS: ReadonlyArray<{
   { pattern: /\breturns? .*to (its|their|your) owner's hand/i, effects: ['return_to_hand'] },
   { pattern: /\bcreates? \w* ?\d* ?.*token/i, effects: ['create_token'] },
   { pattern: /\bexhausts?\b/i, effects: ['exhaust'] },
-  { pattern: /\breadies\b|\bready\b/i, effects: ['ready'] },
+  // "does not Ready during its controller's next Ready Step" names the Ready
+  // Step in order to *stop* one, so the prevention satisfies the marker exactly
+  // as readying does. Both are the same mechanic seen from opposite sides.
+  { pattern: /\breadies\b|\bready\b/i, effects: ['ready', 'skip_next_ready'] },
   { pattern: /\bcosts? \d+ (less|more)/i, effects: ['modify_cost'] },
   { pattern: /\bprevents? .*damage/i, effects: ['prevent_damage'] },
   { pattern: /[+-]\d+\s*\/\s*[+-]\d+/, effects: ['modify_stats'] },
 ];
+
+/**
+ * The other direction: a mechanic the card's structure really has, and the
+ * words its printed text must contain for a player to know about it.
+ *
+ * `PROSE_MARKERS` above catches text that promises behaviour the card does not
+ * have. This catches the opposite and more dangerous drift — behaviour the card
+ * has that its text never mentions — which no amount of curation can excuse,
+ * because the player is reading the card and the engine is not.
+ *
+ * Each pattern is a *vocabulary*, not a phrasing: it accepts every word the
+ * catalogue actually uses for that mechanic, so a card is free to read
+ * naturally. What it may not do is stay silent. Where a mechanic has no
+ * player-visible vocabulary of its own — an `energy` cost, a `reorder_zone`
+ * that is part of a look-at-the-top clause — it is deliberately absent from
+ * this table rather than given a pattern that would match anything.
+ */
+const MECHANIC_MARKERS: Partial<Record<EffectType, RegExp>> = {
+  draw: /\bdraws?\b/i,
+  discard: /\bdiscards?\b/i,
+  deal_damage: /\bdamage\b/i,
+  heal: /\brestores?\b|\bheals?\b|\bHealth\b/i,
+  destroy: /\bdestroys?\b|\bdefeats?\b/i,
+  sacrifice: /\bsacrifices?\b/i,
+  return_to_hand: /\breturns?\b/i,
+  create_token: /\bcreates?\b/i,
+  exhaust: /\bExhaust\w*\b/i,
+  ready: /\bready\b|\breadies\b/i,
+  counter: /\bcounters?\b/i,
+  prevent_damage: /\bprevents?\b/i,
+  modify_stats: /[+-]\d+|\bATK\b|\bHealth\b/i,
+  modify_cost: /\bcosts?\b/i,
+  // A card that moves something between zones has to say where it went, and
+  // every printed phrasing of that names a zone, the game, or a direction.
+  move_card: /\bremoves?\b|\breturns?\b|\bputs?\b|\bbattlefield\b|\bbottom\b|\bdeck\b/i,
+  // Looking, searching, revealing and returning-from-a-pile are all one
+  // instruction; the prose picks whichever verb the card is about.
+  search_zone: /\blooks?\b|\bsearch\w*\b|\breveals?\b|\breturns?\b|\btop\b/i,
+  // "at the end of the turn", "when it is defeated this turn": a delayed clause
+  // is only readable if it says when it happens.
+  schedule_delayed: /\bend of\b|\bthis turn\b/i,
+  skip_next_ready: /\bready\b/i,
+};
+
+/** The same idea for the effects that only exist as continuous abilities. */
+const STATIC_MECHANIC_MARKERS: Record<string, RegExp> = {
+  cost_reduction: /\bcosts?\b/i,
+  reaction_discount: /\bcosts?\b/i,
+  replace_ready: /\bready\b/i,
+};
 
 function collectEffects(card: CardDefinition): EffectDefinition[] {
   return [
     ...card.effects,
     ...card.abilities.flatMap((ability) => ability.effects),
     ...card.activatedAbilities.flatMap((ability) => ability.effects),
+    // A delayed body is behaviour the card really has, just later. Leaving it
+    // out would report "create two Thrall Tokens at the end of the turn" as
+    // prose with no matching effect — drift the card does not have.
+    ...card.delayedAbilities.flatMap((ability) => ability.effects),
   ];
 }
 
@@ -45,11 +102,15 @@ function collectEffects(card: CardDefinition): EffectDefinition[] {
  * the linter has to know about it or it reports a false mismatch.
  */
 function staticEffectTypes(card: CardDefinition): EffectType[] {
-  // `reaction_discount` is deliberately not here: it is a static effect with no
-  // `EffectDefinition` counterpart at all, so mapping it to one would invent a
-  // vocabulary word the linter would then expect to find in the card's prose.
+  // `reaction_discount` and `cost_reduction` are deliberately not here: neither
+  // has an `EffectDefinition` counterpart of the same name, so mapping one to
+  // itself would invent a vocabulary word the linter would then expect to find
+  // in the card's prose. Both really are cost changes, and both are declared as
+  // `modify_cost` in `triggerEffectTypes` below.
   return card.staticAbilities.flatMap((ability) =>
-    ability.effect.type === 'reaction_discount' ? [] : [ability.effect.type],
+    ability.effect.type === 'modify_stats' || ability.effect.type === 'grant_keyword'
+      ? [ability.effect.type]
+      : [],
   );
 }
 
@@ -113,10 +174,21 @@ function triggerEffectTypes(card: CardDefinition): EffectType[] {
     if (ability.sourceState !== undefined) {
       types.push(ability.sourceState === 'exhausted' ? 'exhaust' : 'ready');
     }
-    // A Reaction discount really is a cost reduction; it simply is not an
-    // `EffectDefinition`, because it is derived from the board rather than
-    // applied once. The prose is honest, so the linter should be too.
-    if (ability.effect.type === 'reaction_discount') types.push('modify_cost');
+    // A Reaction discount and a self-scaling cost reduction really are cost
+    // changes; they simply are not `EffectDefinition`s, because both are derived
+    // from the board rather than applied once. The prose is honest, so the
+    // linter should be too.
+    if (ability.effect.type === 'reaction_discount' || ability.effect.type === 'cost_reduction') {
+      types.push('modify_cost');
+    }
+    // A replacement really does exhaust a unit and really does stop one
+    // readying; it simply does so by rewriting an event rather than by running
+    // an instruction, so there is no `EffectDefinition` of that name to find.
+    // The prose is honest about the mechanic, so the linter should be too.
+    if (ability.effect.type === 'replace_arrival' && ability.effect.entersExhausted === true) {
+      types.push('exhaust');
+    }
+    if (ability.effect.type === 'replace_ready') types.push('ready');
   }
 
   return types;
@@ -141,8 +213,44 @@ function keywordsFiltered(card: CardDefinition): string[] {
       else visit(entry);
     }
   };
-  visit([card.effects, card.abilities, card.activatedAbilities, card.staticAbilities]);
+  visit([
+    card.effects,
+    card.abilities,
+    card.activatedAbilities,
+    card.staticAbilities,
+    card.delayedAbilities,
+  ]);
   return found;
+}
+
+/**
+ * Every mechanic the card actually *performs*, as opposed to reacts to.
+ *
+ * Deliberately narrower than `effectTypes` in `lintDisplayText`: a trigger's
+ * own event ("the first time you sacrifice a Unit") is a condition, not a
+ * sacrifice this card carries out, so requiring the word would be requiring the
+ * card to describe somebody else's action. A cost *is* included — "Pay 1 Energy
+ * and Exhaust" is printed on the card and is as visible as any instruction.
+ */
+function performedMechanics(
+  card: CardDefinition,
+  effects: readonly EffectDefinition[],
+): Set<string> {
+  const performed = new Set<string>([
+    ...effects.map((effect) => effect.type),
+    ...costEffectTypes(card),
+    ...staticEffectTypes(card),
+  ]);
+  for (const ability of card.staticAbilities) {
+    const effect = ability.effect;
+    if (effect.type in STATIC_MECHANIC_MARKERS) performed.add(effect.type);
+    // A rewrite that Exhausts an arrival really does Exhaust it; the keyword
+    // half is covered by the keyword check below.
+    if (effect.type === 'replace_arrival' && effect.entersExhausted === true) {
+      performed.add('exhaust');
+    }
+  }
+  return performed;
 }
 
 /** Keywords the card has printed, grants once, or grants continuously. */
@@ -153,6 +261,11 @@ function keywordsInPlay(card: CardDefinition, effects: readonly EffectDefinition
   }
   for (const ability of card.staticAbilities) {
     if (ability.effect.type === 'grant_keyword') keywords.add(ability.effect.keyword);
+    // A keyword handed out as part of an arrival is granted just as surely as
+    // one handed out by an instruction.
+    if (ability.effect.type === 'replace_arrival' && ability.effect.grantKeyword !== undefined) {
+      keywords.add(ability.effect.grantKeyword);
+    }
   }
   return keywords;
 }
@@ -203,9 +316,24 @@ export function lintDisplayText(card: CardDefinition): Issue[] {
     );
   }
 
+  // The other direction, mechanic by mechanic: behaviour the card really
+  // performs must appear in the words a player reads.
+  for (const mechanic of performedMechanics(card, effects)) {
+    const marker = MECHANIC_MARKERS[mechanic as EffectType] ?? STATIC_MECHANIC_MARKERS[mechanic];
+    if (!marker || marker.test(text)) continue;
+    issues.push(
+      warning(
+        'display_text/unstated_effect',
+        `"${card.name}" has a ${mechanic} effect that its displayText never mentions.`,
+        { path: 'displayText', context: { cardId: card.id, effectType: mechanic } },
+      ),
+    );
+  }
+
   // Keywords live in structured data; repeating their reminder text in prose
   // without granting the keyword is the other common drift.
-  const granted = keywordsInPlay(card, effects);
+  const inPlay = keywordsInPlay(card, effects);
+  const granted = new Set(inPlay);
   for (const filtered of keywordsFiltered(card)) granted.add(filtered);
   for (const keyword of KEYWORD_LIST) {
     const named = new RegExp(`\\b${keyword.name}\\b`, 'i').test(text);
@@ -214,6 +342,18 @@ export function lintDisplayText(card: CardDefinition): Issue[] {
         warning(
           'display_text/keyword_mismatch',
           `"${card.name}" mentions ${keyword.name} but does not have or grant that keyword.`,
+          { path: 'displayText', context: { cardId: card.id, keyword: keyword.id } },
+        ),
+      );
+    }
+    // A keyword the card carries or hands out and never names is the reverse
+    // drift: the player has no way to learn it is there. A keyword only used to
+    // *choose* a target is excluded — naming it is optional phrasing.
+    if (!named && inPlay.has(keyword.id)) {
+      issues.push(
+        warning(
+          'display_text/unstated_keyword',
+          `"${card.name}" has or grants ${keyword.name} but its displayText never says so.`,
           { path: 'displayText', context: { cardId: card.id, keyword: keyword.id } },
         ),
       );

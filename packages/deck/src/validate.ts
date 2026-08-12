@@ -128,6 +128,21 @@ function validateCommander(
     );
   }
 
+  // Same rule as the deck list below, applied to the one card that is always
+  // available from the Command Zone: a Commander whose printed behaviour is not
+  // structured yet cannot be played faithfully, so a deck led by it is not
+  // legal. Reported against `commanderId` rather than a deck slot, because that
+  // is where the player has to change something.
+  if (!commander.implemented) {
+    issues.push(
+      error(
+        'deck/commander_not_implemented',
+        `"${commander.name}" is not playable yet: ${commander.unsupportedReason}`,
+        { path: 'commanderId', context: { cardId: commander.id } },
+      ),
+    );
+  }
+
   if (commander.colorIdentity.length > format.maxCommanderColors) {
     issues.push(
       error(

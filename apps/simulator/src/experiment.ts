@@ -18,7 +18,8 @@ import {
   type Environment,
 } from './environment.js';
 import { freezeEnvironment, serializeSnapshot, snapshotFileName } from './resolved-environment.js';
-import { resolveDeckSource } from './deck-source.js';
+import { resolveDeckSource, type ResolvedPrecon } from './deck-source.js';
+import { buildMatchupMatrix, matchupMatrixRows, type MatchupMatrix } from './matchup-matrix.js';
 import { buildSchedule } from './schedule.js';
 import { runBatch, type BatchProgress } from './run-batch.js';
 import { runSearch, type GenerationReport, type SearchCheckpoint } from './deck-search/evolve.js';
@@ -97,6 +98,8 @@ export interface ExperimentOutcome {
   readonly displacement: readonly Displacement[];
   readonly counters: CounterBreadth | null;
   readonly robustness: RobustnessReport | null;
+  /** The ordered matchup matrix, when the batch asked for one (M03.4). */
+  readonly matchupMatrix: MatchupMatrix | null;
   readonly flags: readonly Flag[];
   readonly comparison: ComparisonReport | null;
   readonly searchHistory: readonly GenerationReport[];
@@ -211,6 +214,9 @@ async function runBatchExperiment(
     mirrorSeats: config.mirrorSeats,
     schedule: config.schedule,
     sampledPairings: config.sampledPairings,
+    // The matrix is the one schedule that seats a deck against itself: its
+    // diagonal is four of the sixteen ordered pairs, not a rounding error (M03.4).
+    includeMirrorMatchups: config.orderedMatchupMatrix,
   });
 
   const batch = await runBatch({
@@ -238,13 +244,22 @@ async function runBatchExperiment(
     store,
     environments: [environment],
     decks: resolved.decks,
+    precons: resolved.precons,
     replacements: [],
     comparison: null,
     searchHistory: [],
     workers,
     elapsedMs: Date.now() - started,
     failedMatches: batch.failures.length,
+    ...(config.orderedMatchupMatrix ? { orderedMatchupMatrix: true } : {}),
     extraLimitations: [
+      ...(config.orderedMatchupMatrix
+        ? [
+            'The ordered matchup matrix is a smoke and robustness artifact: it shows that every ' +
+              'ordered pair of these decks terminates cleanly, and says nothing about which deck ' +
+              'is stronger. Balance conclusions wait for M05.',
+          ]
+        : []),
       ...resolved.rejected.map(
         (entry) => `Deck "${entry.id}" was rejected as illegal: ${entry.reasons.join('; ')}`,
       ),
@@ -439,6 +454,7 @@ async function runReplacementExperiment(
     store,
     environments: [environment],
     decks: uniqueDecks,
+    precons: [...baseSource.precons, ...opponentSource.precons],
     replacements: impacts,
     comparison: null,
     searchHistory: [],
@@ -468,14 +484,15 @@ async function runSearchExperiment(
   const store = openStore(config, outputDir, options);
   ensureDir(paths.checkpoints);
 
-  const seeded = config.seedDecks
+  const seedSource = config.seedDecks
     ? resolveDeckSource(
         config.seedDecks,
         environment,
         `${config.seed}|seed-decks`,
         options.configPath ? dirOf(options.configPath) : '.',
-      ).decks
-    : [];
+      )
+    : null;
+  const seeded = seedSource?.decks ?? [];
 
   const history: GenerationReport[] = [];
   const replicateResults: DisplacementReplicate[] = [];
@@ -549,6 +566,7 @@ async function runSearchExperiment(
     store,
     environments: [environment],
     decks: dedupeDecks(allDecks),
+    precons: seedSource?.precons ?? [],
     replacements: [],
     comparison: null,
     searchHistory: history,
@@ -803,6 +821,7 @@ async function runComparisonExperiment(
       ...(candidateSearch ?? []),
       ...(baselineSearch ?? []),
     ]),
+    precons: population.precons,
     replacements: [],
     comparison,
     searchHistory,
@@ -935,6 +954,7 @@ async function runRobustnessExperiment(
     store,
     environments: [environment],
     decks: resolved.decks,
+    precons: resolved.precons,
     replacements: [],
     comparison: null,
     searchHistory: [],
@@ -964,6 +984,8 @@ interface FinishInputs {
   readonly store: MatchStore;
   readonly environments: readonly Environment[];
   readonly decks: readonly SimDeck[];
+  /** Precons the deck sources named by ID. Empty when none did. */
+  readonly precons: readonly ResolvedPrecon[];
   readonly replacements: readonly ReplacementImpact[];
   readonly comparison: ComparisonReport | null;
   readonly searchHistory: readonly GenerationReport[];
@@ -982,6 +1004,8 @@ interface FinishInputs {
   readonly counterVariants?: readonly ReplacementVariant[];
   /** Restrict the headline statistics to one arm. Used by robustness runs. */
   readonly primaryArm?: string;
+  /** Build and write the ordered matchup matrix from this run's records (M03.4). */
+  readonly orderedMatchupMatrix?: boolean;
 }
 
 function finish(inputs: FinishInputs): ExperimentOutcome {
@@ -1084,6 +1108,32 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
       replayPath: record.replayPath ?? null,
     }));
 
+  // Sorted by ID so the manifest and the report are byte-stable however the
+  // deck sources happened to be ordered.
+  const precons = [...inputs.precons].sort((left, right) =>
+    left.preconId.localeCompare(right.preconId),
+  );
+
+  // Built from the same records every other number here comes from, and from
+  // `allRecords` rather than the primary arm, so an abnormal match still appears
+  // in the cell it belongs to instead of vanishing from the grid (M03.4).
+  const matchupMatrix = inputs.orderedMatchupMatrix
+    ? buildMatchupMatrix({
+        experimentId: config.id,
+        seed: config.seed,
+        configHash: configHashOf(config),
+        environmentId: primary.id,
+        environmentHash: primary.hash,
+        // The *construction* format the precons were reviewed against, which is
+        // what a precon ID is only meaningful under. The pool the environment
+        // resolved is pinned separately by its hash and its frozen snapshot.
+        formatId: primary.deckFormat.formatId,
+        decks: inputs.decks,
+        precons,
+        records: allRecords,
+      })
+    : null;
+
   const report = renderReport({
     title: config.label || `${config.kind} experiment "${config.id}"`,
     experimentId: config.id,
@@ -1120,12 +1170,14 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     abnormalMatches,
     ...(inputs.counterVariants || counters ? { counters } : {}),
     ...(inputs.robustness ? { robustness: inputs.robustness } : {}),
+    ...(matchupMatrix ? { matchupMatrix } : {}),
     ...(inputs.diff ? { diff: inputs.diff } : {}),
     ...(inputs.declaredCheck ? { declaredCheck: inputs.declaredCheck } : {}),
     ...(inputs.referencePopulation ? { referencePopulation: inputs.referencePopulation } : {}),
     ...(inputs.comparison ? { comparison: inputs.comparison } : {}),
     searchHistory: inputs.searchHistory,
     deckCount: inputs.decks.length,
+    precons,
     pilots: reportPilots,
     wallClockMs: inputs.elapsedMs,
     workers: inputs.workers,
@@ -1148,7 +1200,10 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   if (primarySnapshot) writeJson(paths.resolvedEnvironment, primarySnapshot);
 
   writeJson(paths.manifest, {
-    schemaVersion: 2,
+    // 4 (M03.4): an ordered-matchup-matrix run records the artifact beside the
+    // hashes, including whether it was complete and whether every cell
+    // terminated cleanly. Absent for every other run.
+    schemaVersion: 4,
     experimentId: config.id,
     kind: config.kind,
     seed: config.seed,
@@ -1182,6 +1237,37 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
         }
       : {}),
     deckHashes: inputs.decks.map((deck) => deck.hash).sort(),
+    /**
+     * Precons the run was configured from, by permanent ID (M03.3).
+     *
+     * The IDs alone would not be reproducible — a shipped precon can be
+     * re-authored — so each one is recorded beside the hash of the deck it
+     * actually resolved to, and the environment hashes above pin the card
+     * definitions those IDs named on the day the run happened.
+     */
+    precons,
+    /**
+     * The ordered matchup matrix this run produced, when it was asked for (M03.4).
+     *
+     * The counts are here rather than only in the artifact so that "every
+     * ordered pair ran and terminated cleanly" is a claim the manifest itself
+     * either makes or declines to make.
+     */
+    ...(matchupMatrix
+      ? {
+          matchupMatrix: {
+            path: 'matchup-matrix.json',
+            schemaVersion: matchupMatrix.schemaVersion,
+            expectedCells: matchupMatrix.expectedCells,
+            playedCells: matchupMatrix.playedCells,
+            complete: matchupMatrix.complete,
+            missing: matchupMatrix.missing,
+            games: matchupMatrix.games,
+            cleanGames: matchupMatrix.cleanGames,
+            invariantFailures: matchupMatrix.invariantFailures.length,
+          },
+        }
+      : {}),
     rawRecordPath: 'matches.jsonl',
     matches: allRecords.length,
     abnormalMatches: inputs.store.abnormalCount,
@@ -1213,6 +1299,28 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     multiplicity,
     flags,
   });
+
+  if (matchupMatrix) {
+    writeJson(paths.matchupMatrix, matchupMatrix);
+    writeCsv(paths.matchupMatrixCsv, matchupMatrixRows(matchupMatrix), [
+      { header: 'first_seat_deck', value: (row) => row.firstSeatDeckId },
+      { header: 'second_seat_deck', value: (row) => row.secondSeatDeckId },
+      { header: 'mirror', value: (row) => row.mirror },
+      { header: 'match_id', value: (row) => row.matchId },
+      { header: 'game_index', value: (row) => row.gameIndex },
+      { header: 'orientation', value: (row) => row.orientation },
+      { header: 'starting_player', value: (row) => row.startingPlayerId },
+      { header: 'seed_path', value: (row) => row.seedPath },
+      { header: 'match_seed', value: (row) => row.matchSeed },
+      { header: 'winner_deck', value: (row) => row.winnerDeckId },
+      { header: 'winner_seat_index', value: (row) => row.winnerSeatIndex },
+      { header: 'termination', value: (row) => row.termination },
+      { header: 'outcome', value: (row) => row.outcome },
+      { header: 'turns', value: (row) => row.turns },
+      { header: 'invariant_failures', value: (row) => row.invariantFailures },
+      { header: 'replay_path', value: (row) => row.replayPath },
+    ]);
+  }
 
   writeCsv(paths.cardUsage, agg.cards, [
     { header: 'card_id', value: (row) => row.definitionId },
@@ -1333,6 +1441,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     displacement,
     counters,
     robustness: inputs.robustness ?? null,
+    matchupMatrix,
     flags,
     comparison: inputs.comparison,
     searchHistory: inputs.searchHistory,

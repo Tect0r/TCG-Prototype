@@ -11,7 +11,41 @@
     "identity": "Sacrifice Spell — Combat and Fodder",
     "power": "medium"
   },
-  "implemented": false,
-  "unsupportedReason": "needs delayed end-of-turn effects (ruleset update §15)",
-  "displayText": "Target friendly Unit gains +3 ATK this turn. When it is defeated this turn, create two Thrall Tokens."
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": { "cardTypes": ["unit"] },
+          "count": 1
+        }
+      },
+      "attack": 3,
+      "health": 0,
+      "duration": "end_of_turn"
+    },
+    { "type": "schedule_delayed", "delayedAbilityId": "thralls_on_defeat" }
+  ],
+  "delayedAbilities": [
+    {
+      "id": "thralls_on_defeat",
+      "boundary": "end_of_turn",
+      "trigger": "on_defeated",
+      "subject": "previous_target",
+      "effects": [{ "type": "create_token", "tokenCardId": "thrall_token", "amount": 2 }]
+    }
+  ],
+  "displayText": "Target friendly Unit gains +3 ATK this turn. When it is defeated this turn, create two Thrall Tokens.",
+  "text": {
+    "effectExplanations": [
+      "You choose the Unit once. The delayed half watches that same Unit — it is never re-targeted."
+    ],
+    "notes": [
+      "The watch lasts only for this turn. If the Unit survives to the end of the turn, nothing happens.",
+      "It watches that specific Unit while it is on the battlefield. A Unit that leaves the battlefield some other way — bounced to a hand, or removed from the game — takes the watch with it."
+    ]
+  }
 }

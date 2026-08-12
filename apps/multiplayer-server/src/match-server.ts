@@ -1,6 +1,8 @@
-import type { CardDatabase } from '@tcg/card-data';
+import { bundledPrecon, preconsForFormat, type CardDatabase } from '@tcg/card-data';
 import {
   DEFAULT_DECK_FORMAT,
+  preconToDeck,
+  reviewPrecon,
   validateDeck,
   type DeckFormatConfig,
   type SavedDeck,
@@ -150,6 +152,9 @@ export class MatchServer {
         return;
       case 'submit_deck':
         this.submitDeck(connection, message.deck);
+        return;
+      case 'submit_precon':
+        this.submitPrecon(connection, message.preconId);
         return;
       case 'set_ready':
         this.setReady(connection, message.ready);
@@ -403,17 +408,96 @@ export class MatchServer {
     // The server validates against its own card database. A client-side
     // legality check is a convenience, never the authority (CLAUDE.md §11).
     const report = validateDeck(deck, this.#database, this.#deckFormat);
-    seat.deck = deck;
-    seat.deckLegal = report.legal;
-    if (!report.legal) {
-      seat.ready = false;
+    this.recordSubmission(
+      connection,
+      lobby,
+      seat,
+      deck,
+      report.legal,
+      `"${deck.name}" is not legal in this format.`,
+      errorsOf(report.issues).map((issue) => issue.message),
+    );
+  }
+
+  /**
+   * Seats a built-in precon named by its permanent ID.
+   *
+   * The client sends the ID and nothing else. The definition is resolved here,
+   * from this server's own bundled content, and reviewed with the same
+   * `reviewPrecon` the deck builder and lobby show the player — so the server
+   * validates the definition the UI presented, and a client cannot smuggle an
+   * edited list in under a precon's name (M03.2). A precon a player has edited
+   * is an ordinary saved deck and arrives through `submit_deck`, where it is
+   * judged on its contents.
+   *
+   * A precon built for another format is *resolved* and then refused by
+   * `reviewPrecon`, which says so; only an ID that names nothing at all is an
+   * unknown precon.
+   */
+  private submitPrecon(connection: ServerConnection, preconId: string): void {
+    const attachment = this.#attachments.get(connection.id);
+    if (!attachment) {
+      this.fail(connection, 'protocol/not_in_lobby', 'Join a lobby first.');
+      return;
+    }
+    const { lobby, seat } = attachment;
+    if (lobby.status === 'in_match') {
+      this.fail(connection, 'protocol/already_started', 'The match has already started.');
+      return;
+    }
+
+    const precon = bundledPrecon(preconId);
+    if (!precon) {
+      // Answered as a deck rejection rather than a bare error so it lands in the
+      // client's deck panel, next to the picker the ID came from. The seat keeps
+      // whatever it had submitted before: a bad ID is not a submission.
+      const published = preconsForFormat(this.#deckFormat.formatId).map((entry) => entry.id);
       connection.send({
         type: 'deck_rejected',
         error: protocolError(
-          'protocol/deck_illegal',
-          `"${deck.name}" is not legal in this format.`,
-          errorsOf(report.issues).map((issue) => issue.message),
+          'protocol/unknown_precon',
+          `No built-in precon has the ID "${preconId}".`,
+          [`Published for ${this.#deckFormat.formatId}: ${published.join(', ') || 'none'}.`],
         ),
+      });
+      return;
+    }
+
+    const review = reviewPrecon(precon, this.#database, this.#deckFormat);
+    // Materialised server-side from the resolved definition, never from the
+    // wire. `preconToDeck` is the same copy the builder makes.
+    const deck = preconToDeck(precon, {
+      id: precon.id,
+      now: new Date(this.#now()).toISOString(),
+    });
+    this.recordSubmission(
+      connection,
+      lobby,
+      seat,
+      deck,
+      review.legal,
+      `"${precon.name}" cannot be played in this format.`,
+      errorsOf(review.issues).map((issue) => issue.message),
+    );
+  }
+
+  /** The one place a seat's deck and its legality verdict are written. */
+  private recordSubmission(
+    connection: ServerConnection,
+    lobby: Lobby,
+    seat: Seat,
+    deck: SavedDeck,
+    legal: boolean,
+    rejection: string,
+    details: readonly string[],
+  ): void {
+    seat.deck = deck;
+    seat.deckLegal = legal;
+    if (!legal) {
+      seat.ready = false;
+      connection.send({
+        type: 'deck_rejected',
+        error: protocolError('protocol/deck_illegal', rejection, [...details]),
       });
     }
     this.broadcastLobby(lobby);

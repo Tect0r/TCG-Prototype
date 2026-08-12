@@ -1314,6 +1314,145 @@ code {
   margin: 0 0 0.2rem;
 }
 
+/* The precon browser: a modal over the builder, sharing the rulebook backdrop. */
+
+.precons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: auto;
+  width: min(56rem, 100%);
+  max-height: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.precons__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.precons__subtitle {
+  flex: 1;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.precons__body {
+  display: grid;
+  grid-template-columns: 16rem 1fr;
+  gap: 1rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.precons__index {
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  padding-right: 0.5rem;
+}
+
+.precons__index ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.precons__index button {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0.4rem;
+}
+
+.precons__index button.is-active {
+  border-color: var(--accent);
+}
+
+.precons__detail {
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.precons__strategy {
+  margin: 0.2rem 0 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+}
+
+.precons__ids {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0 0 0.6rem;
+}
+
+.precons__commander p {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0.6rem;
+}
+
+.precons__list {
+  list-style: none;
+  margin: 0.3rem 0 0.8rem;
+  padding: 0;
+  columns: 2;
+}
+
+.precons__list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  break-inside: avoid;
+  padding: 0.1rem 0;
+}
+
+.precons__list li.is-unresolved {
+  color: var(--danger);
+}
+
+.precons__cost {
+  min-width: 1.2rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.precons__name {
+  flex: 1;
+}
+
+.precons__type {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.precons__missing code {
+  color: var(--danger);
+}
+
+.precons__footer {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.precons__empty {
+  margin: 0;
+  color: var(--text-dim);
+}
+
 /* The card inspector: a side panel, so the board stays visible behind it. */
 
 .inspector__backdrop {
@@ -1581,6 +1720,33 @@ code {
 
 .spectator-setup__problems {
   color: var(--danger);
+}
+
+.spectator-setup__override {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+/* The "results invalid" notice: same treatment wherever it appears, so it reads
+   as one warning about the match rather than three separate remarks. */
+.spectator-setup__invalid,
+.spectator__invalid,
+.spectator-summary__invalid {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.spectator-setup__invalid ul,
+.spectator__invalid ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
 }
 
 .spectator-setup__actions {

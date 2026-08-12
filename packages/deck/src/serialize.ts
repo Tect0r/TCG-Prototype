@@ -1,7 +1,7 @@
 import { err, error, generateId, ok, type IdSources, type Issue, type Result } from '@tcg/shared';
 import { migrateSavedDeck } from './migrate.js';
 import type { SavedDeck } from './schema.js';
-import type { Clock } from './operations.js';
+import { uniqueDeckName, type Clock } from './operations.js';
 
 /**
  * Deck import/export. Exports are plain, readable, versioned JSON in exactly
@@ -98,20 +98,10 @@ export interface ImportPreparationOptions {
  */
 export function prepareImportedDeck(deck: SavedDeck, options: ImportPreparationOptions): SavedDeck {
   const usedIds = new Set(options.existing.map((d) => d.id));
-  const usedNames = new Set(options.existing.map((d) => d.name.toLowerCase()));
   const clock = options.clock ?? (() => new Date().toISOString());
 
   const id = usedIds.has(deck.id) ? generateId('deck', options.idSources) : deck.id;
-
-  let name = deck.name;
-  if (usedNames.has(name.toLowerCase())) {
-    name = `${deck.name} (imported)`;
-    let counter = 2;
-    while (usedNames.has(name.toLowerCase())) {
-      name = `${deck.name} (imported ${counter})`;
-      counter += 1;
-    }
-  }
+  const name = uniqueDeckName(deck.name, options.existing, { suffix: 'imported' });
 
   if (id === deck.id && name === deck.name) return deck;
   return { ...deck, id, name, updatedAt: clock() };

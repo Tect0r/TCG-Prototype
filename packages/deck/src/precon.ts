@@ -9,6 +9,7 @@ import {
 import { error, hasErrors, type Issue } from '@tcg/shared';
 import { deckFormatOf, type DeckFormatConfig } from './format.js';
 import { DECK_SCHEMA_VERSION, type SavedDeck } from './schema.js';
+import { validateDeck } from './validate.js';
 
 /**
  * Built-in preconstructed decks.
@@ -158,6 +159,52 @@ export function preconToDeck(
     cards: precon.cardIds.map((cardId) => ({ cardId, quantity: 1 })),
     createdAt: options.now,
     updatedAt: options.now,
+  };
+}
+
+/**
+ * Everything standing between a precon and a match, in one report.
+ *
+ * `validatePrecon` answers "is this list well-formed", which is not the same
+ * question as "can it be played here": a precon can be a perfectly good list of
+ * IDs and still be unusable because it belongs to another format, or because
+ * one of its cards is not finished yet (`deck/card_not_implemented`). Both
+ * answers come from the layers that already own them — the format check here,
+ * the definition check in `validatePrecon`, the playability check in
+ * `validateDeck` against the copy — so a precon can never be presented as
+ * playable by a rule the deck builder and the match server do not share.
+ *
+ * The checks are ordered and stop at the first failing layer. A precon built to
+ * another format would otherwise report forty cards missing from the pool,
+ * which is true and useless.
+ */
+export function reviewPrecon(
+  precon: PreconDefinition,
+  database: CardDatabase,
+  format: DeckFormatConfig,
+): PreconValidation {
+  if (precon.formatId !== format.formatId) {
+    return {
+      legal: false,
+      issues: [
+        error(
+          'precon/format_mismatch',
+          `Precon "${precon.name}" is built for "${precon.formatId}" and cannot be used in "${format.formatId}".`,
+          { context: { preconId: precon.id, formatId: precon.formatId, active: format.formatId } },
+        ),
+      ],
+    };
+  }
+
+  const definition = validatePrecon(precon, database);
+  if (!definition.legal) return definition;
+
+  // Timestamps are irrelevant to validation; the copy exists only to be checked.
+  const deck = preconToDeck(precon, { id: precon.id, now: '1970-01-01T00:00:00.000Z' });
+  const report = validateDeck(deck, database, format);
+  return {
+    legal: report.legal,
+    issues: [...definition.issues, ...report.issues],
   };
 }
 

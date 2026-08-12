@@ -10,7 +10,7 @@
   "powerClass": "standard",
   "tags": ["soldier"],
   "keywords": ["guardian"],
-  "displayText": "When this unit is deployed, create a 1/1 Soldier token.",
+  "displayText": "Guardian. When this unit is deployed, create a 1/1 Soldier token.",
   "effects": [
     {
       "type": "create_token",

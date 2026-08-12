@@ -144,6 +144,17 @@ export function SpectatorSummary({ replay }: SpectatorSummaryProps) {
         This is one match. It is evidence about what the rules did, not about whether they are
         balanced.
       </p>
+
+      {/* Repeated at the result, because this is the screen whose numbers are
+          most likely to be copied somewhere else (M01.2). */}
+      {!replay.provenance.resultsValid && (
+        <p className="spectator-summary__invalid" role="alert">
+          <strong>Results invalid.</strong> This match ran under the developer override with cards
+          that are not implemented yet:{' '}
+          {replay.provenance.incompleteCards.flatMap((seat) => seat.cardIds).join(', ')}. None of
+          these numbers describe the printed game.
+        </p>
+      )}
     </section>
   );
 }

@@ -10,6 +10,7 @@ import {
   type Duration,
   type EffectDefinition,
   type EffectType,
+  type TargetDefinition,
 } from '@tcg/card-data';
 import { DEFAULT_HELP_CONFIG } from '../references.js';
 import { explainCard } from './card.js';
@@ -145,8 +146,10 @@ const SAMPLE_EFFECTS: { readonly [T in EffectType]: Extract<EffectDefinition, { 
     },
   },
   ready: { type: 'ready', target: { kind: 'source' } },
+  skip_next_ready: { type: 'skip_next_ready', target: { kind: 'blocked_by_source' } },
   move_card: { type: 'move_card', target: { kind: 'source' }, toZone: 'hand' },
   counter: { type: 'counter', unlessPays: 2 },
+  schedule_delayed: { type: 'schedule_delayed', delayedAbilityId: 'later' },
 };
 
 describe('effect explanations', () => {
@@ -173,6 +176,91 @@ describe('effect explanations', () => {
       const second = explainEffect(SAMPLE_EFFECTS[type], { database });
       expect(first).toEqual(second);
     }
+  });
+
+  it('spells out a delayed effect rather than describing the bookkeeping', () => {
+    const boundary = explainEffect(
+      { type: 'schedule_delayed', delayedAbilityId: 'later' },
+      {
+        sourceNoun: 'this unit',
+        delayedAbilities: [
+          {
+            id: 'later',
+            boundary: 'end_of_turn',
+            subject: 'source',
+            effects: [{ type: 'return_to_hand', target: { kind: 'source' } }],
+          },
+        ],
+      },
+    );
+    expect(boundary.text).toBe('At the end of the turn, return this unit to its owner’s hand.');
+
+    const watch = explainEffect(
+      { type: 'schedule_delayed', delayedAbilityId: 'later' },
+      {
+        database,
+        sourceNoun: 'this spell',
+        delayedAbilities: [
+          {
+            id: 'later',
+            boundary: 'end_of_turn',
+            trigger: 'on_defeated',
+            subject: 'previous_target',
+            effects: [
+              { type: 'create_token', tokenCardId: 'thrall_token', amount: 2, controller: 'self' },
+            ],
+          },
+        ],
+      },
+    );
+    expect(watch.text).toMatch(/^When it is defeated this turn, create /);
+    expect(watch.notes).toContain(
+      'if that never happens, the delayed effect simply ends with the turn',
+    );
+  });
+
+  it('says what the two zone transitions really do', () => {
+    const buriedUnit: TargetDefinition = {
+      kind: 'entity',
+      selector: {
+        zone: 'discard',
+        controller: 'self',
+        filter: { cardTypes: ['unit'] },
+        count: 1,
+        selection: 'player_choice',
+        chooser: 'self',
+        optional: false,
+        excludeSource: false,
+      },
+    };
+
+    const removal = explainEffect({ type: 'move_card', toZone: 'removed', target: buriedUnit });
+    expect(removal.text).toMatch(/^Remove .* from the game\.$/);
+    expect(removal.notes).toContain(
+      'a card removed from the game is gone for good: nothing may target it and no effect returns it',
+    );
+
+    const revival = explainEffect({
+      type: 'move_card',
+      toZone: 'battlefield',
+      entersExhausted: true,
+      target: buriedUnit,
+    });
+    expect(revival.text).toMatch(/onto the battlefield Exhausted\.$/);
+    expect(revival.notes).toContain(
+      'this is not a deployment: abilities that watch for a Unit entering the battlefield see it, abilities that watch for one being deployed do not',
+    );
+
+    // A move that is only a move keeps the plain wording.
+    const bounce = explainEffect({ type: 'move_card', toZone: 'hand', target: { kind: 'source' } });
+    expect(bounce.text).toMatch(/^Move .* to its owner’s hand\.$/);
+  });
+
+  it('says only what it can when the delayed body was not supplied', () => {
+    // The body is named by ID, so a caller without the card cannot resolve it.
+    // The honest answer is a short sentence, never an invented one.
+    const explanation = explainEffect({ type: 'schedule_delayed', delayedAbilityId: 'later' });
+    expect(explanation.text).toBe('Set up a delayed effect.');
   });
 
   it('names the source by its card type', () => {
@@ -457,6 +545,100 @@ describe('card explanations', () => {
     expect(staticSection?.steps[0]?.text).toContain('not this unit itself');
   });
 
+  // M02.4. A replacement gets its own sentence rather than the "your <cards>
+  // <change>" shape a continuous ability takes, because that shape has nowhere
+  // to put which event is being rewritten, the once-a-turn throttle, or the
+  // price. These pin what a player actually reads.
+  it('says which event a replacement rewrites, and its throttle', () => {
+    const explanation = explainCard(
+      card({
+        type: 'relic',
+        attack: undefined,
+        health: undefined,
+        staticAbilities: [
+          {
+            id: 'containment',
+            activeZone: 'battlefield',
+            affects: {
+              zone: 'battlefield',
+              controller: 'opponent',
+              filter: { cardTypes: ['unit', 'token', 'commander'] },
+            },
+            effect: {
+              type: 'replace_arrival',
+              on: 'deployed',
+              limit: 'first_each_turn',
+              entersExhausted: true,
+            },
+          },
+        ],
+      }),
+    );
+
+    const text = explanation.sections.find((section) => section.kind === 'static')?.steps[0]?.text;
+    expect(text).toMatch(/first/i);
+    expect(text).toMatch(/enemy/i);
+    expect(text).toMatch(/deployed/i);
+    expect(text).toMatch(/each turn/i);
+    expect(text).toMatch(/enters Exhausted/i);
+  });
+
+  it('names the price of a paid readiness replacement', () => {
+    const explanation = explainCard(
+      card({
+        type: 'relic',
+        attack: undefined,
+        health: undefined,
+        staticAbilities: [
+          {
+            id: 'drag',
+            activeZone: 'battlefield',
+            affects: { zone: 'battlefield', controller: 'opponent' },
+            effect: { type: 'replace_ready', energyCost: 1, limit: 'first_each_turn' },
+          },
+        ],
+      }),
+    );
+
+    const text = explanation.sections.find((section) => section.kind === 'static')?.steps[0]?.text;
+    // The cost is the decision, so it has to be in the sentence a player reads.
+    expect(text).toMatch(/1 energy|one energy/i);
+    expect(text).toMatch(/ready/i);
+    expect(text).toMatch(/^[A-Z].*[.]$/s);
+  });
+
+  it('grants a keyword through an arrival without inventing a throttle', () => {
+    const explanation = explainCard(
+      card({
+        staticAbilities: [
+          {
+            id: 'warhorn',
+            activeZone: 'battlefield',
+            affects: {
+              zone: 'battlefield',
+              controller: 'self',
+              filter: { cardTypes: ['token'], tags: ['goblin'] },
+            },
+            effect: {
+              type: 'replace_arrival',
+              on: 'entered_battlefield',
+              onlyOnControllerTurn: true,
+              grantKeyword: 'rush',
+              grantDuration: 'end_of_turn',
+            },
+          },
+        ],
+      }),
+    );
+
+    const text = explanation.sections.find((section) => section.kind === 'static')?.steps[0]?.text;
+    expect(text).toMatch(/Rush/);
+    expect(text).toMatch(/during your turn/i);
+    expect(text).toMatch(/until the end of that turn/i);
+    // `unlimited` is the default here; nothing may print a limit that is not set.
+    expect(text).not.toMatch(/first|each turn(?! )/i);
+  });
+
   it('never derives behaviour from displayText', () => {
     // Deliberately wrong prose: the explanation must describe the structured
     // effect and must not repeat the lie.
@@ -622,6 +804,55 @@ describe('card explanations', () => {
     const section = explanation.sections.find((s) => s.kind === 'resolve');
     expect(section?.costs).toEqual(['sacrifice one other friendly unit']);
     expect(explanation.notes.join(' ')).toMatch(/nothing is refunded/i);
+  });
+
+  it('words a value read from a statline as "its ATK" (M02.3)', () => {
+    const explanation = explainCard(database.getOrThrow('bastion_commander'), { database });
+    const section = explanation.sections.find((entry) => entry.kind === 'triggered');
+
+    expect(section?.title).toMatch(/^The first time .*blocks.* each turn$/i);
+    // The number is described, never invented: "+0/+its ATK" is honest about
+    // the fact that the amount depends on the unit it lands on.
+    expect(section?.steps[0]?.text).toMatch(/\+0\/\+its ATK/);
+    expect(section?.steps[0]?.text).toMatch(/for that combat/i);
+    expect(section?.steps[0]?.notes.join(' ')).toMatch(
+      /counted when the effect resolves, not when the card was played/,
+    );
+  });
+
+  it('words a derived cost reduction as its own sentence (M02.3)', () => {
+    const explanation = explainCard(database.getOrThrow('stitched_abomination'), { database });
+    const section = explanation.sections.find((entry) => entry.kind === 'static');
+
+    expect(section?.steps[0]?.text).toBe(
+      'This unit costs one less for each unit you control defeated this turn, to a minimum cost of 3.',
+    );
+  });
+
+  it('words an each-player selection as the simultaneous thing it is (M02.5)', () => {
+    const explanation = explainCard(database.getOrThrow('equal_price'), { database });
+    const step = explanation.sections.find((entry) => entry.kind === 'resolve')?.steps[0];
+
+    // "friendly" would name the caster's side for three seats out of four, so
+    // the ownership is worded relative to whoever is being asked.
+    expect(step?.text).toBe('Sacrifice one unit or token controlled by each player.');
+    expect(step?.notes.join(' ')).toMatch(/nothing happens until every answer is in/);
+    expect(step?.notes.join(' ')).toMatch(/a player with no legal choice is skipped/);
+    // The "N legal targets must exist" note is about a single-chooser selection
+    // and would be wrong here.
+    expect(step?.notes.join(' ')).not.toMatch(/must exist for this to happen/);
+  });
+
+  it('words a divided total as a split rather than an amount each (M02.5)', () => {
+    const explanation = explainCard(database.getOrThrow('mass_offering'), { database });
+    const steps = explanation.sections.find((entry) => entry.kind === 'resolve')?.steps;
+
+    expect(steps?.[1]?.text).toBe(
+      'Divide that many damage among all enemy units, tokens or Commanders as you choose.',
+    );
+    // "That many" is a reference, so the step spells out what it refers to.
+    expect(steps?.[1]?.notes.join(' ')).toMatch(/the step before this one acted on/);
+    expect(steps?.[1]?.notes.join(' ')).toMatch(/whole share as one hit/);
   });
 
   it('exposes keyword definitions from the shared registry', () => {

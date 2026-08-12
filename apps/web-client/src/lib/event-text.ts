@@ -98,7 +98,53 @@ export function describeEvent(
       return `${playerName(event.playerId)}'s cards cost ${Math.abs(event.delta)} ${event.delta < 0 ? 'less' : 'more'}.`;
     case 'trigger_queued':
       return `${cardName(event.definitionId)} triggers.`;
+    case 'delayed_effect_scheduled':
+      return event.triggerId === null
+        ? `${cardName(event.definitionId)} sets up an effect for the end of the turn.`
+        : `${cardName(event.definitionId)} sets up an effect that watches ${instanceName(
+            event.subjectInstanceId,
+          )} this turn.`;
+    case 'delayed_effect_fired':
+      return `${cardName(event.definitionId)}'s delayed effect happens.`;
+    case 'delayed_effect_expired':
+      // A watch whose event never came is worth saying: the player was told the
+      // promise existed, so they have to be told it is over.
+      return event.reason === 'controller_eliminated'
+        ? null
+        : `${cardName(event.definitionId)}'s delayed effect ends without happening.`;
+    // The replacement layer rewrites events silently by design, so the log is
+    // the only place a player can see why their unit arrived Exhausted or did
+    // not ready. Every one of these names the card responsible (M02.4).
+    case 'arrival_replaced': {
+      const changes = [
+        ...(event.exhausted ? ['Exhausted'] : []),
+        ...(event.keyword === null ? [] : [`with ${event.keyword.replace(/_/g, ' ')}`]),
+      ].join(' ');
+      return `${cardName(event.sourceDefinitionId)} makes ${cardName(
+        event.definitionId,
+      )} enter ${changes}.`;
+    }
+    case 'ready_prevented':
+      return event.sourceDefinitionId === null
+        ? `${instanceName(event.instanceId)} does not ready.`
+        : `${cardName(event.sourceDefinitionId)} keeps ${instanceName(
+            event.instanceId,
+          )} Exhausted${event.energySpent > 0 ? ` for ${event.energySpent} energy` : ''}.`;
+    case 'ready_skip_applied':
+      return `${instanceName(event.instanceId)} will not ready at its controller's next Ready Step.`;
     case 'card_moved':
+      // The two destinations a player has to understand rather than merely
+      // locate get said in words. "Moves to removed" reads like a zone the
+      // card might come back from, and it never does.
+      if (event.toZone === 'removed') {
+        return `${cardName(event.definitionId)} is removed from the game.`;
+      }
+      if (event.toZone === 'battlefield') {
+        return `${cardName(event.definitionId)} returns to the battlefield from ${event.fromZone.replace(
+          /_/g,
+          ' ',
+        )}.`;
+      }
       return `${cardName(event.definitionId)} moves to ${event.toZone.replace(/_/g, ' ')}.`;
     case 'cards_revealed':
       return `${playerName(event.playerId)} reveals ${(event.definitionIds ?? []).map(cardName).join(', ')}.`;

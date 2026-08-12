@@ -646,6 +646,37 @@ Answer it when a Reaction is authored that needs one, not before.
 
 ---
 
+### Q48. Five Goblin cards say "enters the battlefield" and behave as "when deployed"
+
+**Blocks:** nothing today; the cards work, and every precon is legal. Raised by
+the M02.6 entry-trigger review — see
+[rules/entry-trigger-review.md](rules/entry-trigger-review.md) for the full
+card-by-card record.
+
+`goblin_bomb_thrower`, `goblin_lookout`, `goblin_mob_caller`,
+`goblin_recruiter` and `goblin_siege_leader` all print "When this Unit **enters
+the battlefield**, …" and are authored as top-level `effects` — the implicit
+_deploy_ form. That form runs when the card is played and when a Token is
+created, and **not** when a permanent is put onto the battlefield by an effect.
+So a `goblin_recruiter` returned by `grave_reassembly` creates no Goblin Token,
+which is not what the card says. Confirmed against the engine, not inferred.
+
+Two answers, and they are not equivalent:
+
+- **Fix the prose** to "When deployed". No behaviour changes anywhere; five
+  cards stop over-promising. This is what the "structured data is authoritative"
+  invariant implies on its own.
+- **Fix the structure** to `on_entered_battlefield`. The cards then do what they
+  print — and the Goblin deck gains a revival payoff it does not have today,
+  which is a gameplay change and therefore outside M02.
+
+The fifteen cards that print "When deployed" and use the same implicit form are
+correct as they stand and are **not** part of this question. Nothing was
+converted in bulk; whichever answer you give, the structural route still needs a
+per-card judgement about whether revival should re-fire each one.
+
+---
+
 ### Q4 and Q5 — sharpened, still yours
 
 Both entries above are stale in their wording but still open in substance:

@@ -1,4 +1,5 @@
 import { emit, underCause, type MatchContext } from './context.js';
+import { advanceDelayedEffects } from './delayed.js';
 import { executeEffect } from './effects.js';
 import { findInstance, playerOf } from './derive.js';
 import { collectTriggers } from './triggers.js';
@@ -99,6 +100,10 @@ export function settle(ctx: MatchContext, fromEventIndex: number): void {
     if (batch.length === 0) return;
 
     collectTriggers(ctx, batch);
+    // Delayed watches read the same batch, and are advanced *after* trigger
+    // discovery so an ordinary ability reacting to an event still resolves
+    // before a promise made earlier in the turn about the same event.
+    advanceDelayedEffects(ctx, batch);
     cursor = ctx.events.length;
     if (ctx.state.log.length === lengthBefore) return;
   }

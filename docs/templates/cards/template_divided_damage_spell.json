@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 4,
+  "id": "template_divided_damage_spell",
+  "name": "Template Divided Damage Spell",
+  "type": "spell",
+  "colorIdentity": ["red"],
+  "cost": 4,
+  "role": "removal",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "effects": [
+    {
+      "type": "sacrifice",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 3,
+          "selection": "player_choice",
+          "optional": true
+        }
+      }
+    },
+    {
+      "type": "deal_damage",
+      "amount": {
+        "kind": "previous_targets"
+      },
+      "divided": true,
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit", "token", "commander"]
+          },
+          "count": "all",
+          "selection": "player_choice"
+        }
+      }
+    }
+  ],
+  "displayText": "Sacrifice up to three Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or Commander. The damage may be divided among targets.",
+  "text": {
+    "flavor": "`divided` makes `amount` a total the chooser splits, so the selector under it is the pool the allocation draws from: `count: \"all\"` and `selection: \"player_choice\"` are required. A target takes its whole share as one hit. `previous_targets` counts what the step before resolved with."
+  }
+}

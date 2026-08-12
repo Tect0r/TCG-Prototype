@@ -1,4 +1,5 @@
 import {
+  isDistributedSelection,
   KEYWORD_REGISTRY,
   type CardFilter,
   type CardFilterAlternative,
@@ -224,9 +225,15 @@ export function describeSelector(selector: TargetSelector): string {
   const noun = phrases.noun ?? defaultNoun;
   const nounPlural = phrases.nounPlural ?? plural(2, defaultNoun);
 
-  const adjectives = [controllerAdjective(selector.controller), ...phrases.before].filter(
-    (value): value is string => value !== null,
-  );
+  // In an each-player selection the selector's `controller` is read relative to
+  // whoever is being asked, so "friendly" and "enemy" — which are relative to
+  // the caster — would name the wrong side for three seats out of four. The
+  // ownership moves to a trailing clause below instead.
+  const distributed = isDistributedSelection(selector);
+  const adjectives = [
+    distributed ? null : controllerAdjective(selector.controller),
+    ...phrases.before,
+  ].filter((value): value is string => value !== null);
   const prefix = adjectives.length > 0 ? `${adjectives.join(' ')} ` : '';
 
   const head =
@@ -235,6 +242,18 @@ export function describeSelector(selector: TargetSelector): string {
       : quantify(selector.count, `${prefix}${noun}`, `${prefix}${nounPlural}`);
 
   const parts = [head.replace(/\s+/g, ' '), ...phrases.after];
+
+  if (distributed && selector.controller !== 'any') {
+    // "each player" rather than `describePlayerSelector`'s "every player": the
+    // phrase attaches to a per-seat count, and "one unit every player controls"
+    // reads as one unit they all share.
+    const who = selector.chooser === 'each_opponent' ? 'each opponent' : 'each player';
+    parts.push(
+      selector.controller === 'self'
+        ? `controlled by ${who}`
+        : `controlled by an opponent of ${who}`,
+    );
+  }
 
   // The zone is worth naming whenever it is not the obvious one.
   if (selector.zone !== 'battlefield') {
@@ -250,6 +269,12 @@ export function describeSelector(selector: TargetSelector): string {
 export function describeSelection(selector: TargetSelector): string | null {
   switch (selector.selection) {
     case 'player_choice':
+      // An each-player selection is worded as the simultaneous thing it is:
+      // "every player chooses which" alone would let a reader assume the answers
+      // are taken one at a time, which is the one thing it must not do.
+      if (isDistributedSelection(selector)) {
+        return `${describePlayerSelector(selector.chooser)} chooses separately, and nothing happens until every answer is in`;
+      }
       return selector.chooser === 'self'
         ? 'you choose which'
         : `${describePlayerSelector(selector.chooser)} chooses which`;
@@ -284,15 +309,31 @@ export function playerSelectorIsPlural(selector: PlayerSelector): boolean {
  *
  * `sourceNoun` names the card the text is printed on, so a unit reads "this
  * unit" and a relic reads "this relic".
+ *
+ * `subjectNoun` names the card a `trigger_subject` points at. It has a default
+ * because that is the honest phrase for an ordinary triggered ability, and it is
+ * overridable because inside a delayed clause the subject was bound when the
+ * clause was set up — "the card that triggered this" would be describing an
+ * event that has not happened yet.
  */
-export function describeTarget(target: TargetDefinition, sourceNoun = 'this card'): string {
+export function describeTarget(
+  target: TargetDefinition,
+  sourceNoun = 'this card',
+  subjectNoun = 'the card that triggered this',
+): string {
   switch (target.kind) {
     case 'source':
       return sourceNoun;
     case 'trigger_subject':
       // Named by what it is rather than by a pronoun: "it" would be ambiguous
       // in a sentence that has already mentioned the card the ability is on.
-      return 'the card that triggered this';
+      return subjectNoun;
+    case 'blocked_by_source':
+      return `each unit ${sourceNoun} is blocking`;
+    case 'previous_target':
+      // The word the card itself uses. The step before has just named the unit,
+      // so a pronoun is unambiguous here in a way it never is for a trigger.
+      return 'it';
     case 'entity':
       return describeSelector(target.selector);
     case 'player':
@@ -308,6 +349,13 @@ export function targetIsPlural(target: TargetDefinition): boolean {
     case 'source':
     case 'trigger_subject':
       return false;
+    case 'blocked_by_source':
+      // "Each unit this is blocking" is a set: one blocker may face more than
+      // one attacker as soon as the rules allow it, and the phrase reads plural
+      // either way.
+      return true;
+    case 'previous_target':
+      return false;
     case 'entity':
       return target.selector.count === 'all' || target.selector.count > 1;
     case 'player':
@@ -319,13 +367,21 @@ export function targetIsPlural(target: TargetDefinition): boolean {
 
 /** Extra sentences a target deserves: optionality, choosers, randomness. */
 export function targetNotes(target: TargetDefinition): readonly string[] {
+  if (target.kind === 'blocked_by_source') {
+    return ['nothing happens outside a combat this card is blocking in'];
+  }
   if (target.kind !== 'entity') return [];
   const selector = target.selector;
   const notes: string[] = [];
 
   const selection = describeSelection(selector);
   if (selection !== null) notes.push(selection);
-  if (selector.optional) {
+  if (isDistributedSelection(selector)) {
+    // The "N legal targets must exist" note below is about the instruction as a
+    // whole and would be wrong here: each seat answers for itself, so a seat
+    // with nothing to name drops out and the rest still resolve.
+    notes.push('a player with no legal choice is skipped, and everyone else still answers');
+  } else if (selector.optional) {
     // An optional selector a player answers is "you may": declining by picking
     // nothing is the decision, and a note that only says the step "may resolve
     // with no target" describes an accident rather than a choice.

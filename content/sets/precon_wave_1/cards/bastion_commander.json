@@ -15,7 +15,28 @@
     "identity": "Guardian Commander — Defensive Engine",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs a value derived from the target’s own statline (\"Health equal to its ATK\") (ruleset update §15); the \"for that combat\" duration it also needs now exists",
-  "displayText": "The first friendly Unit that blocks each turn gains Health equal to its ATK for that combat."
+  "abilities": [
+    {
+      "id": "bastion_bulwark",
+      "trigger": "on_block",
+      "activeZone": "battlefield",
+      "scope": { "controller": "self" },
+      "limit": "each_turn",
+      "effects": [
+        {
+          "type": "modify_stats",
+          "target": { "kind": "trigger_subject" },
+          "health": { "kind": "stat", "of": "effect_target", "stat": "attack" },
+          "duration": "end_of_combat"
+        }
+      ]
+    }
+  ],
+  "displayText": "The first friendly Unit that blocks each turn gains Health equal to its ATK for that combat.",
+  "text": {
+    "notes": [
+      "The bonus is worked out when the ability resolves, before combat damage — so a buff that lands on the blocker first is counted.",
+      "This Commander must be on the battlefield for the ability to watch anything. From the Command Zone it does nothing."
+    ]
+  }
 }

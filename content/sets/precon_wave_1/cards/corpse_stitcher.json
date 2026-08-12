@@ -13,7 +13,50 @@
     "identity": "Sacrifice Unit — Graveyard Conversion",
     "power": "medium"
   },
-  "implemented": false,
-  "unsupportedReason": "needs a remove-from-game zone transition (ruleset update §15)",
-  "displayText": "Pay 1 Energy and Exhaust — Remove a Unit card in your discard pile from the game. Create two Thrall Tokens."
+  "activatedAbilities": [
+    {
+      "id": "stitch",
+      "name": "Stitch the Remains",
+      "costs": [
+        {
+          "type": "energy",
+          "amount": 1
+        },
+        {
+          "type": "exhaust_source"
+        }
+      ],
+      "usageLimit": "unlimited",
+      "effects": [
+        {
+          "type": "move_card",
+          "toZone": "removed",
+          "target": {
+            "kind": "entity",
+            "selector": {
+              "zone": "discard",
+              "controller": "self",
+              "filter": {
+                "cardTypes": ["unit"]
+              },
+              "count": 1
+            }
+          }
+        },
+        {
+          "type": "create_token",
+          "tokenCardId": "thrall_token",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "displayText": "Pay 1 Energy and Exhaust — Remove a Unit card in your discard pile from the game. Create two Thrall Tokens.",
+  "text": {
+    "notes": [
+      "A card removed from the game is gone for good. It is not in any pile, nothing can target it, and no effect returns it.",
+      "The Exhaust cost is the limit on this ability: it can only be used again once this Unit is Ready.",
+      "The Tokens are created whether or not there was a Unit card to remove. The removal and the Tokens are two separate instructions, and one failing does not skip the other."
+    ]
+  }
 }

@@ -15,6 +15,7 @@ import type { OpponentSensitivity } from '../analysis/sensitivity.js';
 import type { ComparisonReport } from '../analysis/compare.js';
 import type { Flag } from '../analysis/flags.js';
 import type { GenerationReport } from '../deck-search/evolve.js';
+import type { MatchupMatrix } from '../matchup-matrix.js';
 import { round } from '../analysis/stats.js';
 
 /**
@@ -40,7 +41,11 @@ import { round } from '../analysis/stats.js';
  * `proves`, `causes`, `balanced` and `broken` do not appear about a result.
  */
 
-export const REPORT_SCHEMA_VERSION = 2;
+/**
+ * Version 3 (M03.4): a batch that ran the ordered matchup matrix gains a section
+ * for it, between the outcome tables and the cluster analysis.
+ */
+export const REPORT_SCHEMA_VERSION = 3;
 
 export interface ReportPilot {
   readonly id: string;
@@ -56,6 +61,14 @@ export interface ReportEnvironment {
   readonly hashes?: EnvironmentHashes;
   /** Where the frozen snapshot for this environment was written. */
   readonly snapshotPath?: string | null;
+}
+
+/** A built-in precon a deck source named by ID (M03.3). */
+export interface ReportPrecon {
+  readonly preconId: string;
+  readonly name: string;
+  readonly formatId: string;
+  readonly deckHash: string;
 }
 
 export interface ReportAbnormal {
@@ -90,6 +103,8 @@ export interface ReportInputs {
   readonly flags: readonly Flag[];
   readonly counters?: CounterBreadth | null;
   readonly robustness?: RobustnessReport | null;
+  /** The ordered matchup matrix, when the batch was configured to run one (M03.4). */
+  readonly matchupMatrix?: MatchupMatrix | null;
 
   readonly diff?: EnvironmentDiff;
   readonly declaredCheck?: DeclaredDiffCheck;
@@ -105,6 +120,8 @@ export interface ReportInputs {
   readonly failedMatches: number;
   readonly abnormalMatches: readonly ReportAbnormal[];
   readonly deckCount: number;
+  /** Precons the run was configured from, by permanent ID. Empty when none. */
+  readonly precons?: readonly ReportPrecon[];
   readonly pilots: readonly ReportPilot[];
   readonly wallClockMs: number;
   readonly workers: number;
@@ -154,6 +171,7 @@ export function renderReport(inputs: ReportInputs): string {
   section(lines, referencePopulation(inputs));
   section(lines, flagSection(inputs));
   section(lines, outcomes(inputs));
+  section(lines, matchupMatrixSection(inputs));
   section(lines, clusters(inputs));
   section(lines, cards(inputs));
   section(lines, crossClusterInclusion(inputs));
@@ -291,6 +309,14 @@ function provenance(inputs: ReportInputs): string[] {
     );
   }
   lines.push(`| Decks | ${inputs.deckCount} |`);
+  for (const precon of inputs.precons ?? []) {
+    // Named individually, with the deck hash it resolved to: "we ran the four
+    // precons" is only checkable if a reader can see which lists that meant.
+    lines.push(
+      `| Precon \`${precon.preconId}\` | ${precon.name} (${precon.formatId}) — deck ` +
+        `\`${precon.deckHash}\` |`,
+    );
+  }
   lines.push(`| Workers *(non-semantic)* | ${inputs.workers} |`);
   lines.push(`| Wall clock *(non-semantic)* | ${round(inputs.wallClockMs / 1000, 1)} s |`);
   lines.push('');
@@ -549,6 +575,123 @@ function outcomes(inputs: ReportInputs): string[] {
       );
     }
   }
+
+  return lines;
+}
+
+/* --------------------------------------------------------- matchup matrix */
+
+/**
+ * The ordered matchup matrix (M03.4).
+ *
+ * Deliberately written as a termination report rather than a results table. The
+ * cells do carry who won, because a matrix that hid its own outcomes would be
+ * unauditable, but every framing sentence around them says what the artifact is
+ * for: showing that each ordered pair of decks finishes, deterministically and
+ * cleanly. Win counts from one game per cell and heuristic pilots are not
+ * evidence about balance, and this section refuses to present them as any.
+ */
+function matchupMatrixSection(inputs: ReportInputs): string[] {
+  const matrix = inputs.matchupMatrix;
+  if (!matrix) return [];
+
+  const lines = ['## Ordered matchup matrix *(observation)*', ''];
+  lines.push(
+    `Every ordered pair of the ${matrix.decks.length} deck(s) below — each one in the first seat ` +
+      `against each one in the second, mirrors on the diagonal — is ${matrix.expectedCells} cell(s), ` +
+      `of which ${matrix.playedCells} were played over ${matrix.games} game(s) derived from root ` +
+      `seed \`${matrix.seed}\`.`,
+  );
+  lines.push('');
+  lines.push(
+    '**This is a robustness artifact, not a balance measurement.** It exists to show that every ' +
+      'ordered pair terminates deterministically with no illegal action, no loop and no crash. ' +
+      'The winner column is here so the run is auditable, not so it can be read as a win rate: ' +
+      'the pilots are transparent heuristics, the cells hold a handful of seeded games each, and ' +
+      'nothing here is corrected for anything. No conclusion about deck strength may be drawn ' +
+      'from this section.',
+  );
+  lines.push('');
+
+  if (!matrix.complete) {
+    lines.push(
+      `⚠ **Incomplete.** ${matrix.missing.length} ordered pair(s) produced no record: ` +
+        `${matrix.missing.map((pair) => `\`${pair}\``).join(', ')}. The grid below is therefore ` +
+        'not the whole matrix.',
+    );
+    lines.push('');
+  }
+
+  // Grid: rows are the first seat, columns the second.
+  const header = ['First seat ↓ / second seat →', ...matrix.decks.map((deck) => deck.deckId)];
+  lines.push(`| ${header.join(' | ')} |`);
+  lines.push(`| ${header.map(() => '---').join(' | ')} |`);
+  for (const first of matrix.decks) {
+    const cellsForRow = matrix.decks.map((second) => {
+      const cell = matrix.cells.find(
+        (entry) =>
+          entry.firstSeatDeckId === first.deckId && entry.secondSeatDeckId === second.deckId,
+      );
+      if (!cell) return '— *(not played)*';
+      const counts = `${cell.firstSeatWins}–${cell.secondSeatWins}`;
+      const draws = cell.draws > 0 ? `, ${cell.draws} draw(s)` : '';
+      const unclean = cell.unclean > 0 ? ` ⚠ ${cell.unclean}` : '';
+      return `${counts}${draws}${unclean}`;
+    });
+    lines.push(`| **${first.deckId}** | ${cellsForRow.join(' | ')} |`);
+  }
+  lines.push('');
+  lines.push(
+    'Each cell reads *first-seat wins – second-seat wins*, counted over the games in that cell. ' +
+      '⚠ marks games with an invariant failure.',
+  );
+  lines.push('');
+
+  lines.push(
+    `**Clean terminations:** ${matrix.cleanGames} of ${matrix.games} game(s). ` +
+      (matrix.invariantFailures.length === 0
+        ? 'No abnormal termination, engine diagnostic or pilot failure was recorded in any cell.'
+        : `${matrix.invariantFailures.length} invariant failure(s) were recorded:`),
+  );
+  if (matrix.invariantFailures.length > 0) {
+    lines.push('');
+    lines.push('| Matchup | Match | Failure | Replay |');
+    lines.push('| --- | --- | --- | --- |');
+    for (const failure of matrix.invariantFailures.slice(0, ABNORMAL_LIMIT)) {
+      lines.push(
+        `| ${failure.firstSeatDeckId} → ${failure.secondSeatDeckId} | \`${failure.matchId}\` | ` +
+          `${failure.detail} | ${failure.replayPath ? `\`${failure.replayPath}\`` : 'not retained'} |`,
+      );
+    }
+    if (matrix.invariantFailures.length > ABNORMAL_LIMIT) {
+      lines.push('');
+      lines.push(
+        `${matrix.invariantFailures.length - ABNORMAL_LIMIT} further failure(s) are in ` +
+          '`matchup-matrix.json`.',
+      );
+    }
+  }
+  lines.push('');
+
+  lines.push('**Decks, pilots and seeds:**');
+  lines.push('');
+  lines.push('| Deck | Precon | Commander | Deck hash |');
+  lines.push('| --- | --- | --- | --- |');
+  for (const deck of matrix.decks) {
+    lines.push(
+      `| ${deck.deckId} | ${deck.preconId ? `\`${deck.preconId}\`` : '—'} | ` +
+        `\`${deck.commanderId}\` | \`${deck.deckHash}\` |`,
+    );
+  }
+  lines.push('');
+  lines.push(
+    `Format \`${orDash(matrix.formatId)}\`, environment \`${matrix.environmentId}\` ` +
+      `(content \`${matrix.environmentHash}\`), pilots ` +
+      `${matrix.pilots.map((pilot) => `\`${pilot.id}\`@${pilot.version}`).join(', ') || '—'}. ` +
+      'Every game’s full seed path, seat order, starting player, termination and replay ' +
+      'reference is in `matchup-matrix.json` and `matchup-matrix.csv`; the same root seed and ' +
+      `configuration hash reproduce the identical ${matrix.games} match ID(s).`,
+  );
 
   return lines;
 }

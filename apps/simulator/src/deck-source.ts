@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
-import { migrateSavedDeck } from '@tcg/deck';
+import { z } from 'zod';
+import { bundledPrecon, cardIdSchema, preconIdSchema, preconsForFormat } from '@tcg/card-data';
+import { migrateSavedDeck, preconToDeck, reviewPrecon } from '@tcg/deck';
 import type { DeckSource } from './config.js';
 import type { Environment } from './environment.js';
 import { checkDeck, fromSavedDeck, makeDeck, type SimDeck } from './deck-search/deck.js';
@@ -13,13 +15,33 @@ import { generatePopulation, type GenerationDiagnostic } from './deck-search/gen
  * `validateDeck` against the environment they will actually be played in. An
  * illegal deck is reported, never repaired: quietly "fixing" a decklist would
  * mean the experiment did not test what its configuration says it tested.
+ *
+ * A `precon` source is stricter still, and deliberately so. The other sources
+ * describe decks the experiment invented, so dropping one and reporting it is a
+ * loss of sample size; a precon source *names* a shipped deck, so dropping one
+ * would leave a run reporting on "the four precons" having played three.
+ * Anything wrong with a named precon therefore throws (M03.3).
  */
+
+/** A precon a source resolved, recorded in the experiment manifest. */
+export const resolvedPreconSchema = z.strictObject({
+  preconId: preconIdSchema,
+  name: z.string().min(1),
+  /** The format the precon is built to, which the environment had to match. */
+  formatId: z.string().min(1),
+  commanderId: cardIdSchema,
+  /** The deck it materialised into, tying it to `deckHashes` in the manifest. */
+  deckHash: z.string().min(1),
+});
+export type ResolvedPrecon = z.infer<typeof resolvedPreconSchema>;
 
 export interface ResolvedDecks {
   readonly decks: readonly SimDeck[];
   readonly diagnostics: readonly GenerationDiagnostic[];
   /** Decks that were supplied but rejected, with the reason. */
   readonly rejected: readonly { readonly id: string; readonly reasons: readonly string[] }[];
+  /** Precons this source resolved by ID. Empty for every other source kind. */
+  readonly precons: readonly ResolvedPrecon[];
 }
 
 export function resolveDeckSource(
@@ -80,9 +102,92 @@ export function resolveDeckSource(
       }
       return vet(decks, environment, diagnostics);
     }
+    case 'precon':
+      return resolvePrecons(source.preconIds, environment);
     default:
-      return { decks: [], diagnostics: [], rejected: [] };
+      return { decks: [], diagnostics: [], rejected: [], precons: [] };
   }
+}
+
+/**
+ * Fixed, because a precon copy made for an experiment is not a saved deck. The
+ * timestamps are outside `SimDeck` anyway; pinning them keeps the intermediate
+ * `SavedDeck` free of anything that varies between runs.
+ */
+const PRECON_TIMESTAMP = '2026-01-01T00:00:00.000Z';
+
+/**
+ * Resolves precon IDs into decks, or stops the experiment.
+ *
+ * Each ID goes through the same two questions every other surface asks — does
+ * this precon exist, and can it be played *here* — answered by `bundledPrecon`
+ * and the shared `reviewPrecon`. The environment's declared `deckFormat` is what
+ * "here" means, so an environment that has not stated the precon's format is a
+ * format mismatch rather than a silent success against the wrong rules.
+ *
+ * The resulting decks are then vetted exactly like any other source, which is
+ * what catches a precon whose cards the environment bans or leaves out of its
+ * pool. A rejection at that stage throws too: an experiment named after a set of
+ * precons must run those precons or not run.
+ */
+function resolvePrecons(preconIds: readonly string[], environment: Environment): ResolvedDecks {
+  const decks: SimDeck[] = [];
+  const precons: ResolvedPrecon[] = [];
+  const seen = new Set<string>();
+
+  for (const preconId of preconIds) {
+    if (seen.has(preconId)) {
+      throw new Error(
+        `Precon "${preconId}" is listed twice in one deck source. A deck source is a set of ` +
+          'distinct decks; repeating an ID does not seat the precon twice.',
+      );
+    }
+    seen.add(preconId);
+
+    const precon = bundledPrecon(preconId);
+    if (!precon) {
+      const published = preconsForFormat(environment.deckFormat.formatId).map((entry) => entry.id);
+      throw new Error(
+        `No built-in precon has ID "${preconId}". Precons published for ` +
+          `"${environment.deckFormat.formatId}": ${published.join(', ') || 'none'}.`,
+      );
+    }
+
+    const review = reviewPrecon(precon, environment.database, environment.deckFormat);
+    if (!review.legal) {
+      throw new Error(
+        `Precon "${precon.id}" cannot be played in environment "${environment.id}":\n` +
+          review.issues
+            .filter((issue) => issue.severity === 'error')
+            .map((issue) => `  - ${issue.code}: ${issue.message}`)
+            .join('\n'),
+      );
+    }
+
+    const deck = fromSavedDeck(
+      preconToDeck(precon, { id: precon.id, name: precon.name, now: PRECON_TIMESTAMP }),
+    );
+    decks.push(deck);
+    precons.push({
+      preconId: precon.id,
+      name: precon.name,
+      formatId: precon.formatId,
+      commanderId: precon.commanderId,
+      deckHash: deck.hash,
+    });
+  }
+
+  const vetted = vet(decks, environment, []);
+  if (vetted.rejected.length > 0) {
+    throw new Error(
+      `Environment "${environment.id}" rejects precon(s) it was asked to run:\n` +
+        vetted.rejected.map((entry) => `  - ${entry.id}: ${entry.reasons.join('; ')}`).join('\n') +
+        '\n\nA named precon is never dropped and never substituted; fix the environment’s pool, ' +
+        'bans or format instead.',
+    );
+  }
+
+  return { ...vetted, precons };
 }
 
 /** Deck-builder exports are either one deck or a `{ decks: [...] }` envelope. */
@@ -120,7 +225,7 @@ function vet(
     });
   }
 
-  return { decks: accepted, diagnostics, rejected };
+  return { decks: accepted, diagnostics, rejected, precons: [] };
 }
 
 /** Directory a config file's relative paths are resolved against. */

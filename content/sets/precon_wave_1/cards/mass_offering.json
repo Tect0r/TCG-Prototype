@@ -11,7 +11,57 @@
     "identity": "Sacrifice Spell — Finisher",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs \"divide N damage among targets\" selection (ruleset update §16)",
-  "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or Commander. The damage may be divided among targets."
+  "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or Commander. The damage may be divided among targets.",
+  "effects": [
+    {
+      "type": "sacrifice",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 5,
+          "selection": "player_choice",
+          "chooser": "self",
+          "optional": true
+        }
+      }
+    },
+    {
+      "type": "deal_damage",
+      "amount": {
+        "kind": "previous_targets"
+      },
+      "divided": true,
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "opponent",
+          "filter": {
+            "cardTypes": ["unit", "token", "commander"]
+          },
+          "count": "all",
+          "selection": "player_choice",
+          "chooser": "self"
+        }
+      }
+    }
+  ],
+  "text": {
+    "summary": "Turns a wide board into exactly as much damage as you fed it.",
+    "notes": [
+      "\"Up to five\" really is up to: you may sacrifice none, in which case there is no damage to divide and the Spell does nothing else. Tokens count as Units and are the usual fodder.",
+      "The total is the number of Units you sacrificed with this Spell — not everything that died this turn.",
+      "You then split that total however you like. A target takes its whole share as a single hit, so Barrier stops one allocation once rather than once per point.",
+      "Every point has to be allocated to a legal target. If nothing enemy is on the battlefield the damage is lost, and the Units are still sacrificed."
+    ],
+    "effectExplanations": [
+      "Choose up to five of your own Units and sacrifice them.",
+      "Divide that many damage among enemy Units and Commanders."
+    ]
+  }
 }

@@ -141,7 +141,24 @@ export const targetSelectorSchema = z.strictObject({
   filter: cardFilterSchema.optional(),
   count: targetCountSchema.default(1),
   selection: selectionModeSchema.default('player_choice'),
-  /** Who picks, when `selection` is `player_choice`. */
+  /**
+   * Who picks, when `selection` is `player_choice`.
+   *
+   * A **plural** chooser — `each_opponent` or `all_players` — is the whole of
+   * "**each player** chooses …" (M02.5). It turns one selection into a
+   * distributed one: every named seat is asked separately, in the fixed order
+   * that selector already resolves in, and `controller` below is then read
+   * relative to *the seat being asked* rather than to the ability's controller,
+   * so `controller: "self"` is "a Unit **they** control".
+   *
+   * That re-reading costs nothing anywhere else: with the default `self`
+   * chooser the seat being asked **is** the ability's controller, so every card
+   * authored before this existed means exactly what it always meant.
+   *
+   * Every answer is collected before any of them is applied. The engine may not
+   * resolve the choices one at a time, because a later chooser would then be
+   * deciding with a board the card never promised them (M02.5).
+   */
   chooser: playerSelectorSchema.default('self'),
   /** When true the effect resolves harmlessly if no legal target exists. */
   optional: z.boolean().default(false),
@@ -197,6 +214,25 @@ export const targetDefinitionSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('trigger_subject'),
   }),
+  /**
+   * Every attacker the source is currently assigned to block (M02.4).
+   *
+   * Read from the public block assignments when the instruction resolves, so it
+   * names what the source is actually blocking. Outside such a combat it names
+   * nothing and the instruction fizzles. See the identical member of
+   * `EntityTarget`, which is the narrowing of this union that card-only effects
+   * use.
+   */
+  z.strictObject({
+    kind: z.literal('blocked_by_source'),
+  }),
+  /**
+   * Whatever the instruction before this one resolved with — the "it" of a
+   * two-sentence card (M02.4). See the identical member of `EntityTarget`.
+   */
+  z.strictObject({
+    kind: z.literal('previous_target'),
+  }),
   z.strictObject({
     kind: z.literal('player'),
     relation: z.enum(['self', 'opponent']),
@@ -214,6 +250,22 @@ export const targetDefinitionSchema = z.discriminatedUnion('kind', [
 ]);
 export type TargetDefinition = z.infer<typeof targetDefinitionSchema>;
 export type TargetDefinitionInput = z.input<typeof targetDefinitionSchema>;
+
+/**
+ * True when a selector asks several seats rather than one (M02.5).
+ *
+ * The single predicate every layer reads — engine, help renderer and pilots —
+ * so "is this an each-player choice?" cannot be answered two different ways.
+ * `player_choice` is part of the test because a `random` or `automatic`
+ * selection has no chooser at all: nobody is asked, so there is nothing to
+ * distribute.
+ */
+export function isDistributedSelection(selector: TargetSelector): boolean {
+  return (
+    selector.selection === 'player_choice' &&
+    (selector.chooser === 'each_opponent' || selector.chooser === 'all_players')
+  );
+}
 
 /** Convenience constructor for the common "one zone query" case. */
 export function entityTarget(

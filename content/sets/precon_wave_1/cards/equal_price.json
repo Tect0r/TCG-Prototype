@@ -11,7 +11,31 @@
     "identity": "Sacrifice Spell — Symmetrical Removal",
     "power": "medium"
   },
-  "implemented": false,
-  "unsupportedReason": "needs \"each player chooses\" simultaneous selection (ruleset update §16)",
-  "displayText": "Each player chooses and sacrifices one Unit they control."
+  "displayText": "Each player chooses and sacrifices one Unit they control.",
+  "effects": [
+    {
+      "type": "sacrifice",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "all_players"
+        }
+      }
+    }
+  ],
+  "text": {
+    "summary": "Everyone gives one up at the same time, you included.",
+    "notes": [
+      "Every player is asked before anybody loses anything. You will be asked in turn order starting with the caster, but nothing is sacrificed until the last answer is in, so no one is choosing against a board the others have already changed.",
+      "\"One Unit they control\" is read from each player's own side: you pick from your units, each opponent picks from theirs. Tokens count as Units and may be chosen.",
+      "A player with no Unit is simply not asked, and the rest of the table still sacrifices. A player eliminated before the last answer arrives drops out with their choice."
+    ]
+  }
 }

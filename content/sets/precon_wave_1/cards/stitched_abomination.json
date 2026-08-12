@@ -14,7 +14,26 @@
     "identity": "Sacrifice Unit — Finisher",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs a cost reduction computed from board state, applied to the card while it is still in hand (ruleset update §15)",
-  "displayText": "Overwhelm. This card costs 1 less for each friendly Unit defeated this turn, to a minimum cost of 3."
+  "staticAbilities": [
+    {
+      "id": "stitched_salvage",
+      "activeZone": "hand",
+      "affects": { "zone": "hand", "controller": "self", "onlySource": true },
+      "effect": {
+        "type": "cost_reduction",
+        "amount": {
+          "kind": "count",
+          "count": { "subject": "units_defeated_this_turn", "controller": "self" }
+        },
+        "minimum": 3
+      }
+    }
+  ],
+  "displayText": "Overwhelm. This card costs 1 less for each friendly Unit defeated this turn, to a minimum cost of 3.",
+  "text": {
+    "notes": [
+      "The discount is worked out every time the cost is asked for, so a Unit that dies later in the turn makes this cheaper straight away.",
+      "Sacrificed Units are defeated Units, and count."
+    ]
+  }
 }

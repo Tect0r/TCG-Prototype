@@ -3,10 +3,13 @@ import { DEFAULT_RULES_CONFIG, type PlayerId } from '@tcg/rules-engine';
 import {
   cardPoolHash,
   checkReplayCompatibility,
+  replayFormatVersion,
   resolveSpectatorSetup,
   runSpectatorMatch,
+  setupProvenance,
   spectatorDatabase,
   spectatorReplaySchema,
+  SPECTATOR_REPLAY_VERSION,
   SpectatorPlayback,
   stepDelayMs,
   type InformationMode,
@@ -87,7 +90,7 @@ export function SpectatorScreen() {
 
   const start = useCallback(
     (setup: SetupConfig) => {
-      const resolved = resolveSpectatorSetup(setup);
+      const resolved = resolveSpectatorSetup(setup, { database });
       if (resolved.problems.length > 0) {
         setError(resolved.problems.map((problem) => problem.message).join(' '));
         return;
@@ -105,6 +108,9 @@ export function SpectatorScreen() {
             database,
             config: DEFAULT_RULES_CONFIG,
             cardDataHash: poolHash,
+            // Derived from the resolved setup, never from the checkbox: a run
+            // that contained an unimplemented card says so for good.
+            provenance: setupProvenance(resolved),
           }),
         )
         .then((result) => {
@@ -132,7 +138,19 @@ export function SpectatorScreen() {
       }
       const result = spectatorReplaySchema.safeParse(parsed);
       if (!result.success) {
-        setError(`That file is not a spectator replay: ${result.error.issues[0]?.message ?? ''}`);
+        // A replay from an earlier build is refused, not migrated (M04.1): its
+        // telemetry was recorded before the shared board measurements existed,
+        // and re-deriving them here would present numbers under the identity of
+        // a build that never asserted them. Said as its own message, because
+        // "this is not a replay" would be untrue and unhelpful.
+        const version = replayFormatVersion(parsed);
+        setError(
+          version !== null && version !== SPECTATOR_REPLAY_VERSION
+            ? `That replay is format version ${version}; this build records version ` +
+                `${SPECTATOR_REPLAY_VERSION}. An older replay is refused rather than played ` +
+                'back approximately.'
+            : `That file is not a spectator replay: ${result.error.issues[0]?.message ?? ''}`,
+        );
         return;
       }
       // An incompatible replay is refused outright. Playing it back "as well as
@@ -197,6 +215,25 @@ export function SpectatorScreen() {
 
   return (
     <div className="spectator">
+      {/* Persistent, not dismissible, and above the board: a viewer must never
+          be able to look at this match without knowing it does not count. */}
+      {!replay.provenance.resultsValid && (
+        <div className="spectator__invalid" role="alert">
+          <strong>Results invalid.</strong> This match was run under the developer override, with
+          cards whose printed behaviour is not implemented yet. What happens here is not what those
+          cards say, so it is not evidence about the game.
+          <ul>
+            {replay.provenance.incompleteCards.map((seat) => (
+              <li key={seat.playerId}>
+                {replay.seats.find((entry) => entry.playerId === seat.playerId)?.name ??
+                  seat.playerId}
+                : {seat.cardIds.join(', ')}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <SpectatorControls
         playing={playing}
         atStart={position <= -1}

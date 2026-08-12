@@ -164,7 +164,10 @@ export function App() {
       ) : (
         <main className="app__empty">
           <h2>No decks yet</h2>
-          <p>Create a deck to start building, or import one you exported earlier.</p>
+          <p>
+            Create a deck to start building, copy a built-in precon from “Precons”, or import one
+            you exported earlier.
+          </p>
         </main>
       )}
     </div>

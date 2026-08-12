@@ -18,7 +18,7 @@ import {
  * handshake compares versions and refuses to start rather than failing halfway
  * through a match with a confusing error.
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({
@@ -120,6 +120,19 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('submit_deck'),
     deck: savedDeckSchema,
   }),
+  /**
+   * Play a built-in precon, by permanent ID rather than by contents.
+   *
+   * The list is never sent: the server resolves the ID against its own bundled
+   * precons and materialises the deck itself, so the definition it validates is
+   * the definition the client displayed and a client cannot smuggle an edited
+   * list in under a precon's name (M03.2). An edited copy is an ordinary deck
+   * and goes back through `submit_deck`, where it is validated on its contents.
+   */
+  z.strictObject({
+    type: z.literal('submit_precon'),
+    preconId: z.string().min(1).max(64),
+  }),
   z.strictObject({
     type: z.literal('set_ready'),
     ready: z.boolean(),
@@ -154,6 +167,7 @@ export const PROTOCOL_ERROR_CODES = [
   'protocol/seat_taken',
   'protocol/deck_illegal',
   'protocol/deck_required',
+  'protocol/unknown_precon',
   'protocol/not_started',
   'protocol/already_started',
   'protocol/stale_revision',

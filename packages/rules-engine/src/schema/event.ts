@@ -322,6 +322,55 @@ export const gameEventSchema = z.discriminatedUnion('type', [
 
   event('unit_exhausted', { instanceId: instanceIdSchema }),
   event('unit_readied', { instanceId: instanceIdSchema }),
+
+  /**
+   * A replacement rewrote a card's arrival on the battlefield (M02.4).
+   *
+   * Emitted *before* `unit_deployed` / `unit_entered_battlefield`, because the
+   * rewrite is part of the arrival rather than something that happened to the
+   * card afterwards: by the time the arrival is announced, the card is already
+   * in the state this event describes. Attribution is the point — a player
+   * whose unit arrives Exhausted has to be able to see which permanent did it,
+   * and a replay has to be able to tell two Relics apart.
+   */
+  event('arrival_replaced', {
+    /** The arriving card and its controller. */
+    playerId: playerIdSchema,
+    instanceId: instanceIdSchema,
+    definitionId: cardIdSchema,
+    /** The permanent whose static ability rewrote the arrival. */
+    sourceInstanceId: instanceIdSchema,
+    sourceDefinitionId: cardIdSchema,
+    abilityId: z.string(),
+    exhausted: z.boolean(),
+    keyword: keywordIdSchema.nullable(),
+  }),
+  /**
+   * A permanent that would have become Ready at its controller's Ready Step did
+   * not (M02.4).
+   *
+   * One event for both halves of the layer — a stored `skip_next_ready` and a
+   * standing `replace_ready` — because what a player needs to know is identical
+   * and the distinction is already carried by `abilityId` being null for the
+   * stored one. `sourceInstanceId` is nullable because the card that applied a
+   * stored prevention is routinely gone by the time it acts.
+   */
+  event('ready_prevented', {
+    /** The permanent that stayed Exhausted, and who controls it. */
+    instanceId: instanceIdSchema,
+    playerId: playerIdSchema,
+    sourceInstanceId: instanceIdSchema.nullable(),
+    sourceDefinitionId: cardIdSchema.nullable(),
+    abilityId: z.string().nullable(),
+    /** Energy the replacement's controller paid for it, if any. */
+    energySpent: z.number().int().min(0),
+  }),
+  /** A `skip_next_ready` instruction armed a permanent (M02.4). */
+  event('ready_skip_applied', {
+    instanceId: instanceIdSchema,
+    playerId: playerIdSchema,
+    sourceInstanceId: instanceIdSchema.nullable(),
+  }),
   event('unit_defeated', {
     instanceId: instanceIdSchema,
     definitionId: cardIdSchema,
@@ -358,6 +407,48 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     abilityId: z.string().nullable(),
     triggerId: z.string(),
     resolutionId: z.string(),
+  }),
+  /**
+   * A delayed effect has been set up and is now waiting (M02.1).
+   *
+   * Public: both halves of what created it — a Spell resolving, a trigger
+   * firing — were already in the log, and a delayed clause that nobody could see
+   * would make the board unreadable when it fires three decisions later.
+   */
+  event('delayed_effect_scheduled', {
+    delayedId: z.string(),
+    sourceInstanceId: instanceIdSchema.nullable(),
+    definitionId: cardIdSchema,
+    controllerId: playerIdSchema,
+    abilityId: z.string(),
+    subjectInstanceId: instanceIdSchema.nullable(),
+    boundary: z.string(),
+    /** The event it is waiting for, or `null` if it fires at the boundary. */
+    triggerId: z.string().nullable(),
+  }),
+  /** A delayed effect's moment arrived and its instructions were queued. */
+  event('delayed_effect_fired', {
+    delayedId: z.string(),
+    definitionId: cardIdSchema,
+    controllerId: playerIdSchema,
+    abilityId: z.string(),
+    subjectInstanceId: instanceIdSchema.nullable(),
+    resolutionId: z.string(),
+  }),
+  /**
+   * A delayed effect ended without resolving.
+   *
+   * `boundary_passed` is a watch whose event never happened; `subject_moved` is
+   * the subject leaving the zone it was named in; `controller_eliminated` is
+   * §12 step 3. Distinguished rather than collapsed because the three say very
+   * different things about a card in a balance review.
+   */
+  event('delayed_effect_expired', {
+    delayedId: z.string(),
+    definitionId: cardIdSchema,
+    controllerId: playerIdSchema,
+    abilityId: z.string(),
+    reason: z.enum(['boundary_passed', 'subject_moved', 'controller_eliminated']),
   }),
   event('effect_resolved', {
     resolutionId: z.string(),

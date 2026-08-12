@@ -25,7 +25,9 @@ import { collectTelemetry } from './telemetry.js';
 import { derivePilotSeed, hashString } from './seed.js';
 import {
   SPECTATOR_REPLAY_VERSION,
+  VALID_PROVENANCE,
   type SpectatorDecision,
+  type SpectatorProvenance,
   type SpectatorReplay,
   type SpectatorSeat,
 } from './schema.js';
@@ -64,6 +66,12 @@ export interface RunSpectatorMatchOptions {
   /** Digest of the card pool, recorded so an incompatible replay fails loudly. */
   readonly cardDataHash: string;
   readonly limits?: SpectatorLimits;
+  /**
+   * Whether this match is evidence about the game (M01.2). Defaults to valid,
+   * which is only correct when every seat's deck passed `validateDeck` — build
+   * it from `resolveSpectatorSetup` rather than asserting it.
+   */
+  readonly provenance?: SpectatorProvenance;
 }
 
 export interface SpectatorLimits {
@@ -128,7 +136,20 @@ export async function runSpectatorMatch(
   const limits = options.limits ?? DEFAULT_SPECTATOR_LIMITS;
   const { database } = options;
   const matchId = options.matchId ?? `spectate_${hashString(options.seed).slice(0, 8)}`;
+  const provenance = options.provenance ?? VALID_PROVENANCE;
   const diagnostics: string[] = [];
+
+  // Said in the replay's own diagnostics as well as in its provenance, so a
+  // reader who only skims the log still sees it.
+  if (!provenance.resultsValid) {
+    diagnostics.push(
+      'results invalid: this match was run under the developer override with cards whose ' +
+        'printed behaviour is not implemented yet — ' +
+        provenance.incompleteCards
+          .map((seat) => `${seat.playerId}: ${seat.cardIds.join(', ')}`)
+          .join('; '),
+    );
+  }
 
   const seats: SpectatorSeat[] = options.seats.map((seat, index) => ({
     playerId: seat.playerId ?? `player_${index + 1}`,
@@ -275,6 +296,7 @@ export async function runSpectatorMatch(
     matchSchemaVersion: state.schemaVersion,
     rulesVersion: config.version,
     cardDataHash: options.cardDataHash,
+    provenance,
     matchId,
     seed: options.seed,
     seats,
@@ -286,6 +308,6 @@ export async function runSpectatorMatch(
     result: state.result ? structuredClone(state.result) : null,
     termination,
     diagnostics,
-    telemetry: collectTelemetry(state, events, decisions, database, config, seats),
+    telemetry: collectTelemetry(state, events, decisions, database, config, seats, provenance),
   };
 }

@@ -131,6 +131,47 @@ describe('hash separation by meaning (G3)', () => {
     expect(edited.hashes.pilotInputHash).not.toBe(original.hashes.pilotInputHash);
   });
 
+  // `design` labels are pilot input too, and the projection this replaced read
+  // `design.roles`/`design.archetypes` — names the card schema has never had —
+  // so every design label hashed as `null` whatever it said (M01.3).
+  it('moves the pilot-input hash when a design label changes', () => {
+    const edited = withEdit({ design: { faction: 'goblin', power: 'high' } });
+
+    expect(edited.hashes.mechanicsHash).toBe(original.hashes.mechanicsHash);
+    expect(edited.hashes.presentationHash).toBe(original.hashes.presentationHash);
+    expect(edited.hashes.pilotInputHash).not.toBe(original.hashes.pilotInputHash);
+  });
+
+  // M01.3: the fields the previous mechanics projection could not see. An
+  // additional cost is paid before the card is queued and is never refunded, so
+  // a replay hash that cannot see it claims two different games are the same.
+  it('moves the mechanics hash when an additional cost changes', () => {
+    // A Spell, because only the play-from-hand types may carry one.
+    const spell = (additionalCosts: unknown[]) =>
+      withEdit({
+        type: 'spell',
+        attack: undefined,
+        health: undefined,
+        effects: [{ type: 'draw', player: 'self', amount: 1 }],
+        additionalCosts,
+      }).hashes.mechanicsHash;
+
+    const free = spell([]);
+    const interactive = spell([{ type: 'sacrifice', amount: 1, selection: 'player_choice' }]);
+    const automatic = spell([{ type: 'sacrifice', amount: 1, selection: 'automatic' }]);
+
+    expect(interactive).not.toBe(free);
+    expect(automatic).not.toBe(interactive);
+  });
+
+  it('moves the mechanics hash when a card stops being playable', () => {
+    const edited = withEdit({
+      implemented: false,
+      unsupportedReason: 'Waiting on a primitive.',
+    });
+    expect(edited.hashes.mechanicsHash).not.toBe(original.hashes.mechanicsHash);
+  });
+
   it('treats tags as mechanical, because card filters match on them', () => {
     const edited = withEdit({ tags: ['fixture', 'soldier'] });
     expect(edited.hashes.mechanicsHash).not.toBe(original.hashes.mechanicsHash);

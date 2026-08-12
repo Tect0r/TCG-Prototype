@@ -27,6 +27,33 @@ export const continuationSchema = z.discriminatedUnion('kind', [
     kind: z.literal('turn_end_discard'),
   }),
   /**
+   * A `replace_ready` offer being answered part-way through a Ready Step
+   * (M02.4).
+   *
+   * The Ready Step is not a resolution item — it is turn-start bookkeeping that
+   * runs before anything is queued — so an offer inside it cannot be a
+   * `resolution` continuation. It is instead a paused *step*, and everything
+   * needed to carry on is named here rather than snapshotted: the offer list
+   * itself is recomputed from the board when the step resumes, so it can never
+   * disagree with the state after a serialisation round trip.
+   *
+   * Progress is tracked by *which sources have been asked*, not by an index into
+   * that list. An index would silently point at a different offer once a taken
+   * replacement dropped out of the recomputed list; a set of instance IDs stays
+   * correct however the list moves.
+   */
+  z.strictObject({
+    kind: z.literal('ready_step_replacement'),
+    /** Whose Ready Step this is. */
+    playerId: playerIdSchema,
+    /** The replacement source whose offer this choice is answering. */
+    sourceInstanceId: instanceIdSchema,
+    /** Every source already offered this Ready Step, including that one. */
+    askedSourceIds: z.array(instanceIdSchema),
+    /** Permanents already kept Exhausted earlier in this same Ready Step. */
+    keptExhaustedIds: z.array(instanceIdSchema),
+  }),
+  /**
    * A cost being chosen **before** the thing it pays for commits.
    *
    * The resolution queue is the only thing that can pause for a choice, and a
@@ -77,6 +104,22 @@ export const CHOICE_TYPES = [
    * a fake entity into the option set.
    */
   'confirm',
+  /**
+   * An allocation of a fixed total across legal targets (M02.5).
+   *
+   * The answer is a **multiset**: one entry per point, so three damage split two
+   * and one is `[a, a, b]`. It is the one choice type where a repeated option is
+   * the answer rather than a mistake, and the shape is what makes the validation
+   * the tranche calls for fall out of the existing checks — every entry is a
+   * legal target, the length is the required total, and a non-negative integer
+   * per target is the only thing a multiset can express.
+   *
+   * Deliberately not a map from target to number. `submit_choice` carries a list
+   * of IDs across the protocol, the pilots and the replay log, and a second
+   * payload shape for one choice type would have to be validated, redacted and
+   * serialised everywhere the first one already is.
+   */
+  'divide_damage',
 ] as const;
 export const choiceTypeSchema = z.enum(CHOICE_TYPES);
 export type ChoiceType = z.infer<typeof choiceTypeSchema>;
@@ -112,6 +155,32 @@ export const CHOICE_REASONS = [
    * them with the same wording would be describing a different game.
    */
   'optional_effect',
+  /**
+   * "…you may pay N Energy. If you do, it remains Exhausted" — offered at
+   * somebody else's Ready Step to the controller of a `replace_ready`
+   * replacement (M02.4).
+   *
+   * A `select_units` rather than a `confirm`, because the answer names *which*
+   * permanent stays Exhausted as well as whether to pay at all. Declining is
+   * selecting nothing, which is why the minimum is zero.
+   */
+  'keep_exhausted',
+  /**
+   * "**Each player** chooses and sacrifices one Unit they control" — one seat's
+   * share of a selection every seat is making (M02.5).
+   *
+   * Its own reason rather than `effect_target`, because what a player needs to
+   * know is different: nothing has happened yet, the other seats are answering
+   * the same question, and none of the answers takes effect until all of them
+   * are in. A prompt that read like an ordinary targeting choice would invite
+   * the player to look at a board that is about to change.
+   */
+  'each_player_choice',
+  /**
+   * "The damage **may be divided among targets**" — splitting a fixed total
+   * across the legal targets (M02.5).
+   */
+  'divide_damage',
 ] as const;
 export const choiceReasonSchema = z.enum(CHOICE_REASONS);
 export type ChoiceReason = z.infer<typeof choiceReasonSchema>;

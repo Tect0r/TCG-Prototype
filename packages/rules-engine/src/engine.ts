@@ -3,11 +3,11 @@ import { err, ok, type Result } from '@tcg/shared';
 import { defendersOf } from './combat.js';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
 import { createContext, emit, underCause, type MatchContext } from './context.js';
+import { playCostOf } from './costs.js';
 import { engineError, type EngineError } from './errors.js';
 import {
   commanderDeployCost,
   definitionOf,
-  energyCostOf,
   findInstance,
   hasKeyword,
   isNewlyDeployed,
@@ -18,7 +18,7 @@ import {
   playerOf,
 } from './derive.js';
 import { defeatUnit, nextChoiceId } from './effects.js';
-import { advance, resolveMulligans, setPhase } from './flow.js';
+import { advance, resolveMulligans, resumeReadyStepReplacement, setPhase } from './flow.js';
 import { handlePassReaction, handlePlayReaction, openReactionWindow } from './reactions.js';
 import { settle } from './queue.js';
 import { legalTargets, playerCandidates } from './targeting.js';
@@ -260,9 +260,14 @@ function handleSubmitChoice(
     });
   }
 
-  const unique = new Set(selectedIds);
-  if (unique.size !== selectedIds.length) {
-    return engineError('engine/invalid_selection', 'The same option was selected twice.');
+  // A repeat is normally a malformed answer. On a `divide_damage` allocation it
+  // is the answer: one entry per point of damage, so naming the same unit twice
+  // is how a chooser gives it two (M02.5).
+  if (choice.type !== 'divide_damage') {
+    const unique = new Set(selectedIds);
+    if (unique.size !== selectedIds.length) {
+      return engineError('engine/invalid_selection', 'The same option was selected twice.');
+    }
   }
   for (const id of selectedIds) {
     if (!choice.validEntityIds.includes(id)) {
@@ -295,6 +300,11 @@ function handleSubmitChoice(
   const continuation = choice.continuation;
   if (continuation.kind === 'turn_end_discard') {
     for (const instanceId of selectedIds) discardCard(ctx, playerId, instanceId);
+  } else if (continuation.kind === 'ready_step_replacement') {
+    // Turn start was paused mid-Ready-Step to put a replacement offer to a
+    // player who is usually not the active one. Answering carries the step on
+    // and finishes turn start; `advance` below then runs the turn as normal.
+    resumeReadyStepReplacement(ctx, continuation, selectedIds);
   } else if (continuation.kind === 'cost_selection') {
     // Nothing was spent when the question was asked, so this is not a resume —
     // it is the original action run again with one more answer in hand. Every
@@ -374,6 +384,14 @@ export function spellHasLegalTargets(
     }
     if (target.kind === 'entity' && target.selector.optional) continue;
 
+    // Neither of these is an independent target, so neither can make a card
+    // unplayable on its own (M02.4). "It" is whatever the step before this one
+    // resolved with — a step this same loop has already checked — and "the units
+    // this is blocking" is a fact about a combat that has not happened when the
+    // card is played. Asking `legalTargets` about either here would answer for
+    // the wrong moment and refuse a card that is perfectly playable.
+    if (target.kind === 'previous_target' || target.kind === 'blocked_by_source') continue;
+
     const targets = legalTargets(ctx, target, {
       controllerId: instance.controller,
       sourceInstanceId: instance.instanceId,
@@ -419,7 +437,7 @@ function handlePlayCard(
     });
   }
 
-  const cost = energyCostOf(player, definition);
+  const cost = playCostOf(ctx, playerId, instance, definition);
   if (cost > player.energy) {
     return engineError(
       'engine/insufficient_energy',
@@ -522,7 +540,12 @@ function handlePlayCard(
       });
     }
   } else if (definition.type === 'unit') {
-    moveToZone(ctx, instanceId, 'battlefield', { row: 'units', silent: true, entry: 'suppress' });
+    moveToZone(ctx, instanceId, 'battlefield', {
+      row: 'units',
+      silent: true,
+      entry: 'deployed',
+      announceEntry: false,
+    });
     emit(ctx, {
       type: 'unit_deployed',
       playerId,
@@ -550,7 +573,12 @@ function handlePlayCard(
     }
   } else {
     replaceActiveRelics(ctx, playerId, instance, definition.id);
-    moveToZone(ctx, instanceId, 'battlefield', { row: 'relics', silent: true, entry: 'suppress' });
+    moveToZone(ctx, instanceId, 'battlefield', {
+      row: 'relics',
+      silent: true,
+      entry: 'deployed',
+      announceEntry: false,
+    });
     emit(ctx, { type: 'relic_deployed', playerId, instanceId, definitionId: definition.id });
     emit(ctx, {
       type: 'unit_entered_battlefield',
@@ -639,7 +667,8 @@ function handleDeployCommander(
   moveToZone(ctx, instance.instanceId, 'battlefield', {
     row: 'units',
     silent: true,
-    entry: 'suppress',
+    entry: 'deployed',
+    announceEntry: false,
   });
   emit(ctx, {
     type: 'commander_deployed',

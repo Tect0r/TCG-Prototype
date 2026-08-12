@@ -58,10 +58,11 @@ export const EFFECT_REGISTRY: Readonly<Record<EffectType, EffectTypeInfo>> = Obj
   deal_damage: {
     type: 'deal_damage',
     label: 'Deal damage',
-    description: 'Marks damage on units or subtracts health from players.',
+    description:
+      'Marks damage on units or subtracts health from players. With `divided` the amount is a total the chooser splits across the legal targets instead of an amount each one takes.',
     category: 'damage',
-    parameters: ['target', 'amount'],
-    pausesForChoiceWhen: 'the target is chosen by a player',
+    parameters: ['target', 'amount', 'divided'],
+    pausesForChoiceWhen: 'the target is chosen by a player, or the amount is divided',
   },
   heal: {
     type: 'heal',
@@ -179,13 +180,32 @@ export const EFFECT_REGISTRY: Readonly<Record<EffectType, EffectTypeInfo>> = Obj
     parameters: ['target'],
     pausesForChoiceWhen: 'the target is chosen by a player',
   },
+  skip_next_ready: {
+    type: 'skip_next_ready',
+    label: 'Stop next ready',
+    description:
+      'Stops a permanent readying during its controller’s next Ready Step. It is fixed onto that permanent when the instruction resolves and survives whatever applied it, so a Spell that has already gone to the discard pile and a blocker that died in the same combat both still work. Only the Ready Step is stopped — an effect that says "Ready target Unit" still readies it — and it is used up by that one Ready Step whether or not there was anything to stop. A permanent that leaves the battlefield first loses it.',
+    category: 'board',
+    parameters: ['target'],
+    pausesForChoiceWhen: 'the target is chosen by a player',
+  },
   move_card: {
     type: 'move_card',
     label: 'Move card',
-    description: 'Moves a card from wherever it is into a named zone.',
+    description:
+      'Moves a card from wherever it is into a named zone. Two destinations change more than the card’s address: the removed-from-match zone is terminal, so a card sent there is out of the game for good and nothing may target it; the battlefield is a revival, so the card arrives as a fresh permanent that is Newly Deployed and counts as entering the battlefield rather than as being deployed. A revival can be printed to arrive Exhausted.',
     category: 'zones',
-    parameters: ['target', 'toZone'],
+    parameters: ['target', 'toZone', 'entersExhausted'],
     pausesForChoiceWhen: 'the target is chosen by a player',
+  },
+  schedule_delayed: {
+    type: 'schedule_delayed',
+    label: 'Delayed effect',
+    description:
+      'Sets up one of the card’s own delayed abilities: instructions that happen at a later moment in the same turn, either at a named boundary or when a named event happens to the card the clause is about. The card it is about is fixed when this resolves and is never re-chosen; if that card moves to a different zone first, the delayed effect is dropped.',
+    category: 'board',
+    parameters: ['delayedAbilityId'],
+    pausesForChoiceWhen: null,
   },
   counter: {
     type: 'counter',

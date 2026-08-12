@@ -75,6 +75,13 @@ function locatedEffects(
       located.push({ effect, path: `activatedAbilities.${ability.id}.effects[${index}]` }),
     );
   }
+  // A delayed body resolves later, but it resolves — so it is subject to every
+  // check the other lists get, including "this effect type has no renderer".
+  for (const ability of card.delayedAbilities) {
+    ability.effects.forEach((effect, index) =>
+      located.push({ effect, path: `delayedAbilities.${ability.id}.effects[${index}]` }),
+    );
+  }
   return located;
 }
 

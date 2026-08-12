@@ -39,8 +39,8 @@ const RAW_GLOSSARY = {
       id: 'active_player',
       term: 'Active player',
       definition:
-        'The player whose turn it is. Only the active player may play cards, use activated abilities or declare attackers.',
-      seeAlso: ['seat_order'],
+        'The player whose turn it is. Only the active player may play units, spells and relics, deploy their Commander, use activated abilities or declare attackers. Everyone else is limited to assigning blockers when attacked and to playing a Reaction inside an open window.',
+      seeAlso: ['seat_order', 'reaction_window'],
       relatedRuleSections: ['turn_structure'],
     },
     {
@@ -53,11 +53,19 @@ const RAW_GLOSSARY = {
     },
     {
       id: 'commander_zone',
-      term: 'Commander zone',
+      term: 'Command Zone',
       definition:
-        'Where your Commander sits for the whole match. It is not in your deck and, for now, is never deployed as a unit.',
-      seeAlso: ['owner'],
+        'Where your Commander starts, and where it returns to when it is defeated. It is never part of your deck and is never drawn. From here you may deploy it to the battlefield for its cost; a Commander with no printed cost stays here for the whole match.',
+      seeAlso: ['owner', 'commander_cost_tax'],
       relatedRuleSections: ['commander'],
+    },
+    {
+      id: 'commander_cost_tax',
+      term: 'Commander cost tax',
+      definition:
+        'The surcharge a Commander carries for having been defeated. Each defeat adds {matchConfig.commanderCostPerDefeat} energy to the cost of deploying it again, and the total is capped at {matchConfig.commanderCostCap}. A defeated Commander is never lost — the escalating cost is the whole of the penalty.',
+      seeAlso: ['commander_zone', 'energy'],
+      relatedRuleSections: ['commander', 'damage_and_defeat'],
     },
     {
       id: 'controller',
@@ -76,27 +84,59 @@ const RAW_GLOSSARY = {
       relatedRuleSections: ['choices_and_targets'],
     },
     {
+      id: 'delayed_effect',
+      term: 'Delayed effect',
+      definition:
+        'A promise a card makes for later in the same turn — "return it to your hand at the end of the turn", or "when it is defeated this turn, create two Tokens". It is set up when that instruction resolves, everyone can see it waiting, and it never survives the turn it was made on. The card it is about is decided once and never chosen again: if that card moves to a different zone before the promise comes due, the promise is dropped. A promise that was waiting for an event which never happened simply ends.',
+      seeAlso: ['duration', 'trigger', 'resolution_queue'],
+      relatedRuleSections: ['choices_and_targets'],
+    },
+    {
       id: 'discard_pile',
       term: 'Discard pile',
       definition:
         'A public pile holding cards that have been discarded, spells that have resolved and units that have been defeated. Anyone may look through it.',
-      seeAlso: ['owner'],
+      seeAlso: ['owner', 'removed_from_game'],
+      relatedRuleSections: ['card_types'],
+    },
+    {
+      id: 'removed_from_game',
+      term: 'Removed from the game',
+      definition:
+        'Gone for good. A card removed from the game leaves whatever pile it was in and is not in the discard pile, the deck, a hand or anywhere else a card can be reached: nothing may target it, and no effect returns it. It is the one place a card can go and not come back, which is why so few cards do it. You can still see how many cards a player has had removed.',
+      seeAlso: ['discard_pile', 'instance'],
       relatedRuleSections: ['card_types'],
     },
     {
       id: 'energy',
       term: 'Energy',
       definition:
-        'The single resource used to pay for everything. It refills to your maximum at the start of your turn and does not carry over.',
-      seeAlso: [],
+        'The single resource used to pay for everything. Your energy is set to your maximum at the start of your own turn. Whatever you do not spend stays with you through everybody else’s turns — which is what pays for a Reaction — and is then replaced, not topped up, by the next refill.',
+      seeAlso: ['reaction_window', 'cost_reduction'],
       relatedRuleSections: ['energy'],
+    },
+    {
+      id: 'cost_reduction',
+      term: 'Cost reduction',
+      definition:
+        'A card that costs less than its printed cost. The discount is worked out fresh every time the cost is asked for, so a card whose reduction counts something — “1 less for each friendly Unit defeated this turn” — gets cheaper the moment that number goes up, and goes straight back to full price if it goes down. A printed “to a minimum cost of N” is a floor, never a raise: it can never make a card that already cost less than N cost more.',
+      seeAlso: ['energy', 'derived_value'],
+      relatedRuleSections: ['energy'],
+    },
+    {
+      id: 'derived_value',
+      term: 'Derived value',
+      definition:
+        'A number a card works out instead of printing. It may count something — “for each Goblin you control” — or read a card’s own statline, as in “gains Health equal to its ATK”. Either way it is read at the moment the effect resolves, using the values you can see at that moment: a unit that was buffed after the ability triggered is measured as it is now, not as it was.',
+      seeAlso: ['cost_reduction', 'duration'],
+      relatedRuleSections: ['choices_and_targets'],
     },
     {
       id: 'exhausted',
       term: 'Exhausted',
       definition:
         'A unit that has already attacked or blocked, or that an effect has exhausted. Exhausted units cannot attack or block, and cannot pay a cost that asks them to exhaust. They ready again at the start of their controller’s next turn.',
-      seeAlso: ['ready', 'summoning_sickness'],
+      seeAlso: ['ready', 'newly_deployed'],
       relatedRuleSections: ['combat'],
     },
     {
@@ -135,9 +175,25 @@ const RAW_GLOSSARY = {
       id: 'ready',
       term: 'Ready',
       definition:
-        'A unit that is upright and able to attack, if it is not summoning sick. Units ready at the start of their controller’s turn.',
-      seeAlso: ['exhausted'],
+        'A unit that is upright and able to attack, provided it is not Newly Deployed. Units ready at the start of their controller’s turn, in the same step that clears Newly Deployed.',
+      seeAlso: ['exhausted', 'newly_deployed'],
       relatedRuleSections: ['combat'],
+    },
+    {
+      id: 'replacement_effect',
+      term: 'Replacement effect',
+      definition:
+        'An effect that changes something as it happens, rather than reacting to it afterwards. “The first enemy Unit deployed each turn enters Exhausted” does not exhaust the unit once it has arrived — the unit arrives Exhausted, and there is no moment in between for anything to see it Ready or respond to it. The card responsible is always named in the log, so you can tell which permanent did it.',
+      seeAlso: ['ready_step', 'exhausted', 'newly_deployed'],
+      relatedRuleSections: ['turn_structure'],
+    },
+    {
+      id: 'ready_step',
+      term: 'Ready Step',
+      definition:
+        'The moment at the start of your turn when your Exhausted permanents ready and Newly Deployed clears. A card can stop one permanent readying there — “it does not Ready during its controller’s next Ready Step” — which is used up by that one Ready Step whether or not the permanent was Exhausted, and only stops that step: an effect that says “Ready target Unit” still works. Newly Deployed clears either way.',
+      seeAlso: ['ready', 'exhausted', 'replacement_effect', 'newly_deployed'],
+      relatedRuleSections: ['turn_structure'],
     },
     {
       id: 'relic_zone',
@@ -151,9 +207,9 @@ const RAW_GLOSSARY = {
       id: 'resolution_queue',
       term: 'Resolution queue',
       definition:
-        'The single first-in, first-out line that effects resolve through. There is no stack and no priority: nobody can respond to an effect while it is resolving.',
-      seeAlso: ['trigger', 'pending_choice'],
-      relatedRuleSections: ['choices_and_targets'],
+        'The single first-in, first-out line that effects resolve through. There is no stack and no priority: nobody can respond to an effect while it is resolving. A Reaction window is the one exception to the ordering — the cards played into it resolve last in, first out — and even there nothing may interrupt a card that has started.',
+      seeAlso: ['trigger', 'pending_choice', 'reaction_window'],
+      relatedRuleSections: ['choices_and_targets', 'reactions'],
     },
     {
       id: 'seat_order',
@@ -172,12 +228,20 @@ const RAW_GLOSSARY = {
       relatedRuleSections: ['damage_and_defeat'],
     },
     {
-      id: 'summoning_sickness',
-      term: 'Summoning sickness',
+      id: 'newly_deployed',
+      term: 'Newly Deployed',
       definition:
-        'A unit cannot attack on the turn it arrives, unless it has Swift. It can still block that turn.',
-      seeAlso: ['exhausted'],
+        'The state a permanent has until it has been through its controller’s Ready Step. A Newly Deployed unit cannot attack and cannot pay an “Exhaust this unit” cost; it may still block, and it may still pay every other kind of cost. Rush lifts both restrictions without removing the state. It lasts through opponents’ turns and clears at its controller’s next Turn Start.',
+      seeAlso: ['exhausted', 'ready'],
       relatedRuleSections: ['playing_cards', 'combat'],
+    },
+    {
+      id: 'reaction_window',
+      term: 'Reaction window',
+      definition:
+        'A bounded interruption in which players may play Reactions, opened around declaring attackers, assigning blockers, combat damage, or a spell being played. It opens only if somebody could legally use it. Priority goes to the active player first and then clockwise; each player may play at most {matchConfig.reactionsPerPlayerPerWindow} Reaction, and the cards resolve last in, first out.',
+      seeAlso: ['resolution_queue', 'energy'],
+      relatedRuleSections: ['reactions', 'turn_structure'],
     },
     {
       id: 'target',
@@ -214,6 +278,22 @@ const RAW_GLOSSARY = {
     // The `unit_slot` term was removed rather than reworded: the battlefield has
     // no slots to explain (ruleset update §7). Nothing in the game refers to a
     // position on the battlefield any more.
+    {
+      id: 'each_player_choice',
+      term: 'Each player chooses',
+      definition:
+        'A choice every player makes at once. You are each asked separately, starting with the player whose card it is and going clockwise, and nothing takes effect until the last answer is in — so nobody chooses knowing what anyone else picked. A player with no legal option is skipped, and a player knocked out before the last answer takes their choice with them.',
+      seeAlso: ['pending_choice', 'seat_order'],
+      relatedRuleSections: ['choices_and_targets'],
+    },
+    {
+      id: 'divided_damage',
+      term: 'Divided damage',
+      definition:
+        'Damage a card gives you as a total to split rather than an amount for each target. You allocate every point to a legal target — you may pile them all onto one — and each target then takes its whole share as a single hit, so Barrier and prevention answer the share, not the individual points.',
+      seeAlso: ['target', 'pending_choice'],
+      relatedRuleSections: ['choices_and_targets', 'combat'],
+    },
     {
       id: 'valid_target',
       term: 'Valid target',

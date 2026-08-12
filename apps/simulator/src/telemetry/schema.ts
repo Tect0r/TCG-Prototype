@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { cardIdSchema } from '@tcg/card-data';
+import { boardTelemetrySchema } from '@tcg/board-telemetry';
 import { botFailureSchema } from '@tcg/bot-interface';
 import { resolvedEnvironmentSchema } from '../resolved-environment.js';
 import { seedBundleSchema } from '../seed.js';
@@ -32,8 +33,17 @@ import { seedBundleSchema } from '../seed.js';
  * Version 1 records cannot be migrated: the new counters were never observed, so
  * a v1 file is rejected with a clear message rather than read under v2 meanings
  * (PHASE4_HARDENING §13).
+ *
+ * Version 4 (M04.1): every record carries the shared `board` block, so board
+ * size, combat cost and trigger load are measurable over a batch instead of only
+ * in a watched match. Earlier records cannot be migrated for the same reason v1
+ * could not — the observations were never made — and the drift check on
+ * `matches.header.json` refuses to resume a v3 stream under v4 meanings rather
+ * than merging two runs that measured different things. The manifest schema is
+ * unchanged at 4: it already records `telemetrySchemaVersion` by reference, so
+ * it states which of these is inside it without restating the shape.
  */
-export const TELEMETRY_SCHEMA_VERSION = 3;
+export const TELEMETRY_SCHEMA_VERSION = 4;
 
 export const TERMINATION_KINDS = [
   'victory',
@@ -310,6 +320,17 @@ export const matchRecordSchema = z.strictObject({
   resolutionSteps: z.number().int().min(0),
 
   cards: z.array(cardTelemetrySchema),
+  /**
+   * Board-size, combat-cost and trigger-load evidence for this match (M04.1).
+   *
+   * The same document a spectator replay carries, produced by the same collector
+   * from the same event stream, so a batch and a watched match are answerable
+   * with one definition. It is what M04 exists to gather: whether an unbounded
+   * battlefield produces clutter, long turns or trigger overload is a question
+   * about thousands of games, and until now only a match somebody sat and
+   * watched measured anything about it.
+   */
+  board: boardTelemetrySchema,
   botFailures: z.array(botFailureSchema),
   /** Structured notes: safeguard trips, engine faults, fallbacks. */
   diagnostics: z.array(z.string()),

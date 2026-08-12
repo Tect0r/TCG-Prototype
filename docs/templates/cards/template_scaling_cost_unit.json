@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 4,
+  "id": "template_scaling_cost_unit",
+  "name": "Template Scaling Cost Unit",
+  "type": "unit",
+  "colorIdentity": ["black"],
+  "cost": 5,
+  "attack": 4,
+  "health": 4,
+  "role": "finisher",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "staticAbilities": [
+    {
+      "id": "scaling_cost",
+      "activeZone": "hand",
+      "affects": {
+        "zone": "hand",
+        "controller": "self",
+        "onlySource": true
+      },
+      "effect": {
+        "type": "cost_reduction",
+        "amount": {
+          "kind": "count",
+          "count": {
+            "subject": "units_defeated_this_turn",
+            "controller": "self"
+          }
+        },
+        "minimum": 2
+      }
+    }
+  ],
+  "displayText": "This card costs 1 less for each friendly Unit defeated this turn, to a minimum cost of 2.",
+  "text": {
+    "flavor": "A cost reduction is a static ability, never `modify_cost`: that stamps a fixed delta on for a duration, while this is recomputed whenever a cost is asked for. `activeZone` is where the card must be, `affects.onlySource` is the \"this card\", and `minimum` is a floor that never raises a cost."
+  }
+}

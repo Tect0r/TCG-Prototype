@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { cardIdSchema } from '@tcg/card-data';
 import { pilotIdSchema } from '@tcg/bot-interface';
+import { boardSeatTelemetrySchema, boardTelemetrySchema } from '@tcg/board-telemetry';
 import {
   actionSchema,
   gameEventSchema,
@@ -28,7 +29,52 @@ import {
  * diverge.
  */
 
-export const SPECTATOR_REPLAY_VERSION = 1;
+/**
+ * Bumped to 2 for M01.2: every replay now states whether its result is valid.
+ * A version 1 replay is refused rather than assumed valid — it was recorded
+ * before incomplete cards were refused, so its cards may have executed as
+ * something other than what they are printed to do.
+ *
+ * Bumped to 3 for M04.1: the telemetry block is now `@tcg/board-telemetry`'s
+ * shared document, which spectator and simulator matches both produce. A version
+ * 2 replay is **refused, not migrated**, and the refusal is the honest answer
+ * rather than a convenient one. Its telemetry block is missing whole measures
+ * (combat resolution cost, per-seat peak-board reduction, the per-round attacker
+ * series) and re-deriving them from the log it carries would produce numbers the
+ * build that recorded it never asserted, presented under that build's identity.
+ * A replay is a claim about what a specific engine did; the version check exists
+ * so an incompatible one fails loudly instead of quietly answering differently.
+ */
+export const SPECTATOR_REPLAY_VERSION = 3;
+
+/**
+ * Whether a recorded match is evidence about the game at all.
+ *
+ * `resultsValid: false` is the developer override (`SpectatorSetup`
+ * `developerAllowIncompleteCards`): the match ran with cards whose printed
+ * behaviour is not structured yet, so what happened is not what the cards say.
+ * It travels with the replay and with the telemetry derived from it, because
+ * telemetry is what gets aggregated later, long after the setup screen that
+ * produced it is gone.
+ */
+export const spectatorProvenanceSchema = z.strictObject({
+  resultsValid: z.boolean(),
+  /** Every card that was not playable, per seat. Empty when results are valid. */
+  incompleteCards: z.array(
+    z.strictObject({
+      playerId: playerIdSchema,
+      preconId: z.string().min(1).nullable(),
+      cardIds: z.array(cardIdSchema).min(1),
+    }),
+  ),
+});
+export type SpectatorProvenance = z.infer<typeof spectatorProvenanceSchema>;
+
+/** A match played entirely on implemented cards. */
+export const VALID_PROVENANCE: SpectatorProvenance = Object.freeze({
+  resultsValid: true,
+  incompleteCards: [],
+});
 
 export const spectatorSeatSchema = z.strictObject({
   playerId: playerIdSchema,
@@ -46,87 +92,39 @@ export const spectatorSeatSchema = z.strictObject({
 export type SpectatorSeat = z.infer<typeof spectatorSeatSchema>;
 
 /**
- * Board-size and Commander telemetry (rule adjustment, "Match telemetry").
+ * Board telemetry as a watched match records it (M04.1).
  *
- * Recorded per seat and derived entirely from the authoritative event stream,
- * so it cannot disagree with the replay it accompanies. Playback timing is
- * deliberately absent: a delay a user chose must never reach a number that
- * describes the match.
+ * The measurements themselves are `@tcg/board-telemetry`'s and are not restated
+ * here: one definition, one schema, and a spectator match and a simulator match
+ * that cannot disagree about what `peakUnits` means. What this layer adds is the
+ * two things that are true of a *watched* match and of nothing else — a
+ * leaderboard, and whether the match is evidence about the game at all.
  */
-export const spectatorSeatTelemetrySchema = z.strictObject({
-  playerId: playerIdSchema,
-  /** Unit count at the end of each round, index 0 being round 1. */
-  unitsByRound: z.array(z.number().int().min(0)),
-  peakUnits: z.number().int().min(0),
-  peakNonTokenUnits: z.number().int().min(0),
-  peakTokens: z.number().int().min(0),
-  /**
-   * The largest group of identical Tokens this seat ever controlled — what a
-   * client would render as one visual stack.
-   *
-   * Measured from definition identity rather than from anything the UI does,
-   * because the number has to mean the same thing whether or not grouping is
-   * switched on.
-   */
-  peakTokenStack: z.number().int().min(0),
-  peakTokensByDefinition: z.record(cardIdSchema, z.number().int().min(0)),
-  commanderDefeats: z.number().int().min(0),
-  maxCommanderDeploymentCost: z.number().int().min(0),
-  reactionsPlayed: z.number().int().min(0),
+export const spectatorSeatTelemetrySchema = boardSeatTelemetrySchema.extend({
   /** Final placement: 1 is the winner. Eliminated seats rank by exit order. */
   placement: z.number().int().min(1),
 });
 export type SpectatorSeatTelemetry = z.infer<typeof spectatorSeatTelemetrySchema>;
 
-export const spectatorTelemetrySchema = z.strictObject({
+export const spectatorTelemetrySchema = boardTelemetrySchema.extend({
   seats: z.array(spectatorSeatTelemetrySchema),
-  turns: z.number().int().min(0),
-  /** Complete cycles of the seat order, for the per-round unit counts. */
-  rounds: z.number().int().min(0),
-  actions: z.number().int().min(0),
-  events: z.number().int().min(0),
-  /** Turn number with the most accepted actions, and how many. */
-  longestTurn: z.strictObject({
-    turn: z.number().int().min(0),
-    actions: z.number().int().min(0),
-  }),
-  /** The combat with the most declared attackers, and what happened in it. */
-  largestCombat: z.strictObject({
-    turn: z.number().int().min(0),
-    attackers: z.number().int().min(0),
-    blockers: z.number().int().min(0),
-  }),
-  /** The turn with the most triggers and pending choices, and how many. */
-  busiestTurn: z.strictObject({
-    turn: z.number().int().min(0),
-    triggers: z.number().int().min(0),
-    choices: z.number().int().min(0),
-  }),
-  reactionWindows: z.number().int().min(0),
-  reactionsPlayed: z.number().int().min(0),
-  cardsCountered: z.number().int().min(0),
   /**
-   * Consecutive rounds in which nobody declared an attacker.
+   * False when the match was run under the developer override (M01.2). Repeated
+   * here rather than only on the replay so a telemetry row that has been lifted
+   * out of its replay still says it must not be counted.
+   */
+  resultsValid: z.boolean(),
+  /**
+   * Whether `longestStallRounds` reached the summary screen's threshold.
    *
-   * The board-stall signal §17 asks for. Reported rather than acted on: a wide
-   * board is not automatically a failure, and the unit cap does not come back
-   * because this number is large.
+   * A presentation flag over the shared raw streak, and the *only* derived
+   * verdict anywhere in this document. It stays on the spectator side because it
+   * is not evidence: the eligibility rule and threshold that would make it one
+   * are Q43, and M04.2 replaces it with raw attack-opportunity evidence. Nothing
+   * downstream may act on it, and the Unit cap does not come back because it is
+   * true.
    */
-  longestStallRounds: z.number().int().min(0),
   boardStalled: z.boolean(),
-  /**
-   * How the largest board a seat ever held was reduced, if it was — the number
-   * of units it lost afterwards, and to what.
-   */
-  largestBoardAnswer: z
-    .strictObject({
-      playerId: playerIdSchema,
-      peakUnits: z.number().int().min(0),
-      unitsLostAfterPeak: z.number().int().min(0),
-      /** Defeat reasons, most common first. */
-      reasons: z.array(z.string()),
-    })
-    .nullable(),
 });
 export type SpectatorTelemetry = z.infer<typeof spectatorTelemetrySchema>;
 
@@ -159,6 +157,8 @@ export const spectatorReplaySchema = z.strictObject({
   rulesVersion: z.string().min(1),
   /** Digest of the card pool the match was played with. */
   cardDataHash: z.string().min(1),
+  /** Whether this match is evidence about the game. See the schema above. */
+  provenance: spectatorProvenanceSchema,
 
   matchId: z.string().min(1),
   seed: z.string().min(1),
@@ -187,6 +187,22 @@ export const spectatorReplaySchema = z.strictObject({
   telemetry: spectatorTelemetrySchema,
 });
 export type SpectatorReplay = z.infer<typeof spectatorReplaySchema>;
+
+/**
+ * The format version of something that claims to be a replay, before parsing.
+ *
+ * A replay from an older build fails `spectatorReplaySchema` on its version
+ * literal, which is correct but reads as "this is not a replay" — and it is one,
+ * recorded by a build that measured different things. Reading the version out
+ * first lets the refusal say which it is, without ever accepting the document.
+ * Returns `null` when the value is missing or is not a number, i.e. when the
+ * file really is something else.
+ */
+export function replayFormatVersion(parsed: unknown): number | null {
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const version = (parsed as { schemaVersion?: unknown }).schemaVersion;
+  return typeof version === 'number' ? version : null;
+}
 
 /** Why a replay cannot be played back on this build. */
 export interface ReplayIncompatibility {

@@ -1,6 +1,7 @@
 import { emit, type MatchContext } from './context.js';
 import { removeFromCombat } from './combat.js';
 import { recalculateContinuous } from './continuous.js';
+import { cancelDelayedEffectsOf } from './delayed.js';
 import {
   activeFirstOrder,
   currentHealth,
@@ -228,8 +229,12 @@ function runEliminations(ctx: MatchContext): PlayerId[] {
   return pending;
 }
 
-/** Queued effects and pending choices belonging to an eliminated player. */
+/** Queued effects, delayed effects and pending choices of an eliminated player. */
 function cancelWorkOwnedBy(ctx: MatchContext, playerId: PlayerId): void {
+  // A promise made by a departing seat ends with them, exactly as their queued
+  // work and their static abilities do (CLAUDE.md §12 step 3).
+  cancelDelayedEffectsOf(ctx, playerId);
+
   const remaining = ctx.state.queue.filter((item) => item.controllerId !== playerId);
   if (remaining.length !== ctx.state.queue.length) {
     emit(ctx, {

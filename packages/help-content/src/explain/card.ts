@@ -13,7 +13,7 @@ import { DEPLOY_TRIGGER, TRIGGER_REGISTRY } from '../registries/triggers.js';
 import { capitalise, humanise, list, numberWord, quantify, sentence } from './grammar.js';
 import { explainEffect, type EffectExplanation } from './effects.js';
 import { describeSelector, describeTriggerScope, filterPhrases, zoneName } from './selectors.js';
-import { conditionClause } from './values.js';
+import { conditionClause, describeScaling } from './values.js';
 import type { PublicCardContext } from '../context.js';
 import { contextMessages } from '../context.js';
 
@@ -186,6 +186,70 @@ function describeStatic(ability: StaticAbilityDefinition, sourceNoun: string): s
       `${narrowed ? `${which} (${narrowed})` : which} costs ${ability.effect.amount} less, to a minimum of ${ability.effect.minimum}`,
     );
   }
+
+  // A derived cost reduction gets its own sentence for the same reason: what it
+  // changes is a number on a card in a hand, not a property of anything on the
+  // battlefield, and the "your <cards> <change>" shape below has nowhere to put
+  // either the amount it scales with or the floor it stops at (M02.3).
+  if (ability.effect.type === 'cost_reduction') {
+    const narrowed = filterPhrases(scope.filter).noun;
+    const which = scope.onlySource
+      ? sourceNoun
+      : `${narrowed ? `your ${narrowed}s` : 'the cards in your hand'}`;
+    const floor =
+      ability.effect.minimum > 0 ? `, to a minimum cost of ${ability.effect.minimum}` : '';
+    const { amount, per } = describeScaling(ability.effect.amount);
+    return sentence(`${which} costs ${amount} less${per ? ` for ${per}` : ''}${floor}`);
+  }
+
+  // A replacement rewrites an event rather than describing a standing property
+  // of a set of cards, so it gets its own sentence too: "your <cards> <change>"
+  // has nowhere to put *which* event, or the once-a-turn throttle, or the price.
+  if (ability.effect.type === 'replace_arrival') {
+    const effect = ability.effect;
+    const noun = filterPhrases(scope.filter).noun ?? 'unit';
+    const which =
+      scope.controller === 'opponent'
+        ? `enemy ${noun}`
+        : scope.controller === 'self'
+          ? `${noun} of yours`
+          : noun;
+    const opener = effect.limit === 'first_each_turn' ? `The first ${which}` : `Every ${which}`;
+    const event = effect.on === 'deployed' ? 'deployed' : 'that arrives on the battlefield';
+    const when = effect.onlyOnControllerTurn ? ' during your turn' : '';
+    const throttle = effect.limit === 'first_each_turn' ? ' each turn' : '';
+    const changes = [
+      ...(effect.entersExhausted === true ? ['enters Exhausted'] : []),
+      ...(effect.grantKeyword === undefined
+        ? []
+        : [
+            `has ${KEYWORD_REGISTRY[effect.grantKeyword].name}${
+              effect.grantDuration === 'end_of_turn' ? ' until the end of that turn' : ''
+            }`,
+          ]),
+    ];
+    return sentence(`${opener} ${event}${when}${throttle} ${list(changes)}`);
+  }
+
+  if (ability.effect.type === 'replace_ready') {
+    const effect = ability.effect;
+    const noun = filterPhrases(scope.filter).noun ?? 'unit';
+    const which =
+      scope.controller === 'opponent'
+        ? `an enemy ${noun}`
+        : scope.controller === 'self'
+          ? `one of your ${noun}s`
+          : `any ${noun}`;
+    const opener = effect.limit === 'first_each_turn' ? 'Once each turn, when' : 'Whenever';
+    const price =
+      effect.energyCost > 0
+        ? `you may pay ${numberWord(effect.energyCost)} energy, and if you do it stays Exhausted`
+        : 'it stays Exhausted';
+    return sentence(
+      `${opener} ${which} would become Ready at its controller’s Ready Step, ${price}`,
+    );
+  }
+
   const phrases = filterPhrases(scope.filter);
   const defaultNoun = scope.zone === 'battlefield' ? 'units' : 'cards';
   const noun = phrases.noun ? `${phrases.noun}s` : defaultNoun;
@@ -210,11 +274,14 @@ function stepsFor(
   options: ExplainCardOptions,
   sourceNoun: string,
   curated: readonly string[] | undefined,
+  /** The card's own delayed bodies, so `schedule_delayed` can be spelled out. */
+  delayedAbilities: readonly CardDefinition['delayedAbilities'][number][] = [],
 ): readonly ExplanationStep[] {
   return effects.map((effect, index): ExplanationStep => {
     const explanation: EffectExplanation = explainEffect(effect, {
       database: options.database,
       sourceNoun,
+      delayedAbilities,
     });
     return {
       text: explanation.text,
@@ -311,21 +378,33 @@ function generatedNotes(card: CardDefinition): readonly string[] {
     );
   }
   if (card.type === 'commander') {
+    // A Commander with no printed cost is not free, it is *undeployable*
+    // (`commanderDeployCost` returns null and the engine refuses the action).
+    // Telling a player they may deploy it would be a rule the game does not have.
     notes.push(
-      'Your Commander starts in the Commander zone. Playing it pays its printed cost and puts it onto the battlefield, where it behaves as a unit.',
+      card.cost === null
+        ? 'Your Commander starts in the Command Zone. This one has no printed cost, so it cannot be deployed at all: it stays there for the whole match and its abilities work from there.'
+        : 'Your Commander starts in the Command Zone. Deploying it pays its printed cost and puts it onto the battlefield, where it behaves as a unit.',
     );
+    if (card.cost !== null) {
+      notes.push(
+        'If it is defeated it returns to the Command Zone rather than a discard pile, and each defeat raises what deploying it costs again.',
+      );
+    }
   }
   if (card.type === 'reaction') {
     notes.push(
       'A Reaction can only be played inside its printed timing window, not during your Main Phase.',
     );
   }
+  // Skipped for a Commander that can never reach the battlefield: "on the turn
+  // it is deployed" describes a turn that cannot happen.
   if (
-    (card.type === 'unit' || card.type === 'commander') &&
+    (card.type === 'unit' || (card.type === 'commander' && card.cost !== null)) &&
     card.keywords.every((id) => id !== 'rush')
   ) {
     notes.push(
-      'Like any unit without Rush, it cannot attack, or pay an "Exhaust this unit" cost, on the turn it is deployed.',
+      'It arrives Newly Deployed: it cannot attack, or pay an "Exhaust this unit" cost, on the turn it is deployed. It can still block.',
     );
   }
   return notes;
@@ -356,7 +435,13 @@ export function explainCard(
       // saying in `notes`, not in the cost line.
       costs: card.additionalCosts.map((cost) => describeCost(cost, sourceNoun)),
       limit: null,
-      steps: stepsFor(card.effects, options, sourceNoun, card.text?.effectExplanations),
+      steps: stepsFor(
+        card.effects,
+        options,
+        sourceNoun,
+        card.text?.effectExplanations,
+        card.delayedAbilities,
+      ),
     });
   }
 
@@ -369,7 +454,7 @@ export function explainCard(
       timing: trigger.description,
       costs: [],
       limit: ability.limit === 'each_turn' ? 'Once each turn.' : null,
-      steps: stepsFor(ability.effects, options, sourceNoun, undefined),
+      steps: stepsFor(ability.effects, options, sourceNoun, undefined, card.delayedAbilities),
     });
   }
 
@@ -382,7 +467,7 @@ export function explainCard(
         'You choose when to use this, during your own Main Phase, with nothing else resolving.',
       costs: ability.costs.map((cost) => describeCost(cost, sourceNoun)),
       limit: describeLimit(ability),
-      steps: stepsFor(ability.effects, options, sourceNoun, undefined),
+      steps: stepsFor(ability.effects, options, sourceNoun, undefined, card.delayedAbilities),
     });
   }
 

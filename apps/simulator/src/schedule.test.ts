@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { makeDeck, type SimDeck } from './deck-search/deck.js';
-import { buildSchedule, deckTuples, pilotTuples, type ScheduleOptions } from './schedule.js';
+import {
+  buildSchedule,
+  deckMultisets,
+  deckTuples,
+  distinctRotationCount,
+  pilotTuples,
+  type ScheduleOptions,
+} from './schedule.js';
 import { RANDOM_PILOT, VALUE_PILOT, AGGRESSIVE_PILOT } from './test-fixtures.js';
 
 /**
@@ -50,6 +57,41 @@ describe('deckTuples', () => {
       [2, 3],
     ]);
     expect(deckTuples(4, 3)).toHaveLength(4);
+  });
+});
+
+describe('deckMultisets', () => {
+  it('adds the diagonal to the combinations, in stable order', () => {
+    expect(deckMultisets(3, 2)).toEqual([
+      [0, 0],
+      [0, 1],
+      [0, 2],
+      [1, 1],
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+
+  it('contains every deckTuple plus one mirror per deck', () => {
+    const combinations = deckTuples(4, 2).map((tuple) => tuple.join(','));
+    const multisets = deckMultisets(4, 2).map((tuple) => tuple.join(','));
+    for (const tuple of combinations) expect(multisets).toContain(tuple);
+    expect(multisets).toHaveLength(combinations.length + 4);
+  });
+});
+
+describe('distinctRotationCount', () => {
+  it('counts every rotation of a tuple of distinct decks', () => {
+    expect(distinctRotationCount([0, 1])).toBe(2);
+    expect(distinctRotationCount([0, 1, 2])).toBe(3);
+  });
+
+  it('collapses a mirror to one seating', () => {
+    // Rotating [0, 0] gives [0, 0] back: playing it twice is two games of one
+    // matchup, not the two seat orientations mirroring exists to compare.
+    expect(distinctRotationCount([0, 0])).toBe(1);
+    expect(distinctRotationCount([2, 2, 2])).toBe(1);
+    expect(distinctRotationCount([0, 0, 1])).toBe(3);
   });
 });
 
@@ -217,6 +259,52 @@ describe('buildSchedule', () => {
     expect(armB[0]?.seeds.matchSeed).toBe(armA[0]?.seeds.matchSeed);
     // …but the recorded deck-pair identity still distinguishes them.
     expect(armB[0]?.deckPairId).not.toBe(armA[0]?.deckPairId);
+  });
+
+  it('schedules every ordered pair, mirrors included, when asked (M03.4)', () => {
+    const decks = Array.from({ length: 4 }, (_, index) => deck(index));
+    const matches = buildSchedule(
+      options({ decks, gamesPerPairing: 1, includeMirrorMatchups: true }),
+    );
+
+    // 4 x 4 ordered pairs: six deck pairs both ways round, plus four mirrors.
+    expect(matches).toHaveLength(16);
+
+    const ordered = new Set(
+      matches.map((match) => match.seats.map((seat) => seat.deckIndex).join('->')),
+    );
+    expect(ordered.size).toBe(16);
+    for (let first = 0; first < 4; first += 1) {
+      for (let second = 0; second < 4; second += 1) {
+        expect(ordered).toContain(`${first}->${second}`);
+      }
+    }
+    expect(new Set(matches.map((match) => match.matchId)).size).toBe(16);
+  });
+
+  it('plays a mirror once rather than twice on two seeds', () => {
+    const matches = buildSchedule(
+      options({ decks: [deck(0), deck(1)], gamesPerPairing: 1, includeMirrorMatchups: true }),
+    );
+    const mirrors = matches.filter(
+      (match) => match.seats[0]?.deckIndex === match.seats[1]?.deckIndex,
+    );
+    expect(mirrors).toHaveLength(2);
+    for (const mirror of mirrors) expect(mirror.orientation).toBe(0);
+  });
+
+  it('leaves a schedule without mirrors byte-identical', () => {
+    // Turning the option on must be the only thing that adds matches: every
+    // tuple of distinct decks has as many distinct rotations as it has seats.
+    const decks = Array.from({ length: 4 }, (_, index) => deck(index));
+    const plain = buildSchedule(options({ decks, gamesPerPairing: 2 }));
+    const withMirrors = buildSchedule(
+      options({ decks, gamesPerPairing: 2, includeMirrorMatchups: true }),
+    );
+    const notMirrored = withMirrors.filter(
+      (match) => match.seats[0]?.deckIndex !== match.seats[1]?.deckIndex,
+    );
+    expect(notMirrored).toEqual(plain);
   });
 
   it('refuses a table it cannot seat', () => {

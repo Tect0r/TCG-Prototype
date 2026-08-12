@@ -6,7 +6,7 @@
       "schemaVersion": 4,
       "setId": "precon_wave_1",
       "name": "Precon Wave 1 Card Catalog",
-      "status": "draft",
+      "status": "playtest",
       "description": "The first authored card catalog: four factions, four Commanders and three Tokens, built for the 40-card singleton precon format.",
       "cards": [
         {
@@ -55,6 +55,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Exhaust a Unit."
         },
@@ -85,6 +86,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -114,6 +116,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -160,6 +163,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Return a Goblin Unit card from your discard pile to your hand."
         },
@@ -220,6 +224,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time a friendly Guardian blocks each turn, draw a card, then discard a card."
         },
@@ -276,6 +281,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, a friendly Guardian gains Barrier."
         },
@@ -331,6 +337,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first Guardian you deploy each turn gains Barrier."
         },
@@ -383,6 +390,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, restore 2 Health to each of up to two friendly Units."
         },
@@ -412,12 +420,48 @@
           },
           "effects": [],
           "additionalCosts": [],
-          "abilities": [],
+          "abilities": [
+            {
+              "id": "bastion_bulwark",
+              "trigger": "on_block",
+              "activeZone": "battlefield",
+              "scope": {
+                "controller": "self",
+                "excludeSource": false,
+                "excludeSelfCaused": false
+              },
+              "limit": "each_turn",
+              "effects": [
+                {
+                  "type": "modify_stats",
+                  "target": {
+                    "kind": "trigger_subject"
+                  },
+                  "attack": 0,
+                  "health": {
+                    "kind": "stat",
+                    "of": "effect_target",
+                    "stat": "attack",
+                    "plus": 0,
+                    "sign": 1,
+                    "minimum": 0
+                  },
+                  "duration": "end_of_combat"
+                }
+              ]
+            }
+          ],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs a value derived from the target’s own statline (\"Health equal to its ATK\") (ruleset update §15); the \"for that combat\" duration it also needs now exists",
-          "displayText": "The first friendly Unit that blocks each turn gains Health equal to its ATK for that combat."
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "The first friendly Unit that blocks each turn gains Health equal to its ATK for that combat.",
+          "text": {
+            "notes": [
+              "The bonus is worked out when the ability resolves, before combat damage — so a buff that lands on the blocker first is counted.",
+              "This Commander must be on the battlefield for the ability to watch anything. From the Command Zone it does nothing."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -448,6 +492,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Guardian."
         },
@@ -501,6 +546,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Defeat an Exhausted enemy Unit with 4 Health or less."
         },
@@ -556,6 +602,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time you sacrifice a Unit each turn, look at the top two cards of your deck. You may put one on the bottom."
         },
@@ -604,6 +651,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time you sacrifice a Unit each turn, create one Thrall Token."
         },
@@ -641,6 +689,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, create one Thrall Token."
         },
@@ -690,6 +739,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Draw a card. If at least two friendly Units were defeated this turn, draw another card."
         },
@@ -722,6 +772,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Guardian."
         },
@@ -784,6 +835,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the end of your turn, if a friendly Unit was defeated that turn, look at the top two cards of your deck. You may reveal a Unit and put it into your hand. Put the remaining cards on the bottom."
         },
@@ -814,6 +866,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -846,6 +899,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Barrier. Overwhelm."
         },
@@ -879,6 +933,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "when_opponent_plays_spell"
@@ -919,6 +974,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create one Goblin Token."
         },
@@ -954,6 +1010,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create one Guard Token."
         },
@@ -1016,6 +1073,7 @@
             }
           ],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Once each turn, you may sacrifice another Unit. If you do, this Unit gains +2 ATK this turn.",
           "text": {
@@ -1074,6 +1132,7 @@
               }
             }
           ],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "While this Commander is on the battlefield, the first Reaction Spell you play after the beginning of each of your turns costs 1 less, to a minimum of 1."
         },
@@ -1101,10 +1160,41 @@
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
-          "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
-          "displayText": "The first enemy Unit deployed each turn enters Exhausted."
+          "staticAbilities": [
+            {
+              "id": "containment_field",
+              "activeZone": "battlefield",
+              "affects": {
+                "zone": "battlefield",
+                "controller": "opponent",
+                "filter": {
+                  "cardTypes": [
+                    "unit",
+                    "token",
+                    "commander"
+                  ]
+                },
+                "excludeSource": false
+              },
+              "effect": {
+                "type": "replace_arrival",
+                "on": "deployed",
+                "limit": "first_each_turn",
+                "entersExhausted": true,
+                "grantDuration": "end_of_turn"
+              }
+            }
+          ],
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "The first enemy Unit deployed each turn enters Exhausted.",
+          "text": {
+            "notes": [
+              "This rewrites the arrival itself, so the Unit is never Ready even for an instant — nothing can respond in between, and a Unit with Rush still cannot attack because it is Exhausted rather than Newly Deployed.",
+              "A Token an opponent creates counts as a Unit they deployed.",
+              "One arrival per turn, counted across the whole table: at three or four seats the first enemy deployment of the turn spends it."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -1133,6 +1223,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -1182,6 +1273,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Exhaust every Token with the same Token definition controlled by target player."
         },
@@ -1233,6 +1325,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, Exhaust up to two enemy Units."
         },
@@ -1283,6 +1376,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Deal 2 damage to every Unit."
         },
@@ -1311,11 +1405,64 @@
           "effects": [],
           "additionalCosts": [],
           "abilities": [],
-          "activatedAbilities": [],
+          "activatedAbilities": [
+            {
+              "id": "stitch",
+              "name": "Stitch the Remains",
+              "activeZone": "battlefield",
+              "costs": [
+                {
+                  "type": "energy",
+                  "amount": 1
+                },
+                {
+                  "type": "exhaust_source"
+                }
+              ],
+              "usageLimit": "unlimited",
+              "timing": "main_phase",
+              "effects": [
+                {
+                  "type": "move_card",
+                  "target": {
+                    "kind": "entity",
+                    "selector": {
+                      "zone": "discard",
+                      "controller": "self",
+                      "filter": {
+                        "cardTypes": [
+                          "unit"
+                        ]
+                      },
+                      "count": 1,
+                      "selection": "player_choice",
+                      "chooser": "self",
+                      "optional": false,
+                      "excludeSource": false
+                    }
+                  },
+                  "toZone": "removed"
+                },
+                {
+                  "type": "create_token",
+                  "tokenCardId": "thrall_token",
+                  "amount": 2,
+                  "controller": "self"
+                }
+              ]
+            }
+          ],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs a remove-from-game zone transition (ruleset update §15)",
-          "displayText": "Pay 1 Energy and Exhaust — Remove a Unit card in your discard pile from the game. Create two Thrall Tokens."
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Pay 1 Energy and Exhaust — Remove a Unit card in your discard pile from the game. Create two Thrall Tokens.",
+          "text": {
+            "notes": [
+              "A card removed from the game is gone for good. It is not in any pile, nothing can target it, and no effect returns it.",
+              "The Exhaust cost is the limit on this ability: it can only be used again once this Unit is Ready.",
+              "The Tokens are created whether or not there was a Unit card to remove. The removal and the Tokens are two separate instructions, and one failing does not skip the other."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -1365,6 +1512,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, create two Thrall Tokens. When this Unit is defeated, create another Thrall Token."
         },
@@ -1427,6 +1575,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the beginning of your turn, friendly Units that survived combat as blockers since your previous turn gain +1 ATK that turn."
         },
@@ -1475,6 +1624,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Deal 3 damage to a Unit."
         },
@@ -1531,6 +1681,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever another friendly Unit is defeated during your turn, deal 1 damage to an opponent."
         },
@@ -1586,6 +1737,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time you sacrifice a Unit each turn, draw a card, then discard a card."
         },
@@ -1633,6 +1785,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Defeat the active Relic.",
           "text": {
@@ -1696,6 +1849,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Sacrifice a Unit. Create two Thrall Tokens."
         },
@@ -1740,6 +1894,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit is defeated, create one Thrall Token."
         },
@@ -1813,6 +1968,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "before_blockers_declared",
@@ -1854,6 +2010,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create four Goblin Tokens."
         },
@@ -1877,14 +2034,44 @@
             "identity": "Sacrifice Spell — Symmetrical Removal",
             "power": "medium"
           },
-          "effects": [],
+          "effects": [
+            {
+              "type": "sacrifice",
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "self",
+                  "filter": {
+                    "cardTypes": [
+                      "unit",
+                      "token"
+                    ]
+                  },
+                  "count": 1,
+                  "selection": "player_choice",
+                  "chooser": "all_players",
+                  "optional": false,
+                  "excludeSource": false
+                }
+              }
+            }
+          ],
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs \"each player chooses\" simultaneous selection (ruleset update §16)",
-          "displayText": "Each player chooses and sacrifices one Unit they control."
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Each player chooses and sacrifices one Unit they control.",
+          "text": {
+            "summary": "Everyone gives one up at the same time, you included.",
+            "notes": [
+              "Every player is asked before anybody loses anything. You will be asked in turn order starting with the caster, but nothing is sacrificed until the last answer is in, so no one is choosing against a board the others have already changed.",
+              "\"One Unit they control\" is read from each player's own side: you pick from your units, each opponent picks from theirs. Tokens count as Units and may be chosen.",
+              "A player with no Unit is simply not asked, and the rest of the table still sacrifices. A player eliminated before the last answer arrives drops out with their choice."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -1910,12 +2097,43 @@
           },
           "effects": [],
           "additionalCosts": [],
-          "abilities": [],
+          "abilities": [
+            {
+              "id": "fading_return",
+              "trigger": "on_sacrifice",
+              "activeZone": "battlefield",
+              "effects": [
+                {
+                  "type": "schedule_delayed",
+                  "delayedAbilityId": "return_at_end_of_turn"
+                }
+              ]
+            }
+          ],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs delayed end-of-turn effects (ruleset update §15)",
-          "displayText": "When you sacrifice this Unit, return it to your hand at the end of the turn."
+          "delayedAbilities": [
+            {
+              "id": "return_at_end_of_turn",
+              "boundary": "end_of_turn",
+              "subject": "source",
+              "effects": [
+                {
+                  "type": "return_to_hand",
+                  "target": {
+                    "kind": "source"
+                  }
+                }
+              ]
+            }
+          ],
+          "implemented": true,
+          "displayText": "When you sacrifice this Unit, return it to your hand at the end of the turn.",
+          "text": {
+            "notes": [
+              "The card waits in your discard pile until the end of the turn. If anything moves it somewhere else first — back onto the battlefield, or out of the game — the delayed return is dropped: it was about the card in the discard pile, not about wherever the card is now."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -1978,6 +2196,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "As an additional cost, sacrifice a Unit. Defeat an enemy Unit costing 3 or less."
         },
@@ -2008,6 +2227,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -2055,6 +2275,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, look at the top three cards of your deck. You may reveal a Spell or Relic and put it into your hand. Put the others on the bottom."
         },
@@ -2106,6 +2327,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time another friendly Unit survives combat each turn, restore 1 Health to it."
         },
@@ -2152,6 +2374,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "As an additional cost, sacrifice a Unit. Draw two cards."
         },
@@ -2202,6 +2425,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Return up to two Exhausted Units to their owners' hands."
         },
@@ -2258,6 +2482,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Once each turn, after another friendly Guardian survives combat, you may Ready that Guardian. It cannot retroactively block another attacker from the same attack declaration.",
           "text": {
@@ -2320,6 +2545,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the beginning of your turn, if you control fewer than two Guard Tokens, create one Guard Token."
         },
@@ -2355,6 +2581,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create three Thrall Tokens."
         },
@@ -2387,6 +2614,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Guardian."
         },
@@ -2451,6 +2679,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever this Unit attacks alongside another Goblin, it gains +1 ATK this turn."
         },
@@ -2505,6 +2734,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit enters the battlefield, deal 2 damage to an enemy Unit."
         },
@@ -2556,6 +2786,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the beginning of your turn, if this Unit is Ready, create one Goblin Token."
         },
@@ -2588,6 +2819,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -2633,6 +2865,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit is defeated, create one Goblin Token."
         },
@@ -2685,6 +2918,7 @@
               }
             }
           ],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Other Goblins you control have +1 ATK."
         },
@@ -2775,6 +3009,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever at least three Goblins attack, one attacking Goblin gains +2 ATK this turn."
         },
@@ -2842,6 +3077,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Overwhelm. Whenever this Unit attacks, it gains +1 ATK this turn for every three other Goblins you control."
         },
@@ -2899,6 +3135,7 @@
             }
           ],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Pay 1 Energy and Exhaust — Create one Goblin Token."
         },
@@ -2948,6 +3185,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit enters the battlefield, look at the top three cards of your deck. You may put a Goblin card into your hand. Put the others on the bottom."
         },
@@ -2987,6 +3225,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit enters the battlefield, create two Goblin Tokens."
         },
@@ -3052,6 +3291,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever this Unit attacks, it gains +1 ATK this turn for each other attacking Goblin."
         },
@@ -3115,6 +3355,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit is defeated, deal 1 damage to an enemy Unit or Commander."
         },
@@ -3147,6 +3388,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -3232,6 +3474,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever at least five Goblins attack, those Goblins gain +1 ATK this turn."
         },
@@ -3271,6 +3514,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit enters the battlefield, create one Goblin Token."
         },
@@ -3328,6 +3572,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time each turn you create one or more Goblin Tokens, create one additional Token."
         },
@@ -3360,6 +3605,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -3398,6 +3644,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit enters the battlefield, create three Goblin Tokens."
         },
@@ -3430,6 +3677,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -3461,6 +3709,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -3516,6 +3765,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever you create one or more Goblin Tokens, create one additional Token. This does not trigger from Tokens created by this effect."
         },
@@ -3548,6 +3798,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -3581,6 +3832,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Rush."
         },
@@ -3634,6 +3886,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time each turn you create one or more Goblin Tokens, create one additional Token."
         },
@@ -3703,6 +3956,7 @@
             }
           ],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Exhaust — Create Goblin Tokens equal to the number of other Goblins you control. Activate only once each turn."
         },
@@ -3734,10 +3988,44 @@
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
-          "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
-          "displayText": "Goblin Tokens you create during your turn have Rush until the end of that turn."
+          "staticAbilities": [
+            {
+              "id": "warhorn_call",
+              "activeZone": "battlefield",
+              "affects": {
+                "zone": "battlefield",
+                "controller": "self",
+                "filter": {
+                  "cardTypes": [
+                    "token"
+                  ],
+                  "tags": [
+                    "goblin"
+                  ]
+                },
+                "excludeSource": false
+              },
+              "effect": {
+                "type": "replace_arrival",
+                "on": "entered_battlefield",
+                "onlyOnControllerTurn": true,
+                "limit": "unlimited",
+                "grantKeyword": "rush",
+                "grantDuration": "end_of_turn"
+              }
+            }
+          ],
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Goblin Tokens you create during your turn have Rush until the end of that turn.",
+          "text": {
+            "notes": [
+              "Rush is handed out as part of the Token arriving, so a Token created during your Main Phase can attack the same turn.",
+              "A Token is only ever put onto the battlefield by being created, so every Goblin Token that arrives on your turn is one you created.",
+              "Tokens created on somebody else's turn get nothing, and Rush lasts only until the end of the turn it was granted on.",
+              "This Captain has to already be on the battlefield: its own arrival cannot rewrite itself, and Tokens created before it landed keep whatever they arrived with."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -3766,6 +4054,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -3832,6 +4121,7 @@
             }
           ],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Pay 1 Energy and Exhaust — Sacrifice another Unit. Draw a card. Activate only once each turn."
         },
@@ -3885,6 +4175,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the end of your turn, if at least two friendly Units were defeated that turn, draw a card."
         },
@@ -3908,14 +4199,50 @@
             "identity": "Sacrifice Spell — Mass Recovery",
             "power": "high"
           },
-          "effects": [],
+          "effects": [
+            {
+              "type": "move_card",
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "discard",
+                  "controller": "self",
+                  "filter": {
+                    "cardTypes": [
+                      "unit"
+                    ],
+                    "cost": {
+                      "max": 3
+                    }
+                  },
+                  "count": 2,
+                  "selection": "player_choice",
+                  "chooser": "self",
+                  "optional": true,
+                  "excludeSource": false
+                }
+              },
+              "toZone": "battlefield",
+              "entersExhausted": true
+            }
+          ],
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs returning a card from discard directly to the battlefield (ruleset update §15)",
-          "displayText": "Return up to two Unit cards costing 3 or less from your discard pile to the battlefield Exhausted. They are Newly Deployed."
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Return up to two Unit cards costing 3 or less from your discard pile to the battlefield Exhausted. They are Newly Deployed.",
+          "text": {
+            "effectExplanations": [
+              "\"Up to two\" means you may return one, or none at all — the spell still resolves."
+            ],
+            "notes": [
+              "The Units arrive as if they had just been put into play, not as if they had been deployed: they are Newly Deployed, so they cannot attack or pay an Exhaust cost until your next Ready Step, and anything that watches for a Unit being deployed does not fire. Anything that watches for a Unit entering the battlefield does.",
+              "They arrive already Exhausted. Newly Deployed on its own would still let them block, but an Exhausted Unit cannot, so they defend nothing until your next Ready Step readies them and clears Newly Deployed together.",
+              "Cost 3 or less is the cost printed on the card in the discard pile."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -3964,6 +4291,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, return a Unit costing 1 from your discard pile to your hand."
         },
@@ -3998,6 +4326,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Guardian."
         },
@@ -4026,6 +4355,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -4075,6 +4405,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "after_blockers_declared"
@@ -4120,6 +4451,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Draw two cards, then discard a card."
         },
@@ -4153,6 +4485,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Guardian. Barrier."
         },
@@ -4202,6 +4535,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit is defeated, look at the top two cards of your deck. Put one on the bottom."
         },
@@ -4252,6 +4586,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Guardian. Overwhelm. Whenever this Unit survives combat as a blocker, it gains +2 ATK permanently."
         },
@@ -4302,6 +4637,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Target Unit gains +2 ATK this turn."
         },
@@ -4325,14 +4661,66 @@
             "identity": "Sacrifice Spell — Combat and Fodder",
             "power": "medium"
           },
-          "effects": [],
+          "effects": [
+            {
+              "type": "modify_stats",
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "self",
+                  "filter": {
+                    "cardTypes": [
+                      "unit"
+                    ]
+                  },
+                  "count": 1,
+                  "selection": "player_choice",
+                  "chooser": "self",
+                  "optional": false,
+                  "excludeSource": false
+                }
+              },
+              "attack": 3,
+              "health": 0,
+              "duration": "end_of_turn"
+            },
+            {
+              "type": "schedule_delayed",
+              "delayedAbilityId": "thralls_on_defeat"
+            }
+          ],
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs delayed end-of-turn effects (ruleset update §15)",
-          "displayText": "Target friendly Unit gains +3 ATK this turn. When it is defeated this turn, create two Thrall Tokens."
+          "delayedAbilities": [
+            {
+              "id": "thralls_on_defeat",
+              "boundary": "end_of_turn",
+              "trigger": "on_defeated",
+              "subject": "previous_target",
+              "effects": [
+                {
+                  "type": "create_token",
+                  "tokenCardId": "thrall_token",
+                  "amount": 2,
+                  "controller": "self"
+                }
+              ]
+            }
+          ],
+          "implemented": true,
+          "displayText": "Target friendly Unit gains +3 ATK this turn. When it is defeated this turn, create two Thrall Tokens.",
+          "text": {
+            "effectExplanations": [
+              "You choose the Unit once. The delayed half watches that same Unit — it is never re-targeted."
+            ],
+            "notes": [
+              "The watch lasts only for this turn. If the Unit survives to the end of the turn, nothing happens.",
+              "It watches that specific Unit while it is on the battlefield. A Unit that leaves the battlefield some other way — bounced to a hand, or removed from the game — takes the watch with it."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -4379,6 +4767,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "after_attackers_declared",
@@ -4408,14 +4797,77 @@
             "identity": "Sacrifice Spell — Finisher",
             "power": "high"
           },
-          "effects": [],
+          "effects": [
+            {
+              "type": "sacrifice",
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "self",
+                  "filter": {
+                    "cardTypes": [
+                      "unit",
+                      "token"
+                    ]
+                  },
+                  "count": 5,
+                  "selection": "player_choice",
+                  "chooser": "self",
+                  "optional": true,
+                  "excludeSource": false
+                }
+              }
+            },
+            {
+              "type": "deal_damage",
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "opponent",
+                  "filter": {
+                    "cardTypes": [
+                      "unit",
+                      "token",
+                      "commander"
+                    ]
+                  },
+                  "count": "all",
+                  "selection": "player_choice",
+                  "chooser": "self",
+                  "optional": false,
+                  "excludeSource": false
+                }
+              },
+              "amount": {
+                "kind": "previous_targets",
+                "plus": 0,
+                "minimum": 0
+              },
+              "divided": true
+            }
+          ],
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs \"divide N damage among targets\" selection (ruleset update §16)",
-          "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or Commander. The damage may be divided among targets."
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or Commander. The damage may be divided among targets.",
+          "text": {
+            "summary": "Turns a wide board into exactly as much damage as you fed it.",
+            "effectExplanations": [
+              "Choose up to five of your own Units and sacrifice them.",
+              "Divide that many damage among enemy Units and Commanders."
+            ],
+            "notes": [
+              "\"Up to five\" really is up to: you may sacrifice none, in which case there is no damage to divide and the Spell does nothing else. Tokens count as Units and are the usual fodder.",
+              "The total is the number of Units you sacrificed with this Spell — not everything that died this turn.",
+              "You then split that total however you like. A target takes its whole share as a single hit, so Barrier stops one allocation once rather than once per point.",
+              "Every point has to be allocated to a legal target. If nothing enemy is on the battlefield the damage is lost, and the Units are still sacrificed."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -4480,6 +4932,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Deal damage to target Unit equal to the number of Goblins you control."
         },
@@ -4533,6 +4986,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time another friendly Unit is defeated each turn, restore 1 Health to your Commander."
         },
@@ -4566,6 +5020,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "when_opponent_plays_spell"
@@ -4628,6 +5083,7 @@
               }
             }
           ],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "While this Unit is Ready, your Reaction Spells cost 1 less, to a minimum of 1."
         },
@@ -4660,6 +5116,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Guardian."
         },
@@ -4717,6 +5174,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the end of your turn, if you deployed no Units that turn, look at the top two cards of your deck. You may put one on the bottom."
         },
@@ -4752,6 +5210,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create two Goblin Tokens."
         },
@@ -4804,6 +5263,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "after_combat_damage",
@@ -4860,6 +5320,7 @@
               }
             }
           ],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Thrall Tokens you control have +1 ATK."
         },
@@ -4907,6 +5368,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, look at the top three cards of your deck. You may reveal a Guardian card and put it into your hand. Put the others on the bottom."
         },
@@ -4962,6 +5424,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "after_attackers_declared",
@@ -5050,6 +5513,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, you may sacrifice another Unit. If you do, defeat an enemy Unit costing 2 or less.",
           "text": {
@@ -5100,6 +5564,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Look at the top five cards of your deck. You may reveal a Reaction Spell and put it into your hand. Put the others on the bottom."
         },
@@ -5148,6 +5613,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "after_combat",
@@ -5204,6 +5670,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Draw a card, then put a card from your hand on the bottom of your deck."
         },
@@ -5239,6 +5706,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create one Thrall Token."
         },
@@ -5310,6 +5778,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create five Goblin Tokens. If you controlled no Goblins when you played this card, create seven instead."
         },
@@ -5344,6 +5813,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Draw three cards."
         },
@@ -5381,6 +5851,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, create two Guard Tokens."
         },
@@ -5416,6 +5887,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create two Guard Tokens."
         },
@@ -5463,6 +5935,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "After this Unit survives combat as a blocker, deal 1 damage to an opponent."
         },
@@ -5515,6 +5988,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Return an enemy Unit costing 3 or less to its owner's hand."
         },
@@ -5569,6 +6043,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, return an enemy Unit costing 2 or less to its owner's hand."
         },
@@ -5611,6 +6086,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, draw a card, then discard a card."
         },
@@ -5692,6 +6168,7 @@
             }
           ],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Pay 1 Energy and Exhaust — Sacrifice another Unit and deal 2 damage to an enemy Unit."
         },
@@ -5743,6 +6220,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "after_attackers_declared",
@@ -5805,6 +6283,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Defeat an enemy Unit with 4 ATK or more."
         },
@@ -5859,6 +6338,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Look at the top four cards of your deck. Put one Goblin or Relic card into your hand. Put the others on the bottom."
         },
@@ -5901,6 +6381,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, draw two cards, then discard a card."
         },
@@ -5931,6 +6412,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -5985,6 +6467,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Friendly Guardians gain +0/+2 until the beginning of your next turn."
         },
@@ -6038,6 +6521,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, another friendly Unit gains Barrier."
         },
@@ -6088,6 +6572,7 @@
               }
             }
           ],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Other friendly Guardians have +0/+1."
         },
@@ -6140,6 +6625,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever another Unit is defeated, this Unit gains +1 ATK this turn."
         },
@@ -6191,6 +6677,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "The first time a friendly Unit is defeated each turn, deal 1 damage to an opponent."
         },
@@ -6243,6 +6730,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Newly Deployed Goblins you control gain Rush this turn."
         },
@@ -6290,6 +6778,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit blocks, it gains +1 ATK for that combat."
         },
@@ -6357,6 +6846,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Friendly Units gain +1 ATK this turn for each friendly Unit that survived combat as a blocker since your previous turn, to a maximum of +3 ATK."
         },
@@ -6387,6 +6877,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -6413,12 +6904,33 @@
           },
           "effects": [],
           "additionalCosts": [],
-          "abilities": [],
+          "abilities": [
+            {
+              "id": "stasis_lock",
+              "trigger": "on_block",
+              "activeZone": "battlefield",
+              "effects": [
+                {
+                  "type": "skip_next_ready",
+                  "target": {
+                    "kind": "blocked_by_source"
+                  }
+                }
+              ]
+            }
+          ],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
-          "displayText": "Units blocked by this Unit do not Ready during their controller's next Ready Step."
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Units blocked by this Unit do not Ready during their controller's next Ready Step.",
+          "text": {
+            "notes": [
+              "The lock is fixed onto the attacker the moment blockers are declared, so this Unit dying in that same combat does not undo it.",
+              "It stops only the Ready Step. An effect that says \"Ready target Unit\" still readies the attacker.",
+              "An attacker that leaves the battlefield before that Ready Step loses the lock along with everything else it was carrying."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -6440,14 +6952,43 @@
             "identity": "Control Spell — Lockdown",
             "power": "medium"
           },
-          "effects": [],
+          "effects": [
+            {
+              "type": "exhaust",
+              "target": {
+                "kind": "entity",
+                "selector": {
+                  "zone": "battlefield",
+                  "controller": "any",
+                  "count": 1,
+                  "selection": "player_choice",
+                  "chooser": "self",
+                  "optional": false,
+                  "excludeSource": false
+                }
+              }
+            },
+            {
+              "type": "skip_next_ready",
+              "target": {
+                "kind": "previous_target"
+              }
+            }
+          ],
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
-          "displayText": "Exhaust a Unit. It does not Ready during its controller's next Ready Step."
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Exhaust a Unit. It does not Ready during its controller's next Ready Step.",
+          "text": {
+            "notes": [
+              "\"It\" is the Unit you just Exhausted. You choose once, and both sentences act on that same Unit.",
+              "A Unit that was already Exhausted is still sealed: the first sentence simply has nothing to do.",
+              "The seal survives this Spell going to your discard pile — it is fixed onto the Unit, not maintained by the card."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -6500,6 +7041,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When deployed, Exhaust an enemy Unit with 2 ATK or less."
         },
@@ -6531,10 +7073,42 @@
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
-          "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs a cost reduction computed from board state, applied to the card while it is still in hand (ruleset update §15)",
-          "displayText": "Overwhelm. This card costs 1 less for each friendly Unit defeated this turn, to a minimum cost of 3."
+          "staticAbilities": [
+            {
+              "id": "stitched_salvage",
+              "activeZone": "hand",
+              "affects": {
+                "zone": "hand",
+                "controller": "self",
+                "excludeSource": false,
+                "onlySource": true
+              },
+              "effect": {
+                "type": "cost_reduction",
+                "amount": {
+                  "kind": "count",
+                  "count": {
+                    "subject": "units_defeated_this_turn",
+                    "controller": "self",
+                    "excludeSource": false
+                  },
+                  "per": 1,
+                  "plus": 0,
+                  "minimum": 0
+                },
+                "minimum": 3
+              }
+            }
+          ],
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Overwhelm. This card costs 1 less for each friendly Unit defeated this turn, to a minimum cost of 3.",
+          "text": {
+            "notes": [
+              "The discount is worked out every time the cost is asked for, so a Unit that dies later in the turn makes this cheaper straight away.",
+              "Sacrificed Units are defeated Units, and count."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -6588,6 +7162,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Goblins you control gain +1 ATK this turn."
         },
@@ -6645,6 +7220,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Look at the top four cards of your deck. You may reveal a Unit with Guardian or a Reaction Spell and put it into your hand. Put the others on the bottom."
         },
@@ -6672,10 +7248,32 @@
           "additionalCosts": [],
           "abilities": [],
           "activatedAbilities": [],
-          "staticAbilities": [],
-          "implemented": false,
-          "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
-          "displayText": "Once each turn, when an enemy Unit would become Ready, you may pay 1 Energy. If you do, it remains Exhausted."
+          "staticAbilities": [
+            {
+              "id": "temporal_drag",
+              "activeZone": "battlefield",
+              "affects": {
+                "zone": "battlefield",
+                "controller": "opponent",
+                "excludeSource": false
+              },
+              "effect": {
+                "type": "replace_ready",
+                "energyCost": 1,
+                "limit": "first_each_turn"
+              }
+            }
+          ],
+          "delayedAbilities": [],
+          "implemented": true,
+          "displayText": "Once each turn, when an enemy Unit would become Ready, you may pay 1 Energy. If you do, it remains Exhausted.",
+          "text": {
+            "notes": [
+              "Every permanent readies at the same moment, so you are asked once, at that moment, and name the one you want held down.",
+              "You pay out of the Energy you have during that opponent's turn. If you cannot afford it, you are not asked.",
+              "A Unit already held down by another effect is not offered, so you never pay for something that was going to stay Exhausted anyway."
+            ]
+          }
         },
         {
           "schemaVersion": 4,
@@ -6706,6 +7304,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -6753,6 +7352,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Deal 2 damage to a Unit."
         },
@@ -6803,6 +7403,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Return every non-Commander Unit to its owner's hand. Tokens cease existing."
         },
@@ -6854,6 +7455,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "reaction": {
             "windows": [
               "after_attackers_declared",
@@ -6907,6 +7509,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Return a Unit costing 2 or less from your discard pile to your hand."
         },
@@ -6937,6 +7540,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -6966,6 +7570,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -6995,6 +7600,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -7022,6 +7628,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -7068,6 +7675,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this Unit blocks, it gains +0/+1 for that combat."
         },
@@ -7100,6 +7708,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Guardian."
         },
@@ -7132,6 +7741,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Barrier."
         },
@@ -7182,6 +7792,7 @@
               }
             }
           ],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Other friendly Guardians have +1 ATK."
         },
@@ -7239,6 +7850,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the end of each opponent's turn, if a friendly Unit survived combat as a blocker that turn, look at the top two cards of your deck. You may put one on the bottom."
         }
@@ -7300,6 +7912,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the end of your turn, heal each friendly unit 1."
         },
@@ -7341,6 +7954,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Search your deck for a spell, reveal it, and put it into your hand."
         },
@@ -7393,6 +8007,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Sacrifice a friendly unit, then draw 2 cards."
         },
@@ -7437,6 +8052,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever this unit survives combat, it gets +1/+0 permanently."
         },
@@ -7466,6 +8082,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -7515,6 +8132,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Deal 2 damage to each unit."
         },
@@ -7555,6 +8173,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the start of your turn, draw a card."
         },
@@ -7582,6 +8201,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -7618,6 +8238,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Discard a card, then draw a card."
         },
@@ -7671,8 +8292,9 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
-          "displayText": "When this unit is deployed, destroy an enemy unit."
+          "displayText": "Venom. Resilient. When this unit is deployed, destroy an enemy unit."
         },
         {
           "schemaVersion": 4,
@@ -7712,6 +8334,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this unit is defeated, draw a card."
         },
@@ -7754,6 +8377,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the start of your turn, your units cost 1 less this turn."
         },
@@ -7784,6 +8408,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Look at the top 3 cards of your deck and put them back in any order."
         },
@@ -7814,6 +8439,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -7841,6 +8467,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -7869,6 +8496,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -7899,6 +8527,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -7936,6 +8565,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Your cards cost 2 less this turn. Draw a card."
         },
@@ -7969,6 +8599,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Create a 3/3 Beast token."
         },
@@ -8018,6 +8649,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the end of your turn, deal 1 damage to each enemy unit."
         },
@@ -8075,6 +8707,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this unit is defeated, deal 2 damage to an enemy unit."
         },
@@ -8102,6 +8735,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -8157,8 +8791,9 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
-          "displayText": "Whenever this Commander attacks, a friendly unit gets +1/+0 until end of turn."
+          "displayText": "Siphon. Whenever this Commander attacks, a friendly unit gets +1/+0 until end of turn."
         },
         {
           "schemaVersion": 4,
@@ -8225,6 +8860,7 @@
             }
           ],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the end of your turn, draw a card. 2 energy, once per turn: draw a card, then discard a card."
         },
@@ -8273,6 +8909,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the start of your turn, draw a card, then discard a card."
         },
@@ -8325,6 +8962,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the end of your turn, heal each friendly unit 1."
         },
@@ -8368,6 +9006,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the start of your turn, look at the top 3 cards of your deck and put them back in any order."
         },
@@ -8428,8 +9067,9 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
-          "displayText": "Whenever this Commander attacks, deal 1 damage to an enemy unit."
+          "displayText": "Rush. Whenever this Commander attacks, deal 1 damage to an enemy unit."
         },
         {
           "schemaVersion": 4,
@@ -8472,8 +9112,9 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
-          "displayText": "At the start of your turn, create a 1/1 Soldier token."
+          "displayText": "Guardian. At the start of your turn, create a 1/1 Soldier token."
         },
         {
           "schemaVersion": 4,
@@ -8516,6 +9157,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Whenever this Commander survives combat, heal it 2."
         },
@@ -8541,6 +9183,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -8585,6 +9228,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this unit is deployed, heal another friendly unit 2."
         },
@@ -8612,6 +9256,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -8638,6 +9283,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -8662,6 +9308,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -8688,6 +9335,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -8716,6 +9364,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -8744,6 +9393,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -8787,6 +9437,7 @@
               }
             }
           ],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "While this relic is in play, your units have Armored."
         },
@@ -8834,6 +9485,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Exhaust an enemy unit."
         },
@@ -8882,6 +9534,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Deal 3 damage to a unit."
         },
@@ -8918,8 +9571,9 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
-          "displayText": "When this unit is deployed, create a 1/1 Soldier token."
+          "displayText": "Guardian. When this unit is deployed, create a 1/1 Soldier token."
         },
         {
           "schemaVersion": 4,
@@ -8974,6 +9628,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this unit is deployed, draw a card and deal 1 damage to an enemy unit."
         },
@@ -9018,6 +9673,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Your units get +2/+2."
         },
@@ -9047,6 +9703,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this relic is deployed, draw a card."
         },
@@ -9074,6 +9731,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -9104,6 +9762,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -9151,6 +9810,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this unit is deployed, return an enemy unit to its owner's hand."
         },
@@ -9184,6 +9844,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this unit is deployed, draw a card."
         },
@@ -9212,6 +9873,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true
         },
         {
@@ -9250,6 +9912,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this unit is defeated, create two 1/1 Scrap tokens."
         },
@@ -9293,6 +9956,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Prevent the next 3 damage that would be dealt to a friendly unit this turn."
         },
@@ -9332,6 +9996,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the start of your turn, create a 1/1 Spark token."
         },
@@ -9378,6 +10043,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "When this unit is deployed, your other units get +1/+1."
         },
@@ -9426,6 +10092,7 @@
           "abilities": [],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "Deal 2 damage to a unit."
         },
@@ -9474,6 +10141,7 @@
           ],
           "activatedAbilities": [],
           "staticAbilities": [],
+          "delayedAbilities": [],
           "implemented": true,
           "displayText": "At the start of your turn, deal 3 damage to each enemy unit."
         }

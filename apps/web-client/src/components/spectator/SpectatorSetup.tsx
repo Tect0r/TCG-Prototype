@@ -33,6 +33,7 @@ export function SpectatorSetup({ busy, onStart, onLoadReplay, error }: Spectator
   const precons = useMemo(() => spectatorPrecons(), []);
   const [seed, setSeed] = useState<string>(() => randomSeed());
   const [playerCount, setPlayerCount] = useState<number>(4);
+  const [allowIncomplete, setAllowIncomplete] = useState(false);
   const [seats, setSeats] = useState<SpectatorSetupSeat[]>(() =>
     Array.from({ length: 4 }, (_, index) => ({
       preconId: precons[index % Math.max(1, precons.length)]?.id ?? '',
@@ -41,8 +42,16 @@ export function SpectatorSetup({ busy, onStart, onLoadReplay, error }: Spectator
   );
 
   const active = seats.slice(0, playerCount);
-  const setup: SetupConfig = { seed, seats: active };
-  const problems = resolveSpectatorSetup(setup).problems;
+  const setup: SetupConfig = {
+    seed,
+    seats: active,
+    ...(allowIncomplete ? { developerAllowIncompleteCards: true } : {}),
+  };
+  const resolved = resolveSpectatorSetup(setup);
+  const problems = resolved.problems;
+  // Whether the override is doing anything *for this configuration*, which is
+  // not the same as whether the box is ticked.
+  const overriding = resolved.incompleteCards.length > 0;
 
   const updateSeat = (index: number, patch: Partial<SpectatorSetupSeat>): void => {
     setSeats((current) =>
@@ -130,6 +139,19 @@ export function SpectatorSetup({ busy, onStart, onLoadReplay, error }: Spectator
           is a legitimate way to look at a mirror. */}
       <p className="spectator-setup__note">The same precon may be given to more than one bot.</p>
 
+      {/* The override is offered here rather than hidden behind a build flag so
+          a developer can reach it — and cannot reach it without reading what it
+          costs (M01.2). It never relaxes deck legality, only completeness. */}
+      <label className="spectator-setup__override">
+        <input
+          type="checkbox"
+          checked={allowIncomplete}
+          onChange={(event) => setAllowIncomplete(event.target.checked)}
+          disabled={busy}
+        />
+        <span>Developer: run decks containing cards that are not implemented yet</span>
+      </label>
+
       {problems.length > 0 && (
         <ul className="spectator-setup__problems" role="alert">
           {problems.map((problem) => (
@@ -138,6 +160,21 @@ export function SpectatorSetup({ busy, onStart, onLoadReplay, error }: Spectator
             </li>
           ))}
         </ul>
+      )}
+
+      {overriding && (
+        <div className="spectator-setup__invalid" role="alert">
+          <strong>Results invalid.</strong> These decks contain cards whose printed behaviour is not
+          implemented yet. The match will run, but what happens is not what those cards say, so it
+          is not evidence about the game.
+          <ul>
+            {resolved.incompleteCards.map((seat) => (
+              <li key={seat.seatIndex}>
+                Bot {seat.seatIndex + 1}: {seat.cardIds.join(', ')}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {error && (
         <p className="spectator-setup__problems" role="alert">

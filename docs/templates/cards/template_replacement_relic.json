@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 4,
+  "id": "template_replacement_relic",
+  "name": "Template Replacement Relic",
+  "type": "relic",
+  "colorIdentity": ["blue"],
+  "cost": 4,
+  "role": "support",
+  "powerClass": "major",
+  "tags": [],
+  "keywords": [],
+  "displayText": "The first enemy Unit deployed each turn enters Exhausted. Once each turn, when an enemy Unit would become Ready, you may pay 1 Energy. If you do, it remains Exhausted.",
+  "staticAbilities": [
+    {
+      "id": "template_arrival_replacement",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "opponent",
+        "filter": {
+          "cardTypes": ["unit", "token", "commander"]
+        }
+      },
+      "effect": {
+        "type": "replace_arrival",
+        "on": "deployed",
+        "limit": "first_each_turn",
+        "entersExhausted": true
+      }
+    },
+    {
+      "id": "template_ready_replacement",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "opponent"
+      },
+      "effect": {
+        "type": "replace_ready",
+        "energyCost": 1,
+        "limit": "first_each_turn"
+      }
+    }
+  ],
+  "text": {
+    "notes": [
+      "A replacement rewrites an event as it happens. The unit arrives Exhausted; it is never on the battlefield Ready, so no trigger, Reaction or state-based check sees the un-rewritten version. Do not write this as an `on_deployed` trigger that exhausts the unit afterwards — that is a visibly different, answerable card.",
+      "Only two moments are replaceable: an arrival on the battlefield, and a permanent readying at its controller's Ready Step. Both are scoped to `zone: \"battlefield\"`, and the schema rejects anything else.",
+      "`on: \"deployed\"` covers a Token an opponent creates as well as a card they play; `on: \"entered_battlefield\"` also covers a revival. `limit: \"first_each_turn\"` is counted per copy of the card, across the whole table.",
+      "A `replace_ready` with an `energyCost` above zero pauses the Ready Step and asks its controller, once, which permanent to hold down. At zero it simply applies, with no prompt. A controller who cannot pay is never asked.",
+      "For \"it does not Ready during its controller's next Ready Step\" fixed onto one permanent in advance, use the `skip_next_ready` instruction in `effects` instead — that half of the layer is an ordinary instruction, not a static ability."
+    ]
+  }
+}

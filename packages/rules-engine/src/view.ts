@@ -8,6 +8,7 @@ import {
   isSummoningSick,
   playerOf,
 } from './derive.js';
+import { playCostOf } from './costs.js';
 import { legalActions, legalActionsSchema } from './legal-actions.js';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
 import { gameEventSchema, type GameEvent } from './schema/event.js';
@@ -53,6 +54,31 @@ export const cardInstanceViewSchema = z.strictObject({
   summoningSick: z.boolean(),
   keywords: z.array(keywordIdSchema),
   isToken: z.boolean(),
+  /**
+   * Whether this permanent is under a "does not Ready during its controller's
+   * next Ready Step" prevention (M02.4).
+   *
+   * Public for every seat, like `exhausted` beside it. It is a visible board
+   * fact: the instruction that applied it was a Spell resolving or a block being
+   * declared, both already in the log, and a player who could not see it would
+   * be unable to plan around a unit that is about to stay down. Nothing about
+   * *who* applied it is exposed here — the log carries the attribution.
+   */
+  willNotReady: z.boolean(),
+  /**
+   * What playing this card would cost the viewer right now, after every
+   * reduction the board currently grants (M02.3).
+   *
+   * Populated only for cards in the **viewer's own hand**, and `null` everywhere
+   * else. A cost is a fact about a card its holder might play: for a unit on a
+   * battlefield there is nothing to pay, and for a card in another seat's hand
+   * the number would be both meaningless and a hidden-information leak.
+   *
+   * Derived rather than printed, because a discount that only appeared once the
+   * card became affordable would leave a player unable to see why. `legalActions`
+   * still decides what may actually be played; this only says what it would cost.
+   */
+  energyCost: z.number().int().min(0).nullable(),
 });
 export type CardInstanceView = z.infer<typeof cardInstanceViewSchema>;
 
@@ -67,6 +93,17 @@ export const playerViewSummarySchema = z.strictObject({
   handCount: z.number().int().min(0),
   deckCount: z.number().int().min(0),
   discard: z.array(instanceIdSchema),
+  /**
+   * How many cards this seat has had removed from the game (M02.2).
+   *
+   * A count rather than a list, and deliberately: the `removed` zone is
+   * terminal and nothing may target it (CLAUDE.md §12), so the identities buy a
+   * player nothing they can act on — while a future card that removed from a
+   * hand or a deck would leak hidden information through the same field. The
+   * number is what a player needs: it says the pile a card left is smaller
+   * because the card is gone for good, not because it was played.
+   */
+  removedCount: z.number().int().min(0),
   /** Dense and unbounded; position is arrival order, not a slot. */
   units: z.array(instanceIdSchema),
   relics: z.array(instanceIdSchema),
@@ -78,6 +115,31 @@ export const playerViewSummarySchema = z.strictObject({
   eliminated: z.boolean(),
 });
 export type PlayerViewSummary = z.infer<typeof playerViewSummarySchema>;
+
+/**
+ * A delayed effect as every seat may see it (M02.1).
+ *
+ * Public in full. Nothing here is hidden information: the instruction that
+ * scheduled it was a Spell resolving or a trigger firing, both already in the
+ * log, and the subject is a card on a battlefield or in a discard pile. Hiding
+ * it would leave a player unable to see why two tokens appeared three decisions
+ * later.
+ *
+ * The instruction list is deliberately *not* carried over. A client renders the
+ * promise from the card's own explanation, which is generated from the same
+ * structured data — shipping a second copy of the effects would give the UI a
+ * way to disagree with the card inspector.
+ */
+export const delayedEffectViewSchema = z.strictObject({
+  id: z.string(),
+  definitionId: cardIdSchema,
+  abilityId: z.string(),
+  controllerId: playerIdSchema,
+  subjectInstanceId: instanceIdSchema.nullable(),
+  boundary: z.string(),
+  triggerId: z.string().nullable(),
+});
+export type DelayedEffectView = z.infer<typeof delayedEffectViewSchema>;
 
 export const playerViewSchema = z.strictObject({
   schemaVersion: z.literal(MATCH_SCHEMA_VERSION),
@@ -99,6 +161,8 @@ export const playerViewSchema = z.strictObject({
   instances: z.record(instanceIdSchema, cardInstanceViewSchema),
   /** Redacted: other defenders' pending blocker submissions are stripped. */
   combat: combatStateSchema,
+  /** Promises waiting on a boundary or an event this turn. Public (M02.1). */
+  delayedEffects: z.array(delayedEffectViewSchema),
   /** Only ever the viewer's own choice; otherwise null. */
   pendingChoice: pendingChoiceSchema.nullable(),
   /** Who the match is waiting on, so the other seat can show "please wait". */
@@ -162,13 +226,20 @@ function instanceView(
   state: MatchState,
   database: CardDatabase,
   instanceId: InstanceId,
+  config: RulesConfig,
+  viewerId: PlayerId,
 ): CardInstanceView | null {
   const instance = findInstance(state, instanceId);
   if (!instance) return null;
   const definition = database.get(instance.definitionId);
   if (!definition) return null;
 
+  const inViewersHand = instance.zone === 'hand' && instance.controller === viewerId;
+
   return {
+    energyCost: inViewersHand
+      ? playCostOf({ state, database, config }, viewerId, instance, definition)
+      : null,
     instanceId,
     definitionId: instance.definitionId,
     owner: instance.owner,
@@ -181,6 +252,7 @@ function instanceView(
     summoningSick: instance.zone === 'battlefield' && isSummoningSick(instance, state),
     keywords: [...effectiveKeywords(instance, definition)],
     isToken: instance.isToken,
+    willNotReady: instance.readySkip !== null,
   };
 }
 
@@ -201,7 +273,7 @@ export function playerView(
   const visible: Record<InstanceId, CardInstanceView> = {};
 
   const reveal = (instanceId: InstanceId): void => {
-    const view = instanceView(state, database, instanceId);
+    const view = instanceView(state, database, instanceId, config, viewerId);
     if (view) visible[instanceId] = view;
   };
 
@@ -232,6 +304,7 @@ export function playerView(
       handCount: player.hand.length,
       deckCount: player.deck.length,
       discard: [...player.discard],
+      removedCount: player.removed.length,
       units: [...player.units],
       relics: [...player.relics],
       commanderInstanceId: player.commanderInstanceId,
@@ -261,6 +334,15 @@ export function playerView(
     hand: [...viewer.hand],
     instances: visible,
     combat: redactCombat(state, viewerId),
+    delayedEffects: state.delayedEffects.map((entry) => ({
+      id: entry.id,
+      definitionId: entry.sourceDefinitionId,
+      abilityId: entry.abilityId,
+      controllerId: entry.controllerId,
+      subjectInstanceId: entry.subjectInstanceId,
+      boundary: entry.boundary,
+      triggerId: entry.trigger,
+    })),
     pendingChoice:
       state.pendingChoice && state.pendingChoice.playerId === viewerId
         ? structuredClone(state.pendingChoice)

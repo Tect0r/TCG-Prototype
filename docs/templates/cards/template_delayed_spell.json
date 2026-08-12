@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 4,
+  "id": "template_delayed_spell",
+  "name": "Template Delayed Spell",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "role": "enabler",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": { "cardTypes": ["unit"] },
+          "count": 1
+        }
+      },
+      "attack": 2,
+      "health": 0,
+      "duration": "end_of_turn"
+    },
+    { "type": "schedule_delayed", "delayedAbilityId": "payoff_on_defeat" }
+  ],
+  "delayedAbilities": [
+    {
+      "id": "payoff_on_defeat",
+      "boundary": "end_of_turn",
+      "trigger": "on_defeated",
+      "subject": "previous_target",
+      "effects": [{ "type": "draw", "amount": 1 }]
+    }
+  ],
+  "displayText": "Target friendly Unit gains +2 ATK this turn. When it is defeated this turn, draw a card.",
+  "text": {
+    "flavor": "A delayed ability happens only if a `schedule_delayed` names it. Drop `trigger` to fire at the boundary rather than wait for an event; drop `subject` when the delayed steps name nothing. `previous_target` re-uses the instruction before the schedule, so the player chooses once."
+  }
+}

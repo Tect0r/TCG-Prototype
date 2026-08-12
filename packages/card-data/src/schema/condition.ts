@@ -150,30 +150,109 @@ export const conditionSchema = z.discriminatedUnion('kind', [
 export type ConditionDefinition = z.infer<typeof conditionSchema>;
 
 /**
+ * Whose statline a derived value reads (M02.3).
+ *
+ * "Gains Health equal to **its** ATK" needs a card to point at, and the three
+ * cards a value can ever be about are the three an instruction already knows:
+ *
+ * - `effect_target` — the card this instruction is currently acting on. The
+ *   default, and the reading of "it" on every card that prints one, because the
+ *   value and the effect are two halves of the same sentence. Evaluated **per
+ *   recipient**: an instruction that buffs three units reads three statlines.
+ * - `trigger_subject` — the card the ability fired about, when the instruction
+ *   acts on something else.
+ * - `source` — the card the text is printed on.
+ */
+export const STAT_SUBJECTS = ['effect_target', 'trigger_subject', 'source'] as const;
+export const statSubjectSchema = z.enum(STAT_SUBJECTS);
+export type StatSubject = z.infer<typeof statSubjectSchema>;
+
+/**
+ * Which number of a statline a derived value reads.
+ *
+ * Both are the **derived** value — printed stats plus every applied modifier
+ * plus the continuous layer — never the printed one, because "equal to its ATK"
+ * on a buffed unit means the ATK a player can see.
+ *
+ * Deliberately two members. Remaining Health (Health minus marked damage) is a
+ * third, different number, and no authored card asks for it; shipping it in
+ * advance would be an untested rule (ruleset update §18).
+ */
+export const STAT_FIELDS = ['attack', 'health'] as const;
+export const statFieldSchema = z.enum(STAT_FIELDS);
+export type StatField = z.infer<typeof statFieldSchema>;
+
+/**
+ * The knobs a derived value shares with a counted one.
+ *
+ * `per` is deliberately absent: dividing a statline ("for every three points of
+ * ATK") is a rule nobody has written and no card prints, and a rounding
+ * convention invented here would be one more thing to get wrong.
+ */
+const statValueShape = {
+  kind: z.literal('stat'),
+  of: statSubjectSchema.default('effect_target'),
+  stat: statFieldSchema,
+  /** Added after the stat is read. A flat base on top of it. */
+  plus: z.number().int().min(-99).max(99).default(0),
+} as const;
+
+/**
  * A number an effect uses, which may depend on the board.
  *
  * A bare number is still a bare number — the overwhelming majority of cards —
- * so widening these fields costs existing card data nothing. The object form
- * exists for "for each", "for every three", and the caps and floors that go
- * with them.
+ * so widening these fields costs existing card data nothing. The object forms
+ * exist for "for each", "for every three", "equal to its ATK", and the caps and
+ * floors that go with them.
  */
 export const valueExpressionSchema = z.union([
   z.number().int().min(0).max(99),
-  z.strictObject({
-    kind: z.literal('count'),
-    count: countQuerySchema,
+  z.discriminatedUnion('kind', [
+    z.strictObject({
+      kind: z.literal('count'),
+      count: countQuerySchema,
+      /**
+       * How many matches one point is worth. `per: 3` is "for every three",
+       * rounded **down**, which is the only reading that makes "for every three
+       * other Goblins" mean what a player expects at four Goblins.
+       */
+      per: z.number().int().min(1).max(20).default(1),
+      /** Added after scaling. A flat base on top of the count. */
+      plus: z.number().int().min(-99).max(99).default(0),
+      /** Floor and ceiling, applied last. The result is never negative. */
+      minimum: z.number().int().min(0).max(99).default(0),
+      maximum: z.number().int().min(0).max(99).optional(),
+    }),
+    z.strictObject({
+      ...statValueShape,
+      minimum: z.number().int().min(0).max(99).default(0),
+      maximum: z.number().int().min(0).max(99).optional(),
+    }),
     /**
-     * How many matches one point is worth. `per: 3` is "for every three",
-     * rounded **down**, which is the only reading that makes "for every three
-     * other Goblins" mean what a player expects at four Goblins.
+     * "**For each Unit sacrificed**, …" — how many things the instruction
+     * immediately before this one resolved with (M02.5).
+     *
+     * The value-side twin of the `previous_target` target kind, and it reads the
+     * same record: the entity targets each step resolves with are filed on the
+     * resolution item, so this survives a pause and a JSON round trip. It is
+     * deliberately *not* a `count` query. "Units sacrificed this turn" is a
+     * different number — it includes every earlier sacrifice on the same turn,
+     * from other cards — and a card that said "for each Unit sacrificed" and
+     * meant that would be a considerably stronger card than the one printed.
+     *
+     * Zero, and the instruction has nothing to do, when the step before it acted
+     * on nothing: an "up to five" that took none is a legal outcome, not a
+     * failure. Meaningless on the first instruction of a list, which the card
+     * schema rejects rather than resolving to a silent zero.
      */
-    per: z.number().int().min(1).max(20).default(1),
-    /** Added after scaling. A flat base on top of the count. */
-    plus: z.number().int().min(-99).max(99).default(0),
-    /** Floor and ceiling, applied last. The result is never negative. */
-    minimum: z.number().int().min(0).max(99).default(0),
-    maximum: z.number().int().min(0).max(99).optional(),
-  }),
+    z.strictObject({
+      kind: z.literal('previous_targets'),
+      /** Added after the count. A flat base on top of it. */
+      plus: z.number().int().min(-99).max(99).default(0),
+      minimum: z.number().int().min(0).max(99).default(0),
+      maximum: z.number().int().min(0).max(99).optional(),
+    }),
+  ]),
 ]);
 export type ValueExpression = z.infer<typeof valueExpressionSchema>;
 
@@ -182,8 +261,22 @@ export function isFixedValue(value: ValueExpression): value is number {
   return typeof value === 'number';
 }
 
+/** True when the expression reads a card's statline rather than the board. */
+export function isStatValue(
+  value: ValueExpression | SignedValueExpression,
+): value is Extract<ValueExpression | SignedValueExpression, { kind: 'stat' }> {
+  return typeof value !== 'number' && value.kind === 'stat';
+}
+
+/** True when the expression counts what the preceding instruction acted on. */
+export function isPreviousTargetsValue(
+  value: ValueExpression | SignedValueExpression,
+): value is Extract<ValueExpression, { kind: 'previous_targets' }> {
+  return typeof value !== 'number' && value.kind === 'previous_targets';
+}
+
 /**
- * A signed number an effect uses. Same shape, but the count may be subtracted.
+ * A signed number an effect uses. Same shapes, but the result may be negative.
  *
  * Separate from `ValueExpression` because a stat modifier can legitimately be
  * negative and an amount of damage cannot, and collapsing the two would let a
@@ -191,15 +284,24 @@ export function isFixedValue(value: ValueExpression): value is number {
  */
 export const signedValueExpressionSchema = z.union([
   z.number().int().min(-99).max(99),
-  z.strictObject({
-    kind: z.literal('count'),
-    count: countQuerySchema,
-    per: z.number().int().min(1).max(20).default(1),
-    plus: z.number().int().min(-99).max(99).default(0),
-    /** `-1` counts downwards: "-1/-0 for each …". */
-    sign: z.union([z.literal(1), z.literal(-1)]).default(1),
-    minimum: z.number().int().min(-99).max(99).default(0),
-    maximum: z.number().int().min(-99).max(99).optional(),
-  }),
+  z.discriminatedUnion('kind', [
+    z.strictObject({
+      kind: z.literal('count'),
+      count: countQuerySchema,
+      per: z.number().int().min(1).max(20).default(1),
+      plus: z.number().int().min(-99).max(99).default(0),
+      /** `-1` counts downwards: "-1/-0 for each …". */
+      sign: z.union([z.literal(1), z.literal(-1)]).default(1),
+      minimum: z.number().int().min(-99).max(99).default(0),
+      maximum: z.number().int().min(-99).max(99).optional(),
+    }),
+    z.strictObject({
+      ...statValueShape,
+      /** `-1` subtracts the statline: "-X/-0, where X is its ATK". */
+      sign: z.union([z.literal(1), z.literal(-1)]).default(1),
+      minimum: z.number().int().min(-99).max(99).default(0),
+      maximum: z.number().int().min(-99).max(99).optional(),
+    }),
+  ]),
 ]);
 export type SignedValueExpression = z.infer<typeof signedValueExpressionSchema>;

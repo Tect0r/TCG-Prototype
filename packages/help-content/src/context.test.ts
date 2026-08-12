@@ -92,7 +92,14 @@ describe('public card context', () => {
     const context = publicCardContext(view, rival?.commanderInstanceId ?? '');
     expect(context?.zone).toBe('commander_zone');
     expect(context?.ownedByViewer).toBe(false);
-    expect(contextMessages(context!).join(' ')).toMatch(/Commander zone/);
+    const messages = contextMessages(context!).join(' ');
+    expect(messages).toMatch(/Command Zone/);
+    // It is a deployable permanent that comes back here, not a fixture that
+    // "stays in the Commander zone for the whole match" (ADR 0016 §4).
+    expect(messages).toMatch(/deployed to the battlefield for its cost/);
+    expect(messages).toMatch(/returns here rather than to a discard pile/);
+    // A rival's Commander is never offered to this seat as playable.
+    expect(messages).not.toMatch(/You can deploy it right now/);
   });
 
   it('quotes the engine’s own energy cost when the engine says a card is playable', () => {
@@ -115,8 +122,54 @@ describe('public card context', () => {
 
     const context = publicCardContext(view, instanceId);
     expect(context?.playableForEnergy).toBeNull();
+    expect(context?.holdsReactionPriority).toBe(false);
     const messages = contextMessages(context!);
     expect(messages.join(' ')).toMatch(/only be played during your own Main Phase/);
+    // …and it names the one exception rather than leaving the sentence absolute.
+    expect(messages.join(' ')).toMatch(/A Reaction is the exception/);
+  });
+
+  /**
+   * The Reaction branches, varied off a real context rather than an invented one.
+   *
+   * `prototype_core` holds no Reaction card and the engine's own fixtures are not
+   * exported, so a genuine window is out of reach from here — the engine's
+   * `reactions.test.ts` owns that. What is checked here is the part that lives in
+   * this module: an open window pre-empts the ordinary play path, so the "only
+   * during your own Main Phase" answer must not be given while the engine is
+   * actively waiting on this seat.
+   */
+  describe('while a Reaction window is open', () => {
+    /** A real out-of-turn hand-card context, which is the one this can reach. */
+    function idleHandContext() {
+      const state = startedMatch();
+      const idle = state.activePlayerId === 'player_1' ? 'player_2' : 'player_1';
+      const view = playerView(state, idle, database);
+      const context = publicCardContext(view, view.hand[0] as string);
+      if (!context) throw new Error('expected a hand card');
+      return context;
+    }
+
+    it('offers the card at the price the engine quoted for the window', () => {
+      const messages = contextMessages({
+        ...idleHandContext(),
+        holdsReactionPriority: true,
+        reactionForEnergy: 2,
+      });
+      expect(messages.join(' ')).toMatch(/A Reaction window is open and you can play this into it/);
+      expect(messages.join(' ')).toContain('2 energy');
+      expect(messages.join(' ')).not.toMatch(/only be played during your own Main Phase/);
+    });
+
+    it('does not fall back to the Main Phase answer for a card it cannot admit', () => {
+      const messages = contextMessages({
+        ...idleHandContext(),
+        holdsReactionPriority: true,
+        reactionForEnergy: null,
+      });
+      expect(messages.join(' ')).toMatch(/but this card cannot be played into it/);
+      expect(messages.join(' ')).not.toMatch(/only be played during your own Main Phase/);
+    });
   });
 
   it('admits it does not know, rather than inventing a rule', () => {
@@ -155,9 +208,12 @@ describe('public card context', () => {
     const view = playerView(state, active, database);
     const context = publicCardContext(view, playable!.instanceId);
     expect(context?.zone).toBe('battlefield');
-    expect(context?.summoningSick).toBe(true);
+    expect(context?.newlyDeployed).toBe(true);
 
     const messages = contextMessages(context!);
     expect(messages.join(' ')).toMatch(/arrived this turn/);
+    // The state is named, and the player is told what it does not stop.
+    expect(messages.join(' ')).toMatch(/Newly Deployed/);
+    expect(messages.join(' ')).toMatch(/can still block/);
   });
 });

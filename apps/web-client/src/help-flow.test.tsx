@@ -226,7 +226,7 @@ describe('lobby rulebook', () => {
     const dialog = await screen.findByRole('dialog', { name: 'How to Play' });
 
     expect(within(dialog).getByText('Venom')).toBeInTheDocument();
-    expect(within(dialog).getByText('Summoning sickness')).toBeInTheDocument();
+    expect(within(dialog).getByText('Newly Deployed')).toBeInTheDocument();
     // Keywords the engine ignores are labelled, not described as if they worked.
     const guardian = within(dialog).getByText('Guardian').parentElement;
     expect(guardian?.textContent).toContain('attacker may not be left unblocked');
@@ -391,7 +391,14 @@ describe('in-match card inspection', () => {
     const dialog = await screen.findByRole('dialog', { name: /Card details/ });
     expect(within(dialog).getByText("Rival's Commander")).toBeInTheDocument();
     expect(dialog.textContent ?? '').toMatch(/never paid for/);
-    expect(dialog.textContent ?? '').toMatch(/stays in the Commander zone/);
+    // The fixture Commanders have no printed cost, so they are undeployable
+    // rather than free — the inspector must not promise a deployment the engine
+    // refuses (M01.4, ADR 0016 §4).
+    expect(dialog.textContent ?? '').toMatch(/no printed cost, so it cannot be deployed at all/);
+    expect(dialog.textContent ?? '').toMatch(/Command Zone/);
+    expect(dialog.textContent ?? '').not.toMatch(/on the turn it is deployed/);
+    // The seat context agrees with the card explanation.
+    expect(dialog.textContent ?? '').toMatch(/This Commander is in the Command Zone/);
   });
 
   it('cannot reach the opponent’s hand or deck at all', async () => {

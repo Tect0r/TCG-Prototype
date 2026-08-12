@@ -15,13 +15,23 @@ import { formatIdSchema } from './format.js';
  */
 export const PRECON_SCHEMA_VERSION = 1;
 
+/**
+ * A precon's permanent ID.
+ *
+ * Exported so that anything *addressing* a precon — a spectator seat, a
+ * `submit_precon` message, a simulator deck source — validates the ID the same
+ * way the definition itself does, rather than accepting a shape no precon could
+ * ever have.
+ */
+export const preconIdSchema = z
+  .string()
+  .min(1)
+  .max(60)
+  .regex(/^[a-z][a-z0-9_]*$/, 'Precon IDs must be lowercase_snake_case.');
+
 export const preconDefinitionSchema = z.strictObject({
   schemaVersion: z.number().int().min(1).max(PRECON_SCHEMA_VERSION),
-  id: z
-    .string()
-    .min(1)
-    .max(60)
-    .regex(/^[a-z][a-z0-9_]*$/, 'Precon IDs must be lowercase_snake_case.'),
+  id: preconIdSchema,
   name: z.string().min(1).max(80),
   /** The format whose construction rules this precon is built to. */
   formatId: formatIdSchema,

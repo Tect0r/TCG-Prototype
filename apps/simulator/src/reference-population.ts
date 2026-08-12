@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { DeckSource } from './config.js';
 import type { Environment } from './environment.js';
-import { resolveDeckSource } from './deck-source.js';
+import { resolveDeckSource, resolvedPreconSchema } from './deck-source.js';
 import { checkDeck, simDeckSchema, type SimDeck } from './deck-search/deck.js';
 import { digestOf } from './hash.js';
 
@@ -58,6 +58,14 @@ export const referencePopulationSchema = z.strictObject({
   resolvedAgainst: z.string(),
   decks: z.array(simDeckSchema),
   excluded: z.array(excludedDeckSchema),
+  /**
+   * Precons the source named, when it named any (M03.3).
+   *
+   * Provenance rather than identity: `hash` and `resolvedHash` deliberately
+   * still cover only Commanders and quantities, so recording where a deck came
+   * from cannot change whether two populations are judged the same.
+   */
+  precons: z.array(resolvedPreconSchema).default([]),
 });
 export type ReferencePopulation = z.infer<typeof referencePopulationSchema>;
 
@@ -108,6 +116,7 @@ export function freezeReferencePopulation(inputs: FreezeInputs): ReferencePopula
     resolvedHash: populationHash(resolved.decks),
     resolvedAgainst: inputs.baseline.id,
     decks,
+    precons: [...resolved.precons],
     excluded: excluded.sort(
       (left, right) =>
         left.environmentId.localeCompare(right.environmentId) ||

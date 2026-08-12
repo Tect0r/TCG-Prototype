@@ -2,10 +2,13 @@ import { z } from 'zod';
 import {
   cardFilterSchema,
   cardIdSchema,
+  conditionSchema,
+  delayedBoundarySchema,
   durationSchema,
   effectDefinitionSchema,
   keywordIdSchema,
   reactionWindowSchema,
+  triggerIdSchema,
   zoneIdSchema,
 } from '@tcg/card-data';
 import { rngStateSchema } from '../rng.js';
@@ -141,6 +144,31 @@ export const cardInstanceSchema = z.strictObject({
    * on a later turn (ruleset update §9).
    */
   barrierSpent: z.boolean().default(false),
+  /**
+   * A pending "does not Ready during its controller's next Ready Step" (M02.4).
+   *
+   * A stored one-shot state rather than a modifier with a duration, for the same
+   * reason `barrierSpent` and `newlyDeployed` are stored: it has to survive the
+   * opponents' turns in between and be consumed by exactly one boundary. Every
+   * `Duration` this engine has expires at a boundary, and the closest one —
+   * `until_your_next_turn` — is cleared *immediately before* the Ready Step this
+   * has to act on, so a modifier would always be gone one step too early.
+   *
+   * Carries its source so the log can say what stopped the unit readying. The
+   * source is nullable because it routinely no longer exists: a Spell that
+   * applied it is in a discard pile, and a blocker that applied it is often
+   * defeated by the same combat.
+   *
+   * A second application is idempotent — both clauses name the same Ready Step —
+   * and the first source keeps the attribution.
+   */
+  readySkip: z
+    .strictObject({
+      sourceInstanceId: instanceIdSchema.nullable(),
+      appliedOnTurn: z.number().int().min(0),
+    })
+    .nullable()
+    .default(null),
   counters: z.record(z.string(), z.number().int()),
   /** Tokens cease to exist when they leave the battlefield. */
   isToken: z.boolean(),
@@ -372,6 +400,59 @@ export const resolutionItemSchema = z.strictObject({
 });
 export type ResolutionItem = z.infer<typeof resolutionItemSchema>;
 
+/**
+ * One live delayed effect (M02.1).
+ *
+ * Fully self-contained and serializable: the instructions are copied onto the
+ * entry rather than re-read from the card when it fires, for the same reason a
+ * `ResolutionItem` carries its own — the source is routinely gone by then. A
+ * `fading_wisp` that scheduled "return it to your hand" is, by definition, in a
+ * discard pile while it waits.
+ *
+ * Everything the milestone requires an entry to pin down is a field here: the
+ * boundary, the source instance and definition, the controller, the bound
+ * subject, and the sequence number of the event that created it.
+ */
+export const delayedEffectSchema = z.strictObject({
+  id: z.string().min(1),
+  /** The instance whose text scheduled this. `null` once it has ceased to exist. */
+  sourceInstanceId: instanceIdSchema.nullable(),
+  sourceDefinitionId: cardIdSchema,
+  /** The `delayedAbilities` entry this came from, for provenance and the log. */
+  abilityId: z.string().min(1),
+  /**
+   * Who makes the decisions when it resolves.
+   *
+   * Fixed at scheduling time and never re-derived from the subject's current
+   * controller: the delayed effect belongs to the player whose card set it up,
+   * which is what makes it end with them if they are eliminated (CLAUDE.md §12
+   * step 3) rather than following a stolen unit to a new seat.
+   */
+  controllerId: playerIdSchema,
+  /** The bound "it". `null` when the delayed instructions name nothing. */
+  subjectInstanceId: instanceIdSchema.nullable(),
+  /**
+   * The zone the subject was in when this was scheduled.
+   *
+   * The whole of "what happens if the subject leaves play". A delayed effect
+   * acts on the object it was about, and this engine already treats a card that
+   * changes zone as having shed what it was — `moveToZone` clears its damage,
+   * modifiers and counters. A subject that is somewhere else is therefore no
+   * longer the thing the delayed text named, and the entry is discarded rather
+   * than redirected onto a card that merely shares its identity.
+   */
+  subjectZone: zoneIdSchema.nullable(),
+  boundary: delayedBoundarySchema,
+  /** The event it waits for, or `null` to fire at the boundary itself. */
+  trigger: triggerIdSchema.nullable(),
+  condition: conditionSchema.nullable(),
+  effects: z.array(effectDefinitionSchema),
+  createdOnTurn: z.number().int().min(0),
+  /** Sequence number of the event that scheduled it, for causal logs. */
+  causeSequence: z.number().int().min(0),
+});
+export type DelayedEffect = z.infer<typeof delayedEffectSchema>;
+
 export const blockAssignmentSchema = z.strictObject({
   attackerInstanceId: instanceIdSchema,
   blockerInstanceId: instanceIdSchema,
@@ -575,6 +656,16 @@ export const matchStateSchema = z.strictObject({
   /** The open Reaction window, or `null` when none is (rule adjustment §5). */
   reactionWindow: reactionWindowStateSchema.nullable(),
   nextReactionWindowOrdinal: z.number().int().min(0),
+  /**
+   * Delayed effects waiting for their boundary or their event, in the order
+   * they were scheduled (M02.1).
+   *
+   * Defaulted rather than required so a match state serialized before delayed
+   * effects existed still parses: an old save had none, and `[]` is exactly
+   * what it meant.
+   */
+  delayedEffects: z.array(delayedEffectSchema).default([]),
+  nextDelayedOrdinal: z.number().int().min(0).default(0),
   /** Cleared at the start of every turn; see `turnEventsSchema`. */
   turnEvents: turnEventsSchema,
   result: matchResultSchema.nullable(),

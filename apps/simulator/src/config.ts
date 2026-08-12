@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { cardIdSchema } from '@tcg/card-data';
+import { cardIdSchema, preconIdSchema } from '@tcg/card-data';
 import { perturbationProfileIdSchema, pilotSpecSchema } from '@tcg/bot-interface';
 import { declaredChangesSchema, environmentConfigSchema } from './environment.js';
 import { generatorConfigSchema } from './deck-search/generate.js';
@@ -61,6 +61,26 @@ export const deckSourceSchema = z.discriminatedUnion('kind', [
     kind: z.literal('files'),
     /** Paths to deck-builder JSON exports, relative to the config file. */
     paths: z.array(z.string().min(1)).min(1),
+  }),
+  z.strictObject({
+    kind: z.literal('precon'),
+    /**
+     * Built-in precons, by permanent ID (M03.3).
+     *
+     * A precon travels as an ID and never as a card list, for the same reason it
+     * does over the match protocol: a config that duplicated the forty card IDs
+     * would go stale the moment the shipped precon changed, and the experiment
+     * would then measure a deck nobody plays while still carrying the precon's
+     * name. The IDs are resolved against the bundled content at experiment
+     * start, reviewed with the same `reviewPrecon` the deck builder and the
+     * match server run, and written into the manifest beside the environment
+     * hashes that pin what those IDs resolved to.
+     *
+     * An unknown or incompatible ID stops the experiment. Nothing is ever
+     * substituted: a run that quietly replaced a precon would report results
+     * under a name that did not play them.
+     */
+    preconIds: z.array(preconIdSchema).min(1),
   }),
 ]);
 export type DeckSource = z.infer<typeof deckSourceSchema>;
@@ -196,18 +216,61 @@ const commonFields = {
   failFast: z.boolean().default(false),
 };
 
-export const batchConfigSchema = z.strictObject({
-  ...commonFields,
-  kind: z.literal('batch'),
-  environment: environmentConfigSchema,
-  decks: deckSourceSchema,
-  schedule: z.enum(['round_robin', 'sampled']).default('round_robin'),
-  /** Number of deck pairings to sample when `schedule` is `sampled`. */
-  sampledPairings: z.number().int().min(1).max(100_000).default(50),
-  gamesPerPairing: z.number().int().min(1).max(10_000).default(4),
-  /** Play every pairing in both seat orders (CLAUDE.md §13.7). */
-  mirrorSeats: z.boolean().default(true),
-});
+export const batchConfigSchema = z
+  .strictObject({
+    ...commonFields,
+    kind: z.literal('batch'),
+    environment: environmentConfigSchema,
+    decks: deckSourceSchema,
+    schedule: z.enum(['round_robin', 'sampled']).default('round_robin'),
+    /** Number of deck pairings to sample when `schedule` is `sampled`. */
+    sampledPairings: z.number().int().min(1).max(100_000).default(50),
+    gamesPerPairing: z.number().int().min(1).max(10_000).default(4),
+    /** Play every pairing in both seat orders (CLAUDE.md §13.7). */
+    mirrorSeats: z.boolean().default(true),
+    /**
+     * Run and record the complete ordered matchup matrix (M03.4).
+     *
+     * With `n` decks this schedules all `n²` ordered pairs — every deck in the
+     * first seat against every deck in the second, mirrors included — and writes
+     * `matchup-matrix.json`, `matchup-matrix.csv` and a report section naming
+     * each cell's seat order, seed path, winner, termination and replay.
+     *
+     * It is a smoke and robustness artifact, not a balance measurement: it exists
+     * to show that every ordered pair of the shipped decks terminates
+     * deterministically without an illegal action, a loop or a crash. The
+     * matrix's own report section says so, and nothing in it is a win-rate claim
+     * until M05 makes the pilots balance-trustworthy.
+     *
+     * The settings below are checked rather than adjusted, because an artifact
+     * called "the ordered matchup matrix" that quietly omitted cells would be
+     * worse than one that refused to run.
+     */
+    orderedMatchupMatrix: z.boolean().default(false),
+  })
+  .check((ctx) => {
+    const config = ctx.value;
+    if (!config.orderedMatchupMatrix) return;
+    const problems: string[] = [];
+    if (config.playerCount !== 2) {
+      problems.push(`playerCount is ${config.playerCount}, and an ordered *pair* needs 2 seats`);
+    }
+    if (config.schedule !== 'round_robin') {
+      problems.push(`schedule is "${config.schedule}", which drops pairings`);
+    }
+    if (!config.mirrorSeats) {
+      problems.push('mirrorSeats is false, so each pair would only be played one way round');
+    }
+    if (problems.length === 0) return;
+    ctx.issues.push({
+      code: 'custom',
+      input: config,
+      path: ['orderedMatchupMatrix'],
+      message:
+        'orderedMatchupMatrix needs a schedule that can contain every ordered pair, but ' +
+        `${problems.join('; ')}.`,
+    });
+  });
 export type BatchConfig = z.infer<typeof batchConfigSchema>;
 
 export const searchConfigSchema = z.strictObject({

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer } from 'react';
 import type { ReactNode } from 'react';
-import type { CardDatabase, CardId } from '@tcg/card-data';
+import type { CardDatabase, CardId, PreconDefinition } from '@tcg/card-data';
 import {
   createDeck,
   DEFAULT_DECK_FORMAT,
@@ -8,12 +8,15 @@ import {
   duplicateDeck,
   MemoryStore,
   parseDecksFromJson,
+  preconToDeck,
   prepareImportedDeck,
   renameDeck,
+  uniqueDeckName,
   type DeckFormatConfig,
   type KeyValueStore,
   type SavedDeck,
 } from '@tcg/deck';
+import { generateId } from '@tcg/shared';
 import {
   activeDeck as selectActiveDeck,
   appReducer,
@@ -28,6 +31,8 @@ export interface AppActions {
   updateDeck(deck: SavedDeck): void;
   renameActiveDeck(name: string): void;
   duplicateActiveDeck(): void;
+  /** Copies a built-in precon into a new editable deck and selects it. */
+  copyPrecon(precon: PreconDefinition): void;
   deleteDeck(deckId: string): void;
   importFromJson(text: string): void;
   showNotice(notice: Notice): void;
@@ -117,6 +122,24 @@ export function AppProvider({ database, children, deckFormat, store }: AppProvid
       duplicateActiveDeck: () => {
         if (!deck) return;
         dispatch({ type: 'deck_created', deck: duplicateDeck(deck) });
+      },
+      copyPrecon: (precon) => {
+        // The precon itself is never touched: this is the only way the builder
+        // reaches one, and it reads the definition into a brand-new deck with
+        // its own ID, name and timestamps (ADR 0016 §3).
+        const deck = preconToDeck(precon, {
+          id: generateId('deck'),
+          name: uniqueDeckName(precon.name, state.decks),
+          now: new Date().toISOString(),
+        });
+        dispatch({ type: 'deck_created', deck });
+        dispatch({
+          type: 'notice_shown',
+          notice: {
+            tone: 'info',
+            message: `Copied "${precon.name}" into "${deck.name}". The built-in precon is unchanged.`,
+          },
+        });
       },
       deleteDeck: (deckId) => dispatch({ type: 'deck_deleted', deckId }),
       importFromJson: (text) => {

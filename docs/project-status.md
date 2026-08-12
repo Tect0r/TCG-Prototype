@@ -269,6 +269,7 @@ engine, card database, deck format and migrations that human matches use.
 | Single-match runner    | `simulator/src/run-match.ts`, `run-one.ts`                                                                            |
 | Telemetry              | `simulator/src/telemetry/`                                                                                            |
 | Schedules and batches  | `simulator/src/schedule.ts`, `run-batch.ts`, `workers/`                                                               |
+| Ordered matchup matrix | `simulator/src/matchup-matrix.ts`, `experiments/precon-matrix.json`                                                   |
 | Deck generation/search | `simulator/src/deck-search/`                                                                                          |
 | Analysis               | `simulator/src/analysis/`                                                                                             |
 | Reporting and CLI      | `simulator/src/reporting/`, `experiment.ts`, `cli.ts`, `benchmark.ts`                                                 |

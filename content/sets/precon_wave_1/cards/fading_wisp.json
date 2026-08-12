@@ -13,7 +13,25 @@
     "identity": "Sacrifice Unit — Recurring Fodder",
     "power": "medium"
   },
-  "implemented": false,
-  "unsupportedReason": "needs delayed end-of-turn effects (ruleset update §15)",
-  "displayText": "When you sacrifice this Unit, return it to your hand at the end of the turn."
+  "abilities": [
+    {
+      "id": "fading_return",
+      "trigger": "on_sacrifice",
+      "effects": [{ "type": "schedule_delayed", "delayedAbilityId": "return_at_end_of_turn" }]
+    }
+  ],
+  "delayedAbilities": [
+    {
+      "id": "return_at_end_of_turn",
+      "boundary": "end_of_turn",
+      "subject": "source",
+      "effects": [{ "type": "return_to_hand", "target": { "kind": "source" } }]
+    }
+  ],
+  "displayText": "When you sacrifice this Unit, return it to your hand at the end of the turn.",
+  "text": {
+    "notes": [
+      "The card waits in your discard pile until the end of the turn. If anything moves it somewhere else first — back onto the battlefield, or out of the game — the delayed return is dropped: it was about the card in the discard pile, not about wherever the card is now."
+    ]
+  }
 }

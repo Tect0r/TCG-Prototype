@@ -11,7 +11,31 @@
     "identity": "Control Relic — Tempo",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
-  "displayText": "The first enemy Unit deployed each turn enters Exhausted."
+  "displayText": "The first enemy Unit deployed each turn enters Exhausted.",
+  "staticAbilities": [
+    {
+      "id": "containment_field",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "opponent",
+        "filter": {
+          "cardTypes": ["unit", "token", "commander"]
+        }
+      },
+      "effect": {
+        "type": "replace_arrival",
+        "on": "deployed",
+        "limit": "first_each_turn",
+        "entersExhausted": true
+      }
+    }
+  ],
+  "text": {
+    "notes": [
+      "This rewrites the arrival itself, so the Unit is never Ready even for an instant — nothing can respond in between, and a Unit with Rush still cannot attack because it is Exhausted rather than Newly Deployed.",
+      "A Token an opponent creates counts as a Unit they deployed.",
+      "One arrival per turn, counted across the whole table: at three or four seats the first enemy deployment of the turn spends it."
+    ]
+  }
 }

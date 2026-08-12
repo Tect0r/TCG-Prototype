@@ -9,6 +9,7 @@ import {
   type MatchState,
   type PlayerId,
 } from '@tcg/rules-engine';
+import { BoardTelemetryCollector } from '@tcg/board-telemetry';
 import { isErr } from '@tcg/shared';
 import {
   createPilot,
@@ -167,6 +168,22 @@ export async function runMatch(options: RunMatchOptions): Promise<RunMatchResult
   }));
 
   const collector = new TelemetryCollector(database, setups, state, rulesConfig);
+
+  // The shared board collector (M04.1), fed live rather than from a retained
+  // log: a large batch must not hold every match's events to answer a question
+  // about board size (CLAUDE.md §13.14). It is given the creation events too, so
+  // the stream it sees is the same one a spectator replay carries and the two
+  // paths produce identical telemetry for the same deterministic match.
+  const board = new BoardTelemetryCollector({
+    database,
+    config: rulesConfig,
+    seats: options.seats.map((seat, index) => ({
+      playerId: seat.playerId,
+      seatIndex: index,
+      commanderId: seat.deck.commanderId,
+    })),
+  });
+  board.observeEvents(created.value.events);
   const rngs = setups.map((setup) => rngFor(setup.pilotSeed));
   const decisionCounts = setups.map(() => 0);
 
@@ -257,6 +274,8 @@ export async function runMatch(options: RunMatchOptions): Promise<RunMatchResult
 
     collector.observeAction(outcome.decision.action, before, state);
     collector.observeEvents(applied.value.events, state);
+    board.observeAction(before.turn);
+    board.observeEvents(applied.value.events);
 
     decisions.push({
       index: decisions.length,
@@ -327,6 +346,7 @@ export async function runMatch(options: RunMatchOptions): Promise<RunMatchResult
     events: state.sequence,
     resolutionSteps: state.resolutionSteps,
     cards: [...collected.cards],
+    board: board.finish(state),
     botFailures: failures,
     diagnostics,
     replayPath: null,
@@ -339,8 +359,19 @@ export async function runMatch(options: RunMatchOptions): Promise<RunMatchResult
  * Whose decision the engine is waiting on.
  *
  * Mirrors the engine's own ordering exactly: a pending choice belongs to one
- * seat, an outstanding blocker submission belongs to a named defender, and
+ * seat, an open Reaction window belongs to whoever currently holds priority in
+ * it, an outstanding blocker submission belongs to a named defender, and
  * otherwise it is the active player's move.
+ *
+ * The Reaction case is not a refinement of the active-player case, it replaces
+ * it: `legalActions` offers a window's moves to the priority holder *only*, and
+ * a window opens at all only when somebody can use it — which is frequently a
+ * non-active seat. Asking the active player instead produced a seat with no
+ * legal action whatsoever, at which point the pilot and its random-legal
+ * fallback both had nothing to return and the match died with
+ * "random_legal was asked to decide with no legal action available". Found by
+ * M03.3's precon smoke run, whose decks carry far more Reactions than the
+ * generated fixture decks the batch tests were written against.
  */
 export function seatToAct(state: MatchState): PlayerId | null {
   if (state.status === 'complete') return null;
@@ -350,6 +381,13 @@ export function seatToAct(state: MatchState): PlayerId | null {
       state.seatOrder.find((playerId) => state.players[playerId]?.mulligan.status === 'pending') ??
       null
     );
+  }
+  const window = state.reactionWindow;
+  if (window !== null && !window.closed) {
+    // A closed window is deliberately not handled here: it belongs to the
+    // engine's resolution queue, which drains it inside `applyAction` without
+    // asking anybody, and inventing a seat for it would invent a decision.
+    return window.priorityOrder[window.priorityIndex] ?? null;
   }
   if (state.phase === 'assign_blockers') {
     const awaiting = state.combat.awaitingDefenders[0];

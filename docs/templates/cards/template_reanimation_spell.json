@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 4,
+  "id": "template_reanimation_spell",
+  "name": "Template Reanimation Spell",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 4,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "effects": [
+    {
+      "type": "move_card",
+      "toZone": "battlefield",
+      "entersExhausted": true,
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "discard",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"],
+            "cost": { "max": 3 }
+          },
+          "count": 1,
+          "optional": true
+        }
+      }
+    }
+  ],
+  "displayText": "Return up to one Unit card costing 3 or less from your discard pile to the battlefield Exhausted. It is Newly Deployed.",
+  "text": {
+    "flavor": "`move_card` covers every zone transition. `toZone: \"battlefield\"` is a revival: the card arrives Newly Deployed and fires `entersBattlefield`, never `deployed`. `entersExhausted` is part of that arrival and is legal nowhere else. `toZone: \"removed\"` is terminal. `optional: true` is the \"up to\"."
+  }
+}

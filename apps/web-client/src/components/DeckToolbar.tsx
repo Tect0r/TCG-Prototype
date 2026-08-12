@@ -7,6 +7,7 @@ import {
 } from '@tcg/deck';
 import { useAppActions, useAppState } from '../state/AppContext.js';
 import { downloadTextFile } from '../lib/download.js';
+import { PreconBrowser } from './PreconBrowser.js';
 
 /** Deck management: create, select, rename, duplicate, delete, import, export. */
 export function DeckToolbar({ deck }: { readonly deck: SavedDeck | undefined }) {
@@ -15,6 +16,7 @@ export function DeckToolbar({ deck }: { readonly deck: SavedDeck | undefined }) 
   const fileInput = useRef<HTMLInputElement>(null);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
+  const [browsingPrecons, setBrowsingPrecons] = useState(false);
 
   const startRename = () => {
     if (!deck) return;
@@ -65,6 +67,10 @@ export function DeckToolbar({ deck }: { readonly deck: SavedDeck | undefined }) 
         onClick={() => actions.newDeck(`Deck ${decks.length + 1}`)}
       >
         New deck
+      </button>
+
+      <button type="button" onClick={() => setBrowsingPrecons(true)}>
+        Precons
       </button>
 
       {renaming ? (
@@ -148,6 +154,8 @@ export function DeckToolbar({ deck }: { readonly deck: SavedDeck | undefined }) 
           event.target.value = '';
         }}
       />
+
+      <PreconBrowser open={browsingPrecons} onClose={() => setBrowsingPrecons(false)} />
     </div>
   );
 }

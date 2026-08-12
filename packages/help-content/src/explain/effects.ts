@@ -1,12 +1,16 @@
 import {
+  isPreviousTargetsValue,
   KEYWORD_REGISTRY,
   type CardDatabase,
+  type DelayedAbilityDefinition,
+  type DelayedBoundary,
   type Duration,
   type EffectDefinition,
   type EffectType,
   type SignedValueExpression,
   type ValueExpression,
 } from '@tcg/card-data';
+import { TRIGGER_REGISTRY } from '../registries/triggers.js';
 import { humanise, numberWord, plural, quantify, sentence } from './grammar.js';
 import { conditionClause, describeValue, nominalValue, valueIsFixed } from './values.js';
 import {
@@ -45,6 +49,32 @@ export interface ExplainOptions {
   readonly database?: CardDatabase | undefined;
   /** What to call the card the text is printed on. */
   readonly sourceNoun?: string | undefined;
+  /**
+   * The card's own `delayedAbilities`, so a `schedule_delayed` instruction can
+   * be spelled out rather than described as "sets something up".
+   *
+   * Supplied by the caller because a `schedule_delayed` names its body by ID —
+   * the deliberate price of keeping the instruction union flat. Without it the
+   * renderer says only what it can honestly say.
+   */
+  readonly delayedAbilities?: readonly DelayedAbilityDefinition[] | undefined;
+  /**
+   * What to call a `trigger_subject` target.
+   *
+   * Defaulted by `describeTarget` to "the card that triggered this", which is
+   * right for a triggered ability and wrong inside a delayed clause, where the
+   * subject was bound when the clause was set up and the trigger may never fire
+   * at all.
+   */
+  readonly subjectNoun?: string | undefined;
+}
+
+/** A target as a noun phrase, with both of this card's nouns filled in. */
+function targetPhrase(
+  target: Parameters<typeof describeTarget>[0],
+  options: ExplainOptions,
+): string {
+  return describeTarget(target, options.sourceNoun, options.subjectNoun);
 }
 
 function durationClause(duration: Duration): string {
@@ -67,7 +97,12 @@ function durationClause(duration: Duration): string {
 
 function statChange(attack: SignedValueExpression, health: SignedValueExpression): string {
   const part = (value: SignedValueExpression, other: SignedValueExpression): string => {
-    if (typeof value !== 'number') return `+${describeValue(value)}`;
+    if (typeof value !== 'number') {
+      // A derived amount carries its own sign, and `describeValue` words the
+      // magnitude only — so "-1/-0 for each …" has to read as a minus here or
+      // the card would be described as a buff.
+      return `${value.sign === -1 ? '-' : '+'}${describeValue(value)}`;
+    }
     void other;
     return value >= 0 ? `+${value}` : String(value);
   };
@@ -77,6 +112,57 @@ function statChange(attack: SignedValueExpression, health: SignedValueExpression
 /** An amount as a phrase: a word for a printed number, a clause for a count. */
 function amountPhrase(value: ValueExpression): string {
   return valueIsFixed(value) ? numberWord(nominalValue(value)) : describeValue(value);
+}
+
+/**
+ * Notes an amount needs on top of the sentence it appears in.
+ *
+ * Only `previous_targets` has one: it words as "that many", which is exactly
+ * what the card says and is a dangling reference on its own, so the step that
+ * uses it spells out what "that" was.
+ */
+function amountNotes(value: ValueExpression): string[] {
+  return isPreviousTargetsValue(value)
+    ? ['“that many” is however many cards the step before this one acted on']
+    : [];
+}
+
+/** "…at the end of the turn" — when a delayed effect with no watch happens. */
+function delayedBoundaryClause(boundary: DelayedBoundary): string {
+  switch (boundary) {
+    case 'end_of_turn':
+      return 'at the end of the turn';
+  }
+}
+
+/** "…this turn" — how long a delayed watch stays open. */
+function delayedWindowClause(boundary: DelayedBoundary): string {
+  switch (boundary) {
+    case 'end_of_turn':
+      return ' this turn';
+  }
+}
+
+/**
+ * What to call the card a delayed clause is about.
+ *
+ * "It" for a subject chosen by the instruction before, because that is exactly
+ * the word the printed card uses and the player has just picked it. The source
+ * gets its own noun so "this unit" does not turn into an unresolvable "it" on a
+ * card that names two things.
+ */
+function delayedSubjectNoun(
+  ability: DelayedAbilityDefinition,
+  sourceNoun: string | undefined,
+): string {
+  switch (ability.subject) {
+    case 'source':
+      return sourceNoun ?? 'this card';
+    case 'previous_target':
+      return 'it';
+    case undefined:
+      return sourceNoun ?? 'this card';
+  }
 }
 
 type Renderer<T extends EffectType> = (
@@ -115,15 +201,28 @@ const RENDERERS: RendererTable = {
   },
 
   deal_damage: (effect, options) => {
-    const target = describeTarget(effect.target, options.sourceNoun);
+    const target = targetPhrase(effect.target, options);
+    // A divided total is one number split across a set, so it is worded as a
+    // division rather than as an amount each recipient takes. Reusing "deal N
+    // damage to all enemy units" would describe a card five times as strong.
+    if (effect.divided === true) {
+      return {
+        text: `divide ${amountPhrase(effect.amount)} damage among ${target} as you choose`,
+        notes: [
+          ...amountNotes(effect.amount),
+          'every point has to go somewhere legal, and a target takes its whole share as one hit',
+          'damage with nowhere to go is lost',
+        ],
+      };
+    }
     return {
       text: `deal ${amountPhrase(effect.amount)} damage to ${target}`,
-      notes: targetNotes(effect.target),
+      notes: [...amountNotes(effect.amount), ...targetNotes(effect.target)],
     };
   },
 
   heal: (effect, options) => {
-    const target = describeTarget(effect.target, options.sourceNoun);
+    const target = targetPhrase(effect.target, options);
     const isPlayerTarget = effect.target.kind === 'player' || effect.target.kind === 'players';
     return {
       text: isPlayerTarget
@@ -136,7 +235,7 @@ const RENDERERS: RendererTable = {
   },
 
   modify_stats: (effect, options) => ({
-    text: `give ${describeTarget(effect.target, options.sourceNoun)} ${statChange(
+    text: `give ${targetPhrase(effect.target, options)} ${statChange(
       effect.attack,
       effect.health,
     )} ${durationClause(effect.duration)}`,
@@ -155,7 +254,7 @@ const RENDERERS: RendererTable = {
   }),
 
   grant_keyword: (effect, options) => ({
-    text: `give ${describeTarget(effect.target, options.sourceNoun)} ${
+    text: `give ${targetPhrase(effect.target, options)} ${
       KEYWORD_REGISTRY[effect.keyword].name
     } ${durationClause(effect.duration)}`,
     notes: [
@@ -167,10 +266,7 @@ const RENDERERS: RendererTable = {
   }),
 
   remove_keyword: (effect, options) => ({
-    text: `remove ${KEYWORD_REGISTRY[effect.keyword].name} from ${describeTarget(
-      effect.target,
-      options.sourceNoun,
-    )} ${durationClause(effect.duration)}`,
+    text: `remove ${KEYWORD_REGISTRY[effect.keyword].name} from ${targetPhrase(effect.target, options)} ${durationClause(effect.duration)}`,
     notes: targetNotes(effect.target),
   }),
 
@@ -198,14 +294,14 @@ const RENDERERS: RendererTable = {
   },
 
   destroy: (effect, options) => ({
-    text: `defeat ${describeTarget(effect.target, options.sourceNoun)}, whatever ${
+    text: `defeat ${targetPhrase(effect.target, options)}, whatever ${
       targetIsPlural(effect.target) ? 'their' : 'its'
     } remaining health`,
     notes: targetNotes(effect.target),
   }),
 
   sacrifice: (effect, options) => ({
-    text: `sacrifice ${describeTarget(effect.target, options.sourceNoun)}`,
+    text: `sacrifice ${targetPhrase(effect.target, options)}`,
     notes: [
       ...targetNotes(effect.target),
       'a sacrificed unit counts as defeated as well as sacrificed',
@@ -213,7 +309,7 @@ const RENDERERS: RendererTable = {
   }),
 
   return_to_hand: (effect, options) => ({
-    text: `return ${describeTarget(effect.target, options.sourceNoun)} to ${
+    text: `return ${targetPhrase(effect.target, options)} to ${
       targetIsPlural(effect.target) ? 'their owners’ hands' : 'its owner’s hand'
     }`,
     notes: targetNotes(effect.target),
@@ -303,32 +399,110 @@ const RENDERERS: RendererTable = {
   },
 
   prevent_damage: (effect, options) => ({
-    text: `prevent the next ${amountPhrase(effect.amount)} damage dealt to ${describeTarget(
-      effect.target,
-      options.sourceNoun,
-    )} ${durationClause(effect.duration)}`,
+    text: `prevent the next ${amountPhrase(effect.amount)} damage dealt to ${targetPhrase(effect.target, options)} ${durationClause(effect.duration)}`,
     notes: [...targetNotes(effect.target), 'stacked shields are spent oldest first'],
   }),
 
   exhaust: (effect, options) => ({
-    text: `exhaust ${describeTarget(effect.target, options.sourceNoun)}`,
+    text: `exhaust ${targetPhrase(effect.target, options)}`,
     notes: targetNotes(effect.target),
   }),
 
-  ready: (effect, options) => ({
-    text: `ready ${describeTarget(effect.target, options.sourceNoun)}`,
+  skip_next_ready: (effect, options) => ({
+    text: `stop ${targetPhrase(effect.target, options)} readying during ${
+      targetIsPlural(effect.target) ? 'their' : 'its'
+    } controller’s next Ready Step`,
     notes: [
       ...targetNotes(effect.target),
-      'readying does not remove summoning sickness on its own',
+      'only the Ready Step is stopped: an effect that readies it still works',
+      'it is used up by that one Ready Step, whether or not the unit was Exhausted',
+      'a unit that leaves the battlefield first loses this entirely',
     ],
   }),
 
-  move_card: (effect, options) => ({
-    text: `move ${describeTarget(effect.target, options.sourceNoun)} to ${
-      effect.toZone === 'hand' ? 'its owner’s' : 'the'
-    } ${zoneName(effect.toZone)}`,
-    notes: targetNotes(effect.target),
+  ready: (effect, options) => ({
+    text: `ready ${targetPhrase(effect.target, options)}`,
+    notes: [...targetNotes(effect.target), 'readying does not clear Newly Deployed on its own'],
   }),
+
+  move_card: (effect, options) => {
+    const subject = targetPhrase(effect.target, options);
+    // The two destinations that are not really "a move" in a player's head get
+    // said the way the cards say them. Everything else keeps the generic
+    // wording, which is honest for a zone whose name is the whole story.
+    if (effect.toZone === 'removed') {
+      return {
+        text: `remove ${subject} from the game`,
+        notes: [
+          ...targetNotes(effect.target),
+          'a card removed from the game is gone for good: nothing may target it and no effect returns it',
+        ],
+      };
+    }
+    if (effect.toZone === 'battlefield') {
+      return {
+        text: `put ${subject} onto the battlefield${effect.entersExhausted ? ' Exhausted' : ''}`,
+        notes: [
+          ...targetNotes(effect.target),
+          // Both halves matter to a player deciding whether it is worth it, and
+          // both are engine behaviour rather than card text: an arrival is not
+          // a deployment (rule adjustment §7) and every arrival is Newly
+          // Deployed (ruleset update §9).
+          'it arrives Newly Deployed, so it cannot attack or pay an Exhaust cost until your next Ready Step',
+          'this is not a deployment: abilities that watch for a Unit entering the battlefield see it, abilities that watch for one being deployed do not',
+        ],
+      };
+    }
+    return {
+      text: `move ${subject} to ${
+        effect.toZone === 'hand' ? 'its owner’s' : 'the'
+      } ${zoneName(effect.toZone)}`,
+      notes: targetNotes(effect.target),
+    };
+  },
+
+  schedule_delayed: (effect, options) => {
+    const ability = options.delayedAbilities?.find((entry) => entry.id === effect.delayedAbilityId);
+    // Nothing to look up. Said plainly rather than guessed at: a sentence
+    // invented here would be the one thing the help layer must never produce.
+    if (!ability) {
+      return {
+        text: 'set up a delayed effect',
+        notes: ['the delayed instructions are printed on this card'],
+      };
+    }
+
+    const subjectNoun = delayedSubjectNoun(ability, options.sourceNoun);
+    const when =
+      ability.trigger === undefined
+        ? delayedBoundaryClause(ability.boundary)
+        : `when ${TRIGGER_REGISTRY[ability.trigger].event(subjectNoun)}${delayedWindowClause(
+            ability.boundary,
+          )}`;
+    const body = ability.effects
+      .map((nested) => explainEffect(nested, { ...options, subjectNoun }).text)
+      // Each nested step comes back as a finished sentence. Undo exactly what
+      // `sentence` did to it — the capital and the full stop — so the steps read
+      // as clauses hanging off the timing phrase, the way the printed card
+      // writes them, instead of "At the end of the turn, Return this unit.".
+      .map((text) => text.replace(/\.$/, ''))
+      .map((text) => (text.length > 0 ? text[0]!.toLowerCase() + text.slice(1) : text))
+      .join(', then ');
+
+    return {
+      text: `${when}, ${body}`,
+      notes: [
+        ...(ability.trigger === undefined
+          ? []
+          : ['if that never happens, the delayed effect simply ends with the turn']),
+        ...(ability.subject === undefined
+          ? []
+          : [
+              'the card it is about is fixed when this resolves; if that card moves to a different zone first, the delayed effect is dropped',
+            ]),
+      ],
+    };
+  },
 
   counter: (effect) => ({
     text:

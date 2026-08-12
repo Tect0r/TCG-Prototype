@@ -6,14 +6,15 @@ import {
   DEFAULT_RULES_CONFIG,
   legalActions,
   playerView,
+  type CardInstanceView,
   type MatchState,
   type PlayerId,
 } from '@tcg/rules-engine';
 import { unwrap } from '@tcg/shared';
 import { createPilot, PILOT_IDS } from './registry.js';
 import { scoreCandidate } from './heuristic.js';
-import { DEFAULT_WEIGHTS, effectValue } from './scoring.js';
-import { effectDefinitionSchema } from '@tcg/card-data';
+import { cardValue, DEFAULT_WEIGHTS, effectValue, unitBoardValue } from './scoring.js';
+import { CardDatabase, effectDefinitionSchema, type CardDefinition } from '@tcg/card-data';
 import { checkActionOffered } from './validate.js';
 import { decideSafely } from './run-pilot.js';
 import { botTestDatabase, driveMatch, BLUE_DECK, GREEN_DECK, RED_DECK } from './test-driver.js';
@@ -716,6 +717,225 @@ describe('the new vocabulary is priced, not ignored', () => {
     const capped = effectValue(draw({ ...goblins, maximum: 1 }), DEFAULT_WEIGHTS, database);
     const uncapped = effectValue(draw(goblins), DEFAULT_WEIGHTS, database);
     expect(capped).toBeLessThan(uncapped);
+  });
+
+  it('does not value an amount read from a statline at zero either (M02.3)', () => {
+    // Same failure mode as a count: a pilot that priced "equal to its ATK" at
+    // nothing would read Bastion Commander's whole card as blank.
+    const bolt = (amount: unknown) =>
+      effectDefinitionSchema.parse({
+        type: 'deal_damage',
+        target: { kind: 'entity', selector: { zone: 'battlefield', controller: 'opponent' } },
+        amount,
+      });
+    const derived = effectValue(bolt({ kind: 'stat', stat: 'attack' }), DEFAULT_WEIGHTS, database);
+    expect(derived).toBeGreaterThan(effectValue(bolt(0), DEFAULT_WEIGHTS, database));
+    expect(derived).toBe(effectValue(bolt(3), DEFAULT_WEIGHTS, database));
+  });
+});
+
+describe('shared choices and divided totals are priced honestly (M02.5)', () => {
+  const damage = (amount: unknown, divided?: boolean) =>
+    effectDefinitionSchema.parse({
+      type: 'deal_damage',
+      amount,
+      ...(divided === undefined ? {} : { divided }),
+      target: {
+        kind: 'entity',
+        selector: {
+          zone: 'battlefield',
+          controller: 'opponent',
+          count: 'all',
+          selection: 'player_choice',
+        },
+      },
+    });
+
+  it('does not value a previous_targets amount at zero', () => {
+    // The same failure mode as a count or a statline: priced at nothing, Mass
+    // Offering would read as a five-energy blank and be mulliganed away.
+    const derived = effectValue(
+      damage({ kind: 'previous_targets' }, true),
+      DEFAULT_WEIGHTS,
+      database,
+    );
+    expect(derived).toBeGreaterThan(effectValue(damage(0, true), DEFAULT_WEIGHTS, database));
+  });
+
+  it('prices a divided total once rather than once per target', () => {
+    // Without this a five-point split across "all enemy units" would be priced
+    // as five damage to every one of them.
+    const split = effectValue(damage(4, true), DEFAULT_WEIGHTS, database);
+    const each = effectValue(damage(4), DEFAULT_WEIGHTS, database);
+    expect(split).toBeLessThan(each);
+    expect(split).toBeGreaterThan(0);
+  });
+
+  it('does not price a symmetrical sacrifice as a pure self-cost', () => {
+    const shared = effectValue(
+      effectDefinitionSchema.parse({
+        type: 'sacrifice',
+        target: {
+          kind: 'entity',
+          selector: {
+            zone: 'battlefield',
+            controller: 'self',
+            count: 1,
+            selection: 'player_choice',
+            chooser: 'all_players',
+          },
+        },
+      }),
+      DEFAULT_WEIGHTS,
+      database,
+    );
+    const ownOnly = effectValue(
+      effectDefinitionSchema.parse({
+        type: 'sacrifice',
+        target: {
+          kind: 'entity',
+          selector: { zone: 'battlefield', controller: 'self', count: 1 },
+        },
+      }),
+      DEFAULT_WEIGHTS,
+      database,
+    );
+
+    expect(ownOnly).toBeLessThan(0);
+    expect(shared).toBeGreaterThan(0);
+  });
+
+  it('leaves Equal Price worth holding rather than worth mulliganing', () => {
+    expect(
+      cardValue(database.getOrThrow('equal_price'), DEFAULT_WEIGHTS, database),
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe('a derived cost reduction is priced as energy, not as a buff (M02.3)', () => {
+  /**
+   * `cardValue` used to price every continuous ability as `buffValue × 2` — the
+   * same as a lord's aura. A `cost_reduction` is not board presence: it is
+   * energy, it is worth more the more of it there is, and it is worth nothing at
+   * all once the card is already on the battlefield.
+   */
+  const abomination = database.getOrThrow('stitched_abomination');
+
+  it('prices the discount into the card a pilot is holding', () => {
+    const withDiscount = cardValue(abomination, DEFAULT_WEIGHTS, database);
+    const withoutDiscount = cardValue(
+      { ...abomination, staticAbilities: [] },
+      DEFAULT_WEIGHTS,
+      database,
+    );
+    expect(withDiscount).toBeGreaterThan(withoutDiscount);
+  });
+
+  it('scales with how much the discount is worth', () => {
+    const bigger = cardValue(
+      {
+        ...abomination,
+        staticAbilities: abomination.staticAbilities.map((ability) => ({
+          ...ability,
+          effect: { type: 'cost_reduction' as const, amount: 4, minimum: 0 },
+        })),
+      },
+      DEFAULT_WEIGHTS,
+      database,
+    );
+    expect(bigger).toBeGreaterThan(cardValue(abomination, DEFAULT_WEIGHTS, database));
+  });
+
+  it('is worth nothing to a unit already standing on the battlefield', () => {
+    const unit: CardInstanceView = {
+      instanceId: 'inst_x',
+      definitionId: abomination.id,
+      owner: 'player_1',
+      controller: 'player_1',
+      zone: 'battlefield',
+      attack: abomination.attack ?? 0,
+      health: abomination.health ?? 0,
+      markedDamage: 0,
+      exhausted: false,
+      summoningSick: false,
+      keywords: [...abomination.keywords],
+      isToken: false,
+      willNotReady: false,
+      energyCost: null,
+    };
+
+    const stripped = new CardDatabase([
+      ...database.all().filter((card) => card.id !== abomination.id),
+      { ...abomination, staticAbilities: [] },
+    ]);
+    expect(unitBoardValue(unit, DEFAULT_WEIGHTS, database)).toBe(
+      unitBoardValue(unit, DEFAULT_WEIGHTS, stripped),
+    );
+  });
+});
+
+describe('a replacement is priced as what it replaces (M02.4)', () => {
+  /**
+   * Two different cards wear the `replace_arrival` shape and they are worth
+   * opposite things: rewriting an *opponent's* arrival to be Exhausted is tempo
+   * denial, while handing your own arrivals a keyword is a buff. A pilot that
+   * priced both as "a static ability" would happily trade one for the other.
+   */
+  const containment = database.getOrThrow('containment_array');
+  const warhorn = database.getOrThrow('goblin_warhorn_captain');
+  const anchor = database.getOrThrow('temporal_anchor');
+
+  const stripped = (card: CardDefinition) => ({ ...card, staticAbilities: [] });
+
+  it('prices denial and a granted keyword above the same card without them', () => {
+    for (const card of [containment, warhorn, anchor]) {
+      expect(cardValue(card, DEFAULT_WEIGHTS, database)).toBeGreaterThan(
+        cardValue(stripped(card), DEFAULT_WEIGHTS, database),
+      );
+    }
+  });
+
+  it('treats an arrival rewrite aimed at your own units as a drawback', () => {
+    const selfHarming = {
+      ...containment,
+      staticAbilities: containment.staticAbilities.map((ability) => ({
+        ...ability,
+        affects: { ...ability.affects, controller: 'self' as const },
+      })),
+    };
+    expect(cardValue(selfHarming, DEFAULT_WEIGHTS, database)).toBeLessThan(
+      cardValue(stripped(containment), DEFAULT_WEIGHTS, database),
+    );
+  });
+
+  it('discounts a once-a-turn arrival rewrite against an unlimited one', () => {
+    const unlimited = {
+      ...containment,
+      staticAbilities: containment.staticAbilities.map((ability) => ({
+        ...ability,
+        effect: { ...ability.effect, limit: 'unlimited' as const },
+      })),
+    };
+    expect(cardValue(unlimited, DEFAULT_WEIGHTS, database)).toBeGreaterThan(
+      cardValue(containment, DEFAULT_WEIGHTS, database),
+    );
+  });
+
+  it('takes the price of a paid readiness replacement off its value', () => {
+    const free = {
+      ...anchor,
+      staticAbilities: anchor.staticAbilities.map((ability) => ({
+        ...ability,
+        effect: {
+          type: 'replace_ready' as const,
+          energyCost: 0,
+          limit: 'first_each_turn' as const,
+        },
+      })),
+    };
+    expect(cardValue(free, DEFAULT_WEIGHTS, database)).toBeGreaterThan(
+      cardValue(anchor, DEFAULT_WEIGHTS, database),
+    );
   });
 });
 

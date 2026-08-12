@@ -14,7 +14,34 @@
     "identity": "Swarm Unit — Payoff",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
-  "displayText": "Goblin Tokens you create during your turn have Rush until the end of that turn."
+  "displayText": "Goblin Tokens you create during your turn have Rush until the end of that turn.",
+  "staticAbilities": [
+    {
+      "id": "warhorn_call",
+      "activeZone": "battlefield",
+      "affects": {
+        "zone": "battlefield",
+        "controller": "self",
+        "filter": {
+          "cardTypes": ["token"],
+          "tags": ["goblin"]
+        }
+      },
+      "effect": {
+        "type": "replace_arrival",
+        "on": "entered_battlefield",
+        "onlyOnControllerTurn": true,
+        "grantKeyword": "rush",
+        "grantDuration": "end_of_turn"
+      }
+    }
+  ],
+  "text": {
+    "notes": [
+      "Rush is handed out as part of the Token arriving, so a Token created during your Main Phase can attack the same turn.",
+      "A Token is only ever put onto the battlefield by being created, so every Goblin Token that arrives on your turn is one you created.",
+      "Tokens created on somebody else's turn get nothing, and Rush lasts only until the end of the turn it was granted on.",
+      "This Captain has to already be on the battlefield: its own arrival cannot rewrite itself, and Tokens created before it landed keep whatever they arrived with."
+    ]
+  }
 }

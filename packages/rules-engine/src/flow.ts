@@ -1,5 +1,6 @@
 import { emit, type MatchContext } from './context.js';
 import { clearCombat, resolveCombat } from './combat.js';
+import { reachDelayedBoundary } from './delayed.js';
 import {
   findInstance,
   instanceOf,
@@ -11,10 +12,17 @@ import {
 import { nextChoiceId } from './effects.js';
 import { pumpQueue, settle } from './queue.js';
 import { openReactionWindow, resumeReactionWindow } from './reactions.js';
+import {
+  consumeReadySkip,
+  readyReplacementOffers,
+  readyStepCandidates,
+  takeReadyReplacement,
+} from './replacement.js';
 import { shuffleDeck } from './zones.js';
 import { drawOne } from './zones.js';
 import { freshTurnEvents } from './schema/state.js';
-import type { MatchPhase, PlayerId } from './schema/primitives.js';
+import type { Continuation } from './schema/choice.js';
+import type { InstanceId, MatchPhase, PlayerId } from './schema/primitives.js';
 
 /**
  * Turn and phase machine. Every transition happens here and is observable in the
@@ -27,6 +35,18 @@ export function setPhase(ctx: MatchContext, to: MatchPhase): void {
   const before = ctx.events.length;
   ctx.state.phase = to;
   emit(ctx, { type: 'phase_changed', from, to });
+
+  // The end-of-turn boundary is the transition itself, not the later
+  // `performTurnEnd` bookkeeping: by the time that runs, `advance` has already
+  // drained the queue and is about to hand the turn to the next player, so
+  // anything queued there would resolve on somebody else's turn (M02.1).
+  //
+  // Queued *before* `settle`, which is what discovers the `on_turn_end`
+  // abilities of this same transition — so a promise made earlier in the turn
+  // resolves ahead of an ability that only now noticed the turn ending. Both
+  // orders are defensible; this one is fixed, documented and deterministic.
+  if (to === 'turn_end') reachDelayedBoundary(ctx, 'end_of_turn');
+
   // `on_turn_end` triggers hang off the transition into `turn_end`.
   settle(ctx, before);
 }
@@ -93,11 +113,150 @@ export function beginTurn(ctx: MatchContext, playerId: PlayerId, turn: number): 
   // opponents' turns and clears when its controller's own turn begins
   // (ADR 0016 Q-B). Relics are included because a Commander or relic can carry
   // the state too.
+  //
+  // Cleared for every permanent, including one a replacement is about to keep
+  // Exhausted. `Newly Deployed` ends *at* the Ready Step, not because the unit
+  // readied — the two are separate facts, and a unit held down by Stasis is no
+  // longer newly deployed either way.
   for (const instanceId of [...player.units, ...player.relics]) {
     const instance = findInstance(ctx.state, instanceId);
     if (!instance) continue;
     instance.newlyDeployed = false;
-    if (!instance.exhausted) continue;
+  }
+
+  runReadyStep(ctx, [], []);
+}
+
+/**
+ * The Ready Step itself, and the one part of turn start that can pause (M02.4).
+ *
+ * Three stages, in a fixed order:
+ *
+ *  1. **Stored preventions.** A `skip_next_ready` already sitting on a permanent
+ *     is consumed. Free, and already committed by the card that applied it.
+ *  2. **Standing replacements.** Each active `replace_ready` on any board is
+ *     offered, in the engine's deterministic replacement order, and one that
+ *     costs Energy pauses for its controller's answer.
+ *  3. **Readying.** Everything not kept Exhausted becomes Ready.
+ *
+ * Stage 1 runs before stage 2 deliberately, and it is a gameplay decision rather
+ * than an implementation detail: a unit already held down for free is not
+ * offered to a replacement that would charge for the same outcome, so nobody is
+ * ever asked to pay for a no-op.
+ *
+ * `keptExhausted` and `askedSourceIds` are the whole of the resumable state.
+ * They are carried through the pending choice rather than recomputed, because
+ * stage 1 is destructive — a consumed `skip_next_ready` is gone, so re-running
+ * stage 1 after a pause would find nothing and ready a unit that is meant to
+ * stay down.
+ */
+function runReadyStep(
+  ctx: MatchContext,
+  keptExhausted: readonly InstanceId[],
+  askedSourceIds: readonly InstanceId[],
+): void {
+  const playerId = ctx.state.activePlayerId;
+  const kept = [...keptExhausted];
+  const asked = [...askedSourceIds];
+
+  for (const instanceId of readyStepCandidates(ctx, playerId)) {
+    const instance = findInstance(ctx.state, instanceId);
+    if (!instance) continue;
+    if (consumeReadySkip(ctx, instance) && !kept.includes(instanceId)) kept.push(instanceId);
+  }
+
+  // Bounded by the number of replacement sources on the board: every pass either
+  // asks a source that is then recorded in `asked` and never revisited, or ends.
+  for (;;) {
+    const offer = readyReplacementOffers(ctx, playerId, kept).find(
+      (entry) => !asked.includes(entry.sourceInstanceId),
+    );
+    if (offer === undefined) break;
+    asked.push(offer.sourceInstanceId);
+
+    // A replacement with no cost is not a decision, so nothing is asked. It
+    // applies to as many permanents as its limit allows: every one in scope when
+    // it is `unlimited`, the first when it is "the first each turn".
+    if (offer.energyCost === 0) {
+      for (const instanceId of offer.candidateIds) {
+        if (!takeReadyReplacement(ctx, offer, instanceId)) continue;
+        kept.push(instanceId);
+        if (offer.limit === 'first_each_turn') break;
+      }
+      continue;
+    }
+
+    ctx.state.pendingChoice = {
+      id: nextChoiceId(ctx),
+      playerId: offer.controllerId,
+      type: 'select_units',
+      reason: 'keep_exhausted',
+      zone: 'battlefield',
+      minimum: 0,
+      maximum: 1,
+      validEntityIds: [...offer.candidateIds],
+      ordered: false,
+      sourceInstanceId: offer.sourceInstanceId,
+      continuation: {
+        kind: 'ready_step_replacement',
+        playerId,
+        sourceInstanceId: offer.sourceInstanceId,
+        askedSourceIds: asked,
+        keptExhaustedIds: kept,
+      },
+    };
+    ctx.state.status = 'waiting_for_choice';
+    emit(ctx, {
+      type: 'choice_requested',
+      choiceId: ctx.state.pendingChoice.id,
+      playerId: offer.controllerId,
+      choiceType: 'select_units',
+      reason: 'keep_exhausted',
+      minimum: 0,
+      maximum: 1,
+      validEntityIds: [...offer.candidateIds],
+    });
+    return;
+  }
+
+  finishReadyStep(ctx, kept);
+}
+
+/**
+ * Answers one `replace_ready` offer and carries the Ready Step on.
+ *
+ * The offer is rebuilt from the current board rather than trusted from the
+ * choice: a paused match may have been serialised, stored and reloaded, and the
+ * engine re-derives legality for every answer it accepts (CLAUDE.md §9). An
+ * answer that no longer validates simply does not apply, and the unit readies.
+ */
+export function resumeReadyStepReplacement(
+  ctx: MatchContext,
+  continuation: Extract<Continuation, { kind: 'ready_step_replacement' }>,
+  selectedIds: readonly InstanceId[],
+): void {
+  const kept = [...continuation.keptExhaustedIds];
+  const offer = readyReplacementOffers(ctx, continuation.playerId, kept).find(
+    (entry) => entry.sourceInstanceId === continuation.sourceInstanceId,
+  );
+
+  const chosen = selectedIds[0];
+  if (offer !== undefined && chosen !== undefined && takeReadyReplacement(ctx, offer, chosen)) {
+    kept.push(chosen);
+  }
+
+  runReadyStep(ctx, kept, continuation.askedSourceIds);
+}
+
+/** Readies everything the replacement layer did not keep down, then starts the turn. */
+function finishReadyStep(ctx: MatchContext, keptExhausted: readonly InstanceId[]): void {
+  const playerId = ctx.state.activePlayerId;
+  const player = playerOf(ctx.state, playerId);
+
+  for (const instanceId of [...player.units, ...player.relics]) {
+    if (keptExhausted.includes(instanceId)) continue;
+    const instance = findInstance(ctx.state, instanceId);
+    if (!instance || !instance.exhausted) continue;
     instance.exhausted = false;
     emit(ctx, { type: 'unit_readied', instanceId });
   }
@@ -115,7 +274,7 @@ export function beginTurn(ctx: MatchContext, playerId: PlayerId, turn: number): 
   });
 
   const before = ctx.events.length;
-  emit(ctx, { type: 'turn_started', playerId, turn });
+  emit(ctx, { type: 'turn_started', playerId, turn: ctx.state.turn });
   settle(ctx, before);
 }
 

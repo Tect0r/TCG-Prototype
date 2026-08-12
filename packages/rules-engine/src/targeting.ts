@@ -1,5 +1,5 @@
 import type { PlayerSelector, TargetDefinition, TargetSelector } from '@tcg/card-data';
-import type { MatchContext } from './context.js';
+import type { MatchContext, ReadContext } from './context.js';
 import {
   clockwiseFrom,
   definitionOf,
@@ -21,7 +21,7 @@ import type { InstanceId, PlayerId } from './schema/primitives.js';
  * four different places.
  */
 export function combatRoleOf(
-  ctx: MatchContext,
+  ctx: ReadContext,
   instanceId: InstanceId,
 ): { attacking: boolean; blocking: boolean } {
   return {
@@ -155,6 +155,22 @@ export function legalTargets(
       : undefined;
     return source ? [source.instanceId] : [];
   }
+
+  if (target.kind === 'blocked_by_source') {
+    // Read from the public block assignments at the moment the instruction
+    // resolves. Outside a combat the source blocked in, the list is empty and
+    // the instruction fizzles rather than inventing a target (M02.4).
+    if (scope.sourceInstanceId === null || scope.sourceInstanceId === undefined) return [];
+    const sourceId = scope.sourceInstanceId;
+    return ctx.state.combat.blocks
+      .filter((block) => block.blockerInstanceId === sourceId)
+      .map((block) => block.attackerInstanceId)
+      .filter((attackerId) => findInstance(ctx.state, attackerId)?.zone === 'battlefield');
+  }
+
+  // `previous_target` is not a query over the board: it is a record of what the
+  // step before resolved with, which only the executing instruction knows. It is
+  // answered in `resolveTargets` and never reaches this function.
   if (target.kind !== 'entity') return [];
 
   const selector = target.selector;

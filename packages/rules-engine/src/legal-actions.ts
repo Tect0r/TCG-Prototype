@@ -5,7 +5,6 @@ import { createContext, type MatchContext } from './context.js';
 import {
   commanderDeployCost,
   definitionOf,
-  energyCostOf,
   findInstance,
   hasKeyword,
   isNewlyDeployed,
@@ -14,6 +13,7 @@ import {
   matchesCardFilter,
   playerOf,
 } from './derive.js';
+import { playCostOf } from './costs.js';
 import { spellHasLegalTargets } from './engine.js';
 import { playableReactions } from './reactions.js';
 import { reactionWindowSchema } from '@tcg/card-data';
@@ -212,7 +212,7 @@ export function legalActions(
       if (definition.type !== 'unit' && definition.type !== 'spell' && definition.type !== 'relic')
         continue;
 
-      const cost = energyCostOf(player, definition);
+      const cost = playCostOf(ctx, playerId, instance, definition);
       if (cost > player.energy) continue;
       // A relic at the limit is playable: it replaces the current one rather
       // than being refused (ruleset update §12). Only a format that allows no
@@ -421,6 +421,20 @@ export function enumerateActions(
         choiceId: choice.id,
         selectedIds: [...choice.validEntityIds],
       });
+    } else if (choice.type === 'divide_damage') {
+      // An allocation needs one entry per point, so the slice below would be
+      // short whenever there is more damage than there are targets. Everything
+      // on the first legal target is the one answer that is always valid
+      // (M02.5).
+      const first = choice.validEntityIds[0];
+      if (first !== undefined) {
+        actions.push({
+          type: 'submit_choice',
+          playerId,
+          choiceId: choice.id,
+          selectedIds: Array.from({ length: choice.minimum }, () => first),
+        });
+      }
     } else {
       actions.push({
         type: 'submit_choice',

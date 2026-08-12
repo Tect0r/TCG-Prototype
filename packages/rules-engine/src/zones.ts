@@ -1,6 +1,7 @@
 import type { CardId, ZoneId } from '@tcg/card-data';
 import { emit, type MatchContext } from './context.js';
 import { instanceOf, playerOf } from './derive.js';
+import { applyArrivalReplacements, type ArrivalMethod } from './replacement.js';
 import { shuffle } from './rng.js';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
 import type { CardInstance } from './schema/state.js';
@@ -45,6 +46,7 @@ export function createInstance(
     newlyDeployed: zone === 'battlefield',
     survivedAsBlocker: false,
     barrierSpent: false,
+    readySkip: null,
     statModifiers: [],
     grantedKeywords: [],
     removedKeywords: [],
@@ -83,6 +85,10 @@ function detach(ctx: MatchContext, instance: CardInstance): void {
 function resetPermanentState(instance: CardInstance): void {
   instance.markedDamage = 0;
   instance.exhausted = false;
+  // A pending "does not Ready next Ready Step" is shed with everything else: a
+  // card that has left play is no longer the permanent the clause named, exactly
+  // as a delayed effect stops watching a subject that changes zone (M02.4).
+  instance.readySkip = null;
   instance.statModifiers = [];
   instance.grantedKeywords = [];
   instance.removedKeywords = [];
@@ -109,13 +115,32 @@ export interface MoveOptions {
   /**
    * How a card arriving on the battlefield got there (rule adjustment §7).
    *
-   * `suppress` is for callers that emit the entry event themselves because they
-   * have to order it after something else — a deployment emits `unit_deployed`
-   * first, and the move happens before that. Everything else defaults to
-   * `effect`, which is the honest answer for "an effect put it there": it is an
-   * arrival, but it is not a deployment and must not be reported as one.
+   * Always the honest method, including for the callers that announce the
+   * arrival themselves — see `announceEntry`. It used to double as the "do not
+   * announce" switch, which meant a deployment reached the replacement layer
+   * indistinguishable from an effect putting a card into play (M02.4).
+   *
+   * Defaults to `effect`, the honest answer for "an effect put it there": it is
+   * an arrival, but it is not a deployment and must not be reported as one.
    */
-  readonly entry?: 'deployed' | 'returned' | 'effect' | 'suppress';
+  readonly entry?: ArrivalMethod;
+  /**
+   * Whether this call emits `unit_entered_battlefield` itself.
+   *
+   * False for callers that have to order the arrival event after something else
+   * — a deployment emits `unit_deployed` first, and the move happens before
+   * that. It suppresses only the *event*; the arrival is still a real arrival
+   * and is still put through the replacement layer.
+   */
+  readonly announceEntry?: boolean;
+  /**
+   * Whether a permanent arriving on the battlefield arrives Exhausted (M02.2).
+   *
+   * Ignored for every other destination: readiness is a property of a permanent
+   * in play, and a card in a hand, a deck, a discard pile or out of the game has
+   * none. The card schema refuses to author it anywhere else.
+   */
+  readonly exhausted?: boolean;
 }
 
 /** The battlefield list a definition belongs in, when the caller did not say. */
@@ -169,7 +194,15 @@ export function moveToZone(
   instance.newlyDeployed = toZone === 'battlefield';
   // A unit that leaves play and comes back is a fresh object as far as Barrier
   // is concerned; a spent Barrier must not follow it into the next life.
-  if (toZone === 'battlefield') instance.barrierSpent = false;
+  if (toZone === 'battlefield') {
+    instance.barrierSpent = false;
+    // Readiness on arrival is decided here and nowhere else, so a permanent's
+    // state does not depend on which zone it came from: it arrives Ready unless
+    // the effect that put it there says otherwise ("… to the battlefield
+    // Exhausted"). Set as part of the arrival rather than by a following
+    // instruction, so nothing ever observes the unit Ready in between.
+    instance.exhausted = options.exhausted ?? false;
+  }
 
   if (toZone === 'battlefield') {
     const controller = playerOf(ctx.state, instance.controller);
@@ -196,10 +229,19 @@ export function moveToZone(
     });
   }
 
+  // The replacement layer rewrites the arrival *before* it is announced, so a
+  // unit a Relic says arrives Exhausted is already Exhausted by the time any
+  // trigger, state-based check or seat view sees it land (M02.4). Run for every
+  // caller, announcing or not: a deployment is the arrival a replacement most
+  // often cares about.
+  if (toZone === 'battlefield' && fromZone !== 'battlefield') {
+    applyArrivalReplacements(ctx, instanceId, options.entry ?? 'effect');
+  }
+
   // Every arrival on a battlefield is reported, whatever put it there. A
   // revival emits only this; a deployment emits `unit_deployed` first and
   // suppresses this so it can control the order.
-  if (toZone === 'battlefield' && fromZone !== 'battlefield' && options.entry !== 'suppress') {
+  if (toZone === 'battlefield' && fromZone !== 'battlefield' && options.announceEntry !== false) {
     emit(ctx, {
       type: 'unit_entered_battlefield',
       playerId: instance.controller,

@@ -12,6 +12,8 @@ import { experimentPaths } from './reporting/sinks.js';
  *
  * ```bash
  * npm run simulate -- --config experiments/smoke.json
+ * npm run simulate -- --config experiments/precon-smoke.json
+ * npm run simulate -- --config experiments/precon-matrix.json
  * npm run simulate -- --config experiments/batch.json --workers 8
  * npm run simulate -- --config experiments/abuse-search.json
  * npm run simulate -- --config experiments/replacement.json
@@ -58,6 +60,7 @@ interface CliArgs {
   readonly players: number;
   readonly precons: readonly string[] | null;
   readonly pilots: readonly string[] | null;
+  readonly allowIncompleteCards: boolean;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -73,6 +76,7 @@ function parseArgs(argv: readonly string[]): CliArgs {
   let players = 4;
   let precons: string[] | null = null;
   let pilots: string[] | null = null;
+  let allowIncompleteCards = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -116,6 +120,9 @@ function parseArgs(argv: readonly string[]): CliArgs {
       case '--pilots':
         pilots = (argv[++index] ?? '').split(',').filter(Boolean);
         break;
+      case '--allow-incomplete-cards':
+        allowIncompleteCards = true;
+        break;
       case '--help':
       case '-h':
         printUsage();
@@ -146,6 +153,9 @@ function parseArgs(argv: readonly string[]): CliArgs {
   if (workers !== null && (!Number.isFinite(workers) || workers < 1)) {
     throw new Error('--workers must be a positive integer.');
   }
+  if (allowIncompleteCards && !spectate) {
+    throw new Error('--allow-incomplete-cards only applies to --spectate.');
+  }
 
   return {
     config,
@@ -160,6 +170,7 @@ function parseArgs(argv: readonly string[]): CliArgs {
     players,
     precons,
     pilots,
+    allowIncompleteCards,
   };
 }
 
@@ -184,6 +195,10 @@ function printUsage(): void {
       '      --players <n>     Seats for --spectate: 2, 3 or 4. Default 4.',
       '      --precons <list>  Comma-separated precon IDs, one per seat.',
       '      --pilots <list>   Comma-separated pilot IDs, one per seat.',
+      '      --allow-incomplete-cards',
+      '                        Developer override: run precons that still contain cards',
+      '                        that are not implemented yet. Every result the run produces',
+      '                        is marked invalid, in the replay and in its telemetry.',
       '  -h, --help            Show this message.',
     ].join('\n'),
   );
@@ -205,6 +220,7 @@ async function main(): Promise<void> {
       players: args.players,
       ...(args.precons ? { precons: args.precons } : {}),
       ...(args.pilots ? { pilots: args.pilots as never } : {}),
+      ...(args.allowIncompleteCards ? { allowIncompleteCards: true } : {}),
       output: args.output,
     });
     console.log(result.summary);
@@ -277,9 +293,18 @@ replay written to ${result.outputPath}`);
   console.log(
     `flags:       ${outcome.flags.filter((flag) => flag.level === 'review_recommended').length} review_recommended, ${outcome.flags.filter((flag) => flag.level === 'possible_interaction').length} possible_interaction`,
   );
+  if (outcome.matchupMatrix) {
+    const matrix = outcome.matchupMatrix;
+    console.log(
+      `matrix:      ${matrix.playedCells}/${matrix.expectedCells} ordered pairs, ` +
+        `${matrix.cleanGames}/${matrix.games} games clean` +
+        (matrix.complete ? '' : ' — INCOMPLETE'),
+    );
+  }
   console.log(`elapsed:     ${formatDuration(outcome.elapsedMs)}`);
   console.log('');
   console.log(`report:      ${paths.report}`);
+  if (outcome.matchupMatrix) console.log(`matchup matrix: ${paths.matchupMatrix}`);
   console.log(`raw records: ${paths.matches}`);
 }
 

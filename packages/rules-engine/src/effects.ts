@@ -1,11 +1,12 @@
-import type {
-  EffectDefinition,
-  PlayerSelector,
-  SignedValueExpression,
-  TargetDefinition,
-  TargetSelector,
-  ValueExpression,
-  ZoneId,
+import {
+  isDistributedSelection,
+  type EffectDefinition,
+  type PlayerSelector,
+  type SignedValueExpression,
+  type TargetDefinition,
+  type TargetSelector,
+  type ValueExpression,
+  type ZoneId,
 } from '@tcg/card-data';
 import { emit, type MatchContext } from './context.js';
 import { addDamageShield, damagePlayer, damageUnit, healPlayer, healUnit } from './damage.js';
@@ -27,6 +28,8 @@ import {
   type TargetScope,
 } from './targeting.js';
 import { counterTarget } from './reactions.js';
+import { applyArrivalReplacements, applyReadySkip } from './replacement.js';
+import { scheduleDelayed } from './delayed.js';
 import { enqueue } from './triggers.js';
 import { evaluateCondition, evaluateSignedValue, evaluateValue } from './values.js';
 import { createInstance, discardCard, drawCards, moveToZone, shuffleDeck } from './zones.js';
@@ -127,6 +130,18 @@ function perPlayerKey(effectIndex: number, playerId: PlayerId): string {
   return `${effectIndex}:${playerId}`;
 }
 
+/**
+ * Selection key for one seat's share of an each-player choice (M02.5).
+ *
+ * Its own namespace rather than `perPlayerKey`'s, because the two answer
+ * different questions about the same instruction — "what did you discard" and
+ * "which of your units did you name" — and a future card that did both would
+ * otherwise file them on top of each other.
+ */
+function perChooserKey(effectIndex: number, playerId: PlayerId): string {
+  return `${effectIndex}:by:${playerId}`;
+}
+
 type PlayerResolution =
   | { readonly kind: 'players'; readonly ids: PlayerId[] }
   | { readonly kind: 'choice'; readonly choice: PendingChoice };
@@ -144,8 +159,14 @@ function resolveEffectPlayers(
   item: ResolutionItem,
   effectIndex: number,
   selector: PlayerSelector,
+  /**
+   * Namespace for the stored answer. One instruction can resolve two different
+   * player selectors — the recipients of a `discard`, and the seats a
+   * distributed target selector asks — so they may not share a key.
+   */
+  keySuffix: 'player' | 'chooser' = 'player',
 ): PlayerResolution {
-  const key = `${effectIndex}:player`;
+  const key = `${effectIndex}:${keySuffix}`;
   const stored = item.selections[key];
   if (stored !== undefined) {
     return { kind: 'players', ids: stored.filter((id) => ctx.state.players[id] !== undefined) };
@@ -178,6 +199,76 @@ function resolveEffectPlayers(
 function chooserFor(ctx: MatchContext, selector: TargetSelector, controllerId: PlayerId): PlayerId {
   const players = resolvePlayerSelector(ctx, selector.chooser, controllerId);
   return players?.[0] ?? controllerId;
+}
+
+/**
+ * "**Each player** chooses …" — one selection made by several seats (M02.5).
+ *
+ * Three properties hold, and each of them is a rule rather than an
+ * implementation detail:
+ *
+ *  - **Nothing is applied until every answer is in.** The function only ever
+ *    returns targets once the last seat has answered, so a seat asked later
+ *    decides against exactly the board the first seat saw. Resolving the
+ *    selections one at a time would hand every seat after the first information
+ *    the card never granted them, which is what M02.5 forbids.
+ *  - **Each seat's legal set is computed from its own point of view.** That is
+ *    the whole of "one Unit **they** control": the selector's `controller` is
+ *    read relative to the seat being asked. With the default `self` chooser the
+ *    seat being asked *is* the ability's controller, so nothing else changes.
+ *  - **The order is the selector's own.** `all_players` is the controller then
+ *    clockwise and `each_opponent` is clockwise, which is the ordering every
+ *    other multi-seat effect already uses. It fixes both who is asked first and
+ *    the order the collected targets are then acted on.
+ *
+ * A seat with no legal option is not asked and contributes nothing; a seat
+ * eliminated before the collection finishes drops out of the selector and takes
+ * its stored answer with it. An answer that has stopped being legal by the time
+ * the last seat replies is dropped on the same re-validation every other stored
+ * selection goes through.
+ */
+function resolveDistributed(
+  ctx: MatchContext,
+  item: ResolutionItem,
+  effectIndex: number,
+  target: Extract<TargetDefinition, { kind: 'entity' }>,
+  scope: TargetScope,
+): TargetResolution {
+  const selector = target.selector;
+  const resolved = resolveEffectPlayers(ctx, item, effectIndex, selector.chooser, 'chooser');
+  if (resolved.kind === 'choice') return { kind: 'choice', choice: resolved.choice };
+
+  const collected: InstanceId[] = [];
+  for (const chooserId of resolved.ids) {
+    const chooserKey = perChooserKey(effectIndex, chooserId);
+    const own = legalTargets(ctx, target, { ...scope, controllerId: chooserId });
+    const answer = item.selections[chooserKey];
+    if (answer !== undefined) {
+      collected.push(...answer.filter((id) => own.includes(id)));
+      continue;
+    }
+    if (own.length === 0) {
+      // Nothing to name is not a refusal and not a failure: the seat simply has
+      // no share in this instruction, and everyone else still answers.
+      item.selections[chooserKey] = [];
+      continue;
+    }
+    const wanted = requestedCount(selector, own.length);
+    return {
+      kind: 'choice',
+      choice: buildChoice(ctx, item, effectIndex, {
+        playerId: chooserId,
+        type: selector.zone === 'battlefield' ? 'select_units' : 'select_cards',
+        reason: 'each_player_choice',
+        zone: selector.zone,
+        minimum: selector.optional ? 0 : wanted,
+        maximum: wanted,
+        validEntityIds: own,
+        selectionKey: chooserKey,
+      }),
+    };
+  }
+  return { kind: 'entities', ids: collected };
 }
 
 type TargetResolution =
@@ -225,8 +316,33 @@ function resolveTargets(
     };
   }
 
-  const candidates = legalTargets(ctx, target, scopeOf(item));
+  // "It", meaning whatever the step before this one acted on. Resolved here
+  // rather than in `legalTargets` because only this function knows which step is
+  // being executed, and the answer is a record on the item rather than a query
+  // over the board (M02.4).
+  const candidates =
+    target.kind === 'previous_target'
+      ? (item.selections[targetsKey(effectIndex - 1)] ?? []).filter(
+          (id) => findInstance(ctx.state, id)?.zone === 'battlefield',
+        )
+      : legalTargets(ctx, target, scopeOf(item));
   const stored = item.selections[String(effectIndex)];
+  /**
+   * Files the instances an instruction actually acted on, so the instruction
+   * after it can point at the same ones.
+   *
+   * This is what `previous_target` on a delayed ability reads — the "it" in
+   * "Target friendly Unit gains +3 ATK. When **it** is defeated …" — and it is
+   * kept in `selections` rather than in a new field for the reason `selections`
+   * exists at all: it is the per-step, serializable, replay-safe record of what
+   * this item resolved with, and a paused item has to resume with the same
+   * answer after a JSON round trip. A derived key rather than an authored one,
+   * under a namespace nothing else uses.
+   */
+  const remember = (ids: readonly InstanceId[]): InstanceId[] => {
+    item.selections[targetsKey(effectIndex)] = [...ids];
+    return [...ids];
+  };
   // A Token-group target reaches every Token sharing the chosen one's
   // definition and controller. Expanded here, after the choice, because the
   // group is a consequence of naming one Token rather than a wider option set
@@ -235,15 +351,39 @@ function resolveTargets(
     target.kind === 'entity' ? expandTokenGroup(ctx, target.selector, ids) : [...ids];
 
   if (stored !== undefined) {
-    return { kind: 'entities', ids: group(stored.filter((id) => candidates.includes(id))) };
+    return {
+      kind: 'entities',
+      ids: remember(group(stored.filter((id) => candidates.includes(id)))),
+    };
   }
-  if (target.kind === 'source' || target.kind === 'trigger_subject') {
-    return candidates.length > 0 ? { kind: 'entities', ids: candidates } : { kind: 'fizzle' };
+  if (
+    target.kind === 'source' ||
+    target.kind === 'trigger_subject' ||
+    // "Units blocked by this Unit" names a set the combat already decided;
+    // there is nothing for a player to choose, and every member is affected.
+    target.kind === 'blocked_by_source' ||
+    // "It" was chosen one step ago. Asking again is the bug this exists to fix.
+    target.kind === 'previous_target'
+  ) {
+    return candidates.length > 0
+      ? { kind: 'entities', ids: remember(candidates) }
+      : { kind: 'fizzle' };
   }
 
   const selector = target.selector;
+
+  // "Each player chooses …". Handled before the legal set above is consulted at
+  // all, because that set was computed from the controller's point of view and
+  // a distributed selection has as many points of view as it has seats.
+  if (isDistributedSelection(selector)) {
+    const distributed = resolveDistributed(ctx, item, effectIndex, target, scopeOf(item));
+    return distributed.kind === 'entities'
+      ? { kind: 'entities', ids: remember(group(distributed.ids)) }
+      : distributed;
+  }
+
   if (candidates.length === 0) {
-    return selector.optional ? { kind: 'entities', ids: [] } : { kind: 'fizzle' };
+    return selector.optional ? { kind: 'entities', ids: remember([]) } : { kind: 'fizzle' };
   }
 
   if (selector.selection === 'player_choice') {
@@ -262,7 +402,90 @@ function resolveTargets(
     };
   }
 
-  return { kind: 'entities', ids: group(autoSelect(ctx, selector, candidates)) };
+  return { kind: 'entities', ids: remember(group(autoSelect(ctx, selector, candidates))) };
+}
+
+/** Selection key under which one instruction's resolved entity targets are filed. */
+function targetsKey(effectIndex: number): string {
+  return `${effectIndex}:targets`;
+}
+
+/** Whether a source's damage is lethal regardless of amount (Venom). */
+function damageIsLethal(ctx: MatchContext, sourceInstanceId: InstanceId | null): boolean {
+  const source = sourceInstanceId ? findInstance(ctx.state, sourceInstanceId) : undefined;
+  return source !== undefined && hasKeyword(source, definitionOf(ctx.database, source), 'venom');
+}
+
+/**
+ * "Deal N damage … the damage may be divided among targets" (M02.5).
+ *
+ * The chooser allocates the total one point at a time, and the answer is the
+ * allocation: a list with one entry per point, so `[a, a, b]` is two damage to
+ * `a` and one to `b`. That shape is what makes the validation the tranche asks
+ * for fall out of checks the engine already performs — every entry has to be a
+ * legal target and the list has to be exactly as long as the total, which is the
+ * same thing as "non-negative integers summing to N" — without a second payload
+ * type crossing the protocol.
+ *
+ * Each target is damaged **once**, for its whole share. Two damage split off a
+ * five-damage total is one two-damage event, not two one-damage events, because
+ * Barrier and prevention are measured against a damage event and splitting it
+ * further would let a shield absorb the same allocation twice.
+ *
+ * The targets are damaged in board order rather than in the order the chooser
+ * happened to click, so two answers that describe the same allocation produce
+ * the same match, event for event.
+ */
+function divideDamage(
+  ctx: MatchContext,
+  item: ResolutionItem,
+  target: Extract<TargetDefinition, { kind: 'entity' }>,
+  effectIndex: number,
+  total: number,
+): EffectOutcome {
+  const candidates = legalTargets(ctx, target, scopeOf(item));
+  // Nothing to divide is not an error: "sacrifice up to five Units" that took
+  // none leaves a total of zero, and the card simply deals no damage.
+  if (total <= 0 || candidates.length === 0) return { kind: 'fizzled', reason: 'no_legal_target' };
+
+  const stored = item.selections[String(effectIndex)];
+  if (stored === undefined) {
+    return {
+      kind: 'awaiting_choice',
+      choice: buildChoice(ctx, item, effectIndex, {
+        playerId: chooserFor(ctx, target.selector, item.controllerId),
+        type: 'divide_damage',
+        reason: 'divide_damage',
+        zone: target.selector.zone,
+        minimum: total,
+        maximum: total,
+        validEntityIds: candidates,
+      }),
+    };
+  }
+
+  // Re-validated on resume like every other stored selection: a target that has
+  // left the legal set drops out, and its share of the damage is simply not
+  // dealt. The rest of the allocation still lands.
+  const allocation = new Map<InstanceId, number>();
+  for (const instanceId of stored) {
+    if (!candidates.includes(instanceId)) continue;
+    allocation.set(instanceId, (allocation.get(instanceId) ?? 0) + 1);
+  }
+  if (allocation.size === 0) return { kind: 'fizzled', reason: 'no_legal_target' };
+
+  const lethal = damageIsLethal(ctx, item.sourceInstanceId);
+  const dealt: InstanceId[] = [];
+  for (const instanceId of candidates) {
+    const amount = allocation.get(instanceId);
+    if (amount === undefined) continue;
+    dealt.push(instanceId);
+    damageUnit(ctx, instanceId, amount, { sourceInstanceId: item.sourceInstanceId, lethal });
+  }
+  // Filed like any other instruction's targets, so a following "it" or
+  // `previous_targets` sees what this step actually hit.
+  item.selections[targetsKey(effectIndex)] = dealt;
+  return RESOLVED;
 }
 
 /**
@@ -318,10 +541,35 @@ export function executeEffect(
     if (answer[0] !== 'yes') return { kind: 'fizzled', reason: 'declined' };
   }
 
-  /** Resolves an amount that may be a count of the board rather than a number. */
-  const value = (expression: ValueExpression): number => evaluateValue(ctx, expression, scope);
-  const signed = (expression: SignedValueExpression): number =>
-    evaluateSignedValue(ctx, expression, scope);
+  /**
+   * Resolves an amount that may be a count of the board, or a number read off
+   * the statline of the card this instruction is acting on.
+   *
+   * `targetInstanceId` is passed per recipient rather than once per instruction,
+   * because "each friendly Unit gains Health equal to its ATK" is three
+   * different numbers for three units — and because the statline is read here,
+   * at resolution, not when the ability was queued or the target chosen (M02.3).
+   */
+  /**
+   * How many entities the step before this one resolved with, for a
+   * `previous_targets` amount — the "each Unit sacrificed" of a card whose first
+   * sentence did the sacrificing (M02.5). Read from the same record the
+   * `previous_target` target kind reads, so the two halves of such a card can
+   * never disagree about what happened.
+   */
+  const previousTargetCount = (item.selections[targetsKey(effectIndex - 1)] ?? []).length;
+  const value = (expression: ValueExpression, targetInstanceId?: InstanceId): number =>
+    evaluateValue(ctx, expression, {
+      ...scope,
+      targetInstanceId: targetInstanceId ?? null,
+      previousTargetCount,
+    });
+  const signed = (expression: SignedValueExpression, targetInstanceId?: InstanceId): number =>
+    evaluateSignedValue(ctx, expression, {
+      ...scope,
+      targetInstanceId: targetInstanceId ?? null,
+      previousTargetCount,
+    });
 
   switch (effect.type) {
     case 'draw': {
@@ -383,6 +631,13 @@ export function executeEffect(
     }
 
     case 'deal_damage': {
+      // "The damage may be divided among targets" is a different instruction
+      // underneath: one total, allocated by a player, rather than one amount
+      // repeated at every recipient (M02.5).
+      if (effect.divided === true && effect.target.kind === 'entity') {
+        return divideDamage(ctx, item, effect.target, effectIndex, value(effect.amount));
+      }
+
       const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
@@ -397,14 +652,10 @@ export function executeEffect(
         return RESOLVED;
       }
 
-      const source = item.sourceInstanceId
-        ? findInstance(ctx.state, item.sourceInstanceId)
-        : undefined;
-      const lethal =
-        source !== undefined && hasKeyword(source, definitionOf(ctx.database, source), 'venom');
+      const lethal = damageIsLethal(ctx, item.sourceInstanceId);
 
       for (const targetId of resolution.ids) {
-        damageUnit(ctx, targetId, value(effect.amount), {
+        damageUnit(ctx, targetId, value(effect.amount, targetId), {
           sourceInstanceId: item.sourceInstanceId,
           lethal,
         });
@@ -421,7 +672,8 @@ export function executeEffect(
         for (const playerId of resolution.ids) healPlayer(ctx, playerId, value(effect.amount));
         return RESOLVED;
       }
-      for (const targetId of resolution.ids) healUnit(ctx, targetId, value(effect.amount));
+      for (const targetId of resolution.ids)
+        healUnit(ctx, targetId, value(effect.amount, targetId));
       return RESOLVED;
     }
 
@@ -433,9 +685,14 @@ export function executeEffect(
       for (const targetId of resolution.ids) {
         const instance = findInstance(ctx.state, targetId);
         if (!instance) continue;
+        // Read once per recipient and reused for both the modifier and the
+        // event, so the log can never report a different number from the one
+        // that was applied.
+        const attack = signed(effect.attack, targetId);
+        const health = signed(effect.health, targetId);
         instance.statModifiers.push({
-          attack: signed(effect.attack),
-          health: signed(effect.health),
+          attack,
+          health,
           duration: effect.duration,
           sourceInstanceId: item.sourceInstanceId,
           appliedOnTurn: ctx.state.turn,
@@ -443,8 +700,8 @@ export function executeEffect(
         emit(ctx, {
           type: 'stats_modified',
           instanceId: targetId,
-          attack: signed(effect.attack),
-          health: signed(effect.health),
+          attack,
+          health,
           duration: effect.duration,
         });
       }
@@ -506,6 +763,11 @@ export function executeEffect(
           });
           player.units.push(token.instanceId);
           created.push(token.instanceId);
+          // A Token is created straight onto the battlefield rather than moved
+          // there, so its arrival is put through the replacement layer here —
+          // before either arrival event, so nothing ever sees the Token in the
+          // state it would have arrived in (M02.4).
+          applyArrivalReplacements(ctx, token.instanceId, 'token_created');
           emit(ctx, {
             type: 'token_created',
             playerId,
@@ -626,7 +888,13 @@ export function executeEffect(
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
-      for (const targetId of resolution.ids) moveToZone(ctx, targetId, effect.toZone);
+      for (const targetId of resolution.ids) {
+        // `entersExhausted` is part of the arrival, not a step after it: the
+        // card is put onto the battlefield already Exhausted, so nothing —
+        // including a state-based check or a trigger discovered between two
+        // instructions — ever sees it Ready (M02.2).
+        moveToZone(ctx, targetId, effect.toZone, { exhausted: effect.entersExhausted === true });
+      }
       return RESOLVED;
     }
 
@@ -646,6 +914,17 @@ export function executeEffect(
           type: shouldExhaust ? 'unit_exhausted' : 'unit_readied',
           instanceId: targetId,
         });
+      }
+      return RESOLVED;
+    }
+
+    case 'skip_next_ready': {
+      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      if (resolution.kind === 'choice')
+        return { kind: 'awaiting_choice', choice: resolution.choice };
+      if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
+      for (const targetId of resolution.ids) {
+        applyReadySkip(ctx, targetId, item.sourceInstanceId);
       }
       return RESOLVED;
     }
@@ -671,7 +950,7 @@ export function executeEffect(
         addDamageShield(
           ctx,
           { instanceId: targetId },
-          value(effect.amount),
+          value(effect.amount, targetId),
           effect.duration,
           item.sourceInstanceId,
         );
@@ -850,6 +1129,62 @@ export function executeEffect(
           ordered: true,
         }),
       };
+    }
+
+    case 'schedule_delayed': {
+      // The delayed body is read from the card that printed it, so a card whose
+      // definition is missing schedules nothing rather than an empty promise.
+      const definitionId = item.sourceDefinitionId;
+      const definition = definitionId === null ? undefined : ctx.database.get(definitionId);
+      const ability = definition?.delayedAbilities.find(
+        (entry) => entry.id === effect.delayedAbilityId,
+      );
+      if (!definition || !ability) return { kind: 'fizzled', reason: 'unsupported' };
+
+      // "It" is resolved now and stored as a concrete instance. `source` is the
+      // card the text is printed on — which may already be in a discard pile,
+      // because a `on_sacrifice` delayed clause is about the card that just
+      // died. `previous_target` is whatever the instruction before this one
+      // acted on, which the schema guarantees exists.
+      const subjects: InstanceId[] =
+        ability.subject === 'source'
+          ? item.sourceInstanceId === null
+            ? []
+            : [item.sourceInstanceId]
+          : ability.subject === 'previous_target'
+            ? (item.selections[targetsKey(effectIndex - 1)] ?? [])
+            : [];
+
+      // A delayed clause that names a subject and found none is a clause about
+      // nothing: the buff fizzled, or the source has ceased to exist. Scheduling
+      // it anyway would promise the player an effect that can never fire.
+      if (ability.subject !== undefined && subjects.length === 0) {
+        return { kind: 'fizzled', reason: 'no_legal_target' };
+      }
+
+      // One entry per bound subject. With the single-target cards in the
+      // catalog that is always one, and it is what keeps "when **it** is
+      // defeated" honest if a future card buffs two units with one instruction.
+      if (subjects.length === 0) {
+        scheduleDelayed(ctx, {
+          ability,
+          sourceInstanceId: item.sourceInstanceId,
+          sourceDefinitionId: definition.id,
+          controllerId: item.controllerId,
+          subjectInstanceId: null,
+        });
+        return RESOLVED;
+      }
+      for (const subjectInstanceId of subjects) {
+        scheduleDelayed(ctx, {
+          ability,
+          sourceInstanceId: item.sourceInstanceId,
+          sourceDefinitionId: definition.id,
+          controllerId: item.controllerId,
+          subjectInstanceId,
+        });
+      }
+      return RESOLVED;
     }
 
     default: {

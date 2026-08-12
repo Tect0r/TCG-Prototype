@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "kind": "batch",
+  "id": "precon-smoke",
+  "label": "Precon smoke run — the four shipped Wave 1 decks, referenced by ID, one game per seat order",
+  "seed": "precon-2026-08",
+  "output": "results",
+  "playerCount": 2,
+  "pilots": [{ "id": "value" }],
+  "pilotPairing": "mirror",
+  "environment": {
+    "id": "precon_wave_1",
+    "label": "The Wave 1 format: its own card pool, 40-card singleton construction",
+    "format": "precon_wave_1",
+    "deckFormat": {
+      "formatId": "precon_wave_1",
+      "deckSize": 40,
+      "singleton": true,
+      "copyLimit": 1,
+      "uniqueCopyLimit": 1,
+      "maxCommanderColors": 2
+    }
+  },
+  "decks": {
+    "kind": "precon",
+    "preconIds": [
+      "precon_bastion_guardians",
+      "precon_containment_control",
+      "precon_goblin_swarm",
+      "precon_grave_sacrifice"
+    ]
+  },
+  "schedule": "round_robin",
+  "gamesPerPairing": 1,
+  "mirrorSeats": true,
+  "limits": { "maxTurns": 150 },
+  "retention": { "replaySampleRate": 1 },
+  "analysis": { "minMatchesPerCard": 20, "minPairSupport": 15, "minMatchesPerDeck": 10 },
+  "workers": 4
+}

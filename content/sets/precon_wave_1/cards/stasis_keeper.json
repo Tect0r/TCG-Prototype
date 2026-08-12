@@ -13,7 +13,27 @@
     "identity": "Control Unit — Combat Disruption",
     "power": "medium"
   },
-  "implemented": false,
-  "unsupportedReason": "needs replacement effects (enters Exhausted / prevent a Ready event) (ruleset update §15)",
-  "displayText": "Units blocked by this Unit do not Ready during their controller's next Ready Step."
+  "displayText": "Units blocked by this Unit do not Ready during their controller's next Ready Step.",
+  "abilities": [
+    {
+      "id": "stasis_lock",
+      "trigger": "on_block",
+      "activeZone": "battlefield",
+      "effects": [
+        {
+          "type": "skip_next_ready",
+          "target": {
+            "kind": "blocked_by_source"
+          }
+        }
+      ]
+    }
+  ],
+  "text": {
+    "notes": [
+      "The lock is fixed onto the attacker the moment blockers are declared, so this Unit dying in that same combat does not undo it.",
+      "It stops only the Ready Step. An effect that says \"Ready target Unit\" still readies the attacker.",
+      "An attacker that leaves the battlefield before that Ready Step loses the lock along with everything else it was carrying."
+    ]
+  }
 }

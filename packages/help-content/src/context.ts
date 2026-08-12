@@ -21,13 +21,31 @@ export interface PublicCardContext {
   /** True when the card belongs to the viewing seat. */
   readonly ownedByViewer: boolean;
   readonly exhausted: boolean;
-  readonly summoningSick: boolean;
+  /**
+   * Has not yet been through its controller's Ready Step (ADR 0016 Q-B).
+   *
+   * The seat view still calls this `summoningSick`; the name is kept there
+   * because it is a protocol field. Everything the player is *told* uses the
+   * ruleset's own vocabulary.
+   */
+  readonly newlyDeployed: boolean;
   readonly markedDamage: number;
   /** Derived attack/health, including every active modifier. */
   readonly attack: number | null;
   readonly health: number | null;
   /** Energy the engine says it costs, when the engine says it is playable. */
   readonly playableForEnergy: number | null;
+  /**
+   * Energy the engine says this card costs *as a Reaction*, when it is offering
+   * it into the open window.
+   *
+   * Separate from `playableForEnergy` because the two are never both live: a
+   * window pre-empts the ordinary play path entirely, and the Reaction price
+   * can differ from the printed one through the per-turn discount.
+   */
+  readonly reactionForEnergy: number | null;
+  /** This seat holds priority in an open Reaction window. */
+  readonly holdsReactionPriority: boolean;
   readonly canAttackNow: boolean;
   readonly canBlockNow: boolean;
   /** Activated ability IDs the engine currently offers on this card. */
@@ -67,11 +85,15 @@ export function publicCardContext(view: PlayerView, instanceId: string): PublicC
     zone: instance.zone,
     ownedByViewer: instance.owner === view.viewerId,
     exhausted: instance.exhausted,
-    summoningSick: instance.summoningSick,
+    newlyDeployed: instance.summoningSick,
     markedDamage: instance.markedDamage,
     attack: instance.attack,
     health: instance.health,
     playableForEnergy: playable?.energyCost ?? null,
+    reactionForEnergy:
+      legal.reaction?.playableCards.find((card) => card.instanceId === instanceId)?.energyCost ??
+      null,
+    holdsReactionPriority: legal.reaction !== null,
     canAttackNow: legal.attacking?.legalAttackers.includes(instanceId) ?? false,
     canBlockNow: legal.blocking?.blockerInstanceIds.includes(instanceId) ?? false,
     activatableAbilityIds: legal.activatableAbilities
@@ -107,8 +129,10 @@ export function contextMessages(context: PublicCardContext): readonly string[] {
         ),
       );
     }
-    if (context.summoningSick) {
-      messages.push('This unit arrived this turn, so it cannot attack yet.');
+    if (context.newlyDeployed) {
+      messages.push(
+        'This unit arrived this turn, so it is Newly Deployed: it cannot attack yet, but it can still block.',
+      );
     } else if (context.exhausted) {
       messages.push('This unit is exhausted. It readies at the start of its controller’s turn.');
     }
@@ -124,14 +148,27 @@ export function contextMessages(context: PublicCardContext): readonly string[] {
   }
 
   if (context.zone === 'hand') {
-    if (context.playableForEnergy !== null) {
+    if (context.reactionForEnergy !== null) {
+      messages.push(
+        `A Reaction window is open and you can play this into it for ${context.reactionForEnergy} energy.`,
+      );
+    } else if (context.holdsReactionPriority) {
+      // The window pre-empts the ordinary play path, so the branches below would
+      // otherwise report "only during your own Main Phase" while the engine is
+      // actively waiting on this seat.
+      messages.push(
+        'A Reaction window is open and it is your turn to answer, but this card cannot be played into it.',
+      );
+    } else if (context.playableForEnergy !== null) {
       messages.push(`You can play this now for ${context.playableForEnergy} energy.`);
     } else if (context.viewerEliminated) {
       messages.push('You are out of the match and can no longer play cards.');
     } else if (context.choicePending) {
       messages.push('A choice is being resolved, so no cards can be played until it is answered.');
     } else if (!context.viewerMayPlayCards) {
-      messages.push('Cards can only be played during your own Main Phase.');
+      messages.push(
+        'Cards can only be played during your own Main Phase. A Reaction is the exception: it is played inside an open Reaction window.',
+      );
     } else {
       // "Your battlefield is full" used to be a branch here. It cannot happen
       // any more: the battlefield is unbounded (ruleset update §7).
@@ -147,7 +184,12 @@ export function contextMessages(context: PublicCardContext): readonly string[] {
     messages.push('This card is in a discard pile. Discard piles are public.');
   }
   if (context.zone === 'commander_zone') {
-    messages.push('This Commander stays in the Commander zone for the whole match.');
+    messages.push(
+      'This Commander is in the Command Zone. It can be deployed to the battlefield for its cost, and it returns here rather than to a discard pile if it is defeated.',
+    );
+    if (context.playableForEnergy !== null) {
+      messages.push(`You can deploy it right now for ${context.playableForEnergy} energy.`);
+    }
   }
 
   return messages;

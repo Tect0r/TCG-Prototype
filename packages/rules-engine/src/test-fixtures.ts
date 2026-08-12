@@ -223,6 +223,7 @@ function newInstance(
     enteredZoneOnTurn: 0,
     newlyDeployed: false,
     survivedAsBlocker: false,
+    readySkip: null,
     barrierSpent: false,
     statModifiers: [],
     grantedKeywords: [],
@@ -251,6 +252,27 @@ export function giveCard(state: MatchState, playerId: PlayerId, definitionId: Ca
   return { state: next, instanceId: instance.instanceId };
 }
 
+/**
+ * Creates a card directly in a player's discard pile.
+ *
+ * The discard pile is a starting position for a whole family of cards — every
+ * revival and every removal reads from it — so the tests build it directly
+ * rather than by playing a unit and killing it, which would mix the effect under
+ * test with combat or a sacrifice outlet.
+ */
+export function giveDiscard(
+  state: MatchState,
+  playerId: PlayerId,
+  definitionId: CardId,
+): Placement {
+  const next = clone(state);
+  const player = next.players[playerId];
+  if (!player) throw new Error(`No player ${playerId}`);
+  const instance = newInstance(next, definitionId, playerId, 'discard');
+  player.discard.push(instance.instanceId);
+  return { state: next, instanceId: instance.instanceId };
+}
+
 /** Puts a unit onto the battlefield, ready and past summoning sickness. */
 export function deployUnit(
   state: MatchState,
@@ -272,6 +294,31 @@ export function deployUnit(
   instance.newlyDeployed = options.summoningSick === true;
   player.units.push(instance.instanceId);
   return { state: next, instanceId: instance.instanceId };
+}
+
+/**
+ * Puts a seat's own Commander onto its battlefield, as deploying it would.
+ *
+ * Deliberately not `deployUnit(state, playerId, 'some_commander')`, which mints a
+ * *second* instance of the card: a Commander ability gated to the battlefield has
+ * to be exercised on the instance that actually lives in the Command Zone, or the
+ * test proves something about a card no player could ever have.
+ */
+export function deployCommander(state: MatchState, playerId: PlayerId): Placement {
+  const next = clone(state);
+  const player = next.players[playerId];
+  if (!player) throw new Error(`No player ${playerId}`);
+  const instanceId = player.commanderInstanceId;
+  const instance = next.instances[instanceId];
+  if (!instance) throw new Error(`No Commander instance for ${playerId}`);
+
+  instance.zone = 'battlefield';
+  // Entered "last turn", so it can attack and pay an Exhaust cost immediately —
+  // the same convenience `deployUnit` applies.
+  instance.enteredZoneOnTurn = Math.max(0, next.turn - 1);
+  instance.newlyDeployed = false;
+  player.units.push(instanceId);
+  return { state: next, instanceId };
 }
 
 export function deployRelic(

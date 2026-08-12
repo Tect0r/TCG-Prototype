@@ -11,7 +11,7 @@
   "powerClass": "centerpiece",
   "tags": ["undead", "noble"],
   "keywords": ["venom", "resilient"],
-  "displayText": "When this unit is deployed, destroy an enemy unit.",
+  "displayText": "Venom. Resilient. When this unit is deployed, destroy an enemy unit.",
   "effects": [
     {
       "type": "destroy",

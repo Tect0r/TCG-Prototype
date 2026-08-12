@@ -33,6 +33,7 @@ export {
   setCardQuantity,
   setCommander,
   setDeckNotes,
+  uniqueDeckName,
   type Clock,
   type CreateDeckOptions,
 } from './operations.js';
@@ -55,6 +56,7 @@ export {
 } from './repository.js';
 export {
   validatePrecon,
+  reviewPrecon,
   preconToDeck,
   preconFormat,
   preconDatabase,

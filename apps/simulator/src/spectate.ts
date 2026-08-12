@@ -8,6 +8,7 @@ import {
   groupEvents,
   resolveSpectatorSetup,
   runSpectatorMatch,
+  setupProvenance,
   spectatorDatabase,
   spectatorPrecons,
   type SpectatorReplay,
@@ -35,6 +36,11 @@ export interface SpectateOptions {
   /** Pilot per seat. Defaults to one pilot per seat, wrapping. */
   readonly pilots?: readonly PilotId[];
   readonly output?: string | null;
+  /**
+   * Developer override: run precons that still contain unimplemented cards
+   * (M01.2). Everything the run produces is marked invalid.
+   */
+  readonly allowIncompleteCards?: boolean;
 }
 
 export interface SpectateResult {
@@ -53,15 +59,22 @@ export async function runSpectate(options: SpectateOptions): Promise<SpectateRes
       preconId: options.precons?.[index] ?? seat.preconId,
       pilotId: options.pilots?.[index] ?? seat.pilotId,
     })),
+    ...(options.allowIncompleteCards ? { developerAllowIncompleteCards: true } : {}),
   };
 
-  const resolved = resolveSpectatorSetup(setup);
+  const resolved = resolveSpectatorSetup(setup, { database });
   if (resolved.problems.length > 0) {
     // Reported, never repaired: substituting a deck would make the match a
     // different experiment from the one that was asked for.
+    const incomplete = resolved.problems.some((p) => p.kind === 'incomplete_cards');
     throw new Error(
       'Spectator setup is not runnable:\n' +
         resolved.problems.map((p) => `  seat ${p.seatIndex + 1}: ${p.message}`).join('\n') +
+        (incomplete
+          ? '\n\nThose cards are not implemented yet, so a match containing them would not be ' +
+            'evidence about the game. --allow-incomplete-cards runs it anyway and marks every ' +
+            'result invalid.'
+          : '') +
         `\n\nAvailable precons: ${spectatorPrecons()
           .map((p) => p.id)
           .join(', ')}` +
@@ -75,6 +88,7 @@ export async function runSpectate(options: SpectateOptions): Promise<SpectateRes
     database,
     config: DEFAULT_RULES_CONFIG,
     cardDataHash: cardPoolHash(database),
+    provenance: setupProvenance(resolved),
   });
 
   let outputPath: string | null = null;
@@ -87,10 +101,35 @@ export async function runSpectate(options: SpectateOptions): Promise<SpectateRes
   return { replay, outputPath, summary: formatSpectateSummary(replay) };
 }
 
+/**
+ * The "results invalid" notice a developer-override run carries.
+ *
+ * It names every blocking card rather than counting them, because the point of
+ * reading it is to know what was wrong with the match you are looking at.
+ */
+function invalidResultsBanner(replay: SpectatorReplay): string[] {
+  return [
+    '!! RESULTS INVALID — developer override !!',
+    'This match ran with cards whose printed behaviour is not implemented yet, so what',
+    'happened is not what those cards say. It is not evidence about the game.',
+    ...replay.provenance.incompleteCards.map((seat) => {
+      const name = replay.seats.find((entry) => entry.playerId === seat.playerId)?.name;
+      return `  ${name ?? seat.playerId}: ${seat.cardIds.join(', ')}`;
+    }),
+  ];
+}
+
 /** The end-of-match report, in the same terms the spectator screen shows. */
 export function formatSpectateSummary(replay: SpectatorReplay): string {
   const { telemetry } = replay;
-  const lines: string[] = [
+  const lines: string[] = [];
+
+  // First and last, because a warning that scrolls off the top is not a warning.
+  if (!replay.provenance.resultsValid) {
+    lines.push(...invalidResultsBanner(replay), '');
+  }
+
+  lines.push(
     `match:   ${replay.matchId}`,
     `seed:    ${replay.seed}`,
     `rules:   ${replay.rulesVersion}   cards: ${replay.cardDataHash}`,
@@ -100,7 +139,7 @@ export function formatSpectateSummary(replay: SpectatorReplay): string {
     `groups:  ${groupEvents(replay.events).length} visible step(s) from ${replay.events.length} events`,
     '',
     'seat                                     place  peak  nonTok  tok  stack  cmdr✝  cmdrMax  react',
-  ];
+  );
 
   const byPlacement = [...telemetry.seats].sort((left, right) => left.placement - right.placement);
   for (const seat of byPlacement) {
@@ -149,5 +188,6 @@ export function formatSpectateSummary(replay: SpectatorReplay): string {
     '',
     'This is one match. It is evidence about what the rules did, not about whether they are balanced.',
   );
+  if (!replay.provenance.resultsValid) lines.push('', ...invalidResultsBanner(replay));
   return lines.join('\n');
 }

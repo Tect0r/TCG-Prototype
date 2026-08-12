@@ -2,6 +2,6 @@
   "schemaVersion": 3,
   "setId": "precon_wave_1",
   "name": "Precon Wave 1 Card Catalog",
-  "status": "draft",
+  "status": "playtest",
   "description": "The first authored card catalog: four factions, four Commanders and three Tokens, built for the 40-card singleton precon format."
 }

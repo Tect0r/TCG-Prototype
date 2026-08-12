@@ -136,8 +136,45 @@ function scorePlayCard(
   return (
     cardValue(definition, weights, observation.database) +
     weights.energyEfficiency * playable.energyCost -
-    replacedRelicCost(observation, definition, weights)
+    replacedRelicCost(observation, definition, weights) -
+    emptySourceZonePenalty(observation, definition, weights)
   );
+}
+
+/**
+ * Takes back the value of an instruction that pulls a card out of our discard
+ * pile when the pile is empty.
+ *
+ * `cardValue` is computed from the definition alone, so a five-cost "return up
+ * to two Units from your discard pile" is priced as two cards gained even on
+ * turn three, when there is nothing to return and the card does exactly nothing.
+ * The pilot can see its own discard pile — it is public — so this is a fact it
+ * is entitled to read rather than a hidden-information shortcut.
+ *
+ * Deliberately coarse: it asks whether the zone is empty, not whether anything
+ * in it matches the selector's filter, and it only covers the discard pile,
+ * which is the only source zone a Wave 1 card names and the only one the view
+ * lists card by card. A pilot that plays a reanimation spell for one legal
+ * target out of a filtered pile is making a defensible play; one that casts it
+ * into an empty pile is not. Pricing the filtered pool properly is pilot
+ * quality work and belongs to M05, not here.
+ */
+function emptySourceZonePenalty(
+  observation: BotObservation,
+  definition: CardDefinition,
+  weights: BotWeights,
+): number {
+  if (selfSummary(observation.view).discard.length > 0) return 0;
+
+  let penalty = 0;
+  for (const effect of definition.effects) {
+    if (effect.type !== 'move_card') continue;
+    if (effect.target.kind !== 'entity') continue;
+    const selector = effect.target.selector;
+    if (selector.zone !== 'discard' || selector.controller !== 'self') continue;
+    penalty += effectsValue([effect], weights, observation.database);
+  }
+  return penalty;
 }
 
 /**
@@ -219,7 +256,7 @@ function scoreActivate(
   const instance = observation.view.instances[action.sourceInstanceId];
   const definition = instance ? observation.database.get(instance.definitionId) : undefined;
   const ability = definition?.activatedAbilities.find((entry) => entry.id === action.abilityId);
-  if (!ability) return 0;
+  if (!definition || !ability) return 0;
 
   const costPenalty = ability.costs.reduce((sum, cost) => {
     switch (cost.type) {
@@ -236,7 +273,10 @@ function scoreActivate(
     }
   }, 0);
 
-  return effectsValue(ability.effects, weights, observation.database) + costPenalty;
+  return (
+    effectsValue(ability.effects, weights, observation.database, definition.delayedAbilities) +
+    costPenalty
+  );
 }
 
 function scoreAttack(

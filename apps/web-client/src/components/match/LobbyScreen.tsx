@@ -1,8 +1,20 @@
-import { useState } from 'react';
-import { useAppState, useCardDatabase } from '../../state/AppContext.js';
+import { useMemo, useState } from 'react';
+import { useAppState, useCardDatabase, useDeckFormat } from '../../state/AppContext.js';
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
-import { validateDeck } from '@tcg/deck';
+import { preconsForFormat } from '@tcg/card-data';
+import { reviewPrecon, validateDeck } from '@tcg/deck';
 import { RulebookPanel } from '../help/RulebookPanel.js';
+
+/**
+ * What the deck picker is currently pointing at.
+ *
+ * A precon is chosen by permanent ID rather than by a copy of its list: the
+ * server resolves the ID against its own content, so what it validates is the
+ * shipped definition this screen previewed (M03.2). A player who has edited a
+ * precon is choosing their saved deck instead, which travels by contents.
+ */
+const PRECON_PREFIX = 'precon:';
+const DECK_PREFIX = 'deck:';
 
 /**
  * Create or join a private invite-code lobby, submit a deck, and ready up.
@@ -19,10 +31,14 @@ export function LobbyScreen() {
   const { connection, lobby, seatId, lastError, deckError } = useMatchState();
   const { decks } = useAppState();
   const database = useCardDatabase();
+  // The same format the builder validated against. Defaulting here instead
+  // would let the preview pass a deck the server then rejects.
+  const deckFormat = useDeckFormat();
 
   const [displayName, setDisplayName] = useState('Player');
   const [inviteCode, setInviteCode] = useState('');
-  const [selectedDeckId, setSelectedDeckId] = useState<string>('');
+  /** Prefixed, because a precon ID and a saved-deck ID are different things. */
+  const [selection, setSelection] = useState<string>('');
   const [tableSize, setTableSize] = useState(2);
   const [rulebookOpen, setRulebookOpen] = useState(false);
   /** Remembered for this lobby session, so reopening lands where you left off. */
@@ -31,8 +47,31 @@ export function LobbyScreen() {
   const mySeat = lobby?.seats.find((seat) => seat.seatId === seatId);
   const isHost = mySeat?.isHost ?? false;
   const emptySeats = lobby ? lobby.maxSeats - lobby.seats.length : 0;
-  const selectedDeck = decks.find((deck) => deck.id === selectedDeckId);
-  const localReport = selectedDeck ? validateDeck(selectedDeck, database) : null;
+
+  // Scoped to the active format exactly like the builder's precon browser and
+  // the server's own list, so the three cannot offer different decks (M03.2).
+  const precons = useMemo(() => preconsForFormat(deckFormat.formatId), [deckFormat.formatId]);
+
+  const selectedDeck = selection.startsWith(DECK_PREFIX)
+    ? decks.find((deck) => deck.id === selection.slice(DECK_PREFIX.length))
+    : undefined;
+  const selectedPrecon = selection.startsWith(PRECON_PREFIX)
+    ? precons.find((precon) => precon.id === selection.slice(PRECON_PREFIX.length))
+    : undefined;
+
+  // The same preview in both cases, from the same shared functions the server
+  // runs. It is still only a preview: the server's verdict is the one that
+  // counts, and it re-runs these against its own pool.
+  const localReport = selectedDeck
+    ? validateDeck(selectedDeck, database, deckFormat)
+    : selectedPrecon
+      ? reviewPrecon(selectedPrecon, database, deckFormat)
+      : null;
+
+  const submit = (): void => {
+    if (selectedDeck) client.submitDeck(selectedDeck);
+    else if (selectedPrecon) client.submitPrecon(selectedPrecon.id);
+  };
 
   return (
     <section className="lobby" aria-label="Match lobby">
@@ -169,18 +208,35 @@ export function LobbyScreen() {
           <div className="lobby__deck">
             <label className="field">
               <span>Deck</span>
-              <select
-                value={selectedDeckId}
-                onChange={(event) => setSelectedDeckId(event.target.value)}
-              >
+              <select value={selection} onChange={(event) => setSelection(event.target.value)}>
                 <option value="">Choose a deck…</option>
-                {decks.map((deck) => (
-                  <option key={deck.id} value={deck.id}>
-                    {deck.name}
-                  </option>
-                ))}
+                {precons.length > 0 && (
+                  <optgroup label="Precons">
+                    {precons.map((precon) => (
+                      <option key={precon.id} value={`${PRECON_PREFIX}${precon.id}`}>
+                        {precon.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {decks.length > 0 && (
+                  <optgroup label="Your decks">
+                    {decks.map((deck) => (
+                      <option key={deck.id} value={`${DECK_PREFIX}${deck.id}`}>
+                        {deck.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
+
+            {selectedPrecon && (
+              <p className="lobby__hint">
+                Playing the built-in <code>{selectedPrecon.id}</code> as printed. Copy it in the
+                Deck Builder first if you want to change it.
+              </p>
+            )}
 
             {localReport && !localReport.legal && (
               <p className="lobby__error">
@@ -195,11 +251,7 @@ export function LobbyScreen() {
             )}
 
             <div className="lobby__actions">
-              <button
-                type="button"
-                onClick={() => selectedDeck && client.submitDeck(selectedDeck)}
-                disabled={!selectedDeck}
-              >
+              <button type="button" onClick={submit} disabled={!selectedDeck && !selectedPrecon}>
                 Submit deck
               </button>
               <button
@@ -230,7 +282,8 @@ export function LobbyScreen() {
 
       {decks.length === 0 && (
         <p className="lobby__hint">
-          You have no saved decks yet. Build one in the Deck Builder tab first.
+          You have no saved decks yet. Play a built-in precon as it comes, or build your own in the
+          Deck Builder tab.
         </p>
       )}
     </section>

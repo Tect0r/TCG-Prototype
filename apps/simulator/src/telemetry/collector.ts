@@ -8,7 +8,7 @@ import type {
   PlayerId,
   RulesConfig,
 } from '@tcg/rules-engine';
-import { currentAttack, currentHealth, energyCostOf } from '@tcg/rules-engine';
+import { currentAttack, currentHealth, playCostOf } from '@tcg/rules-engine';
 import type { BotFailure } from '@tcg/bot-interface';
 import {
   type CardTelemetry,
@@ -87,6 +87,7 @@ export interface CollectedTelemetry {
 
 export class TelemetryCollector {
   readonly #database: CardDatabase;
+  readonly #config: RulesConfig;
   readonly #maxRelics: number;
   readonly #seats: readonly SeatSetup[];
   readonly #tracks = new Map<string, InstanceTrack>();
@@ -104,6 +105,7 @@ export class TelemetryCollector {
     rulesConfig: RulesConfig,
   ) {
     this.#database = database;
+    this.#config = rulesConfig;
     this.#maxRelics = rulesConfig.relicSlots;
     this.#seats = seats;
 
@@ -159,7 +161,17 @@ export class TelemetryCollector {
       if (!definition) continue;
 
       const row = this.#cardRow(playerId, instance.definitionId);
-      const affordable = energyCostOf(player, definition) <= player.energy;
+      // The *current* cost, not the printed one: a card whose cost scales with
+      // the board is affordable exactly when the engine says it is, and a
+      // telemetry row that disagreed with the play path would report dead cards
+      // that were never dead (M02.3).
+      const cost = playCostOf(
+        { state, database: this.#database, config: this.#config },
+        playerId,
+        instance,
+        definition,
+      );
+      const affordable = cost <= player.energy;
       if (affordable) {
         track.everAffordable = true;
         row.affordableOpportunities += 1;
@@ -388,6 +400,38 @@ export class TelemetryCollector {
       }
 
       case 'trigger_queued': {
+        const track = this.#tracks.get(event.sourceInstanceId);
+        if (track) this.#cardRow(track.owner, track.definitionId).triggersFired += 1;
+        break;
+      }
+
+      // A delayed effect coming due is that card's ability resolving, and it
+      // reaches the queue without a `trigger_queued` (M02.1). Attributed by
+      // definition and controller rather than by instance, because the card
+      // that made the promise is routinely gone by the time it is paid — a
+      // Spell is in a discard pile, and a sacrificed Unit is too.
+      case 'delayed_effect_fired': {
+        this.#cardRow(event.controllerId, event.definitionId).triggersFired += 1;
+        break;
+      }
+
+      // A static ability rewriting an event is that card doing its work, and it
+      // reaches no queue at all (M02.4). Without this a Relic whose whole text
+      // is a replacement would report zero of everything and read as a dead
+      // card, which is exactly the inference balance work must not make.
+      // Attributed to the *replacing* source, not to the card it rewrote.
+      case 'arrival_replaced': {
+        const track = this.#tracks.get(event.sourceInstanceId);
+        if (track) this.#cardRow(track.owner, track.definitionId).triggersFired += 1;
+        break;
+      }
+
+      // Only the standing `replace_ready` half. A prevention with no `abilityId`
+      // came from a stored `skip_next_ready`, and the instruction that armed it
+      // was already counted when the Spell was played or its trigger queued —
+      // counting the payoff too would bill one card twice for one decision.
+      case 'ready_prevented': {
+        if (event.abilityId === null || event.sourceInstanceId === null) break;
         const track = this.#tracks.get(event.sourceInstanceId);
         if (track) this.#cardRow(track.owner, track.definitionId).triggersFired += 1;
         break;

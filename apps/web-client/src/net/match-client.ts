@@ -177,6 +177,18 @@ export class MatchClient {
     this.dispatch({ type: 'submit_deck', deck });
   }
 
+  /**
+   * Plays a built-in precon by permanent ID.
+   *
+   * Deliberately not `submitDeck(preconToDeck(...))`: the server resolves the ID
+   * against its own content, so the list it validates is the shipped definition
+   * rather than whatever this client happened to send (M03.2).
+   */
+  submitPrecon(preconId: string): void {
+    this.patch({ deckError: null });
+    this.dispatch({ type: 'submit_precon', preconId });
+  }
+
   setReady(ready: boolean): void {
     this.dispatch({ type: 'set_ready', ready });
   }

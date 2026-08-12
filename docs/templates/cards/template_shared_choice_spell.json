@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 4,
+  "id": "template_shared_choice_spell",
+  "name": "Template Shared Choice Spell",
+  "type": "spell",
+  "colorIdentity": ["black"],
+  "cost": 2,
+  "role": "removal",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "effects": [
+    {
+      "type": "sacrifice",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit", "token"]
+          },
+          "count": 1,
+          "selection": "player_choice",
+          "chooser": "all_players"
+        }
+      }
+    }
+  ],
+  "displayText": "Each player chooses and sacrifices one Unit they control.",
+  "text": {
+    "flavor": "A plural `chooser` distributes one selection. `controller` is read relative to the seat being asked, so `\"self\"` is \"a Unit they control\". Seats answer controller-first then clockwise, and every answer is collected before any is applied. A seat with no legal option is skipped."
+  }
+}

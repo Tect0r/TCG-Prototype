@@ -157,6 +157,9 @@ export interface ExperimentPaths {
   readonly cardUsage: string;
   readonly cardPairs: string;
   readonly clusterInclusion: string;
+  /** The ordered matchup matrix, when a batch asked for one (M03.4). */
+  readonly matchupMatrix: string;
+  readonly matchupMatrixCsv: string;
   readonly summary: string;
   readonly report: string;
   readonly replays: string;
@@ -178,6 +181,8 @@ export function experimentPaths(root: string): ExperimentPaths {
     cardUsage: join(root, 'card-usage.csv'),
     cardPairs: join(root, 'card-pairs.csv'),
     clusterInclusion: join(root, 'cluster-inclusion.csv'),
+    matchupMatrix: join(root, 'matchup-matrix.json'),
+    matchupMatrixCsv: join(root, 'matchup-matrix.csv'),
     summary: join(root, 'summary.json'),
     report: join(root, 'report.md'),
     replays: join(root, 'replays'),

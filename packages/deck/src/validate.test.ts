@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CardDatabase } from '@tcg/card-data';
 import { validateDeck, deckStats, commanderColorIdentity } from './validate.js';
 import { DEVELOPMENT_DECK_FORMAT } from './format.js';
 import { setCardQuantity, setCommander } from './operations.js';
@@ -168,6 +169,93 @@ describe('validateDeck', () => {
     expect(report.issues.find((i) => i.code === 'deck/unused_commander_color')?.severity).toBe(
       'warning',
     );
+  });
+
+  describe('a Commander whose printed behaviour is not implemented yet (M01.2)', () => {
+    // Built by hand rather than pointed at a shipped card, so the rule stays
+    // under test after M02 finishes the cards that are unfinished today.
+    const withUnfinishedCommander = new CardDatabase(
+      database.all().map((card) =>
+        card.id === 'prototype_commander_blue_red'
+          ? {
+              ...card,
+              implemented: false,
+              unsupportedReason: 'its Guardian ability is not structured yet',
+            }
+          : card,
+      ),
+    );
+
+    it('makes the deck illegal and says what is missing', () => {
+      const report = validateDeck(legalDeck(), withUnfinishedCommander, DEVELOPMENT_DECK_FORMAT);
+      const issue = report.issues.find((i) => i.code === 'deck/commander_not_implemented');
+
+      expect(issue?.severity).toBe('error');
+      expect(issue?.path).toBe('commanderId');
+      expect(issue?.context).toMatchObject({ cardId: 'prototype_commander_blue_red' });
+      expect(issue?.message).toMatch(/Guardian ability is not structured yet/);
+      expect(report.legal).toBe(false);
+    });
+
+    it('is the only thing wrong with an otherwise legal deck', () => {
+      // The same deck is legal on the real database, so nothing else in the
+      // report is reacting to the substitution.
+      expect(validateDeck(legalDeck(), database, DEVELOPMENT_DECK_FORMAT).legal).toBe(true);
+
+      const report = validateDeck(legalDeck(), withUnfinishedCommander, DEVELOPMENT_DECK_FORMAT);
+      expect(codes(report.issues.filter((i) => i.severity === 'error'))).toEqual([
+        'deck/commander_not_implemented',
+      ]);
+    });
+
+    it('does not stop the rest of the deck being checked', () => {
+      // The Commander is still returned, so colour identity is still enforced
+      // against it rather than silently skipped.
+      const report = validateDeck(
+        deckWith([['bramble_titan', 1]]),
+        withUnfinishedCommander,
+        DEVELOPMENT_DECK_FORMAT,
+      );
+      expect(codes(report.issues)).toContain('deck/commander_not_implemented');
+      expect(codes(report.issues)).toContain('deck/color_identity');
+    });
+  });
+
+  describe('an ordinary card whose printed behaviour is not implemented yet (M01.2)', () => {
+    // Built by hand for the same reason the Commander case above is, and since
+    // M02.5 that reason is no longer hypothetical: every bundled precon is
+    // finished, so no shipped deck exercises this path any more. The rule still
+    // has to hold for the next card somebody starts and does not finish.
+    const withUnfinishedCard = new CardDatabase(
+      database.all().map((card) =>
+        card.id === 'pyre_champion'
+          ? {
+              ...card,
+              implemented: false,
+              unsupportedReason: 'its damage trigger is not structured yet',
+            }
+          : card,
+      ),
+    );
+
+    it('makes the deck illegal and says which card is missing', () => {
+      const report = validateDeck(legalDeck(), withUnfinishedCard, DEVELOPMENT_DECK_FORMAT);
+      const issue = report.issues.find((i) => i.code === 'deck/card_not_implemented');
+
+      expect(issue?.severity).toBe('error');
+      expect(issue?.context).toMatchObject({ cardId: 'pyre_champion' });
+      expect(issue?.message).toMatch(/damage trigger is not structured yet/);
+      expect(report.legal).toBe(false);
+    });
+
+    it('is the only thing wrong with an otherwise legal deck', () => {
+      expect(validateDeck(legalDeck(), database, DEVELOPMENT_DECK_FORMAT).legal).toBe(true);
+
+      const report = validateDeck(legalDeck(), withUnfinishedCard, DEVELOPMENT_DECK_FORMAT);
+      expect(codes(report.issues.filter((i) => i.severity === 'error'))).toEqual([
+        'deck/card_not_implemented',
+      ]);
+    });
   });
 
   it('flags a duplicated deck-list entry', () => {

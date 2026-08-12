@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { CardDatabase, cardDefinitionSchema, formatDatabase } from '@tcg/card-data';
 import { DEFAULT_RULES_CONFIG } from '@tcg/rules-engine';
 import { groupEvents } from './grouping.js';
 import {
@@ -9,11 +10,18 @@ import {
   type PlaybackSpeed,
 } from './playback.js';
 import { runSpectatorMatch } from './run.js';
-import { checkReplayCompatibility, spectatorReplaySchema, type SpectatorReplay } from './schema.js';
+import {
+  checkReplayCompatibility,
+  replayFormatVersion,
+  spectatorReplaySchema,
+  SPECTATOR_REPLAY_VERSION,
+  type SpectatorReplay,
+} from './schema.js';
 import {
   cardPoolHash,
   defaultSpectatorSetup,
   resolveSpectatorSetup,
+  setupProvenance,
   spectatorDatabase,
   spectatorPrecons,
 } from './setup.js';
@@ -31,18 +39,47 @@ const database = spectatorDatabase();
 const poolHash = cardPoolHash(database);
 const config = DEFAULT_RULES_CONFIG;
 
+/**
+ * A four-seat table seats all four shipped precons, and since M02.5 every one
+ * of them is finished — so these runs need **no** developer override and record
+ * a valid result (M02.5 acceptance). Up to M02.4 the Sacrifice precon still held
+ * `equal_price` and `mass_offering` and the whole suite ran overridden; the
+ * override path itself is still exercised below, against a database doctored to
+ * contain an unfinished card, which is the only place it can live now that no
+ * shipped deck is incomplete.
+ */
 async function run(seed: string, playerCount = 4): Promise<SpectatorReplay> {
-  const setup = defaultSpectatorSetup(seed, playerCount);
-  const resolved = resolveSpectatorSetup(setup);
+  const resolved = resolveSpectatorSetup(defaultSpectatorSetup(seed, playerCount));
   expect(resolved.problems).toEqual([]);
+  expect(resolved.incompleteCards).toEqual([]);
   return runSpectatorMatch({
     seed,
     seats: resolved.seats,
     database,
     config,
     cardDataHash: poolHash,
+    provenance: setupProvenance(resolved),
   });
 }
+
+/**
+ * The shipped pool with one Sacrifice card marked unfinished.
+ *
+ * Every bundled precon is complete since M02.5, so the refusal and the developer
+ * override have nothing real left to refuse. Doctoring one card keeps both paths
+ * under test against the deck that used to exercise them, rather than deleting
+ * the coverage along with the last unfinished card.
+ */
+const UNFINISHED_CARD_ID = 'mass_offering';
+const incompleteDatabase = new CardDatabase(
+  database
+    .all()
+    .map((card) =>
+      card.id === UNFINISHED_CARD_ID
+        ? { ...card, implemented: false, unsupportedReason: 'left unfinished for this test' }
+        : card,
+    ),
+);
 
 let replay: SpectatorReplay;
 
@@ -55,7 +92,10 @@ describe('setup', () => {
     const precons = spectatorPrecons();
     expect(precons.length).toBeGreaterThanOrEqual(4);
 
-    const resolved = resolveSpectatorSetup(defaultSpectatorSetup('seed'));
+    const resolved = resolveSpectatorSetup({
+      ...defaultSpectatorSetup('seed'),
+      developerAllowIncompleteCards: true,
+    });
     expect(resolved.seats).toHaveLength(4);
     expect(resolved.problems).toEqual([]);
     for (const seat of resolved.seats) {
@@ -68,6 +108,7 @@ describe('setup', () => {
     const preconId = spectatorPrecons()[0]?.id ?? '';
     const resolved = resolveSpectatorSetup({
       seed: 'x',
+      developerAllowIncompleteCards: true,
       seats: [
         { preconId, pilotId: 'value' },
         { preconId, pilotId: 'aggressive' },
@@ -84,6 +125,96 @@ describe('setup', () => {
     });
     expect(resolved.seats).toHaveLength(0);
     expect(resolved.problems[0]?.message).toContain('no_such_precon');
+    expect(resolved.problems[0]?.kind).toBe('unknown_precon');
+  });
+
+  it('refuses a precon that still contains unimplemented cards', () => {
+    const resolved = resolveSpectatorSetup(
+      { seed: 'x', seats: [{ preconId: 'precon_grave_sacrifice', pilotId: 'value' }] },
+      { database: incompleteDatabase },
+    );
+
+    expect(resolved.seats).toHaveLength(0);
+    const problem = resolved.problems[0];
+    expect(problem?.kind).toBe('incomplete_cards');
+    expect(problem?.cardIds).toEqual([UNFINISHED_CARD_ID]);
+    // Named individually in the message a user actually reads, not counted.
+    for (const cardId of problem?.cardIds ?? []) {
+      expect(problem?.message).toContain(cardId);
+    }
+  });
+
+  it('seats every shipped precon without an override (M02.5)', () => {
+    // The acceptance criterion for M02: no bundled deck needs the developer
+    // override any more, so the default four-seat table resolves clean.
+    const resolved = resolveSpectatorSetup(defaultSpectatorSetup('x', 4));
+
+    expect(resolved.problems).toEqual([]);
+    expect(resolved.seats).toHaveLength(4);
+    expect(resolved.incompleteCards).toEqual([]);
+    expect(setupProvenance(resolved).resultsValid).toBe(true);
+  });
+
+  it('admits a precon with nothing unfinished in it, and no override', () => {
+    // Bastion is the first fully implemented precon: its Commander shipped in
+    // M02.3 and its forty cards were already done. The refusal above is a
+    // property of unfinished content, not of the spectator, so a complete
+    // precon has to seat without the developer override and without recording
+    // an incomplete-content note against the replay.
+    const resolved = resolveSpectatorSetup({
+      seed: 'x',
+      seats: [{ preconId: 'precon_bastion_guardians', pilotId: 'value' }],
+    });
+
+    expect(resolved.problems).toEqual([]);
+    expect(resolved.seats).toHaveLength(1);
+    expect(resolved.incompleteCards).toEqual([]);
+  });
+
+  it('lets the developer override run it, and records every blocking card', () => {
+    const resolved = resolveSpectatorSetup(
+      {
+        seed: 'x',
+        developerAllowIncompleteCards: true,
+        seats: [{ preconId: 'precon_grave_sacrifice', pilotId: 'value' }],
+      },
+      { database: incompleteDatabase },
+    );
+
+    expect(resolved.problems).toEqual([]);
+    expect(resolved.seats).toHaveLength(1);
+    expect(resolved.incompleteCards[0]?.preconId).toBe('precon_grave_sacrifice');
+    expect(resolved.incompleteCards[0]?.cardIds).toEqual([UNFINISHED_CARD_ID]);
+
+    const provenance = setupProvenance(resolved);
+    expect(provenance.resultsValid).toBe(false);
+    expect(provenance.incompleteCards[0]?.playerId).toBe('player_1');
+  });
+
+  it('never overrides ordinary deck legality, only completeness', () => {
+    // Validated against the pool the match would be played on: under the
+    // development pool a Wave 1 precon resolves to nothing, and that is an
+    // illegal deck rather than an unfinished one.
+    const development = formatDatabase('development');
+    const resolved = resolveSpectatorSetup(
+      {
+        seed: 'x',
+        developerAllowIncompleteCards: true,
+        seats: [{ preconId: 'precon_goblin_swarm', pilotId: 'value' }],
+      },
+      { database: development },
+    );
+
+    expect(resolved.seats).toHaveLength(0);
+    expect(resolved.problems[0]?.kind).toBe('illegal_deck');
+    expect(resolved.incompleteCards).toEqual([]);
+  });
+
+  it('marks a valid setup valid without any override bookkeeping', () => {
+    expect(setupProvenance({ seats: [], problems: [], incompleteCards: [] })).toEqual({
+      resultsValid: true,
+      incompleteCards: [],
+    });
   });
 
   it('supports two, three and four seats', async () => {
@@ -117,6 +248,61 @@ describe('a recorded four-bot match', () => {
     expect(JSON.stringify(other.actions)).not.toBe(JSON.stringify(replay.actions));
   }, 60_000);
 
+  it('records a valid result now that no precon needs the override (M02.5)', () => {
+    // Up to M02.4 every run in this suite was overridden and stamped invalid.
+    // The four shipped precons are complete, so the ordinary four-bot match is
+    // now a result that counts — and nothing anywhere in the artefacts says
+    // otherwise.
+    expect(replay.provenance.resultsValid).toBe(true);
+    expect(replay.provenance.incompleteCards).toEqual([]);
+    expect(replay.telemetry.resultsValid).toBe(true);
+    expect(replay.diagnostics.find((line) => line.startsWith('results invalid:'))).toBeUndefined();
+  });
+
+  it('carries its provenance for as long as the replay exists (M01.2)', async () => {
+    // The override still has to mark everything it touches, so this runs a real
+    // match on a pool doctored to hold one unfinished card — the replay, the
+    // telemetry lifted out of it, and the diagnostics somebody skims all have to
+    // say the result does not count.
+    const resolved = resolveSpectatorSetup(
+      {
+        seed: 'spectator-incomplete',
+        developerAllowIncompleteCards: true,
+        seats: [
+          { preconId: 'precon_grave_sacrifice', pilotId: 'value' },
+          { preconId: 'precon_bastion_guardians', pilotId: 'value' },
+        ],
+      },
+      { database: incompleteDatabase },
+    );
+    expect(resolved.problems).toEqual([]);
+
+    const overridden = await runSpectatorMatch({
+      seed: 'spectator-incomplete',
+      seats: resolved.seats,
+      database: incompleteDatabase,
+      config,
+      cardDataHash: cardPoolHash(incompleteDatabase),
+      provenance: setupProvenance(resolved),
+    });
+
+    expect(overridden.provenance.resultsValid).toBe(false);
+    expect(overridden.telemetry.resultsValid).toBe(false);
+
+    const named = overridden.provenance.incompleteCards.flatMap((seat) => seat.cardIds);
+    expect(named).toContain(UNFINISHED_CARD_ID);
+    for (const seat of overridden.provenance.incompleteCards) {
+      expect(overridden.seats.some((entry) => entry.playerId === seat.playerId)).toBe(true);
+    }
+    const invalidLine = overridden.diagnostics.find((line) => line.startsWith('results invalid:'));
+    expect(invalidLine).toBeDefined();
+    for (const cardId of named) expect(invalidLine).toContain(cardId);
+
+    // And it survives being written out and read back.
+    const round = spectatorReplaySchema.parse(JSON.parse(JSON.stringify(overridden)));
+    expect(round.provenance).toEqual(overridden.provenance);
+  }, 60_000);
+
   it('records the versions a replay must be checked against', () => {
     expect(
       checkReplayCompatibility(replay, {
@@ -130,6 +316,60 @@ describe('a recorded four-bot match', () => {
       cardDataHash: 'deadbeef',
     });
     expect(stale.map((problem) => problem.field).sort()).toEqual(['cardDataHash', 'rulesVersion']);
+  });
+
+  /**
+   * M04.1's version policy: a replay recorded before the shared board telemetry
+   * existed is refused outright, and is refused *as an old replay* rather than
+   * as an unrecognised file. Migrating it would mean re-deriving measurements
+   * the recording build never made and presenting them under its identity.
+   */
+  it('refuses a replay from an earlier format version, and says which it is', () => {
+    const older = { ...replay, schemaVersion: SPECTATOR_REPLAY_VERSION - 1 };
+    expect(spectatorReplaySchema.safeParse(older).success).toBe(false);
+    expect(replayFormatVersion(older)).toBe(SPECTATOR_REPLAY_VERSION - 1);
+    // Something that is not a replay at all stays distinguishable from one.
+    expect(replayFormatVersion({ hello: 'world' })).toBeNull();
+    expect(replayFormatVersion('not an object')).toBeNull();
+    expect(replayFormatVersion(replay)).toBe(SPECTATOR_REPLAY_VERSION);
+  });
+
+  /**
+   * M01.3. `cardPoolHash` used to be taken over a field list maintained here,
+   * and that list did not include `additionalCosts` — so a card whose printed
+   * cost changed from "sacrifice a Unit of your choice" to "sacrifice a Unit"
+   * left the hash alone, and a replay recorded before the change was still
+   * accepted as compatible with the pool that came after it.
+   */
+  it('refuses a replay after only an interactive sacrifice cost changed', () => {
+    const real = database.all().find((entry) => entry.type === 'spell');
+    expect(real).toBeDefined();
+    if (!real) return;
+
+    const withInteractiveCost = cardDefinitionSchema.parse({
+      ...real,
+      additionalCosts: [{ type: 'sacrifice', amount: 1, selection: 'player_choice' }],
+    });
+    const withAutomaticCost = cardDefinitionSchema.parse({
+      ...real,
+      additionalCosts: [{ type: 'sacrifice', amount: 1, selection: 'automatic' }],
+    });
+
+    const others = database.all().filter((entry) => entry.id !== real.id);
+    const interactiveHash = cardPoolHash(new CardDatabase([...others, withInteractiveCost]));
+    const automaticHash = cardPoolHash(new CardDatabase([...others, withAutomaticCost]));
+
+    expect(interactiveHash).not.toBe(poolHash);
+    expect(automaticHash).not.toBe(interactiveHash);
+
+    // And that difference is what a recorded replay is checked against.
+    const recorded = { ...replay, cardDataHash: interactiveHash };
+    expect(
+      checkReplayCompatibility(recorded, {
+        rulesVersion: config.version,
+        cardDataHash: automaticHash,
+      }).map((problem) => problem.field),
+    ).toEqual(['cardDataHash']);
   });
 });
 

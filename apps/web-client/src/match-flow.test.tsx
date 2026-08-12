@@ -251,6 +251,91 @@ describe('lobby screen', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/not legal/);
   });
+
+  /** Puts the seat in a lobby, which is where the deck panel exists. */
+  async function enterLobby(harness: ReturnType<typeof renderMatchApp>): Promise<void> {
+    await openPlayTab(harness.user);
+    await clickCreateLobby(harness);
+    harness.transport().deliver({
+      type: 'lobby_joined',
+      versions: CURRENT_VERSIONS,
+      seatId: 'seat_1',
+      reconnectToken: 'c'.repeat(32),
+      lobby: {
+        inviteCode: 'PRE001',
+        status: 'waiting',
+        maxSeats: 2,
+        hostSeatId: 'seat_1',
+        canStart: false,
+        seats: [
+          {
+            seatId: 'seat_1',
+            displayName: 'Player',
+            connected: true,
+            ready: false,
+            deckName: null,
+            deckLegal: false,
+            isHost: true,
+            graceSeconds: null,
+            eliminated: false,
+          },
+        ],
+      },
+    });
+    await screen.findByText('PRE001');
+  }
+
+  it('offers the built-in precons for the active format beside saved decks', async () => {
+    const harness = renderMatchApp();
+    await enterLobby(harness);
+
+    const picker = screen.getByLabelText('Deck');
+    for (const name of [
+      'Bastion Guardians',
+      'Containment Control',
+      'Goblin Swarm',
+      'Grave Sacrifice',
+    ])
+      expect(within(picker).getByRole('option', { name })).toBeInTheDocument();
+    expect(within(picker).getByRole('option', { name: 'UI Test Deck' })).toBeInTheDocument();
+  });
+
+  it('submits a precon as an ID, sending no card list at all', async () => {
+    const harness = renderMatchApp();
+    await enterLobby(harness);
+
+    await harness.user.selectOptions(screen.getByLabelText('Deck'), 'precon:precon_goblin_swarm');
+    await harness.user.click(screen.getByRole('button', { name: 'Submit deck' }));
+
+    const submitted = harness.transport().last('submit_precon');
+    // The whole message: the server resolves the list from its own content, so
+    // there is nothing here for a client to tamper with (M03.2).
+    expect(submitted).toEqual({ type: 'submit_precon', preconId: 'precon_goblin_swarm' });
+    expect(harness.transport().last('submit_deck')).toBeUndefined();
+  });
+
+  it('still submits an edited deck by its contents', async () => {
+    const harness = renderMatchApp();
+    await enterLobby(harness);
+
+    await harness.user.selectOptions(screen.getByLabelText('Deck'), `deck:${savedDeck.id}`);
+    await harness.user.click(screen.getByRole('button', { name: 'Submit deck' }));
+
+    expect(harness.transport().last('submit_deck')?.deck).toEqual(savedDeck);
+    expect(harness.transport().last('submit_precon')).toBeUndefined();
+  });
+
+  it('previews a precon with the same review the server will run', async () => {
+    // `reviewPrecon` is shared, so the preview cannot promise a legality the
+    // server withholds. A shipped precon is legal, so nothing is flagged.
+    const harness = renderMatchApp();
+    await enterLobby(harness);
+
+    await harness.user.selectOptions(screen.getByLabelText('Deck'), 'precon:precon_goblin_swarm');
+
+    expect(screen.getByText(/Playing the built-in/)).toBeInTheDocument();
+    expect(screen.queryByText(/not legal yet/)).not.toBeInTheDocument();
+  });
 });
 
 async function clickCreateLobby(harness: ReturnType<typeof renderMatchApp>): Promise<void> {
@@ -528,6 +613,9 @@ describe('free-for-all match board', () => {
           summoningSick: false,
           keywords: [],
           isToken: false,
+          willNotReady: false,
+          // A unit on the battlefield has nothing to pay to play.
+          energyCost: null,
         },
       },
     };

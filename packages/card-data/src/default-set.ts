@@ -1,8 +1,8 @@
-import { unwrap } from '@tcg/shared';
+import { err, error, ok, unwrap, type Issue, type Result } from '@tcg/shared';
 import bundle from './data/generated/content-bundle.json' with { type: 'json' };
 import { CardDatabase } from './database.js';
 import { loadCardSets, type LoadedCardData } from './loader.js';
-import type { CardDefinition } from './schema/card.js';
+import type { CardDefinition, CardSet } from './schema/card.js';
 import { playFormatSchema, type PlayFormat } from './schema/format.js';
 import { preconDefinitionSchema, type PreconDefinition } from './schema/precon.js';
 
@@ -44,6 +44,23 @@ export function bundledPrecon(preconId: string): PreconDefinition | undefined {
   return BUNDLED_PRECONS.find((precon) => precon.id === preconId);
 }
 
+/**
+ * The built-in precons published for one format, in stable file order.
+ *
+ * The precon equivalent of `formatCardPool`: every surface that offers precons
+ * to choose from — the deck-builder browser, the lobby, the match server —
+ * scopes them through this, so a development fixture deck can never be listed
+ * beside Wave 1 and the list a player picks from is the list the server will
+ * accept from (M03.2).
+ *
+ * A precon that exists but belongs to another format is still resolvable by ID
+ * through `bundledPrecon`, because "this precon is for another format" is a
+ * better answer than "no such precon".
+ */
+export function preconsForFormat(formatId: string): readonly PreconDefinition[] {
+  return BUNDLED_PRECONS.filter((precon) => precon.formatId === formatId);
+}
+
 /** Looks up a bundled format by its permanent ID. */
 export function bundledFormat(formatId: string): PlayFormat | undefined {
   return BUNDLED_FORMATS.find((format) => format.formatId === formatId);
@@ -72,11 +89,21 @@ export function formatCardPool(formatId: string): CardDefinition[] {
   if (!format) {
     throw new Error(`Format "${formatId}" is not defined in content/formats.`);
   }
+  return poolOf(format, loadBundledCardData().sets);
+}
+
+/** A `CardDatabase` containing only the cards legal in `formatId`. */
+export function formatDatabase(formatId: string): CardDatabase {
+  return new CardDatabase(formatCardPool(formatId));
+}
+
+/** The single scoping rule every format-pool caller goes through. */
+function poolOf(format: PlayFormat, sets: readonly CardSet[]): CardDefinition[] {
   const banned = new Set(format.bannedCardIds);
   const included = new Set(format.setIds);
 
   const cards: CardDefinition[] = [];
-  for (const set of loadBundledCardData().sets) {
+  for (const set of sets) {
     if (!included.has(set.setId)) continue;
     for (const card of set.cards) {
       if (!banned.has(card.id)) cards.push(card);
@@ -85,7 +112,78 @@ export function formatCardPool(formatId: string): CardDefinition[] {
   return cards;
 }
 
-/** A `CardDatabase` containing only the cards legal in `formatId`. */
-export function formatDatabase(formatId: string): CardDatabase {
-  return new CardDatabase(formatCardPool(formatId));
+/**
+ * The format an entry point runs, from an explicit request or the default.
+ *
+ * Entry points must never *infer* a format from whatever data happens to be
+ * bundled. A blank request means "the shipping format"; anything else is taken
+ * literally so a development-format run is a deliberate, visible choice
+ * (`VITE_TCG_FORMAT` in the client, `TCG_FORMAT` on the server). An unknown ID
+ * is reported by `loadFormatCardData`, not silently replaced with the default.
+ */
+export function resolveFormatId(requested?: string | null): string {
+  const trimmed = requested?.trim();
+  return trimmed ? trimmed : DEFAULT_FORMAT_ID;
+}
+
+/** Validated bundled content, scoped to one format's legal pool. */
+export interface FormatCardData extends LoadedCardData {
+  /** The resolved format ID, for provenance in logs, results and replays. */
+  readonly formatId: string;
+  /** The format definition the pool was scoped with. */
+  readonly format: PlayFormat;
+}
+
+/**
+ * Loads the bundled content and returns *only* the pool legal in `formatId`.
+ *
+ * This is the shared entry-point API: the deck builder and the match server
+ * both resolve their pool through it, so neither can drift into offering or
+ * accepting a card the other refuses. `loadBundledCardData()` remains the
+ * universe — needed to resolve saved decks and replays from any format — and is
+ * not a legal pool for anything.
+ *
+ * `database` and `sets` are format-scoped. `warnings` are not: they are
+ * authoring diagnostics about the bundle as a whole, and hiding the ones
+ * outside the active format would make content problems harder to see, not
+ * fewer.
+ */
+export function loadFormatCardData(formatId: string): Result<FormatCardData, Issue[]> {
+  const format = bundledFormat(formatId);
+  if (!format) {
+    const known = BUNDLED_FORMATS.map((entry) => entry.formatId).join(', ');
+    return err([
+      error(
+        'card_data/unknown_format',
+        `Format "${formatId}" is not defined in content/formats. Known formats: ${known}.`,
+        { context: { formatId, known: BUNDLED_FORMATS.map((entry) => entry.formatId) } },
+      ),
+    ]);
+  }
+
+  const loaded = loadCardSets(BUNDLED_CARD_SETS);
+  if (!loaded.ok) return loaded;
+
+  const available = new Set(loaded.value.sets.map((set) => set.setId));
+  const missing = format.setIds.filter((setId) => !available.has(setId));
+  if (missing.length > 0) {
+    // Otherwise the format would quietly resolve to a smaller pool than it
+    // declares, and a deck would be rejected for the wrong reason.
+    return err([
+      error(
+        'card_data/unknown_format_set',
+        `Format "${formatId}" declares set${missing.length === 1 ? '' : 's'} ${missing.join(', ')}, which ${missing.length === 1 ? 'is' : 'are'} not in the bundled content. Run \`npm run content:build\`.`,
+        { context: { formatId, missing } },
+      ),
+    ]);
+  }
+
+  const sets = loaded.value.sets.filter((set) => format.setIds.includes(set.setId));
+  return ok({
+    formatId: format.formatId,
+    format,
+    database: new CardDatabase(poolOf(format, loaded.value.sets)),
+    sets,
+    warnings: loaded.value.warnings,
+  });
 }

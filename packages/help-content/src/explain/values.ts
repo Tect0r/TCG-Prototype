@@ -5,6 +5,7 @@ import {
   type CountQuery,
   type CountSubject,
   type SignedValueExpression,
+  type StatSubject,
   type ValueExpression,
 } from '@tcg/card-data';
 
@@ -194,15 +195,34 @@ export function describeCount(query: CountQuery, plural = true): string {
     .join(' ');
 }
 
-/** "three", "the number of Goblins you control", "one for every three Goblins". */
+/** Whose statline a derived value reads, as the word a card would use. */
+const STAT_SUBJECT_NOUNS: Record<StatSubject, string> = {
+  effect_target: 'its',
+  trigger_subject: "the triggering card's",
+  source: "this card's",
+};
+
+/**
+ * "three", "the number of Goblins you control", "one for every three Goblins",
+ * "its ATK".
+ */
 export function describeValue(value: ValueExpression | SignedValueExpression): string {
   if (typeof value === 'number') return numberWord(Math.abs(value));
 
-  const counted = describeCount(value.count);
   const base =
-    value.per === 1
-      ? `the number of ${counted}`
-      : `one for every ${numberWord(value.per)} ${counted}`;
+    value.kind === 'stat'
+      ? `${STAT_SUBJECT_NOUNS[value.of]} ${value.stat === 'attack' ? 'ATK' : 'health'}`
+      : value.kind === 'previous_targets'
+        ? // "That many" rather than a description of the preceding step, because
+          // the sentence before this one has just said what it acted on and
+          // repeating it inline ("deal the number of cards the step before this
+          // one acted on damage") is unreadable. The card schema guarantees
+          // there *is* a preceding step, and the renderers that use this pair it
+          // with a note spelling the reference out.
+          'that many'
+        : value.per === 1
+          ? `the number of ${describeCount(value.count)}`
+          : `one for every ${numberWord(value.per)} ${describeCount(value.count)}`;
 
   const extras: string[] = [];
   if (value.plus > 0) extras.push(`plus ${numberWord(value.plus)}`);
@@ -211,6 +231,37 @@ export function describeValue(value: ValueExpression | SignedValueExpression): s
   if (value.minimum > 0) extras.push(`to a minimum of ${numberWord(value.minimum)}`);
 
   return extras.length > 0 ? `${base}, ${extras.join(', ')}` : base;
+}
+
+/**
+ * The same expression split into "how much" and "per what".
+ *
+ * `describeValue` words a scaling amount as a *total* — "the number of units
+ * defeated this turn" — which is right inside "draw that many cards" and wrong
+ * inside a cost clause: "costs the number of units defeated this turn less"
+ * reads like a machine wrote it, where the card says "costs 1 less for each
+ * Unit defeated this turn". Same claim, two sentences, so the caller picks.
+ *
+ * `per` is null whenever there is nothing to scale by — a printed number, or a
+ * value read off a statline.
+ */
+export function describeScaling(value: ValueExpression): {
+  readonly amount: string;
+  readonly per: string | null;
+} {
+  if (typeof value === 'number') return { amount: numberWord(value), per: null };
+  // Neither a statline nor a `previous_targets` total scales by anything: both
+  // are one number read once, so there is no "per what" to split off.
+  if (value.kind === 'stat' || value.kind === 'previous_targets') {
+    return { amount: describeValue(value), per: null };
+  }
+  return {
+    amount: 'one',
+    per:
+      value.per === 1
+        ? `each ${describeCount(value.count, false)}`
+        : `every ${numberWord(value.per)} ${describeCount(value.count)}`,
+  };
 }
 
 /** True when the value is a plain printed number, for callers that branch. */

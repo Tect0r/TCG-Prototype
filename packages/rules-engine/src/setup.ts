@@ -164,6 +164,8 @@ export function createMatch(options: CreateMatchOptions): Result<MatchStart, Eng
     combat: { ...EMPTY_COMBAT },
     reactionWindow: null,
     nextReactionWindowOrdinal: 0,
+    delayedEffects: [],
+    nextDelayedOrdinal: 0,
     turnEvents: freshTurnEvents(),
     result: null,
     sequence: 0,

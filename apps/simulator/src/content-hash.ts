@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import type { CardDatabase, CardDefinition, CardId } from '@tcg/card-data';
+import {
+  cardMechanics,
+  cardPilotMetadata,
+  cardPresentation,
+  type CardDatabase,
+  type CardDefinition,
+  type CardId,
+} from '@tcg/card-data';
 import type { RulesConfig } from '@tcg/rules-engine';
 import type { DeckFormatConfig } from '@tcg/deck';
 import { digestOf } from './hash.js';
@@ -21,10 +28,15 @@ import { digestOf } from './hash.js';
  * | `fullContentHash`   | Is this byte-for-byte the same content?              |
  *
  * The split is only trustworthy if the boundary is drawn where the code actually
- * reads things, so two easily-missed cases are called out at their definitions:
- * `tags` are mechanical (card filters match on them), and `unique`/`collectible`
- * are mechanical (deck legality reads them).
+ * reads things, so the projections themselves live beside the card schema in
+ * `@tcg/card-data#CARD_FIELD_KINDS`, where a new card field cannot be added
+ * without classifying it (M01.3). They used to be defined here, from a field
+ * list that had drifted: it omitted `additionalCosts`, `reaction` and
+ * `implemented`, and its pilot projection read `design.roles`/`design.archetypes`
+ * — names the card schema has never had — so authored design metadata was hashed
+ * as `null` whatever it said.
  */
+export { cardMechanics, cardPilotMetadata, cardPresentation };
 
 export const environmentHashesSchema = z.strictObject({
   /** Executable rules only: card mechanics, the pool, rules config, deck format. */
@@ -37,63 +49,6 @@ export const environmentHashesSchema = z.strictObject({
   fullContentHash: z.string(),
 });
 export type EnvironmentHashes = z.infer<typeof environmentHashesSchema>;
-
-/** Design metadata a card may carry. Read by pilots and analysis, never by the engine. */
-interface DesignBearing {
-  readonly design?: {
-    readonly roles?: readonly string[];
-    readonly archetypes?: readonly string[];
-    readonly complexity?: string;
-    readonly status?: string;
-    readonly setId?: string;
-  };
-}
-
-/** The executable projection of a card: everything the engine reads. */
-export function cardMechanics(card: CardDefinition): unknown {
-  return {
-    id: card.id,
-    type: card.type,
-    colorIdentity: card.colorIdentity,
-    cost: card.cost,
-    attack: card.attack ?? null,
-    health: card.health ?? null,
-    // Deck legality reads both of these, so they change what can be played.
-    unique: card.unique,
-    collectible: card.collectible,
-    // Tags are mechanical, not decoration: `CardFilter` matches on them, so a tag
-    // edit can change which units a lord buffs or which cards a spell may target.
-    tags: [...card.tags].sort(),
-    keywords: [...card.keywords].sort(),
-    effects: card.effects,
-    abilities: card.abilities,
-    activatedAbilities: card.activatedAbilities,
-    staticAbilities: card.staticAbilities,
-  };
-}
-
-/** Authored metadata pilots and deck generation read but the engine does not. */
-export function cardPilotMetadata(card: CardDefinition): unknown {
-  const design = (card as CardDefinition & DesignBearing).design;
-  return {
-    id: card.id,
-    role: card.role ?? null,
-    powerClass: card.powerClass ?? null,
-    roles: design?.roles ? [...design.roles].sort() : null,
-    archetypes: design?.archetypes ? [...design.archetypes].sort() : null,
-    complexity: design?.complexity ?? null,
-  };
-}
-
-/** Player-facing content. Changing it can never change a match. */
-export function cardPresentation(card: CardDefinition): unknown {
-  return {
-    id: card.id,
-    name: card.name,
-    displayText: card.displayText ?? null,
-    text: card.text ?? null,
-  };
-}
 
 /**
  * Every definition a match in this environment can reach.

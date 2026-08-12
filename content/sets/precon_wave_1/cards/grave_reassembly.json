@@ -11,7 +11,35 @@
     "identity": "Sacrifice Spell — Mass Recovery",
     "power": "high"
   },
-  "implemented": false,
-  "unsupportedReason": "needs returning a card from discard directly to the battlefield (ruleset update §15)",
-  "displayText": "Return up to two Unit cards costing 3 or less from your discard pile to the battlefield Exhausted. They are Newly Deployed."
+  "effects": [
+    {
+      "type": "move_card",
+      "toZone": "battlefield",
+      "entersExhausted": true,
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "discard",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"],
+            "cost": { "max": 3 }
+          },
+          "count": 2,
+          "optional": true
+        }
+      }
+    }
+  ],
+  "displayText": "Return up to two Unit cards costing 3 or less from your discard pile to the battlefield Exhausted. They are Newly Deployed.",
+  "text": {
+    "effectExplanations": [
+      "\"Up to two\" means you may return one, or none at all — the spell still resolves."
+    ],
+    "notes": [
+      "The Units arrive as if they had just been put into play, not as if they had been deployed: they are Newly Deployed, so they cannot attack or pay an Exhaust cost until your next Ready Step, and anything that watches for a Unit being deployed does not fire. Anything that watches for a Unit entering the battlefield does.",
+      "They arrive already Exhausted. Newly Deployed on its own would still let them block, but an Exhausted Unit cannot, so they defend nothing until your next Ready Step readies them and clears Newly Deployed together.",
+      "Cost 3 or less is the cost printed on the card in the discard pile."
+    ]
+  }
 }

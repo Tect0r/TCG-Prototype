@@ -137,16 +137,38 @@ export {
   type SearchResult,
 } from './deck-search/evolve.js';
 
-export { resolveDeckSource, configDirOf, type ResolvedDecks } from './deck-source.js';
+export {
+  resolveDeckSource,
+  configDirOf,
+  resolvedPreconSchema,
+  type ResolvedDecks,
+  type ResolvedPrecon,
+} from './deck-source.js';
 
 export {
   buildSchedule,
+  deckMultisets,
   deckTuples,
+  distinctRotationCount,
   pilotTuples,
   type ScheduleOptions,
   type ScheduledMatch,
   type ScheduledSeat,
 } from './schedule.js';
+
+export {
+  MATCHUP_MATRIX_SCHEMA_VERSION,
+  buildMatchupMatrix,
+  matchupMatrixRows,
+  matchupMatrixSchema,
+  type BuildMatchupMatrixInputs,
+  type MatchupCell,
+  type MatchupDeck,
+  type MatchupGame,
+  type MatchupMatrix,
+  type MatchupMatrixRow,
+  type MatchupSeat,
+} from './matchup-matrix.js';
 
 export {
   DEFAULT_LIMITS,

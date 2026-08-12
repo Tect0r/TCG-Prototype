@@ -15,11 +15,18 @@ import {
   abilityDefinitionSchema,
   activatedAbilityDefinitionSchema,
   additionalCostSchema,
+  delayedAbilityDefinitionSchema,
   effectDefinitionSchema,
   staticAbilityDefinitionSchema,
   type EffectDefinition,
 } from './effect.js';
-import { cardFilterSchema } from './target.js';
+import { cardFilterSchema, type TargetSelector } from './target.js';
+import {
+  isPreviousTargetsValue,
+  isStatValue,
+  type SignedValueExpression,
+  type ValueExpression,
+} from './condition.js';
 
 /**
  * When a Reaction may be played, as structured data.
@@ -140,6 +147,14 @@ const baseCardSchema = z.strictObject({
   activatedAbilities: z.array(activatedAbilityDefinitionSchema).default([]),
   /** Continuous effects, recomputed from state rather than applied once. */
   staticAbilities: z.array(staticAbilityDefinitionSchema).default([]),
+  /**
+   * Delayed effects this card can set up, referenced by ID from a
+   * `schedule_delayed` instruction (M02.1).
+   *
+   * Inert on their own: an entry nothing schedules never happens, which is why
+   * an unreferenced one is rejected below rather than left as dead data.
+   */
+  delayedAbilities: z.array(delayedAbilityDefinitionSchema).max(4).default([]),
   /** Required on a `reaction`, and meaningless on anything else. */
   reaction: reactionTimingSchema.optional(),
   /**
@@ -176,7 +191,7 @@ const PLAYED_FROM_HAND = new Set(['unit', 'spell', 'relic']);
  * the card's top-level text.
  */
 function effectLists(
-  card: Pick<CardDefinition, 'effects' | 'abilities' | 'activatedAbilities'>,
+  card: Pick<CardDefinition, 'effects' | 'abilities' | 'activatedAbilities' | 'delayedAbilities'>,
 ): { path: (string | number)[]; effects: readonly EffectDefinition[] }[] {
   return [
     { path: ['effects'], effects: card.effects },
@@ -188,7 +203,58 @@ function effectLists(
       path: ['activatedAbilities', index, 'effects'],
       effects: ability.effects,
     })),
+    // A delayed body is an ordinary instruction list that happens to resolve
+    // later, so "if you do" and the `while_source_present` rule below mean
+    // exactly what they mean anywhere else and are checked the same way.
+    ...card.delayedAbilities.map((ability, index) => ({
+      path: ['delayedAbilities', index, 'effects'],
+      effects: ability.effects,
+    })),
   ];
+}
+
+/**
+ * Every `ValueExpression` field an instruction carries, with its field name.
+ *
+ * Hand-maintained rather than derived, because the schema mixes two kinds of
+ * "amount": `ValueExpression` fields the board can decide, and the plain
+ * `z.number()` fields on `search_zone`, `reorder_zone`, `modify_cost` and
+ * `counter`, which are printed constants. Only the first kind can carry a
+ * derived value, so only the first kind is listed here. A new value-bearing
+ * instruction has to be added, or its derived values go unchecked.
+ */
+function valueFieldsOf(
+  effect: EffectDefinition,
+): { field: string; value: ValueExpression | SignedValueExpression }[] {
+  switch (effect.type) {
+    case 'draw':
+    case 'discard':
+    case 'create_token':
+    case 'deal_damage':
+    case 'heal':
+    case 'prevent_damage':
+      return [{ field: 'amount', value: effect.amount }];
+    case 'modify_stats':
+      return [
+        { field: 'attack', value: effect.attack },
+        { field: 'health', value: effect.health },
+      ];
+    default:
+      return [];
+  }
+}
+
+/**
+ * The zone query an instruction points at, when it has one.
+ *
+ * `source`, `trigger_subject`, `blocked_by_source`, `previous_target` and the
+ * two player kinds all name a set nobody picks from, so there is no selector to
+ * validate — which is exactly why the checks below skip them rather than
+ * guessing at a shape.
+ */
+function selectorOf(effect: EffectDefinition): TargetSelector | null {
+  if (!('target' in effect)) return null;
+  return effect.target.kind === 'entity' ? effect.target.selector : null;
 }
 
 export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
@@ -373,14 +439,25 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
   // sustain it; a triggered or activated ability on any of them can too, since
   // the card is still in play.
   if (card.type === 'spell' || card.type === 'reaction') {
-    card.effects.forEach((effect, index) => {
-      if (!('duration' in effect) || effect.duration !== 'while_source_present') return;
-      ctx.addIssue({
-        code: 'custom',
-        path: ['effects', index, 'duration'],
-        message: `A ${card.type} leaves play as it resolves, so it cannot sustain a \`while_source_present\` modifier. Use \`end_of_turn\` or \`permanent\`.`,
+    // A delayed body resolves later still, so a source-bound modifier written
+    // there is even more obviously dead than one written in the spell itself.
+    const sourceBoundLists = [
+      { path: ['effects'] as (string | number)[], effects: card.effects },
+      ...card.delayedAbilities.map((ability, index) => ({
+        path: ['delayedAbilities', index, 'effects'] as (string | number)[],
+        effects: ability.effects,
+      })),
+    ];
+    for (const list of sourceBoundLists) {
+      list.effects.forEach((effect, index) => {
+        if (!('duration' in effect) || effect.duration !== 'while_source_present') return;
+        ctx.addIssue({
+          code: 'custom',
+          path: [...list.path, index, 'duration'],
+          message: `A ${card.type} leaves play as it resolves, so it cannot sustain a \`while_source_present\` modifier. Use \`end_of_turn\` or \`permanent\`.`,
+        });
       });
-    });
+    }
   }
 
   // "If you do" needs a preceding instruction to be about. At index 0 there is
@@ -400,6 +477,147 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
     });
   }
 
+  // "… to the battlefield Exhausted" describes an arrival on the battlefield.
+  // Anywhere else there is nothing to exhaust — a card in a hand, a deck, a
+  // discard pile or out of the game has no readiness at all — so the flag would
+  // be a printed detail the engine drops (M02.2).
+  for (const list of effectLists(card)) {
+    list.effects.forEach((effect, index) => {
+      if (effect.type !== 'move_card') return;
+      if (!effect.entersExhausted || effect.toZone === 'battlefield') return;
+      ctx.addIssue({
+        code: 'custom',
+        path: [...list.path, index, 'entersExhausted'],
+        message:
+          'Only a card arriving on the battlefield can arrive Exhausted; nothing in another zone is Ready or Exhausted.',
+      });
+    });
+  }
+
+  // "Gains Health equal to **its** ATK" reads the statline of the card the
+  // instruction is acting on, so there has to be one, and it has to be a card.
+  // An instruction with no target at all, or one aimed at a player, would leave
+  // "it" pointing at nothing and the value would quietly resolve to zero — a
+  // card that reads as a scaling effect and behaves as none (M02.3).
+  for (const list of effectLists(card)) {
+    list.effects.forEach((effect, index) => {
+      for (const { field, value } of valueFieldsOf(effect)) {
+        if (!isStatValue(value) || value.of !== 'effect_target') continue;
+        const path = [...list.path, index, field, 'of'];
+        if (!('target' in effect)) {
+          ctx.addIssue({
+            code: 'custom',
+            path,
+            message: `A \`${effect.type}\` instruction has no target, so a value read from "effect_target" refers to nothing. Use "source" or "trigger_subject".`,
+          });
+          continue;
+        }
+        if (effect.target.kind === 'player' || effect.target.kind === 'players') {
+          ctx.addIssue({
+            code: 'custom',
+            path,
+            message:
+              'A player has no ATK or Health of its own, so a value read from "effect_target" cannot be resolved. Player health is not a statline.',
+          });
+        }
+      }
+    });
+  }
+
+  // "For each Unit sacrificed" counts what the instruction before this one
+  // resolved with, exactly as an "if you do" condition and a `previous_target`
+  // subject do — and at index 0 there is none, so the amount would silently be
+  // zero and the instruction would be dead text (M02.5).
+  for (const list of effectLists(card)) {
+    list.effects.forEach((effect, index) => {
+      if (index > 0) return;
+      for (const { field, value } of valueFieldsOf(effect)) {
+        if (!isPreviousTargetsValue(value)) continue;
+        ctx.addIssue({
+          code: 'custom',
+          path: [...list.path, index, field, 'kind'],
+          message:
+            'A "previous_targets" amount counts what the instruction before it acted on; the first instruction has none.',
+        });
+      }
+    });
+  }
+
+  // Divided damage splits a total across targets the *allocation* names, so the
+  // selector underneath it has to be the unrestricted pool that allocation
+  // picks from. A fixed `count`, or a selection nobody makes, describes a
+  // pre-selection the division never performs — a printed clause the engine
+  // would have to quietly reinterpret (M02.5).
+  for (const list of effectLists(card)) {
+    list.effects.forEach((effect, index) => {
+      if (effect.type !== 'deal_damage' || effect.divided !== true) return;
+      const path = [...list.path, index, 'divided'];
+      const selector = selectorOf(effect);
+      if (selector === null) {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message:
+            'Divided damage needs a set of entity targets to divide between; a player or a fixed subject takes the whole amount.',
+        });
+        return;
+      }
+      if (selector.selection !== 'player_choice') {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message: 'Divided damage is allocated by a player; set `selection` to "player_choice".',
+        });
+      }
+      if (selector.count !== 'all') {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message:
+            'The allocation decides which targets are hit, so the selector is the pool it draws from; set `count` to "all".',
+        });
+      }
+      // One player splits one total. "Each player divides N damage" is a
+      // different card that nothing prints, and composing the two primitives
+      // untested is exactly the untested rule ruleset update §18 rules out.
+      if (selector.chooser === 'each_opponent' || selector.chooser === 'all_players') {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message: 'A divided total is allocated by one player; `chooser` cannot name several.',
+        });
+      }
+      // The total is read once, before anything is targeted, so there is no
+      // "it" for a statline to be read off. Left alone it would resolve to a
+      // silent zero and the card would deal no damage at all.
+      if (isStatValue(effect.amount) && effect.amount.of === 'effect_target') {
+        ctx.addIssue({
+          code: 'custom',
+          path: [...list.path, index, 'amount', 'of'],
+          message:
+            'A divided total is read before any target is chosen, so it cannot come from "effect_target". Use "source" or "trigger_subject".',
+        });
+      }
+    });
+  }
+
+  // A plural chooser is only ever read when somebody is being asked. Setting one
+  // beside a `random` or `automatic` selection prints "each player chooses" on a
+  // card where nobody chooses anything (M02.5).
+  for (const list of effectLists(card)) {
+    list.effects.forEach((effect, index) => {
+      const selector = selectorOf(effect);
+      if (selector === null) return;
+      if (selector.chooser !== 'each_opponent' && selector.chooser !== 'all_players') return;
+      if (selector.selection === 'player_choice') return;
+      ctx.addIssue({
+        code: 'custom',
+        path: [...list.path, index, 'target', 'selector', 'chooser'],
+        message: `A "${selector.chooser}" chooser only means anything when \`selection\` is "player_choice"; nobody is asked for a ${selector.selection} selection.`,
+      });
+    });
+  }
+
   // Only the cards the ordinary play-from-hand path handles may print one.
   // A token is created by an effect and a Commander is deployed through its own
   // path, so neither has a moment at which a cost list would be read; a
@@ -413,6 +631,91 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
       message: `A ${card.type} is not played through the ordinary play-from-hand path, so it cannot carry an additional cost.`,
     });
   }
+
+  // A delayed effect is only ever set up by a `schedule_delayed` naming it, so
+  // the two sides have to agree. A dangling reference would be an instruction
+  // that silently does nothing; an unreferenced entry would be a delayed clause
+  // printed on a card that can never happen. Both are the "silently approximate
+  // a card" failure ruleset update §1 forbids, so both are rejected.
+  const delayedIds = new Set<string>();
+  card.delayedAbilities.forEach((ability, index) => {
+    if (delayedIds.has(ability.id)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delayedAbilities', index, 'id'],
+        message: `Delayed ability IDs must be unique within a card; "${ability.id}" is used twice.`,
+      });
+    }
+    delayedIds.add(ability.id);
+
+    // A watch has to have something to watch. The trigger names an event about
+    // a card, and without a bound subject there is no card for it to be about.
+    if (ability.trigger !== undefined && ability.subject === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delayedAbilities', index, 'subject'],
+        message:
+          'A delayed ability that waits for a trigger must name the subject the event has to be about.',
+      });
+    }
+
+    ability.effects.forEach((effect, effectIndex) => {
+      // One level, always. Nesting would turn a bounded piece of bookkeeping
+      // into a chain whose length is a property of the card data.
+      if (effect.type === 'schedule_delayed') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['delayedAbilities', index, 'effects', effectIndex, 'type'],
+          message: 'A delayed ability cannot schedule another delayed ability.',
+        });
+      }
+      if (effect.type === 'counter') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['delayedAbilities', index, 'effects', effectIndex, 'type'],
+          message: 'Countering happens inside a Reaction window, which no delayed effect is in.',
+        });
+      }
+    });
+  });
+
+  const scheduled = new Set<string>();
+  for (const list of effectLists(card)) {
+    list.effects.forEach((effect, index) => {
+      if (effect.type !== 'schedule_delayed') return;
+      scheduled.add(effect.delayedAbilityId);
+
+      const ability = card.delayedAbilities.find((entry) => entry.id === effect.delayedAbilityId);
+      if (!ability) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [...list.path, index, 'delayedAbilityId'],
+          message: `No \`delayedAbilities\` entry with id "${effect.delayedAbilityId}" on this card.`,
+        });
+        return;
+      }
+
+      // `previous_target` reads the instruction before this one, exactly as an
+      // "if you do" condition does — and at index 0 there is none, so the
+      // delayed effect could never find a subject and would never be scheduled.
+      if (ability.subject === 'previous_target' && index === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [...list.path, index, 'delayedAbilityId'],
+          message: `"${ability.id}" points at the target of the instruction before it; the first instruction has none.`,
+        });
+      }
+    });
+  }
+
+  card.delayedAbilities.forEach((ability, index) => {
+    if (scheduled.has(ability.id)) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['delayedAbilities', index, 'id'],
+      message: `Nothing on this card schedules "${ability.id}"; add a \`schedule_delayed\` instruction or remove it.`,
+    });
+  });
 
   // Curated step clarifications are index-aligned with `effects`. More of them
   // than there are steps means the card was edited and the prose was not — the
@@ -458,6 +761,7 @@ export const PATCHABLE_CARD_FIELDS = [
   'abilities',
   'activatedAbilities',
   'staticAbilities',
+  'delayedAbilities',
   'reaction',
   'displayText',
   'text',

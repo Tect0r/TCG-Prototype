@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@tcg/board-telemetry": "*",
     "@tcg/bot-interface": "*",
     "@tcg/card-data": "*",
     "@tcg/deck": "*",

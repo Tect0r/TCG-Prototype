@@ -1,11 +1,11 @@
 import type { CardDefinition, ReactionWindow } from '@tcg/card-data';
 import { emit, type MatchContext } from './context.js';
 import { staticAbilityActive } from './continuous.js';
+import { playCostOf } from './costs.js';
 import { engineError, type EngineError } from './errors.js';
 import {
   activeFirstOrder,
   definitionOf,
-  energyCostOf,
   findInstance,
   isAlive,
   matchesCardFilter,
@@ -14,7 +14,7 @@ import {
 import { enqueue } from './triggers.js';
 import { moveToZone } from './zones.js';
 import type { InstanceId, MatchPhase, PlayerId } from './schema/primitives.js';
-import type { PendingReaction, ReactionWindowState } from './schema/state.js';
+import type { CardInstance, PendingReaction, ReactionWindowState } from './schema/state.js';
 
 /**
  * Bounded Reaction windows (rule adjustment §5).
@@ -110,14 +110,22 @@ export interface ReactionCost {
  * The floor is the discounting effect's own printed minimum, clamped so it can
  * never raise a cost that was already below it — "costs 1 less, to a minimum of
  * 1" must not make a free Reaction cost 1.
+ *
+ * The base is the ordinary play cost, not the printed one, so a Reaction
+ * carrying a `cost_reduction` static ability is discounted the same way in a
+ * window as it would be in a Main Phase (M02.3). The two reductions apply in
+ * sequence — the derived one first, then the per-turn Reaction discount — and
+ * each respects its own printed floor. No authored card carries both, so the
+ * ordering is currently unobservable; it is pinned here rather than left to
+ * whichever call site ran first.
  */
 export function reactionCostOf(
   ctx: MatchContext,
   playerId: PlayerId,
-  definition: CardDefinition,
+  instance: CardInstance,
 ): ReactionCost {
-  const player = playerOf(ctx.state, playerId);
-  const base = energyCostOf(player, definition);
+  const definition = definitionOf(ctx.database, instance);
+  const base = playCostOf(ctx, playerId, instance, definition);
   const { amount, minimum } = reactionDiscountFor(ctx, playerId, definition);
   if (amount === 0) return { cost: base, discount: 0, consumesDiscount: false };
 
@@ -181,7 +189,7 @@ export function playableReactions(
     if (definition.type !== 'reaction') continue;
     if (!timingAdmits(ctx, definition, window)) continue;
 
-    const { cost } = reactionCostOf(ctx, playerId, definition);
+    const { cost } = reactionCostOf(ctx, playerId, instance);
     if (cost > player.energy) continue;
     playable.push({ instanceId, definitionId: definition.id, energyCost: cost });
   }
@@ -365,7 +373,7 @@ export function handlePlayReaction(
     return engineError('engine/unknown_instance', 'No such card in this match.', { instanceId });
   }
   const definition = definitionOf(ctx.database, instance);
-  const { cost, discount, consumesDiscount } = reactionCostOf(ctx, playerId, definition);
+  const { cost, discount, consumesDiscount } = reactionCostOf(ctx, playerId, instance);
 
   // ---- committed
   const player = playerOf(ctx.state, playerId);

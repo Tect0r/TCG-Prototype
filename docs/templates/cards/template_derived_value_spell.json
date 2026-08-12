@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 4,
+  "id": "template_derived_value_spell",
+  "name": "Template Derived Value Spell",
+  "type": "spell",
+  "colorIdentity": ["white"],
+  "cost": 2,
+  "role": "support",
+  "powerClass": "standard",
+  "tags": [],
+  "keywords": [],
+  "effects": [
+    {
+      "type": "modify_stats",
+      "target": {
+        "kind": "entity",
+        "selector": {
+          "zone": "battlefield",
+          "controller": "self",
+          "filter": {
+            "cardTypes": ["unit"]
+          },
+          "count": 1
+        }
+      },
+      "health": {
+        "kind": "stat",
+        "of": "effect_target",
+        "stat": "attack"
+      },
+      "duration": "end_of_combat"
+    }
+  ],
+  "displayText": "Target friendly Unit gains Health equal to its ATK for that combat.",
+  "text": {
+    "flavor": "A `stat` value reads a number off a card instead of printing one. `of: \"effect_target\"` is the \"its\" in \"equal to its ATK\": the card this instruction acts on, read per recipient, from the derived statline as it resolves. Use `\"source\"` or `\"trigger_subject\"` when \"it\" is another card."
+  }
+}

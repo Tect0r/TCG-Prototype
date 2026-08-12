@@ -77,6 +77,23 @@ export interface ScheduleOptions {
    * one, so nothing downstream can confuse the two decks.
    */
   readonly seedIgnoreDeckHashes?: readonly string[];
+  /**
+   * Also seat a deck against itself (M03.4).
+   *
+   * The default schedule enumerates *combinations* of distinct decks, because a
+   * search or an abuse hunt learns nothing from a deck beating a copy of itself
+   * and would spend a quarter of its budget doing so. An ordered matchup matrix
+   * is the opposite case: "every ordered pair of the four precons" is 4 × 4 = 16
+   * cells, and the four diagonal ones are mirrors. With this set, deck tuples are
+   * combinations *with repetition*.
+   *
+   * A mirror tuple has one distinct seat rotation rather than `playerCount` of
+   * them, so it contributes one ordered matchup and not `playerCount` copies of
+   * the same table on different seeds. Tuples of distinct decks are unaffected:
+   * all of their rotations differ, which is why turning this on cannot move an
+   * existing schedule.
+   */
+  readonly includeMirrorMatchups?: boolean;
 }
 
 /** Every combination of `size` deck indices, in stable lexicographic order. */
@@ -136,6 +153,46 @@ export function pilotTuples(
   }
 }
 
+/**
+ * Every combination of `size` deck indices *with repetition*, in stable order.
+ *
+ * The mirror-inclusive counterpart of `deckTuples`: `[0, 0]` is a deck seated
+ * against a copy of itself, which is a legitimate ordered matchup and not a
+ * duplicate of anything.
+ */
+export function deckMultisets(deckCount: number, size: number): number[][] {
+  const tuples: number[][] = [];
+  const build = (start: number, current: number[]): void => {
+    if (current.length === size) {
+      tuples.push([...current]);
+      return;
+    }
+    for (let index = start; index < deckCount; index += 1) {
+      current.push(index);
+      build(index, current);
+      current.pop();
+    }
+  };
+  build(0, []);
+  return tuples;
+}
+
+/**
+ * How many *distinct* seatings rotating this tuple produces.
+ *
+ * For a tuple of distinct decks this is its length, which is what the schedule
+ * has always used. For a mirror it is 1: rotating `[0, 0]` gives `[0, 0]` back,
+ * and running that twice would be two games of one matchup rather than the two
+ * seat orientations the mirroring is there to measure.
+ */
+export function distinctRotationCount(tuple: readonly number[]): number {
+  const size = tuple.length;
+  for (let by = 1; by < size; by += 1) {
+    if (tuple.every((value, index) => value === tuple[(index + by) % size])) return by;
+  }
+  return size;
+}
+
 /** Rotates a tuple left by `by` positions. */
 function rotate<T>(items: readonly T[], by: number): T[] {
   const size = items.length;
@@ -150,7 +207,9 @@ export function buildSchedule(options: ScheduleOptions): ScheduledMatch[] {
     );
   }
 
-  let tuples = deckTuples(options.decks.length, size);
+  let tuples = options.includeMirrorMatchups
+    ? deckMultisets(options.decks.length, size)
+    : deckTuples(options.decks.length, size);
   if (options.schedule === 'sampled' && tuples.length > options.sampledPairings) {
     // Deterministic sampling: rank every tuple by a hash of its own identity and
     // keep the lowest. No RNG, no order dependence, stable under resume.
@@ -163,7 +222,6 @@ export function buildSchedule(options: ScheduleOptions): ScheduledMatch[] {
   }
 
   const pilotSets = pilotTuples(options.pilots.length, size, options.pilotPairing);
-  const orientations = options.mirrorSeats ? size : 1;
   const environmentPath = options.pairedSeeds
     ? options.experimentSeed
     : environmentSeed(options.experimentSeed, options.environmentId);
@@ -182,6 +240,9 @@ export function buildSchedule(options: ScheduleOptions): ScheduledMatch[] {
         ? deckPairId
         : digestOf({ decks: hashes.map((hash) => (masked.has(hash) ? '*' : hash)).sort() });
     const pairPath = deckPairSeed(environmentPath, seedPairId);
+    // A tuple of distinct decks has `size` distinct rotations, so this is the
+    // previous `size` for every schedule that does not include mirrors.
+    const orientations = options.mirrorSeats ? distinctRotationCount(tuple) : 1;
 
     for (const pilotSet of pilotSets) {
       const variantKey = digestOf({

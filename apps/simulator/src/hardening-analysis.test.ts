@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_ANALYSIS_SETTINGS, type AnalysisSettings } from './config.js';
+import { emptyBoardTelemetry } from '@tcg/board-telemetry';
 import { analyzeInclusion } from './analysis/inclusion.js';
 import { analyzeDisplacement, type DisplacementReplicate } from './analysis/displacement.js';
 import { opponentFieldSensitivity } from './analysis/sensitivity.js';
@@ -216,6 +217,9 @@ function record(options: {
         plays: [],
       })),
     ),
+    // Zeroed rather than invented: these fixtures test the analysis layer, and a
+    // made-up board figure would be indistinguishable from a measured one.
+    board: emptyBoardTelemetry(),
     botFailures: [],
     diagnostics: [],
     replayPath: null,

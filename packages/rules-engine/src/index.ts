@@ -60,6 +60,7 @@ export {
   cardInstanceSchema,
   combatStateSchema,
   continuousLayerSchema,
+  delayedEffectSchema,
   matchResultSchema,
   matchStateSchema,
   playerStateSchema,
@@ -75,6 +76,7 @@ export {
   type CombatState,
   type ContinuousLayer,
   type CostModifier,
+  type DelayedEffect,
   type MatchEndReason,
   type MatchResult,
   type MatchState,
@@ -142,7 +144,9 @@ export {
   playerViewSchema,
   playerViewSummarySchema,
   cardInstanceViewSchema,
+  delayedEffectViewSchema,
   type CardInstanceView,
+  type DelayedEffectView,
   type PlayerView,
   type PlayerViewSummary,
 } from './view.js';
@@ -174,3 +178,5 @@ export {
   opponentOf,
   remainingHealth,
 } from './derive.js';
+
+export { playCostOf } from './costs.js';

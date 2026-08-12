@@ -13,6 +13,7 @@ import {
   setCardQuantity,
   setCommander,
   setDeckNotes,
+  uniqueDeckName,
 } from './operations.js';
 import { DECK_SCHEMA_VERSION, savedDeckSchema } from './schema.js';
 import { database, deckWith, fixedClock, fixedIdSources } from './test-fixtures.js';
@@ -118,6 +119,32 @@ describe('duplicateDeck', () => {
   it('honours an explicit name', () => {
     const copy = duplicateDeck(deckWith([]), { name: 'Variant B', idSources: fixedIdSources });
     expect(copy.name).toBe('Variant B');
+  });
+});
+
+describe('uniqueDeckName', () => {
+  const named = (...names: readonly string[]) =>
+    names.map((name) => renameDeck(deckWith([]), name));
+
+  it('keeps a free name unchanged', () => {
+    expect(uniqueDeckName('Goblin Swarm', named('Bastion Guardians'))).toBe('Goblin Swarm');
+  });
+
+  it('suffixes a taken name, then numbers it', () => {
+    expect(uniqueDeckName('Goblin Swarm', named('Goblin Swarm'))).toBe('Goblin Swarm (copy)');
+    expect(uniqueDeckName('Goblin Swarm', named('Goblin Swarm', 'Goblin Swarm (copy)'))).toBe(
+      'Goblin Swarm (copy 2)',
+    );
+  });
+
+  it('compares case-insensitively, because the deck list is read by a human', () => {
+    expect(uniqueDeckName('Goblin Swarm', named('goblin swarm'))).toBe('Goblin Swarm (copy)');
+  });
+
+  it('honours a caller-chosen suffix', () => {
+    expect(uniqueDeckName('Goblin Swarm', named('Goblin Swarm'), { suffix: 'imported' })).toBe(
+      'Goblin Swarm (imported)',
+    );
   });
 });
 

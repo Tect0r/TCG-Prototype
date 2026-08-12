@@ -47,6 +47,7 @@ export {
   targetCountSchema,
   entityTarget,
   targetsPlayers,
+  isDistributedSelection,
   CONTROLLERS,
   DURATIONS,
   PLAYER_SELECTORS,
@@ -71,7 +72,16 @@ export {
   additionalCostSchema,
   activatedAbilityDefinitionSchema,
   abilityUsageLimitSchema,
+  arrivalEventSchema,
   continuousScopeSchema,
+  replacementLimitSchema,
+  ARRIVAL_EVENTS,
+  REPLACEMENT_LIMITS,
+  delayedAbilityDefinitionSchema,
+  delayedBoundarySchema,
+  delayedSubjectSchema,
+  DELAYED_BOUNDARIES,
+  DELAYED_SUBJECTS,
   staticAbilityDefinitionSchema,
   triggerIdSchema,
   triggerScopeSchema,
@@ -86,7 +96,12 @@ export {
   type AbilityDefinition,
   type ActivatedAbilityDefinition,
   type AbilityUsageLimit,
+  type ArrivalEvent,
   type ContinuousScope,
+  type ReplacementLimit,
+  type DelayedAbilityDefinition,
+  type DelayedBoundary,
+  type DelayedSubject,
   type EffectDefinition,
   type EffectType,
   type EntityTarget,
@@ -104,16 +119,24 @@ export {
   sourceStateSchema,
   valueExpressionSchema,
   signedValueExpressionSchema,
+  statSubjectSchema,
+  statFieldSchema,
   isFixedValue,
+  isStatValue,
+  isPreviousTargetsValue,
   COMPARISONS,
   COUNT_SUBJECTS,
   SOURCE_STATES,
+  STAT_FIELDS,
+  STAT_SUBJECTS,
   type Comparison,
   type ConditionDefinition,
   type CountQuery,
   type CountSubject,
   type SignedValueExpression,
   type SourceState,
+  type StatField,
+  type StatSubject,
   type ValueExpression,
 } from './schema/condition.js';
 
@@ -145,11 +168,27 @@ export {
   type ReactionTiming,
 } from './schema/card.js';
 
+export {
+  CARD_FIELD_KINDS,
+  IDENTITY_CARD_FIELDS,
+  MECHANICS_CARD_FIELDS,
+  PILOT_CARD_FIELDS,
+  PRESENTATION_CARD_FIELDS,
+  canonicalJson,
+  cardMechanics,
+  cardPilotMetadata,
+  cardPoolMechanicsJson,
+  cardPresentation,
+  type CardFieldKind,
+  type CardProjection,
+} from './mechanics.js';
+
 export { CardDatabase } from './database.js';
 export { loadCardSets, zodIssuesToIssues, type LoadedCardData } from './loader.js';
 export { migrateCardSet, canMigrateCardSet } from './migrate.js';
 export {
   PRECON_SCHEMA_VERSION,
+  preconIdSchema,
   preconDefinitionSchema,
   type PreconDefinition,
 } from './schema/precon.js';
@@ -164,6 +203,10 @@ export {
   formatCardPool,
   formatDatabase,
   loadBundledCardData,
+  loadFormatCardData,
+  preconsForFormat,
+  resolveFormatId,
+  type FormatCardData,
 } from './default-set.js';
 export { compareCards, isColorIdentityLegal, matchesQuery, type CardQuery } from './query.js';
 export {

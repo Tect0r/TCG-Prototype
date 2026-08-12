@@ -4,6 +4,7 @@ import { toMatchDeck, type SimDeck } from './deck-search/deck.js';
 import { generateDeck } from './deck-search/generate.js';
 import { matchRecordSchema, isAbnormal, TERMINATION_KINDS } from './telemetry/schema.js';
 import { runMatch, seatToAct, DEFAULT_LIMITS, type RunMatchOptions } from './run-match.js';
+import type { MatchState } from '@tcg/rules-engine';
 import type { Environment } from './environment.js';
 import {
   AGGRESSIVE_PILOT,
@@ -227,5 +228,48 @@ describe('seatToAct', () => {
     const { state } = await runMatch(options());
     expect(state.status).toBe('complete');
     expect(seatToAct(state)).toBeNull();
+  });
+
+  /**
+   * An open Reaction window holds priority itself, and `legalActions` offers its
+   * moves to the priority holder alone. Asking the active player instead handed
+   * a seat with nothing legal to the pilots, and the random-legal fallback threw
+   * rather than returning an action — killing the whole match. Found by M03.3's
+   * precon smoke run; the fixture decks these tests use carry no Reactions, so
+   * nothing here had ever opened a window with a non-active priority holder.
+   */
+  it('asks the seat holding priority in an open Reaction window', async () => {
+    const { state } = await runMatch(options());
+    const [first, second] = state.seatOrder;
+    if (!first || !second) throw new Error('The fixture match needs two seats.');
+
+    const open: MatchState = {
+      ...state,
+      status: 'playing',
+      phase: 'reaction_window',
+      activePlayerId: first,
+      pendingChoice: null,
+      reactionWindow: {
+        id: 'rw_0001',
+        windows: ['after_blockers_declared'],
+        triggerSequence: 1,
+        priorityOrder: [first, second],
+        priorityIndex: 1,
+        playsByPlayer: {},
+        passedPlayerIds: [],
+        pending: [],
+        closed: false,
+        resumePhase: 'resolve_combat',
+      },
+    };
+    expect(seatToAct(open)).toBe(second);
+
+    // A closed window is drained by the engine's own resolution queue without
+    // anybody being asked, so it must not divert the seat that is to act.
+    const closed: MatchState = {
+      ...open,
+      reactionWindow: { ...open.reactionWindow!, closed: true },
+    };
+    expect(seatToAct(closed)).toBe(first);
   });
 });
