@@ -28,6 +28,22 @@ export const pilotSpecSchema = z.strictObject({
 export type PilotSpec = z.infer<typeof pilotSpecSchema>;
 export type PilotSpecInput = z.input<typeof pilotSpecSchema>;
 
+/**
+ * Pilots that make no attempt to play well (M05.1).
+ *
+ * `random_legal` samples uniformly from whatever the engine offers. It is
+ * genuine evidence for legality, termination, loops and crashes, and it is not
+ * evidence for anything about balance — so a run flown entirely by pilots named
+ * here has its review flags downgraded to `insufficient_data` rather than
+ * printed as though somebody had tried to win.
+ *
+ * Deliberately a list of the pilots that *are* legality-only rather than a
+ * taxonomy of the ones that are not: the four honest agent classes, and what
+ * each one may be cited for, are M05.4's subject. This is the single distinction
+ * M05.1 needs and nothing more.
+ */
+export const LEGAL_ONLY_PILOT_IDS: readonly PilotId[] = ['random_legal'];
+
 /** The published weight vector for a heuristic pilot, before any override. */
 export const PILOT_BASE_WEIGHTS: Readonly<Record<PilotId, BotWeights>> = Object.freeze({
   random_legal: DEFAULT_WEIGHTS,

@@ -682,6 +682,16 @@ export const abilityCostSchema = z.discriminatedUnion('type', [
   sacrificeCostSchema,
 ]);
 export type AbilityCost = z.infer<typeof abilityCostSchema>;
+export type AbilityCostType = AbilityCost['type'];
+
+/**
+ * The cost vocabulary, as a list. Covers `additionalCosts` too: that schema is a
+ * strict subset of this union, so a cost type classified here is classified for
+ * both (M05.1).
+ */
+export const ABILITY_COST_TYPES = abilityCostSchema.options.map(
+  (option) => option.shape.type.value,
+) as readonly AbilityCostType[];
 
 /**
  * "**As an additional cost**, sacrifice a Unit."
@@ -796,6 +806,152 @@ export type ReplacementLimit = z.infer<typeof replacementLimitSchema>;
  * That is what makes "your units get +1/+0" cover units that arrive later, and
  * makes the bonus vanish the instant the source leaves play (CLAUDE.md §17 Q2).
  */
+const staticAbilityEffectSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('modify_stats'),
+    attack: z.number().int().min(-99).max(99).default(0),
+    health: z.number().int().min(-99).max(99).default(0),
+  }),
+  z.strictObject({ type: z.literal('grant_keyword'), keyword: keywordIdSchema }),
+  /**
+   * "The first Reaction Spell you play after the beginning of each of your
+   * turns costs 1 less, to a minimum of 1" (rule adjustment §6).
+   *
+   * A static ability rather than a triggered one because it is a standing
+   * property of a card in play — it has to be true at the moment a cost is
+   * computed, on a turn that is usually not its controller's, which is a
+   * question no trigger is in a position to answer.
+   *
+   * It is the one static effect that does not contribute to an instance's
+   * continuous layer: a cost reduction is a fact about its controller, not a
+   * modifier stamped on a card. `affects.controller` must therefore be `self`
+   * — "your Reactions" — and `affects.filter`, if present, narrows which of
+   * them qualify.
+   */
+  z.strictObject({
+    type: z.literal('reaction_discount'),
+    amount: z.number().int().min(1).max(10).default(1),
+    /** The printed "to a minimum of N" floor. */
+    minimum: z.number().int().min(0).max(10).default(1),
+    /**
+     * `first_each_turn` resets at the beginning of the controller's own turn
+     * and stays available across the opponents' turns until it is used —
+     * which is the whole point, since that is when Reactions are played.
+     */
+    limit: z.enum(['first_each_turn', 'unlimited']).default('first_each_turn'),
+  }),
+  /**
+   * "This card costs 1 less **for each friendly Unit defeated this turn**,
+   * to a minimum cost of 3" (M02.3).
+   *
+   * A static ability rather than a `modify_cost` instruction, and the
+   * difference is the whole mechanic: `modify_cost` stamps a fixed delta
+   * onto its controller for a duration, which would freeze the discount at
+   * whatever the board looked like when it was applied. This is derived —
+   * recomputed every time a cost is asked for — so a Unit defeated after the
+   * card was drawn makes it cheaper, and a card that stops qualifying goes
+   * back to full price with nothing to clean up.
+   *
+   * Like `reaction_discount` beside it, it contributes nothing to the
+   * continuous layer: a cost is a fact about a card its controller might
+   * play, not a modifier stamped on anything. The cost path reads it
+   * directly at the moment a cost is computed.
+   */
+  /**
+   * "The first enemy Unit deployed each turn **enters Exhausted**";
+   * "Goblin Tokens you create during your turn **have Rush** until the end
+   * of that turn" (M02.4).
+   *
+   * A replacement, not a trigger: it rewrites an arrival as it happens, so
+   * nothing — not a state-based check, not another trigger discovered from
+   * the same event — ever observes the unit in the state it would have
+   * arrived in. A triggered "when a Unit is deployed, exhaust it" would be a
+   * visibly different card, and one an opponent could respond to in between.
+   *
+   * `affects` says whose arrivals and which cards; `on` says which arrivals.
+   * The rewrite itself is the last three fields, and at least one of them
+   * must be set — a replacement that changes nothing is an authoring
+   * mistake, not a no-op the loader should accept.
+   */
+  z.strictObject({
+    type: z.literal('replace_arrival'),
+    on: arrivalEventSchema.default('entered_battlefield'),
+    /**
+     * "…**during your turn**". Absent means every turn.
+     *
+     * Its own narrow flag rather than a `ConditionDefinition`, matching
+     * `sourceState` beside it: a replacement is read at the moment an event
+     * happens, and "whose turn is it" is a single field read that cannot
+     * turn a card's arrival into a scan of the board.
+     */
+    onlyOnControllerTurn: z.boolean().optional(),
+    limit: replacementLimitSchema.default('unlimited'),
+    /** "…enters Exhausted." */
+    entersExhausted: z.boolean().optional(),
+    /** "…have Rush", granted as part of the arrival. */
+    grantKeyword: keywordIdSchema.optional(),
+    /**
+     * How long a granted keyword lasts. `end_of_turn` is what every card
+     * that grants one on arrival prints ("until the end of that turn").
+     */
+    grantDuration: durationSchema.default('end_of_turn'),
+  }),
+  /**
+   * "Once each turn, when an enemy Unit would become Ready, you may pay 1
+   * Energy. If you do, it remains Exhausted" (M02.4).
+   *
+   * The derived half of the readiness replacement layer, and the mirror of
+   * `skip_next_ready`: this one is a standing property of a card in play and
+   * applies to whatever is on the board when the Ready Step arrives, where
+   * the instruction is fixed onto one permanent in advance.
+   *
+   * Only the Ready Step is replaced. That is not a narrowing of the printed
+   * text — the Ready Step is the only thing in this ruleset that readies a
+   * card its controller does not own the effect of, and every `ready`
+   * instruction in the catalog aims at its own controller's units.
+   *
+   * With an `energyCost` above zero the replacement is *offered* to its
+   * controller when the Ready Step arrives and is skipped entirely when they
+   * cannot pay; at zero it simply applies.
+   */
+  z.strictObject({
+    type: z.literal('replace_ready'),
+    /** "…you may pay N Energy." Zero makes the replacement mandatory. */
+    energyCost: z.number().int().min(0).max(20).default(0),
+    limit: replacementLimitSchema.default('unlimited'),
+  }),
+  z.strictObject({
+    type: z.literal('cost_reduction'),
+    /**
+     * How much cheaper. A `ValueExpression`, so the board can decide — which
+     * is the point — but a printed number is still a printed number.
+     */
+    amount: valueExpressionSchema,
+    /**
+     * The printed "to a minimum cost of N" floor.
+     *
+     * Clamped against the printed cost when it is applied, so it can never
+     * *raise* a cost that was already below it.
+     */
+    minimum: z.number().int().min(0).max(20).default(0),
+  }),
+]);
+
+export type StaticAbilityEffect = z.infer<typeof staticAbilityEffectSchema>;
+export type StaticAbilityEffectType = StaticAbilityEffect['type'];
+
+/**
+ * The continuous-effect vocabulary, as a list.
+ *
+ * Read off the union rather than restated, for the same reason `EFFECT_TYPES`
+ * is: a new continuous effect cannot be added to the schema without appearing
+ * here, and therefore without appearing in the support registry keyed by this
+ * list (M05.1).
+ */
+export const STATIC_ABILITY_EFFECT_TYPES = staticAbilityEffectSchema.options.map(
+  (option) => option.shape.type.value,
+) as readonly StaticAbilityEffectType[];
+
 export const staticAbilityDefinitionSchema = z
   .strictObject({
     id: abilityIdSchema,
@@ -811,136 +967,7 @@ export const staticAbilityDefinitionSchema = z
      */
     sourceState: sourceStateSchema.optional(),
     affects: continuousScopeSchema,
-    effect: z.discriminatedUnion('type', [
-      z.strictObject({
-        type: z.literal('modify_stats'),
-        attack: z.number().int().min(-99).max(99).default(0),
-        health: z.number().int().min(-99).max(99).default(0),
-      }),
-      z.strictObject({ type: z.literal('grant_keyword'), keyword: keywordIdSchema }),
-      /**
-       * "The first Reaction Spell you play after the beginning of each of your
-       * turns costs 1 less, to a minimum of 1" (rule adjustment §6).
-       *
-       * A static ability rather than a triggered one because it is a standing
-       * property of a card in play — it has to be true at the moment a cost is
-       * computed, on a turn that is usually not its controller's, which is a
-       * question no trigger is in a position to answer.
-       *
-       * It is the one static effect that does not contribute to an instance's
-       * continuous layer: a cost reduction is a fact about its controller, not a
-       * modifier stamped on a card. `affects.controller` must therefore be `self`
-       * — "your Reactions" — and `affects.filter`, if present, narrows which of
-       * them qualify.
-       */
-      z.strictObject({
-        type: z.literal('reaction_discount'),
-        amount: z.number().int().min(1).max(10).default(1),
-        /** The printed "to a minimum of N" floor. */
-        minimum: z.number().int().min(0).max(10).default(1),
-        /**
-         * `first_each_turn` resets at the beginning of the controller's own turn
-         * and stays available across the opponents' turns until it is used —
-         * which is the whole point, since that is when Reactions are played.
-         */
-        limit: z.enum(['first_each_turn', 'unlimited']).default('first_each_turn'),
-      }),
-      /**
-       * "This card costs 1 less **for each friendly Unit defeated this turn**,
-       * to a minimum cost of 3" (M02.3).
-       *
-       * A static ability rather than a `modify_cost` instruction, and the
-       * difference is the whole mechanic: `modify_cost` stamps a fixed delta
-       * onto its controller for a duration, which would freeze the discount at
-       * whatever the board looked like when it was applied. This is derived —
-       * recomputed every time a cost is asked for — so a Unit defeated after the
-       * card was drawn makes it cheaper, and a card that stops qualifying goes
-       * back to full price with nothing to clean up.
-       *
-       * Like `reaction_discount` beside it, it contributes nothing to the
-       * continuous layer: a cost is a fact about a card its controller might
-       * play, not a modifier stamped on anything. The cost path reads it
-       * directly at the moment a cost is computed.
-       */
-      /**
-       * "The first enemy Unit deployed each turn **enters Exhausted**";
-       * "Goblin Tokens you create during your turn **have Rush** until the end
-       * of that turn" (M02.4).
-       *
-       * A replacement, not a trigger: it rewrites an arrival as it happens, so
-       * nothing — not a state-based check, not another trigger discovered from
-       * the same event — ever observes the unit in the state it would have
-       * arrived in. A triggered "when a Unit is deployed, exhaust it" would be a
-       * visibly different card, and one an opponent could respond to in between.
-       *
-       * `affects` says whose arrivals and which cards; `on` says which arrivals.
-       * The rewrite itself is the last three fields, and at least one of them
-       * must be set — a replacement that changes nothing is an authoring
-       * mistake, not a no-op the loader should accept.
-       */
-      z.strictObject({
-        type: z.literal('replace_arrival'),
-        on: arrivalEventSchema.default('entered_battlefield'),
-        /**
-         * "…**during your turn**". Absent means every turn.
-         *
-         * Its own narrow flag rather than a `ConditionDefinition`, matching
-         * `sourceState` beside it: a replacement is read at the moment an event
-         * happens, and "whose turn is it" is a single field read that cannot
-         * turn a card's arrival into a scan of the board.
-         */
-        onlyOnControllerTurn: z.boolean().optional(),
-        limit: replacementLimitSchema.default('unlimited'),
-        /** "…enters Exhausted." */
-        entersExhausted: z.boolean().optional(),
-        /** "…have Rush", granted as part of the arrival. */
-        grantKeyword: keywordIdSchema.optional(),
-        /**
-         * How long a granted keyword lasts. `end_of_turn` is what every card
-         * that grants one on arrival prints ("until the end of that turn").
-         */
-        grantDuration: durationSchema.default('end_of_turn'),
-      }),
-      /**
-       * "Once each turn, when an enemy Unit would become Ready, you may pay 1
-       * Energy. If you do, it remains Exhausted" (M02.4).
-       *
-       * The derived half of the readiness replacement layer, and the mirror of
-       * `skip_next_ready`: this one is a standing property of a card in play and
-       * applies to whatever is on the board when the Ready Step arrives, where
-       * the instruction is fixed onto one permanent in advance.
-       *
-       * Only the Ready Step is replaced. That is not a narrowing of the printed
-       * text — the Ready Step is the only thing in this ruleset that readies a
-       * card its controller does not own the effect of, and every `ready`
-       * instruction in the catalog aims at its own controller's units.
-       *
-       * With an `energyCost` above zero the replacement is *offered* to its
-       * controller when the Ready Step arrives and is skipped entirely when they
-       * cannot pay; at zero it simply applies.
-       */
-      z.strictObject({
-        type: z.literal('replace_ready'),
-        /** "…you may pay N Energy." Zero makes the replacement mandatory. */
-        energyCost: z.number().int().min(0).max(20).default(0),
-        limit: replacementLimitSchema.default('unlimited'),
-      }),
-      z.strictObject({
-        type: z.literal('cost_reduction'),
-        /**
-         * How much cheaper. A `ValueExpression`, so the board can decide — which
-         * is the point — but a printed number is still a printed number.
-         */
-        amount: valueExpressionSchema,
-        /**
-         * The printed "to a minimum cost of N" floor.
-         *
-         * Clamped against the printed cost when it is applied, so it can never
-         * *raise* a cost that was already below it.
-         */
-        minimum: z.number().int().min(0).max(20).default(0),
-      }),
-    ]),
+    effect: staticAbilityEffectSchema,
   })
   .superRefine((ability, ctx) => {
     if (ability.affects.onlySource && ability.affects.excludeSource) {

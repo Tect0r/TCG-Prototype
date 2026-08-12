@@ -770,6 +770,25 @@ Both entries above are stale in their wording but still open in substance:
   Does it clear marked damage at end of turn, survive lethal damage once, or get
   dropped from the vocabulary entirely? No authored precon card uses it, so
   dropping it is genuinely on the table — ruleset update §18 lists exactly that.
+
+  **M05.1 answered half of it and left the design decision alone.** The mechanic
+  support registry (`packages/card-data/src/support.ts`) records `resilient` as
+  `engine: 'none'`, and the content build now _derives_ a card's support by
+  walking its structured data against that registry instead of trusting the
+  card's own `implemented` flag. A `playtest` or `active` set containing a card
+  built on an inert mechanic — printed on the card, or granted by one of its
+  instructions — is a **build error**, so `resilient` is structurally barred from
+  playable content rather than merely absent from it by luck. `dread_sovereign`
+  in the `prototype_core` development fixture set is the one card that prints it,
+  and the build warns about it there by name.
+
+  What is still yours: whether to implement `resilient` — and under which of the
+  two readings — or to delete it from `KEYWORD_IDS` outright. Until then the
+  registry also records `pilot: 'legal_only'` for it, which is what a simulator
+  report now prints. Note that `scoring.ts` still pays a flat keyword bonus for
+  it through `keywordCount`; repairing that is M05.2's first bullet ("never value
+  unimplemented keywords"), and the registry entry says so.
+
 - **Q5** is now specifically the **post-battlefield-defeat** lifecycle, because
   Commanders became deployable. Does a defeated Commander return to the Commander
   zone, and after how long? Is there a replay tax? Can Commander defeat itself

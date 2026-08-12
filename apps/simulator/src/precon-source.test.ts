@@ -274,7 +274,7 @@ describe('a precon experiment', () => {
     expect(outcome.records.filter((record) => record.termination !== 'victory')).toEqual([]);
 
     const manifest = JSON.parse(readFileSync(experimentPaths(dir).manifest, 'utf8'));
-    expect(manifest.schemaVersion).toBe(4);
+    expect(manifest.schemaVersion).toBe(5);
     expect(manifest.failedMatches).toBe(0);
     expect(manifest.abnormalMatches).toBe(0);
     expect(manifest.precons.map((entry: { preconId: string }) => entry.preconId)).toEqual([
@@ -293,6 +293,18 @@ describe('a precon experiment', () => {
     expect(manifest.environments[0].hashes.mechanicsHash.length).toBeGreaterThan(0);
 
     expect(outcome.report).toContain('Precon `precon_goblin_swarm`');
+
+    // The run states what its own mechanics let it claim, derived from the
+    // support registry rather than from the cards' `implemented` flags (M05.1).
+    expect(outcome.report).toContain('## Mechanic support');
+    expect(manifest.mechanicSupport.registryVersion).toBeGreaterThan(0);
+    expect(manifest.mechanicSupport.decks).toHaveLength(4);
+    expect(manifest.mechanicSupport.weakest.engine).toBe('full');
+    expect(manifest.mechanicSupport.legalOnlyPilots).toBe(false);
+    // Every shipped precon carries a Reaction, and no pilot values a counter, so
+    // the report has to name those cards rather than quietly rate them.
+    expect(manifest.mechanicSupport.pilotBlindCards.length).toBeGreaterThan(0);
+    expect(outcome.report).toContain('Cards no pilot values a mechanic of');
     // The frozen environment is what pins the definitions those IDs named.
     const snapshot = JSON.parse(readFileSync(experimentPaths(dir).resolvedEnvironment, 'utf8'));
     expect(snapshot.formatId).toBe(WAVE_1);

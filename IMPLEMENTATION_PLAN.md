@@ -19,7 +19,7 @@ After verification, update the evidence and stop.
 | [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
 | [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete                |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | Legal but not balance-trustworthy     | M05.1                   |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1 done (2026-08-12)               | M05.2                   |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
 
@@ -306,6 +306,47 @@ moves, all refusals: board telemetry 2 → 3, spectator replays 4 → 5, simulat
 records 5 → 6, report 3 → 4 with `summary.json` 2 → 3, and the matchup matrix
 1 → 2. Manifests stay at schema 4. M04 is complete.
 
+Since M05.1, "is this mechanic supported" is a question with a machine-readable
+answer instead of an author's sentence. `@tcg/card-data`'s **mechanic support
+registry** classifies every member of seven executable vocabularies — instruction
+effects, continuous effects, triggers, keywords, conditions, value expressions
+and costs — along four independent dimensions: does the engine execute it, is it
+described to a player, can a pilot play it, does a match record observe it. Each
+table is a total `Record` over a vocabulary read off the schema, so adding a
+mechanic without classifying it is a **compile error**, and every entry carries a
+note naming the module its claim is about, so a downgrade is actionable.
+
+Support is now **derived, not claimed**. `mechanicsUsedBy` walks a card's
+structured data — keywords, additional costs, all four effect lists, trigger and
+instruction gates, value expressions, continuous effects, and the keyword a
+`grant_keyword` hands out — and the content build fails a `playtest` or `active`
+set containing anything the engine does not execute, warning instead in a
+`development` set. `KEYWORD_REGISTRY.implemented` is a view of the registry
+rather than a second claim beside it. That is half of Q4: `resilient` is now
+barred from playable content by a rule rather than by luck, and only the design
+decision — implement it under which reading, or delete it — is still open.
+
+Every simulator run states what its own evidence is worth. The manifest (schema
+4 → 5) and `summary.json` (3 → 4) carry a `mechanicSupport` block: the weakest
+engine/help/pilot/telemetry level each deck reaches, the mechanics responsible,
+and the cards no pilot values or no record observes. The report (schema 4 → 5)
+prints it as `## Mechanic support`, immediately after the review signals and
+before any outcome, because it is the section that says which of those signals to
+believe. A balance flag the run cannot carry is **downgraded to
+`insufficient_data`, never dropped** — when every pilot is legality-only, when
+its subject card carries an unvalued mechanic, or when its subject card does
+nothing a record observes — with its evidence, interval and threshold intact and
+the reason appended to its message. `run_quality` flags are untouched: "three
+matches ended abnormally" stays true however blindly the pilots played.
+
+Two real gaps fell out of doing this and are recorded rather than papered over,
+because both are M05.2's work. **No pilot values `counter`** — the effect switch
+has no case for it and returns zero — so every shipped precon, all of which carry
+a Reaction, now honestly reports `pilot: legal_only`. And
+`CardTelemetry.timesReturnedToHand` is in the schema and is never incremented, so
+a bounce is invisible to a batch; `return_to_hand` is classified
+`telemetry: 'none'` on that basis.
+
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and
 `eslint.config.js` are held to the same strictness as shipped code. The separate
@@ -331,7 +372,10 @@ Do not reopen these while implementing:
 
 Only stop on these when the active tranche genuinely needs the answer:
 
-- Q4: implement or remove `resilient`.
+- Q4: implement or remove `resilient`. M05.1 answered the content half — it is
+  now a build error in a `playtest`/`active` set, derived from the mechanic
+  support registry — and left the design decision alone. Deleting it from
+  `KEYWORD_IDS` or implementing one of the two readings is still yours.
 - Q42: exact visual equivalence key for Token grouping.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.

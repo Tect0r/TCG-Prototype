@@ -9,6 +9,7 @@ import type { ReplacementImpact } from './analysis/replacement.js';
 import { computeFlags } from './analysis/flags.js';
 import { aggregate } from './analysis/aggregate.js';
 import { aggregateBoard } from './analysis/board.js';
+import { analyzeMechanicSupport } from './analysis/support.js';
 import { clusterDecks, type ClusteringResult } from './analysis/clusters.js';
 import { analyzeInclusion } from './analysis/inclusion.js';
 import { ANALYSIS_STATS_VERSION, describeMultiplicity } from './analysis/paired.js';
@@ -381,6 +382,11 @@ function reportInputsFor(replacements: readonly ReplacementImpact[]): ReportInpu
     settings,
     aggregate: summary,
     board: aggregateBoard(records),
+    mechanicSupport: analyzeMechanicSupport({
+      decks: allDecks,
+      database: env.database,
+      pilotIds: ['value'],
+    }),
     clustering: clusters,
     inclusion: analyzeInclusion(allDecks, clusters, records, settings),
     pairs: [],

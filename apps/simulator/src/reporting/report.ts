@@ -17,6 +17,8 @@ import type { Flag } from '../analysis/flags.js';
 import type { GenerationReport } from '../deck-search/evolve.js';
 import type { MatchupMatrix } from '../matchup-matrix.js';
 import type { BoardAggregate, BoardMeasure } from '../analysis/board.js';
+import type { MechanicSupportAnalysis } from '../analysis/support.js';
+import { SUPPORT_DIMENSIONS } from '@tcg/card-data';
 import { describeStallDefinition } from '@tcg/board-telemetry';
 import { round } from '../analysis/stats.js';
 
@@ -50,8 +52,13 @@ import { round } from '../analysis/stats.js';
  * Version 4 (M04.3): every batch gains an unlimited-board section — clutter, turn
  * length, trigger load and the stall verdict — between the outcome tables and the
  * matchup matrix.
+ *
+ * Version 5 (M05.1): every batch gains a mechanic-support section stating, per
+ * deck, the weakest engine/help/pilot/telemetry support its cards reach and the
+ * mechanics responsible; and the flag table may now carry review signals that
+ * were downgraded because the run's own support could not carry them.
  */
-export const REPORT_SCHEMA_VERSION = 4;
+export const REPORT_SCHEMA_VERSION = 5;
 
 export interface ReportPilot {
   readonly id: string;
@@ -106,6 +113,11 @@ export interface ReportInputs {
    * `boardSection` for why that population differs from the rest of the report.
    */
   readonly board: BoardAggregate;
+  /**
+   * What the mechanics these decks are built from let the run claim (M05.1).
+   * Derived from the mechanic support registry, never from a card's own flag.
+   */
+  readonly mechanicSupport: MechanicSupportAnalysis;
   readonly clustering: ClusteringResult;
   readonly inclusion: InclusionAnalysis;
   readonly pairs: readonly CardPair[];
@@ -183,6 +195,7 @@ export function renderReport(inputs: ReportInputs): string {
   section(lines, environmentDiff(inputs));
   section(lines, referencePopulation(inputs));
   section(lines, flagSection(inputs));
+  section(lines, mechanicSupportSection(inputs));
   section(lines, outcomes(inputs));
   section(lines, boardSection(inputs));
   section(lines, matchupMatrixSection(inputs));
@@ -224,6 +237,12 @@ function limitations(inputs: ReportInputs): string[] {
       `${settings.minPairSupport} co-occurrences in the "both" cell and ` +
       `${settings.minPairCellSupport} in every contributing cell.`,
     'Individual deck win rates are samples from one opponent field, not a balance model.',
+    `Mechanic support is derived, not claimed: the weakest levels these decks reach are ` +
+      `engine \`${inputs.mechanicSupport.weakest.engine}\`, ` +
+      `pilot \`${inputs.mechanicSupport.weakest.pilot}\`, ` +
+      `telemetry \`${inputs.mechanicSupport.weakest.telemetry}\`. ` +
+      'A review signal the run’s own support cannot carry is downgraded to insufficient data ' +
+      'rather than printed; the mechanic support section says which mechanics are involved.',
     'Every threshold in this report is a configurable review dial, printed in full below and ' +
       'alongside each flag.',
     inputs.multiplicity.note,
@@ -590,6 +609,124 @@ function outcomes(inputs: ReportInputs): string[] {
     }
   }
 
+  return lines;
+}
+
+/* --------------------------------------------------------- mechanic support */
+
+/** How many limiting mechanics a dimension lists before the JSON takes over. */
+const SUPPORT_MECHANIC_LIMIT = 6;
+
+const SUPPORT_QUESTION: Readonly<Record<(typeof SUPPORT_DIMENSIONS)[number], string>> = {
+  engine: 'Does the rules engine execute it?',
+  help: 'Is it described to a player?',
+  pilot: 'Can a pilot play it?',
+  telemetry: 'Does a match record observe it?',
+};
+
+/**
+ * What these decks are made of, and what that lets the rest of the report claim
+ * (M05.1).
+ *
+ * Placed immediately after the review signals and before any outcome, because it
+ * is the section that says which of those signals to believe. Everything in it
+ * is derived from `@tcg/card-data`'s mechanic support registry and the decks that
+ * actually played — never from a card's own `implemented` flag, which is a
+ * sentence an author typed rather than a property anything checks.
+ *
+ * It is an *observation*, not a score. There is no "support rating" and no
+ * threshold: each dimension reports the weakest level any mechanic in the deck
+ * reaches and names the mechanics that reach it, so a reader can go and look.
+ */
+function mechanicSupportSection(inputs: ReportInputs): string[] {
+  const support = inputs.mechanicSupport;
+  if (support.decks.length === 0) return [];
+
+  const lines = ['## Mechanic support *(observation)*', ''];
+  lines.push(
+    'Derived from the mechanic support registry, card by card. A level here is a fact about ' +
+      'this software, not about the cards: `pilot: legal_only` means no pilot values the mechanic, ' +
+      'and `telemetry: none` means no counter in a match record observes it. Neither is a ' +
+      'statement that the card is weak.',
+  );
+  lines.push('');
+  lines.push(`| Dimension | Question | Weakest across the run |`);
+  lines.push('| --- | --- | --- |');
+  for (const dimension of SUPPORT_DIMENSIONS) {
+    lines.push(
+      `| ${dimension} | ${SUPPORT_QUESTION[dimension]} | \`${support.weakest[dimension]}\` |`,
+    );
+  }
+  lines.push('');
+
+  lines.push('| Deck | Engine | Help | Pilot | Telemetry | Limiting mechanics |');
+  lines.push('| --- | --- | --- | --- | --- | --- |');
+  for (const deck of support.decks.slice(0, TABLE_LIMIT)) {
+    // Only the dimensions that are not fully supported are worth naming: listing
+    // the mechanics behind `engine: full` would be a copy of the deck.
+    const limiting = SUPPORT_DIMENSIONS.filter((dimension) => deck.weakest[dimension] !== 'full')
+      .flatMap((dimension) => deck.limiting[dimension])
+      .filter((key, index, all) => all.indexOf(key) === index);
+    const shown = limiting.slice(0, SUPPORT_MECHANIC_LIMIT).map((key) => `\`${key}\``);
+    if (limiting.length > shown.length) shown.push(`+${limiting.length - shown.length} more`);
+    lines.push(
+      `| ${deck.label} | ${deck.weakest.engine} | ${deck.weakest.help} | ${deck.weakest.pilot} | ` +
+        `${deck.weakest.telemetry} | ${shown.join(', ') || '—'} |`,
+    );
+  }
+  if (support.decks.length > TABLE_LIMIT) {
+    lines.push('');
+    lines.push(
+      `${support.decks.length - TABLE_LIMIT} further deck(s) are in \`summary.json\` and \`manifest.json\`.`,
+    );
+  }
+  lines.push('');
+
+  if (support.legalOnlyPilots) {
+    lines.push(
+      '**Every pilot in this run plays only legally.** This run is evidence for legality, ' +
+        'termination, loops and crashes and for nothing else; every review signal above has been ' +
+        'downgraded to insufficient data on that basis alone.',
+    );
+    lines.push('');
+  }
+
+  if (support.pilotBlindCards.length > 0) {
+    lines.push(
+      `Cards no pilot values a mechanic of: ${support.pilotBlindCards.map((id) => `\`${id}\``).join(', ')}. ` +
+        'A card-level review signal about one of these was downgraded: the pilots played it blind, ' +
+        'so how it performed is not evidence about how strong it is.',
+    );
+    lines.push('');
+  }
+  if (support.telemetryBlindCards.length > 0) {
+    lines.push(
+      `Cards nothing in a match record observes: ${support.telemetryBlindCards.map((id) => `\`${id}\``).join(', ')}. ` +
+        'Statistics about these cards can be checked against the win column and against nothing else.',
+    );
+    lines.push('');
+  }
+  if (support.weakest.engine !== 'full') {
+    const inert = [...new Set(support.decks.flatMap((deck) => deck.inertCards))].sort();
+    lines.push(
+      `**${inert.length} card(s) in this run are built on a mechanic the engine does not execute** ` +
+        `(${inert.map((id) => `\`${id}\``).join(', ')}). Those cards did less in these matches than ` +
+        'their text says they do, and every number involving them is about the reduced card.',
+    );
+    lines.push('');
+  }
+
+  if (support.notes.length > 0) {
+    lines.push('Where each limiting mechanic stands today:');
+    lines.push('');
+    for (const note of support.notes) lines.push(`- \`${note.key}\` — ${note.where}`);
+    lines.push('');
+  }
+
+  lines.push(
+    `Support registry v${support.registryVersion}; support analysis schema v${support.schemaVersion}. ` +
+      `Pilots: ${support.pilotIds.join(', ') || 'none recorded'}.`,
+  );
   return lines;
 }
 

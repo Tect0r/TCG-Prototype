@@ -47,7 +47,8 @@ import {
   type ReplacementVariant,
 } from './analysis/replacement.js';
 import { compareEnvironments, type ComparisonReport } from './analysis/compare.js';
-import { computeFlags, type Flag } from './analysis/flags.js';
+import { computeFlags, type Flag, type SupportLimits } from './analysis/flags.js';
+import { analyzeMechanicSupport, supportLimitsOf } from './analysis/support.js';
 import { REPORT_SCHEMA_VERSION, renderReport } from './reporting/report.js';
 import { experimentPaths, ensureDir, writeCsv, writeJson } from './reporting/sinks.js';
 import { MatchStore } from './reporting/match-store.js';
@@ -928,6 +929,17 @@ async function runRobustnessExperiment(
 
   // Each profile is analysed on its own records. Pooling them would average away
   // the disagreement the experiment exists to find (§10.3).
+  // The same limits every profile is judged under, so the profiles stay
+  // comparable and no arm claims a review signal the run's support cannot
+  // carry (M05.1).
+  const profileSupport = supportLimitsOf(
+    analyzeMechanicSupport({
+      decks: resolved.decks,
+      database: environment.database,
+      pilotIds: config.pilots.map((pilot: PilotSpec) => pilot.id),
+    }),
+  );
+
   const perProfile = arms.map((arm) => {
     const agg = aggregate(arm.records, { confidence: config.analysis.confidence });
     const clustering = clusterDecks(resolved.decks, environment.database, arm.records, {
@@ -945,6 +957,8 @@ async function runRobustnessExperiment(
         replacements: [],
         settings: config.analysis,
         inclusion,
+        support: profileSupport,
+        deckCount: resolved.decks.length,
       }),
     };
   });
@@ -1077,6 +1091,20 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
         })
       : []);
 
+  // Derived from the mechanic support registry and the decks that actually
+  // played, so a report can state what its own evidence is worth before it
+  // states anything else (M05.1).
+  const mechanicSupport = analyzeMechanicSupport({
+    decks: inputs.decks,
+    database: primary.database,
+    pilotIds: config.pilots.map((pilot: PilotSpec) => pilot.id),
+  });
+  const supportLimits: SupportLimits = {
+    legalOnlyPilots: mechanicSupport.legalOnlyPilots,
+    pilotBlindCards: mechanicSupport.pilotBlindCards,
+    telemetryBlindCards: mechanicSupport.telemetryBlindCards,
+  };
+
   const flags = computeFlags({
     aggregate: agg,
     clustering,
@@ -1085,6 +1113,8 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     settings,
     inclusion,
     sensitivity,
+    support: supportLimits,
+    deckCount: inputs.decks.length,
     ...(displacement.length > 0 ? { displacement } : {}),
     ...(counters ? { counters } : {}),
   });
@@ -1164,6 +1194,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     settings,
     aggregate: agg,
     board: boardAggregate,
+    mechanicSupport,
     clustering,
     inclusion,
     pairs,
@@ -1212,7 +1243,13 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     // 4 (M03.4): an ordered-matchup-matrix run records the artifact beside the
     // hashes, including whether it was complete and whether every cell
     // terminated cleanly. Absent for every other run.
-    schemaVersion: 4,
+    //
+    // 5 (M05.1): every manifest carries `mechanicSupport` — the weakest engine,
+    // help, pilot and telemetry support reached by each deck that played, the
+    // mechanics responsible, and whether the pilots were legality-only. A v4
+    // manifest cannot be migrated to it: the reading was never taken, and the
+    // registry it is taken against did not exist.
+    schemaVersion: 5,
     experimentId: config.id,
     kind: config.kind,
     seed: config.seed,
@@ -1256,6 +1293,16 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
      */
     precons,
     /**
+     * What the mechanics these decks are built from let this run claim (M05.1).
+     *
+     * Derived from `@tcg/card-data`'s mechanic support registry and the decks
+     * that actually played, never from a card's own `implemented` flag, so a
+     * reader can tell "the pilots played this badly" from "no pilot values this
+     * at all" without opening the report. `registryVersion` pins the
+     * classification the reading was taken against.
+     */
+    mechanicSupport,
+    /**
      * The ordered matchup matrix this run produced, when it was asked for (M03.4).
      *
      * The counts are here rather than only in the artifact so that "every
@@ -1293,11 +1340,16 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     // 3 (M04.3): the batch's unlimited-board reading, so the report's board
     // section is a view of the JSON like every other section rather than the only
     // place those numbers exist.
-    schemaVersion: 3,
+    //
+    // 4 (M05.1): the mechanic support reading, for the same reason — the
+    // report's support section is a view of this, and a flag downgraded for
+    // missing support can be traced back to the mechanic that caused it.
+    schemaVersion: 4,
     configHash: configHashOf(config),
     thresholds: settings,
     aggregate: agg,
     board: boardAggregate,
+    mechanicSupport,
     clusters: clustering.clusters,
     clusterMatchups: clustering.matchups,
     inclusion,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { KEYWORD_IDS, keywordIdSchema, type KeywordId } from './schema/primitives.js';
+import { mechanicSupport } from './support.js';
 
 /**
  * The one keyword registry.
@@ -60,7 +61,11 @@ export const keywordDefinitionSchema = z.strictObject({
 
 export type KeywordDefinition = z.infer<typeof keywordDefinitionSchema>;
 
-export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = Object.freeze({
+/**
+ * The authored half of each entry: everything except whether the engine does
+ * anything with it, which is derived below.
+ */
+const AUTHORED_KEYWORDS: Readonly<Record<KeywordId, Omit<KeywordDefinition, 'implemented'>>> = {
   rush: {
     schemaVersion: 1,
     id: 'rush',
@@ -69,7 +74,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Can attack and use its Exhaust abilities the turn it is deployed.',
     fullDefinition:
       'A Newly Deployed unit normally cannot attack, and cannot pay an "Exhaust this unit" activation cost. Rush lifts both restrictions on the turn it arrives. Rush does not ready an already-exhausted unit.',
-    implemented: true,
     relatedRuleSections: ['playing_cards', 'combat'],
     examples: [
       'Deploy a Rush unit on turn four and attack with it immediately.',
@@ -84,7 +88,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Attackers cannot be left unblocked while you have a Guardian able to block.',
     fullDefinition:
       'While the defending player controls a ready Guardian that could legally block an attacker, that attacker may not be left unblocked. The defender still chooses which legal Guardian blocks it. Guardian does not let one unit block more than one attacker: with more attackers than ready Guardians, each Guardian covers one attack and the rest may be blocked normally or left unblocked.',
-    implemented: true,
     relatedRuleSections: ['combat'],
     examples: [
       'You attack with two units into one ready Guardian. One attack must be blocked by it; the other may go through.',
@@ -98,7 +101,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Prevents the next damage dealt to this unit, then goes away.',
     fullDefinition:
       'The next damage event that would deal damage to this unit is prevented entirely, and Barrier is then removed. A zero-damage event does not consume it. Multiple instances of Barrier do not stack — a unit either has it or does not.',
-    implemented: true,
     relatedRuleSections: ['damage_and_defeat'],
     examples: [
       'A 2/2 with Barrier blocks a 5/5, takes no damage, and loses Barrier. The next hit kills it.',
@@ -112,7 +114,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Excess combat damage carries through to the defending player.',
     fullDefinition:
       "When this unit is blocked, damage equal to the blocker's current health is assigned to the blocker and the rest is dealt to the defending player. Barrier on the blocker prevents only the damage assigned to the blocker; the overflow still reaches the player.",
-    implemented: true,
     relatedRuleSections: ['combat', 'damage_and_defeat'],
     examples: ['A 7/7 with Overwhelm blocked by a 2/2 deals 2 to the blocker and 5 to the player.'],
   },
@@ -124,7 +125,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Opponents cannot choose this unit as a target.',
     fullDefinition:
       'An opposing player may not choose this unit as the target of a card or ability. It can still be affected by effects that do not target — "every unit", sweepers, combat damage — and its own controller may still target it.',
-    implemented: true,
     relatedRuleSections: ['playing_cards'],
     examples: [
       'A unit made untargetable cannot be picked by enemy removal, but still takes damage from "deal 2 damage to every unit".',
@@ -138,7 +138,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Cannot be blocked.',
     fullDefinition:
       'While this unit is attacking, the defending player may not assign any blocker to it. Its damage always reaches the defending player.',
-    implemented: true,
     relatedRuleSections: ['combat'],
     examples: ['An Evasive 2/2 deals 2 damage to the defending player every turn it attacks.'],
   },
@@ -151,7 +150,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
       'Reduces each instance of damage dealt to it by {matchConfig.armoredReduction}.',
     fullDefinition:
       'Every separate instance of damage dealt to this unit is reduced by {matchConfig.armoredReduction}, to a minimum of zero. The reduction applies per instance, not once per turn, and is applied before any damage-prevention effect on the unit.',
-    implemented: true,
     relatedRuleSections: ['damage_and_defeat'],
     examples: [
       'Two separate 1-damage hits on an Armored unit both reduce to zero; a single 2-damage hit reduces to 1.',
@@ -165,7 +163,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Combat damage this unit deals heals its controller by the same amount.',
     fullDefinition:
       'Whenever this unit deals combat damage — to a player or to a blocking or blocked unit — its controller heals that much health. Only combat damage siphons; damage this unit deals through a card effect does not. Player healing has no maximum, so it can take you above your starting health.',
-    implemented: true,
     relatedRuleSections: ['combat', 'damage_and_defeat'],
     examples: ['A Siphon 3/3 that attacks unblocked deals 3 damage and heals you 3.'],
   },
@@ -177,7 +174,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Any damage this unit deals to another unit is lethal to it.',
     fullDefinition:
       'Any non-zero damage this unit deals to another unit defeats that unit in the next state-based check, no matter how much health it has left. This applies to combat damage and to damage dealt by this unit through a card effect. It has no effect on damage dealt to players.',
-    implemented: true,
     relatedRuleSections: ['damage_and_defeat'],
     examples: ['A Venom 1/1 that blocks a 6/6 defeats it, taking 6 damage in return.'],
   },
@@ -189,7 +185,6 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'Deals its combat damage before units without Quick Strike.',
     fullDefinition:
       'Combat damage is dealt in two steps. Units with Quick Strike deal their damage in the first step; every other unit deals damage in the second. Defeats are resolved between the steps, so a unit defeated by Quick Strike damage never deals its own combat damage.',
-    implemented: true,
     relatedRuleSections: ['combat'],
     examples: [
       'A Quick Strike 3/2 blocked by a 2/3 defeats the blocker in the first step and takes no damage back.',
@@ -203,11 +198,32 @@ export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = 
     shortDefinition: 'No effect yet — this keyword is not implemented.',
     fullDefinition:
       'Resilient currently does nothing. The candidate readings — clearing marked damage at end of turn, or surviving lethal damage once per turn — differ sharply in power and both interact with the rule that damage persists between turns, so the engine deliberately implements neither until the decision is made.',
-    implemented: false,
     relatedRuleSections: ['damage_and_defeat'],
     examples: [],
   },
-});
+};
+
+/**
+ * The registry as it is read everywhere else, with `implemented` filled in from
+ * the mechanic support registry rather than typed out beside each entry (M05.1).
+ *
+ * There used to be two claims about whether a keyword does anything — this flag
+ * and the engine's own note — and they were kept in step by hand. Now there is
+ * one: `support.ts` says `engine: 'full'` or `engine: 'none'`, and this is a
+ * view of it. A keyword cannot be described to a player as working while the
+ * registry the content build gates on says it is inert.
+ */
+export const KEYWORD_REGISTRY: Readonly<Record<KeywordId, KeywordDefinition>> = Object.freeze(
+  Object.fromEntries(
+    KEYWORD_IDS.map((id) => [
+      id,
+      {
+        ...AUTHORED_KEYWORDS[id],
+        implemented: mechanicSupport({ kind: 'keyword', id }).engine === 'full',
+      },
+    ]),
+  ) as Record<KeywordId, KeywordDefinition>,
+);
 
 export const KEYWORD_LIST: readonly KeywordDefinition[] = KEYWORD_IDS.map(
   (id) => KEYWORD_REGISTRY[id],

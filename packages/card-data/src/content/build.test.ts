@@ -186,6 +186,55 @@ describe('content source validation', () => {
     expect(errorCodes()).toContain('card_data/orphan_token');
   });
 
+  it('derives support from the mechanic registry rather than from the card’s own claim', () => {
+    // `resilient` is authored, printed, filterable — and inert. The card says
+    // `implemented: true` (the schema default) and is structurally valid; the
+    // only thing that knows better is the support registry (M05.1).
+    const resilientUnit = unitCard('alpha', {
+      keywords: ['resilient'],
+      displayText: 'A plain unit with Resilient.',
+    });
+
+    write('content/sets/test_set/set.json', manifest());
+    write('content/sets/test_set/cards/alpha.json', resilientUnit);
+    const lenient = buildContent(root);
+    expect(lenient.issues.filter((i) => i.severity === 'error')).toEqual([]);
+    const warned = lenient.issues.find((i) => i.code === 'content/unsupported_mechanic');
+    expect(warned?.severity).toBe('warning');
+    expect(warned?.message).toContain('keyword:resilient');
+
+    // The status is the only thing that changes. A set people will play with
+    // may not contain a mechanic the engine does not execute.
+    write('content/sets/test_set/set.json', manifest({ status: 'playtest' }));
+    expect(errorCodes()).toContain('content/unsupported_mechanic');
+  });
+
+  it('follows a granted keyword into the instruction that grants it', () => {
+    // `grant_keyword` is fully executed; granting an inert keyword is not, and a
+    // check that only looked at `card.keywords` would miss it entirely.
+    write('content/sets/test_set/set.json', manifest({ status: 'playtest' }));
+    write(
+      'content/sets/test_set/cards/alpha.json',
+      unitCard('alpha', {
+        effects: [{ type: 'grant_keyword', target: { kind: 'source' }, keyword: 'resilient' }],
+        displayText: 'When this unit is deployed, it gains Resilient.',
+      }),
+    );
+    expect(errorCodes()).toContain('content/unsupported_mechanic');
+  });
+
+  it('accepts a playtest set built entirely from executed mechanics', () => {
+    write('content/sets/test_set/set.json', manifest({ status: 'playtest' }));
+    write(
+      'content/sets/test_set/cards/alpha.json',
+      unitCard('alpha', {
+        keywords: ['guardian'],
+        displayText: 'Guardian.',
+      }),
+    );
+    expect(errorCodes()).not.toContain('content/unsupported_mechanic');
+  });
+
   it('rejects a set directory with no cards', () => {
     write('content/sets/test_set/set.json', manifest());
     expect(errorCodes()).toContain('content/empty_set');

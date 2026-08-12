@@ -10,6 +10,7 @@ import {
 import { playFormatSchema, type PlayFormat } from '../schema/format.js';
 import { preconDefinitionSchema, type PreconDefinition } from '../schema/precon.js';
 import { CARD_SCHEMA_VERSION, STRICT_SET_STATUSES } from '../schema/primitives.js';
+import { describeCardSupport, limitingMechanics, mechanicKey } from '../support.js';
 import { loadCardSets, zodIssuesToIssues } from '../loader.js';
 import { migrateCardSet } from '../migrate.js';
 import {
@@ -448,6 +449,31 @@ function validateCrossReferences(
               path: `content/sets/${set.setId}/cards/${card.id}.json`,
               context: { cardId: card.id, setId: set.setId },
             }),
+      );
+    }
+  }
+
+  // Support is *derived*, never read off the card (M05.1). `implemented: true`
+  // is a sentence an author typed; this walks the structured data the engine
+  // actually executes and asks the mechanic support registry about every piece
+  // of it. A set nobody will play with may carry an inert mechanic and be told
+  // so; a `playtest` or `active` set may not, which is what keeps an unfinished
+  // keyword out of playable content without anybody having to remember.
+  for (const set of sets) {
+    const strict = STRICT_SET_STATUSES.includes(set.status);
+    for (const card of set.cards) {
+      const support = describeCardSupport(card);
+      if (support.executable) continue;
+      const inert = limitingMechanics(support.mechanics, 'engine').map(mechanicKey);
+      const message =
+        `"${card.name}" (${card.id}) is built on ${inert.length === 1 ? 'a mechanic' : 'mechanics'} ` +
+        `the rules engine does not execute: ${inert.join(', ')}.`;
+      const context = { cardId: card.id, setId: set.setId, mechanics: inert.join(',') };
+      const path = `content/sets/${set.setId}/cards/${card.id}.json`;
+      issues.push(
+        strict
+          ? error('content/unsupported_mechanic', `[${set.setId}] ${message}`, { path, context })
+          : warning('content/unsupported_mechanic', message, { path, context }),
       );
     }
   }

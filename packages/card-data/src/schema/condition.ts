@@ -148,6 +148,18 @@ export const conditionSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 export type ConditionDefinition = z.infer<typeof conditionSchema>;
+export type ConditionKind = ConditionDefinition['kind'];
+
+/**
+ * The condition vocabulary, as a list.
+ *
+ * Read off the union rather than restated, so a new gate cannot be added to the
+ * schema without appearing here — and therefore without appearing in the support
+ * registry that is keyed by this list (M05.1).
+ */
+export const CONDITION_KINDS = conditionSchema.options.map(
+  (option) => option.shape.kind.value,
+) as readonly ConditionKind[];
 
 /**
  * Whose statline a derived value reads (M02.3).
@@ -205,56 +217,78 @@ const statValueShape = {
  * exist for "for each", "for every three", "equal to its ATK", and the caps and
  * floors that go with them.
  */
-export const valueExpressionSchema = z.union([
-  z.number().int().min(0).max(99),
-  z.discriminatedUnion('kind', [
-    z.strictObject({
-      kind: z.literal('count'),
-      count: countQuerySchema,
-      /**
-       * How many matches one point is worth. `per: 3` is "for every three",
-       * rounded **down**, which is the only reading that makes "for every three
-       * other Goblins" mean what a player expects at four Goblins.
-       */
-      per: z.number().int().min(1).max(20).default(1),
-      /** Added after scaling. A flat base on top of the count. */
-      plus: z.number().int().min(-99).max(99).default(0),
-      /** Floor and ceiling, applied last. The result is never negative. */
-      minimum: z.number().int().min(0).max(99).default(0),
-      maximum: z.number().int().min(0).max(99).optional(),
-    }),
-    z.strictObject({
-      ...statValueShape,
-      minimum: z.number().int().min(0).max(99).default(0),
-      maximum: z.number().int().min(0).max(99).optional(),
-    }),
+const valueObjectSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('count'),
+    count: countQuerySchema,
     /**
-     * "**For each Unit sacrificed**, …" — how many things the instruction
-     * immediately before this one resolved with (M02.5).
-     *
-     * The value-side twin of the `previous_target` target kind, and it reads the
-     * same record: the entity targets each step resolves with are filed on the
-     * resolution item, so this survives a pause and a JSON round trip. It is
-     * deliberately *not* a `count` query. "Units sacrificed this turn" is a
-     * different number — it includes every earlier sacrifice on the same turn,
-     * from other cards — and a card that said "for each Unit sacrificed" and
-     * meant that would be a considerably stronger card than the one printed.
-     *
-     * Zero, and the instruction has nothing to do, when the step before it acted
-     * on nothing: an "up to five" that took none is a legal outcome, not a
-     * failure. Meaningless on the first instruction of a list, which the card
-     * schema rejects rather than resolving to a silent zero.
+     * How many matches one point is worth. `per: 3` is "for every three",
+     * rounded **down**, which is the only reading that makes "for every three
+     * other Goblins" mean what a player expects at four Goblins.
      */
-    z.strictObject({
-      kind: z.literal('previous_targets'),
-      /** Added after the count. A flat base on top of it. */
-      plus: z.number().int().min(-99).max(99).default(0),
-      minimum: z.number().int().min(0).max(99).default(0),
-      maximum: z.number().int().min(0).max(99).optional(),
-    }),
-  ]),
+    per: z.number().int().min(1).max(20).default(1),
+    /** Added after scaling. A flat base on top of the count. */
+    plus: z.number().int().min(-99).max(99).default(0),
+    /** Floor and ceiling, applied last. The result is never negative. */
+    minimum: z.number().int().min(0).max(99).default(0),
+    maximum: z.number().int().min(0).max(99).optional(),
+  }),
+  z.strictObject({
+    ...statValueShape,
+    minimum: z.number().int().min(0).max(99).default(0),
+    maximum: z.number().int().min(0).max(99).optional(),
+  }),
+  /**
+   * "**For each Unit sacrificed**, …" — how many things the instruction
+   * immediately before this one resolved with (M02.5).
+   *
+   * The value-side twin of the `previous_target` target kind, and it reads the
+   * same record: the entity targets each step resolves with are filed on the
+   * resolution item, so this survives a pause and a JSON round trip. It is
+   * deliberately *not* a `count` query. "Units sacrificed this turn" is a
+   * different number — it includes every earlier sacrifice on the same turn,
+   * from other cards — and a card that said "for each Unit sacrificed" and
+   * meant that would be a considerably stronger card than the one printed.
+   *
+   * Zero, and the instruction has nothing to do, when the step before it acted
+   * on nothing: an "up to five" that took none is a legal outcome, not a
+   * failure. Meaningless on the first instruction of a list, which the card
+   * schema rejects rather than resolving to a silent zero.
+   */
+  z.strictObject({
+    kind: z.literal('previous_targets'),
+    /** Added after the count. A flat base on top of it. */
+    plus: z.number().int().min(-99).max(99).default(0),
+    minimum: z.number().int().min(0).max(99).default(0),
+    maximum: z.number().int().min(0).max(99).optional(),
+  }),
 ]);
+
+export const valueExpressionSchema = z.union([z.number().int().min(0).max(99), valueObjectSchema]);
 export type ValueExpression = z.infer<typeof valueExpressionSchema>;
+
+/**
+ * How a number on a card is arrived at.
+ *
+ * `fixed` is the printed number, which has no `kind` discriminant of its own —
+ * it is a bare `number` in the data — so it is named here rather than read off
+ * the union. Everything else comes straight from the schema, so a new derived
+ * value cannot be added without appearing in the support registry keyed by this
+ * list (M05.1).
+ */
+export type ValueExpressionKind = 'fixed' | Extract<ValueExpression, { kind: string }>['kind'];
+
+export const VALUE_EXPRESSION_KINDS: readonly ValueExpressionKind[] = [
+  'fixed',
+  ...valueObjectSchema.options.map((option) => option.shape.kind.value),
+];
+
+/** Which member of the vocabulary a value expression is. */
+export function valueExpressionKindOf(
+  value: ValueExpression | SignedValueExpression,
+): ValueExpressionKind {
+  return typeof value === 'number' ? 'fixed' : value.kind;
+}
 
 /** True when the expression is a plain printed number. */
 export function isFixedValue(value: ValueExpression): value is number {

@@ -58,6 +58,12 @@ export const FLAG_REASONS = [
   'abnormal_terminations',
   'excessive_match_length',
   'diversity_collapse',
+  /**
+   * The run's decks contain mechanics no pilot values or no record observes
+   * (M05.1). A `run_quality` note, and the reason a card flag beside it may have
+   * been downgraded.
+   */
+  'unsupported_mechanics',
 ] as const;
 export const flagReasonSchema = z.enum(FLAG_REASONS);
 export type FlagReason = z.infer<typeof flagReasonSchema>;
@@ -92,10 +98,18 @@ export interface FlagInputs {
   readonly displacement?: readonly Displacement[];
   /** Controlled counter evidence, when a target population was declared. */
   readonly counters?: CounterBreadth;
+  /**
+   * What the run's own mechanic support lets it claim (M05.1). Absent means "no
+   * limits known", which is only correct for a caller that has no decks — every
+   * experiment passes it.
+   */
+  readonly support?: SupportLimits;
+  /** Deck count, for the support note's sample size. */
+  readonly deckCount?: number;
 }
 
 export function computeFlags(inputs: FlagInputs): Flag[] {
-  const flags: Flag[] = [
+  const raw: Flag[] = [
     ...runQualityFlags(inputs),
     ...cardFlags(inputs),
     ...inclusionFlags(inputs),
@@ -106,6 +120,15 @@ export function computeFlags(inputs: FlagInputs): Flag[] {
     ...displacementFlags(inputs),
     ...counterFlags(inputs),
   ];
+
+  // The downgrade runs last and over everything, so a flag added later cannot
+  // quietly escape it by being computed in a new helper (M05.1).
+  const flags = inputs.support
+    ? [
+        ...applySupportLimits(raw, inputs.support),
+        ...supportFlags(inputs.support, inputs.deckCount ?? 0),
+      ]
+    : raw;
 
   // Stable order: most actionable first, then alphabetically, so two runs of
   // the analyser print the same list in the same order.
@@ -120,6 +143,124 @@ export function computeFlags(inputs: FlagInputs): Flag[] {
     if (left.reason !== right.reason) return left.reason.localeCompare(right.reason);
     return left.subject.localeCompare(right.subject);
   });
+}
+
+/* ------------------------------------------------- support-limited evidence */
+
+/**
+ * Levels a flag can claim about balance. `run_quality` is about the run itself
+ * and is never downgraded: "3 matches ended abnormally" stays true however
+ * blindly the pilots played.
+ */
+const BALANCE_LEVELS: readonly FlagLevel[] = ['review_recommended', 'possible_interaction'];
+
+export interface SupportLimits {
+  /** Every pilot in the run only plays legally, so none of it is play quality. */
+  readonly legalOnlyPilots: boolean;
+  /** Card IDs no pilot values at least one thing about. */
+  readonly pilotBlindCards: readonly string[];
+  /** Card IDs nothing in a match record observes. */
+  readonly telemetryBlindCards: readonly string[];
+}
+
+/**
+ * Declines the balance claims the run's own support cannot carry (M05.1).
+ *
+ * A flag is *downgraded to `insufficient_data`*, never dropped, for the same
+ * reason a small sample is: "we cannot tell" has to stay visible, and a
+ * suppressed flag looks exactly like a clean bill of health. The evidence, the
+ * sample size and the threshold are all preserved, and the message gains the
+ * sentence explaining which support was missing, so the downgrade can be
+ * checked and argued with.
+ *
+ * Three dependencies, and no others:
+ *
+ * - **Legality-only pilots.** A `random_legal` run is evidence for termination,
+ *   loops and crashes. Every balance claim in it is a claim about uniform random
+ *   play, so all of them are declined at once.
+ * - **A card no pilot values.** A card-subject flag about a card carrying an
+ *   unvalued mechanic — a Reaction that counters, today — is a claim about a
+ *   card the pilots played blind. It is not evidence that the card is strong or
+ *   weak; it is evidence that nobody tried.
+ * - **A card nothing observes.** A card-subject flag about a card whose every
+ *   mechanic is invisible to telemetry cannot be checked against a single
+ *   recorded observation, only against the win column.
+ *
+ * Deck-, cluster- and run-subject flags are left alone by the last two: they are
+ * not claims about one card, and a deck does not become unreadable because one
+ * of its forty cards is.
+ */
+export function applySupportLimits(flags: readonly Flag[], limits: SupportLimits): Flag[] {
+  const pilotBlind = new Set(limits.pilotBlindCards);
+  const telemetryBlind = new Set(limits.telemetryBlindCards);
+
+  return flags.map((flag) => {
+    if (!BALANCE_LEVELS.includes(flag.level)) return flag;
+
+    const reasons: string[] = [];
+    if (limits.legalOnlyPilots) {
+      reasons.push(
+        'every pilot in this run plays only legally, so nothing here is evidence about play quality',
+      );
+    }
+    if (pilotBlind.has(flag.subject)) {
+      reasons.push('no pilot values at least one mechanic on this card, so it was played blind');
+    }
+    if (telemetryBlind.has(flag.subject)) {
+      reasons.push(
+        'nothing this card does reaches a telemetry counter, so the signal is unchecked',
+      );
+    }
+    if (reasons.length === 0) return flag;
+
+    return {
+      ...flag,
+      level: 'insufficient_data' as FlagLevel,
+      message: `${flag.message} Downgraded: ${reasons.join('; ')}.`,
+      evidence: { ...flag.evidence, supportDowngraded: true },
+    };
+  });
+}
+
+/**
+ * A `run_quality` note stating what the run's decks are made of (M05.1).
+ *
+ * Separate from the downgrades above and emitted whether or not anything was
+ * downgraded, because "every mechanic in these decks is executed, valued and
+ * observed" is worth saying out loud when it is true.
+ */
+export function supportFlags(limits: SupportLimits, deckCount: number): Flag[] {
+  const parts: string[] = [];
+  if (limits.legalOnlyPilots) {
+    parts.push('every pilot in this run plays only legally');
+  }
+  if (limits.pilotBlindCards.length > 0) {
+    parts.push(`${limits.pilotBlindCards.length} card(s) carry a mechanic no pilot values`);
+  }
+  if (limits.telemetryBlindCards.length > 0) {
+    parts.push(`${limits.telemetryBlindCards.length} card(s) do nothing a match record observes`);
+  }
+  if (parts.length === 0) return [];
+
+  return [
+    {
+      level: 'run_quality',
+      reason: 'unsupported_mechanics',
+      subject: 'run',
+      message:
+        `${parts.join(', ')}. Card-level review signals about those cards are downgraded to ` +
+        'insufficient data rather than dropped; the mechanic support section lists exactly which mechanics are involved.',
+      evidence: {
+        decks: deckCount,
+        legalOnlyPilots: limits.legalOnlyPilots,
+        pilotBlindCards: limits.pilotBlindCards.join(',') || 'none',
+        telemetryBlindCards: limits.telemetryBlindCards.join(',') || 'none',
+      },
+      sampleSize: deckCount,
+      interval: null,
+      threshold: null,
+    },
+  ];
 }
 
 /* ------------------------------------------------------------- run quality */

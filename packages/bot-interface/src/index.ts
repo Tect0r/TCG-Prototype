@@ -65,6 +65,7 @@ export {
   pilotSpecSchema,
   PILOT_IDS,
   PILOT_BASE_WEIGHTS,
+  LEGAL_ONLY_PILOT_IDS,
   type PilotId,
   type PilotSpec,
   type PilotSpecInput,
