@@ -185,6 +185,78 @@ export function isNewlyDeployed(instance: CardInstance, _state?: MatchState): bo
 /** @deprecated Renamed to `isNewlyDeployed` to match the ruleset's vocabulary. */
 export const isSummoningSick = isNewlyDeployed;
 
+/**
+ * Who could have attacked, and why the rest could not (M04.2).
+ *
+ * One function answers both questions the engine asks about an attack step: which
+ * of a seat's Units may be declared (`legal-actions.ts`) and what the seat's
+ * opportunity looked like at the moment it decided (the `attack_opportunity`
+ * event). They were deliberately not written twice — a telemetry census that
+ * re-derived attack legality could disagree with the legality the engine
+ * enforces, and then the evidence M04 exists to gather would be evidence about
+ * the census instead of about the game.
+ *
+ * The three groups partition `player.units` exactly: every Unit is legal,
+ * Exhausted, or Ready-but-held-by-Newly-Deployed. That is asserted in
+ * `attack-opportunity.test.ts` rather than assumed, because a future attack
+ * restriction that lands in only one of the branches would silently make the
+ * breakdown stop adding up.
+ */
+export interface AttackCensus {
+  /** Units the engine would accept as attackers right now, in board order. */
+  readonly legalAttackers: InstanceId[];
+  /** Units controlled on the battlefield. */
+  readonly units: number;
+  /** Of those, the ones that are not Exhausted. */
+  readonly readyUnits: number;
+  /** Units that cannot attack because they are Exhausted. */
+  readonly exhaustedUnits: number;
+  /**
+   * Ready Units held back by `Newly Deployed` without Rush.
+   *
+   * The rule half of "nobody could attack": a board of five Units that all
+   * arrived this turn is not a quiet board, it is a board the ruleset has not let
+   * loose yet (`CLAUDE.md`, Newly Deployed).
+   */
+  readonly newlyDeployedUnits: number;
+}
+
+export function attackCensus(
+  state: MatchState,
+  database: CardDatabase,
+  playerId: PlayerId,
+): AttackCensus {
+  const player = playerOf(state, playerId);
+  const legalAttackers: InstanceId[] = [];
+  let units = 0;
+  let exhaustedUnits = 0;
+  let newlyDeployedUnits = 0;
+
+  for (const instanceId of player.units) {
+    const instance = findInstance(state, instanceId);
+    if (!instance) continue;
+    units += 1;
+    if (instance.exhausted) {
+      exhaustedUnits += 1;
+      continue;
+    }
+    const definition = definitionOf(database, instance);
+    if (isNewlyDeployed(instance, state) && !hasKeyword(instance, definition, 'rush')) {
+      newlyDeployedUnits += 1;
+      continue;
+    }
+    legalAttackers.push(instanceId);
+  }
+
+  return {
+    legalAttackers,
+    units,
+    readyUnits: units - exhaustedUnits,
+    exhaustedUnits,
+    newlyDeployedUnits,
+  };
+}
+
 function costModifierApplies(modifier: CostModifier, definition: CardDefinition): boolean {
   if (modifier.filter === null) return true;
   return matchesCardFilter(definition, null, modifier.filter);

@@ -3,12 +3,12 @@ import type { AbilityCost, CardDatabase } from '@tcg/card-data';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
 import { createContext, type MatchContext } from './context.js';
 import {
+  attackCensus,
   commanderDeployCost,
   definitionOf,
   findInstance,
   hasKeyword,
   isNewlyDeployed,
-  isSummoningSick,
   livingOpponents,
   matchesCardFilter,
   playerOf,
@@ -278,12 +278,10 @@ export function legalActions(
   }
 
   if (isActive && state.phase === 'declare_attackers') {
-    const legalAttackers = player.units.filter((instanceId) => {
-      const instance = findInstance(state, instanceId);
-      if (!instance || instance.exhausted) return false;
-      const definition = definitionOf(options.database, instance);
-      return !isSummoningSick(instance, state) || hasKeyword(instance, definition, 'rush');
-    });
+    // The same census the engine records as `attack_opportunity` (M04.2), so what
+    // a seat is offered and what the telemetry says it could have done are one
+    // answer rather than two implementations of the same rule.
+    const { legalAttackers } = attackCensus(state, options.database, playerId);
     return {
       ...empty,
       attacking: { legalAttackers, legalDefenders: livingOpponents(state, playerId) },

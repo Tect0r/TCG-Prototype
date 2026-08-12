@@ -166,7 +166,21 @@ export function formatSpectateSummary(replay: SpectatorReplay): string {
     `largest combat:  turn ${telemetry.largestCombat.turn} (${telemetry.largestCombat.attackers} attackers, ${telemetry.largestCombat.blockers} blockers)`,
     `busiest turn:    turn ${telemetry.busiestTurn.turn} (${telemetry.busiestTurn.triggers} triggers, ${telemetry.busiestTurn.choices} choices)`,
     `reactions:       ${telemetry.reactionsPlayed} played across ${telemetry.reactionWindows} window(s); ${telemetry.cardsCountered} card(s) countered`,
-    `board stall:     ${telemetry.boardStalled ? 'yes' : 'no'} (longest ${telemetry.longestStallRounds} round(s) with no attack)`,
+  );
+
+  // Attack opportunity rather than a stall verdict (M04.2). The line reports what
+  // was observed at each attack step and says the classification is undetermined,
+  // because it is: Q43 has not fixed the eligibility rule or the threshold, and
+  // "no attackers this round" is not evidence of a stall on its own.
+  const opportunity = telemetry.attackOpportunity;
+  lines.push(
+    `attack steps:    ${opportunity.steps} (${opportunity.able} able, ${opportunity.declined} declined, ${opportunity.unable} unable)`,
+    `quiet rounds:    longest ${telemetry.longestStallRounds} with no attack — ` +
+      `${opportunity.longestDeclinedStreak} declined, ${opportunity.longestUnableStreak} unable` +
+      (opportunity.readyPreventions > 0
+        ? `; ${opportunity.readyPreventions} Ready Step(s) prevented`
+        : ''),
+    `stall verdict:   ${opportunity.classification} (pending Q43)`,
   );
 
   if (telemetry.largestBoardAnswer) {

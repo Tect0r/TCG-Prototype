@@ -162,6 +162,8 @@ export { serializeMatchState, deserializeMatchState, parseMatchState } from './s
 
 export {
   activeFirstOrder,
+  attackCensus,
+  type AttackCensus,
   clockwiseFrom,
   currentAttack,
   currentHealth,

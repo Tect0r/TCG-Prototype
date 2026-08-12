@@ -6,6 +6,7 @@ import { createContext, emit, underCause, type MatchContext } from './context.js
 import { playCostOf } from './costs.js';
 import { engineError, type EngineError } from './errors.js';
 import {
+  attackCensus,
   commanderDeployCost,
   definitionOf,
   findInstance,
@@ -1183,6 +1184,24 @@ function handleDeclareAttackers(
   }
 
   // ---- committed
+
+  // The opportunity census is taken here, before declared attackers Exhaust,
+  // because it has to describe the board the seat decided against rather than
+  // the board its decision produced (M04.2). It is emitted for every
+  // declaration, including a full attack, so the series has no gaps to explain.
+  const census = attackCensus(ctx.state, ctx.database, playerId);
+  emit(ctx, {
+    type: 'attack_opportunity',
+    playerId,
+    units: census.units,
+    readyUnits: census.readyUnits,
+    legalAttackers: census.legalAttackers.length,
+    exhaustedUnits: census.exhaustedUnits,
+    newlyDeployedUnits: census.newlyDeployedUnits,
+    legalDefenders: opponents.length,
+    declaredAttackers: attacks.length,
+  });
+
   ctx.state.combat.attacks = attacks.map((attack) => ({ ...attack }));
   for (const attack of attacks) {
     const instance = findInstance(ctx.state, attack.attackerInstanceId);

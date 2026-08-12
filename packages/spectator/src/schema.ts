@@ -44,8 +44,15 @@ import {
  * build that recorded it never asserted, presented under that build's identity.
  * A replay is a claim about what a specific engine did; the version check exists
  * so an incompatible one fails loudly instead of quietly answering differently.
+ *
+ * Bumped to 4 for M04.2, and refused rather than migrated for the third time and
+ * the same reason: a version 3 match was played by an engine that emitted no
+ * `attack_opportunity` event, so its log does not record what any seat could have
+ * attacked with. Re-deriving it would mean re-simulating the match, which is a
+ * different match. The verdict field a v3 replay does carry — `boardStalled` — is
+ * gone, so reading one under v4 would also mean silently dropping a claim.
  */
-export const SPECTATOR_REPLAY_VERSION = 3;
+export const SPECTATOR_REPLAY_VERSION = 4;
 
 /**
  * Whether a recorded match is evidence about the game at all.
@@ -99,6 +106,12 @@ export type SpectatorSeat = z.infer<typeof spectatorSeatSchema>;
  * that cannot disagree about what `peakUnits` means. What this layer adds is the
  * two things that are true of a *watched* match and of nothing else — a
  * leaderboard, and whether the match is evidence about the game at all.
+ *
+ * Since M04.2 that is *all* it adds. `boardStalled` used to live here, a
+ * presentation threshold over "no attackers for three rounds" that no evidence
+ * supported; the shared schema now carries the attack-opportunity counts a stall
+ * would have to be argued from, and its `classification` says `'undetermined'`
+ * until Q43. A watched match does not get a verdict a measured one is denied.
  */
 export const spectatorSeatTelemetrySchema = boardSeatTelemetrySchema.extend({
   /** Final placement: 1 is the winner. Eliminated seats rank by exit order. */
@@ -114,17 +127,6 @@ export const spectatorTelemetrySchema = boardTelemetrySchema.extend({
    * out of its replay still says it must not be counted.
    */
   resultsValid: z.boolean(),
-  /**
-   * Whether `longestStallRounds` reached the summary screen's threshold.
-   *
-   * A presentation flag over the shared raw streak, and the *only* derived
-   * verdict anywhere in this document. It stays on the spectator side because it
-   * is not evidence: the eligibility rule and threshold that would make it one
-   * are Q43, and M04.2 replaces it with raw attack-opportunity evidence. Nothing
-   * downstream may act on it, and the Unit cap does not come back because it is
-   * true.
-   */
-  boardStalled: z.boolean(),
 });
 export type SpectatorTelemetry = z.infer<typeof spectatorTelemetrySchema>;
 

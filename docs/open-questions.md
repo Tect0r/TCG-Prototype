@@ -569,6 +569,69 @@ Any threshold is defensible; the point is that it must be one explicit,
 configurable, versioned number rather than a judgement made in the reporting
 layer. Suggest 3 rounds, configurable, unless you have an intuition.
 
+#### Raw traces now exist (M04.2)
+
+The question was previously abstract because nothing measured eligibility. Since
+M04.2 every match records, per round, how many seats reached their attack step and
+which of five outcomes each one was in — able, no Units, all Exhausted, held by
+`Newly Deployed`, no living defender — plus how many able seats declared nothing
+and how many Ready Steps an effect rewrote. `attackOpportunity.classification` is
+`'undetermined'` and stays that way until this question is answered.
+
+Two four-seat precon matches, played through the spectator (seeds
+`m04-2-trace-a`, `m04-2-trace-b`; columns are `asked/able/declined`, then
+`noUnits/allExhausted/newlyDeployed/noDefender`, then attackers declared):
+
+```
+seed m04-2-trace-a — 8 rounds, longestStallRounds 2
+  R1  4/0/0 | 2/0/2/0 | 0 attackers      <- nobody could: two empty boards, two fresh
+  R2  4/2/2 | 1/0/1/0 | 0 attackers      <- two seats could and declined
+  R3  4/4/3 | 0/0/0/0 | 1 attacker       <- three declined, one attacked
+  R4–R8: every asked seat able; 5, 7, 17, 34, 53 attackers
+
+seed m04-2-trace-b — 7 rounds, longestStallRounds 1
+  R1  4/0/0 | 1/0/3/0 | 0 attackers      <- nobody could
+  R2  4/3/2 | 0/0/1/0 | 1 attacker
+  R3–R7: 7, 5, 9, 38, 64 attackers
+```
+
+What the traces show, and what the answer has to deal with:
+
+1. **The baseline counted the wrong thing.** Seed A's `longestStallRounds: 2` is
+   rounds 1 and 2 added together, and they are opposite findings: nobody _could_
+   attack in round 1, and two seats could and chose not to in round 2. A threshold
+   over silence cannot separate them; that is why `boardStalled` was removed
+   rather than retuned.
+2. **The opening is never evidence.** Round 1 is quiet in both traces, for the
+   same reason both times — empty or freshly-deployed boards. If the rule counts
+   it, every match opens with a stall round it did nothing to earn.
+3. **Declining is common and brief.** Seats declined in 8 of 30 attack steps in
+   seed A, but no quiet round followed another: `longestDeclinedStreak` was 1 in
+   seed A and 0 in seed B. If a stall means "consecutive quiet rounds somebody
+   could have attacked in", nothing in these matches is close to 3.
+4. **A wide board did not go quiet.** Both matches end in escalating combat (53
+   and 64 attackers in the last round), which is the opposite of the failure
+   signal ruleset update §17 worries about. This is two matches and not evidence
+   about balance — but it is evidence that the metric has to be able to say "no".
+
+The concrete choices to make:
+
+- **Eligibility.** Which streak counts — `longestDeclinedStreak` (quiet rounds
+  where at least one asked seat was able), or something stricter such as "every
+  living seat was able"? Note that on a four-seat table the strict reading almost
+  never fires.
+- **Threshold.** Rounds of that streak. 3 was the old number over the wrong
+  series; against `longestDeclinedStreak` it would mean three consecutive rounds
+  in which somebody who could attack did not.
+- **Round 1.** Excluded outright, or handled by eligibility (an empty board is
+  never able, so it falls out on its own — which the traces suggest is enough)?
+- **A single Token attacking.** Currently any declared attacker makes the round
+  non-quiet, so one Token breaks the streak. Keep, or require some threshold of
+  attackers?
+
+M04.3 implements the answer as a configured, versioned number and puts it in the
+reports. Until then the raw counts above are what the reports may say.
+
 ---
 
 ### Q44. Do you want multiple blockers per attacker, and if so, when?

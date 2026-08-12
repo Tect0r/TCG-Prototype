@@ -13,15 +13,15 @@ After verification, update the evidence and stop.
 
 ## Status
 
-| Milestone                                                                                 | State at baseline                     | Next tranche               |
-| ----------------------------------------------------------------------------------------- | ------------------------------------- | -------------------------- |
-| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)         | Complete                   |
-| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                   |
-| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                   |
-| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1 done (2026-08-12)               | M04.2 — attack opportunity |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | Legal but not balance-trustworthy     | Blocked by M03/M04         |
-| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint    |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone            |
+| Milestone                                                                                 | State at baseline                     | Next tranche            |
+| ----------------------------------------------------------------------------------------- | ------------------------------------- | ----------------------- |
+| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)         | Complete                |
+| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
+| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
+| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.2 done (2026-08-12)         | Q43 decision checkpoint |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | Legal but not balance-trustworthy     | Blocked by M03/M04      |
+| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
 
 Since M01.2, an unfinished card makes a deck illegal by name. The spectator
 refuses such a precon and runs it only under a deliberately named developer
@@ -234,6 +234,42 @@ reference. One thing deliberately withheld: the shared schema carries
 distinguishing "nobody wanted to attack" from "nobody could" is M04.2 and the
 threshold that would make either evidence is Q43.
 
+Since M04.2, a quiet round says **why** it was quiet, and the engine is what says
+so. A new event, `attack_opportunity`, is emitted at every attack declaration —
+immediately before `attackers_declared` and **before declared attackers Exhaust**,
+so it describes the board the seat decided against rather than the board its
+decision produced — carrying Units held, Ready Units, legal attackers, Exhausted
+Units, Ready Units held back by `Newly Deployed`, living opponents, and attackers
+actually declared. It comes from `attackCensus`, which is also where
+`legal-actions.ts` now gets `legalAttackers`, so the evidence and the legality the
+engine enforces are one function rather than two readings of the same rule; the
+counts partition the board exactly and that is asserted, not assumed. It is an
+observation — no trigger reads it, nothing branches on it, and every count is a
+tally of Units on a public battlefield, so no observation boundary moves.
+
+The collector files each census under exactly one of five outcomes that sum to
+`seatsAsked` — able, no Units, all Exhausted, held by Newly Deployed, no living
+defender — with `seatsDeclining` a subset of "able" and `readyPreventions`
+counted from `ready_prevented` and buffered onto the round it affects, because a
+Ready Step runs before the `turn_started` that names its turn. The same steps are
+counted per seat, since a round series cannot say who declined. Two raw streaks
+replace the old single one: `longestDeclinedStreak` over quiet rounds somebody
+could have attacked in, `longestUnableStreak` over quiet rounds nobody could.
+`longestStallRounds` is kept and is **not** their sum — a quiet round no seat was
+asked in counts there and belongs to neither.
+
+`boardStalled` is **removed, not retuned**, and it was the only derived verdict in
+either document. `attackOpportunity.classification` is the literal
+`'undetermined'` so nothing can read a verdict out of it by accident, and a build
+that starts writing one has to change the schema version. Three refusals, no
+migrations: board telemetry 1 → 2, spectator replays 3 → 4 (a v3 log cannot answer
+what a seat could have attacked with, and carries a `boardStalled` claim that no
+longer exists), simulator records 4 → 5; manifests stay at schema 4. Q43 is now
+answerable rather than abstract — two four-seat precon traces are in
+`docs/open-questions.md`, and they show the baseline's `longestStallRounds: 2`
+adding round 1 (nobody _could_: two empty boards, two freshly deployed) to round 2
+(two seats could and declined), which are opposite findings.
+
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and
 `eslint.config.js` are held to the same strictness as shipped code. The separate
@@ -261,7 +297,9 @@ Only stop on these when the active tranche genuinely needs the answer:
 
 - Q4: implement or remove `resilient`.
 - Q42: exact visual equivalence key for Token grouping.
-- Q43: board-stall eligibility and threshold.
+- Q43: board-stall eligibility and threshold. **Ready to answer since M04.2** —
+  the raw traces and the four concrete choices are in `docs/open-questions.md`.
+  M04.3 is blocked on it.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.
 - Q46: whether Reactions may carry interactive additional costs.

@@ -42,8 +42,16 @@ import { seedBundleSchema } from '../seed.js';
  * than merging two runs that measured different things. The manifest schema is
  * unchanged at 4: it already records `telemetrySchemaVersion` by reference, so
  * it states which of these is inside it without restating the shape.
+ *
+ * Version 5 (M04.2): the `board` block is board-telemetry schema 2, which adds
+ * the attack-opportunity census — what each seat could have attacked with at each
+ * of its attack steps, not merely whether it did. A v4 record was produced by an
+ * engine that never emitted the event those counts come from, so it is refused
+ * on the same terms as every bump before it, and the `matches.header.json` drift
+ * check keeps a v4 stream from being resumed under v5 meanings. The manifest
+ * schema stays at 4.
  */
-export const TELEMETRY_SCHEMA_VERSION = 4;
+export const TELEMETRY_SCHEMA_VERSION = 5;
 
 export const TERMINATION_KINDS = [
   'victory',

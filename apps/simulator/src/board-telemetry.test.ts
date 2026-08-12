@@ -90,6 +90,42 @@ describe('board telemetry in a simulated match', () => {
     expect(record.board.attackersByRound).toHaveLength(record.board.rounds);
   });
 
+  /**
+   * M04.2 on a real match rather than a hand-written stream.
+   *
+   * The census is only worth anything if it holds where the engine, not a fixture
+   * author, decides who may attack: every attack step a real match took has to be
+   * accounted for under exactly one reason, and the per-seat and per-round views
+   * of the same steps have to agree.
+   */
+  it('accounts for every attack step a real match took', async () => {
+    const { record } = await play(env, deckA, deckB, 'board-5');
+    const opportunity = record.board.attackOpportunity;
+    // Aggressive and value pilots on all-Unit decks: this match reaches combat.
+    expect(opportunity.steps).toBeGreaterThan(0);
+    expect(opportunity.byRound).toHaveLength(record.board.rounds);
+    expect(opportunity.steps).toBe(opportunity.able + opportunity.unable);
+    expect(opportunity.declined).toBeLessThanOrEqual(opportunity.able);
+    expect(opportunity.steps).toBe(
+      record.board.seats.reduce((sum, seat) => sum + seat.attackSteps, 0),
+    );
+
+    for (const round of opportunity.byRound) {
+      expect(round.seatsAsked).toBe(
+        round.seatsAble +
+          round.seatsWithoutUnits +
+          round.seatsAllExhausted +
+          round.seatsNewlyDeployed +
+          round.seatsWithoutDefender,
+      );
+      expect(round.attackers).toBe(record.board.attackersByRound[round.round - 1]);
+    }
+
+    // No verdict, in a batch record either. Q43 has not been answered, so the
+    // only honest classification is the one the schema pins.
+    expect(opportunity.classification).toBe('undetermined');
+  });
+
   it('agrees exactly with the same collector run over the finished log', async () => {
     const { record, state, events, decisions } = await play(env, deckA, deckB, 'board-3');
     const replayed = collectBoardTelemetry({

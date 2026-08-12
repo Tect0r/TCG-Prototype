@@ -85,9 +85,25 @@ export function SpectatorSummary({ replay }: SpectatorSummaryProps) {
           Reactions: {telemetry.reactionsPlayed} played across {telemetry.reactionWindows}{' '}
           window(s); {telemetry.cardsCountered} card(s) countered
         </li>
+        {/*
+         * Attack opportunity, not a stall verdict (M04.2). The old line said
+         * "board stall: yes" off three quiet rounds, which could not tell a table
+         * that declined from a table that had nothing to attack with. These two
+         * say which it was and that the verdict is still open (Q43).
+         */}
         <li>
-          Board stall: {telemetry.boardStalled ? 'yes' : 'no'} — longest run of{' '}
-          {telemetry.longestStallRounds} round(s) with no attack
+          Attack steps: {telemetry.attackOpportunity.steps} — {telemetry.attackOpportunity.able}{' '}
+          able, {telemetry.attackOpportunity.declined} declined,{' '}
+          {telemetry.attackOpportunity.unable} unable
+          {telemetry.attackOpportunity.readyPreventions > 0
+            ? `; ${telemetry.attackOpportunity.readyPreventions} Ready Step(s) prevented by an effect`
+            : ''}
+        </li>
+        <li>
+          Quiet rounds: longest run of {telemetry.longestStallRounds} with no attack —{' '}
+          {telemetry.attackOpportunity.longestDeclinedStreak} where somebody could have attacked,{' '}
+          {telemetry.attackOpportunity.longestUnableStreak} where nobody could. Stall verdict:{' '}
+          {telemetry.attackOpportunity.classification} (pending Q43).
         </li>
         {telemetry.largestBoardAnswer && (
           <li>

@@ -28,13 +28,20 @@ import { playerIdSchema } from '@tcg/rules-engine';
  *   describes the match, so "longest turn" is counted in accepted actions and
  *   "combat resolution" in emitted events. There is nowhere in this shape for a
  *   millisecond to land.
- * - **Policy.** Nothing here is a verdict. `longestStallRounds` and
- *   `attackersByRound` are counts; whether a run of quiet rounds is a *stall* is
- *   Q43, is not answered here, and is M04.2/M04.3's work.
+ * - **Policy.** Nothing here is a verdict. `longestStallRounds`,
+ *   `attackersByRound` and the whole `attackOpportunity` block are counts;
+ *   whether a run of quiet rounds is a *stall* is Q43, is not answered here, and
+ *   is M04.3's work. `attackOpportunity.classification` exists precisely to say
+ *   so out loud.
  */
 
 /**
- * Version 1: the first shared schema.
+ * Version 2: attack opportunity (M04.2).
+ *
+ * Version 1 could say nobody attacked and nothing about whether anybody could,
+ * so a quiet round was unreadable — a ruleset holding a fresh board back and a
+ * table of players declining looked the same. Version 2 adds the
+ * `attackOpportunity` block and per-seat opportunity counts, all raw.
  *
  * It is carried inside the document rather than only by the artefacts that embed
  * it, because a board-telemetry block is routinely lifted out of its replay or
@@ -42,7 +49,7 @@ import { playerIdSchema } from '@tcg/rules-engine';
  * version is gone. Consumers state the version policy for their own artefact —
  * see `SPECTATOR_REPLAY_VERSION` and `TELEMETRY_SCHEMA_VERSION`.
  */
-export const BOARD_TELEMETRY_VERSION = 1;
+export const BOARD_TELEMETRY_VERSION = 2;
 
 /** A per-seat count keyed by an engine reason string, e.g. `destroyed`. */
 const reasonCountsSchema = z.record(z.string(), z.number().int().min(0));
@@ -79,6 +86,34 @@ export const boardSeatTelemetrySchema = z.strictObject({
   maxCommanderDeploymentCost: z.number().int().min(0),
   reactionsPlayed: z.number().int().min(0),
   /**
+   * Times this seat was asked to declare attackers, and what it could do with
+   * each of those turns (M04.2).
+   *
+   * Per seat as well as per round because the round series cannot say *who*
+   * declined: on a four-seat table one player sandbagging behind a wide board and
+   * three players with nothing to attack with produce the same quiet round, and
+   * they are opposite findings about an unbounded battlefield. `able + unable`
+   * equals `attackSteps` exactly; `declined` is a subset of `able`.
+   */
+  attackSteps: z.number().int().min(0),
+  /** Attack steps where this seat had a legal attacker and a legal defender. */
+  attackStepsAble: z.number().int().min(0),
+  /** Attack steps where it could not attack at all, for any reason. */
+  attackStepsUnable: z.number().int().min(0),
+  /** Attack steps where it could attack and declared nothing. */
+  attackStepsDeclined: z.number().int().min(0),
+  /** Total attackers this seat declared, across every attack step. */
+  attackersDeclared: z.number().int().min(0),
+  /**
+   * Ready Steps of this seat's permanents that an effect rewrote (M02.4).
+   *
+   * The "combat was prevented by an effect" evidence, counted from
+   * `ready_prevented` rather than inferred from a Unit being Exhausted, because a
+   * Unit that attacked last turn and a Unit somebody paid to keep Exhausted are
+   * the same board and different findings.
+   */
+  readyPreventions: z.number().int().min(0),
+  /**
    * 1 for the first seat eliminated, 2 for the next, `null` for a survivor.
    *
    * Raw exit order rather than a placement: ranking seats is a presentation
@@ -106,6 +141,99 @@ export const combatTelemetrySchema = z.strictObject({
   resolutionEvents: z.number().int().min(0),
 });
 export type CombatTelemetry = z.infer<typeof combatTelemetrySchema>;
+
+/**
+ * One round's attack opportunity, as the engine reported it (M04.2).
+ *
+ * Every field is a count of `attack_opportunity` events, which the engine emits
+ * from the board a seat was looking at when it declared. The five outcome
+ * counters partition `seatsAsked` exactly — able, no Units, all Exhausted, held
+ * by Newly Deployed, no defender — so a reader can tell which of M04.2's four
+ * situations a quiet round was without re-deriving any rule, and a round that
+ * does not add up is a defect rather than a judgement call.
+ *
+ * A seat that never reached its attack step is not counted at all. A turn that
+ * ended in combat before the declaration, a seat eliminated mid-turn and a match
+ * that ended in Main Phase 1 all leave no census, which is correct: no decision
+ * was taken, so there is nothing to attribute.
+ */
+export const roundAttackOpportunitySchema = z.strictObject({
+  /** 1-based, matching `attackersByRound`'s index 0. */
+  round: z.number().int().min(1),
+  /** Seats that reached an attack step this round. */
+  seatsAsked: z.number().int().min(0),
+  /** Seats with at least one legal attacker and at least one legal defender. */
+  seatsAble: z.number().int().min(0),
+  /**
+   * Seats that were able to attack and declared nothing.
+   *
+   * The one case the baseline could not see. A round with `seatsDeclining > 0` is
+   * a round somebody chose to be quiet in.
+   */
+  seatsDeclining: z.number().int().min(0),
+  /** Seats asked while controlling no Unit at all: early development. */
+  seatsWithoutUnits: z.number().int().min(0),
+  /** Seats whose Units were all Exhausted. */
+  seatsAllExhausted: z.number().int().min(0),
+  /** Seats whose only Ready Units were held by `Newly Deployed` without Rush. */
+  seatsNewlyDeployed: z.number().int().min(0),
+  /** Seats with a legal attacker and no living opponent left to attack. */
+  seatsWithoutDefender: z.number().int().min(0),
+  /** Ready Steps an effect rewrote this round, across every seat. */
+  readyPreventions: z.number().int().min(0),
+  /** Attackers declared this round. Equals `attackersByRound[round - 1]`. */
+  attackers: z.number().int().min(0),
+});
+export type RoundAttackOpportunity = z.infer<typeof roundAttackOpportunitySchema>;
+
+/**
+ * Whether the quiet rounds in this match were a stall.
+ *
+ * `'undetermined'` is the only value this build writes, and it is a `literal`
+ * rather than a nullable string so that a consumer cannot read a verdict out of
+ * it by accident and a build that starts writing one has to change the schema
+ * version to do it. The eligibility rule and the threshold are Q43; implementing
+ * the choice is M04.3. Until then the evidence below is the answer, and "no
+ * attackers this round" on its own is never one (`M04` acceptance).
+ */
+export const stallClassificationSchema = z.literal('undetermined');
+
+/**
+ * Attack opportunity across the whole match (M04.2).
+ *
+ * This block replaces "three rounds without attackers is a stall", which was a
+ * threshold over silence and could not tell M04.2's four situations apart. The
+ * streaks here are still raw: each is the longest run of *quiet* rounds of one
+ * kind, and none of them is compared with anything.
+ */
+export const attackOpportunitySchema = z.strictObject({
+  /** Attack steps observed across every seat. */
+  steps: z.number().int().min(0),
+  /** Steps where a seat could have attacked. */
+  able: z.number().int().min(0),
+  /** Steps where a seat that could have attacked declared nothing. */
+  declined: z.number().int().min(0),
+  /** Steps where a seat could not attack at all. */
+  unable: z.number().int().min(0),
+  /** Ready Steps an effect rewrote in the whole match. */
+  readyPreventions: z.number().int().min(0),
+  byRound: z.array(roundAttackOpportunitySchema),
+  /**
+   * The longest run of quiet rounds in which at least one asked seat could have
+   * attacked. A stall candidate, if Q43 decides that declining counts as one.
+   */
+  longestDeclinedStreak: z.number().int().min(0),
+  /**
+   * The longest run of quiet rounds in which no asked seat could attack.
+   *
+   * Kept separate from the declined streak because the two are opposite findings
+   * that the baseline's single number added together: this one is the ruleset or
+   * an effect working, not a board nobody wanted to commit.
+   */
+  longestUnableStreak: z.number().int().min(0),
+  classification: stallClassificationSchema,
+});
+export type AttackOpportunity = z.infer<typeof attackOpportunitySchema>;
 
 export const boardTelemetrySchema = z.strictObject({
   schemaVersion: z.literal(BOARD_TELEMETRY_VERSION),
@@ -148,10 +276,20 @@ export const boardTelemetrySchema = z.strictObject({
    *
    * Counted in rounds rather than turns so a three-seat table is not described
    * as quiet merely because one seat had nothing to attack with. **Not a
-   * stall**: silence and inability are different, telling them apart is M04.2,
-   * and the threshold that would make either a verdict is Q43.
+   * stall**: silence and inability are different, and the threshold that would
+   * make either a verdict is Q43. Kept beside `attackOpportunity` rather than
+   * replaced by it, because it is the one number every earlier measurement was
+   * expressed in. It is *not* the sum of the two streaks below: a quiet round no
+   * seat was asked in counts here and belongs to neither of them.
    */
   longestStallRounds: z.number().int().min(0),
+  /**
+   * Why the quiet rounds were quiet (M04.2).
+   *
+   * The evidence `longestStallRounds` could not carry. See
+   * `attackOpportunitySchema`.
+   */
+  attackOpportunity: attackOpportunitySchema,
   /**
    * How the largest board any seat held was reduced, if it was.
    *
@@ -202,6 +340,17 @@ export function emptyBoardTelemetry(): BoardTelemetry {
     cardsCountered: 0,
     attackersByRound: [],
     longestStallRounds: 0,
+    attackOpportunity: {
+      steps: 0,
+      able: 0,
+      declined: 0,
+      unable: 0,
+      readyPreventions: 0,
+      byRound: [],
+      longestDeclinedStreak: 0,
+      longestUnableStreak: 0,
+      classification: 'undetermined',
+    },
     largestBoardAnswer: null,
   };
 }

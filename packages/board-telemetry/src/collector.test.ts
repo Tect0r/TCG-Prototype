@@ -81,6 +81,53 @@ function defeated(
   return { type: 'unit_defeated', instanceId, definitionId, controllerId, reason };
 }
 
+/**
+ * One attack-opportunity census (M04.2).
+ *
+ * Spelled out per fixture rather than derived from the units the stream created,
+ * because these are the *engine's* answers and the collector must not be tested
+ * against a second implementation of the rules that decide them. The engine's
+ * side of the contract — that the counts partition the board and match the
+ * legality it enforces — is pinned in
+ * `packages/rules-engine/src/attack-opportunity.test.ts`.
+ */
+function opportunity(
+  playerId: string,
+  counts: {
+    units: number;
+    readyUnits: number;
+    legalAttackers: number;
+    exhaustedUnits?: number;
+    newlyDeployedUnits?: number;
+    legalDefenders?: number;
+    declaredAttackers: number;
+  },
+): EventBody {
+  return {
+    type: 'attack_opportunity',
+    playerId,
+    units: counts.units,
+    readyUnits: counts.readyUnits,
+    legalAttackers: counts.legalAttackers,
+    exhaustedUnits: counts.exhaustedUnits ?? 0,
+    newlyDeployedUnits: counts.newlyDeployedUnits ?? 0,
+    legalDefenders: counts.legalDefenders ?? 1,
+    declaredAttackers: counts.declaredAttackers,
+  };
+}
+
+function readyPrevented(playerId: string, instanceId: string): EventBody {
+  return {
+    type: 'ready_prevented',
+    instanceId,
+    playerId,
+    sourceInstanceId: null,
+    sourceDefinitionId: null,
+    abilityId: null,
+    energySpent: 0,
+  };
+}
+
 function trigger(instanceId: string, definitionId: string, controllerId: string): EventBody {
   return {
     type: 'trigger_queued',
@@ -114,6 +161,12 @@ function fixtureEvents(): GameEvent[] {
 
     // Round 2. A small combat that is expensive to resolve.
     { type: 'turn_started', playerId: 'player_1', turn: 3 },
+    opportunity('player_1', {
+      units: 2,
+      readyUnits: 2,
+      legalAttackers: 2,
+      declaredAttackers: 2,
+    }),
     {
       type: 'attackers_declared',
       playerId: 'player_1',
@@ -150,6 +203,15 @@ function fixtureEvents(): GameEvent[] {
     { type: 'turn_started', playerId: 'player_2', turn: 4 },
     entered('player_2', 't4', TOKEN),
     entered('player_2', 't5', TOKEN),
+    // Four Units, one of which arrived this turn and is held by Newly Deployed:
+    // the seat attacked with everything it was allowed to.
+    opportunity('player_2', {
+      units: 4,
+      readyUnits: 4,
+      legalAttackers: 3,
+      newlyDeployedUnits: 1,
+      declaredAttackers: 3,
+    }),
     {
       type: 'attackers_declared',
       playerId: 'player_2',
@@ -164,8 +226,16 @@ function fixtureEvents(): GameEvent[] {
     defeated('t2', TOKEN, 'player_2', 'destroyed'),
     { type: 'phase_changed', from: 'resolve_combat', to: 'main_2' },
 
-    // Round 3: nobody attacks.
+    // Round 3: nobody attacks — and seat 1 could have. That is the distinction
+    // the baseline could not draw; the round looks identical in
+    // `attackersByRound` either way.
     { type: 'turn_started', playerId: 'player_1', turn: 5 },
+    opportunity('player_1', {
+      units: 2,
+      readyUnits: 2,
+      legalAttackers: 2,
+      declaredAttackers: 0,
+    }),
     {
       type: 'card_moved',
       instanceId: 'u2',
@@ -279,10 +349,65 @@ describe('board telemetry', () => {
     const telemetry = collect();
     expect(telemetry.attackersByRound).toEqual([0, 5, 0]);
     expect(telemetry.longestStallRounds).toBe(1);
-    // Nothing here classifies the quiet rounds. Whether anybody *could* have
-    // attacked is M04.2 and the threshold is Q43, so the document carries the
-    // series a later cut can be re-derived from and no flag at all.
+    // Nothing here classifies the quiet rounds. The threshold that would make a
+    // stall out of them is Q43, so the document carries the series a later cut
+    // can be re-derived from and no flag at all.
     expect(Object.keys(telemetry)).not.toContain('boardStalled');
+    expect(telemetry.attackOpportunity.classification).toBe('undetermined');
+  });
+
+  it('separates declining to attack from being unable to (M04.2)', () => {
+    const telemetry = collect();
+    const opportunity = telemetry.attackOpportunity;
+    // Three attack steps: seat 1 attacked on turn 3, seat 2 on turn 4, seat 1
+    // declined on turn 5. Every one of them could have attacked.
+    expect(opportunity.steps).toBe(3);
+    expect(opportunity.able).toBe(3);
+    expect(opportunity.unable).toBe(0);
+    expect(opportunity.declined).toBe(1);
+
+    // Round 3 was quiet *and* somebody could have attacked, which the attacker
+    // series cannot say and a stall threshold over it would have got backwards.
+    expect(opportunity.byRound[2]).toEqual({
+      round: 3,
+      seatsAsked: 1,
+      seatsAble: 1,
+      seatsDeclining: 1,
+      seatsWithoutUnits: 0,
+      seatsAllExhausted: 0,
+      seatsNewlyDeployed: 0,
+      seatsWithoutDefender: 0,
+      readyPreventions: 0,
+      attackers: 0,
+    });
+    expect(opportunity.longestDeclinedStreak).toBe(1);
+    expect(opportunity.longestUnableStreak).toBe(0);
+
+    // Round 1 is quiet too, and nobody was asked in it — the match had not
+    // reached an attack step. It counts as a quiet round and belongs to neither
+    // streak, because there is no decision to attribute.
+    expect(opportunity.byRound[0]?.seatsAsked).toBe(0);
+    expect(telemetry.longestStallRounds).toBe(1);
+  });
+
+  it('attributes each attack step to the seat that took it', () => {
+    const [first, second] = collect().seats;
+    // The round series cannot say who declined: on a wide table one seat
+    // sandbagging and three with nothing to attack with make the same quiet
+    // round, and they are opposite findings about an unbounded battlefield.
+    expect(first?.attackSteps).toBe(2);
+    expect(first?.attackStepsAble).toBe(2);
+    expect(first?.attackStepsDeclined).toBe(1);
+    expect(first?.attackersDeclared).toBe(2);
+
+    expect(second?.attackSteps).toBe(1);
+    expect(second?.attackStepsDeclined).toBe(0);
+    expect(second?.attackersDeclared).toBe(3);
+
+    // Per seat, `able + unable` is every step it was asked in.
+    for (const seat of [first, second]) {
+      expect(seat?.attackSteps).toBe((seat?.attackStepsAble ?? 0) + (seat?.attackStepsUnable ?? 0));
+    }
   });
 
   it('reaches the same answer streamed live as replayed at the end', () => {
@@ -304,6 +429,185 @@ describe('board telemetry', () => {
       }
     }
     expect(streamed.finish(finalState())).toEqual(collect());
+  });
+
+  /**
+   * The three ways a seat can be unable to attack, and the effect that caused one
+   * of them — the cases M04.2 has to keep apart from "chose not to".
+   *
+   * A separate stream because the main fixture is a match where people attack,
+   * and these rounds are the opposite: an empty board, a board that all arrived
+   * at once, and a board an opponent paid to keep Exhausted.
+   */
+  function unableEvents(): GameEvent[] {
+    return stream([
+      // Round 1. Seat 1 has nothing yet; seat 2 has two Units that arrived this
+      // turn. Neither could attack, and neither declined.
+      { type: 'turn_started', playerId: 'player_1', turn: 1 },
+      opportunity('player_1', {
+        units: 0,
+        readyUnits: 0,
+        legalAttackers: 0,
+        declaredAttackers: 0,
+      }),
+      { type: 'turn_started', playerId: 'player_2', turn: 2 },
+      entered('player_2', 't1', TOKEN),
+      entered('player_2', 't2', TOKEN),
+      opportunity('player_2', {
+        units: 2,
+        readyUnits: 2,
+        legalAttackers: 0,
+        newlyDeployedUnits: 2,
+        declaredAttackers: 0,
+      }),
+
+      // Round 2. Seat 1's only Unit is held down by an effect at its Ready Step —
+      // emitted *before* `turn_started`, which is where the Ready Step runs.
+      readyPrevented('player_1', 'u1'),
+      { type: 'turn_started', playerId: 'player_1', turn: 3 },
+      opportunity('player_1', {
+        units: 1,
+        readyUnits: 0,
+        legalAttackers: 0,
+        exhaustedUnits: 1,
+        declaredAttackers: 0,
+      }),
+      // Seat 2's Units have settled and it declines.
+      { type: 'turn_started', playerId: 'player_2', turn: 4 },
+      opportunity('player_2', {
+        units: 2,
+        readyUnits: 2,
+        legalAttackers: 2,
+        declaredAttackers: 0,
+      }),
+    ]);
+  }
+
+  function collectUnable(): ReturnType<typeof collectBoardTelemetry> {
+    return collectBoardTelemetry({
+      finalState: finalState(),
+      events: unableEvents(),
+      actionTurns: [1, 2, 3, 4],
+      database,
+      config,
+      seats: SEATS,
+    });
+  }
+
+  it('tells an empty board, a fresh board and a held-down board apart', () => {
+    const opportunity = collectUnable().attackOpportunity;
+    expect(opportunity.byRound[0]).toEqual({
+      round: 1,
+      seatsAsked: 2,
+      seatsAble: 0,
+      seatsDeclining: 0,
+      // Early development on one side, the ruleset holding a board back on the
+      // other. Both are "no attackers this round" and neither is a stall.
+      seatsWithoutUnits: 1,
+      seatsAllExhausted: 0,
+      seatsNewlyDeployed: 1,
+      seatsWithoutDefender: 0,
+      readyPreventions: 0,
+      attackers: 0,
+    });
+    expect(opportunity.byRound[1]).toEqual({
+      round: 2,
+      seatsAsked: 2,
+      seatsAble: 1,
+      seatsDeclining: 1,
+      seatsWithoutUnits: 0,
+      seatsAllExhausted: 1,
+      seatsNewlyDeployed: 0,
+      seatsWithoutDefender: 0,
+      // Filed on the round the Ready Step belonged to, not the round that had
+      // just ended when the event was emitted.
+      readyPreventions: 1,
+      attackers: 0,
+    });
+
+    // Two quiet rounds in a row, and they are quiet for opposite reasons. A
+    // single "three rounds without an attack" counter added them together.
+    expect(opportunity.longestUnableStreak).toBe(1);
+    expect(opportunity.longestDeclinedStreak).toBe(1);
+    expect(collectUnable().longestStallRounds).toBe(2);
+    expect(opportunity.classification).toBe('undetermined');
+  });
+
+  it('does not call a seat with no opponent left "able to attack"', () => {
+    // A free-for-all seat can reach its attack step with a board full of Ready
+    // Units and nothing living to point them at, between the last elimination and
+    // the match ending. It could not attack, and it did not decline.
+    const telemetry = collectBoardTelemetry({
+      finalState: finalState(),
+      events: stream([
+        { type: 'turn_started', playerId: 'player_1', turn: 1 },
+        opportunity('player_1', {
+          units: 3,
+          readyUnits: 3,
+          legalAttackers: 3,
+          legalDefenders: 0,
+          declaredAttackers: 0,
+        }),
+      ]),
+      actionTurns: [1],
+      database,
+      config,
+      seats: SEATS,
+    });
+
+    const round = telemetry.attackOpportunity.byRound[0];
+    expect(round?.seatsWithoutDefender).toBe(1);
+    expect(round?.seatsAble).toBe(0);
+    expect(round?.seatsDeclining).toBe(0);
+    expect(telemetry.attackOpportunity.unable).toBe(1);
+    // A quiet round nobody could attack in, so it is the unable streak and not
+    // the declined one — a seat cannot decline an attack it could not make.
+    expect(telemetry.attackOpportunity.longestUnableStreak).toBe(1);
+    expect(telemetry.attackOpportunity.longestDeclinedStreak).toBe(0);
+  });
+
+  it('counts a prevented Ready Step against the seat whose permanent it was', () => {
+    const [first, second] = collectUnable().seats;
+    expect(first?.readyPreventions).toBe(1);
+    expect(second?.readyPreventions).toBe(0);
+    // Counted from the event rather than inferred from an Exhausted Unit: a Unit
+    // that attacked last turn and a Unit somebody paid to keep down are the same
+    // board and different findings.
+    expect(first?.attackStepsUnable).toBe(2);
+    expect(first?.attackStepsAble).toBe(0);
+  });
+
+  it('every round adds up, in both fixtures', () => {
+    // The partition is the guarantee that makes the series readable at all. A
+    // round whose outcomes do not sum to `seatsAsked` means a census was filed
+    // under two reasons or none.
+    for (const telemetry of [collect(), collectUnable()]) {
+      let steps = 0;
+      for (const round of telemetry.attackOpportunity.byRound) {
+        expect(round.seatsAsked).toBe(
+          round.seatsAble +
+            round.seatsWithoutUnits +
+            round.seatsAllExhausted +
+            round.seatsNewlyDeployed +
+            round.seatsWithoutDefender,
+        );
+        expect(round.seatsDeclining).toBeLessThanOrEqual(round.seatsAble);
+        expect(round.attackers).toBe(telemetry.attackersByRound[round.round - 1]);
+        steps += round.seatsAsked;
+      }
+      expect(telemetry.attackOpportunity.steps).toBe(steps);
+      expect(steps).toBe(telemetry.seats.reduce((sum, seat) => sum + seat.attackSteps, 0));
+    }
+  });
+
+  it('reaches the same attack-opportunity answer streamed as replayed', () => {
+    // The buffered Ready-Step prevention is the one accumulator whose answer
+    // depends on an event that arrives *before* the round it belongs to, so the
+    // equality M04 turns on is asserted on the fixture that exercises it too.
+    const streamed = new BoardTelemetryCollector({ database, config, seats: SEATS });
+    streamed.observeEvents(unableEvents());
+    for (const turn of [1, 2, 3, 4]) streamed.observeAction(turn);
+    expect(streamed.finish(finalState())).toEqual(collectUnable());
   });
 
   it('carries no playback timing at all', () => {

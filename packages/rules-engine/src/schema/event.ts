@@ -202,6 +202,44 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     count: z.number().int().min(1),
   }),
 
+  /**
+   * What the active seat could have attacked with, recorded as it declared
+   * (M04.2).
+   *
+   * Emitted immediately before `attackers_declared`, from the board the seat was
+   * actually looking at — before declared attackers Exhaust — so "chose not to
+   * attack" and "had nothing to attack with" are separable facts in the log
+   * instead of an inference from silence. Without it a round with no
+   * `attackers_declared` payload is unreadable: a board of ten Units that all
+   * arrived this turn and a board of ten Units whose controller declined look
+   * identical, and only the first is a rule doing its job.
+   *
+   * It is an observation and not a rule. No trigger keys off it, nothing branches
+   * on it, and removing it would change no outcome — which is why it is emitted
+   * even when the seat attacks with everything.
+   *
+   * Nothing here is hidden information: every count is a tally of Units on a
+   * public battlefield, so `redactEvent` has no work to do. The counts partition
+   * `units` exactly — `legalAttackers + exhaustedUnits + newlyDeployedUnits` —
+   * and `readyUnits` is `units - exhaustedUnits`.
+   */
+  event('attack_opportunity', {
+    playerId: playerIdSchema,
+    /** Units this seat controlled when it was asked to declare. */
+    units: z.number().int().min(0),
+    /** Of those, the ones that were not Exhausted. */
+    readyUnits: z.number().int().min(0),
+    /** Units the engine would have accepted as attackers. */
+    legalAttackers: z.number().int().min(0),
+    /** Units that could not attack because they were Exhausted. */
+    exhaustedUnits: z.number().int().min(0),
+    /** Ready Units held back by `Newly Deployed` without Rush. */
+    newlyDeployedUnits: z.number().int().min(0),
+    /** Living opponents available to be attacked. */
+    legalDefenders: z.number().int().min(0),
+    /** Attackers this seat then declared. */
+    declaredAttackers: z.number().int().min(0),
+  }),
   event('attackers_declared', {
     playerId: playerIdSchema,
     instanceIds: z.array(instanceIdSchema),

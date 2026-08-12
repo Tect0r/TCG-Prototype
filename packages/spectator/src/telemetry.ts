@@ -17,22 +17,17 @@ import {
  * log rather than by inspecting the final board — the difference between "how
  * many units did this seat ever have" and "how many does it have now", and the
  * first is the question the unlimited battlefield has to be judged on. This file
- * is what a *watched* match adds on top: a leaderboard, the provenance flag, and
- * the summary screen's stall wording.
+ * is what a *watched* match adds on top: a leaderboard and the provenance flag.
+ *
+ * Since M04.2 it adds nothing else. The summary screen's stall wording used to be
+ * decided here, from a three-round threshold over silence; the shared schema now
+ * carries the attack-opportunity evidence and leaves the verdict
+ * `'undetermined'` until Q43, and a watched match reads the same undetermined
+ * classification a batch does.
  *
  * Playback timing is deliberately absent from all of it. A delay the viewer
  * chose must never reach a number that describes the match.
  */
-
-/**
- * Rounds with no attacker at which the summary screen starts saying "stalled".
- *
- * Three is where "nobody wants to attack" stops looking like a slow opening. It
- * is a presentation threshold and not a rule: the eligibility question — could
- * anybody have attacked at all? — is M04.2, and the threshold that would make
- * this evidence is Q43.
- */
-const STALL_ROUNDS = 3;
 
 export function collectTelemetry(
   finalState: MatchState,
@@ -69,7 +64,6 @@ export function collectTelemetry(
     ...board,
     seats: seatTelemetry,
     resultsValid: provenance.resultsValid,
-    boardStalled: board.longestStallRounds >= STALL_ROUNDS,
   };
 }
 
