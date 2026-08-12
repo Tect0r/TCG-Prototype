@@ -240,6 +240,8 @@ export {
   type DeckFeatures,
 } from './analysis/clusters.js';
 
+export { aggregateBoard, type BoardAggregate, type BoardMeasure } from './analysis/board.js';
+
 export { cardPairs, cardPairSchema, type CardPair } from './analysis/pairs.js';
 
 export {

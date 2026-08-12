@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { PILOT_IDS, type PilotId } from '@tcg/bot-interface';
+import { describeStallDefinition } from '@tcg/board-telemetry';
 import { DEFAULT_RULES_CONFIG } from '@tcg/rules-engine';
 import {
   cardPoolHash,
@@ -168,10 +169,10 @@ export function formatSpectateSummary(replay: SpectatorReplay): string {
     `reactions:       ${telemetry.reactionsPlayed} played across ${telemetry.reactionWindows} window(s); ${telemetry.cardsCountered} card(s) countered`,
   );
 
-  // Attack opportunity rather than a stall verdict (M04.2). The line reports what
-  // was observed at each attack step and says the classification is undetermined,
-  // because it is: Q43 has not fixed the eligibility rule or the threshold, and
-  // "no attackers this round" is not evidence of a stall on its own.
+  // Attack opportunity first, then the verdict cut from it (M04.2, M04.3). The
+  // evidence is printed above the answer on purpose: "no attackers this round" is
+  // never a stall on its own, and the reader should see which rounds the rule
+  // counted before seeing what it concluded.
   const opportunity = telemetry.attackOpportunity;
   lines.push(
     `attack steps:    ${opportunity.steps} (${opportunity.able} able, ${opportunity.declined} declined, ${opportunity.unable} unable)`,
@@ -180,7 +181,10 @@ export function formatSpectateSummary(replay: SpectatorReplay): string {
       (opportunity.readyPreventions > 0
         ? `; ${opportunity.readyPreventions} Ready Step(s) prevented`
         : ''),
-    `stall verdict:   ${opportunity.classification} (pending Q43)`,
+    `stall verdict:   ${opportunity.classification} — ` +
+      `${opportunity.longestUnanimousDeclinedStreak} round(s) where every living seat could ` +
+      `attack and none did, against a threshold of ${opportunity.stallDefinition.thresholdRounds}`,
+    `stall rule:      ${describeStallDefinition(opportunity.stallDefinition)}`,
   );
 
   if (telemetry.largestBoardAnswer) {

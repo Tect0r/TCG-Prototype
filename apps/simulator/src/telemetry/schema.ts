@@ -50,8 +50,16 @@ import { seedBundleSchema } from '../seed.js';
  * on the same terms as every bump before it, and the `matches.header.json` drift
  * check keeps a v4 stream from being resumed under v5 meanings. The manifest
  * schema stays at 4.
+ *
+ * Version 6 (M04.3): the `board` block is board-telemetry schema 3, which answers
+ * Q43 — every record now carries a stall verdict and the configured rule that
+ * produced it, and each round carries the living-seat count that rule is judged
+ * against. A v5 record has the census but not the living-seat figure, so its
+ * rounds cannot be re-judged after an elimination; refused on the same terms as
+ * every bump before it, with the `matches.header.json` drift check keeping a v5
+ * stream from being resumed under v6 meanings. The manifest schema stays at 4.
  */
-export const TELEMETRY_SCHEMA_VERSION = 5;
+export const TELEMETRY_SCHEMA_VERSION = 6;
 
 export const TERMINATION_KINDS = [
   'victory',

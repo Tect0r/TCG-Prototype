@@ -16,6 +16,8 @@ import type { ComparisonReport } from '../analysis/compare.js';
 import type { Flag } from '../analysis/flags.js';
 import type { GenerationReport } from '../deck-search/evolve.js';
 import type { MatchupMatrix } from '../matchup-matrix.js';
+import type { BoardAggregate, BoardMeasure } from '../analysis/board.js';
+import { describeStallDefinition } from '@tcg/board-telemetry';
 import { round } from '../analysis/stats.js';
 
 /**
@@ -44,8 +46,12 @@ import { round } from '../analysis/stats.js';
 /**
  * Version 3 (M03.4): a batch that ran the ordered matchup matrix gains a section
  * for it, between the outcome tables and the cluster analysis.
+ *
+ * Version 4 (M04.3): every batch gains an unlimited-board section — clutter, turn
+ * length, trigger load and the stall verdict — between the outcome tables and the
+ * matchup matrix.
  */
-export const REPORT_SCHEMA_VERSION = 3;
+export const REPORT_SCHEMA_VERSION = 4;
 
 export interface ReportPilot {
   readonly id: string;
@@ -93,6 +99,13 @@ export interface ReportInputs {
   readonly settings: AnalysisSettings;
 
   readonly aggregate: Aggregate;
+  /**
+   * The unlimited battlefield across the batch (M04.3).
+   *
+   * Aggregated over *every* record, including abnormal ones — see
+   * `boardSection` for why that population differs from the rest of the report.
+   */
+  readonly board: BoardAggregate;
   readonly clustering: ClusteringResult;
   readonly inclusion: InclusionAnalysis;
   readonly pairs: readonly CardPair[];
@@ -171,6 +184,7 @@ export function renderReport(inputs: ReportInputs): string {
   section(lines, referencePopulation(inputs));
   section(lines, flagSection(inputs));
   section(lines, outcomes(inputs));
+  section(lines, boardSection(inputs));
   section(lines, matchupMatrixSection(inputs));
   section(lines, clusters(inputs));
   section(lines, cards(inputs));
@@ -579,6 +593,106 @@ function outcomes(inputs: ReportInputs): string[] {
   return lines;
 }
 
+/* ----------------------------------------------------- unlimited board */
+
+/**
+ * What the unbounded battlefield actually did across the batch (M04.3).
+ *
+ * `CLAUDE.md` says the battlefield has no Unit limit and that large boards are
+ * "measured, not treated as proof that a cap is needed". This section is that
+ * measurement, and it is written to be capable of saying nothing is wrong: four
+ * questions, each answered by a distribution rather than an average, and a stall
+ * verdict produced by a rule that lives in the engine-side collector rather than
+ * here.
+ *
+ * **The population is every match, abnormal ones included**, which is the one
+ * place this report deliberately departs from the sample every other section
+ * uses. A match that hit the turn limit or made no progress is the strongest
+ * stall candidate in a batch and usually holds the widest board in it; excluding
+ * it would bias the single question this section exists to answer. The count is
+ * printed so the reader can weigh it.
+ */
+function boardSection(inputs: ReportInputs): string[] {
+  const board = inputs.board;
+  if (board.matches === 0) return [];
+
+  const lines = ['## Unlimited board *(observation)*', ''];
+  lines.push(
+    `Measured over all ${board.matches} match(es) in this run, including the ` +
+      `${inputs.abnormalMatches.length} that terminated abnormally — a match that hit the turn ` +
+      'limit is the most likely stall in a batch, so this is the one section that does not ' +
+      'exclude them. Nothing here is a balance finding: it says whether an unlimited ' +
+      'battlefield produced clutter, long turns, trigger overload or stalls under these ' +
+      'pilots and these decks.',
+    '',
+    'measure | max | p90 | mean | widest match',
+    '--- | ---: | ---: | ---: | ---',
+  );
+
+  const row = (label: string, value: BoardMeasure): string =>
+    `${label} | ${value.max} | ${round(value.p90, 2)} | ${round(value.mean, 2)} | ${orDash(value.matchId)}`;
+
+  lines.push(
+    row('peak Units (one seat)', board.peakUnits),
+    row('peak non-Token Units', board.peakNonTokenUnits),
+    row('peak identical-Token stack', board.peakTokenStack),
+    row('longest turn (actions)', board.longestTurnActions),
+    row('largest combat (attackers)', board.largestCombatAttackers),
+    row('costliest combat (events)', board.longestCombatEvents),
+    row('busiest turn (triggers)', board.busiestTurnTriggers),
+    row('busiest turn (choices)', board.busiestTurnChoices),
+    '',
+  );
+
+  // The attack-opportunity totals, which are the evidence the verdict is cut
+  // from. Printed before it, so the verdict is never the first thing read.
+  lines.push(
+    `**Attack opportunity.** ${board.attackSteps} attack step(s) across the batch: ` +
+      `${board.attackStepsAble} where the seat could attack, of which ` +
+      `${board.attackStepsDeclined} declined, and ${board.attackStepsUnable} where it could ` +
+      `not attack at all. ${board.readyPreventions} Ready Step(s) were rewritten by an effect.`,
+    '',
+  );
+
+  if (board.mixedStallDefinitions) {
+    // Refusing to add up verdicts asked under different rules, rather than
+    // presenting a count whose meaning varies from record to record.
+    lines.push(
+      '**Stalls: not summarised.** The records in this run were classified under more than one ' +
+        'stall definition, so the verdicts are not one population and are not counted here. ' +
+        'Each record still carries its own `board.attackOpportunity.stallDefinition`.',
+    );
+    return lines;
+  }
+
+  const definition = board.stallDefinition;
+  lines.push(
+    `**Stall rule.** ${definition ? describeStallDefinition(definition) : 'not recorded'}. ` +
+      'A round in which anybody attacked, or which any living seat did not reach, or in which ' +
+      'any asked seat could not legally have attacked, is not counted — so "no attackers this ' +
+      'round" is never on its own evidence of a stall (Q43, M04 acceptance).',
+    '',
+    `**Stall verdict.** ${board.stalledMatches} of ${board.matches} match(es) classified ` +
+      `\`stalled\`. Longest qualifying run in the batch: ${board.stallStreak.max} round(s) ` +
+      `(mean ${round(board.stallStreak.mean, 2)}). For contrast, the permissive series the ` +
+      'verdict does *not* read — quiet rounds where at least one seat could have attacked — ' +
+      `reached ${board.declinedStreak.max} round(s), and quiet rounds where nobody could ` +
+      `reached ${board.unableStreak.max}.`,
+  );
+
+  if (board.stalledMatchIds.length > 0) {
+    lines.push(
+      '',
+      `Stalled matches: ${board.stalledMatchIds.join(', ')}` +
+        (board.stalledMatches > board.stalledMatchIds.length
+          ? ` … and ${board.stalledMatches - board.stalledMatchIds.length} more (see \`${inputs.matchesPath}\`)`
+          : ''),
+    );
+  }
+
+  return lines;
+}
+
 /* --------------------------------------------------------- matchup matrix */
 
 /**
@@ -671,6 +785,41 @@ function matchupMatrixSection(inputs: ReportInputs): string[] {
       );
     }
   }
+  lines.push('');
+
+  // The board per cell (M04.3). Kept in the matrix rather than only in the batch
+  // section because a pairing that consistently stalls, or consistently produces
+  // a very wide board, is a property of those two decks facing each other and is
+  // invisible once every cell is averaged into one distribution.
+  lines.push('**Unlimited board, per cell** — widest board / longest turn / largest combat:');
+  lines.push('');
+  const boardHeader = ['First seat ↓ / second seat →', ...matrix.decks.map((deck) => deck.deckId)];
+  lines.push(`| ${boardHeader.join(' | ')} |`);
+  lines.push(`| ${boardHeader.map(() => '---').join(' | ')} |`);
+  for (const first of matrix.decks) {
+    const cellsForRow = matrix.decks.map((second) => {
+      const cell = matrix.cells.find(
+        (entry) =>
+          entry.firstSeatDeckId === first.deckId && entry.secondSeatDeckId === second.deckId,
+      );
+      if (!cell || cell.games.length === 0) return '—';
+      // Worst case over the cell's games: a cell is a claim about a pairing, and
+      // the pairing's worst board is what an unbounded battlefield is judged on.
+      const peak = Math.max(...cell.games.map((game) => game.board.peakUnits));
+      const turn = Math.max(...cell.games.map((game) => game.board.longestTurnActions));
+      const combat = Math.max(...cell.games.map((game) => game.board.largestCombatAttackers));
+      const stalled = cell.games.filter(
+        (game) => game.board.stallClassification === 'stalled',
+      ).length;
+      return `${peak} / ${turn} / ${combat}${stalled > 0 ? ` ⚠ ${stalled} stalled` : ''}`;
+    });
+    lines.push(`| **${first.deckId}** | ${cellsForRow.join(' | ')} |`);
+  }
+  lines.push('');
+  lines.push(
+    'Each cell is the worst case over its games. ⚠ marks games the configured stall rule ' +
+      'classified as stalled — see the unlimited-board section above for the rule itself.',
+  );
   lines.push('');
 
   lines.push('**Decks, pilots and seeds:**');

@@ -552,9 +552,32 @@ hits.
 
 ---
 
-### Q43. What counts as a board stall?
+### Q43. What counts as a board stall? — **answered 2026-08-12**
 
-**Blocks:** REMAINING_WORK D2 (unlimited-board telemetry).
+**Answer.** The strict reading, with a threshold of three.
+
+A round counts toward a stall only when **every living seat reached its attack
+step, every one of them could legally have attacked, and none of them did**.
+**Three consecutive** such rounds is a stall. Round 1 gets no special case — an
+empty board is never able and a fresh board is held by `Newly Deployed`, so the
+opening excludes itself through the ordinary rule. **Any** declared attacker
+breaks the streak, one Token included.
+
+Implemented in M04.3 as `@tcg/board-telemetry/stall`:
+`STALL_DEFINITION_VERSION` versions the eligibility rule, `thresholdRounds` is
+the configurable number, and both travel inside every document that carries a
+verdict as `attackOpportunity.stallDefinition`. The raw streak the verdict is cut
+from is stored as `longestUnanimousDeclinedStreak`, so a finished document can be
+re-judged against a different threshold without re-simulating. Board telemetry is
+schema 3; `classification` is now `'stalled' | 'not_stalled'`.
+
+Consequence worth stating plainly: on a four-seat table this almost never fires,
+and that is deliberate. Both traced precon matches classify `not_stalled`, which
+is the correct answer for two matches that ended in 53- and 64-attacker combats.
+
+The original question and the evidence it was answered from are kept below.
+
+**Blocked:** REMAINING_WORK D2 (unlimited-board telemetry). Released.
 
 Ruleset update §17 requires every match to record "whether the match reached a
 board stall" and lists "neither player wants to attack for multiple rounds" as a
@@ -575,8 +598,8 @@ The question was previously abstract because nothing measured eligibility. Since
 M04.2 every match records, per round, how many seats reached their attack step and
 which of five outcomes each one was in — able, no Units, all Exhausted, held by
 `Newly Deployed`, no living defender — plus how many able seats declared nothing
-and how many Ready Steps an effect rewrote. `attackOpportunity.classification` is
-`'undetermined'` and stays that way until this question is answered.
+and how many Ready Steps an effect rewrote. These are the traces the answer above
+was chosen against.
 
 Two four-seat precon matches, played through the spectator (seeds
 `m04-2-trace-a`, `m04-2-trace-b`; columns are `asked/able/declined`, then
@@ -614,23 +637,22 @@ What the traces show, and what the answer has to deal with:
    signal ruleset update §17 worries about. This is two matches and not evidence
    about balance — but it is evidence that the metric has to be able to say "no".
 
-The concrete choices to make:
+The four concrete choices, and what was chosen:
 
-- **Eligibility.** Which streak counts — `longestDeclinedStreak` (quiet rounds
-  where at least one asked seat was able), or something stricter such as "every
-  living seat was able"? Note that on a four-seat table the strict reading almost
-  never fires.
-- **Threshold.** Rounds of that streak. 3 was the old number over the wrong
-  series; against `longestDeclinedStreak` it would mean three consecutive rounds
-  in which somebody who could attack did not.
-- **Round 1.** Excluded outright, or handled by eligibility (an empty board is
-  never able, so it falls out on its own — which the traces suggest is enough)?
-- **A single Token attacking.** Currently any declared attacker makes the round
-  non-quiet, so one Token breaks the streak. Keep, or require some threshold of
-  attackers?
+- **Eligibility** — _every living seat was able_, rather than the permissive
+  `longestDeclinedStreak`. The strict reading almost never fires on a four-seat
+  table, which is the point: "the whole table could have attacked and none of
+  them did" is a strong enough claim to act on, and the permissive series is kept
+  beside it as `longestDeclinedStreak` for anyone who wants the wider view.
+- **Threshold** — _3 rounds_, now applied to the right series. Neither traced
+  match comes close.
+- **Round 1** — _handled by eligibility_, with no round-index special case, as the
+  traces suggested was sufficient: round 1 scored zero able seats in both.
+- **A single Token attacking** — _breaks the streak_. "Quiet" stays a fact about
+  the event stream rather than a second threshold with its own rationale.
 
-M04.3 implements the answer as a configured, versioned number and puts it in the
-reports. Until then the raw counts above are what the reports may say.
+M04.3 implemented this as a configured, versioned number and put it in the batch,
+matchup and spectator reports.
 
 ---
 

@@ -18,8 +18,8 @@ After verification, update the evidence and stop.
 | [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)         | Complete                |
 | [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
 | [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
-| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.2 done (2026-08-12)         | Q43 decision checkpoint |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | Legal but not balance-trustworthy     | Blocked by M03/M04      |
+| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete                |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | Legal but not balance-trustworthy     | M05.1                   |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
 
@@ -270,6 +270,42 @@ answerable rather than abstract — two four-seat precon traces are in
 adding round 1 (nobody _could_: two empty boards, two freshly deployed) to round 2
 (two seats could and declined), which are opposite findings.
 
+Since M04.3, a quiet round has a **verdict**, and Q43 is answered: a round counts
+toward a stall only when every living seat reached its attack step, every one of
+them could legally have attacked, and none of them did; **three consecutive** such
+rounds is a stall. The strict reading was chosen over the permissive one, with no
+round-1 special case — an empty board is never able and a fresh board is held by
+`Newly Deployed`, so the opening excludes itself through the ordinary rule — and
+any declared attacker, one Token included, breaks the streak. On a four-seat table
+it almost never fires, which is the point: both traced precon matches classify
+`not_stalled`, which is the right answer for matches that ended in 53- and
+64-attacker combats.
+
+The rule is data rather than presentation, because Q43 required "one explicit,
+configurable, versioned number rather than a judgement made in the reporting
+layer". `@tcg/board-telemetry/stall` owns it; the collector applies it; and every
+document carries the definition it was judged by as `stallDefinition`, so a
+verdict never travels without its rule and a batch that mixes definitions is
+refused a summary rather than given a meaningless one. The streak it was cut from
+is stored raw as `longestUnanimousDeclinedStreak`, and each round carries
+`stallEligible`, so a finished document can be re-judged at a different threshold
+without re-simulating. One new observation makes the strict rule possible:
+`livingSeats` per round, taken at the round's start, because `seatsAsked` alone
+cannot tell "the whole table" from "a seat that was skipped" after an elimination.
+
+Board metrics are now in the reports. A `## Unlimited board` section answers M04's
+four questions with distributions rather than averages — and aggregates over
+_every_ record, abnormal ones included, which is the one place the report departs
+from its usual sample and says so, because a turn-limit match is the strongest
+stall candidate in a batch. The matchup matrix carries the same figures per cell,
+plus seven new CSV columns. Reconciliation is a function rather than an assertion:
+`reconcileBoardTelemetry` names the fields two documents disagree on, and the
+spectator's own `collectTelemetry` is run over a simulator match and required to
+agree on everything except the two things a watched match adds. Five version
+moves, all refusals: board telemetry 2 → 3, spectator replays 4 → 5, simulator
+records 5 → 6, report 3 → 4 with `summary.json` 2 → 3, and the matchup matrix
+1 → 2. Manifests stay at schema 4. M04 is complete.
+
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and
 `eslint.config.js` are held to the same strictness as shipped code. The separate
@@ -297,9 +333,6 @@ Only stop on these when the active tranche genuinely needs the answer:
 
 - Q4: implement or remove `resilient`.
 - Q42: exact visual equivalence key for Token grouping.
-- Q43: board-stall eligibility and threshold. **Ready to answer since M04.2** —
-  the raw traces and the four concrete choices are in `docs/open-questions.md`.
-  M04.3 is blocked on it.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.
 - Q46: whether Reactions may carry interactive additional costs.

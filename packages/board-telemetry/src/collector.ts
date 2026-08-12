@@ -14,6 +14,12 @@ import {
   type CombatTelemetry,
   type RoundAttackOpportunity,
 } from './schema.js';
+import {
+  DEFAULT_STALL_DEFINITION,
+  classifyStall,
+  roundIsStallEligible,
+  type StallDefinition,
+} from './stall.js';
 
 /**
  * The one collector both match paths use (M04.1).
@@ -55,6 +61,14 @@ export interface BoardTelemetryOptions {
   readonly database: CardDatabase;
   readonly config: RulesConfig;
   readonly seats: readonly BoardTelemetrySeat[];
+  /**
+   * The stall rule this match's verdict is cut with (M04.3).
+   *
+   * Defaults to the shipped definition, and whatever it is is written into the
+   * result: a consumer never has to know how the collector was configured to
+   * read the answer it produced.
+   */
+  readonly stallDefinition?: StallDefinition;
 }
 
 /**
@@ -163,6 +177,16 @@ export class BoardTelemetryCollector {
   readonly #choicesPerTurn = new Map<number, number>();
   readonly #attackersPerRound = new Map<number, number>();
   readonly #opportunityPerRound = new Map<number, RoundOpportunity>();
+  /**
+   * Seats not yet eliminated when each round began (M04.3).
+   *
+   * Written once per round, at the first `turn_started` that names it, so it is a
+   * start-of-round figure: a seat eliminated part-way through a round was alive
+   * when the round began and did take its turn, and stall eligibility asks
+   * whether the round put the question to every seat that had one.
+   */
+  readonly #livingSeatsPerRound = new Map<number, number>();
+  readonly #stallDefinition: StallDefinition;
 
   /**
    * Rounds are complete cycles of the seat order. The engine has no round
@@ -189,6 +213,7 @@ export class BoardTelemetryCollector {
     this.#config = options.config;
     this.#seats = options.seats;
     this.#seatCount = Math.max(1, options.seats.length);
+    this.#stallDefinition = options.stallDefinition ?? DEFAULT_STALL_DEFINITION;
     for (const seat of options.seats) this.#trackers.set(seat.playerId, newTracker(seat));
   }
 
@@ -218,6 +243,10 @@ export class BoardTelemetryCollector {
         if (this.#turn > 0 && this.#turn % this.#seatCount === 0) this.#snapshotRound();
         this.#turn = event.turn;
         this.#round = Math.ceil(this.#turn / this.#seatCount);
+        // First turn of this round wins, so the figure is start-of-round.
+        if (!this.#livingSeatsPerRound.has(this.#round)) {
+          this.#livingSeatsPerRound.set(this.#round, this.#seatCount - this.#eliminationOrder);
+        }
         this.#flushReadyPreventions();
         break;
       }
@@ -507,21 +536,44 @@ export class BoardTelemetryCollector {
    * was asked in (a round the match ended in) belongs to neither and breaks both,
    * because nothing was observed to attribute.
    *
-   * `classification` is `'undetermined'` and stays that way. Both streaks are
-   * candidates for whatever Q43 chooses; picking one here would be the verdict
-   * this tranche exists to withhold.
+   * The third streak is the one the verdict reads (M04.3). It counts only rounds
+   * that satisfy the configured rule — every living seat asked, every one able,
+   * nobody attacking — and `roundIsStallEligible` is the single place that
+   * decides, so the per-round `stallEligible` flag, the streak and the
+   * classification cannot disagree about what was counted.
    */
   #attackOpportunity(attackersByRound: readonly number[]): BoardTelemetry['attackOpportunity'] {
     const byRound: RoundAttackOpportunity[] = [];
     let declinedStreak = 0;
     let unableStreak = 0;
+    let stallStreak = 0;
     let longestDeclinedStreak = 0;
     let longestUnableStreak = 0;
+    let longestUnanimousDeclinedStreak = 0;
 
     for (let round = 1; round <= this.#round; round += 1) {
       const tally = this.#opportunityPerRound.get(round) ?? newRoundOpportunity();
       const attackers = attackersByRound[round - 1] ?? 0;
-      byRound.push({ round, ...tally, attackers });
+      // A round with no `turn_started` of its own cannot have lost a seat since
+      // the last one that did, so the seat count carries forward.
+      const livingSeats =
+        this.#livingSeatsPerRound.get(round) ?? this.#seatCount - this.#eliminationOrder;
+      const stallEligible = roundIsStallEligible({
+        seatsAsked: tally.seatsAsked,
+        seatsAble: tally.seatsAble,
+        livingSeats,
+        attackers,
+      });
+      byRound.push({ round, livingSeats, ...tally, attackers, stallEligible });
+
+      if (stallEligible) {
+        stallStreak += 1;
+        if (stallStreak > longestUnanimousDeclinedStreak) {
+          longestUnanimousDeclinedStreak = stallStreak;
+        }
+      } else {
+        stallStreak = 0;
+      }
 
       if (attackers > 0 || tally.seatsAsked === 0) {
         declinedStreak = 0;
@@ -555,7 +607,9 @@ export class BoardTelemetryCollector {
       byRound,
       longestDeclinedStreak,
       longestUnableStreak,
-      classification: 'undetermined',
+      longestUnanimousDeclinedStreak,
+      stallDefinition: { ...this.#stallDefinition },
+      classification: classifyStall(longestUnanimousDeclinedStreak, this.#stallDefinition),
     };
   }
 
@@ -684,11 +738,13 @@ export function collectBoardTelemetry(options: {
   readonly database: CardDatabase;
   readonly config: RulesConfig;
   readonly seats: readonly BoardTelemetrySeat[];
+  readonly stallDefinition?: StallDefinition;
 }): BoardTelemetry {
   const collector = new BoardTelemetryCollector({
     database: options.database,
     config: options.config,
     seats: options.seats,
+    ...(options.stallDefinition ? { stallDefinition: options.stallDefinition } : {}),
   });
   collector.observeEvents(options.events);
   for (const turn of options.actionTurns) collector.observeAction(turn);

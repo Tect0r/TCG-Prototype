@@ -74,7 +74,7 @@ there is no second definition of `peakUnits` to drift.
   (M04.2 has since removed it.)
 - **No board metrics in reports yet.** That is M04.3, and reporting numbers
   before the stall definition exists would print a column that has to be
-  re-cut.
+  re-cut. (M04.3 has since added them.)
 - **No summary-screen change.** It reads the same field names it always did. The
   only UI change anywhere is the replay-loading refusal message, which had to
   learn the difference between "not a replay" and "a replay from version 2".
@@ -197,10 +197,11 @@ refusals have nothing to refuse yet.
   `z.literal('undetermined')` rather than a nullable string, so a consumer cannot
   read a verdict out of it by accident and a build that starts writing one has to
   change the schema version to do it.
-- **No board metrics in reports.** Still M04.3.
+- **No board metrics in reports.** Still M04.3. (Added there.)
 - **No configurable eligibility rule.** Adding a configurable threshold before
   Q43 chooses the series it applies to would ship the same mistake with a knob
-  on it.
+  on it. (M04.3 added the knob _after_ Q43 chose the series, which is the order
+  that makes it meaningful.)
 
 ### Evidence
 
@@ -224,38 +225,153 @@ refusals have nothing to refuse yet.
   opportunity and `Stall verdict: undetermined`, and no longer says "Board stall".
 - `npm run verify`.
 
-## Decision checkpoint — Q43
+## Decision checkpoint — Q43 — answered (2026-08-12)
 
 Ask the owner to choose the eligibility rule and threshold after real raw traces
 exist. Present examples from representative matches rather than an abstract
 question. Then version the chosen derived metric in M04.3.
 
-**Ready to ask.** Two four-seat precon matches are traced in
-`docs/open-questions.md` Q43 under "Raw traces now exist", with the four concrete
-choices the answer has to make. The headline finding: the baseline's
-`longestStallRounds: 2` on one of them is round 1 (nobody could attack — two empty
-boards and two freshly-deployed ones) plus round 2 (two seats could and declined)
-added together, which are opposite findings. Both matches then escalate to 53 and
-64 attackers in their final rounds, so the metric also has to be able to say
-"no".
+**Asked and answered.** Two four-seat precon matches are traced in
+`docs/open-questions.md` Q43, with the four concrete choices the answer had to
+make. The headline finding: the baseline's `longestStallRounds: 2` on one of them
+is round 1 (nobody could attack — two empty boards and two freshly-deployed ones)
+plus round 2 (two seats could and declined) added together, which are opposite
+findings. Both matches then escalate to 53 and 64 attackers in their final rounds,
+so the metric also has to be able to say "no".
 
-## M04.3 — Reports and reconciliation
+The owner chose the **strict** reading: every living seat asked, every one able,
+none attacking; **three** consecutive such rounds; no round-1 special case; any
+declared attacker breaks the streak.
+
+## M04.3 — Reports and reconciliation — done (2026-08-12)
 
 After Q43:
 
-- implement the configured stall definition;
-- surface board metrics in batch and matchup reports;
-- reconcile shared collector results against spectator results for the same seed;
-- preserve raw event evidence as primary;
-- test multiplayer, token-heavy, no-legal-attacker, and anti-wide scenarios.
+- [x] implement the configured stall definition — `@tcg/board-telemetry/stall`,
+      applied by the shared collector and recorded with every verdict;
+- [x] surface board metrics in batch and matchup reports — a new
+      "Unlimited board" report section, a per-cell board grid in the matrix
+      section, seven new matrix CSV columns, and `summary.json` schema 3;
+- [x] reconcile shared collector results against spectator results for the same
+      seed — `reconcileBoardTelemetry`, asserted on a real match in
+      `apps/simulator/src/board-telemetry.test.ts`;
+- [x] preserve raw event evidence as primary — the streak the verdict is cut from
+      and the per-round `stallEligible` flag are both stored, and the report
+      re-derives its board section from `matches.jsonl` alone under test;
+- [x] test multiplayer, token-heavy, no-legal-attacker, and anti-wide scenarios.
 
-## Acceptance
+### What was built
 
-- The same deterministic match produces identical board telemetry in spectator
-  and simulator paths.
-- Reports can answer whether unlimited boards create clutter, long turns,
-  trigger overload, or meaningful stalls.
-- A stall is never inferred merely from "no attackers this round."
+**The rule is data, not presentation.** Q43's own framing was the constraint: the
+answer had to be "one explicit, configurable, versioned number rather than a
+judgement made in the reporting layer". So `stall.ts` owns it —
+`roundIsStallEligible` decides a round, `classifyStall` applies the threshold, and
+`DEFAULT_STALL_DEFINITION` is the shipped rule. The collector applies it in
+`finish`, and every document carries the definition it was judged by as
+`attackOpportunity.stallDefinition`. A verdict never travels without its rule, so
+a batch run at a different threshold cannot be mistaken for one run at the shipped
+one — and `aggregateBoard` refuses to count verdicts at all when a batch mixes
+definitions, rather than summing answers to different questions.
+
+**One new observation makes the strict rule possible.** `livingSeats` per round —
+seats not yet eliminated when the round began. `seatsAsked` alone cannot judge
+unanimity: three seats asked is the whole table after an elimination and a missing
+seat before one. It is taken at the _start_ of the round, so a seat eliminated
+after taking its turn still counts as one the round asked; taking survivors
+instead would refuse a round that was in fact unanimous.
+
+**Each clause can be seen refusing.** A round that fails any clause breaks the
+streak rather than being skipped, because "three consecutive rounds" is a claim
+about an uninterrupted run. The fixtures show all of it: three unanimous rounds
+classified `stalled`; the same fixture with one Token attacking in round 3
+classified `not_stalled`; a four-round quiet stretch broken in the middle by one
+seat that could not attack, where the permissive streak reads 4 and the strict one
+reads 2; and three rounds in which nobody could attack at all — the exact input
+the baseline called a stall — classified `not_stalled`.
+
+**Reconciliation is a function, not an assertion.** `reconcileBoardTelemetry`
+returns the list of field paths on which two documents disagree.
+`expect(a).toEqual(b)` over a forty-measure document makes a failure pass or fail
+without making it legible. The simulator suite now runs the _spectator's own_
+`collectTelemetry` over a simulator match and requires the two board blocks to
+reconcile with an empty difference list once the two things a watched match adds —
+the leaderboard and the provenance flag — are removed. That the removal list is
+exactly two items is the M04.1 property being re-checked.
+
+**The board section's population is deliberately not the report's usual one.** It
+aggregates over _every_ record, abnormal ones included, and says so in its own
+first paragraph. A match that hit the turn limit is the strongest stall candidate
+in a batch and usually holds its widest board; excluding it would bias the single
+question the section exists to answer. Every other section keeps its existing
+sample.
+
+### Version policy
+
+Three refusals, no migrations, on the same terms as M04.1 and M04.2.
+
+- **Board telemetry: 2 → 3.** A v2 document holds `classification:
+'undetermined'`, no `stallDefinition` and no `livingSeats`. The last of those is
+  what makes it unmigratable rather than merely incomplete: without it, the seats a
+  round _should_ have asked are unknown for any match that lost a player, so the
+  rule cannot be applied retroactively without guessing.
+- **Spectator replays: 4 → 5.** Same reason, one layer out.
+- **Simulator records: 5 → 6.** Same reason; the `matches.header.json` drift check
+  keeps a v5 stream from being resumed under v6 meanings.
+- **Report schema: 3 → 4** and **`summary.json`: 2 → 3** — additive sections, but
+  a reader keying off the version should see that the board numbers are new.
+- **Matchup matrix: 1 → 2** — every game gains a compact `board` block.
+- **Manifests stay at schema 4.** They record `telemetrySchemaVersion` and
+  `matchupMatrix.schemaVersion` by reference.
+
+Nothing in the repository is a stored replay, match record or matrix artifact —
+`experiments/` holds configurations only — so all of these have nothing to refuse
+yet.
+
+### Deliberately not done
+
+- **No stall flag in `analysis/flags.ts`.** A stalled match is an observation
+  about the ruleset, not a review signal about a card, and routing it into the
+  flag list would put it through multiplicity correction alongside card win rates
+  it has nothing to do with.
+- **No per-deck stall attribution.** The matrix shows stalls per cell, which is as
+  far as the evidence goes: a stall is a property of a table, and splitting it
+  between two decks would be an inference the data does not support.
+- **No re-tuning of `thresholdRounds` from the traced matches.** Three is the
+  owner's number. Two matches are not grounds to move it, and the raw streak is
+  stored precisely so it can be moved later without re-simulating.
+
+### Evidence
+
+- `packages/board-telemetry/src/collector.test.ts` — the stall rule's positive
+  case, each clause refusing, the living-seat count tracking an elimination and
+  being taken at the start of the round, a configured threshold changing the
+  verdict but not the streak, a no-legal-attacker table, a 40-Token board, a wide
+  board answered by a sweeper, streamed-vs-replayed equality on the verdict, and
+  `reconcileBoardTelemetry` naming the fields that moved.
+- `apps/simulator/src/board-telemetry.test.ts` — a real match: the verdict in a
+  batch record, per-round `stallEligible` agreeing with the counts behind it, and
+  the spectator path reconciling field for field on the same seed.
+- `apps/simulator/src/experiment.test.ts` — the batch board block re-derived from
+  `matches.jsonl` alone and equal to what was written, and the report's printed
+  stall verdict matching the records it came from.
+- `apps/web-client/src/spectator-flow.test.tsx` — the summary screen shows a real
+  verdict with its threshold, and says neither "Board stall" nor "undetermined".
+- `npm run verify`.
+
+## Acceptance — met (2026-08-12)
+
+- [x] The same deterministic match produces identical board telemetry in
+      spectator and simulator paths — reconciled field for field, on a real
+      match, in `apps/simulator/src/board-telemetry.test.ts`.
+- [x] Reports can answer whether unlimited boards create clutter, long turns,
+      trigger overload, or meaningful stalls — the "Unlimited board" section
+      answers each with a distribution, and the matrix answers them per cell.
+- [x] A stall is never inferred merely from "no attackers this round." The rule
+      requires every living seat to have been able to attack; a fixture of three
+      rounds in which nobody could — the baseline's exact false positive —
+      classifies `not_stalled`.
+
+M04 is complete.
 
 ## Exclusions
 

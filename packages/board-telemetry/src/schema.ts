@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { cardIdSchema } from '@tcg/card-data';
 import { playerIdSchema } from '@tcg/rules-engine';
+import {
+  DEFAULT_STALL_DEFINITION,
+  stallClassificationSchema,
+  stallDefinitionSchema,
+} from './stall.js';
 
 /**
  * The one definition of "what an unlimited battlefield did in this match"
@@ -28,11 +33,13 @@ import { playerIdSchema } from '@tcg/rules-engine';
  *   describes the match, so "longest turn" is counted in accepted actions and
  *   "combat resolution" in emitted events. There is nowhere in this shape for a
  *   millisecond to land.
- * - **Policy.** Nothing here is a verdict. `longestStallRounds`,
- *   `attackersByRound` and the whole `attackOpportunity` block are counts;
- *   whether a run of quiet rounds is a *stall* is Q43, is not answered here, and
- *   is M04.3's work. `attackOpportunity.classification` exists precisely to say
- *   so out loud.
+ * - **Policy invented here.** Since M04.3 there is exactly one verdict in this
+ *   document — `attackOpportunity.classification` — and it is not this schema's
+ *   opinion: it is `@tcg/board-telemetry/stall`'s configured rule, recorded
+ *   beside the answer as `stallDefinition` so no number can be read without the
+ *   definition that produced it. Everything else remains a count, including the
+ *   raw streak the verdict was cut from, so a different threshold can be applied
+ *   to a finished document without re-simulating the match.
  */
 
 /**
@@ -48,8 +55,17 @@ import { playerIdSchema } from '@tcg/rules-engine';
  * its match record and aggregated somewhere else, at which point the surrounding
  * version is gone. Consumers state the version policy for their own artefact —
  * see `SPECTATOR_REPLAY_VERSION` and `TELEMETRY_SCHEMA_VERSION`.
+ *
+ * Version 3: the configured stall definition (M04.3, answering Q43).
+ *
+ * A version 2 document holds `classification: 'undetermined'` and no
+ * `stallDefinition`, and it cannot be upgraded by re-reading it: eligibility is
+ * decided per round from `livingSeats`, which version 2 never recorded, so the
+ * seats a round *should* have asked are unknown for any match that lost a player.
+ * Refused rather than migrated, on the same terms as versions 2 and 3 of the
+ * artefacts that carry it.
  */
-export const BOARD_TELEMETRY_VERSION = 2;
+export const BOARD_TELEMETRY_VERSION = 3;
 
 /** A per-seat count keyed by an engine reason string, e.g. `destroyed`. */
 const reasonCountsSchema = z.record(z.string(), z.number().int().min(0));
@@ -160,6 +176,22 @@ export type CombatTelemetry = z.infer<typeof combatTelemetrySchema>;
 export const roundAttackOpportunitySchema = z.strictObject({
   /** 1-based, matching `attackersByRound`'s index 0. */
   round: z.number().int().min(1),
+  /**
+   * Seats not yet eliminated when this round began (M04.3).
+   *
+   * Recorded because stall eligibility asks whether the round put the question to
+   * the *whole table*, which `seatsAsked` alone cannot answer: three seats asked
+   * is unanimous on a three-seat table and a missing seat on a four-seat one.
+   * Taken at the start of the round rather than the end, so a seat that was
+   * eliminated after taking its turn still counts as one the round asked.
+   *
+   * Declared before `seatsAsked` because the collector builds the object in that
+   * order, and `strictObject` emits keys in schema order: a record that has been
+   * round-tripped through this schema must serialize byte-identically to the one
+   * the collector produced, or the worker-count and on-disk determinism checks
+   * fail on key order alone.
+   */
+  livingSeats: z.number().int().min(0),
   /** Seats that reached an attack step this round. */
   seatsAsked: z.number().int().min(0),
   /** Seats with at least one legal attacker and at least one legal defender. */
@@ -183,20 +215,19 @@ export const roundAttackOpportunitySchema = z.strictObject({
   readyPreventions: z.number().int().min(0),
   /** Attackers declared this round. Equals `attackersByRound[round - 1]`. */
   attackers: z.number().int().min(0),
+  /**
+   * Whether this round counted toward the stall streak (M04.3).
+   *
+   * Derived from the counts above by `roundIsStallEligible` and stored rather
+   * than left to the reader, so the verdict is auditable round by round: a match
+   * classified `'stalled'` names the rounds that made it one, and a match that
+   * was not can be checked for near misses without re-deriving the rule.
+   */
+  stallEligible: z.boolean(),
 });
 export type RoundAttackOpportunity = z.infer<typeof roundAttackOpportunitySchema>;
 
-/**
- * Whether the quiet rounds in this match were a stall.
- *
- * `'undetermined'` is the only value this build writes, and it is a `literal`
- * rather than a nullable string so that a consumer cannot read a verdict out of
- * it by accident and a build that starts writing one has to change the schema
- * version to do it. The eligibility rule and the threshold are Q43; implementing
- * the choice is M04.3. Until then the evidence below is the answer, and "no
- * attackers this round" on its own is never one (`M04` acceptance).
- */
-export const stallClassificationSchema = z.literal('undetermined');
+export { stallClassificationSchema };
 
 /**
  * Attack opportunity across the whole match (M04.2).
@@ -220,7 +251,13 @@ export const attackOpportunitySchema = z.strictObject({
   byRound: z.array(roundAttackOpportunitySchema),
   /**
    * The longest run of quiet rounds in which at least one asked seat could have
-   * attacked. A stall candidate, if Q43 decides that declining counts as one.
+   * attacked.
+   *
+   * The permissive reading of "somebody declined", and **not** the one Q43 chose.
+   * Kept because it is the wider series the strict streak below is a subset of,
+   * and because a match where one seat repeatedly declines behind a wide board is
+   * a finding worth seeing even when the rest of the table could not have
+   * attacked anyway.
    */
   longestDeclinedStreak: z.number().int().min(0),
   /**
@@ -231,6 +268,24 @@ export const attackOpportunitySchema = z.strictObject({
    * an effect working, not a board nobody wanted to commit.
    */
   longestUnableStreak: z.number().int().min(0),
+  /**
+   * The longest run of rounds that satisfied the configured stall rule (M04.3).
+   *
+   * The series `classification` is cut from, stored raw so a reader can apply a
+   * different `thresholdRounds` to a finished document without re-simulating. It
+   * is a subset of `longestDeclinedStreak` by construction: every round where
+   * *every* asked seat was able is a round where at least one was.
+   */
+  longestUnanimousDeclinedStreak: z.number().int().min(0),
+  /**
+   * The rule that produced `classification`, carried with the answer (M04.3).
+   *
+   * Q43 required the threshold to be explicit, configurable and versioned rather
+   * than a judgement made in the reporting layer. A verdict travelling without
+   * its definition would be exactly that judgement, one artefact later.
+   */
+  stallDefinition: stallDefinitionSchema,
+  /** The verdict. See `stall.ts`; `not_stalled` is a real answer, not a default. */
   classification: stallClassificationSchema,
 });
 export type AttackOpportunity = z.infer<typeof attackOpportunitySchema>;
@@ -275,9 +330,11 @@ export const boardTelemetrySchema = z.strictObject({
    * The longest run of consecutive rounds in which nobody declared an attacker.
    *
    * Counted in rounds rather than turns so a three-seat table is not described
-   * as quiet merely because one seat had nothing to attack with. **Not a
-   * stall**: silence and inability are different, and the threshold that would
-   * make either a verdict is Q43. Kept beside `attackOpportunity` rather than
+   * as quiet merely because one seat had nothing to attack with. **Still not a
+   * stall**, and since M04.3 that is a statement about a rule that exists rather
+   * than one that is pending: the verdict reads
+   * `attackOpportunity.longestUnanimousDeclinedStreak`, which counts only the
+   * rounds the whole living table could have attacked in. Kept beside `attackOpportunity` rather than
    * replaced by it, because it is the one number every earlier measurement was
    * expressed in. It is *not* the sum of the two streaks below: a quiet round no
    * seat was asked in counts here and belongs to neither of them.
@@ -349,7 +406,12 @@ export function emptyBoardTelemetry(): BoardTelemetry {
       byRound: [],
       longestDeclinedStreak: 0,
       longestUnableStreak: 0,
-      classification: 'undetermined',
+      longestUnanimousDeclinedStreak: 0,
+      stallDefinition: { ...DEFAULT_STALL_DEFINITION },
+      // A match that was never played did not stall. The verdict is `not_stalled`
+      // rather than absent because the schema has no absent, and a zero streak
+      // against any threshold is genuinely that answer.
+      classification: 'not_stalled',
     },
     largestBoardAnswer: null,
   };

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { experimentConfigSchema, type ExperimentConfig } from './config.js';
 import { runExperiment, type ExperimentOutcome } from './experiment.js';
 import { aggregate } from './analysis/aggregate.js';
+import { aggregateBoard } from './analysis/board.js';
 import { cardPairs } from './analysis/pairs.js';
 import { readJsonl, experimentPaths } from './reporting/sinks.js';
 import { matchRecordSchema } from './telemetry/schema.js';
@@ -166,6 +167,36 @@ describe('report reconciliation', () => {
       expect(Number(row.dead_unseen)).toBe(card?.deadHand.unseen ?? 0);
       expect(Number(row.dead_legal_but_unchosen)).toBe(card?.deadHand.legal_but_unchosen ?? 0);
     }
+  });
+
+  /**
+   * M04.3 — the board section is a view of the records, like every other section.
+   *
+   * Re-derived from `matches.jsonl` alone and required to equal what was written,
+   * because the report's whole claim to be auditable is that no number in it
+   * exists only in it. The verdict is included: it is read from the records, not
+   * computed by the reporting layer, so re-deriving must reproduce it exactly.
+   */
+  it('re-derives the batch board telemetry from matches.jsonl alone', () => {
+    const summary = JSON.parse(readFileSync(experimentPaths(dir).summary, 'utf8'));
+    const rederived = aggregateBoard(records());
+    expect(JSON.stringify(rederived)).toBe(JSON.stringify(summary.board));
+    expect(JSON.stringify(rederived)).toBe(JSON.stringify(outcome.board));
+  });
+
+  it('prints a stall verdict in the report that the records support', () => {
+    const stalled = records().filter(
+      (record) => record.board.attackOpportunity.classification === 'stalled',
+    ).length;
+    expect(outcome.board.stalledMatches).toBe(stalled);
+    expect(outcome.report).toContain('## Unlimited board');
+    expect(outcome.report).toContain(
+      `**Stall verdict.** ${stalled} of ${records().length} match(es) classified`,
+    );
+    // The rule travels with the verdict wherever the verdict is shown, so a
+    // reader never meets a number without the definition that produced it.
+    expect(outcome.report).toContain('**Stall rule.**');
+    expect(outcome.report).toContain('every living seat reached its attack step');
   });
 
   it('reconciles the seat totals in the aggregate with the raw seats', () => {

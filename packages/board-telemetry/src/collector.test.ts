@@ -8,7 +8,9 @@ import {
   type MatchState,
 } from '@tcg/rules-engine';
 import { BoardTelemetryCollector, collectBoardTelemetry } from './collector.js';
+import { reconcileBoardTelemetry } from './reconcile.js';
 import { boardTelemetrySchema, emptyBoardTelemetry } from './schema.js';
+import { DEFAULT_STALL_DEFINITION, type StallDefinition } from './stall.js';
 
 /**
  * M04.1 — the shared board collector.
@@ -345,15 +347,17 @@ describe('board telemetry', () => {
     expect(telemetry.events).toBe(fixtureEvents().length);
   });
 
-  it('records the per-round attacker series and the quiet streak, not a verdict', () => {
+  it('records the per-round attacker series beside the verdict cut from it', () => {
     const telemetry = collect();
     expect(telemetry.attackersByRound).toEqual([0, 5, 0]);
     expect(telemetry.longestStallRounds).toBe(1);
-    // Nothing here classifies the quiet rounds. The threshold that would make a
-    // stall out of them is Q43, so the document carries the series a later cut
-    // can be re-derived from and no flag at all.
+    // The raw series survives the arrival of a verdict (M04.3): the streak the
+    // classification was cut from is stored, so a different threshold can be
+    // applied to a finished document without re-simulating the match.
     expect(Object.keys(telemetry)).not.toContain('boardStalled');
-    expect(telemetry.attackOpportunity.classification).toBe('undetermined');
+    expect(telemetry.attackOpportunity.longestUnanimousDeclinedStreak).toBe(0);
+    expect(telemetry.attackOpportunity.classification).toBe('not_stalled');
+    expect(telemetry.attackOpportunity.stallDefinition).toEqual(DEFAULT_STALL_DEFINITION);
   });
 
   it('separates declining to attack from being unable to (M04.2)', () => {
@@ -370,6 +374,7 @@ describe('board telemetry', () => {
     // series cannot say and a stall threshold over it would have got backwards.
     expect(opportunity.byRound[2]).toEqual({
       round: 3,
+      livingSeats: 2,
       seatsAsked: 1,
       seatsAble: 1,
       seatsDeclining: 1,
@@ -379,6 +384,11 @@ describe('board telemetry', () => {
       seatsWithoutDefender: 0,
       readyPreventions: 0,
       attackers: 0,
+      // Somebody declined, but the round only asked one of the two living seats
+      // — the match ended in it. Under the strict rule Q43 chose that is not a
+      // stall round, and the permissive `longestDeclinedStreak` below still sees
+      // it. The two readings are kept apart rather than merged.
+      stallEligible: false,
     });
     expect(opportunity.longestDeclinedStreak).toBe(1);
     expect(opportunity.longestUnableStreak).toBe(0);
@@ -498,6 +508,7 @@ describe('board telemetry', () => {
     const opportunity = collectUnable().attackOpportunity;
     expect(opportunity.byRound[0]).toEqual({
       round: 1,
+      livingSeats: 2,
       seatsAsked: 2,
       seatsAble: 0,
       seatsDeclining: 0,
@@ -509,9 +520,14 @@ describe('board telemetry', () => {
       seatsWithoutDefender: 0,
       readyPreventions: 0,
       attackers: 0,
+      // Round 1 excludes itself, with no round-index special case anywhere: an
+      // empty board is not able and a board that all arrived this turn is held by
+      // Newly Deployed, so the ordinary rule already refuses it (Q43c).
+      stallEligible: false,
     });
     expect(opportunity.byRound[1]).toEqual({
       round: 2,
+      livingSeats: 2,
       seatsAsked: 2,
       seatsAble: 1,
       seatsDeclining: 1,
@@ -523,6 +539,9 @@ describe('board telemetry', () => {
       // just ended when the event was emitted.
       readyPreventions: 1,
       attackers: 0,
+      // One of the two seats could not attack, so the table did not collectively
+      // decline: an effect held it down. Not a stall round.
+      stallEligible: false,
     });
 
     // Two quiet rounds in a row, and they are quiet for opposite reasons. A
@@ -530,7 +549,10 @@ describe('board telemetry', () => {
     expect(opportunity.longestUnableStreak).toBe(1);
     expect(opportunity.longestDeclinedStreak).toBe(1);
     expect(collectUnable().longestStallRounds).toBe(2);
-    expect(opportunity.classification).toBe('undetermined');
+    // Two quiet rounds and neither is a stall round: the strict rule counts
+    // neither, so the verdict is a real "no" rather than a pending one.
+    expect(opportunity.longestUnanimousDeclinedStreak).toBe(0);
+    expect(opportunity.classification).toBe('not_stalled');
   });
 
   it('does not call a seat with no opponent left "able to attack"', () => {
@@ -615,5 +637,362 @@ describe('board telemetry', () => {
     // delay to land, in either path.
     const keys = Object.keys(collect()).join(' ');
     expect(keys).not.toMatch(/ms|millis|duration|elapsed|wall/i);
+  });
+});
+
+/**
+ * M04.3 — the configured stall definition (Q43).
+ *
+ * The rule: a round counts only when every living seat reached its attack step,
+ * every one of them could legally have attacked, and none did; three consecutive
+ * such rounds is a stall. These fixtures exist to show each clause doing work,
+ * because a rule this strict is only trustworthy if it can be seen refusing.
+ */
+describe('stall definition', () => {
+  const FOUR_SEATS = [
+    { playerId: 'player_1', seatIndex: 0, commanderId: COMMANDER },
+    { playerId: 'player_2', seatIndex: 1, commanderId: COMMANDER },
+    { playerId: 'player_3', seatIndex: 2, commanderId: COMMANDER },
+    { playerId: 'player_4', seatIndex: 3, commanderId: COMMANDER },
+  ] as const;
+
+  function finalStateFor(seats: readonly { playerId: string }[]): MatchState {
+    const created = createMatch({
+      matchId: 'stall-definition',
+      seed: 'stall-definition',
+      database,
+      config,
+      preserveSeatOrder: true,
+      seats: seats.map((seat) => ({ playerId: seat.playerId, name: seat.playerId, deck: deck() })),
+    });
+    if (!created.ok) throw new Error(`fixture match setup failed: ${created.error.code}`);
+    return created.value.state;
+  }
+
+  /** A seat that could attack with everything it has and declared `declared`. */
+  function ableStep(playerId: string, declared: number): EventBody {
+    return opportunity(playerId, {
+      units: 2,
+      readyUnits: 2,
+      legalAttackers: 2,
+      declaredAttackers: declared,
+    });
+  }
+
+  function collectWith(
+    events: GameEvent[],
+    seats: readonly { playerId: string; seatIndex: number; commanderId: string }[],
+    stallDefinition?: StallDefinition,
+  ): ReturnType<typeof collectBoardTelemetry> {
+    return collectBoardTelemetry({
+      finalState: finalStateFor(seats),
+      events,
+      actionTurns: [],
+      database,
+      config,
+      seats,
+      ...(stallDefinition ? { stallDefinition } : {}),
+    });
+  }
+
+  /**
+   * Six turns of a two-seat table in which both seats can attack every round and
+   * neither ever does. Three eligible rounds: the rule's positive case.
+   */
+  function unanimousDeclineEvents(roundThreeAttackers: number): GameEvent[] {
+    return stream([
+      { type: 'turn_started', playerId: 'player_1', turn: 1 },
+      entered('player_1', 'u1', DRONE),
+      entered('player_1', 'u2', DRONE),
+      ableStep('player_1', 0),
+      { type: 'turn_started', playerId: 'player_2', turn: 2 },
+      entered('player_2', 'v1', DRONE),
+      entered('player_2', 'v2', DRONE),
+      ableStep('player_2', 0),
+
+      { type: 'turn_started', playerId: 'player_1', turn: 3 },
+      ableStep('player_1', 0),
+      { type: 'turn_started', playerId: 'player_2', turn: 4 },
+      ableStep('player_2', 0),
+
+      { type: 'turn_started', playerId: 'player_1', turn: 5 },
+      ableStep('player_1', 0),
+      { type: 'turn_started', playerId: 'player_2', turn: 6 },
+      ableStep('player_2', roundThreeAttackers),
+      ...(roundThreeAttackers > 0
+        ? [
+            {
+              type: 'attackers_declared' as const,
+              playerId: 'player_2',
+              instanceIds: ['v1'],
+              attacks: [{ attackerInstanceId: 'v1', defenderPlayerId: 'player_1' }],
+            },
+          ]
+        : []),
+    ]);
+  }
+
+  it('calls three rounds of unanimous declining a stall', () => {
+    const telemetry = collectWith(unanimousDeclineEvents(0), SEATS);
+    const opportunity = telemetry.attackOpportunity;
+
+    expect(opportunity.byRound.map((round) => round.stallEligible)).toEqual([true, true, true]);
+    expect(opportunity.longestUnanimousDeclinedStreak).toBe(3);
+    expect(opportunity.classification).toBe('stalled');
+
+    // The strict streak is a subset of the permissive one by construction, and
+    // both are kept: "everyone could and nobody did" is the verdict, "somebody
+    // could and nobody did" is the wider observation it was cut from.
+    expect(opportunity.longestDeclinedStreak).toBe(3);
+    expect(opportunity.longestUnableStreak).toBe(0);
+    // Every round asked the whole table. That is what makes it unanimous.
+    for (const round of opportunity.byRound) {
+      expect(round.seatsAsked).toBe(round.livingSeats);
+      expect(round.seatsAble).toBe(round.seatsAsked);
+    }
+  });
+
+  it('lets a single declared attacker break the streak', () => {
+    // Q43d: any attacker makes the round non-quiet, one Token included. Round 3
+    // is otherwise identical to the stalled fixture's.
+    const telemetry = collectWith(unanimousDeclineEvents(1), SEATS);
+    const opportunity = telemetry.attackOpportunity;
+
+    expect(opportunity.byRound.map((round) => round.stallEligible)).toEqual([true, true, false]);
+    expect(opportunity.longestUnanimousDeclinedStreak).toBe(2);
+    expect(opportunity.classification).toBe('not_stalled');
+  });
+
+  it('breaks the streak on a round one seat could not have attacked in', () => {
+    // The clause that separates this rule from the baseline. Round 2 is quiet and
+    // somebody declined in it, so the permissive streak runs through all four
+    // rounds; the strict one restarts, because the table did not collectively
+    // choose peace — one seat had no choice.
+    const telemetry = collectWith(
+      stream([
+        { type: 'turn_started', playerId: 'player_1', turn: 1 },
+        entered('player_1', 'u1', DRONE),
+        ableStep('player_1', 0),
+        { type: 'turn_started', playerId: 'player_2', turn: 2 },
+        entered('player_2', 'v1', DRONE),
+        ableStep('player_2', 0),
+
+        { type: 'turn_started', playerId: 'player_1', turn: 3 },
+        ableStep('player_1', 0),
+        { type: 'turn_started', playerId: 'player_2', turn: 4 },
+        opportunity('player_2', {
+          units: 2,
+          readyUnits: 0,
+          legalAttackers: 0,
+          exhaustedUnits: 2,
+          declaredAttackers: 0,
+        }),
+
+        { type: 'turn_started', playerId: 'player_1', turn: 5 },
+        ableStep('player_1', 0),
+        { type: 'turn_started', playerId: 'player_2', turn: 6 },
+        ableStep('player_2', 0),
+
+        { type: 'turn_started', playerId: 'player_1', turn: 7 },
+        ableStep('player_1', 0),
+        { type: 'turn_started', playerId: 'player_2', turn: 8 },
+        ableStep('player_2', 0),
+      ]),
+      SEATS,
+    );
+    const observed = telemetry.attackOpportunity;
+
+    expect(observed.byRound.map((round) => round.stallEligible)).toEqual([true, false, true, true]);
+    expect(observed.longestUnanimousDeclinedStreak).toBe(2);
+    expect(observed.longestDeclinedStreak).toBe(4);
+    expect(observed.classification).toBe('not_stalled');
+  });
+
+  /**
+   * A four-seat table that loses a player, which is the case `seatsAsked` alone
+   * cannot judge: three seats asked is the whole table afterwards and a missing
+   * seat before.
+   */
+  function fourSeatEvents(): GameEvent[] {
+    return stream([
+      { type: 'turn_started', playerId: 'player_1', turn: 1 },
+      entered('player_1', 'u1', DRONE),
+      ableStep('player_1', 0),
+      { type: 'turn_started', playerId: 'player_2', turn: 2 },
+      ableStep('player_2', 0),
+      { type: 'turn_started', playerId: 'player_3', turn: 3 },
+      ableStep('player_3', 0),
+      { type: 'turn_started', playerId: 'player_4', turn: 4 },
+      ableStep('player_4', 0),
+      { type: 'player_eliminated', playerId: 'player_4', turn: 4 },
+
+      // Round 2: three seats left, all three asked, all three able, still quiet.
+      { type: 'turn_started', playerId: 'player_1', turn: 5 },
+      ableStep('player_1', 0),
+      { type: 'turn_started', playerId: 'player_2', turn: 6 },
+      ableStep('player_2', 0),
+      { type: 'turn_started', playerId: 'player_3', turn: 7 },
+      ableStep('player_3', 0),
+    ]);
+  }
+
+  it('measures a round against the seats that were alive for it', () => {
+    const telemetry = collectWith(fourSeatEvents(), FOUR_SEATS);
+    const [first, second] = telemetry.attackOpportunity.byRound;
+
+    expect(first).toMatchObject({ round: 1, livingSeats: 4, seatsAsked: 4, stallEligible: true });
+    // Three of four seats asked *is* the whole table once one has been
+    // eliminated. Against a fixed seat count this round would have been refused.
+    expect(second).toMatchObject({ round: 2, livingSeats: 3, seatsAsked: 3, stallEligible: true });
+    expect(telemetry.attackOpportunity.longestUnanimousDeclinedStreak).toBe(2);
+    // Two eligible rounds against a threshold of three.
+    expect(telemetry.attackOpportunity.classification).toBe('not_stalled');
+  });
+
+  it('takes the living-seat count at the start of the round, not the end', () => {
+    // player_4 was eliminated during round 1, after taking its turn. The round
+    // asked four seats because four seats had turns in it, so counting survivors
+    // instead would refuse a round that was in fact unanimous.
+    const round = collectWith(fourSeatEvents(), FOUR_SEATS).attackOpportunity.byRound[0];
+    expect(round?.livingSeats).toBe(4);
+    expect(round?.stallEligible).toBe(true);
+  });
+
+  it('applies a configured threshold and records which one it used', () => {
+    // Q43 required the number to be explicit, configurable and versioned rather
+    // than a judgement in the reporting layer — so the same evidence classifies
+    // differently under a different threshold, and the document says which.
+    const definition: StallDefinition = { ...DEFAULT_STALL_DEFINITION, thresholdRounds: 2 };
+    const telemetry = collectWith(fourSeatEvents(), FOUR_SEATS, definition);
+
+    expect(telemetry.attackOpportunity.longestUnanimousDeclinedStreak).toBe(2);
+    expect(telemetry.attackOpportunity.classification).toBe('stalled');
+    expect(telemetry.attackOpportunity.stallDefinition).toEqual(definition);
+
+    // The raw streak is identical either way: only the verdict moved.
+    const shipped = collectWith(fourSeatEvents(), FOUR_SEATS);
+    expect(shipped.attackOpportunity.longestUnanimousDeclinedStreak).toBe(
+      telemetry.attackOpportunity.longestUnanimousDeclinedStreak,
+    );
+    expect(shipped.attackOpportunity.stallDefinition.thresholdRounds).toBe(3);
+  });
+
+  it('never calls a table with no legal attacker a stall', () => {
+    // Three quiet rounds in which nobody could attack at all — the exact input the
+    // baseline's "three rounds without attackers" counted as a stall. Under the
+    // rule Q43 chose it is the opposite finding, and the verdict says so.
+    const bodies: EventBody[] = [];
+    for (let turn = 1; turn <= 6; turn += 1) {
+      const playerId = turn % 2 === 1 ? 'player_1' : 'player_2';
+      bodies.push({ type: 'turn_started', playerId, turn });
+      bodies.push(
+        opportunity(playerId, {
+          units: 1,
+          readyUnits: 0,
+          legalAttackers: 0,
+          exhaustedUnits: 1,
+          declaredAttackers: 0,
+        }),
+      );
+    }
+    const telemetry = collectWith(stream(bodies), SEATS);
+
+    expect(telemetry.longestStallRounds).toBe(3);
+    expect(telemetry.attackOpportunity.longestUnableStreak).toBe(3);
+    expect(telemetry.attackOpportunity.longestUnanimousDeclinedStreak).toBe(0);
+    expect(telemetry.attackOpportunity.classification).toBe('not_stalled');
+    expect(telemetry.attackOpportunity.byRound.every((round) => !round.stallEligible)).toBe(true);
+  });
+
+  it('measures a token-heavy board without calling it stalled', () => {
+    // Clutter and stalling are different complaints about an unbounded
+    // battlefield (M04 acceptance). This board is very wide and very active, and
+    // the numbers have to be able to say both things at once.
+    const bodies: EventBody[] = [{ type: 'turn_started', playerId: 'player_1', turn: 1 }];
+    for (let index = 0; index < 40; index += 1) {
+      bodies.push(entered('player_1', `t${index}`, TOKEN));
+    }
+    bodies.push(
+      opportunity('player_1', {
+        units: 40,
+        readyUnits: 40,
+        legalAttackers: 40,
+        declaredAttackers: 40,
+      }),
+      {
+        type: 'attackers_declared',
+        playerId: 'player_1',
+        instanceIds: Array.from({ length: 40 }, (_, index) => `t${index}`),
+        attacks: Array.from({ length: 40 }, (_, index) => ({
+          attackerInstanceId: `t${index}`,
+          defenderPlayerId: 'player_2',
+        })),
+      },
+    );
+    const telemetry = collectWith(stream(bodies), SEATS);
+    const [first] = telemetry.seats;
+
+    expect(first?.peakUnits).toBe(40);
+    expect(first?.peakTokens).toBe(40);
+    // One definition, so the whole board is one visual stack — the clutter
+    // measure M06/Q42 will present and must not be allowed to move.
+    expect(first?.peakTokenStack).toBe(40);
+    expect(telemetry.largestCombat.attackers).toBe(40);
+    expect(telemetry.attackOpportunity.classification).toBe('not_stalled');
+  });
+
+  it('records a wide board being answered, and does not call that a stall either', () => {
+    // The anti-wide case: a board reaches 40 and a sweeper removes 38 of them.
+    // "The largest board was answered" is the finding, and it is the opposite of
+    // both a stall and an unanswerable board.
+    const bodies: EventBody[] = [{ type: 'turn_started', playerId: 'player_1', turn: 1 }];
+    for (let index = 0; index < 40; index += 1) {
+      bodies.push(entered('player_1', `t${index}`, TOKEN));
+    }
+    bodies.push({ type: 'turn_started', playerId: 'player_2', turn: 2 });
+    for (let index = 0; index < 38; index += 1) {
+      bodies.push(defeated(`t${index}`, TOKEN, 'player_1', 'destroyed'));
+    }
+    const telemetry = collectWith(stream(bodies), SEATS);
+
+    expect(telemetry.largestBoardAnswer).toEqual({
+      playerId: 'player_1',
+      peakUnits: 40,
+      unitsLostAfterPeak: 38,
+      reasons: ['destroyed'],
+    });
+    expect(telemetry.attackOpportunity.classification).toBe('not_stalled');
+  });
+
+  it('reaches the same verdict streamed live as replayed at the end', () => {
+    // The verdict is derived in `finish`, from accumulators the streaming path
+    // fills one event at a time. Reconciled rather than merely compared, so a
+    // regression names the field that moved (M04.3).
+    const events = unanimousDeclineEvents(0);
+    const streamed = new BoardTelemetryCollector({ database, config, seats: SEATS });
+    streamed.observeEvents(events);
+
+    const reconciliation = reconcileBoardTelemetry(
+      streamed.finish(finalStateFor(SEATS)),
+      collectWith(unanimousDeclineEvents(0), SEATS),
+    );
+    expect(reconciliation.differences).toEqual([]);
+    expect(reconciliation.agreed).toBe(true);
+  });
+
+  it('names the fields that disagree when two documents differ', () => {
+    const stalled = collectWith(unanimousDeclineEvents(0), SEATS);
+    const quiet = collectWith(unanimousDeclineEvents(1), SEATS);
+    const reconciliation = reconcileBoardTelemetry(stalled, quiet);
+
+    expect(reconciliation.agreed).toBe(false);
+    // A path, not a diff of two forty-field objects: the point of the helper is
+    // that a spectator/simulator disagreement is legible without a debugger.
+    expect(reconciliation.differences).toContain(
+      'attackOpportunity.classification: "stalled" !== "not_stalled"',
+    );
+    expect(reconciliation.differences).toContain(
+      'attackOpportunity.byRound[2].stallEligible: true !== false',
+    );
   });
 });

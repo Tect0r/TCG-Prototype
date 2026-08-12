@@ -1,13 +1,20 @@
-import type { SpectatorReplay } from '@tcg/spectator';
+import type { SpectatorReplay, StallClassification } from '@tcg/spectator';
 
 /**
  * The end-of-match screen: result, placements, and the board-size telemetry the
  * unlimited battlefield has to be judged on (rule adjustment, "Match telemetry").
  *
- * Deliberately plain numbers with no verdict attached. A wide board is not a
- * failure and this screen must not imply it is: it reports what happened so a
- * human can decide whether the energy constraint was enough.
+ * Deliberately plain numbers, and the one verdict on the screen is not this
+ * component's. A wide board is not a failure and nothing here may imply it is:
+ * the stall classification comes from the engine-side rule in
+ * `@tcg/board-telemetry`, is shown with the streak and threshold that produced
+ * it, and every other figure is a count a human weighs for themselves.
  */
+
+/** Wording only. The value is the shared classification, unchanged. */
+function stallVerdictLabel(classification: StallClassification): string {
+  return classification === 'stalled' ? 'stalled' : 'not stalled';
+}
 
 export interface SpectatorSummaryProps {
   readonly replay: SpectatorReplay;
@@ -86,10 +93,11 @@ export function SpectatorSummary({ replay }: SpectatorSummaryProps) {
           window(s); {telemetry.cardsCountered} card(s) countered
         </li>
         {/*
-         * Attack opportunity, not a stall verdict (M04.2). The old line said
-         * "board stall: yes" off three quiet rounds, which could not tell a table
-         * that declined from a table that had nothing to attack with. These two
-         * say which it was and that the verdict is still open (Q43).
+         * The evidence, then the verdict cut from it (M04.2, M04.3). The old line
+         * said "board stall: yes" off three quiet rounds, which could not tell a
+         * table that declined from a table that had nothing to attack with. These
+         * three say which it was, what the rule counted, and what it concluded —
+         * in that order, because the verdict is only readable against the rule.
          */}
         <li>
           Attack steps: {telemetry.attackOpportunity.steps} — {telemetry.attackOpportunity.able}{' '}
@@ -102,8 +110,13 @@ export function SpectatorSummary({ replay }: SpectatorSummaryProps) {
         <li>
           Quiet rounds: longest run of {telemetry.longestStallRounds} with no attack —{' '}
           {telemetry.attackOpportunity.longestDeclinedStreak} where somebody could have attacked,{' '}
-          {telemetry.attackOpportunity.longestUnableStreak} where nobody could. Stall verdict:{' '}
-          {telemetry.attackOpportunity.classification} (pending Q43).
+          {telemetry.attackOpportunity.longestUnableStreak} where nobody could.
+        </li>
+        <li>
+          Stall verdict: {stallVerdictLabel(telemetry.attackOpportunity.classification)} —{' '}
+          {telemetry.attackOpportunity.longestUnanimousDeclinedStreak} round(s) where every living
+          seat could have attacked and none did, against a threshold of{' '}
+          {telemetry.attackOpportunity.stallDefinition.thresholdRounds}.
         </li>
         {telemetry.largestBoardAnswer && (
           <li>

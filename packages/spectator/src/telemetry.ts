@@ -19,11 +19,12 @@ import {
  * first is the question the unlimited battlefield has to be judged on. This file
  * is what a *watched* match adds on top: a leaderboard and the provenance flag.
  *
- * Since M04.2 it adds nothing else. The summary screen's stall wording used to be
- * decided here, from a three-round threshold over silence; the shared schema now
- * carries the attack-opportunity evidence and leaves the verdict
- * `'undetermined'` until Q43, and a watched match reads the same undetermined
- * classification a batch does.
+ * Since M04.2 it adds nothing else, and since M04.3 that includes the stall
+ * verdict. The summary screen's stall wording used to be decided here, from a
+ * three-round threshold over silence. The rule now lives in
+ * `@tcg/board-telemetry/stall`, is applied by the shared collector, and travels
+ * inside the document beside the answer — so a watched match and a batch reach
+ * the same verdict by the same route, and this layer has no opinion to add.
  *
  * Playback timing is deliberately absent from all of it. A delay the viewer
  * chose must never reach a number that describes the match.

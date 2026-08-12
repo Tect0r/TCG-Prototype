@@ -51,8 +51,17 @@ import {
  * attacked with. Re-deriving it would mean re-simulating the match, which is a
  * different match. The verdict field a v3 replay does carry — `boardStalled` — is
  * gone, so reading one under v4 would also mean silently dropping a claim.
+ *
+ * Bumped to 5 for M04.3, and refused rather than migrated for the fourth time.
+ * The telemetry block is now board-telemetry schema 3, which carries a stall
+ * verdict and the rule that produced it. A version 4 replay cannot be upgraded by
+ * re-reading it: eligibility is decided per round against the seats that were
+ * alive when the round began, and v4 recorded `seatsAsked` without
+ * `livingSeats`, so for any match that lost a player there is no way to tell a
+ * unanimous round from one that skipped a seat. Deriving the verdict anyway would
+ * mean guessing, under the identity of a build that never guessed.
  */
-export const SPECTATOR_REPLAY_VERSION = 4;
+export const SPECTATOR_REPLAY_VERSION = 5;
 
 /**
  * Whether a recorded match is evidence about the game at all.
@@ -107,11 +116,12 @@ export type SpectatorSeat = z.infer<typeof spectatorSeatSchema>;
  * two things that are true of a *watched* match and of nothing else — a
  * leaderboard, and whether the match is evidence about the game at all.
  *
- * Since M04.2 that is *all* it adds. `boardStalled` used to live here, a
- * presentation threshold over "no attackers for three rounds" that no evidence
- * supported; the shared schema now carries the attack-opportunity counts a stall
- * would have to be argued from, and its `classification` says `'undetermined'`
- * until Q43. A watched match does not get a verdict a measured one is denied.
+ * Since M04.2 that is *all* it adds, and M04.3 did not change it. `boardStalled`
+ * used to live here, a presentation threshold over "no attackers for three
+ * rounds" that no evidence supported. The stall verdict now exists again — but in
+ * the shared schema, produced by the shared collector from the rule Q43 chose, so
+ * a watched match reads the same answer a batch does instead of computing its own.
+ * A watched match gets no verdict a measured one is denied, and vice versa.
  */
 export const spectatorSeatTelemetrySchema = boardSeatTelemetrySchema.extend({
   /** Final placement: 1 is the winner. Eliminated seats rank by exit order. */

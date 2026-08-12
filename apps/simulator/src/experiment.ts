@@ -25,6 +25,7 @@ import { runBatch, type BatchProgress } from './run-batch.js';
 import { runSearch, type GenerationReport, type SearchCheckpoint } from './deck-search/evolve.js';
 import { generatePopulation } from './deck-search/generate.js';
 import { aggregate, type Aggregate } from './analysis/aggregate.js';
+import { aggregateBoard, type BoardAggregate } from './analysis/board.js';
 import { clusterDecks, type ClusteringResult } from './analysis/clusters.js';
 import { cardPairs, type CardPair } from './analysis/pairs.js';
 import { analyzeInclusion, type InclusionAnalysis } from './analysis/inclusion.js';
@@ -90,6 +91,8 @@ export interface ExperimentOutcome {
   readonly outputDir: string;
   readonly records: readonly MatchRecord[];
   readonly aggregate: Aggregate;
+  /** The batch's unlimited-board reading, over every record (M04.3). */
+  readonly board: BoardAggregate;
   readonly clustering: ClusteringResult;
   readonly inclusion: InclusionAnalysis;
   readonly pairs: readonly CardPair[];
@@ -1029,6 +1032,11 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
 
   const settings = config.analysis;
   const agg = aggregate(records, { confidence: settings.confidence });
+  // Over `allRecords`, unlike every other analysis here: a match that hit the
+  // turn limit is the strongest stall candidate in a batch and usually holds its
+  // widest board, so excluding abnormal matches would bias the one question board
+  // telemetry exists to answer (M04.3). The report says which population it is.
+  const boardAggregate = aggregateBoard(allRecords);
   const clustering = clusterDecks(inputs.decks, primary.database, records, {
     confidence: settings.confidence,
   });
@@ -1155,6 +1163,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     })),
     settings,
     aggregate: agg,
+    board: boardAggregate,
     clustering,
     inclusion,
     pairs,
@@ -1281,10 +1290,14 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   });
   writeJson(paths.decks, inputs.decks);
   writeJson(paths.summary, {
-    schemaVersion: 2,
+    // 3 (M04.3): the batch's unlimited-board reading, so the report's board
+    // section is a view of the JSON like every other section rather than the only
+    // place those numbers exist.
+    schemaVersion: 3,
     configHash: configHashOf(config),
     thresholds: settings,
     aggregate: agg,
+    board: boardAggregate,
     clusters: clustering.clusters,
     clusterMatchups: clustering.matchups,
     inclusion,
@@ -1319,6 +1332,16 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
       { header: 'turns', value: (row) => row.turns },
       { header: 'invariant_failures', value: (row) => row.invariantFailures },
       { header: 'replay_path', value: (row) => row.replayPath },
+      // The unlimited board, per cell (M04.3): a pairing that consistently
+      // stalls or consistently produces a sixty-attacker combat is visible here
+      // and nowhere else, because every ordered pair appears exactly once.
+      { header: 'peak_units', value: (row) => row.peakUnits },
+      { header: 'peak_token_stack', value: (row) => row.peakTokenStack },
+      { header: 'longest_turn_actions', value: (row) => row.longestTurnActions },
+      { header: 'largest_combat_attackers', value: (row) => row.largestCombatAttackers },
+      { header: 'busiest_turn_triggers', value: (row) => row.busiestTurnTriggers },
+      { header: 'stall_classification', value: (row) => row.stallClassification },
+      { header: 'stall_streak', value: (row) => row.stallStreak },
     ]);
   }
 
@@ -1433,6 +1456,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     outputDir: inputs.outputDir,
     records: allRecords,
     aggregate: agg,
+    board: boardAggregate,
     clustering,
     inclusion,
     pairs,

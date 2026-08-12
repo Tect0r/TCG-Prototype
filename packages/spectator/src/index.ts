@@ -29,6 +29,21 @@ export {
 
 export { collectTelemetry } from './telemetry.js';
 
+/**
+ * The shared stall vocabulary, re-exported (M04.3).
+ *
+ * A watched match's telemetry *is* board telemetry, so the surfaces that render
+ * it — the summary screen, the `spectate` CLI — need the classification type and
+ * the rule's description without taking a second dependency on the collector
+ * package. Re-exported rather than restated: there is one definition.
+ */
+export {
+  DEFAULT_STALL_DEFINITION,
+  describeStallDefinition,
+  type StallClassification,
+  type StallDefinition,
+} from '@tcg/board-telemetry';
+
 export {
   groupEvents,
   GROUP_KINDS,

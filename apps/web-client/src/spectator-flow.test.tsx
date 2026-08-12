@@ -242,12 +242,16 @@ describe('AI Spectator', () => {
     expect(within(summary).getByText(/Peak units/)).toBeTruthy();
     expect(within(summary).getByText(/Largest stack/)).toBeTruthy();
     expect(within(summary).getByText(/Cmdr defeats/)).toBeTruthy();
-    // M04.2: attack opportunity, and no stall verdict. The summary says how many
-    // attack steps a seat could have attacked in and declined; it must not say
-    // "stalled: yes", because Q43 has not decided what that would mean.
+    // M04.2 evidence, then the M04.3 verdict cut from it. The summary says how
+    // many attack steps a seat could have attacked in and declined, and then what
+    // the configured rule concluded — with the streak and the threshold beside it,
+    // so the verdict is never a bare claim. The old "Board stall" wording, a
+    // threshold over silence, must not come back.
     expect(within(summary).getByText(/Attack steps/)).toBeTruthy();
-    expect(within(summary).getByText(/Stall verdict: undetermined/)).toBeTruthy();
+    expect(within(summary).getByText(/Stall verdict: (stalled|not stalled)/)).toBeTruthy();
+    expect(within(summary).getByText(/against a threshold of \d+/)).toBeTruthy();
     expect(within(summary).queryByText(/Board stall/)).toBeNull();
+    expect(within(summary).queryByText(/undetermined/)).toBeNull();
     // The caveat is not decoration: a single match is not balance evidence.
     expect(within(summary).getByText(/not about whether they are balanced/)).toBeTruthy();
   }, 40_000);
