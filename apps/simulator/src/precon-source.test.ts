@@ -274,7 +274,7 @@ describe('a precon experiment', () => {
     expect(outcome.records.filter((record) => record.termination !== 'victory')).toEqual([]);
 
     const manifest = JSON.parse(readFileSync(experimentPaths(dir).manifest, 'utf8'));
-    expect(manifest.schemaVersion).toBe(7);
+    expect(manifest.schemaVersion).toBe(8);
     expect(manifest.failedMatches).toBe(0);
     expect(manifest.abnormalMatches).toBe(0);
     expect(manifest.precons.map((entry: { preconId: string }) => entry.preconId)).toEqual([
@@ -365,6 +365,17 @@ describe('a precon experiment', () => {
       'reactive_control',
     ]);
     expect(manifest.deckConstruction.decksOffPlan).toBe(0);
+
+    // And what the whole document is for (M05.6). A real four-precon batch,
+    // flown properly, over shipped hand-authored decks, is still calibration:
+    // that is the point of the label, and it is derived from the classes above
+    // rather than from anything this experiment file could have set.
+    expect(outcome.report).toContain('## Calibration standing');
+    expect(manifest.calibration.standing).toBe('calibration');
+    expect(manifest.calibration.claim).toBe('final_balance');
+    expect(manifest.calibration.classesFlown).toEqual(['generic_heuristic']);
+    expect(manifest.calibration.classesMissing).toEqual(['human_playtest']);
+    expect(manifest.calibration.reasons.length).toBeGreaterThan(0);
 
     // The frozen environment is what pins the definitions those IDs named.
     const snapshot = JSON.parse(readFileSync(experimentPaths(dir).resolvedEnvironment, 'utf8'));

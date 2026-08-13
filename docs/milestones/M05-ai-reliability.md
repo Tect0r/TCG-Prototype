@@ -353,7 +353,7 @@ tranche. The replacement behaviour is therefore exercised at a smaller deck size
 over the same pool, and the constraint is written down here rather than hidden
 behind a test fixture.
 
-## M05.6 — Calibration before balance
+## M05.6 — Calibration before balance — **done (2026-08-13)**
 
 For each precon:
 
@@ -362,6 +362,118 @@ For each precon:
 - compare pilots on identical seeds;
 - run the ordered matchup matrix;
 - label results as calibration until human sanity checks agree.
+
+### Checklist
+
+- [x] `packages/bot-interface/src/calibration/` is the tactical fixture suite:
+      sixteen hand-authored boards over the four Wave 1 precons, each asking the
+      one question that board exists to ask. A fixture drives the real pilot
+      through the real observation boundary — `playerView` plus `legalActions`,
+      the same pair a networked bot receives — so nothing can be calibrated
+      against information no seat can see. The board itself is built with the
+      engine's own arrangement helpers, published for the first time as
+      `@tcg/rules-engine/test-fixtures`, because a fixture's board has to be a
+      board the engine could have produced and there is one definition of that.
+- [x] `CALIBRATION_FACETS` is the decision vocabulary — sequencing, targeting,
+      sacrifice, blocking, reaction — with `CALIBRATION_FACET_REGISTRY` a total
+      `Record` over it, so a facet added without a question and an applicability
+      rule is a compile error, and `calibrationFacetGaps()` is the runtime twin.
+      The three the milestone names, plus the two that are the whole identity of
+      two of the four shipped decks: a Guardian deck is a blocking deck and a
+      Containment deck is a Reaction deck, and leaving those out would have
+      calibrated every precon except at the thing it is for.
+- [x] **Applicability is derived from the cards, never claimed.**
+      `precon_goblin_swarm` contains no sacrifice and `precon_grave_sacrifice`
+      contains no Reaction, so neither is asked a question it cannot pose — and
+      that is read off `mechanicsUsedByAll` and the card types rather than typed
+      into a table beside the deck. Precon IDs arrive as content and are not a
+      union a `Record` can be total over, so the coverage guarantee the facet
+      vocabulary gets from the type system is made by `calibrationGaps()`
+      instead: a precon added to the format without a fixture, or a fixture filed
+      under a facet its own deck cannot pose, is a named failure.
+- [x] Every fixture records what the pilot **actually does**, and `knownGaps`
+      names the pilots that do not make the characteristic decision, with the
+      part of the valuation that cannot see the difference. The suite asserts the
+      record in **both directions**: a gap that closes fails exactly as loudly as
+      a characteristic decision that regresses, because both mean the written
+      record has stopped being true. A suite containing only decisions the pilots
+      already make would measure nothing.
+- [x] `compareCalibrationSuite` is the pilot comparison. The seed is a function
+      of the fixture ID alone, so every pilot faces the identical board, the
+      identical scripted opponent and the identical generator state — "compare
+      pilots on identical seeds" is true by construction rather than by
+      discipline, and a disagreement between two pilots is a difference in
+      valuation and cannot be a difference in luck. It ranks nothing:
+      `aggressive` and `defensive` are one agent class with two weight vectors,
+      and a fixture they answer differently is a fact about the fixture.
+      `CALIBRATED_PILOT_IDS` is a **view** of the agent class registry — the
+      pilots whose class can carry `play_quality` — so `random_legal` is excluded
+      by the M05.4 taxonomy rather than by a second list.
+- [x] `apps/simulator/src/analysis/calibration.ts` labels the run. The standing
+      is `claimCarriedBy(classes, 'final_balance')` and nothing else: derived from
+      the agent classes that flew, **not a field in an experiment file**, so no
+      configuration promotes a run from an instrument reading to a balance
+      conclusion. The report opens with `## Calibration standing` before the
+      limitations and before any number it could qualify (report schema 7 → 8),
+      and the manifest (7 → 8) and `summary.json` (6 → 7) carry the block so a
+      downstream tool can refuse to publish on a calibration run without parsing
+      prose.
+- [x] The ordered matchup matrix was run on the shipped four-precon
+      configuration and its result recorded below, under the standing this
+      tranche introduced.
+- [x] `packages/bot-interface/src/calibration/calibration.test.ts` asserts the
+      three things separately: the suite is complete, every fixture's recorded
+      behaviour is still true, and the pilots faced identical positions.
+      `apps/simulator/src/calibration.test.ts` covers the standing, the
+      unclassified-pilot withdrawal, the promoted case (reachable only by handing
+      the analysis a human class directly, which is what stops the standing being
+      a constant dressed up as a derivation) and the mixed run that is **not**
+      promoted by its strongest arm.
+
+### What the fixtures found
+
+Nine of the sixteen fixtures are answered characteristically by all three
+heuristic pilots, one splits, and six are answered by none. The six are not a
+verdict on the pilots; they are the list of things a match result could never
+have told anybody, and each is recorded on the fixture that found it:
+
+- **Removal targeting ignores lethality.** `rankChoiceOptions` orders by board
+  value, so Throwing Knife and Crude Bomb are aimed at the biggest body on the
+  table rather than at the one the damage actually defeats. Two fixtures, two
+  decks. `aggressive` gets the Goblin one right and `defensive` and `value` get
+  it wrong, for a reason unrelated to lethality: its weight vector values ATK
+  enough that the killable body ranks higher anyway. That split is the finding.
+- **Blocking prefers a trade to a block that loses nothing.** All three blocking
+  gaps are the same shape: `greedyBlocks` looks for the kill, so a 2/1 is thrown
+  in front of a 3/2 that a 2/5 would have eaten and survived. `aggressive`
+  additionally declines to block at all while its own Health is not in danger.
+- **Sequencing is scored one play at a time.** Nothing prices a play for what it
+  makes the _next_ play worth, so the Bastion Armory lands after the Guardian it
+  was meant to arm. The Goblin War Drum happens to land first, but because a
+  Relic outranks a 1-cost spell rather than because anything read the trigger.
+- **An additional sacrifice cost outweighs what it buys.** `costsValue` prices
+  the body given up and nothing prices the Thralls that replaced it, so the
+  Grave deck's own draw engine is never cast after its own converter.
+- **Nothing prices holding Energy for a window that has not opened.**
+  `unspentEnergyPenalty` is unconditional, so a held counter is always spent on a
+  body. This is the clearest single reason a Reaction deck cannot be judged by
+  this build's pilots, and it is `control` evidence — which M05.4 already
+  declines for every run this software can produce.
+
+All six are recorded rather than fixed. Fixing them is pilot-quality work; this
+tranche is the instrument that says which of them are worth fixing, and the
+suite fails the moment any of them silently changes.
+
+### Why the standing is derived rather than configured
+
+The milestone says "label results as calibration **until human sanity checks
+agree**". Modelling the human check as a field an operator sets would have made
+the label a promise rather than a reading. It is instead the `final_balance`
+claim from M05.4's registry, which only `human_playtest` carries and which no
+pilot in this build belongs to — so a person's agreement enters the system the
+same way any other evidence does, by flying the run, and not by editing JSON.
+Every batch this software can produce is therefore calibration, and says so in
+its first section with the reason and with what would have to change.
 
 ## Acceptance
 

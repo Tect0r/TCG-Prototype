@@ -52,6 +52,7 @@ import { computeFlags, type Flag, type SupportLimits } from './analysis/flags.js
 import { analyzeMechanicSupport, supportLimitsOf } from './analysis/support.js';
 import { analyzeAgentClasses, agentEvidenceOf } from './analysis/agent-classes.js';
 import { analyzeDeckConstruction } from './analysis/construction.js';
+import { analyzeCalibration } from './analysis/calibration.js';
 import { REPORT_SCHEMA_VERSION, renderReport } from './reporting/report.js';
 import { experimentPaths, ensureDir, writeCsv, writeJson } from './reporting/sinks.js';
 import { MatchStore } from './reporting/match-store.js';
@@ -264,7 +265,8 @@ async function runBatchExperiment(
         ? [
             'The ordered matchup matrix is a smoke and robustness artifact: it shows that every ' +
               'ordered pair of these decks terminates cleanly, and says nothing about which deck ' +
-              'is stronger. Balance conclusions wait for M05.',
+              'is stronger. The winner column is present for auditability; the calibration ' +
+              'standing above says what the run as a whole may be cited for.',
           ]
         : []),
       ...resolved.rejected.map(
@@ -1143,6 +1145,11 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   // not evidence about a strategy.
   const deckConstruction = analyzeDeckConstruction(inputs.decks);
 
+  // What the whole document is for (M05.6). Derived from the classes above and
+  // from nothing an experiment file can set, so no configuration promotes a run
+  // from an instrument reading to a balance conclusion.
+  const calibration = analyzeCalibration({ agentClasses });
+
   const flags = computeFlags({
     aggregate: agg,
     clustering,
@@ -1236,6 +1243,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     mechanicSupport,
     agentClasses,
     deckConstruction,
+    calibration,
     clustering,
     inclusion,
     pairs,
@@ -1302,7 +1310,14 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     // migratable from v6 for the third time for the same reason: a v6 run's
     // decks never recorded where they came from, and defaulting them to
     // `unconstrained` would be a claim rather than a reading.
-    schemaVersion: 7,
+    //
+    // 8 (M05.6): every manifest carries `calibration` — whether the run is an
+    // instrument reading or a balance conclusion, and what would have to change
+    // for that to move. Not migratable from v7: the standing is derived from the
+    // agent class taxonomy a run was judged against, and stamping today's
+    // reading onto an older manifest would be re-judging it rather than reading
+    // it.
+    schemaVersion: 8,
     experimentId: config.id,
     kind: config.kind,
     seed: config.seed,
@@ -1376,6 +1391,15 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
      */
     deckConstruction,
     /**
+     * What this run's results are *for* (M05.6).
+     *
+     * The frame the three blocks above sit inside: they qualify individual
+     * findings, and this qualifies the document. Derived from `agentClasses` and
+     * from nothing in the configuration, so a manifest cannot record a promotion
+     * that an operator granted itself.
+     */
+    calibration,
+    /**
      * The ordered matchup matrix this run produced, when it was asked for (M03.4).
      *
      * The counts are here rather than only in the artifact so that "every
@@ -1425,7 +1449,11 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     // 6 (M05.5): the deck-construction reading, so the report's construction
     // section is a view of this JSON like every other section, and a plan's
     // package integrity can be traced without opening the deck list.
-    schemaVersion: 6,
+    //
+    // 7 (M05.6): the calibration standing, so "this is not a balance verdict" is
+    // a machine-readable field a downstream tool can refuse to publish on rather
+    // than a sentence in the prose.
+    schemaVersion: 7,
     configHash: configHashOf(config),
     thresholds: settings,
     aggregate: agg,
@@ -1433,6 +1461,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     mechanicSupport,
     agentClasses,
     deckConstruction,
+    calibration,
     clusters: clustering.clusters,
     clusterMatchups: clustering.matchups,
     inclusion,

@@ -23,6 +23,15 @@ import type { AttackDeclaration, CardInstance, MatchState } from './schema/state
  * directly into a cloned `MatchState`. They keep every zone list and instance
  * field consistent — anything that bypasses them would test a state the engine
  * can never actually produce.
+ *
+ * Since M05.6 this module is a **published subpath** of the package,
+ * `@tcg/rules-engine/test-fixtures`, rather than a file only its own tests see.
+ * `@tcg/bot-interface`'s tactical calibration fixtures hand-author boards too,
+ * and a second set of arrangement helpers living over there would be a second
+ * definition of "a state the engine could have produced" — the one thing these
+ * functions exist to be. It is deliberately *not* re-exported from `index.ts`:
+ * an application that reaches for it has to name it, and naming it says what it
+ * is.
  */
 
 let cached: CardDatabase | undefined;

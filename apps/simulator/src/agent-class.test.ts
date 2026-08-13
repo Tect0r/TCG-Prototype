@@ -3,6 +3,7 @@ import { emptyBoardTelemetry } from '@tcg/board-telemetry';
 import { EVIDENCE_CLAIMS } from '@tcg/bot-interface';
 import { analyzeAgentClasses, agentEvidenceOf } from './analysis/agent-classes.js';
 import { analyzeDeckConstruction } from './analysis/construction.js';
+import { analyzeCalibration } from './analysis/calibration.js';
 import {
   FLAG_CLAIMS,
   FLAG_REASONS,
@@ -386,6 +387,7 @@ describe('the report', () => {
       }),
       agentClasses: analyzeAgentClasses({ pilotIds }),
       deckConstruction: analyzeDeckConstruction([DECK]),
+      calibration: analyzeCalibration({ agentClasses: analyzeAgentClasses({ pilotIds }) }),
       clustering: clusters,
       inclusion: analyzeInclusion([DECK], clusters, records, DEFAULT_ANALYSIS_SETTINGS),
       pairs: [],
@@ -431,5 +433,21 @@ describe('the report', () => {
     expect(report).toContain('| generic_heuristic | value |');
     expect(report).toContain('| random_legal | random_legal |');
     expect(report).toMatch(/More than one class flew this run/);
+  });
+
+  it('opens with the calibration standing, before any number it could qualify', () => {
+    const report = reportFor(['value'], [record('m_1', [{ pilotId: 'value', won: true }])]);
+    expect(report).toContain('## Calibration standing');
+    expect(report).toContain('**These results are calibration, not a balance verdict.**');
+    expect(report).toContain('| Standing | `calibration` |');
+    expect(report).toContain('| Classes still missing | `human_playtest` |');
+    expect(report).toMatch(/no configuration setting that changes this label/i);
+    // Before the limitations, which are before everything else.
+    expect(report.indexOf('## Calibration standing')).toBeLessThan(
+      report.indexOf('## Limitations, first'),
+    );
+    expect(report.indexOf('## Calibration standing')).toBeLessThan(
+      report.indexOf('## Agent classes'),
+    );
   });
 });

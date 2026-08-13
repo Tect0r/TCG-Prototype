@@ -28,6 +28,7 @@ import {
   constructionKindLabel,
   type DeckConstructionAnalysis,
 } from '../analysis/construction.js';
+import type { CalibrationStanding } from '../analysis/calibration.js';
 import { ARCHETYPE_REGISTRY, SUPPORT_DIMENSIONS } from '@tcg/card-data';
 import { EVIDENCE_CLAIM_QUESTIONS, type AgentClass, type EvidenceClaim } from '@tcg/bot-interface';
 import { describeStallDefinition } from '@tcg/board-telemetry';
@@ -76,8 +77,12 @@ import { round } from '../analysis/stats.js';
  * Version 7 (M05.5): every batch gains a deck-construction section separating
  * hand-authored, plan-generated and unconstrained decks, and naming the archetype
  * and package integrity of any deck measured against an authored deck plan.
+ *
+ * Version 8 (M05.6): every batch opens with its calibration standing — whether
+ * the run is an instrument reading or a balance conclusion — derived from the
+ * agent classes that flew it and stated before anything it might be mistaken for.
  */
-export const REPORT_SCHEMA_VERSION = 7;
+export const REPORT_SCHEMA_VERSION = 8;
 
 export interface ReportPilot {
   readonly id: string;
@@ -148,6 +153,12 @@ export interface ReportInputs {
    * evidence": the cards, the player, and the deck's provenance.
    */
   readonly deckConstruction: DeckConstructionAnalysis;
+  /**
+   * What this document is for (M05.6). Derived from `agentClasses` and from
+   * nothing an experiment file can set, so a run cannot be promoted by
+   * configuration.
+   */
+  readonly calibration: CalibrationStanding;
   readonly clustering: ClusteringResult;
   readonly inclusion: InclusionAnalysis;
   readonly pairs: readonly CardPair[];
@@ -212,12 +223,13 @@ export function renderReport(inputs: ReportInputs): string {
   lines.push(`# ${inputs.title}`);
   lines.push('');
   lines.push(
-    'Simulated evidence from heuristic pilots. **This is not a balance verdict.** ' +
+    `Simulated evidence from heuristic pilots, standing as **${inputs.calibration.standing}**. ` +
       'Everything below describes what these bots did with these decks under these rules; ' +
       'a card is worth reviewing when the evidence says so, and a human decides what to change.',
   );
   lines.push('');
 
+  section(lines, calibrationSection(inputs));
   section(lines, limitations(inputs));
   section(lines, provenance(inputs));
   section(lines, evidenceLegend());
@@ -254,6 +266,65 @@ function section(lines: string[], block: readonly string[]): void {
   lines.push('');
 }
 
+/* ------------------------------------------------------ calibration standing */
+
+/**
+ * What this document is for (M05.6).
+ *
+ * First, before the limitations and before any number, because it is the one
+ * statement that changes how every other section should be read. The three
+ * evidence blocks further down qualify individual findings; this one qualifies
+ * the report.
+ *
+ * Deliberately short and deliberately unconditional. It is derived from the
+ * agent classes that flew and from nothing else, so there is no configuration a
+ * reader has to check and no threshold to argue about.
+ */
+function calibrationSection(inputs: ReportInputs): string[] {
+  const standing = inputs.calibration;
+  const lines = ['## Calibration standing *(observation)*', ''];
+
+  lines.push(
+    standing.standing === 'calibration'
+      ? '**These results are calibration, not a balance verdict.** They say where to look; ' +
+          'they do not say what to change.'
+      : '**These results carry a balance conclusion.** Every class of agent that flew this run ' +
+          `carries \`${standing.claim}\`.`,
+  );
+  lines.push('');
+
+  if (standing.reasons.length > 0) {
+    for (const reason of standing.reasons) lines.push(`- ${reason}`);
+    lines.push('');
+  }
+
+  lines.push(`| Field | Value |`);
+  lines.push('| --- | --- |');
+  lines.push(`| Standing | \`${standing.standing}\` |`);
+  lines.push(`| Claim it rests on | \`${standing.claim}\` |`);
+  lines.push(
+    `| Classes that carry it | ${standing.claimCarriedBy.map((entry) => `\`${entry}\``).join(', ') || '—'} |`,
+  );
+  lines.push(
+    `| Classes that flew | ${standing.classesFlown.map((entry) => `\`${entry}\``).join(', ') || 'none recorded'} |`,
+  );
+  lines.push(
+    `| Classes still missing | ${standing.classesMissing.map((entry) => `\`${entry}\``).join(', ') || 'none'} |`,
+  );
+  lines.push(`| Agent class registry | v${standing.registryVersion} |`);
+  lines.push(`| Calibration schema | v${standing.schemaVersion} |`);
+  lines.push('');
+
+  lines.push(standing.promotionRequires);
+  lines.push('');
+  lines.push(
+    'Match-level calibration is what this document is. Decision-level calibration — whether a ' +
+      'pilot makes the characteristic play of a given deck on a hand-authored board — lives in ' +
+      'the tactical fixture suite beside the pilots, and is not measured by a batch.',
+  );
+  return lines;
+}
+
 /* ------------------------------------------------------------- limitations */
 
 function limitations(inputs: ReportInputs): string[] {
@@ -261,6 +332,11 @@ function limitations(inputs: ReportInputs): string[] {
   const lines = ['## Limitations, first', ''];
 
   const items = [
+    `This run stands as **${inputs.calibration.standing}**. ` +
+      (inputs.calibration.standing === 'calibration'
+        ? 'Nothing below is a balance conclusion, however large the sample: the standing is ' +
+          'derived from the agent classes that flew and is not a setting.'
+        : 'Every class that flew carries a final balance conclusion.'),
     `Pilots are transparent heuristics, not skilled players: ` +
       `${inputs.pilots.map((pilot) => `${pilot.id}@${pilot.version}`).join(', ')}. ` +
       'A card that rewards play the pilots cannot perform will look weak here.',

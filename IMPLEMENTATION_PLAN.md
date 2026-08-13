@@ -19,7 +19,7 @@ After verification, update the evidence and stop.
 | [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
 | [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete                |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.5 done (2026-08-13)         | M05.6                   |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)         | Complete                |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
 
@@ -520,6 +520,62 @@ what it frees, so `replace` declines on a full-size Wave 1 deck with an accurate
 reason instead of returning something smaller. That is the same constraint that
 already made crossover between two full-size Wave 1 decks report "no legal
 change" before this tranche, and it is the pool's property, not the operator's.
+
+Since M05.6, a pilot's judgement is measured **one hand-authored decision at a
+time**, and every batch says what it is for. `packages/bot-interface/src/calibration/`
+holds sixteen tactical fixtures over the four Wave 1 precons — a board a person
+reading the deck would recognise, the one question it exists to ask, and the
+characteristic answer — driven through the same `playerView` + `legalActions`
+pair a networked bot gets, so nothing is calibrated against information no seat
+can see. The boards are built with the engine's own arrangement helpers, now
+published as `@tcg/rules-engine/test-fixtures`, because a fixture's board has to
+be a board the engine could have produced and there is one definition of that.
+
+Two structural rules make the suite an instrument rather than a wish. The facet
+vocabulary — sequencing, targeting, sacrifice, blocking, reaction — is a total
+`Record`, so a facet added without a question is a compile error; and **whether a
+deck can pose a facet's question at all is derived from its cards**, so
+`precon_goblin_swarm` is never asked about sacrifice and `precon_grave_sacrifice`
+is never asked about Reactions, without anybody claiming so in a table. Precon
+IDs are content rather than a union, so `calibrationGaps()` makes the coverage
+guarantee the type system cannot. And a fixture records what the pilot **actually
+does**: `knownGaps` names the pilots that miss the characteristic decision and
+the part of the valuation that is blind to it, and the suite asserts the record
+in **both directions** — a gap that closes fails as loudly as a decision that
+regresses, because both mean the written record has gone stale.
+
+Pilots are compared on identical positions by construction: the seed is a
+function of the fixture ID alone, the board is fixed and the opponent is
+scripted, so a disagreement is a difference in valuation and cannot be luck.
+Nothing is ranked — `CALIBRATED_PILOT_IDS` is a view of the agent class registry
+(the pilots whose class carries `play_quality`), and `aggressive` beating
+`defensive` on a fixture is a fact about that fixture.
+
+Nine of the sixteen are answered characteristically by all three pilots, one
+splits, and six are answered by none — and the six are the point, because a match
+result cannot show you any of them. Removal is aimed by board value rather than
+by what the damage defeats; blocking prefers a trade to a block that loses
+nothing; sequencing is scored one play at a time, so the Bastion Armory lands
+after the Guardian it was meant to arm; an additional sacrifice cost outweighs
+what it buys, so the Grave deck never casts its own draw engine; and nothing
+prices holding Energy for a window that has not opened, which is the clearest
+single reason a Reaction deck cannot be judged by these pilots. All six are
+recorded, not fixed: this tranche is the instrument that says which are worth
+fixing.
+
+Every batch now opens with `## Calibration standing`, before the limitations and
+before any number it could qualify. The standing is
+`claimCarriedBy(classes, 'final_balance')` and nothing else — derived from the
+agent classes that flew, **not a field in an experiment file** — so no
+configuration promotes a run from an instrument reading to a balance conclusion,
+and the milestone's "until human sanity checks agree" is satisfied by a person
+flying the run rather than by editing JSON. The shipped four-precon ordered
+matrix was re-run under it: 16/16 ordered pairs, 16/16 clean, standing
+`calibration`. Three version moves, all refusals: report 7 → 8, manifest 7 → 8,
+`summary.json` 6 → 7. `CALIBRATION_SUITE_VERSION` starts at 1 and pins the
+fixtures a calibration citation was made against; a `knownGaps` entry moving does
+not bump it, because that is a measurement changing and the instrument is the
+same. M05 is complete.
 
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and
