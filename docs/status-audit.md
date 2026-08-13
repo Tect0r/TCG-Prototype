@@ -9,7 +9,7 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `7291756241c37dab4df0b272bd9392c845fa9d85`  |
+| Commit           | `8af1d78a8579ced286bda007146d7de0242364b7`  |
 | Working tree     | dirty — the audit includes uncommitted work |
 | Taken on         | 2026-08-13                                  |
 | Node             | v24.15.0                                    |
@@ -238,7 +238,7 @@ No match record observes (31):
 | Q37      | Should the pilots be better players than they are?                     | open          | no                      |
 | Q38      | When is a multiplayer balance run worth it?                            | open          | no                      |
 | Q39      | What is the Reaction chaining and ordering policy? — answered 2026-... | answered      | no                      |
-| Q40      | Should root `cards.json` and `precons.json` be deleted?                | open          | no                      |
+| Q40      | Should root `cards.json` and `precons.json` be deleted? — answered ... | answered      | no                      |
 | Q41      | Are unimplemented cards visible in the deck builder, and is there a... | answered      | no                      |
 | Q42      | What makes two Tokens "identical" for visual stacking? — answered 2... | answered      | no                      |
 | Q43      | What counts as a board stall? — answered 2026-08-12                    | answered      | no                      |
@@ -248,7 +248,7 @@ No match record observes (31):
 | Q47      | May a Reaction answer another Reaction?                                | open          | yes                     |
 | Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | open          | yes                     |
 
-16 question(s) are open in the question file and not on the plan's
+15 question(s) are open in the question file and not on the plan's
 short list, which is the curated set a tranche might have to stop on rather than an index.
 
 No question the plan calls open is missing or answered in the question file.
@@ -258,7 +258,7 @@ No question the plan calls open is missing or answered in the question file.
 | Reading                                  | Value                                                                                                                                                                                                                                                                       |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Workspaces                               | `packages/board-telemetry`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
-| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `cards.json`, `eslint.config.js`, `package-lock.json`, `package.json`, `precons.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                        |
+| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                      |
 | Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                        |
 | Architecture decision records            | 22                                                                                                                                                                                                                                                                          |
 | Milestone documents                      | 7                                                                                                                                                                                                                                                                           |

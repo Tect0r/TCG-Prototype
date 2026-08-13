@@ -380,11 +380,72 @@ Keep milestone files as concise completion records or archive them under
       Markdown files resolve, including the two new documents and every inbound
       link to a section the plan no longer has.
 
-## M07.6 — Root JSON decision
+## M07.6 — Root JSON decision — **done (2026-08-13)**
 
 Re-run exact parity checks between tracked root `cards.json`/`precons.json` and
 generated content. Ask the owner whether to delete the redundant imports. Until
 explicit approval, keep them and state that generated `content/` is authoritative.
+
+### Checklist
+
+- [x] **The parity check was re-run, not remembered.**
+      `scripts/lib/root-catalog-parity.ts` (`8af1d78`) read both root catalogues,
+      read the shipped content through `loadBundledCardData` and `bundledFormat` —
+      the same calls the product makes — and compared them field by field in
+      **both** directions. The two shapes are mapped onto each other explicitly
+      rather than skipped where they differ: the authored catalogue is flat, and a
+      runtime card nests `faction`, `identity` and `power` under `design` and
+      calls `rulesText` `displayText`. Colour identities, keyword lists and a
+      precon's `cardIds` are compared as sets, because all three say in their own
+      schemas that order carries no meaning; a substitution still changes the set
+      and is still caught.
+- [x] The reading: **155 cards and 4 precons on both sides**, nothing present on
+      one side only, and **every structural field equal** — name, type, colour
+      identity, cost, attack, health, keywords, collectibility, all three design
+      labels, every decklist, and the deck size, singleton and
+      commander-outside-deck rules the root file states against the format that
+      enforces them.
+- [x] **Six cards differed, all in printed rules text, and the root copy was the
+      stale one in every case.** `cruel_preacher`, `soul_furnace` and
+      `retaliating_guard` aimed damage at "the enemy Commander" rather than at an
+      opponent — the distinction `CLAUDE.md` locks; `dismantle_the_device` said
+      "Destroy the active Relic" against the Defeat vocabulary;
+      `containment_pulse` said "Token stack", which M06.1 established is a drawing
+      decision rather than a game object; and `chief_containment_scholar` stated
+      neither the zone nor the timing its Commander ability has. So the root pair
+      was not an inert duplicate but an unread, unlinted second copy of every
+      card's rules text that taught three rules this game does not have.
+- [x] **The owner was asked with that evidence in hand and approved deletion**, so
+      the tranche's default — keep them and state that `content/` is
+      authoritative — did not apply. `cards.json` and `precons.json` are deleted,
+      and `docs/status-audit.md`'s root-file inventory is regenerated to match.
+- [x] The evidence outlives the files.
+      [`docs/history/retired-root-documents.md`](../history/retired-root-documents.md#the-two-root-json-catalogues)
+      gains a section recording what the two catalogues were, where each one's
+      content lives now, the full parity reading, and a two-command recipe that
+      restores the files **and** the checker from `8af1d78` and re-runs it. Both
+      are tracked, so nothing is lost. The one citation that pointed at them —
+      the retired-documents table's note that root `cards.json` still named
+      `CLAUDE_RULESET_UPDATE.md` — is corrected in the same change.
+- [x] The checker went with the files rather than remaining as a command that can
+      never find its input again, along with its 14 tests and the `parity:root`
+      script. Its verdict is recorded in prose and asserted nowhere, because there
+      is nothing left to assert it against; what keeps `content/` honest is the
+      content build, `lintDisplayText` and the audit, none of which the deleted
+      files were ever part of.
+- [x] **Q40 is answered**, with the ruling and the date, and moved out of the open
+      sections — leaving `docs/open-questions.md` with no `Repository` section at
+      all. The question ledger stays clean: Q40 was never on the plan's short
+      list, so the audit's open-but-unlisted count falls by one and no
+      contradiction appears.
+- [x] No rule, schema, protocol or behaviour changed. Nothing outside `docs/`,
+      the deleted files and the deleted tooling was touched, and no version
+      constant moved.
+- [x] Verified: `npm run verify` passes (2057 tests in 101 files, back to the
+      pre-tranche totals now that the parity tests are gone with their subject),
+      `npm run audit:check` reports the audit current, and the parity command
+      itself was run and recorded at `8af1d78`, where `npm run verify` also
+      passed with the 14 extra tests (2071 in 102 files).
 
 ## M07.7 — Final consistency test
 

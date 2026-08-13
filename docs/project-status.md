@@ -401,7 +401,7 @@ readable without becoming a lie.
 
 ### M07 — Documentation consolidation — in progress
 
-[M07](milestones/M07-documentation-consolidation.md). M07.1–M07.5 are done.
+[M07](milestones/M07-documentation-consolidation.md). M07.1–M07.6 are done.
 
 - **M07.1** — the project's status is generated: `npm run audit:status` writes
   [status-audit.md](status-audit.md) from the code and content, and a stale
@@ -420,9 +420,15 @@ readable without becoming a lie.
   the current state and keeps no countable fact, and
   [history/retired-root-documents.md](history/retired-root-documents.md) records
   what the root used to hold and where each document's content lives now.
+- **M07.6** — the root `cards.json` / `precons.json` design catalogues are
+  deleted (Q40). The parity check that settled it found the import faithful in
+  every structural field and found six cards whose printed text had gone stale in
+  the root copy only — "the enemy Commander", "Destroy the active Relic", "Token
+  stack". Generated `content/` is now the only card text in the tree; the reading
+  and how to reproduce it are in
+  [history/retired-root-documents.md](history/retired-root-documents.md#the-two-root-json-catalogues).
 
-Remaining: M07.6 (the root `cards.json` / `precons.json` decision, Q40), M07.7
-(the automated consistency checks).
+Remaining: M07.7 (the automated consistency checks).
 
 ---
 

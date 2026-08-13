@@ -26,7 +26,7 @@ checklist in the milestone file, then stop.
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | Complete (2026-08-12) | —            |
 | [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | Complete (2026-08-13) | —            |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Complete (2026-08-13) | —            |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1–M07.5 done      | **M07.6**    |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1–M07.6 done      | **M07.7**    |
 
 ## Where the record lives
 

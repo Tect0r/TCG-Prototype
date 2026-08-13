@@ -376,23 +376,6 @@ point. Related to Q35.
 
 ---
 
-## Repository
-
-### Q40. Should root `cards.json` and `precons.json` be deleted?
-
-**Blocks nothing. Purely cleanup, and it is M07.6's job to ask you properly.**
-
-Both files are tracked in git, so deleting them is reversible through history —
-the earlier version of this entry said they were untracked and called deletion
-irreversible, which was wrong.
-
-They were verifiably migrated into `content/`, and generated `content/` is
-authoritative. Keeping them means two sources of truth for card text, which is
-the drift risk the ruleset update warned about. M07.6 re-runs the exact parity
-check and puts the choice to you; until you approve, they stay.
-
----
-
 ## Answered
 
 Compressed to the ruling and the date. The reasoning lives in the ADR, the
@@ -558,6 +541,20 @@ One part of the original question is **not** settled by the implementation and i
 now tracked separately as **Q47**: playing a Reaction restarts the round of
 priority, which lets one Reaction answer another, and `CLAUDE.md`'s product rules
 say it should not. Recorded here in M07.2.
+
+### Q40. Should root `cards.json` and `precons.json` be deleted? — answered 2026-08-13
+
+**Deleted.** M07.6 re-ran the parity check first, and it is what settled it: 155
+cards and 4 precons on both sides, every structural field equal — name, type,
+colour identity, cost, statline, keywords, collectibility, all three design
+labels, every decklist and the format's construction rules — and six cards whose
+printed text differed, with the **root copy stale in every one**. It still said
+"the enemy Commander" where damage goes to a player, "Destroy the active Relic"
+where the vocabulary is Defeat, and "Token stack" where a stack is a drawing
+decision. Generated `content/` is the single source of truth and nothing in the
+codebase ever opened either file. Both are recoverable from git history, and the
+full reading with its reproduction recipe is in
+[history/retired-root-documents.md](history/retired-root-documents.md#the-two-root-json-catalogues).
 
 ### Q41. Are unimplemented cards visible in the deck builder, and is there a format picker? — answered 2026-08-13
 
