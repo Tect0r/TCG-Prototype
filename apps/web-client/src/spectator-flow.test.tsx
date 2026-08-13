@@ -256,6 +256,32 @@ describe('AI Spectator', () => {
     expect(within(summary).getByText(/not about whether they are balanced/)).toBeTruthy();
   }, 40_000);
 
+  it('unstacks tokens without changing a number the match produced', async () => {
+    // M06's acceptance criterion on the surface where it is easiest to doubt:
+    // the replay was recorded before this screen rendered anything, so a
+    // presentation toggle cannot reach it. Checked rather than argued.
+    const user = userEvent.setup();
+    renderApp();
+    await startMatch(user);
+
+    const controls = screen.getByRole('group', { name: 'Playback controls' });
+    await user.click(within(controls).getByRole('button', { name: 'Skip to result' }));
+    const summary = await screen.findByRole(
+      'region',
+      { name: 'Match result' },
+      { timeout: 20_000 },
+    );
+    const before = summary.textContent;
+
+    const toggle = within(controls).getByRole('button', { name: 'Stack tokens' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    expect(screen.getByRole('region', { name: 'Match result' }).textContent).toBe(before);
+    expect(document.querySelector('.spectator-board')).toBeTruthy();
+  }, 40_000);
+
   it('leaves the deck builder and the online match screens untouched', async () => {
     const user = userEvent.setup();
     renderApp();

@@ -1,15 +1,16 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { CardDatabase } from '@tcg/card-data';
 import {
   commanderDeployCost,
-  currentAttack,
-  currentHealth,
   DEFAULT_RULES_CONFIG,
-  type CardInstance,
+  instanceView,
+  type CardInstanceView,
   type MatchState,
   type PlayerId,
 } from '@tcg/rules-engine';
 import type { InformationMode, SpectatorSeat } from '@tcg/spectator';
+import { groupEntities, type GroupingSource } from '../../lib/token-grouping.js';
+import { TileList } from '../TokenStack.js';
 
 /**
  * All two to four boards, rendered from the authoritative state of one playback
@@ -22,9 +23,20 @@ import type { InformationMode, SpectatorSeat } from '@tcg/spectator';
  * — and nothing in this file is reachable from a human or online match, which
  * goes through `MatchBoard` and its `PlayerView` and always will.
  *
- * Identical Tokens are stacked visually. The stack is presentation only: each
- * Token keeps its own instance ID, its own damage and its own exhausted state,
- * and the count on the badge is the number of individual game objects behind it
+ * ## Tokens are stacked by the same rule as a match (M06.3)
+ *
+ * Until M06.3 this file stacked Tokens by **definition alone** — the reading
+ * Q42 measured and rejected — so the worst board Wave 1 produces, 117 Goblins
+ * on one seat, was one chip saying ×117 and a viewer could not see that 64 of
+ * them could not attack. It now uses `groupEntities`, the layer the match board
+ * uses, over battlefield units projected through the engine's own
+ * `instanceView`. Both surfaces therefore group by the same eleven fields read
+ * out of the same function, which is what makes "Analysis Mode must not change
+ * grouping semantics" true by construction rather than by inspection: the mode
+ * decides whether a *hand* is projected, and a hand is not part of a tile.
+ *
+ * A stack is presentation only. Each Token keeps its own instance ID, its own
+ * damage and its own Ready state, and expanding a tile shows every one of them
  * (ruleset update §7).
  */
 
@@ -37,76 +49,76 @@ export interface SpectatorBoardProps {
   readonly visibleHands: Readonly<Record<PlayerId, readonly string[]>>;
   /** Instances the current playback step is about. */
   readonly highlight: ReadonlySet<string>;
+  /** Off draws every Token as its own chip — the pre-M06 board exactly. */
+  readonly grouping?: boolean;
 }
 
-interface TokenStack {
-  readonly definitionId: string;
-  readonly members: readonly CardInstance[];
-}
-
-/** Groups a battlefield into single units and visual Token stacks, in order. */
-function layOut(
+/**
+ * Every battlefield unit on the table, as a client would be shown it.
+ *
+ * The projection is the engine's, not a second reading of `CardInstance`:
+ * `instanceView` is what builds a `PlayerView`'s instances, so a Token here and
+ * the same Token in a match carry identical attack, health, marked damage,
+ * keywords, Newly Deployed and Barrier state — and a field added to the
+ * grouping key is added to both at once. Only battlefield units are projected,
+ * so no hand can reach this map however the information mode is set.
+ */
+function battlefieldSource(
   state: MatchState,
-  instanceIds: readonly string[],
-): { singles: CardInstance[]; stacks: TokenStack[] } {
-  const singles: CardInstance[] = [];
-  const stacks = new Map<string, CardInstance[]>();
-
-  for (const instanceId of instanceIds) {
-    const instance = state.instances[instanceId];
-    if (!instance) continue;
-    if (!instance.isToken) {
-      singles.push(instance);
-      continue;
+  seats: readonly SpectatorSeat[],
+  database: CardDatabase,
+): GroupingSource {
+  const instances: Record<string, CardInstanceView> = {};
+  for (const seat of seats) {
+    const player = state.players[seat.playerId];
+    if (!player) continue;
+    for (const instanceId of player.units) {
+      // The viewer argument only decides whether a card in that seat's *hand*
+      // carries its current cost; a unit on a battlefield reports null to
+      // everyone, so it cannot smuggle anything in here.
+      const view = instanceView(state, database, instanceId, DEFAULT_RULES_CONFIG, seat.playerId);
+      if (view) instances[instanceId] = view;
     }
-    const group = stacks.get(instance.definitionId) ?? [];
-    group.push(instance);
-    stacks.set(instance.definitionId, group);
   }
-
-  return {
-    singles,
-    stacks: [...stacks].map(([definitionId, members]) => ({ definitionId, members })),
-  };
+  return { instances, combat: state.combat };
 }
 
 function UnitChip({
   instance,
   database,
   highlighted,
-  count,
+  ariaLabel,
+  role,
 }: {
-  readonly instance: CardInstance;
+  readonly instance: CardInstanceView | undefined;
   readonly database: CardDatabase;
   readonly highlighted: boolean;
-  /** Set for a visual Token stack; the stack still holds `count` game objects. */
-  readonly count?: number;
+  /** Set only for a member of an expanded stack, where the chips are identical. */
+  readonly ariaLabel?: string | undefined;
+  readonly role?: string | undefined;
 }) {
+  if (!instance) return null;
   const definition = database.get(instance.definitionId);
-  const attack = definition ? currentAttack(instance, definition) : 0;
-  const health = definition ? currentHealth(instance, definition) : 0;
 
   const classes = [
     'spectator-unit',
     instance.exhausted ? 'spectator-unit--exhausted' : '',
     highlighted ? 'spectator-unit--highlight' : '',
-    instance.newlyDeployed ? 'spectator-unit--new' : '',
+    instance.summoningSick ? 'spectator-unit--new' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <div className={classes} title={definition?.displayText ?? instance.definitionId}>
-      <span className="spectator-unit__name">
-        {definition?.name ?? instance.definitionId}
-        {count !== undefined && count > 1 && (
-          <span className="spectator-unit__count" aria-label={`${count} copies`}>
-            ×{count}
-          </span>
-        )}
-      </span>
+    <div
+      className={classes}
+      title={definition?.displayText ?? instance.definitionId}
+      role={role}
+      aria-label={ariaLabel}
+    >
+      <span className="spectator-unit__name">{definition?.name ?? instance.definitionId}</span>
       <span className="spectator-unit__stats">
-        {attack}/{Math.max(0, health - instance.markedDamage)}
+        {instance.attack}/{Math.max(0, instance.health - instance.markedDamage)}
         {instance.markedDamage > 0 ? ` (${instance.markedDamage})` : ''}
       </span>
     </div>
@@ -120,11 +132,38 @@ export function SpectatorBoard({
   mode,
   visibleHands,
   highlight,
+  grouping = true,
 }: SpectatorBoardProps) {
   const bySeat = useMemo(
     () => seats.map((seat) => ({ seat, player: state.players[seat.playerId] })),
     [seats, state],
   );
+  const source = useMemo(() => battlefieldSource(state, seats, database), [state, seats, database]);
+  /**
+   * Which stacks are open, keyed by seat and grouping key. A key is a function
+   * of the shared state, so a stack stays open while playback steps through
+   * frames that leave that state alone, and the ones that change close on their
+   * own instead of following an index that has moved underneath them.
+   */
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
+  const toggleGroup = (groupId: string): void =>
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (!next.delete(groupId)) next.add(groupId);
+      return next;
+    });
+  const nameOf = (playerId: string): string =>
+    seats.find((seat) => seat.playerId === playerId)?.name ?? playerId;
+  /**
+   * The Tokens this playback step is about, marked so they leave their stack.
+   *
+   * The same field a match uses for the viewer's own half-made decision
+   * (M06.2), and for the same reason: a mark that did not split the tile would
+   * be a highlight on a chip standing for a hundred Tokens, which says the step
+   * was about all of them. This says exactly which.
+   */
+  const stepMark = (instanceId: string): string | null =>
+    highlight.has(instanceId) ? 'this step' : null;
 
   const priorityHolder =
     state.reactionWindow && !state.reactionWindow.closed
@@ -143,8 +182,21 @@ export function SpectatorBoard({
         const deployCost = definition
           ? commanderDeployCost(player, definition, DEFAULT_RULES_CONFIG)
           : null;
-        const { singles, stacks } = layOut(state, player.units);
+        const entries = groupEntities(source, player.units, {
+          enabled: grouping,
+          selectionOf: stepMark,
+        });
         const hand = visibleHands[seat.playerId] ?? [];
+        const renderUnit = (instanceId: string, ariaLabel?: string) => (
+          <UnitChip
+            key={instanceId}
+            instance={source.instances[instanceId]}
+            database={database}
+            highlighted={highlight.has(instanceId)}
+            ariaLabel={ariaLabel}
+            role={ariaLabel === undefined ? undefined : 'listitem'}
+          />
+        );
 
         const classes = [
           'spectator-seat',
@@ -203,30 +255,21 @@ export function SpectatorBoard({
             </p>
 
             <div className="spectator-seat__row" aria-label={`${seat.name} units`}>
-              {singles.length === 0 && stacks.length === 0 && (
-                <span className="spectator-seat__empty">no units</span>
-              )}
-              {singles.map((instance) => (
-                <UnitChip
-                  key={instance.instanceId}
-                  instance={instance}
-                  database={database}
-                  highlighted={highlight.has(instance.instanceId)}
-                />
-              ))}
-              {stacks.map((stack) => {
-                const first = stack.members[0];
-                if (!first) return null;
-                return (
-                  <UnitChip
-                    key={`${stack.definitionId}:${first.instanceId}`}
-                    instance={first}
-                    database={database}
-                    count={stack.members.length}
-                    highlighted={stack.members.some((member) => highlight.has(member.instanceId))}
-                  />
-                );
-              })}
+              {entries.length === 0 && <span className="spectator-seat__empty">no units</span>}
+              <TileList
+                entries={entries}
+                source={source}
+                database={database}
+                idPrefix={seat.playerId}
+                variant="spectator"
+                // Nobody can click a spectator chip, so its members are a list
+                // to read rather than a set of things to choose between.
+                membersRole="list"
+                expandedGroups={expandedGroups}
+                onToggleGroup={toggleGroup}
+                nameOf={nameOf}
+                renderEntity={renderUnit}
+              />
             </div>
 
             {player.relics.length > 0 && (

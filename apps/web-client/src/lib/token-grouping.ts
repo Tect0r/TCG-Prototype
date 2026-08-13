@@ -1,4 +1,4 @@
-import type { CardInstanceView, PlayerView } from '@tcg/rules-engine';
+import type { CardInstanceView } from '@tcg/rules-engine';
 
 /**
  * The presentation-only Token grouping layer (M06.1, answering Q42).
@@ -66,6 +66,19 @@ import type { CardInstanceView, PlayerView } from '@tcg/rules-engine';
  * units, a pending choice's `validEntityIds`, the sources offering an activated
  * ability. Anything the view does not describe as a Token comes back as its own
  * tile, so a player ID or a `yes`/`no` option is passed through untouched.
+ *
+ * ## Not only the match client (M06.3)
+ *
+ * The source is a **projection**, not a `PlayerView`: anything carrying
+ * `CardInstanceView`s and a combat state can be laid out. A `PlayerView`
+ * satisfies it as it stands, and the AI spectator — which reads `MatchState`
+ * directly, because no human sits at a seat — satisfies it by projecting the
+ * battlefield through the engine's own `instanceView`. That is deliberate. Both
+ * surfaces group by the same eleven fields read out of the same function, so
+ * "the spectator must not change grouping semantics" is a property of the code
+ * rather than a pair of readings somebody has to keep in step. It also means
+ * the layer cannot see a hand: a projection is built by its caller, and what a
+ * caller may project is decided where it already was.
  */
 
 /** Which fields of the view a Token's tile identity is cut from. */
@@ -85,6 +98,39 @@ export const TOKEN_GROUP_KEY_FIELDS = [
   /** The viewer's own uncommitted pick, if any (M06.2). */
   'selection',
 ] as const;
+
+/**
+ * Everything the layer reads (M06.3).
+ *
+ * Structural on purpose: a `PlayerView` is one, and so is a spectator's
+ * projection of a playback frame. Nothing else is required, and in particular
+ * no hand, no deck and no legality — a tile is cut from public board state and
+ * the viewer's own local marks, and this type is what says so.
+ */
+export interface GroupingSource {
+  readonly instances: Readonly<Record<string, CardInstanceView | undefined>>;
+  readonly combat: {
+    readonly attacks: readonly {
+      readonly attackerInstanceId: string;
+      readonly defenderPlayerId: string;
+    }[];
+    readonly blocks: readonly {
+      readonly attackerInstanceId: string;
+      readonly blockerInstanceId: string;
+    }[];
+    /**
+     * Blocker submissions the source is willing to show. A `PlayerView` carries
+     * only the viewer's own; a spectator frame carries every seat's, and that is
+     * the spectator's existing licence rather than a new one.
+     */
+    readonly submissions: readonly {
+      readonly blocks: readonly {
+        readonly attackerInstanceId: string;
+        readonly blockerInstanceId: string;
+      }[];
+    }[];
+  };
+}
 
 /** What this Token is doing in the combat currently on the board. */
 export interface TokenCombatRole {
@@ -107,7 +153,7 @@ const NOT_IN_COMBAT: TokenCombatRole = Object.freeze({
  * blockers and their own decision, already on their screen. No other seat's
  * submission is read, because `PlayerView` never carries one.
  */
-function combatRoles(view: PlayerView): ReadonlyMap<string, TokenCombatRole> {
+function combatRoles(view: GroupingSource): ReadonlyMap<string, TokenCombatRole> {
   const roles = new Map<string, TokenCombatRole>();
   const put = (instanceId: string, patch: Partial<TokenCombatRole>): void => {
     const current = roles.get(instanceId) ?? NOT_IN_COMBAT;
@@ -157,10 +203,14 @@ export function tokenGroupKey(
 }
 
 /**
- * What the viewer has already picked, in the words shown on the tile.
+ * What the surface has marked this entity as, in the words shown on the tile.
  *
- * `null` is "not picked". Anything else both splits the group and is printed on
- * it, which is what keeps the two from disagreeing.
+ * `null` is "unmarked". Anything else both splits the group and is printed on
+ * it, which is what keeps the two from disagreeing. It is always local to the
+ * surface: the viewer's own uncommitted pick in a match (M06.2), and the Tokens
+ * the playback step being watched is about in the spectator (M06.3) — which is
+ * how one Token out of a hundred-strong stack can be shown to be the one that
+ * just died.
  */
 export type SelectionMarker = string | null;
 
@@ -225,7 +275,7 @@ export const DEFAULT_MINIMUM_GROUP_SIZE = 2;
  * takes its own arrival position rather than the group's.
  */
 export function groupEntities(
-  view: PlayerView,
+  view: GroupingSource,
   instanceIds: readonly string[],
   options: GroupEntitiesOptions = {},
 ): TileEntry[] {

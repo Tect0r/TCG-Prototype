@@ -49,6 +49,8 @@ export function SpectatorScreen() {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<PlaybackSpeed>('1x');
   const [mode, setMode] = useState<InformationMode>('normal');
+  /** Token stacking, on by default (M06.3). Presentation only, like the mode. */
+  const [grouping, setGrouping] = useState(true);
 
   const playback = useMemo(
     () =>
@@ -242,6 +244,8 @@ export function SpectatorScreen() {
         mode={mode}
         position={position}
         total={total}
+        grouping={grouping}
+        onGrouping={setGrouping}
         onPlayPause={() => setPlaying((current) => !current)}
         onStep={() => {
           setPlaying(false);
@@ -291,6 +295,7 @@ export function SpectatorScreen() {
         mode={mode}
         visibleHands={visibleHands}
         highlight={highlight}
+        grouping={grouping}
       />
 
       {decision && (

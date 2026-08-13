@@ -240,7 +240,22 @@ function redactCombat(state: MatchState, viewerId: PlayerId): CombatState {
   };
 }
 
-function instanceView(
+/**
+ * One card as a client may read it.
+ *
+ * Exported since M06.3 because it is the single definition of "what a card
+ * looks like outside the engine", and a second surface needed one: the AI
+ * spectator reads `MatchState` directly, and projecting its battlefield through
+ * this function is what lets it group Tokens by the *same* eleven fields the
+ * match client does rather than by a hand-rolled second reading of the state.
+ *
+ * It reveals nothing on its own: the caller decides which instances to project,
+ * which is where every hidden-information rule already lives (`playerView`
+ * below, `SpectatorPlayback.handFor` in the spectator). `viewerId` only decides
+ * whether a card **in that player's hand** carries its current cost; for a card
+ * anywhere else `energyCost` is null whoever asks.
+ */
+export function instanceView(
   state: MatchState,
   database: CardDatabase,
   instanceId: InstanceId,

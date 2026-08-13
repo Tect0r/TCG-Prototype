@@ -164,7 +164,7 @@ Keyboard and screen-reader interaction must expose count and selectable members.
       choice with one exact Token, activating the exact source of two identical
       ones, and opening/naming/closing a stack from the keyboard alone).
 
-## M06.3 — Cross-view consistency
+## M06.3 — Cross-view consistency — **done (2026-08-13)**
 
 Reuse the presentation grouping in spectator and normal match views where
 practical. Normal spectator mode exposes only public information; Analysis mode
@@ -173,12 +173,59 @@ may show private zones but must not change grouping semantics.
 Add visual/view-model tests for large groups, damaged members, exhaustion,
 Barrier consumption, combat selection, and replay stepping.
 
-## Acceptance
+### Checklist
 
-- Large Token boards remain readable.
-- Every Token remains an independently addressable engine instance.
-- Grouping on/off produces identical legal actions, engine events, replay hashes,
-  and telemetry.
+- [x] The spectator's own grouping is **deleted, not adjusted**. It stacked
+      Tokens by definition alone — the reading Q42 measured and rejected — so
+      the worst board Wave 1 makes was one chip saying ×117 and a viewer could
+      not see that 64 of them could not attack. It now calls `groupEntities`,
+      the layer the match board calls.
+- [x] Both surfaces group by the **same projection**, not by two readings of the
+      state. `instanceView` — the function that builds every `PlayerView`'s
+      instances — is now exported from `@tcg/rules-engine`, and the spectator
+      projects each seat's battlefield through it. A field added to the grouping
+      key therefore reaches both surfaces at once, and the two cannot drift.
+      `groupEntities` takes a structural `GroupingSource` (instances plus a
+      combat state) rather than a `PlayerView`, which is what lets a spectator
+      frame satisfy it without anything being redacted twice.
+- [x] Analysis Mode cannot change grouping semantics, structurally: only
+      **battlefield** units are ever projected into the source, and the mode
+      decides whether a _hand_ is shown. A hand is not part of a tile, and the
+      test asserts the tiles are identical in both modes on the same frame.
+- [x] `components/TokenStack.tsx` is the shared tile: one grouping rule, one
+      summary, one expansion affordance, one set of accessible names. The two
+      surfaces pass in the two things that genuinely differ — a class-name
+      variant, and the function that draws one entity. A spectator's members are
+      `listitem`s inside a `list` rather than a `group`, because a chip nobody
+      can click is a list entry, and calling it anything else would promise an
+      affordance that is not there.
+- [x] Replay stepping uses M06.2's `selection` field: the Tokens the current
+      step is about are marked `this step` and so leave their stack. A highlight
+      painted on a tile standing for a hundred Tokens would say the step was
+      about all hundred; this says exactly which.
+- [x] The spectator gains the same **Stack tokens** toggle the match board has.
+      It changes no frame, no replay and no telemetry — the match was over
+      before the screen rendered anything — and that is now asserted rather than
+      argued: the result panel's text is byte-identical with stacking on and off.
+- [x] Tests: 8 new in `components/spectator/SpectatorBoard.test.tsx` — a
+      hundred-Token board as one tile, the 53/64 Wave 1 worst case split by
+      Newly Deployed, damaged/Exhausted/spent-Barrier members drawn as
+      themselves, attackers separated from bystanders, the stepped Tokens
+      identified, expansion as a labelled list with per-member names, stacking
+      off, and Analysis Mode grouping identically — plus 1 in
+      `spectator-flow.test.tsx` driving the toggle through a real four-bot match.
+
+## Acceptance — met (2026-08-13)
+
+- Large Token boards remain readable. The worst board Wave 1 produces, 117
+  Tokens on one seat, is two tiles in a match and two chips in the spectator.
+- Every Token remains an independently addressable engine instance. Nothing was
+  added to `MatchState`, a tile has no instance ID, and every action leaves
+  through a member carrying its own.
+- Grouping on/off produces identical legal actions, engine events, replay hashes
+  and telemetry. In a match the toggle sends nothing (asserted); in the
+  spectator the replay was recorded before the screen existed, and the result
+  panel is byte-identical either way (asserted).
 
 ## Exclusions
 

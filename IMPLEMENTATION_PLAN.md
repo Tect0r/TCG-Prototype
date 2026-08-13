@@ -20,7 +20,7 @@ After verification, update the evidence and stop.
 | [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)               | Complete        |
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)               | Complete        |
 | [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)               | Complete        |
-| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1–M06.2 done (2026-08-13) | M06.3           |
+| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1–M06.3 done (2026-08-13) | Complete        |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain             | Final milestone |
 
 Since M01.2, an unfinished card makes a deck illegal by name. The spectator
@@ -653,6 +653,34 @@ shared state in words rather than "×11", the members are a labelled `group`
 region whose entries are named "… 3 of 11", and Escape inside an open stack
 closes it and hands focus back rather than making a player tab out past a
 hundred Tokens. No version moves anywhere — nothing here leaves the client.
+
+Since M06.3, the two surfaces that draw a battlefield draw it the **same way**,
+and that is a property of the code rather than a pair of readings somebody keeps
+in step. The spectator used to stack Tokens by definition alone — the reading
+Q42 measured and rejected — so the worst board Wave 1 makes was one chip saying
+×117 with no hint that 64 of them could not attack. It now calls the same
+`groupEntities`, over the same projection: `instanceView`, the function that
+builds every `PlayerView`'s instances, is exported and the spectator runs each
+seat's battlefield through it, so a field added to the grouping key reaches both
+surfaces at once. `groupEntities` takes a structural `GroupingSource` — instances
+plus a combat state — rather than a `PlayerView`, which is what lets a spectator
+frame satisfy it without redacting anything twice. `components/TokenStack.tsx` is
+the shared tile: one summary, one expansion affordance, one set of accessible
+names, with a class-name variant and a `renderEntity` function as the only two
+things a surface may differ in.
+
+Analysis Mode cannot change grouping semantics structurally rather than by
+promise: only battlefield units are ever projected into the source, and the mode
+decides whether a **hand** is shown. A hand is not part of a tile, and the tiles
+are asserted identical in both modes on the same frame. Replay stepping reuses
+M06.2's `selection` field — the Tokens the current step is about are marked and
+leave their stack, because a highlight painted on a tile standing for a hundred
+Tokens says the step was about all hundred. The spectator gains the same **Stack
+tokens** toggle, and M06's last acceptance criterion is checked rather than
+argued on the surface where it is easiest to doubt: the result panel's text is
+byte-identical with stacking on and off, because the replay was recorded before
+the screen rendered anything. No schema, protocol, replay or telemetry version
+moves. M06 is complete.
 
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and

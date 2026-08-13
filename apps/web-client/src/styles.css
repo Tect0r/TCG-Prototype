@@ -2002,10 +2002,24 @@ code {
   box-shadow: 0 0 0 1px var(--warning);
 }
 
-.spectator-unit__count {
-  margin-left: 0.25rem;
-  color: var(--warning);
-  font-weight: 600;
+/*
+ * A Token stack in the spectator (M06.3). The tile is a button because it
+ * opens, so it needs the chip's own look rather than the browser's: the
+ * spectator row is chips, and a stack is one of them with a count on it.
+ */
+button.spectator-unit {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-style: dashed;
+}
+
+.spectator-seat__row .unit-group__members {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  grid-column: auto;
 }
 
 .spectator-unit__stats {

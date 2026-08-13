@@ -150,6 +150,7 @@ export {
 
 export {
   playerView,
+  instanceView,
   eventsSince,
   redactEvent,
   playerViewSchema,

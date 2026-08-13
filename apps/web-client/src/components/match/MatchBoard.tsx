@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CardDatabase } from '@tcg/card-data';
 import type { SeatId } from '@tcg/protocol';
 import type {
@@ -12,14 +12,8 @@ import { useCardDatabase } from '../../state/AppContext.js';
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
 import type { SeatConnection } from '../../net/match-client.js';
 import { buildLog } from '../../lib/event-text.js';
-import {
-  groupEntities,
-  tokenGroupLabel,
-  tokenGroupSummary,
-  tokenMemberLabel,
-  type SelectionMarker,
-  type TileEntry,
-} from '../../lib/token-grouping.js';
+import { groupEntities, type SelectionMarker } from '../../lib/token-grouping.js';
+import { TileList } from '../TokenStack.js';
 import { CardInspector, type InspectableCard } from '../help/CardInspector.js';
 
 /**
@@ -200,172 +194,6 @@ function UnitCard({
       {instance.willNotReady && <span className="unit__flag">will not ready</span>}
       {label && <span className="unit__flag">{label}</span>}
     </button>
-  );
-}
-
-/**
- * One tile standing for several identical Tokens, and its members (M06.1/M06.2).
- *
- * Presentation only: the tile has no instance ID of its own, and clicking it
- * expands the group rather than acting on it. Every action still goes through
- * the individual entities underneath — rendered by the caller's own
- * `renderMember`, which is the same function that draws a lone entity — so a
- * Token stays an independently addressable engine instance whatever list it is
- * being shown in, and there is one interaction path rather than two.
- *
- * It draws the representative's card, the count, and the state the whole group
- * shares — and the state summary is built from the same fields that decided the
- * group, so a tile can never claim something that is only true of one member.
- *
- * ## Keyboard and screen reader (M06.2)
- *
- * The tile is an ordinary button, so it opens with Enter or Space. Its
- * accessible name carries the count and the shared state in words rather than
- * as "×11". The members are a labelled `group` immediately after it in DOM
- * order, so Tab walks into them, and each member's name carries its ordinal so
- * eleven identical cards are eleven distinguishable buttons. Escape anywhere
- * inside closes the tile and puts focus back on it, because tabbing back out of
- * a hundred Tokens is not an affordance.
- */
-function TokenGroup({
-  entry,
-  view,
-  database,
-  groupId,
-  heading,
-  expanded,
-  onToggle,
-  nameOf,
-  renderMember,
-}: {
-  readonly entry: Extract<TileEntry, { kind: 'group' }>;
-  readonly view: PlayerView;
-  readonly database: CardDatabase;
-  /** Unique across every list on screen, so two tiles never share a DOM id. */
-  readonly groupId: string;
-  /** Replaces the card name on the tile, for a list that is not the board. */
-  readonly heading?: string | undefined;
-  readonly expanded: boolean;
-  readonly onToggle: () => void;
-  readonly nameOf: (playerId: string) => string;
-  readonly renderMember: (instanceId: string, ariaLabel: string) => ReactNode;
-}) {
-  const tile = useRef<HTMLButtonElement>(null);
-  const instance = view.instances[entry.representativeInstanceId];
-  if (!instance) return null;
-  const name = database.get(entry.definitionId)?.name ?? entry.definitionId;
-  const count = entry.instanceIds.length;
-  const summary = tokenGroupSummary(instance, entry.role, nameOf, entry.selection);
-  const title = heading ?? name;
-  const domId = `token-group-${groupId}`;
-  const classes = [
-    'unit',
-    'unit-group',
-    instance.exhausted ? 'unit--exhausted' : '',
-    expanded ? 'unit-group--expanded' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  return (
-    <div
-      className="unit-group__wrap"
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || !expanded) return;
-        // Stopped here rather than allowed to bubble: Escape inside an open
-        // stack means "close this stack", not "close whatever is outermost".
-        event.stopPropagation();
-        onToggle();
-        tile.current?.focus();
-      }}
-    >
-      <button
-        type="button"
-        ref={tile}
-        className={classes}
-        aria-expanded={expanded}
-        aria-controls={domId}
-        aria-label={tokenGroupLabel(title, count, summary)}
-        onClick={onToggle}
-      >
-        <span className="unit__name">
-          {title}
-          <span className="unit-group__count">×{count}</span>
-        </span>
-        <span className="unit__stats">{summary.join(' · ')}</span>
-        <span className="unit-group__affordance">
-          {expanded ? `Hide these ${count}` : `Show all ${count}`}
-        </span>
-      </button>
-      {expanded && (
-        <div
-          className="unit-group__members"
-          id={domId}
-          role="group"
-          aria-label={`${title}, ${count} selectable`}
-        >
-          {entry.instanceIds.map((instanceId, index) =>
-            renderMember(instanceId, tokenMemberLabel(name, index, count)),
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * A laid-out list of entities: lone ones as themselves, identical Tokens as
- * tiles (M06.2).
- *
- * One component for every list a Token can appear in — a seat's battlefield, a
- * pending choice's options, the sources offering an activated ability — so the
- * grouping rule, the expansion affordance and the accessible names cannot drift
- * apart between them. `renderEntity` draws one entity and is given the member
- * label when it is being drawn inside a tile, so the caller writes its click
- * handling once and gets both cases.
- */
-function TileList({
-  entries,
-  view,
-  database,
-  idPrefix,
-  headingFor,
-  expandedGroups,
-  onToggleGroup,
-  nameOf,
-  renderEntity,
-}: {
-  readonly entries: readonly TileEntry[];
-  readonly view: PlayerView;
-  readonly database: CardDatabase;
-  readonly idPrefix: string;
-  readonly headingFor?: ((entry: Extract<TileEntry, { kind: 'group' }>) => string) | undefined;
-  readonly expandedGroups: ReadonlySet<string>;
-  readonly onToggleGroup: (groupId: string) => void;
-  readonly nameOf: (playerId: string) => string;
-  readonly renderEntity: (instanceId: string, ariaLabel?: string) => ReactNode;
-}) {
-  return (
-    <>
-      {entries.map((entry) => {
-        if (entry.kind === 'single') return renderEntity(entry.instanceId);
-        const groupId = `${idPrefix}:${entry.key}`;
-        return (
-          <TokenGroup
-            key={groupId}
-            entry={entry}
-            view={view}
-            database={database}
-            groupId={groupId}
-            heading={headingFor?.(entry)}
-            expanded={expandedGroups.has(groupId)}
-            onToggle={() => onToggleGroup(groupId)}
-            nameOf={nameOf}
-            renderMember={renderEntity}
-          />
-        );
-      })}
-    </>
   );
 }
 
@@ -639,7 +467,7 @@ function OpponentBoard({
       <div className="board__units">
         <TileList
           entries={groupEntities(view, player.units, { enabled: grouping, selectionOf })}
-          view={view}
+          source={view}
           database={database}
           idPrefix={player.playerId}
           expandedGroups={expandedGroups}
@@ -1038,7 +866,7 @@ export function MatchBoard() {
               enabled: grouping,
               selectionOf: ownSelection,
             })}
-            view={view}
+            source={view}
             database={database}
             idPrefix="own"
             expandedGroups={expandedGroups}
@@ -1170,7 +998,7 @@ export function MatchBoard() {
             <TileList
               key={`${offer.abilityId}:${offer.energyCost}`}
               entries={groupEntities(view, offer.sourceInstanceIds, { enabled: grouping })}
-              view={view}
+              source={view}
               database={database}
               idPrefix={`ability:${offer.abilityId}:${offer.energyCost}`}
               headingFor={() => `Ability: ${name}`}
@@ -1213,7 +1041,7 @@ export function MatchBoard() {
                 enabled: grouping,
                 selectionOf: choiceSelectionOf,
               })}
-              view={view}
+              source={view}
               database={database}
               idPrefix="choice"
               expandedGroups={expandedGroups}

@@ -23,6 +23,9 @@ export interface SpectatorControlsProps {
   readonly mode: InformationMode;
   readonly position: number;
   readonly total: number;
+  /** Token stacking, on by default (M06.1/M06.3). Presentation only. */
+  readonly grouping: boolean;
+  readonly onGrouping: (grouping: boolean) => void;
   readonly onPlayPause: () => void;
   readonly onStep: () => void;
   readonly onRestart: () => void;
@@ -46,6 +49,8 @@ export function SpectatorControls({
   mode,
   position,
   total,
+  grouping,
+  onGrouping,
   onPlayPause,
   onStep,
   onRestart,
@@ -99,6 +104,20 @@ export function SpectatorControls({
           ))}
         </select>
       </label>
+
+      {/* The same toggle the match board carries, for the same reason: "grouping
+          on and off are the same match" is an acceptance criterion, and a
+          viewer has to be able to check it by watching. It changes no frame,
+          no replay and no telemetry — the match was over before this screen
+          rendered anything. */}
+      <button
+        type="button"
+        className={grouping ? 'is-active' : ''}
+        aria-pressed={grouping}
+        onClick={() => onGrouping(!grouping)}
+      >
+        Stack tokens
+      </button>
 
       <span className="spectator-controls__position" aria-live="polite">
         step {Math.max(0, position + 1)} / {total}
