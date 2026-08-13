@@ -32,7 +32,7 @@ part no generator can produce.
 | [M04](milestones/M04-shared-board-telemetry.md)        | Shared board telemetry         | **Complete** (2026-08-12) |
 | [M05](milestones/M05-ai-reliability.md)                | AI reliability                 | **Complete** (2026-08-13) |
 | [M06](milestones/M06-token-presentation.md)            | Token presentation             | **Complete** (2026-08-13) |
-| [M07](milestones/M07-documentation-consolidation.md)   | Documentation consolidation    | In progress — M07.5 next  |
+| [M07](milestones/M07-documentation-consolidation.md)   | Documentation consolidation    | In progress — M07.6 next  |
 
 The live work queue is [`IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md).
 It, not this file, names the next bounded task.
@@ -272,7 +272,9 @@ balance run is worth it). All four are in
 Phase 4 finished the laboratory. These milestones made the thing it measures
 real: a 155-card catalogue, four precons that can actually be played, and a
 record of what any of it is worth. Each milestone file holds the tranche-level
-detail and its checklist; `IMPLEMENTATION_PLAN.md` holds the running narrative.
+detail and its checklist; [`history/milestone-log.md`](history/milestone-log.md)
+holds the running narrative the work queue carried while they were built, frozen
+as it was written.
 
 ### M01 — Truthfulness and verification — complete
 
@@ -399,7 +401,7 @@ readable without becoming a lie.
 
 ### M07 — Documentation consolidation — in progress
 
-[M07](milestones/M07-documentation-consolidation.md). M07.1–M07.4 are done.
+[M07](milestones/M07-documentation-consolidation.md). M07.1–M07.5 are done.
 
 - **M07.1** — the project's status is generated: `npm run audit:status` writes
   [status-audit.md](status-audit.md) from the code and content, and a stale
@@ -413,9 +415,14 @@ readable without becoming a lie.
   nothing deleted.
 - **M07.4** — this report, and
   [the Wave 1 staged test protocol](testing/FIRST_CARD_BATCH_TEST_PLAN.md).
+- **M07.5** — the root work queue is a queue: its running narrative is archived
+  in [history/milestone-log.md](history/milestone-log.md), the README describes
+  the current state and keeps no countable fact, and
+  [history/retired-root-documents.md](history/retired-root-documents.md) records
+  what the root used to hold and where each document's content lives now.
 
-Remaining: M07.5 (root and README cleanup), M07.6 (the root `cards.json` /
-`precons.json` decision, Q40), M07.7 (the automated consistency checks).
+Remaining: M07.6 (the root `cards.json` / `precons.json` decision, Q40), M07.7
+(the automated consistency checks).
 
 ---
 

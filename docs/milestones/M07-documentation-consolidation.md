@@ -295,7 +295,7 @@ actual staged protocol used for Wave 1, not the obsolete pre-authoring plan.
       `npm run audit:check` reports the audit current, and the link check above
       is clean.
 
-## M07.5 — Root and README cleanup
+## M07.5 — Root and README cleanup — **done (2026-08-13)**
 
 Ensure the root contains only:
 
@@ -307,6 +307,78 @@ Delete superseded root handoff/spec files listed in the package apply guide.
 Refresh `README.md` and shrink completed milestone detail to durable evidence.
 Keep milestone files as concise completion records or archive them under
 `docs/history/`; do not put the backlog back into `CLAUDE.md`.
+
+### Checklist
+
+- [x] The root holds the three permitted documents and no other Markdown, and
+      that is **enforced rather than tidied**: `PERMITTED_ROOT_DOCS` in
+      `scripts/lib/status-audit.ts` is compared against a live directory listing,
+      so a fourth root document fails `npm run audit:check` and the suite. The
+      six superseded handoff and specification files were already deleted before
+      this milestone — `PLAYER_HELP_AND_CONTENT_SYSTEM.md` and
+      `READINESS_PROGRESS.md` in `8165dab`, and `CLAUDE_RULESET_UPDATE.md`,
+      `CLAUDE_AI_SPECTATOR_AND_RULE_ADJUSTMENTS.md`,
+      `PRE_CARD_AND_AGENT_TESTING_READINESS.md` and `REMAINING_WORK.md` in
+      `b70abe2` — so this tranche recorded the deletions rather than repeating
+      them. The tracked root `cards.json` / `precons.json` are **not** documents
+      and are deliberately untouched: they are M07.6.
+- [x] `docs/history/retired-root-documents.md` is that record, and it exists
+      because those names are still cited. ADR 0016 was written against
+      `CLAUDE_RULESET_UPDATE.md` and `PRE_CARD_AND_AGENT_TESTING_READINESS.md`,
+      ADR 0017 against `CLAUDE_RULESET_UPDATE.md`, and root `cards.json` still
+      names it in a `compatibilityNote`. Each row says what the document was,
+      the commit and date it went, where its content lives now, and who still
+      cites it — so a citation stays honest without an accepted ADR being edited
+      to remove its own context. Two details are settled from git rather than
+      from prose: `RULESET_UPDATE_PROGRESS.md`, which `REMAINING_WORK.md` claims
+      to have replaced, was **never tracked** and cannot be recovered; and
+      `docs/PHASE4_HARDENING.md` is not retired, because analysis code cites its
+      section numbers in comments.
+- [x] **The work queue is a queue.** `IMPLEMENTATION_PLAN.md` went from 912 lines
+      to 111: the thirty "Since M0x.y" narrative entries — every one of them about
+      finished work — are archived verbatim in
+      `docs/history/milestone-log.md`, grouped by milestone and linked to the
+      milestone file that holds the matching checklist. Nothing was rewritten and
+      nothing was summarised away, which is the same treatment M07.2 gave
+      answered questions and M07.3 gave stale ADR text.
+- [x] The archive says what it is worth. Its header states that it is frozen and
+      **not** the current record, that entries were overtaken by later entries in
+      the same file — M01.2 counts cards that M02.6 finished, M04.1 describes a
+      stall threshold M04.3 replaced — and carries a question-to-document table
+      naming the live document that wins in each case.
+- [x] The plan keeps only what a tranche needs while it is running: the baseline,
+      the execution rule, the status table, the locked decisions, the owner
+      decisions still open, the completion-evidence list and the stop conditions.
+      A new **Where the record lives** table sends every "what happened" question
+      to exactly one document. The `- Q\d+:` bullets keep their shape because
+      M07.1's question ledger parses them out of this file; the ledger is still
+      clean.
+- [x] `README.md` is refreshed and **keeps no countable fact**. The stale handoff
+      baseline is gone — it said 142 of 155 cards were executable with 13
+      `implemented: false`, three paragraphs above its own correction — and
+      counts, versions and coverage are now one pointer at
+      `docs/status-audit.md`, which fails the suite when it drifts. What replaces
+      it is durable: Wave 1 is playable end to end, a precon reaches a match as an
+      ID, the unfinished-card refusal still stands, and **no run this build can
+      produce is a balance conclusion**, because no shipped pilot is
+      archetype-aware or human. The documentation map is rewritten as one line per
+      subject, including the three rules documents, the test protocol and
+      `docs/history/`.
+- [x] Milestone files are kept where they are rather than archived. They are the
+      per-tranche specification the working protocol tells an agent to read, and
+      their checklists — not the plan's narrative — are the durable completion
+      record. `CLAUDE.md` is untouched: no backlog went back into it.
+- [x] Documentation only. Nothing outside `docs/`, `README.md` and
+      `IMPLEMENTATION_PLAN.md` changed, no version constant moved, and no source
+      file was edited. The audit's derived half reads the root file list, the ADR
+      directory, the milestone directory and the question ledger — none of which
+      this tranche changed — so `npm run audit:check` still reports it current
+      without regeneration.
+- [x] Verified: `npm run verify` passes (2057 tests in 101 files),
+      `npm run audit:check` reports the audit current, and all 227 relative links
+      and anchors across the repository's 43
+      Markdown files resolve, including the two new documents and every inbound
+      link to a section the plan no longer has.
 
 ## M07.6 — Root JSON decision
 
