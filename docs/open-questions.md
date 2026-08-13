@@ -527,10 +527,63 @@ hide `development` from the UI entirely (tests address it directly).
 
 ---
 
-### Q42. What makes two Tokens "identical" for visual stacking?
+### Q42. What makes two Tokens "identical" for visual stacking? — **answered 2026-08-13**
 
-**Blocks:** REMAINING_WORK C3 (token grouping), and 2 cards —
-`containment_pulse`, `total_recall`.
+**Answer.** Same definition **and** same state — the second option below, chosen
+against measurement rather than against the intuition that made it look noisy.
+
+Two Tokens share a tile only when their controller, definition and entire public
+interaction-relevant state match: current attack and health, marked damage,
+Ready/Exhausted, Newly Deployed, effective keywords, a pending "will not Ready",
+whether Barrier has been spent, and what they are doing in this combat. The
+twelve fields are named by `TOKEN_GROUP_KEY_FIELDS` in
+`apps/web-client/src/lib/token-grouping.ts`, and the test suite drives its own
+cases off that list.
+
+The evidence: three complete four-seat Wave 1 precon matches (all four precons;
+seeds `q42-a`, `q42-b`, `q42-c`), sampled through `playerView` after every
+applied action — 275 board states holding at least one Token.
+
+```
+largest one-seat Token group observed   117× goblin_token
+  under the strict key                    2 tiles: 64 Newly Deployed, 53 Ready
+                                                  (all 2/1, none damaged)
+
+tiles across all 275 samples
+  definition only                       441
+  definition + full state               631      (1.43×)
+  samples where state split a group     139/275
+
+which field did the splitting (groups affected)
+  summoningSick 157 · exhausted 69 · markedDamage 58
+  attacking 15 · keywords 5 · blocking 1
+  attack, health, willNotReady           0  — Wave 1 buffs are board-wide and
+                                             move a whole group at once
+```
+
+So the fear this question recorded — "a stack splits and re-forms constantly
+during combat" — is not what Wave 1 does. The strict key costs 1.43× the tiles,
+and the permissive one would have hidden, on the worst board the precons
+produce, that 64 of those 117 Tokens could not attack.
+
+**What a card that targets "a Token stack" hits is unchanged, and is not the
+tile.** `groupByTokenDefinition` (`targeting.ts#expandTokenGroup`, shipped with
+`containment_pulse` in M02) expands a chosen Token into every Token of the same
+**definition** controlled by the same player, whatever state it is in. That was
+already the rule; this answer deliberately does not move it, so a card that
+sweeps a swarm reaches across several tiles on purpose. The `token_stack`
+glossary entry says so in the player's own words.
+
+**One consequence.** `barrierSpent` is now public on `CardInstanceView`
+(`PROTOCOL_VERSION` 5 → 6). "Has Barrier" and "has Barrier left" are different
+questions, and only the first reached a client, so two Tokens that answer combat
+completely differently were indistinguishable. Not a new disclosure:
+`barrier_consumed` is already an unredacted log event.
+
+Implemented in M06.1. The original question is kept below.
+
+**Blocked:** REMAINING_WORK C3 (token grouping), and 2 cards —
+`containment_pulse`, `total_recall`. Released.
 
 Ruleset update §7 says identical Tokens may be visually stacked while each keeps
 individual identity, and §7 also says an effect affects one individual Unit

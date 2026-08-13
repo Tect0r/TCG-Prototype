@@ -23,8 +23,17 @@ import {
  * carry `provenance`, so the shape a server sends is not one a v4 client can
  * validate. The handshake refuses rather than letting a strict-object parse fail
  * mid-match on the first choice.
+ *
+ * 6 (M06.1): every `CardInstanceView` carries `barrierSpent`, so a client can
+ * tell a unit that still has its Barrier from one that has spent it — which is
+ * part of the Q42 grouping key and would otherwise put two units that answer
+ * combat differently under one badge. `playerViewSchema` is a strict object, so
+ * a v5 client would reject the first view it was sent; the handshake refuses
+ * first, and says why. `MATCH_SCHEMA_VERSION` deliberately does **not** move:
+ * `barrierSpent` has been on `CardInstance` since the keyword shipped, and it is
+ * the projection that changed rather than the state.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({

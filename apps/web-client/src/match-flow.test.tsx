@@ -614,6 +614,7 @@ describe('free-for-all match board', () => {
           keywords: [],
           isToken: false,
           willNotReady: false,
+          barrierSpent: false,
           // A unit on the battlefield has nothing to pay to play.
           energyCost: null,
         },
@@ -650,5 +651,86 @@ describe('free-for-all match board', () => {
       playerId: 'player_1',
       attacks: [{ attackerInstanceId: attacker, defenderPlayerId: 'player_4' }],
     });
+  });
+
+  /* ------------------------------------------- M06.1: Token stacks on screen */
+
+  /** A crowd of Tokens on the viewer's own battlefield, one of them damaged. */
+  function tokenBoard(): PlayerView {
+    const base = viewFor(ffaState(), 'player_1');
+    const tokens = Array.from({ length: 12 }, (_, index) => ({
+      instanceId: `tok_${index + 1}`,
+      definitionId: 'prototype_soldier_token',
+      owner: 'player_1',
+      controller: 'player_1',
+      zone: 'battlefield' as const,
+      attack: 1,
+      health: 1,
+      // The last one has taken a hit, so it is a different game object to
+      // anyone deciding what to block with, and must not hide inside the tile.
+      markedDamage: index === 11 ? 1 : 0,
+      exhausted: false,
+      summoningSick: false,
+      keywords: [],
+      isToken: true,
+      willNotReady: false,
+      barrierSpent: false,
+      energyCost: null,
+    }));
+    return {
+      ...base,
+      status: 'playing',
+      players: base.players.map((player) =>
+        player.playerId === 'player_1'
+          ? { ...player, units: tokens.map((token) => token.instanceId) }
+          : player,
+      ),
+      instances: {
+        ...base.instances,
+        ...Object.fromEntries(tokens.map((token) => [token.instanceId, token])),
+      },
+    };
+  }
+
+  const ownBoard = (): HTMLElement => screen.getByLabelText('Your battlefield');
+  /** The stack tile, named by its count so it cannot match a single card. */
+  const stackTile = (): HTMLElement =>
+    within(ownBoard()).getByRole('button', { name: /Soldier.*11/ });
+
+  it('draws identical Tokens as one counted tile, and the odd one out on its own', async () => {
+    await boardWithView(tokenBoard());
+
+    // Eleven identical Tokens become one tile; the damaged twelfth is its own
+    // card, because it is not interchangeable with them.
+    expect(stackTile()).toHaveAttribute('aria-expanded', 'false');
+    expect(stackTile()).toHaveTextContent('Show all 11');
+    expect(within(ownBoard()).getAllByRole('button')).toHaveLength(2);
+  });
+
+  it('expands a tile into its individual Tokens and folds it back', async () => {
+    const harness = await boardWithView(tokenBoard());
+
+    await harness.user.click(stackTile());
+    expect(stackTile()).toHaveAttribute('aria-expanded', 'true');
+    // The tile plus eleven addressable members plus the damaged single.
+    expect(within(ownBoard()).getAllByRole('button')).toHaveLength(13);
+
+    await harness.user.click(stackTile());
+    expect(within(ownBoard()).getAllByRole('button')).toHaveLength(2);
+  });
+
+  it('shows every Token individually when stacking is turned off', async () => {
+    const harness = await boardWithView(tokenBoard());
+    await harness.user.click(screen.getByRole('button', { name: 'Stack tokens' }));
+
+    // Twelve Tokens, twelve cards, no tile, and nothing sent to the server:
+    // grouping is presentation and the toggle proves it.
+    expect(within(ownBoard()).getAllByRole('button')).toHaveLength(12);
+    expect(
+      within(ownBoard()).queryByRole('button', { name: /Soldier.*11/ }),
+    ).not.toBeInTheDocument();
+    expect(harness.transport().sent.some((message) => message.type === 'submit_action')).toBe(
+      false,
+    );
   });
 });

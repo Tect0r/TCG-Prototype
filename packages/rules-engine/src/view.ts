@@ -66,6 +66,24 @@ export const cardInstanceViewSchema = z.strictObject({
    */
   willNotReady: z.boolean(),
   /**
+   * Whether this permanent's Barrier has already absorbed a hit (M06.1/Q42).
+   *
+   * `keywords` says a unit *has* Barrier; this says whether the Barrier is still
+   * there to spend. They are two different questions (see `CardInstance`), and
+   * until M06.1 only the first reached a client — so two units that answer
+   * combat completely differently were indistinguishable on screen.
+   *
+   * Public for every seat, like `exhausted` and `willNotReady` beside it, and
+   * not a new disclosure: `barrier_consumed` is already an unredacted event in
+   * the log, so the fact was always derivable by anyone reading it. Putting it
+   * on the instance means a player does not have to.
+   *
+   * Always present, and `false` for anything that never had Barrier: a
+   * nullable "not applicable" would make every reader re-derive the keyword
+   * check that `keywords` already answers.
+   */
+  barrierSpent: z.boolean(),
+  /**
    * What playing this card would cost the viewer right now, after every
    * reduction the board currently grants (M02.3).
    *
@@ -253,6 +271,7 @@ function instanceView(
     keywords: [...effectiveKeywords(instance, definition)],
     isToken: instance.isToken,
     willNotReady: instance.readySkip !== null,
+    barrierSpent: instance.barrierSpent,
   };
 }
 

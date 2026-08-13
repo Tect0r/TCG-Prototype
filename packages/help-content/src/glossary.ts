@@ -148,6 +148,14 @@ const RAW_GLOSSARY = {
       relatedRuleSections: ['card_anatomy'],
     },
     {
+      id: 'token_stack',
+      term: 'Token stack',
+      definition:
+        'A way of drawing the board, not a game object. Tokens appear as one card with a count only when they match in every way that matters: same token, stats, damage, Ready or Exhausted state, Newly Deployed, keywords, Barrier, and job in the current combat. Any token that differs is drawn on its own, because it is not interchangeable. Expand a stack and every token is there, each still its own unit with its own damage. A card that affects every token of the same kind reaches them whatever state they are in, so it may cross several stacks.',
+      seeAlso: ['instance', 'marked_damage', 'newly_deployed'],
+      relatedRuleSections: ['card_types'],
+    },
+    {
       id: 'marked_damage',
       term: 'Marked damage',
       definition:

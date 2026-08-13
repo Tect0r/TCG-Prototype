@@ -12,6 +12,7 @@ import { useCardDatabase } from '../../state/AppContext.js';
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
 import type { SeatConnection } from '../../net/match-client.js';
 import { buildLog } from '../../lib/event-text.js';
+import { groupBattlefield, tokenGroupSummary, type BoardEntry } from '../../lib/token-grouping.js';
 import { CardInspector, type InspectableCard } from '../help/CardInspector.js';
 
 /**
@@ -138,6 +139,67 @@ function UnitCard({
           down for a whole turn cycle (M02.4). */}
       {instance.willNotReady && <span className="unit__flag">will not ready</span>}
       {label && <span className="unit__flag">{label}</span>}
+    </button>
+  );
+}
+
+/**
+ * One tile standing for several identical Tokens (M06.1).
+ *
+ * Presentation only: the tile has no instance ID of its own, and clicking it
+ * expands the group rather than acting on it. Every action still goes through
+ * the individual `UnitCard`s underneath, which is what keeps a Token an
+ * independently addressable engine instance while the board stays readable.
+ *
+ * It draws the representative's card, the count, and the state the whole group
+ * shares — and the state summary is built from the same fields that decided the
+ * group, so a tile can never claim something that is only true of one member.
+ */
+function TokenGroupTile({
+  entry,
+  view,
+  database,
+  expanded,
+  onToggle,
+  nameOf,
+}: {
+  readonly entry: Extract<BoardEntry, { kind: 'group' }>;
+  readonly view: PlayerView;
+  readonly database: CardDatabase;
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
+  readonly nameOf: (playerId: string) => string;
+}) {
+  const instance = view.instances[entry.representativeInstanceId];
+  if (!instance) return null;
+  const name = database.get(entry.definitionId)?.name ?? entry.definitionId;
+  const count = entry.instanceIds.length;
+  const summary = tokenGroupSummary(instance, entry.role, nameOf);
+  const classes = [
+    'unit',
+    'unit-group',
+    instance.exhausted ? 'unit--exhausted' : '',
+    expanded ? 'unit-group--expanded' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <button
+      type="button"
+      className={classes}
+      aria-expanded={expanded}
+      aria-controls={`token-group-${entry.key}`}
+      onClick={onToggle}
+    >
+      <span className="unit__name">
+        {name}
+        <span className="unit-group__count">×{count}</span>
+      </span>
+      <span className="unit__stats">{summary.join(' · ')}</span>
+      <span className="unit-group__affordance">
+        {expanded ? `Hide these ${count}` : `Show all ${count}`}
+      </span>
     </button>
   );
 }
@@ -328,6 +390,9 @@ function OpponentBoard({
   attackTarget,
   onChooseDefender,
   onInspect,
+  grouping,
+  expandedGroups,
+  onToggleGroup,
 }: {
   readonly player: PlayerViewSummary;
   readonly view: PlayerView;
@@ -340,11 +405,51 @@ function OpponentBoard({
   readonly onChooseDefender: () => void;
   /** Set only in Help mode, and then it replaces every other click handler. */
   readonly onInspect: ((card: InspectableCard) => void) | null;
+  readonly grouping: boolean;
+  readonly expandedGroups: ReadonlySet<string>;
+  readonly onToggleGroup: (key: string) => void;
 }) {
   const legal = view.legalActions;
   const attacksOnMe = new Map(
     view.combat.attacks.map((attack) => [attack.attackerInstanceId, attack.defenderPlayerId]),
   );
+  const nameOf = (playerId: string): string =>
+    view.players.find((seat) => seat.playerId === playerId)?.name ?? playerId;
+
+  const renderUnit = (instanceId: string) => {
+    const instance = view.instances[instanceId];
+    const defenderId = attacksOnMe.get(instanceId);
+    const blockable = legal.blocking?.attackerInstanceIds.includes(instanceId) ?? false;
+    // An attacker is only clickable once one of our blockers is picked.
+    // In Help mode the inspect handler replaces it entirely, so a click
+    // can never assign a blocker while the player is reading.
+    const inspect = inspectable(view, instanceId, `${player.name}'s board`);
+    const assignBlock = onInspect
+      ? inspect
+        ? () => onInspect(inspect)
+        : undefined
+      : blockable && pendingBlocker !== null && !locked
+        ? () => onAssignBlock(instanceId)
+        : undefined;
+
+    const attackedName =
+      defenderId === undefined
+        ? undefined
+        : defenderId === view.viewerId
+          ? 'attacking you'
+          : `attacking ${nameOf(defenderId)}`;
+
+    return (
+      <UnitCard
+        key={instanceId}
+        instance={instance}
+        database={database}
+        highlighted={blockable && pendingBlocker !== null}
+        label={attackedName}
+        onClick={assignBlock}
+      />
+    );
+  };
 
   return (
     <div className="board__side" aria-label={`${player.name} battlefield`}>
@@ -359,38 +464,25 @@ function OpponentBoard({
         </button>
       )}
       <div className="board__units">
-        {player.units.map((instanceId) => {
-          const instance = view.instances[instanceId];
-          const defenderId = attacksOnMe.get(instanceId);
-          const blockable = legal.blocking?.attackerInstanceIds.includes(instanceId) ?? false;
-          // An attacker is only clickable once one of our blockers is picked.
-          // In Help mode the inspect handler replaces it entirely, so a click
-          // can never assign a blocker while the player is reading.
-          const inspect = inspectable(view, instanceId, `${player.name}'s board`);
-          const assignBlock = onInspect
-            ? inspect
-              ? () => onInspect(inspect)
-              : undefined
-            : blockable && pendingBlocker !== null && !locked
-              ? () => onAssignBlock(instanceId)
-              : undefined;
-
-          const attackedName =
-            defenderId === undefined
-              ? undefined
-              : defenderId === view.viewerId
-                ? 'attacking you'
-                : `attacking ${view.players.find((p) => p.playerId === defenderId)?.name ?? '?'}`;
-
+        {groupBattlefield(view, player.units, { enabled: grouping }).map((entry) => {
+          if (entry.kind === 'single') return renderUnit(entry.instanceId);
+          const expanded = expandedGroups.has(entry.key);
           return (
-            <UnitCard
-              key={instanceId}
-              instance={instance}
-              database={database}
-              highlighted={blockable && pendingBlocker !== null}
-              label={attackedName}
-              onClick={assignBlock}
-            />
+            <div className="unit-group__wrap" key={entry.key}>
+              <TokenGroupTile
+                entry={entry}
+                view={view}
+                database={database}
+                expanded={expanded}
+                onToggle={() => onToggleGroup(entry.key)}
+                nameOf={nameOf}
+              />
+              {expanded && (
+                <div className="unit-group__members" id={`token-group-${entry.key}`}>
+                  {entry.instanceIds.map(renderUnit)}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -433,6 +525,24 @@ export function MatchBoard() {
   const [choiceSelection, setChoiceSelection] = useState<string[]>([]);
   const [helpMode, setHelpMode] = useState(false);
   const [inspecting, setInspecting] = useState<InspectableCard | null>(null);
+  /**
+   * Token grouping, on by default (M06.1). A real toggle rather than a debug
+   * flag: "grouping on and off are the same match" is an acceptance criterion,
+   * and a player has to be able to check it by playing.
+   */
+  const [grouping, setGrouping] = useState(true);
+  /**
+   * Which groups are open, keyed by grouping key rather than by instance. A key
+   * is a function of the shared state, so a group survives a member being
+   * defeated and closes on its own when the state it stood for stops existing.
+   */
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
+  const toggleGroup = (key: string): void =>
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
 
   const phase = view?.phase;
   const choiceId = view?.pendingChoice?.id ?? null;
@@ -504,6 +614,68 @@ export function MatchBoard() {
     setSelectedAttacker(null);
   };
 
+  /**
+   * One of the viewer's own units, exactly as before grouping existed.
+   *
+   * Extracted rather than inlined because it is now reached two ways — as a
+   * tile of its own, and as a member of an expanded Token group — and both have
+   * to produce the identical clickable card. A group that rendered its members
+   * differently would be a second interaction path with its own bugs.
+   */
+  const renderOwnUnit = (instanceId: string) => {
+    const instance = view.instances[instanceId];
+    const canAttack = legal.attacking?.legalAttackers.includes(instanceId) ?? false;
+    const canBlock = legal.blocking?.blockerInstanceIds.includes(instanceId) ?? false;
+    const assigned = blocks.find((block) => block.blockerInstanceId === instanceId);
+    const target = attacks[instanceId];
+
+    const inspectCard = inspectable(view, instanceId, 'Your board');
+    let onClick: (() => void) | undefined;
+    // Help mode short-circuits the whole attacker/blocker branch below.
+    if (inspect && inspectCard) {
+      onClick = () => inspect(inspectCard);
+    } else if (!inspect && !locked) {
+      if (canAttack) {
+        // Click to pick an attacker, then click an opponent to aim it.
+        // Clicking an already-aimed attacker clears its target, so a
+        // declaration stays editable until it is confirmed.
+        onClick = () => {
+          if (target !== undefined) {
+            setAttacks((current) => {
+              const next = { ...current };
+              delete next[instanceId];
+              return next;
+            });
+            setSelectedAttacker(null);
+            return;
+          }
+          setSelectedAttacker((current) => (current === instanceId ? null : instanceId));
+        };
+      } else if (canBlock) {
+        onClick = () =>
+          setPendingBlocker((current) => (current === instanceId ? null : instanceId));
+      }
+    }
+
+    return (
+      <UnitCard
+        key={instanceId}
+        instance={instance}
+        database={database}
+        highlighted={canAttack || canBlock}
+        selected={selectedAttacker === instanceId || pendingBlocker === instanceId}
+        label={
+          target !== undefined
+            ? `→ ${nameOf(target)}`
+            : assigned
+              ? `blocking ${database.get(view.instances[assigned.attackerInstanceId]?.definitionId ?? '')?.name ?? ''}`
+              : undefined
+        }
+        onClick={onClick}
+      />
+    );
+  };
+
   return (
     <section className="board" aria-label="Match board">
       <div className="board__status">
@@ -536,6 +708,17 @@ export function MatchBoard() {
           }}
         >
           ? Help
+        </button>
+        {/* Grouping is presentation, so the toggle sends nothing and changes no
+            match state — turning it off shows every Token as its own card and
+            leaves the legal actions, the log and the result identical. */}
+        <button
+          type="button"
+          className={`board__group-toggle${grouping ? ' is-active' : ''}`}
+          aria-pressed={grouping}
+          onClick={() => setGrouping((current) => !current)}
+        >
+          Stack tokens
         </button>
         <button type="button" className="button--quiet" onClick={() => client.leave()}>
           {eliminated ? 'Leave' : 'Concede and leave'}
@@ -607,6 +790,9 @@ export function MatchBoard() {
                 }
                 onChooseDefender={() => chooseDefender(player.playerId)}
                 onInspect={inspect}
+                grouping={grouping}
+                expandedGroups={expandedGroups}
+                onToggleGroup={toggleGroup}
               />
             )}
             {inspect && (
@@ -638,57 +824,25 @@ export function MatchBoard() {
           })}
         </div>
         <div className="board__units">
-          {me?.units.map((instanceId) => {
-            const instance = view.instances[instanceId];
-            const canAttack = legal.attacking?.legalAttackers.includes(instanceId) ?? false;
-            const canBlock = legal.blocking?.blockerInstanceIds.includes(instanceId) ?? false;
-            const assigned = blocks.find((block) => block.blockerInstanceId === instanceId);
-            const target = attacks[instanceId];
-
-            const inspectCard = inspectable(view, instanceId, 'Your board');
-            let onClick: (() => void) | undefined;
-            // Help mode short-circuits the whole attacker/blocker branch below.
-            if (inspect && inspectCard) {
-              onClick = () => inspect(inspectCard);
-            } else if (!inspect && !locked) {
-              if (canAttack) {
-                // Click to pick an attacker, then click an opponent to aim it.
-                // Clicking an already-aimed attacker clears its target, so a
-                // declaration stays editable until it is confirmed.
-                onClick = () => {
-                  if (target !== undefined) {
-                    setAttacks((current) => {
-                      const next = { ...current };
-                      delete next[instanceId];
-                      return next;
-                    });
-                    setSelectedAttacker(null);
-                    return;
-                  }
-                  setSelectedAttacker((current) => (current === instanceId ? null : instanceId));
-                };
-              } else if (canBlock) {
-                onClick = () =>
-                  setPendingBlocker((current) => (current === instanceId ? null : instanceId));
-              }
-            }
-
+          {groupBattlefield(view, me?.units ?? [], { enabled: grouping }).map((entry) => {
+            if (entry.kind === 'single') return renderOwnUnit(entry.instanceId);
+            const expanded = expandedGroups.has(entry.key);
             return (
-              <UnitCard
-                key={instanceId}
-                instance={instance}
-                database={database}
-                highlighted={canAttack || canBlock}
-                selected={selectedAttacker === instanceId || pendingBlocker === instanceId}
-                label={
-                  target !== undefined
-                    ? `→ ${nameOf(target)}`
-                    : assigned
-                      ? `blocking ${database.get(view.instances[assigned.attackerInstanceId]?.definitionId ?? '')?.name ?? ''}`
-                      : undefined
-                }
-                onClick={onClick}
-              />
+              <div className="unit-group__wrap" key={entry.key}>
+                <TokenGroupTile
+                  entry={entry}
+                  view={view}
+                  database={database}
+                  expanded={expanded}
+                  onToggle={() => toggleGroup(entry.key)}
+                  nameOf={nameOf}
+                />
+                {expanded && (
+                  <div className="unit-group__members" id={`token-group-${entry.key}`}>
+                    {entry.instanceIds.map(renderOwnUnit)}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -710,7 +864,6 @@ export function MatchBoard() {
           )}
         </>
       )}
-
       <div className="board__controls">
         {legal.mulligan && (
           <div className="control-group">

@@ -861,6 +861,7 @@ describe('a derived cost reduction is priced as energy, not as a buff (M02.3)', 
       keywords: [...abomination.keywords],
       isToken: false,
       willNotReady: false,
+      barrierSpent: false,
       energyCost: null,
     };
 

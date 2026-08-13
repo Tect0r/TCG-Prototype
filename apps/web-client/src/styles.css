@@ -969,6 +969,51 @@ code {
   color: var(--text-dim);
 }
 
+/* ------------------------------------------------ Token grouping (M06.1) */
+
+/*
+ * A group occupies one cell of the board grid until it is expanded, at which
+ * point its members are laid out underneath it and it spans the whole row. The
+ * tile is never a drop-in for a unit: it is a disclosure control, and it looks
+ * like one.
+ */
+.unit-group__wrap {
+  display: contents;
+}
+
+.unit-group {
+  cursor: pointer;
+  border-style: dashed;
+}
+
+.unit-group--expanded {
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+.unit-group__count {
+  margin-left: 0.3rem;
+  color: var(--warning);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit-group__affordance {
+  margin-top: auto;
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+
+.unit-group__members {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius);
+}
+
 .board__controls {
   display: flex;
   gap: 0.5rem;
@@ -1076,7 +1121,8 @@ code {
   margin-left: auto;
 }
 
-.board__help-toggle.is-active {
+.board__help-toggle.is-active,
+.board__group-toggle.is-active {
   border-color: var(--accent);
   background: var(--accent);
   color: #0d0f13;

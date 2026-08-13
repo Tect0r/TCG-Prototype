@@ -13,15 +13,15 @@ After verification, update the evidence and stop.
 
 ## Status
 
-| Milestone                                                                                 | State at baseline                     | Next tranche            |
-| ----------------------------------------------------------------------------------------- | ------------------------------------- | ----------------------- |
-| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)         | Complete                |
-| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
-| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
-| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete                |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)         | Complete                |
-| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
+| Milestone                                                                                 | State at baseline                     | Next tranche    |
+| ----------------------------------------------------------------------------------------- | ------------------------------------- | --------------- |
+| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)         | Complete        |
+| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete        |
+| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete        |
+| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete        |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)         | Complete        |
+| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1 done (2026-08-13) | M06.2           |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone |
 
 Since M01.2, an unfinished card makes a deck illegal by name. The spectator
 refuses such a precon and runs it only under a deliberately named developer
@@ -577,6 +577,47 @@ fixtures a calibration citation was made against; a `knownGaps` entry moving doe
 not bump it, because that is a measurement changing and the instrument is the
 same. M05 is complete.
 
+Since M06.1, a board of a hundred Tokens is readable, and **Q42 is answered by
+measurement rather than by intuition**: two Tokens share a tile only when their
+controller, definition and _entire_ public interaction-relevant state match —
+attack, health, marked damage, Ready/Exhausted, Newly Deployed, effective
+keywords, a pending "will not Ready", whether Barrier is spent, and what they are
+doing in this combat. The question feared that a strict key would split and
+re-form constantly; three complete four-seat precon matches say otherwise. Across
+275 sampled boards the strict key drew 631 tiles where definition-only drew 441
+(1.43×), and the worst board Wave 1 produces — **117 `goblin_token` on one seat**
+— came out as **two** tiles, 64 Newly Deployed and 53 Ready. Grouping by
+definition alone would have hidden, on exactly that board, that 64 of them could
+not attack. `attack`, `health` and `willNotReady` never split a group at all,
+because Wave 1's buffs are board-wide and move a whole group at once.
+
+A tile is **not** a targeting unit, and that is deliberate.
+`groupByTokenDefinition` still expands a chosen Token into every Token of the
+same _definition_ controlled by the same player, whatever state it is in, so
+`containment_pulse` sweeps across several tiles on purpose. The `token_stack`
+glossary entry tells the player both halves.
+
+The layer is `apps/web-client/src/lib/token-grouping.ts` — pure functions over a
+`PlayerView`, returning new arrays, with a group keyed by its **shared state**
+rather than by any member's instance ID, because a group has no identity in the
+engine and must not borrow one. Only Tokens group; a non-Token Unit is always its
+own tile, and so is a unit the view does not describe. Expanding a tile renders
+its members through the same `UnitCard` path a lone unit uses, so there is one
+interaction path rather than two, and a **Stack tokens** toggle returns the
+pre-M06 board exactly — which is what makes "grouping on/off is the same match"
+checkable by playing rather than only by test. The multiset invariant (grouping
+loses no Token and invents none) is asserted on every board the suite builds.
+
+One protocol move, no schema moves: `barrierSpent` is now on
+`CardInstanceView` and `PROTOCOL_VERSION` is 5 → 6. "Has Barrier" and "has
+Barrier left" are different questions and only the first reached a client, so two
+Tokens that answer combat completely differently were indistinguishable. It is
+not a new disclosure — `barrier_consumed` is already an unredacted log event.
+`MATCH_SCHEMA_VERSION` deliberately stays at 7: the field has been on
+`CardInstance` since Barrier shipped, and it is the projection that changed
+rather than the state. No replay, telemetry or manifest version moves, because no
+artefact carries a view.
+
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and
 `eslint.config.js` are held to the same strictness as shipped code. The separate
@@ -607,7 +648,6 @@ Only stop on these when the active tranche genuinely needs the answer:
   support registry — and M05.2 answered the bot half: no pilot pays anything for
   it anywhere. Deleting it from `KEYWORD_IDS` or implementing one of the two
   readings is still yours, and is now the only part left.
-- Q42: exact visual equivalence key for Token grouping.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.
 - Q46: whether Reactions may carry interactive additional costs.
