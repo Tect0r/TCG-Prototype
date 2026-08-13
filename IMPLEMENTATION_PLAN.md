@@ -26,7 +26,14 @@ checklist in the milestone file, then stop.
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | Complete (2026-08-12) | —            |
 | [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | Complete (2026-08-13) | —            |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Complete (2026-08-13) | —            |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1–M07.6 done      | **M07.7**    |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Complete (2026-08-14) | —            |
+
+**The queue is empty.** Every milestone this plan carries is finished, and no
+M08 exists yet. The next action is an owner decision, not a tranche: the
+questions under [Owner decisions still open](#owner-decisions-still-open) are
+what the implementation is now waiting on, and `docs/open-questions.md` holds
+every other question the project has recorded. Adding a milestone file under
+`docs/milestones/` and a row above is what starts the next one.
 
 ## Where the record lives
 
@@ -94,7 +101,11 @@ question the project has recorded.
   mechanic touches them.
 - `npm run verify` passing. It covers the root `tsconfig.json` since M01.5;
   nothing needs to be run separately.
-- No newly stale player-facing text.
+- No newly stale player-facing text. Since M07.7 this is checked rather than
+  remembered: `npm run check:consistency` reports retired rule vocabulary,
+  broken links and anchors, path references to files that do not exist, and any
+  documented value that no longer matches the constant or registry it copies.
+  It runs inside the suite, so `npm run verify` already covers it.
 - `docs/status-audit.md` regenerated with `npm run audit:status` when the tranche
   changed anything it counts. Since M07.1 the suite fails until it is, so this is
   a reminder of the command rather than a duty to remember the numbers.

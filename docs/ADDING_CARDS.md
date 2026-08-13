@@ -39,13 +39,13 @@ breaks nothing at all. If you dislike a card's name, change `name`.
 
 ## 2. Choosing a type
 
-| Type        | Where it lives                  | Notes                                                            |
-| ----------- | ------------------------------- | ---------------------------------------------------------------- |
-| `unit`      | A battlefield slot              | Needs `attack` and `health`. Attacks and blocks.                 |
-| `spell`     | Resolves, then the discard pile | Must have at least one effect. No triggered or static abilities. |
-| `relic`     | The relic row                   | Persists. Does not use a unit slot.                              |
-| `commander` | The Commander zone              | `cost` must be `null`. Never deployed as a unit.                 |
-| `token`     | Created by an effect            | `cost` must be `null`, and `collectible` must be `false`.        |
+| Type        | Where it lives                  | Notes                                                                  |
+| ----------- | ------------------------------- | ---------------------------------------------------------------------- |
+| `unit`      | The battlefield                 | Needs `attack` and `health`. Attacks and blocks. No limit on how many. |
+| `spell`     | Resolves, then the discard pile | Must have at least one effect. No triggered or static abilities.       |
+| `relic`     | The relic row                   | Persists. Playing a second one replaces the first.                     |
+| `commander` | The Command Zone                | Needs `cost`, `attack` and `health`. Deploys onto the battlefield.     |
+| `token`     | Created by an effect            | `cost` must be `null`, and `collectible` must be `false`.              |
 
 The schema enforces all of this. A unit without stats, a token with a cost, or a
 spell with a triggered ability fails validation with the exact field named.

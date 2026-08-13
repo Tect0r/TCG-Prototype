@@ -30,6 +30,7 @@
     "content:check": "vite-node packages/card-data/src/content/cli.ts -- --check",
     "audit:status": "vite-node scripts/audit-status.ts --",
     "audit:check": "vite-node scripts/audit-status.ts -- --check",
+    "check:consistency": "vite-node scripts/check-consistency.ts --",
     "cards:new": "vite-node scripts/new-card.ts --",
     "report:triggers": "vite-node scripts/report-triggers.ts --",
     "verify": "npm run content:check && npm run typecheck && npm run lint && npm run format:check && npm run validate:content && npm run test && npm run build",

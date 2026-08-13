@@ -246,6 +246,12 @@ All of them live in one validated block (`analysisSettings` in
 `apps/simulator/src/config.ts`), are written into every experiment's
 `config.json`, and are overridable per experiment.
 
+The table below is the subset that gets asked about, not the whole block —
+`analysisSettingsSchema` is the complete list, and it carries each setting's
+default beside the comment explaining it. Every row here is compared against
+that schema by `npm run check:consistency`, so a default that moves fails the
+suite; a setting with no row does not, because this was never a full index.
+
 | Setting                  | Provisional default | What it gates                                                |
 | ------------------------ | ------------------- | ------------------------------------------------------------ |
 | `minMatchesPerCard`      | 30                  | Below this, a card is reported `insufficient_data`           |

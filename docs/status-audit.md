@@ -9,7 +9,7 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `8af1d78a8579ced286bda007146d7de0242364b7`  |
+| Commit           | `86cd671f13abdc04d28ba8a10d5c6e980c6bb75f`  |
 | Working tree     | dirty — the audit includes uncommitted work |
 | Taken on         | 2026-08-13                                  |
 | Node             | v24.15.0                                    |
@@ -32,11 +32,11 @@ reproducing it means running the suite again.
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
 | packages       | 59      | 1384     |
-| scripts        | 3       | 34       |
+| scripts        | 4       | 62       |
 | server         | 4       | 63       |
 | simulator      | 23      | 434      |
 | web-client     | 12      | 142      |
-| **total**      | **101** | **2057** |
+| **total**      | **102** | **2085** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 

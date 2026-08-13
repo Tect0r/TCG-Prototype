@@ -447,7 +447,7 @@ explicit approval, keep them and state that generated `content/` is authoritativ
       itself was run and recorded at `8af1d78`, where `npm run verify` also
       passed with the 14 extra tests (2071 in 102 files).
 
-## M07.7 — Final consistency test
+## M07.7 — Final consistency test — **done (2026-08-14)**
 
 Add/retain automated checks that catch:
 
@@ -461,11 +461,120 @@ Add/retain automated checks that catch:
 Run `npm run verify` and a Markdown link check. Record remaining open decisions,
 not speculative future features.
 
-## Acceptance
+### Checklist
+
+- [x] All six checks exist, in one module — `scripts/lib/consistency.ts`, with
+      `scripts/check-consistency.ts` as the CLI shell and `npm run check:consistency`
+      as the command, the arrangement M01.5 set for repository tooling and M07.1
+      reused for the audit. Two of the six are **retained rather than rebuilt**:
+      an `implemented: false` card in a `playtest`/`active` set is already a
+      `content/unimplemented_card` build error, and the audit's counts are
+      already compared byte-for-byte by `status-audit.test.ts`. Both are re-run
+      here against the same registries anyway, so one command answers the whole
+      question instead of three commands answering a third each.
+- [x] **The gate is the suite, not the command.** `scripts/lib/consistency.test.ts`
+      runs every check against the real repository, so drift fails
+      `npm run verify` without a new step in the chain — the same reason
+      `audit:check` is not in `verify` either. The command exists to give a
+      person a readable list rather than a test failure.
+- [x] Every check is handed input it **must reject**, because a checker that has
+      quietly stopped matching reports a clean repository in the same words as
+      one that works. Fifteen planted-failure cases cover a retired term, a dead
+      link, a dangling anchor, a missing path, a drifted dial, an unknown config
+      field, a wrong deck size and a wrong card count; a sixteenth asserts the
+      counts are non-zero, so no check can pass by matching nothing. 28 tests.
+- [x] **Two real defects were found and fixed**, both in `docs/ADDING_CARDS.md`'s
+      card-type table, and both about rules the project had already settled
+      elsewhere: `relic` said it "does not use a unit slot" when there are no
+      unit slots and `RulesConfig` refuses to grow one, and `commander` said
+      "`cost` must be `null`. Never deployed as a unit." — which is the
+      pre-ruleset-update Commander. `commanderDeployCost` returns `null` for a
+      costless Commander precisely because that one **is not deployable**, and
+      every Wave 1 Commander prints a cost (`goblin_warboss` is 4). The row now
+      says a Commander needs `cost`, `attack` and `health` and deploys onto the
+      battlefield, which is what `confirmed-rules.md#commanders` and the schema
+      both already said.
+- [x] **A quoted term is a mention, not a claim.** `docs/open-questions.md` has
+      to be able to write that a deleted file said "the enemy Commander", and
+      `confirmed-rules.md` has to be able to say there is no `unitSlots`, so
+      fenced code, inline code, quotation marks and link targets are blanked —
+      with offsets preserved, so a finding still reports its real line. A
+      **denial** is exempt for the same reason and by a deliberately tiny window:
+      the rulebook's "no separate recovery zone" is the sentence this check
+      exists to protect, while "does not use a unit slot" is not a denial that
+      unit slots exist, and `not` is not `no`, so it was still reported.
+- [x] **Historical documents are exempt from the prose checks and still
+      link-checked.** An accepted ADR keeps the text it was accepted with and
+      M07.3 corrected it with a supersession block rather than a rewrite; a
+      milestone file records what was true when it ran; `project-status.md` keeps
+      a corrected Phase 1–3 history. Holding any of them to today's vocabulary
+      would mean editing the record, which is the opposite of what M07 did. A
+      broken link is broken in a historical document too, so links are checked
+      everywhere: **43 documents, 230 internal links and anchors, all resolving.**
+- [x] The retired-term lexicon is **terms, not numbers**, and each entry names
+      the code that retired it — no `unitSlots`, `swift` renamed `rush` by the
+      v2 → v3 migration, no Recovery Zone, Commanders deploy, an unbounded
+      battlefield, no `on_deploy` trigger, no monolithic `prototype_core.json`.
+      A wrong _number_ is caught exactly instead, against the constant that owns
+      it. "Token stack" is deliberately absent: M06 made it a real presentation
+      concept with a glossary entry and a component, and what M07.6 found stale
+      was a card reaching for it as a game object.
+- [x] The same sweep runs over the **player-facing help**, which is data rather
+      than a file: the resolved rulebook — whose keyword and glossary indexes are
+      rendered into its section text — plus every keyword and glossary definition
+      on its own, since a surface may show either alone. `rulebook.test.ts`'s
+      retired-claims sweep is untouched and still runs.
+- [x] **`docs/rules/open-decisions.md` is checked against its sources in both
+      directions where it promises to be complete.** It is the one place the
+      project deliberately copies configuration into prose, because a playtester
+      needs the dials without opening TypeScript, and M07.2 had to repair it by
+      hand after six dials shipped without rows. Every row of the `RulesConfig`
+      table, the deck-construction table, the keyword table and the analyser's
+      thresholds is compared with the live value — `yes`, `+1`, `90s` and
+      `2000/20` normalised so the tables stay readable — and **every**
+      `RulesConfig` field must have a row, because the section says it does.
+      46 documented values.
+- [x] The thresholds table is the one place coverage is **not** demanded, and the
+      document now says why: it is openly the subset that gets asked about and
+      `analysisSettingsSchema` is the complete list of 26. Requiring the other 16
+      rows would have been this tranche inventing documentation work in a section
+      that opens by saying it is not game rules. A documented row must still be
+      right.
+- [x] Path references are checked without guessing: a backticked token counts as
+      a path claim only when its first segment is a real repository root **and**
+      it names a file, reaches past the first directory, or ends in `/`. That is
+      what separates `docs/status-audit.md` from the issue code
+      `content/unimplemented_card`, the glob `packages/*`, the package
+      `@tcg/card-data` and the shape `content/sets/<setId>/cards/<card_id>.json`.
+      45 references checked.
+- [x] Count claims in active prose are **checked rather than banned**. M07.5
+      stripped countable facts out of `README.md` and pointed at the audit, but a
+      test protocol has to say how big the batch it describes was, so the five
+      that remain are compared against the content — the 155-card Wave 1 set, the
+      40-card singleton deck — and the comparison count is asserted non-zero so a
+      reworded sentence cannot silently retire the check.
+- [x] No rule, schema, protocol or behaviour changed. The only source edit is the
+      new tooling and its test; no version constant moved, and no card, format or
+      registry was touched.
+- [x] Verified: `npm run verify` passes (**2085 tests in 102 files**, up from
+      2057 in 101 by exactly this tranche's test file),
+      `npm run check:consistency` reports no inconsistency across 43 documents,
+      230 links, 45 path references, 46 documented values and 5 count claims, and
+      `npm run audit:check` reports the derived half current — nothing this
+      tranche changed feeds it, so only the run record moved.
+
+## Acceptance — **met (2026-08-14)**
 
 - One short root work queue, one short permanent agent file, one accurate README.
-- No active document teaches an obsolete rule.
-- ADR history remains available with explicit supersession.
-- All links and generated facts validate.
+  — M07.5. The root holds exactly those three documents, and a fourth fails the
+  suite via `PERMITTED_ROOT_DOCS`.
+- No active document teaches an obsolete rule. — M07.2 rewrote the rules record
+  and M07.7 made it a failing test rather than a discipline.
+- ADR history remains available with explicit supersession. — M07.3. Thirteen
+  ADRs amended in place, five added, supersession linked from both ends.
+- All links and generated facts validate. — M07.1's derived audit and M07.7's
+  link, path and documented-value checks, all inside `npm run verify`.
 - The next developer can identify current state and next action without reading
-  historical handoff documents.
+  historical handoff documents. — `IMPLEMENTATION_PLAN.md` is 111 lines and its
+  **Where the record lives** table sends every "what happened" question to
+  exactly one document.

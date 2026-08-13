@@ -64,6 +64,7 @@ npm run typecheck
 npm run validate:content
 npm run content:check
 npm run audit:status
+npm run check:consistency
 npm run cards:new -- --help
 npm run report:triggers
 npm run simulate -- --help
@@ -77,6 +78,12 @@ production build.
 Type-checking covers every workspace **and** the root project — `scripts/`,
 `vitest.config.ts` and `eslint.config.js` — so repository tooling is held to the
 same strictness as shipped code. `npm run typecheck:root` runs that part alone.
+
+`npm run check:consistency` holds the documents to the software: retired rule
+vocabulary in anything still describing the current game, internal links and
+anchors, backticked paths that no longer exist, and every value a document
+copies out of a config or registry. It runs inside the suite as well, so
+`npm run verify` already covers it; the command is for reading the findings.
 
 ## Content and formats
 
