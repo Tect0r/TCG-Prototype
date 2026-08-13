@@ -1,31 +1,27 @@
-# Open design decisions
+# Provisional rules
 
-Everything here is **unconfirmed**. Each entry records what the code does today,
-why, and what has to happen before it can be called settled. Nothing in this
-file may be treated as a confirmed rule.
+Rules the game **implements** but whose value or shape is still a playtest
+decision. Nothing here is a gap in the engine: every entry works today, and every
+entry could move without a rewrite because the implementation keeps it
+configurable rather than inlining it.
 
-Where a value is provisional, the implementation keeps it configurable rather
-than inlining it, so playtesting can move it without a rewrite.
+Three files divide the whole rules record between them:
+[confirmed-rules.md](./confirmed-rules.md) holds what is settled, this file holds
+what is implemented but provisional, and
+[../open-questions.md](../open-questions.md) holds what has no answer at all.
+Each entry below names the question that would settle it.
 
-Phase 2A forced a decision on several things that were genuinely open. In every
-such case the engine ships the smallest, most reversible placeholder, and this
-file records exactly what it does and where to change it. A placeholder is not
-an answer — the questions stay open in
-[open-questions.md](../open-questions.md).
-
-**As of 2026-08-07** some of those placeholders have been ruled on by CLAUDE.md
-§17 without the code having caught up yet. Each entry below says which of three
-states it is in: **open** (no answer), **confirmed — implemented** (the
-placeholder was ratified, nothing to do), or **confirmed — not implemented**
-(Phase 3 work item). Only "open" entries are still decisions to make.
+A provisional value is not a placeholder for missing behaviour. Where an entry
+says "open", what is open is the **number or the wording**, not whether the rule
+runs.
 
 ---
 
 ## Deck construction
 
-**Superseded 2026-08-10** by the Precon Wave 1 ruleset (ADR 0016). Deck
-construction is no longer a constant: it is declared per format in
-`content/formats/*.json` and flattened by `deckFormatOf`.
+Deck construction is declared per format in `content/formats/*.json` and
+flattened by `deckFormatOf`. It is data, not a constant, so an experiment or a
+new format only needs a different config object.
 
 | Format          | Size | Copies                | Commander colours | Pool             |
 | --------------- | ---- | --------------------- | ----------------- | ---------------- |
@@ -33,268 +29,218 @@ construction is no longer a constant: it is declared per format in
 | `development`   | 30   | 2 (1 for unique)      | 2                 | `prototype_core` |
 
 `DEFAULT_DECK_FORMAT` is `precon_wave_1`. `DEVELOPMENT_DECK_FORMAT` is what the
-Phase 1–4 regression fixtures use, and callers that mean the old rules now say
-so explicitly rather than relying on a default.
+Phase 1–4 regression fixtures use, and callers that mean the old rules say so
+explicitly rather than relying on a default. `validateDeck(deck, database,
+format)` takes the format as an argument, and the multiplayer server validates
+every submitted deck with the same function.
 
-`validateDeck(deck, database, format)` still takes the format as an argument, so
-an experiment only needs a different config object. The multiplayer server
-validates every submitted deck with the same function.
-
-**Needs playtesting:** whether 40-card singleton gives enough consistency, and
-whether the two-colour Commander cap should open up to three once the colour pie
-exists.
+**Provisional:** whether 40-card singleton gives enough consistency, and whether
+the two-colour Commander cap should open to three once the colour pie exists.
+Playtest question — Q19.
 
 ---
 
 ## Match rules — provisional numbers
 
-Every provisional value the engine uses is a field on `RulesConfig`
+Every provisional numeric rule is a field on `RulesConfig`
 (`packages/rules-engine/src/config.ts`). Nothing in the engine inlines any of
 them, and `MatchState` records the `rulesVersion` it was created under.
 
-| Value                      | Current | Field                                    |
-| -------------------------- | ------- | ---------------------------------------- |
-| Starting health            | 20      | `startingHealth`                         |
-| Opening hand               | 5       | `openingHandSize`                        |
-| Maximum hand size          | 10      | `maxHandSize`                            |
-| Free opening redraws       | 1       | `openingRedraws`                         |
-| First player skips a draw  | yes     | `firstPlayerSkipsFirstDraw`              |
-| Starting / per-turn energy | 1 / +1  | `startingMaxEnergy`, `energyGainPerTurn` |
-| Energy cap                 | 10      | `energyCap`                              |
-| Unit slots                 | 5       | `unitSlots`                              |
-| Relic limit                | 3       | `relicSlots`                             |
-| Exhausted units may block  | yes     | `exhaustedUnitsMayBlock`                 |
-| Blockers per attacker      | 1       | `blockersPerAttacker`                    |
-| Armored reduction          | 1       | `armoredReduction`                       |
-| Empty deck loses           | yes     | `emptyDeckDrawLoses`                     |
-| Disconnect grace           | 90s     | `disconnectGraceSeconds`                 |
+| Value                          | Current | Field                                     |
+| ------------------------------ | ------- | ----------------------------------------- |
+| Starting health                | 20      | `startingHealth`                          |
+| Opening hand                   | 5       | `openingHandSize`                         |
+| Maximum hand size              | 10      | `maxHandSize`                             |
+| Free opening redraws           | 1       | `openingRedraws`                          |
+| First player skips a draw      | yes     | `firstPlayerSkipsFirstDraw`               |
+| Starting / per-turn energy     | 1 / +1  | `startingMaxEnergy`, `energyGainPerTurn`  |
+| Energy cap                     | 10      | `energyCap`                               |
+| Active Relics                  | 1       | `relicSlots`                              |
+| Exhausted units may block      | no      | `exhaustedUnitsMayBlock`                  |
+| Blockers per attacker          | 1       | `blockersPerAttacker`                     |
+| Armored reduction              | 1       | `armoredReduction`                        |
+| Commander surcharge per defeat | +1      | `commanderCostPerDefeat`                  |
+| Commander total cost cap       | 10      | `commanderCostCap`                        |
+| Reactions enabled              | yes     | `reactionsEnabled`                        |
+| Reactions per player, window   | 1       | `reactionsPerPlayerPerWindow`             |
+| Printed cost-reduction floor   | 1       | `costReductionFloor`                      |
+| Empty deck loses               | yes     | `emptyDeckDrawLoses`                      |
+| Resolution safeguards          | 2000/20 | `maxResolutionSteps`, `maxRepeatedStates` |
+| Disconnect grace               | 90s     | `disconnectGraceSeconds`                  |
 
 Changing one is a config edit plus updating the tests that assert it. Several
 tests already pass their own config object — that is the pattern to follow, not
 editing the default.
+
+Two absences are deliberate and must stay absent. There is **no `unitSlots`**:
+the battlefield cap was removed rather than raised, and it must not return as a
+large number here or as a hidden limit anywhere else. And `exhaustedUnitsMayBlock`
+covers only _who may be declared_ — declaring a blocker **exhausts** it
+unconditionally in `flow.ts#finalizeBlockers`, because that half is a confirmed
+rule rather than a number.
+
+Whether three- and four-player matches need different values at all is Q35;
+whether the disconnect window is fair at four seats is Q34.
 
 ---
 
 ## Colour identities
 
 Five placeholder colours: `white`, `blue`, `black`, `red`, `green`. These are
-plain colour words with **no lore, faction or mechanical pie attached yet**. The
-spec's own examples use blue and red, so those names were kept.
+plain colour words with **no lore, faction or mechanical pie attached yet**.
 
 Neutral/colourless is modelled as an **empty** `colorIdentity` array rather than
-a sixth colour. That makes the legality rule fall out for free: every colour in
-a card's identity must appear in the Commander's identity, and an empty array
-satisfies that vacuously.
+a sixth colour, which makes the legality rule fall out for free: every colour in
+a card's identity must appear in the Commander's, and an empty array satisfies
+that vacuously.
 
-**Open:** the final colour names, count, and what each colour actually _does_.
-Renaming is safe — colour IDs appear only in card data and `COLOR_INFO`; display
-names are already separate.
+**Provisional:** the final colour names, count, and what each colour actually
+_does_ — Q17. Renaming is safe: colour IDs appear only in card data and
+`COLOR_INFO`, and display names are already separate.
 
 ---
 
 ## Keywords
 
-Eight provisional keywords exist: `swift`, `guardian`, `evasive`, `armored`,
-`siphon`, `venom`, `quick_strike`, `resilient`. Their exact wording and
-interactions are **still undecided** ([open-questions.md](../open-questions.md)
-Q4).
+Eleven keywords exist. The single source of truth is `KEYWORD_REGISTRY` in
+`packages/card-data/src/keywords.ts`: it carries the player-facing definition
+every tooltip, glossary entry and card explanation reads, and its `implemented`
+flag is now a **view of the mechanic support registry** rather than a second
+claim beside it. `packages/rules-engine/src/keywords.ts` adds only the
+developer-facing note naming the handler that owns each behaviour.
 
-Phase 2A had to do _something_ with them to run a match. The single source of
-truth is `KEYWORD_REGISTRY` in `packages/card-data/src/keywords.ts`: it carries
-the player-facing definition every tooltip, glossary entry and card explanation
-reads, plus the `implemented` flag saying whether the engine acts on the keyword
-at all. `packages/rules-engine/src/keywords.ts` imports that flag rather than
-keeping a copy, and adds only the developer-facing note naming the handler that
-owns the behaviour — so the definition a player reads and the engine's record of
-what is wired up cannot drift apart.
+| Keyword                     | Engine behaviour today                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `rush`                      | Bypasses the two `Newly Deployed` restrictions without removing the state.                    |
+| `guardian`                  | Blocking obligation: a defender must block at least as many aimed attacks as ready Guardians. |
+| `barrier`                   | Prevents the first non-zero damage event, then is spent.                                      |
+| `overwhelm`                 | Splits damage against the blocker's current Health; the remainder hits the player.            |
+| `untargetable_by_opponents` | Dropped from any legal target set computed for an opposing chooser.                           |
+| `evasive`                   | Cannot be assigned a blocker.                                                                 |
+| `armored`                   | Reduces **each instance** of damage by `armoredReduction`, minimum zero.                      |
+| `quick_strike`              | Deals combat damage in an earlier step; anything defeated there never strikes back.           |
+| `venom`                     | Any damage it deals to a unit is lethal to that unit.                                         |
+| `siphon`                    | Combat damage it deals heals its controller by the same amount.                               |
+| `resilient`                 | **Inert.** No mechanical effect.                                                              |
 
-Changing a keyword means changing the registry entry, the engine note, and the
-handler it names — not hunting through combat code.
+**`resilient` is the only inert one,** and it is inert on purpose: the plausible
+readings (clear all damage at end of turn, versus survive lethal damage once per
+turn) differ enormously in power and interact directly with the "damage persists
+between turns" rule. Its glossary entry says so in the words a player reads,
+rather than describing a rule the game does not implement.
 
-| Keyword        | Engine behaviour today                                                          |
-| -------------- | ------------------------------------------------------------------------------- |
-| `swift`        | Ignores summoning sickness.                                                     |
-| `evasive`      | Cannot be assigned a blocker.                                                   |
-| `armored`      | Reduces **each instance** of damage by `armoredReduction` (1), minimum zero.    |
-| `quick_strike` | Deals combat damage in an earlier step; a unit killed there never strikes back. |
-| `venom`        | Any damage it deals to a unit is lethal to that unit.                           |
-| `siphon`       | Combat damage it deals heals its controller by the same amount.                 |
-| `guardian`     | **Inert.** No mechanical effect.                                                |
-| `resilient`    | **Inert.** No mechanical effect.                                                |
+Two structural consequences, both already in force. A `playtest` or `active` set
+containing a card built on an inert mechanic is a **build error**, so `resilient`
+is barred from playable content by a rule rather than by luck; no
+`precon_wave_1` card prints it. And `keywordIsValued` reads the same registry, so
+an `engine: 'none'` keyword is worth **zero** to a pilot everywhere a keyword is
+priced — implementing it switches its valuation on in the same change that
+switches its behaviour on.
 
-Two of them do nothing on purpose:
+**Provisional:** what `resilient` should do, or whether to delete it — Q4.
+Also whether `armored` is per damage instance (current) or per turn.
 
-- **`guardian` is inert** because taunt-style semantics have no meaning in the
-  combat model: attackers target a _player_ and never choose a unit to attack,
-  so "must be attacked through a guardian" has nothing to attach to. Phase 3
-  makes that permanent rather than temporary — CLAUDE.md §12 confirms that units
-  cannot attack other units directly at any player count, so any eventual
-  meaning has to live on the blocking or damage side. Inventing one would be
-  guessing at a design decision nobody has made. Cards keep the keyword, the
-  deck builder keeps filtering on it, and a regression test asserts that a
-  guardian blocker currently behaves exactly like any other blocker.
-- **`resilient` is inert** because the plausible readings (clear all damage at
-  end of turn, versus survive lethal damage once per turn) differ enormously in
-  power and interact directly with the "damage persists between turns" rule.
+Changing a keyword means changing the registry entry, the engine note beside it,
+and the handler it names — not hunting through combat code.
 
-Both are waiting on Q4. Neither blocks anything else.
+---
+
+## Reaction chaining policy
+
+Implemented, versioned and deliberately minimal (ADR 0016; `reactions.ts`):
+
+- one window per triggering event, opened only if somebody could legally act;
+- priority to the active player first, then clockwise, offered only to a player
+  with something legal to play;
+- each eligible player plays at most `reactionsPerPlayerPerWindow` (1) Reaction
+  per window;
+- playing a Reaction restarts the round of priority, so a player who had already
+  declined is asked again;
+- the window closes when everybody declines in a row;
+- pending cards resolve last in, first out, with the spell the window opened
+  around at the bottom;
+- nothing already resolving is interruptible, and countering refunds nothing.
+
+**Provisional:** whether "playing a Reaction restarts the round" is the wanted
+rule. It is the one point where the engine and `CLAUDE.md`'s product rules
+currently disagree, and the in-app rulebook describes the engine — Q47. Whether a
+Reaction may carry an additional cost is Q46; the schema rejects one today rather
+than accepting it and quietly not charging it.
+
+---
+
+## Barrier against other reduction
+
+Barrier's order **against Overwhelm** is confirmed (ADR 0016 Q-D, and
+[confirmed-rules.md](./confirmed-rules.md#combat)). Its order against the other
+reducers is not: the engine has `armored` (flat reduction) and `prevent_damage`
+shields, and `damage.ts` currently applies `armored` first. Ruleset update §9's
+"a zero-damage event does not consume Barrier" is already in force, which leans
+toward reduction-first.
+
+**Provisional:** the general ordering, which only genuinely diverges once a
+`prevent_damage` shield with a capped amount exists — Q45.
+
+---
+
+## Blockers per attacker
+
+`blockersPerAttacker` defaults to `1`, and blocker assignment is modelled so more
+than one can be added without rewriting combat state.
+
+**Provisional:** whether multi-blocking is ever wanted — Q44. It is recorded here
+because doing it in the same pass as another combat change is far cheaper than a
+second rewrite.
+
+---
+
+## Turn phase list
+
+The machine itself is confirmed and enforced in `flow.ts`
+([confirmed-rules.md](./confirmed-rules.md#turn-structure)); phase legality is
+never inferred from the UI, which only renders what `legalActions` reports.
+
+**Provisional:** the phase list itself. Nothing so far suggests it is wrong.
+
+---
+
+## Leaving a live match
+
+Leaving a live match concedes; losing the socket starts the grace window
+instead (`match-server.ts`, `leave` / `disconnect`).
+
+**Provisional:** whether that split is right at four seats, where one stalled
+seat holds up three others — Q34, and related to the timeout policy in Q8.
 
 ---
 
 ## Tokens and colour identity
 
-A card that creates a coloured token arguably carries that colour. The loader
+A card that creates a coloured Token arguably carries that colour. The loader
 emits a **warning** (`card_data/token_color_leak`), not an error, when a card
-creates a token whose colours are not in the creating card's identity.
+creates a Token whose colours are not in the creating card's identity.
 
-**Open:** whether this should be a hard rule. If it becomes one, promote the
-warning to an error in `loader.ts`. The bundled set already respects it.
-
----
-
-## Commander recovery
-
-Still **not implemented and not modelled**, per CLAUDE.md §4 ("do not invent
-that subsystem in Phase 2") and now §12, which also bars Commander battlefield
-deployment and recovery from Phase 3. Commanders do not enter the battlefield,
-are never defeated, and the `recovery` zone exists in the schema with nothing
-that can enter it.
-
-One consequence worth knowing: Commander abilities triggered by `on_attack`,
-`on_block`, `on_survive_combat`, `on_deploy`, `on_defeated` or `on_sacrifice`
-can **never fire** in Phase 2, because a Commander never does any of those
-things. Four of the eight bundled Commanders have such abilities and are
-effectively vanilla for now. That follows from the deferral; it is not a bug.
-
-Commander _passives_ that hang off `on_turn_start` / `on_turn_end` do work, from
-the Commander zone, as CLAUDE.md §4 requires.
-
----
-
-## Card-schema questions: what the engine does today
-
-Q1–Q3 were **answered on 2026-08-07** (CLAUDE.md §17). The engine still runs the
-Phase 2A placeholder for all three; each is now a Phase 3 work item rather than a
-decision.
-
-### `effects` vs. `abilities` (Q1)
-
-**Confirmed — not implemented.** The ruling: keep top-level `effects` for spell
-resolution _and_ for unit/relic deploy resolution, keep triggered `abilities`
-only for non-deploy triggers, and migrate every `on_deploy` ability into
-top-level `effects` so deploy behaviour has one authoring form.
-
-Today the engine still accepts both: it enqueues a unit's or relic's top-level
-`effects` when the card enters play, immediately before any `on_deploy` ability
-on the same card, and the bundled set uses both forms. Closing this needs a card
-migration plus a schema rule rejecting `on_deploy` inside `abilities`. See
-[ADR 0002](../architecture/0002-card-data-model.md).
-
-### Static and continuous abilities (Q2)
-
-**Confirmed — not implemented,** and still the real gap. The ruling: a separate
-validated `staticAbilities` layer whose effects are derived from current state,
-never permanently stamped onto recipients, and recalculated after every relevant
-state change. Until it exists there is no continuous-effects layer at all.
-
-Concretely:
-
-- `modify_cost` is a turn-scoped modifier held on the player, so "your units
-  cost 1 less this turn" works as written and expires at end of turn.
-- `grant_keyword` and `modify_stats` apply **once, to whatever is on the board
-  at that moment**. `radiant_bulwark` reads "your units gain Armored"; the
-  engine grants Armored to units present when it is deployed and does _not_
-  grant it to units that arrive later.
-
-That divergence between text and behaviour is a consequence of the layer not
-existing yet, not a bug to fix in isolation. Lord-style and aura cards still
-should not be authored until it does.
-
-### `sacrifice` as cost or effect (Q3)
-
-**Confirmed — implemented.** The ruling: it may be **either**. A `sacrifice`
-instruction inside `effects` stays an effect, and a cost lives in a structured
-`costs` array — energy, exhaust-source, discard and sacrifice — validated and
-paid atomically before the ability is queued. The `energyCost` field is gone;
-the v1 → v2 card migration converts it.
-
-Three refinements landed with the "you may" cards (ADR 0017), all of them about
-_which_ card pays:
-
-- **A sacrifice cost is the payer's choice by default** (`selection`, defaulting
-  to `player_choice`). Where the decision matters, the engine pauses for a
-  selection **before anything is spent**, then re-runs the whole action with the
-  answer — a cost cannot be a paused resolution, because nothing has been queued
-  yet. `automatic` keeps the older deterministic pick. Nobody is asked when the
-  candidate count equals the cost.
-- **`excludeSource`** is "sacrifice **another** Unit". Before it existed
-  `ritual_butcher` printed "another" and could eat itself.
-- **A card may carry its own `additionalCosts`**, separate from an ability's.
-  The timing is the whole distinction: it is paid before an opponent's Reaction
-  window opens, so countering the card refunds nothing. Restricted to `unit`,
-  `spell` and `relic` — the types the ordinary play-from-hand path handles.
-  Whether a **Reaction** may carry one is Q46.
-
-### Trigger scope
-
-Every v0.2 trigger is **self-referential**: a source reacts only to events about
-itself. The exceptions are `on_turn_start` and `on_turn_end`, which fire for
-everything a player controls on their own turn.
-
-There is deliberately no "whenever _another_ unit is defeated". That would be a
-card-design decision about what the trigger vocabulary means, and nothing in the
-bundled set needs it.
-
-Relatedly, `on_sacrifice` and `on_defeated` **both** fire when a unit is
-sacrificed: sacrifice emits `unit_defeated` with `reason: 'sacrificed'`, and
-`on_defeated` matches any defeat. That is now **confirmed — implemented** (Q24):
-a sacrificed unit counts as defeated, and the `reason` is retained so a future
-card can filter on it.
-
----
-
-## Phase 2 engine placeholders
-
-Everything else the engine had to assume in order to run, with where to change
-it and whether CLAUDE.md §17 has since ruled on it.
-
-| Placeholder                                                                                                                                  | Status                                                                                                                               | Where it lives                            |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| A search may legally find nothing (`minimum: 0`)                                                                                             | Confirmed for **hidden** zones only; public zones must be mandatory unless the effect says `up_to`/`may` — **not implemented** (Q25) | `effects.ts`, `search_zone`               |
-| Player healing has no upper bound                                                                                                            | Confirmed — implemented (Q26); a per-effect maximum is a later schema addition                                                       | `damage.ts`, `healPlayer`                 |
-| Triggers created mid-card are appended, so the rest of that card's instructions resolve first                                                | Confirmed — implemented (Q28)                                                                                                        | `queue.ts`, `pumpQueue`                   |
-| `while_source_present` duration behaves as `permanent`                                                                                       | Open; subsumed by the `staticAbilities` layer (Q2)                                                                                   | `flow.ts`, `expireEndOfTurnEffects`       |
-| A spell is unplayable when a **required** target has no legal option; a unit or relic still enters play and its deploy effect simply fizzles | Open                                                                                                                                 | `engine.ts`, `spellHasLegalTargets`       |
-| Damage reduction order: `armored` first, then prevention shields                                                                             | Open; depends on Q4                                                                                                                  | `damage.ts`, `damageUnit`                 |
-| Leaving a live match concedes; losing the socket starts the grace window instead                                                             | Open; free-for-all raises the stakes (Q34)                                                                                           | `match-server.ts`, `leave` / `disconnect` |
-
----
-
-## Turn phases
-
-Implemented in Phase 2A as an explicit state machine
-(`packages/rules-engine/src/flow.ts`), exactly as recorded in
-[confirmed-rules.md](./confirmed-rules.md). Phase legality is enforced by the
-engine; the UI only renders what `legalActions` reports.
-
-Still provisional: the phase list itself. Nothing so far suggests it is wrong.
+**Provisional:** whether this should be a hard rule — Q18. If it becomes one,
+promote the warning to an error in `loader.ts`. The bundled sets already comply.
 
 ---
 
 ## Artwork
 
-`768 × 1024 px` PNG, per the spec, is what the placeholder generator emits and
-what the card frame reserves space for. Marked "unless implementation testing
-exposes a better choice" — nothing so far suggests it should change.
+`768 × 1024 px` PNG is what the placeholder generator emits and what the card
+frame reserves space for.
+
+**Provisional:** the size — Q22. Nothing so far suggests changing it; revisit
+only if real art shows a problem.
 
 ---
 
 ## Simulator analysis thresholds
 
 **Not game rules.** Nothing in this section changes how a match plays. These are
-the numbers the Phase 4 balance analyser uses to decide when to ask a human to
-look at something, and they are listed here so they are not mistaken for
-confirmed values of anything.
+the numbers the balance analyser uses to decide when to ask a human to look at
+something, and they are listed here so they are not mistaken for confirmed values
+of anything.
 
 All of them live in one validated block (`analysisSettings` in
 `apps/simulator/src/config.ts`), are written into every experiment's
@@ -313,55 +259,13 @@ All of them live in one validated block (`analysisSettings` in
 | `deadHandShare`          | 0.5                 | Share of drawn copies dead before an inclusion looks wrong   |
 | `abnormalShare`          | 0.02                | Abnormal terminations above which the run is suspect         |
 
-These are guesses. They were chosen to be legible rather than tuned, and nobody
-has run enough matches against a real card pool to say whether any of them is
-right — that is **Q14** in [open-questions.md](../open-questions.md). The
-analyser never converts a threshold into a verdict: it produces
-`review_recommended`, `possible_interaction`, `insufficient_data` or
-`run_quality`, always with the evidence, the sample size and the interval
-attached, so the number can be argued with.
+These were chosen to be legible rather than tuned — Q14. The analyser never
+converts a threshold into a verdict: it produces `review_recommended`,
+`possible_interaction`, `insufficient_data` or `run_quality`, always with the
+evidence, the sample size and the interval attached, so the number can be argued
+with.
 
----
-
-## Precon Wave 1 decisions (2026-08-10)
-
-Four of `CLAUDE_RULESET_UPDATE.md` §18's open items were forced by the authored
-card catalog and were answered by the project owner rather than assumed. They
-are **provisional playtest rules**, recorded in full in
-[ADR 0016](../architecture/0016-precon-wave-1-ruleset.md).
-
-| Question                              | Answer                                                 | State                       |
-| ------------------------------------- | ------------------------------------------------------ | --------------------------- |
-| What does "the enemy Commander" mean? | The opposing **player's** Health                       | confirmed — not implemented |
-| How long does `Newly Deployed` last?  | Until its controller's next Ready Step                 | confirmed — implemented     |
-| May a Newly Deployed Unit block?      | Yes                                                    | confirmed — implemented     |
-| Barrier vs Overwhelm ordering         | Overwhelm splits first; Barrier saves only the blocker | confirmed — implemented     |
-
-### ⚠ Flagged divergence in the Overwhelm split
-
-The answer specifies "damage equal to the blocker's **current Health**". Update
-§9 says "up to the blocker's **remaining lethal requirement** … account for
-marked damage". These differ whenever the blocker is already damaged. The
-implemented rule is the answer as given; `combat.ts#buildHits` carries the note
-and it is a one-line change to switch. **Open:** which of the two was intended.
-
-### Reaction chaining policy — provisional, versioned
-
-Recorded here because §18 leaves it open and §11 requires a documented minimal
-policy rather than a hidden one:
-
-- one window per triggering event, in seat order from the non-active player;
-- each eligible player may play **at most one** Reaction per window;
-- a Reaction cannot be responded to by another Reaction;
-- the window closes when every eligible player has acted or declined.
-
-**Not yet implemented** — the ten authored Reactions are inventoried as
-unsupported until the windows exist.
-
-### Still open from §18
-
-Commander lifecycle after battlefield defeat; the relationship between a
-deployed Commander's printed Health and its controller's Health beyond the
-targeting answer above; whether several blockers may block one attacker; final
-Health / hand size / mulligan / Energy curve / deck-out; final faction names and
-colour pie; the fate of `resilient`; alternate victory conditions; phase timers.
+The board-stall threshold is **not** here. It was a judgement in the reporting
+layer and is now one explicit, configurable, versioned number that travels inside
+every document carrying a verdict (`@tcg/board-telemetry/stall`,
+`STALL_DEFINITION_VERSION`), which is what Q43's answer required.

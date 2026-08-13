@@ -9,7 +9,7 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `862b3e4e35b35a7525112e4be53fec68c69364ac`  |
+| Commit           | `d94ed61fd94d3ac06f75d142d12ce4ad67075676`  |
 | Working tree     | dirty — the audit includes uncommitted work |
 | Taken on         | 2026-08-13                                  |
 | Node             | v24.15.0                                    |
@@ -199,61 +199,59 @@ No match record observes (31):
 
 | Question | Title                                                                  | Question file | Listed open in the plan |
 | -------- | ---------------------------------------------------------------------- | ------------- | ----------------------- |
-| Q1       | Do `effects` and `abilities` collapse into one form? — 2026-08-07      | answered      | no                      |
-| Q2       | How are static / continuous abilities expressed? — 2026-08-07          | answered      | no                      |
-| Q3       | Is `sacrifice` a cost or an effect? — 2026-08-07                       | answered      | no                      |
-| Q4       | What does each keyword actually do?                                    | open          | yes                     |
-| Q5       | How long is Commander recovery, and what happens during it?            | open          | no                      |
+| Q1       | Do `effects` and `abilities` collapse into one form? — answered 202... | answered      | no                      |
+| Q2       | How are static / continuous abilities expressed? — answered 2026-08-07 | answered      | no                      |
+| Q3       | Is `sacrifice` a cost or an effect? — answered 2026-08-07              | answered      | no                      |
+| Q4       | What should `resilient` do, or should it be deleted?                   | open          | yes                     |
+| Q5       | What happens to a Commander after battlefield defeat? — answered 20... | answered      | no                      |
 | Q6       | Is there an alternate victory condition?                               | open          | no                      |
-| Q7       | What is the client/server protocol contract? — 2026-08-07              | answered      | no                      |
+| Q7       | What is the client/server protocol contract? — answered 2026-08-07     | answered      | no                      |
 | Q8       | What is the turn/action timeout policy?                                | open          | no                      |
 | Q9       | Should a match survive a server restart?                               | open          | no                      |
-| Q10      | Multiplayer combat and targeting — 2026-08-07                          | answered      | no                      |
-| Q11      | Priority order for simultaneous triggers — 2026-08-07                  | answered      | no                      |
-| Q12      | Elimination semantics — 2026-08-07                                     | answered      | no                      |
-| Q13      | Team play — in or out? — 2026-08-07                                    | answered      | no                      |
+| Q10      | Multiplayer combat and targeting — answered 2026-08-07                 | answered      | no                      |
+| Q11      | Priority order for simultaneous triggers — answered 2026-08-07         | answered      | no                      |
+| Q12      | Elimination semantics — answered 2026-08-07                            | answered      | no                      |
+| Q13      | Team play — in or out? — answered 2026-08-07                           | answered      | no                      |
 | Q14      | What thresholds should actually gate a card change?                    | open          | no                      |
 | Q15      | How is "a healthy plural meta" measured?                               | open          | no                      |
-| Q16      | Simulator determinism boundary — **answered 2026-08-08**               | answered      | no                      |
+| Q16      | Simulator determinism boundary — answered 2026-08-08                   | answered      | no                      |
 | Q17      | Colour identity — names, count, and what each colour does              | open          | no                      |
-| Q18      | Does creating a coloured token leak colour identity into the creator?  | open          | no                      |
-| Q19      | Is 30 cards / 2 copies / 2 colours right?                              | open          | no                      |
+| Q18      | Does creating a coloured Token leak colour identity into the creator?  | open          | no                      |
+| Q19      | Is 40-card singleton with a two-colour Commander cap right?            | open          | no                      |
 | Q20      | Should `displayText` be generated from structured effects?             | open          | no                      |
 | Q21      | Localisation                                                           | open          | no                      |
 | Q22      | Is 768 × 1024 px the right art size?                                   | open          | no                      |
-| Q23      | Should an effect be able to target a player directly? — 2026-08-07     | answered      | no                      |
-| Q24      | Does a sacrificed unit also trigger `on_defeated`? — 2026-08-07        | answered      | no                      |
-| Q25      | Must a search find something if a legal card exists? — 2026-08-07      | answered      | no                      |
-| Q26      | Is player healing capped? — 2026-08-07                                 | answered      | no                      |
-| Q27      | Is the activated-ability shape right, and should the placeholder ab... | answered      | no                      |
+| Q23      | Should an effect be able to target a player directly? — answered 20... | answered      | no                      |
+| Q24      | Does a sacrificed unit also trigger `on_defeated`? — answered 2026-... | answered      | no                      |
+| Q25      | Must a search find something if a legal card exists? — answered 202... | answered      | no                      |
+| Q26      | Is player healing capped? — answered 2026-08-07                        | answered      | no                      |
+| Q27      | Is the activated-ability shape right? — answered 2026-08-07            | answered      | no                      |
 | Q28      | Should a trigger created mid-card resolve before the rest of that c... | answered      | no                      |
-| Q29      | Confirm the `targetsSource` addition to the target schema — 2026-08-07 | answered      | no                      |
-| Q30      | Is strict stale-revision rejection the behaviour you want? — 2026-0... | answered      | no                      |
-| Q31      | How is seat order determined?                                          | open          | no                      |
-| Q32      | Is `removed` a real zone, and does elimination reveal hidden inform... | open          | no                      |
-| Q33      | What order does `all_players` resolve in?                              | open          | no                      |
+| Q29      | Confirm the `targetsSource` addition to the target schema — answere... | answered      | no                      |
+| Q30      | Is strict stale-revision rejection the behaviour you want? — answer... | answered      | no                      |
+| Q31      | How is seat order determined? — answered 2026-08-08                    | answered      | no                      |
+| Q32      | Is `removed` a real zone, and does elimination reveal hidden inform... | answered      | no                      |
+| Q33      | What order does `all_players` resolve in? — answered 2026-08-08        | answered      | no                      |
 | Q34      | Does the disconnect grace window run while it is not that player's ... | open          | no                      |
 | Q35      | Do three- and four-player matches need different rule values?          | open          | no                      |
-| Q36      | Who controls the lobby, and can its size change after players join?    | open          | no                      |
+| Q36      | Who controls the lobby, and can its size change after players join?... | answered      | no                      |
 | Q37      | Should the pilots be better players than they are?                     | open          | no                      |
 | Q38      | When is a multiplayer balance run worth it?                            | open          | no                      |
-| Q39      | What is the final Reaction chaining and ordering policy?               | open          | no                      |
-| Q40      | Should `cards.json` and `precons.json` be deleted from the repo root?  | open          | no                      |
-| Q41      | Are unimplemented cards visible in the deck builder, and is there a... | open          | no                      |
-| Q42      | What makes two Tokens "identical" for visual stacking? — **answered... | answered      | no                      |
-| Q43      | What counts as a board stall? — **answered 2026-08-12**                | answered      | no                      |
+| Q39      | What is the Reaction chaining and ordering policy? — answered 2026-... | answered      | no                      |
+| Q40      | Should root `cards.json` and `precons.json` be deleted?                | open          | no                      |
+| Q41      | Are unimplemented cards visible in the deck builder, and is there a... | answered      | no                      |
+| Q42      | What makes two Tokens "identical" for visual stacking? — answered 2... | answered      | no                      |
+| Q43      | What counts as a board stall? — answered 2026-08-12                    | answered      | no                      |
 | Q44      | Do you want multiple blockers per attacker, and if so, when?           | open          | yes                     |
 | Q45      | Is Barrier consumed before or after other prevention and reduction?    | open          | yes                     |
 | Q46      | May a Reaction carry an additional cost?                               | open          | yes                     |
-| Q47      | (no entry in docs/open-questions.md)                                   | absent        | yes                     |
+| Q47      | May a Reaction answer another Reaction?                                | open          | yes                     |
 | Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | open          | yes                     |
 
-23 question(s) are open in the question file and not on the plan's
+16 question(s) are open in the question file and not on the plan's
 short list, which is the curated set a tranche might have to stop on rather than an index.
 
-The other direction is a contradiction, and there is one for each of:
-
-- Q47 is listed open in `IMPLEMENTATION_PLAN.md`, but `docs/open-questions.md` records it as absent.
+No question the plan calls open is missing or answered in the question file.
 
 ## Repository inventory
 

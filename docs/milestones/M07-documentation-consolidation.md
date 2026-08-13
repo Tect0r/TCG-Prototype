@@ -65,7 +65,7 @@ known limitations. Do not copy old totals from prose.
       audit records that it passed, with 2057 tests in 101 files across the five
       Vitest projects.
 
-## M07.2 — Rules truth sweep
+## M07.2 — Rules truth sweep — **done (2026-08-13)**
 
 Rewrite/consolidate:
 
@@ -79,6 +79,74 @@ targets, and already-built schemas.
 
 Keep the explicit card-by-card `deployed` versus `entersBattlefield` review
 record. Do not convert it into a blanket rule.
+
+### Checklist
+
+- [x] The three files now divide the rules record with **no overlap**, and each
+      says so at the top: `confirmed-rules.md` is what is settled and
+      implemented, `open-decisions.md` is what is implemented but whose value is
+      provisional, `open-questions.md` is what has no answer. Every provisional
+      entry names the question that would settle it, and every open question
+      names what it blocks, so a reader can get from a rule to its status in one
+      hop in either direction.
+- [x] `confirmed-rules.md` is rewritten from the code rather than edited. It is
+      organised by subject rather than by the phase that built it — the Phase 1 /
+      Phase 2 framing is gone — and every section ends with the module that
+      enforces it. It deliberately does **not** restate the in-app rulebook's
+      prose: `packages/help-content/src/data/rulebook.json` is the player's copy,
+      reads its numbers from the live `RulesConfig` and its keyword definitions
+      from `KEYWORD_REGISTRY`, and a second hand-maintained copy is the drift M07
+      exists to remove.
+- [x] Every stale rule the tranche named is gone, and each was checked against
+      the code rather than against another document: no `unitSlots` field exists
+      (`config.ts` says so and says why it must not return), `relicSlots` is 1,
+      `guardian` is a real blocking obligation and `swift` was renamed `rush` by
+      the v2 → v3 migration, Commanders deploy and return to the Command Zone
+      with a +1 cost tax capped at 10, deck construction is per-format data
+      (40-card singleton for `precon_wave_1`), player targets are first-class
+      variants, and the `staticAbilities`, structured `costs` and source-target
+      schemas are all built.
+- [x] `open-decisions.md` holds only implemented-but-provisional rules. The
+      Phase 2 placeholder table is gone, because every row in it — `minimum: 0`
+      searches, uncapped healing, appended mid-card triggers,
+      `while_source_present`, the no-legal-target rule — is now settled and
+      implemented. The `RulesConfig` table is regenerated against
+      `config.ts` and gains the six dials that shipped since it was written. The
+      `#keywords`, `#colour-identities` and `#deck-construction` anchors are kept,
+      because other documents link to them.
+- [x] `resilient` is the only inert keyword, and the keyword table says what the
+      other ten actually do. Both structural halves of Q4 are recorded as closed —
+      an inert mechanic is a build error in a strict-status set, and
+      `keywordIsValued` prices it at zero — leaving only the design call.
+- [x] **Q47 now exists.** M07.1's question ledger found exactly one contradiction:
+      the plan called Q47 open and `docs/open-questions.md` had no entry at all.
+      It is written up from the code — playing a Reaction clears
+      `window.passedPlayerIds`, so the round restarts and a Reaction may answer
+      another, which `reactions.test.ts` asserts and `CLAUDE.md`'s product rules
+      forbid — with both directions of the fix and what each would cost. The
+      ledger is now clean: **no contradictions**, and the open-but-unlisted count
+      falls 23 → 16.
+- [x] Three questions were answered by the implementation rather than by this
+      tranche, and are recorded as answered rather than left to rot: **Q5**
+      (Commander post-defeat lifecycle — a locked decision in `CLAUDE.md`),
+      **Q39** (the Reaction window policy is built and versioned; its unresolved
+      remainder is exactly Q47), and **Q41** (the builder is format-scoped and
+      names why a card cannot be added). Four more — Q31, Q32, Q33, Q36 — were
+      decided during Phase 3 but sat in an open section and read as open to the
+      ledger; they are now in `Answered`.
+- [x] Answered entries are **compressed, not deleted**: one short ruling and a
+      date each, so a decision cannot be silently re-opened, and so the ledger can
+      still tell `answered` from `absent`. The stale "confirmed — not yet
+      implemented" wording is gone from all of them.
+- [x] One factual correction: Q40 said root `cards.json` / `precons.json` were
+      untracked and their deletion irreversible. `git ls-files` says both are
+      tracked. The entry now says so and defers the decision to M07.6.
+- [x] `docs/rules/entry-trigger-review.md` is untouched and is linked from both
+      `confirmed-rules.md` and Q48. Nothing was converted into a blanket rule.
+- [x] Verified: `npm run verify` passes (2057 tests in 101 files),
+      `npm run audit:check` reports the audit current, and every internal link and
+      anchor in the three rewritten files resolves — as does every inbound link
+      from elsewhere in the repository to a heading in them.
 
 ## M07.3 — ADR amendments
 

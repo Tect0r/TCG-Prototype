@@ -21,7 +21,7 @@ After verification, update the evidence and stop.
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)               | Complete     |
 | [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)               | Complete     |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1–M06.3 done (2026-08-13) | Complete     |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1 done (2026-08-13)                     | M07.2        |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1–M07.2 done (2026-08-13)               | M07.3        |
 
 Since M01.2, an unfinished card makes a deck illegal by name. The spectator
 refuses such a precon and runs it only under a deliberately named developer
@@ -718,6 +718,50 @@ direction is counted, not flagged: 23 questions are open in the file and not on
 this list, which is the curated set a tranche might have to stop on rather than
 an index.
 
+Since M07.2, the three rules documents divide the record between them with no
+overlap, and each one says at the top which kind of claim it holds:
+`docs/rules/confirmed-rules.md` is what is settled and implemented,
+`docs/rules/open-decisions.md` is what is implemented but whose **value** is
+provisional, and `docs/open-questions.md` is what has no answer at all. Every
+provisional entry names the question that would settle it and every open question
+names what it blocks, so a reader gets from a rule to its status in one hop
+either way. `confirmed-rules.md` was rewritten from the code rather than edited:
+it is organised by subject instead of by the phase that built it, each section
+ends with the module that enforces it, and it deliberately does **not** restate
+the in-app rulebook's prose — `rulebook.json` is the player's copy, it reads its
+numbers off the live `RulesConfig`, and a second hand-maintained copy of
+player-facing wording is exactly the drift this milestone exists to remove.
+
+Every stale rule was checked against the code, not against another document:
+there is no `unitSlots` field and `config.ts` records why it must not come back,
+`relicSlots` is 1, `guardian` is a real blocking obligation, `swift` was renamed
+`rush` by the v2 → v3 migration, Commanders deploy and return, deck construction
+is per-format data, player targets are first-class variants, and the
+`staticAbilities` / structured `costs` / `{ kind: "source" }` schemas are all
+built. The whole Phase 2 placeholder table is therefore gone from
+`open-decisions.md` — every row in it is now settled — and the `RulesConfig`
+table is regenerated with the six dials that shipped since it was written.
+`resilient` is the only inert keyword, and both structural halves of Q4 are
+recorded as closed, which leaves only the design call.
+
+**Q47 now exists**, which was M07.1's one recorded contradiction: the plan called
+it open and the question file had no entry at all. It is written up from the
+code — playing a Reaction clears `window.passedPlayerIds`, so the round of
+priority restarts and a Reaction may answer another, which `reactions.test.ts`
+asserts and `CLAUDE.md`'s product rules forbid — with both directions of the fix
+and what each costs. The ledger is now clean, and the open-but-unlisted count
+falls 23 → 16. Three questions were answered by the implementation rather than by
+this tranche and are recorded as such rather than left to rot: Q5 (the Commander
+post-defeat lifecycle is a locked decision), Q39 (the Reaction window policy is
+built and versioned, and its unresolved remainder is precisely Q47) and Q41 (the
+builder is format-scoped and names why a card cannot be added). Four more —
+Q31, Q32, Q33, Q36 — were decided during Phase 3 but sat in an open section and
+read as open to the ledger. Answered entries are **compressed, not deleted**: one
+ruling and a date each, so a decision cannot be silently re-opened and the ledger
+can still tell `answered` from `absent`. One factual correction fell out of it:
+Q40 called root `cards.json` / `precons.json` untracked and their deletion
+irreversible, and `git ls-files` says both are tracked.
+
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and
 `eslint.config.js` are held to the same strictness as shipped code. The separate
@@ -761,7 +805,9 @@ Only stop on these when the active tranche genuinely needs the answer:
   a play clears `passedPlayerIds`, so a player who has not yet acted in the
   window may counter the counter, and `reactions.test.ts` asserts exactly that.
   `CLAUDE.md`'s product rules say it may not. One of the two is wrong; the
-  rulebook currently describes the engine. Raised by M01.4, not decided by it.
+  rulebook currently describes the engine. Raised by M01.4, not decided by it,
+  and written up in full in `docs/open-questions.md` by M07.2 — both directions
+  of the fix and what each one costs.
 
 ## Completion evidence for every tranche
 
