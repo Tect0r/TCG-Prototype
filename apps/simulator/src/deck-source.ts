@@ -5,8 +5,20 @@ import { bundledPrecon, cardIdSchema, preconIdSchema, preconsForFormat } from '@
 import { migrateSavedDeck, preconToDeck, reviewPrecon } from '@tcg/deck';
 import type { DeckSource } from './config.js';
 import type { Environment } from './environment.js';
-import { checkDeck, fromSavedDeck, makeDeck, type SimDeck } from './deck-search/deck.js';
+import {
+  checkDeck,
+  fromSavedDeck,
+  makeDeck,
+  withConstruction,
+  type SimDeck,
+} from './deck-search/deck.js';
 import { generatePopulation, type GenerationDiagnostic } from './deck-search/generate.js';
+import {
+  conformanceOf,
+  PlanResolutionError,
+  resolvePlanForPrecon,
+  type ResolvedPlan,
+} from './deck-search/plan.js';
 
 /**
  * Turns a configured deck source into validated decks (CLAUDE.md §13.8).
@@ -56,12 +68,15 @@ export function resolveDeckSource(
       return vet(generated.decks, environment, generated.diagnostics);
     }
     case 'inline': {
+      // A person typed this list into a config file, which is exactly what
+      // `hand_authored` means (M05.5).
       const decks = source.decks.map((entry) =>
         makeDeck({
           commanderId: entry.commanderId,
           cards: entry.cards,
           ...(entry.id === undefined ? {} : { id: entry.id }),
           ...(entry.label === undefined ? {} : { label: entry.label }),
+          construction: { kind: 'hand_authored' },
         }),
       );
       return vet(decks, environment, []);
@@ -97,7 +112,8 @@ export function resolveDeckSource(
             });
             continue;
           }
-          decks.push(fromSavedDeck(migrated.value));
+          // A deck-builder export is somebody's deck, however it was arrived at.
+          decks.push(fromSavedDeck(migrated.value, { kind: 'hand_authored' }));
         }
       }
       return vet(decks, environment, diagnostics);
@@ -164,9 +180,27 @@ function resolvePrecons(preconIds: readonly string[], environment: Environment):
       );
     }
 
-    const deck = fromSavedDeck(
+    const drafted = fromSavedDeck(
       preconToDeck(precon, { id: precon.id, name: precon.name, now: PRECON_TIMESTAMP }),
+      { kind: 'hand_authored' },
     );
+    // A shipped precon is hand-authored, and when a deck plan describes it the
+    // deck is *also* measured against that plan (M05.5). The two are separate
+    // facts: the plan says what the deck is made of, and `hand_authored` says a
+    // person made it — a report that conflated them would credit the generator
+    // with a designer's deck the moment a plan happened to fit.
+    //
+    // The plan is an annotation on a deck that was named by a different ID, so
+    // failing to resolve it must not become this precon's error message. An
+    // environment that bans a packaged card will be refused by `vet` below, in
+    // the precon's own words; here the annotation is simply dropped.
+    let plan: ResolvedPlan | null = null;
+    try {
+      plan = resolvePlanForPrecon(precon.id, environment);
+    } catch (cause) {
+      if (!(cause instanceof PlanResolutionError)) throw cause;
+    }
+    const deck = withConstruction(drafted, conformanceOf(drafted, plan, 'hand_authored'));
     decks.push(deck);
     precons.push({
       preconId: precon.id,

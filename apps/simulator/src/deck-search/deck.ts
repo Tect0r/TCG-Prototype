@@ -22,6 +22,50 @@ import { deckHash } from '../hash.js';
  * legality (CLAUDE.md §13.8).
  */
 
+/**
+ * How a deck came to exist (M05.5).
+ *
+ * Three kinds, and the report keeps them apart because they support different
+ * claims:
+ *
+ * - `hand_authored` — a person wrote the list. A precon, an inline deck, a
+ *   deck-builder export. The only kind a designer's intent is evidence about.
+ * - `plan_generated` — the generator seeded it from an authored deck plan, so
+ *   its engine and payoff are coherent by construction rather than by luck.
+ * - `unconstrained` — the generator drew it from the legal pool with nothing but
+ *   a curve and a role weighting. Legal, and about as strategically coherent as
+ *   a random 40 cards.
+ *
+ * The kind is *recorded*, never inferred: no amount of inspecting a decklist
+ * recovers where it came from, and a random deck that happens to contain a whole
+ * package is still a random deck.
+ */
+export const DECK_CONSTRUCTION_KINDS = [
+  'hand_authored',
+  'plan_generated',
+  'unconstrained',
+] as const;
+export const deckConstructionKindSchema = z.enum(DECK_CONSTRUCTION_KINDS);
+export type DeckConstructionKind = z.infer<typeof deckConstructionKindSchema>;
+
+export const deckConstructionSchema = z.strictObject({
+  kind: deckConstructionKindSchema.default('unconstrained'),
+  /** The plan this deck was built to or is measured against. */
+  planId: z.string().nullable().default(null),
+  archetypeId: z.string().nullable().default(null),
+  /** Packages every one of whose cards is still present. */
+  packagesIntact: z.array(z.string()).default([]),
+  /** Packages the deck has some of but not all of. */
+  packagesBroken: z.array(z.string()).default([]),
+  /**
+   * Cards the plan does not name. Never zero for a plan-generated deck: the
+   * plan schema caps a plan below the deck size precisely so the search always
+   * has slots it owns.
+   */
+  offPlanCards: z.number().int().min(0).default(0),
+});
+export type DeckConstruction = z.infer<typeof deckConstructionSchema>;
+
 export const simDeckSchema = z.strictObject({
   /** Stable, content-derived unless the experiment supplied its own. */
   id: z.string().min(1).max(64),
@@ -41,6 +85,16 @@ export const simDeckSchema = z.strictObject({
       mutationSeed: z.string().default(''),
     })
     .prefault({ kind: 'seed' }),
+  /**
+   * How the deck was constructed, and how much of its plan it still holds.
+   *
+   * Outside the hash on purpose: two decks with identical cards are the same
+   * deck to the engine and to every replay, whoever built them. This is
+   * provenance, which is why it is recorded beside `origin` rather than folded
+   * into it — `origin` says which *operator* produced this deck from which
+   * parents, and this says what the deck is *for*.
+   */
+  construction: deckConstructionSchema.prefault({}),
 });
 export type SimDeck = z.infer<typeof simDeckSchema>;
 export type SimDeckInput = z.input<typeof simDeckSchema>;
@@ -54,6 +108,7 @@ export function makeDeck(input: {
   readonly id?: string;
   readonly label?: string;
   readonly origin?: SimDeckInput['origin'];
+  readonly construction?: SimDeckInput['construction'];
 }): SimDeck {
   const cards = normalizeEntries(input.cards);
   const hash = deckHash({ commanderId: input.commanderId, cards });
@@ -64,6 +119,10 @@ export function makeDeck(input: {
     cards,
     hash,
     origin: input.origin ?? { kind: 'seed' },
+    // Defaulted rather than required, and defaulted to `unconstrained` rather
+    // than to something flattering: a caller that has not said where its deck
+    // came from has not earned a stronger label than "legal cards".
+    construction: input.construction ?? {},
   });
 }
 
@@ -101,7 +160,10 @@ export function toMatchDeck(deck: SimDeck): MatchDeck {
   return { commanderId: deck.commanderId, cards: deck.cards.map((entry) => ({ ...entry })) };
 }
 
-export function fromSavedDeck(saved: SavedDeck): SimDeck {
+export function fromSavedDeck(
+  saved: SavedDeck,
+  construction?: SimDeckInput['construction'],
+): SimDeck {
   if (saved.commanderId === null) {
     throw new Error(`Deck "${saved.id}" has no Commander and cannot be simulated.`);
   }
@@ -110,7 +172,19 @@ export function fromSavedDeck(saved: SavedDeck): SimDeck {
     cards: saved.cards,
     id: saved.id,
     label: saved.name,
+    ...(construction === undefined ? {} : { construction }),
   });
+}
+
+/**
+ * Re-stamps a deck's construction without touching its identity.
+ *
+ * Used after a mutation: the deck's cards moved, so how much of its plan it
+ * still holds moved with them, but its hash, ID and lineage are unchanged and
+ * must not be recomputed from a different set of inputs.
+ */
+export function withConstruction(deck: SimDeck, construction: DeckConstruction): SimDeck {
+  return { ...deck, construction };
 }
 
 export interface DeckLegality {

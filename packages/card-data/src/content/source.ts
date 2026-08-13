@@ -19,8 +19,17 @@ export const setManifestSchema = z.strictObject({
 });
 export type SetManifest = z.infer<typeof setManifestSchema>;
 
-/** Version of the generated bundle's own envelope. */
-export const CONTENT_BUNDLE_SCHEMA_VERSION = 1;
+/**
+ * Version of the generated bundle's own envelope.
+ *
+ * - 1 — sets, formats and precons.
+ * - 2 (M05.5) — `deckPlans`, the authored package structure of a deck. A v1
+ *   bundle has no `deckPlans` key at all, so this is a refusal rather than a
+ *   migration: the plans were never authored, and inventing an empty list would
+ *   make "this build has no deck plans" indistinguishable from "this bundle
+ *   predates them".
+ */
+export const CONTENT_BUNDLE_SCHEMA_VERSION = 2;
 
 /**
  * Where the generated bundle lives, relative to the repository root.

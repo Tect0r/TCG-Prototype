@@ -3,6 +3,7 @@ import { cardIdSchema, preconIdSchema } from '@tcg/card-data';
 import { perturbationProfileIdSchema, pilotSpecSchema } from '@tcg/bot-interface';
 import { declaredChangesSchema, environmentConfigSchema } from './environment.js';
 import { generatorConfigSchema } from './deck-search/generate.js';
+import { PACKAGE_POLICIES } from './deck-search/mutate.js';
 
 /**
  * Experiment configuration (CLAUDE.md §13.13).
@@ -286,6 +287,14 @@ export const searchConfigSchema = z.strictObject({
   eliteCount: z.number().int().min(1).max(100).default(4),
   /** Card swaps applied per mutation. */
   mutationStrength: z.number().int().min(1).max(20).default(3),
+  /**
+   * What mutation may do to the packages of `generator.planId` (M05.5).
+   *
+   * The default is `none` on purpose: adding deck plans to this build must not
+   * narrow what a search can find, so a search only respects a plan's joints
+   * when it is deliberately asked to. Ignored without a `generator.planId`.
+   */
+  packagePolicy: z.enum(PACKAGE_POLICIES).default('none'),
   /** Share of offspring produced by crossover rather than mutation. */
   crossoverShare: z.number().min(0).max(1).default(0.25),
   /** Opponents sampled from the archive when evaluating a candidate. */
@@ -357,6 +366,7 @@ export const comparisonConfigSchema = z.strictObject({
       generations: z.number().int().min(1).max(100).default(3),
       eliteCount: z.number().int().min(1).max(50).default(3),
       mutationStrength: z.number().int().min(1).max(20).default(3),
+      packagePolicy: z.enum(PACKAGE_POLICIES).default('none'),
       crossoverShare: z.number().min(0).max(1).default(0.25),
       opponentsPerEvaluation: z.number().int().min(1).max(32).default(3),
       gamesPerOpponent: z.number().int().min(1).max(50).default(2),

@@ -40,7 +40,9 @@ function main(argv: readonly string[]): number {
 
   const serialized = serializeBundle(bundle);
   const cardCount = bundle.sets.reduce((total, set) => total + set.cards.length, 0);
-  const summary = `${bundle.sets.length} set(s), ${cardCount} card(s), ${bundle.formats.length} format(s)`;
+  const summary =
+    `${bundle.sets.length} set(s), ${cardCount} card(s), ${bundle.formats.length} format(s), ` +
+    `${bundle.precons.length} precon(s), ${bundle.deckPlans.length} deck plan(s)`;
 
   if (check) {
     const current = existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : null;

@@ -5,6 +5,7 @@ import { loadCardSets, type LoadedCardData } from './loader.js';
 import type { CardDefinition, CardSet } from './schema/card.js';
 import { playFormatSchema, type PlayFormat } from './schema/format.js';
 import { preconDefinitionSchema, type PreconDefinition } from './schema/precon.js';
+import { deckPlanSchema, type DeckPlan } from './schema/deck-plan.js';
 
 /**
  * Raw, unvalidated set payloads shipped with the prototype.
@@ -59,6 +60,44 @@ export function bundledPrecon(preconId: string): PreconDefinition | undefined {
  */
 export function preconsForFormat(formatId: string): readonly PreconDefinition[] {
   return BUNDLED_PRECONS.filter((precon) => precon.formatId === formatId);
+}
+
+/**
+ * Every authored deck plan, in stable file order (M05.5).
+ *
+ * A plan is content like a precon and is immutable for the same reason: a search
+ * that mutates a deck must not be able to mutate the description it is being
+ * measured against.
+ */
+export const BUNDLED_DECK_PLANS: readonly DeckPlan[] = bundle.deckPlans.map((raw) =>
+  deckPlanSchema.parse(raw),
+);
+
+/** Looks up an authored deck plan by its permanent ID. */
+export function bundledDeckPlan(deckPlanId: string): DeckPlan | undefined {
+  return BUNDLED_DECK_PLANS.find((plan) => plan.id === deckPlanId);
+}
+
+/**
+ * The deck plans published for one format, in stable file order.
+ *
+ * The plan equivalent of `preconsForFormat`, and scoped for the same reason: a
+ * plan is only meaningful under the construction rules and card pool its cards
+ * were checked against.
+ */
+export function deckPlansForFormat(formatId: string): readonly DeckPlan[] {
+  return BUNDLED_DECK_PLANS.filter((plan) => plan.formatId === formatId);
+}
+
+/**
+ * The plan describing a shipped precon, when one was authored.
+ *
+ * Deliberately a lookup rather than a field on `PreconDefinition`: a precon is a
+ * decklist and stays valid without a plan, and more than one plan may eventually
+ * describe the same list at different levels of detail.
+ */
+export function deckPlanForPrecon(preconId: string): DeckPlan | undefined {
+  return BUNDLED_DECK_PLANS.find((plan) => plan.preconId === preconId);
 }
 
 /** Looks up a bundled format by its permanent ID. */

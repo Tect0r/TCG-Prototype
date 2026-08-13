@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "id": "plan_containment_control",
+  "name": "Containment Control plan",
+  "archetypeId": "reactive_control",
+  "formatId": "precon_wave_1",
+  "commanderId": "chief_containment_scholar",
+  "preconId": "precon_containment_control",
+  "summary": "Survive the opening on cheap blockers, answer only what has to be answered, hold Energy open for Reactions, and win late on accumulated cards.",
+  "packages": [
+    {
+      "id": "reaction_suite",
+      "label": "Reaction suite",
+      "role": "interaction",
+      "rationale": "The cards that require a turn to be spent doing nothing. Their value is entirely in being held, which no per-turn valuation can express and which is why the plan names them as a group.",
+      "core": true,
+      "cardIds": ["narrow_denial", "calculated_response", "mass_displacement", "phase_withdrawal"]
+    },
+    {
+      "id": "containment_removal",
+      "label": "Containment removal",
+      "role": "interaction",
+      "rationale": "Proactive answers, spread across Exhaustion, bounce, lockdown and a sweeper so the deck is not narrow against any one board.",
+      "core": true,
+      "cardIds": [
+        "arcane_snare",
+        "stasis_seal",
+        "return_to_the_veil",
+        "seal_the_rift",
+        "controlled_collapse",
+        "rift_displacer"
+      ]
+    },
+    {
+      "id": "reaction_engine",
+      "label": "Reaction engine",
+      "role": "engine",
+      "rationale": "The Reaction Engine, Exhaustion Engine and Tempo cards: they make holding Energy cheaper rather than adding to the board, which is the only way this archetype gains tempo.",
+      "core": true,
+      "cardIds": ["nullmage_apprentice", "temporal_anchor", "containment_array"]
+    },
+    {
+      "id": "early_blockers",
+      "label": "Early blockers",
+      "role": "defense",
+      "rationale": "Cheap Defenders that hold the board while Energy is being kept open. Losing them is how a reactive deck dies before its answers matter.",
+      "core": true,
+      "cardIds": [
+        "veil_initiate",
+        "archive_acolyte",
+        "laboratory_familiar",
+        "containment_guard",
+        "field_analyst",
+        "static_adept",
+        "ward_scribe",
+        "containment_warden"
+      ]
+    },
+    {
+      "id": "card_advantage",
+      "label": "Card advantage",
+      "role": "consistency",
+      "rationale": "Filtering, selection and draw. A deck that answers one threat per turn only wins by having more cards than there are threats, so this is the win condition as much as the finisher is.",
+      "core": true,
+      "cardIds": [
+        "quick_study",
+        "probe_the_future",
+        "inventory_audit",
+        "reconstruct_the_theory",
+        "senior_researcher",
+        "observation_lens"
+      ]
+    },
+    {
+      "id": "late_finish",
+      "label": "Late finish",
+      "role": "payoff",
+      "rationale": "Two expensive cards the deck is trying to reach. Not core: the archetype is defined by surviving, and a search may find a different way to close.",
+      "core": false,
+      "cardIds": ["bound_anomaly", "total_recall"]
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { emptyBoardTelemetry } from '@tcg/board-telemetry';
 import { EVIDENCE_CLAIMS } from '@tcg/bot-interface';
 import { analyzeAgentClasses, agentEvidenceOf } from './analysis/agent-classes.js';
+import { analyzeDeckConstruction } from './analysis/construction.js';
 import {
   FLAG_CLAIMS,
   FLAG_REASONS,
@@ -384,6 +385,7 @@ describe('the report', () => {
         pilotIds,
       }),
       agentClasses: analyzeAgentClasses({ pilotIds }),
+      deckConstruction: analyzeDeckConstruction([DECK]),
       clustering: clusters,
       inclusion: analyzeInclusion([DECK], clusters, records, DEFAULT_ANALYSIS_SETTINGS),
       pairs: [],

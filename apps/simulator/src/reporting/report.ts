@@ -23,7 +23,12 @@ import {
   describeAgentClass,
   type AgentClassAnalysis,
 } from '../analysis/agent-classes.js';
-import { SUPPORT_DIMENSIONS } from '@tcg/card-data';
+import {
+  CONSTRUCTION_KIND_MEANINGS,
+  constructionKindLabel,
+  type DeckConstructionAnalysis,
+} from '../analysis/construction.js';
+import { ARCHETYPE_REGISTRY, SUPPORT_DIMENSIONS } from '@tcg/card-data';
 import { EVIDENCE_CLAIM_QUESTIONS, type AgentClass, type EvidenceClaim } from '@tcg/bot-interface';
 import { describeStallDefinition } from '@tcg/board-telemetry';
 import { round } from '../analysis/stats.js';
@@ -67,8 +72,12 @@ import { round } from '../analysis/stats.js';
  * Version 6 (M05.4): every batch gains an agent-class section naming the class
  * of agent that flew it and, claim by claim, what it may and may not be cited
  * for; and the outcome section reports win rate per class, never pooled.
+ *
+ * Version 7 (M05.5): every batch gains a deck-construction section separating
+ * hand-authored, plan-generated and unconstrained decks, and naming the archetype
+ * and package integrity of any deck measured against an authored deck plan.
  */
-export const REPORT_SCHEMA_VERSION = 6;
+export const REPORT_SCHEMA_VERSION = 7;
 
 export interface ReportPilot {
   readonly id: string;
@@ -134,6 +143,11 @@ export interface ReportInputs {
    * by a random pilot are still not evidence about play.
    */
   readonly agentClasses: AgentClassAnalysis;
+  /**
+   * Whose decks these were (M05.5). The third independent half of "is this
+   * evidence": the cards, the player, and the deck's provenance.
+   */
+  readonly deckConstruction: DeckConstructionAnalysis;
   readonly clustering: ClusteringResult;
   readonly inclusion: InclusionAnalysis;
   readonly pairs: readonly CardPair[];
@@ -212,6 +226,7 @@ export function renderReport(inputs: ReportInputs): string {
   section(lines, referencePopulation(inputs));
   section(lines, flagSection(inputs));
   section(lines, agentClassSection(inputs));
+  section(lines, deckConstructionSection(inputs));
   section(lines, mechanicSupportSection(inputs));
   section(lines, outcomes(inputs));
   section(lines, boardSection(inputs));
@@ -266,6 +281,9 @@ function limitations(inputs: ReportInputs): string[] {
       `telemetry \`${inputs.mechanicSupport.weakest.telemetry}\`. ` +
       'A review signal the run’s own support cannot carry is downgraded to insufficient data ' +
       'rather than printed; the mechanic support section says which mechanics are involved.',
+    `Deck provenance: ${describeConstructionMix(inputs.deckConstruction)}. ` +
+      'Hand-authored, plan-generated and unconstrained decks are counted apart and never ' +
+      'averaged; the deck construction section says which decks were which.',
     'Every threshold in this report is a configurable review dial, printed in full below and ' +
       'alongside each flag.',
     inputs.multiplicity.note,
@@ -749,6 +767,111 @@ function agentClassSection(inputs: ReportInputs): string[] {
 
   lines.push(
     `Agent class registry v${analysis.registryVersion}; agent class analysis schema ` +
+      `v${analysis.schemaVersion}.`,
+  );
+  return lines;
+}
+
+/* ------------------------------------------------------- deck construction */
+
+/** "12 unconstrained" / "4 hand-authored, 12 plan-generated", for the bullet. */
+function describeConstructionMix(analysis: DeckConstructionAnalysis): string {
+  const present = analysis.counts.filter((entry) => entry.decks > 0);
+  if (present.length === 0) return 'no decks recorded';
+  return present.map((entry) => `${entry.decks} ${constructionKindLabel(entry.kind)}`).join(', ');
+}
+
+/**
+ * Whose decks these were (M05.5).
+ *
+ * Sits between the agent classes and the mechanic support because it is the
+ * third independent question in the same family: *who played*, *whose decks*,
+ * *what the cards do*. A run of coherent decks flown by a random pilot and a run
+ * of random decks flown by a heuristic are both weak evidence, for different
+ * reasons, and only reporting all three separately makes that legible.
+ *
+ * Every kind is counted apart and none is averaged with another, for the same
+ * reason M05.4 refused a pooled skill distribution: a win rate over a mixed
+ * population is a number about no particular kind of deck.
+ */
+function deckConstructionSection(inputs: ReportInputs): string[] {
+  const analysis = inputs.deckConstruction;
+  if (analysis.deckCount === 0) return [];
+
+  const lines = ['## Deck construction *(observation)*', ''];
+  lines.push(
+    'What a deck result means depends on where the deck came from. These three kinds are ' +
+      '**counted apart and never averaged**: a hand-authored list is somebody’s decision, a ' +
+      'plan-generated one has a coherent engine and payoff by construction, and an unconstrained ' +
+      'one is a weighted draw from the legal pool.',
+  );
+  lines.push('');
+
+  lines.push('| Kind | Decks | What it means |');
+  lines.push('| --- | --- | --- |');
+  for (const entry of analysis.counts) {
+    if (entry.decks === 0) continue;
+    lines.push(
+      `| ${constructionKindLabel(entry.kind)} | ${entry.decks} | ` +
+        `${CONSTRUCTION_KIND_MEANINGS[entry.kind]} |`,
+    );
+  }
+  lines.push('');
+
+  if (analysis.mixed) {
+    lines.push(
+      '**This run mixes deck kinds.** Every pooled deck number elsewhere in this report ' +
+        'therefore averages over decks that were not built the same way, and is not a statement ' +
+        'about any one of them.',
+    );
+    lines.push('');
+  }
+
+  if (analysis.plans.length > 0) {
+    lines.push('| Plan | Archetype | Decks | Packages intact | Slots outside the plan |');
+    lines.push('| --- | --- | --- | --- | --- |');
+    for (const plan of analysis.plans) {
+      const archetype = plan.archetypeId
+        ? ARCHETYPE_REGISTRY[plan.archetypeId].label
+        : 'not recognised by this build';
+      const intact =
+        plan.packagesIntactMin === plan.packagesIntactMax
+          ? String(plan.packagesIntactMin)
+          : `${plan.packagesIntactMin}–${plan.packagesIntactMax}`;
+      const off =
+        plan.offPlanCardsMin === plan.offPlanCardsMax
+          ? String(plan.offPlanCardsMin)
+          : `${plan.offPlanCardsMin}–${plan.offPlanCardsMax}`;
+      lines.push(`| \`${plan.planId}\` | ${archetype} | ${plan.decks} | ${intact} | ${off} |`);
+    }
+    lines.push('');
+    lines.push(
+      'A package counts as intact only when **every** one of its cards is present. The last ' +
+        'column is never zero: a plan may not claim the whole deck, so a search always has slots ' +
+        'of its own to explore with.',
+    );
+    lines.push('');
+  }
+
+  if (analysis.decksOffPlan > 0) {
+    lines.push(
+      `**${analysis.decksOffPlan} deck(s) measured against a plan now hold none of its packages ` +
+        'intact.** Whatever they are, they are no longer the archetype they were seeded from, and ' +
+        'the plan’s name beside them is provenance rather than a description.',
+    );
+    lines.push('');
+  }
+
+  if (analysis.archetypes.length === 0) {
+    lines.push(
+      'No deck in this run was built to an authored plan, so nothing here is evidence about a ' +
+        'strategy — only about legal decks under these rules.',
+    );
+    lines.push('');
+  }
+
+  lines.push(
+    `Archetype registry v${analysis.registryVersion}; deck construction analysis schema ` +
       `v${analysis.schemaVersion}.`,
   );
   return lines;

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "id": "plan_goblin_swarm",
+  "name": "Goblin Swarm plan",
+  "archetypeId": "token_swarm",
+  "formatId": "precon_wave_1",
+  "commanderId": "goblin_warboss",
+  "preconId": "precon_goblin_swarm",
+  "summary": "Make more Goblins than the opponent can answer one at a time, multiply them, and cash the width in with effects that count Units.",
+  "packages": [
+    {
+      "id": "token_engine",
+      "label": "Token engine",
+      "role": "engine",
+      "rationale": "Every card here is authored as a Swarm Generator: without them the deck has no board to be wide with, and no other package produces bodies from nothing.",
+      "core": true,
+      "cardIds": [
+        "goblin_caller",
+        "goblin_recruiter",
+        "goblin_breeder",
+        "goblin_instigator",
+        "goblin_mob_caller",
+        "goblin_siege_leader",
+        "call_a_goblin",
+        "open_the_tunnels",
+        "empty_the_tunnels",
+        "goblin_war_drum"
+      ]
+    },
+    {
+      "id": "tribal_multipliers",
+      "label": "Tribal multipliers",
+      "role": "engine",
+      "rationale": "The Multiplier and Tribal Engine cards are worth nothing on an empty board and are the difference between a wide board and a winning one, so they belong with the engine rather than with the payoff.",
+      "core": true,
+      "cardIds": ["goblin_chieftain", "goblin_tallykeeper", "goblin_scrapmaster"]
+    },
+    {
+      "id": "width_payoff",
+      "label": "Width payoff",
+      "role": "payoff",
+      "rationale": "Each of these scales on how many Units are already out. Held without the engine they are blank; that dependence is exactly what a plan exists to record.",
+      "core": true,
+      "cardIds": [
+        "goblin_drummer",
+        "goblin_piledriver",
+        "goblin_warhorn_captain",
+        "goblin_raid_standard",
+        "strength_in_numbers",
+        "goblin_horde_breaker",
+        "sound_the_warhorn"
+      ]
+    },
+    {
+      "id": "goblin_curve",
+      "label": "Early curve",
+      "role": "curve",
+      "rationale": "Plain one- and two-cost bodies. Interchangeable by design, which is why this package is not core: a search may replace any of them without changing what the deck is.",
+      "core": false,
+      "cardIds": [
+        "goblin_spearman",
+        "goblin_torchrunner",
+        "goblin_bruiser",
+        "goblin_banner_thief",
+        "goblin_sneak"
+      ]
+    },
+    {
+      "id": "reach_and_removal",
+      "label": "Reach and removal",
+      "role": "interaction",
+      "rationale": "The deck's only answers to a blocker it cannot attack past. Not core: the archetype survives losing them, and the search should be free to try that.",
+      "core": false,
+      "cardIds": ["goblin_bomb_thrower", "goblin_powder_runner", "throwing_knife"]
+    }
+  ]
+}

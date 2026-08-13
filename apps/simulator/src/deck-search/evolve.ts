@@ -9,7 +9,8 @@ import { normalizedEntropy, proportion, round } from '../analysis/stats.js';
 import { isAbnormal, type MatchRecord } from '../telemetry/schema.js';
 import { seededIndex } from '../seed.js';
 import { simDeckSchema, type SimDeck } from './deck.js';
-import { crossoverDecks, deckDistance, mutateDeck } from './mutate.js';
+import { crossoverDecks, deckDistance, mutateDeck, type PackagePolicy } from './mutate.js';
+import type { ResolvedPlan } from './plan.js';
 
 /**
  * Evolutionary abuse search (CLAUDE.md §13.9).
@@ -31,7 +32,15 @@ import { crossoverDecks, deckDistance, mutateDeck } from './mutate.js';
  *   print, never something to paper over by injecting unexplained randomness.
  */
 
-export const SEARCH_CHECKPOINT_VERSION = 1;
+/**
+ * - 1 — the original checkpoint.
+ * - 2 (M05.5) — every `SimDeck` in a checkpoint carries `construction`: how the
+ *   deck was built and how much of its plan it still holds. A refusal rather
+ *   than a migration, because a v1 checkpoint never recorded where its decks
+ *   came from and defaulting them to `unconstrained` would silently relabel a
+ *   resumed planned search as an unplanned one.
+ */
+export const SEARCH_CHECKPOINT_VERSION = 2;
 
 export const fitnessSchema = z.strictObject({
   deckHash: z.string(),
@@ -116,6 +125,14 @@ export interface SearchOptions {
   readonly eliteCount: number;
   readonly mutationStrength: number;
   readonly crossoverShare: number;
+  /**
+   * The deck plan this search's population was seeded from, resolved once
+   * (M05.5). `null` for an unplanned search, which is still the default: a
+   * search that cannot leave its plan is not a search.
+   */
+  readonly plan?: ResolvedPlan | null;
+  /** What breeding may do to the plan's packages. `none` unless configured. */
+  readonly packagePolicy?: PackagePolicy;
   readonly opponentsPerEvaluation: number;
   readonly gamesPerOpponent: number;
   readonly archiveSize: number;
@@ -476,10 +493,13 @@ function breed(
           options.environment,
           seed,
           generation,
+          options.plan ?? null,
         )
       : mutateDeck(parent, options.environment, seed, {
           strength: options.mutationStrength,
           generation,
+          plan: options.plan ?? null,
+          packagePolicy: options.packagePolicy ?? 'none',
         });
 
     const child = produced.deck;

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generated": "GENERATED FILE — do not edit. Source: content/. Rebuild with `npm run content:build`.",
   "sets": [
     {
@@ -10385,6 +10385,376 @@
         "bone_altar",
         "book_of_the_dead",
         "soul_furnace"
+      ]
+    }
+  ],
+  "deckPlans": [
+    {
+      "schemaVersion": 1,
+      "id": "plan_bastion_guardians",
+      "name": "Bastion Guardians plan",
+      "archetypeId": "defensive_attrition",
+      "formatId": "precon_wave_1",
+      "commanderId": "bastion_commander",
+      "preconId": "precon_bastion_guardians",
+      "summary": "Block profitably, keep the Units that survive doing it, and turn the formation the opponent failed to break into the attack that wins.",
+      "packages": [
+        {
+          "id": "shield_wall",
+          "label": "Shield wall",
+          "role": "defense",
+          "rationale": "The authored Defenders. They are the resource every other package in this deck spends: a payoff that counts surviving blockers needs blockers that survive.",
+          "core": true,
+          "cardIds": [
+            "wall_initiate",
+            "vigilant_squire",
+            "shield_page",
+            "bastion_infantry",
+            "spear_guard",
+            "gate_sentinel",
+            "oathsworn_protector",
+            "ironbound_knight"
+          ]
+        },
+        {
+          "id": "combat_protection",
+          "label": "Combat protection",
+          "role": "defense",
+          "rationale": "Reactions that make a block survivable. They only read as good play alongside the wall, and alone they are four cards that do nothing on their own turn.",
+          "core": true,
+          "cardIds": [
+            "hold_the_line",
+            "orderly_withdrawal",
+            "emergency_interposition",
+            "unbreakable_formation"
+          ]
+        },
+        {
+          "id": "formation_engine",
+          "label": "Formation engine",
+          "role": "engine",
+          "rationale": "The Formation, Protection and Defensive Engine cards. Each one raises what the wall is worth rather than adding to it, which is the archetype's whole loop.",
+          "core": true,
+          "cardIds": [
+            "shieldwall_sergeant",
+            "banner_keeper",
+            "bastion_armory",
+            "fortress_gate"
+          ]
+        },
+        {
+          "id": "counterattack_payoff",
+          "label": "Counterattack payoff",
+          "role": "payoff",
+          "rationale": "The cards that convert a surviving formation into damage. Without them the deck defends indefinitely and never closes, which is the failure mode this package exists against.",
+          "core": true,
+          "cardIds": [
+            "counteroffensive_captain",
+            "watch_captain",
+            "shield_formation",
+            "stand_united",
+            "living_bulwark"
+          ]
+        },
+        {
+          "id": "guard_tokens",
+          "label": "Guard tokens",
+          "role": "curve",
+          "rationale": "Bodies on demand to fill gaps in the wall. Substitutable, so not core: any cheap Unit does most of this job.",
+          "core": false,
+          "cardIds": [
+            "call_the_watch",
+            "reinforce_the_gate",
+            "refuge_warden"
+          ]
+        },
+        {
+          "id": "selection",
+          "label": "Selection",
+          "role": "consistency",
+          "rationale": "A defensive deck loses to the one card it did not draw; these are what let it find the missing half of the loop.",
+          "core": false,
+          "cardIds": [
+            "tactical_assessment",
+            "watchtower",
+            "patrol_scout"
+          ]
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "plan_containment_control",
+      "name": "Containment Control plan",
+      "archetypeId": "reactive_control",
+      "formatId": "precon_wave_1",
+      "commanderId": "chief_containment_scholar",
+      "preconId": "precon_containment_control",
+      "summary": "Survive the opening on cheap blockers, answer only what has to be answered, hold Energy open for Reactions, and win late on accumulated cards.",
+      "packages": [
+        {
+          "id": "reaction_suite",
+          "label": "Reaction suite",
+          "role": "interaction",
+          "rationale": "The cards that require a turn to be spent doing nothing. Their value is entirely in being held, which no per-turn valuation can express and which is why the plan names them as a group.",
+          "core": true,
+          "cardIds": [
+            "narrow_denial",
+            "calculated_response",
+            "mass_displacement",
+            "phase_withdrawal"
+          ]
+        },
+        {
+          "id": "containment_removal",
+          "label": "Containment removal",
+          "role": "interaction",
+          "rationale": "Proactive answers, spread across Exhaustion, bounce, lockdown and a sweeper so the deck is not narrow against any one board.",
+          "core": true,
+          "cardIds": [
+            "arcane_snare",
+            "stasis_seal",
+            "return_to_the_veil",
+            "seal_the_rift",
+            "controlled_collapse",
+            "rift_displacer"
+          ]
+        },
+        {
+          "id": "reaction_engine",
+          "label": "Reaction engine",
+          "role": "engine",
+          "rationale": "The Reaction Engine, Exhaustion Engine and Tempo cards: they make holding Energy cheaper rather than adding to the board, which is the only way this archetype gains tempo.",
+          "core": true,
+          "cardIds": [
+            "nullmage_apprentice",
+            "temporal_anchor",
+            "containment_array"
+          ]
+        },
+        {
+          "id": "early_blockers",
+          "label": "Early blockers",
+          "role": "defense",
+          "rationale": "Cheap Defenders that hold the board while Energy is being kept open. Losing them is how a reactive deck dies before its answers matter.",
+          "core": true,
+          "cardIds": [
+            "veil_initiate",
+            "archive_acolyte",
+            "laboratory_familiar",
+            "containment_guard",
+            "field_analyst",
+            "static_adept",
+            "ward_scribe",
+            "containment_warden"
+          ]
+        },
+        {
+          "id": "card_advantage",
+          "label": "Card advantage",
+          "role": "consistency",
+          "rationale": "Filtering, selection and draw. A deck that answers one threat per turn only wins by having more cards than there are threats, so this is the win condition as much as the finisher is.",
+          "core": true,
+          "cardIds": [
+            "quick_study",
+            "probe_the_future",
+            "inventory_audit",
+            "reconstruct_the_theory",
+            "senior_researcher",
+            "observation_lens"
+          ]
+        },
+        {
+          "id": "late_finish",
+          "label": "Late finish",
+          "role": "payoff",
+          "rationale": "Two expensive cards the deck is trying to reach. Not core: the archetype is defined by surviving, and a search may find a different way to close.",
+          "core": false,
+          "cardIds": [
+            "bound_anomaly",
+            "total_recall"
+          ]
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "plan_goblin_swarm",
+      "name": "Goblin Swarm plan",
+      "archetypeId": "token_swarm",
+      "formatId": "precon_wave_1",
+      "commanderId": "goblin_warboss",
+      "preconId": "precon_goblin_swarm",
+      "summary": "Make more Goblins than the opponent can answer one at a time, multiply them, and cash the width in with effects that count Units.",
+      "packages": [
+        {
+          "id": "token_engine",
+          "label": "Token engine",
+          "role": "engine",
+          "rationale": "Every card here is authored as a Swarm Generator: without them the deck has no board to be wide with, and no other package produces bodies from nothing.",
+          "core": true,
+          "cardIds": [
+            "goblin_caller",
+            "goblin_recruiter",
+            "goblin_breeder",
+            "goblin_instigator",
+            "goblin_mob_caller",
+            "goblin_siege_leader",
+            "call_a_goblin",
+            "open_the_tunnels",
+            "empty_the_tunnels",
+            "goblin_war_drum"
+          ]
+        },
+        {
+          "id": "tribal_multipliers",
+          "label": "Tribal multipliers",
+          "role": "engine",
+          "rationale": "The Multiplier and Tribal Engine cards are worth nothing on an empty board and are the difference between a wide board and a winning one, so they belong with the engine rather than with the payoff.",
+          "core": true,
+          "cardIds": [
+            "goblin_chieftain",
+            "goblin_tallykeeper",
+            "goblin_scrapmaster"
+          ]
+        },
+        {
+          "id": "width_payoff",
+          "label": "Width payoff",
+          "role": "payoff",
+          "rationale": "Each of these scales on how many Units are already out. Held without the engine they are blank; that dependence is exactly what a plan exists to record.",
+          "core": true,
+          "cardIds": [
+            "goblin_drummer",
+            "goblin_piledriver",
+            "goblin_warhorn_captain",
+            "goblin_raid_standard",
+            "strength_in_numbers",
+            "goblin_horde_breaker",
+            "sound_the_warhorn"
+          ]
+        },
+        {
+          "id": "goblin_curve",
+          "label": "Early curve",
+          "role": "curve",
+          "rationale": "Plain one- and two-cost bodies. Interchangeable by design, which is why this package is not core: a search may replace any of them without changing what the deck is.",
+          "core": false,
+          "cardIds": [
+            "goblin_spearman",
+            "goblin_torchrunner",
+            "goblin_bruiser",
+            "goblin_banner_thief",
+            "goblin_sneak"
+          ]
+        },
+        {
+          "id": "reach_and_removal",
+          "label": "Reach and removal",
+          "role": "interaction",
+          "rationale": "The deck's only answers to a blocker it cannot attack past. Not core: the archetype survives losing them, and the search should be free to try that.",
+          "core": false,
+          "cardIds": [
+            "goblin_bomb_thrower",
+            "goblin_powder_runner",
+            "throwing_knife"
+          ]
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "plan_grave_sacrifice",
+      "name": "Grave Sacrifice plan",
+      "archetypeId": "sacrifice_value",
+      "formatId": "precon_wave_1",
+      "commanderId": "grave_matriarch",
+      "preconId": "precon_grave_sacrifice",
+      "summary": "Keep a supply of expendable Units, keep an outlet to spend them through, and be paid every time one of them is defeated.",
+      "packages": [
+        {
+          "id": "sacrifice_outlets",
+          "label": "Sacrifice outlets",
+          "role": "engine",
+          "rationale": "The only cards that turn a Unit into a defeat on demand. Every payoff in this deck is dead without one, and holding three is the reason the deck can rely on them.",
+          "core": true,
+          "cardIds": [
+            "carrion_feeder",
+            "ritual_butcher",
+            "bone_altar"
+          ]
+        },
+        {
+          "id": "fodder_supply",
+          "label": "Fodder supply",
+          "role": "engine",
+          "rationale": "The other half of the outlet: Units and Tokens whose purpose is to be spent. Authored as Fodder, Fodder Generator or Recurring Fodder, so this membership is read off the cards rather than assigned.",
+          "core": true,
+          "cardIds": [
+            "doomed_acolyte",
+            "fading_wisp",
+            "bone_carrier",
+            "corpse_wagon",
+            "raise_a_thrall",
+            "funeral_march",
+            "divide_the_offering"
+          ]
+        },
+        {
+          "id": "death_payoff",
+          "label": "Death payoff",
+          "role": "payoff",
+          "rationale": "What the outlet is for. Each of these reads a defeat and converts it; between them they cover drain, Tokens, damage and a finisher, so the package is what makes the loop worth running.",
+          "core": true,
+          "cardIds": [
+            "cruel_preacher",
+            "ossuary_captain",
+            "soul_collector",
+            "soul_furnace",
+            "stitched_abomination",
+            "mass_offering"
+          ]
+        },
+        {
+          "id": "graveyard_recursion",
+          "label": "Graveyard recursion",
+          "role": "consistency",
+          "rationale": "Fodder that comes back is fodder spent twice. This is what stops the engine from running out, which is the archetype's real limiting resource.",
+          "core": true,
+          "cardIds": [
+            "grave_robber",
+            "corpse_stitcher",
+            "unearth_the_remains",
+            "grave_reassembly"
+          ]
+        },
+        {
+          "id": "sacrifice_removal",
+          "label": "Sacrifice removal",
+          "role": "interaction",
+          "rationale": "Removal that is paid for with the deck's own fodder, so interaction and engine are the same expenditure. Not core: the archetype still functions with different answers.",
+          "core": false,
+          "cardIds": [
+            "pit_executioner",
+            "feed_the_pit",
+            "equal_price",
+            "marked_for_death",
+            "throwing_knife"
+          ]
+        },
+        {
+          "id": "attrition_draw",
+          "label": "Attrition draw",
+          "role": "consistency",
+          "rationale": "Cards that pay Health or a Unit for cards. Substitutable, so not core, but this is where the deck's card advantage comes from once the board trade stalls.",
+          "core": false,
+          "cardIds": [
+            "blood_scribe",
+            "death_witness",
+            "forbidden_offering",
+            "bone_harvest"
+          ]
+        }
       ]
     }
   ]

@@ -11,6 +11,7 @@ import { aggregate } from './analysis/aggregate.js';
 import { aggregateBoard } from './analysis/board.js';
 import { analyzeMechanicSupport } from './analysis/support.js';
 import { analyzeAgentClasses } from './analysis/agent-classes.js';
+import { analyzeDeckConstruction } from './analysis/construction.js';
 import { clusterDecks, type ClusteringResult } from './analysis/clusters.js';
 import { analyzeInclusion } from './analysis/inclusion.js';
 import { ANALYSIS_STATS_VERSION, describeMultiplicity } from './analysis/paired.js';
@@ -389,6 +390,7 @@ function reportInputsFor(replacements: readonly ReplacementImpact[]): ReportInpu
       pilotIds: ['value'],
     }),
     agentClasses: analyzeAgentClasses({ pilotIds: ['value'] }),
+    deckConstruction: analyzeDeckConstruction(allDecks),
     clustering: clusters,
     inclusion: analyzeInclusion(allDecks, clusters, records, settings),
     pairs: [],

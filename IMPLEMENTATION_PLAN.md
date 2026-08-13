@@ -19,7 +19,7 @@ After verification, update the evidence and stop.
 | [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
 | [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete                |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.4 done (2026-08-13)         | M05.5                   |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.5 done (2026-08-13)         | M05.6                   |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
 
@@ -466,6 +466,60 @@ about the software rather than an omission. Three version moves, all refusals:
 report 5 → 6, manifest 5 → 6, `summary.json` 4 → 5.
 `AGENT_CLASS_REGISTRY_VERSION` starts at 1 and pins the taxonomy a citation was
 made against.
+
+Since M05.5, a deck can say **what it is made of**, and a run can say **whose
+decks it played**. `@tcg/card-data`'s archetype registry names four strategies —
+`token_swarm`, `defensive_attrition`, `sacrifice_value`, `reactive_control` —
+each with the package roles a plan claiming it must supply, as a total `Record`
+over the vocabulary, so adding an archetype without deciding what it requires is
+a compile error. It names no card, which is what keeps the vocabulary stable when
+the pool moves. Beside it, a **deck-plan schema** and four authored plans in
+`content/deck-plans/`, one per Wave 1 precon, group a decklist into named
+packages carrying a role, a rationale and a `core` flag; membership was derived
+from the cards' own `role` and `design.identity` rather than assigned. A plan is
+content, so every claim it makes is checked by the content build (bundle schema
+1 → 2) — required roles supplied, no overlapping packages, cards in the format
+pool, and the Commander and every card actually in the precon it claims to
+describe — and all of it is an error in every set status, because an
+unimplemented card is inventory but a plan that misdescribes a deck is a search
+input that steers a whole population wrong.
+
+A package is present **all or nothing**. That reading is what makes the two
+mutation policies mean anything: `protect` never removes a card of an intact core
+package, `replace` removes one whole core package and refills the freed slots
+**from the pool** rather than from the plan, and a package that counted as
+half-present would let a search dismantle an engine one card at a time and still
+report it protected. Generation with `planId` seeds packages whole, in declared
+order, and fills only the rest by the weighted draw; a package that cannot go in
+whole is skipped and reported rather than applied partially.
+
+Two things are deliberate. **Search remains able to explore outside plans
+structurally, not by configuration**: `MAX_PLAN_SHARE` caps a plan at 75% of the
+deck and the content build enforces it, so every plan-generated deck has free
+slots no generator setting can take away — and `packagePolicy` defaults to
+`none`, byte-identical to the pre-M05.5 operator, so adding plans did not narrow
+what a search can find. And `SimDeck.construction` — `hand_authored` /
+`plan_generated` / `unconstrained`, plus the plan and which packages survive — is
+**recorded, never inferred**: a random deck holding a whole package is still a
+random deck, and a shipped precon that contains its own plan whole is
+hand-authored and _also_ conforms, which are two separate facts. It sits outside
+the deck hash, because two identical lists are the same deck to the engine
+whoever built them.
+
+The report gains `## Deck construction` between the agent classes and the
+mechanic support — the third independent half of "is this evidence": the cards,
+the player, and now the deck's provenance, counted apart and never averaged.
+Four version moves: report 6 → 7, manifest 6 → 7, `summary.json` 5 → 6, and
+`SEARCH_CHECKPOINT_VERSION` 1 → 2 as a refusal, since a v1 checkpoint never
+recorded where its decks came from. `ARCHETYPE_REGISTRY_VERSION` starts at 1.
+
+One limit of the shipped content is recorded rather than worked around.
+`goblin_warboss` is mono-red, so its colour-legal Wave 1 pool is 41 cards against
+a 40-card singleton deck: one spare. Every package-scale move has nowhere to put
+what it frees, so `replace` declines on a full-size Wave 1 deck with an accurate
+reason instead of returning something smaller. That is the same constraint that
+already made crossover between two full-size Wave 1 decks report "no legal
+change" before this tranche, and it is the pool's property, not the operator's.
 
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and

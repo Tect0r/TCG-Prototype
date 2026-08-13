@@ -9,7 +9,15 @@ import {
 } from '../schema/card.js';
 import { playFormatSchema, type PlayFormat } from '../schema/format.js';
 import { preconDefinitionSchema, type PreconDefinition } from '../schema/precon.js';
+import {
+  deckPlanSchema,
+  MAX_PLAN_SHARE,
+  planCardIds,
+  planSlotCount,
+  type DeckPlan,
+} from '../schema/deck-plan.js';
 import { CARD_SCHEMA_VERSION, STRICT_SET_STATUSES } from '../schema/primitives.js';
+import { archetypeGaps, missingRolesOf } from '../archetype.js';
 import { describeCardSupport, limitingMechanics, mechanicKey } from '../support.js';
 import { loadCardSets, zodIssuesToIssues } from '../loader.js';
 import { migrateCardSet } from '../migrate.js';
@@ -29,6 +37,8 @@ export interface ContentBundle {
   readonly sets: readonly CardSet[];
   readonly formats: readonly PlayFormat[];
   readonly precons: readonly PreconDefinition[];
+  /** Authored package structure, one plan per strategy (M05.5). */
+  readonly deckPlans: readonly DeckPlan[];
 }
 
 export interface BuildContentResult {
@@ -311,9 +321,37 @@ export function buildContent(root: string): { bundle?: ContentBundle; issues: Is
     precons.push(parsed.data);
   }
 
+  const deckPlans: DeckPlan[] = [];
+  const plansRoot = join(contentRoot, 'deck-plans');
+  for (const fileName of jsonFilesIn(plansRoot)) {
+    const filePath = join(plansRoot, fileName);
+    const label = displayPath(root, filePath);
+    const raw = readJson(filePath, label);
+    if ('issue' in raw) {
+      issues.push(raw.issue);
+      continue;
+    }
+    const parsed = deckPlanSchema.safeParse(raw.value);
+    if (!parsed.success) {
+      issues.push(...zodIssuesToIssues(parsed.error, label));
+      continue;
+    }
+    if (parsed.data.id !== fileName.slice(0, -'.json'.length)) {
+      issues.push(
+        error(
+          'content/deck_plan_id_mismatch',
+          `File "${fileName}" declares id "${parsed.data.id}". They must agree.`,
+          { path: label },
+        ),
+      );
+      continue;
+    }
+    deckPlans.push(parsed.data);
+  }
+
   if (hasErrors(issues)) return { issues };
 
-  issues.push(...validateCrossReferences(sets, formats, precons));
+  issues.push(...validateCrossReferences(sets, formats, precons, deckPlans));
   if (hasErrors(issues)) return { issues };
 
   const bundle: ContentBundle = {
@@ -322,6 +360,7 @@ export function buildContent(root: string): { bundle?: ContentBundle; issues: Is
     sets,
     formats,
     precons,
+    deckPlans,
   };
 
   return { bundle, issues };
@@ -335,6 +374,7 @@ function validateCrossReferences(
   sets: readonly CardSet[],
   formats: readonly PlayFormat[],
   precons: readonly PreconDefinition[],
+  deckPlans: readonly DeckPlan[],
 ): Issue[] {
   const issues: Issue[] = [];
 
@@ -432,6 +472,8 @@ function validateCrossReferences(
     }
   }
 
+  issues.push(...validateDeckPlans(deckPlans, formats, precons, setOfCard));
+
   // An unsupported card is an inventory item, not a silent gap: it warns in a
   // draft set and is rejected outright in one people will play with.
   for (const set of sets) {
@@ -501,6 +543,197 @@ function validateCrossReferences(
       );
     } else {
       issues.push(problem);
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Deck-plan rules (M05.5).
+ *
+ * A plan is a *claim about a deck*, so all of it is checkable and all of it is
+ * checked here rather than at run time: the archetype exists, the format exists,
+ * every card is in that format's pool, the packages do not overlap, the
+ * archetype's required roles are all supplied, the plan leaves room for a search
+ * to explore outside it, and — when the plan names a precon — the Commander and
+ * every card actually belong to that precon.
+ *
+ * Every one of these is an error rather than a warning, in every set status.
+ * A `development` set may contain a card the engine cannot run, because that is
+ * inventory; a plan that misdescribes a deck is not inventory, it is a search
+ * input that would quietly steer a whole population wrong.
+ */
+function validateDeckPlans(
+  deckPlans: readonly DeckPlan[],
+  formats: readonly PlayFormat[],
+  precons: readonly PreconDefinition[],
+  setOfCard: ReadonlyMap<string, string>,
+): Issue[] {
+  const issues: Issue[] = [];
+  if (deckPlans.length === 0) return issues;
+
+  // The registry is a compile-time total `Record`; this is the runtime twin, and
+  // it runs here because a plan arrives as JSON and never sees the type.
+  for (const problem of archetypeGaps()) {
+    issues.push(error('content/archetype_registry_gap', problem));
+  }
+
+  const formatById = new Map(formats.map((format) => [format.formatId, format]));
+  const preconById = new Map(precons.map((precon) => [precon.id, precon]));
+  const planIds = new Set<string>();
+
+  for (const plan of deckPlans) {
+    const path = `content/deck-plans/${plan.id}.json`;
+    const context = { deckPlanId: plan.id };
+
+    if (planIds.has(plan.id)) {
+      issues.push(
+        error('content/duplicate_deck_plan_id', `Duplicate deck plan ID "${plan.id}".`, {
+          path,
+          context,
+        }),
+      );
+    }
+    planIds.add(plan.id);
+
+    const packageIds = new Set<string>();
+    const owner = new Map<string, string>();
+    for (const group of plan.packages) {
+      if (packageIds.has(group.id)) {
+        issues.push(
+          error(
+            'content/duplicate_package_id',
+            `Deck plan "${plan.id}" declares package "${group.id}" twice.`,
+            { path, context },
+          ),
+        );
+      }
+      packageIds.add(group.id);
+
+      for (const cardId of group.cardIds) {
+        const holder = owner.get(cardId);
+        if (holder !== undefined) {
+          // Overlapping packages would make "is this package intact" ambiguous
+          // and would let one removal break two packages at once.
+          issues.push(
+            error(
+              'content/package_card_overlap',
+              `Deck plan "${plan.id}" lists "${cardId}" in both "${holder}" and "${group.id}". A card belongs to at most one package.`,
+              { path, context: { ...context, cardId } },
+            ),
+          );
+          continue;
+        }
+        owner.set(cardId, group.id);
+      }
+    }
+
+    const missing = missingRolesOf(plan);
+    if (missing.length > 0) {
+      issues.push(
+        error(
+          'content/deck_plan_incomplete',
+          `Deck plan "${plan.id}" claims archetype "${plan.archetypeId}" but supplies no ${missing.join(', ')} package.`,
+          { path, context: { ...context, missing: missing.join(',') } },
+        ),
+      );
+    }
+    if (!plan.packages.some((group) => group.core)) {
+      issues.push(
+        error(
+          'content/deck_plan_no_core',
+          `Deck plan "${plan.id}" marks no package core, so there is nothing for a search to protect or replace.`,
+          { path, context },
+        ),
+      );
+    }
+
+    const format = formatById.get(plan.formatId);
+    if (!format) {
+      issues.push(
+        error(
+          'content/deck_plan_unknown_format',
+          `Deck plan "${plan.id}" declares format "${plan.formatId}", which does not exist.`,
+          { path, context: { ...context, formatId: plan.formatId } },
+        ),
+      );
+      continue;
+    }
+
+    const includedSets = new Set(format.setIds);
+    const banned = new Set(format.bannedCardIds);
+    for (const cardId of [plan.commanderId, ...planCardIds(plan)]) {
+      const set = setOfCard.get(cardId);
+      if (set === undefined || !includedSets.has(set) || banned.has(cardId)) {
+        issues.push(
+          error(
+            'content/deck_plan_unknown_card',
+            `Deck plan "${plan.id}" references "${cardId}", which is not in the "${plan.formatId}" pool.`,
+            { path, context: { ...context, cardId } },
+          ),
+        );
+      }
+    }
+
+    // The ceiling is the structural half of "search must remain able to explore
+    // outside plans": a plan that could fill a deck would make that a matter of
+    // generator configuration instead of a property of the data.
+    const slots = planSlotCount(plan);
+    const ceiling = Math.floor(format.deck.size * MAX_PLAN_SHARE);
+    if (slots > ceiling) {
+      issues.push(
+        error(
+          'content/deck_plan_too_large',
+          `Deck plan "${plan.id}" asks for ${slots} of ${format.deck.size} slots; at most ${ceiling} (${Math.round(MAX_PLAN_SHARE * 100)}%) may be planned so a search always has room to explore outside it.`,
+          { path, context: { ...context, slots: String(slots), ceiling: String(ceiling) } },
+        ),
+      );
+    }
+
+    if (plan.preconId === undefined) continue;
+
+    const precon = preconById.get(plan.preconId);
+    if (!precon) {
+      issues.push(
+        error(
+          'content/deck_plan_unknown_precon',
+          `Deck plan "${plan.id}" describes precon "${plan.preconId}", which does not exist.`,
+          { path, context: { ...context, preconId: plan.preconId } },
+        ),
+      );
+      continue;
+    }
+    if (precon.formatId !== plan.formatId) {
+      issues.push(
+        error(
+          'content/deck_plan_precon_format',
+          `Deck plan "${plan.id}" is built to "${plan.formatId}" but describes precon "${precon.id}", which is built to "${precon.formatId}".`,
+          { path, context: { ...context, preconId: precon.id } },
+        ),
+      );
+    }
+    if (precon.commanderId !== plan.commanderId) {
+      issues.push(
+        error(
+          'content/deck_plan_precon_commander',
+          `Deck plan "${plan.id}" names Commander "${plan.commanderId}" but precon "${precon.id}" runs "${precon.commanderId}".`,
+          { path, context: { ...context, preconId: precon.id } },
+        ),
+      );
+    }
+    // A plan that names a precon is describing *that* deck, so a card the precon
+    // does not run makes the description false rather than merely aspirational.
+    const inPrecon = new Set(precon.cardIds);
+    for (const cardId of planCardIds(plan)) {
+      if (inPrecon.has(cardId)) continue;
+      issues.push(
+        error(
+          'content/deck_plan_card_not_in_precon',
+          `Deck plan "${plan.id}" packages "${cardId}", which precon "${precon.id}" does not contain.`,
+          { path, context: { ...context, cardId, preconId: precon.id } },
+        ),
+      );
     }
   }
 

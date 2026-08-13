@@ -2,8 +2,9 @@ import { isColorIdentityLegal, type CardDefinition, type CardId } from '@tcg/car
 import { nextInt, type RngState } from '@tcg/rules-engine';
 import type { Environment } from '../environment.js';
 import { rngFor } from '../seed.js';
-import { checkDeck, makeDeck, type SimDeck } from './deck.js';
+import { checkDeck, makeDeck, withConstruction, type SimDeck } from './deck.js';
 import { poolFor } from './generate.js';
+import { conformanceOf, corePackages, isPackageIntact, type ResolvedPlan } from './plan.js';
 
 /**
  * Legal mutation and crossover (CLAUDE.md §13.9).
@@ -21,16 +22,48 @@ export interface MutationResult {
 }
 
 /**
+ * What a mutation is allowed to do to a deck plan's packages (M05.5).
+ *
+ * - `none` — the default and the historical behaviour. Cards are swapped one at
+ *   a time with no idea that any of them belong together. **This is what keeps
+ *   the search able to explore outside plans**, and it is the default precisely
+ *   so that adding plans to this build did not narrow what a search may find.
+ * - `protect` — a card belonging to an intact **core** package is never chosen
+ *   for removal. The deck keeps its identity and the search varies everything
+ *   else; the non-core packages and the plan's free slots stay fully mutable,
+ *   which is why this constrains rather than freezes.
+ * - `replace` — the opposite question. One whole intact core package is removed
+ *   and the freed slots are refilled from the legal pool, so the search can ask
+ *   what this deck is without its engine. The replacements are drawn from the
+ *   *pool*, not from the plan: a plan-shaped mutation that could only produce
+ *   plan cards would be a plan, not a search.
+ *
+ * Both non-default modes need a resolved plan; without one they degrade to
+ * `none` and say so, rather than pretending to protect something.
+ */
+export const PACKAGE_POLICIES = ['none', 'protect', 'replace'] as const;
+export type PackagePolicy = (typeof PACKAGE_POLICIES)[number];
+
+export interface MutationOptions {
+  readonly strength: number;
+  readonly generation: number;
+  /** The plan this deck is measured against. `null` outside a planned search. */
+  readonly plan?: ResolvedPlan | null;
+  readonly packagePolicy?: PackagePolicy;
+}
+
+/**
  * Swaps `strength` cards for other legal ones.
  *
  * Deck size is preserved exactly: each removal is matched by an addition, so a
- * mutation can never drift the deck out of the format.
+ * mutation can never drift the deck out of the format. That holds for the
+ * whole-package replacement too — `n` cards out, `n` cards in.
  */
 export function mutateDeck(
   base: SimDeck,
   environment: Environment,
   seed: string,
-  options: { readonly strength: number; readonly generation: number },
+  options: MutationOptions,
 ): MutationResult {
   const commander = environment.database.get(base.commanderId);
   if (!commander) return { deck: null, reasons: [`unknown Commander ${base.commanderId}`] };
@@ -50,8 +83,58 @@ export function mutateDeck(
   const limitOf = (card: CardDefinition): number =>
     card.unique ? environment.deckFormat.uniqueCopyLimit : environment.deckFormat.copyLimit;
 
-  for (let step = 0; step < options.strength; step += 1) {
-    const present = [...counts.keys()].sort();
+  const plan = options.plan ?? null;
+  const policy: PackagePolicy = plan ? (options.packagePolicy ?? 'none') : 'none';
+  const intactCore = plan ? corePackages(plan).filter((group) => isPackageIntact(base, group)) : [];
+
+  // Cards a `protect` policy will not remove. Empty under every other policy,
+  // which is what makes `none` byte-identical to the pre-M05.5 operator.
+  const protectedCards = new Set<CardId>(
+    policy === 'protect' ? intactCore.flatMap((group) => group.cardIds) : [],
+  );
+
+  // `replace` spends its first step on a whole package, then mutates normally.
+  // Doing it first matters: the freed slots are then part of the ordinary swap
+  // budget, so a replacement is one macro-move and not a second deck.
+  let steps = options.strength;
+  if (policy === 'replace') {
+    if (intactCore.length === 0) {
+      return { deck: null, reasons: ['no intact core package was available to replace'] };
+    }
+    const group = pick(
+      [...intactCore].sort((left, right) => left.definition.id.localeCompare(right.definition.id)),
+    );
+    for (const cardId of group.cardIds) counts.delete(cardId);
+
+    let refilled = 0;
+    for (
+      let attempt = 0;
+      refilled < group.cardIds.length && attempt < pool.length * 4;
+      attempt += 1
+    ) {
+      const addable = pool.filter(
+        (card) => (counts.get(card.id) ?? 0) < limitOf(card) && !group.cardIds.includes(card.id),
+      );
+      if (addable.length === 0) break;
+      const added = pick(addable);
+      counts.set(added.id, (counts.get(added.id) ?? 0) + 1);
+      refilled += 1;
+    }
+    if (refilled < group.cardIds.length) {
+      return {
+        deck: null,
+        reasons: [
+          `replacing package "${group.definition.id}" left the deck ` +
+            `${group.cardIds.length - refilled} card(s) short of legal size`,
+        ],
+      };
+    }
+    changes.push(`-package ${group.definition.id} (${group.cardIds.length} cards)`);
+    steps = Math.max(0, steps - 1);
+  }
+
+  for (let step = 0; step < steps; step += 1) {
+    const present = [...counts.keys()].filter((cardId) => !protectedCards.has(cardId)).sort();
     if (present.length === 0) break;
     const removeId = pick(present);
     const remaining = (counts.get(removeId) ?? 0) - 1;
@@ -74,7 +157,7 @@ export function mutateDeck(
 
   if (changes.length === 0) return { deck: null, reasons: ['no legal swap was available'] };
 
-  const mutated = makeDeck({
+  const drafted = makeDeck({
     commanderId: base.commanderId,
     cards: [...counts].map(([cardId, quantity]) => ({ cardId, quantity })),
     label: `${base.label} m${options.generation}`,
@@ -86,6 +169,8 @@ export function mutateDeck(
       mutationSeed: seed,
     },
   });
+
+  const mutated = withInheritedConstruction(drafted, base, plan);
 
   // Several swaps can compose back to the starting deck. That is a failed
   // mutation, not a new candidate: returning it would put a duplicate into the
@@ -119,6 +204,7 @@ export function crossoverDecks(
   environment: Environment,
   seed: string,
   generation: number,
+  plan: ResolvedPlan | null = null,
 ): MutationResult {
   const commander = environment.database.get(left.commanderId);
   if (!commander) return { deck: null, reasons: ['unknown Commander'] };
@@ -171,7 +257,7 @@ export function crossoverDecks(
 
   if (changes.length === 0) return { deck: null, reasons: ['crossover produced no legal change'] };
 
-  const child = makeDeck({
+  const drafted = makeDeck({
     commanderId: left.commanderId,
     cards: [...counts].map(([cardId, quantity]) => ({ cardId, quantity })),
     label: `${left.label} x ${right.label} g${generation}`,
@@ -183,6 +269,10 @@ export function crossoverDecks(
       mutationSeed: seed,
     },
   });
+
+  // The child keeps the *left* parent's Commander, so it keeps the left parent's
+  // construction kind too — that is the parent it is a variation of.
+  const child = withInheritedConstruction(drafted, left, plan);
 
   if (child.hash === left.hash || child.hash === right.hash) {
     return { deck: null, reasons: ['crossover reproduced a parent exactly'] };
@@ -198,6 +288,33 @@ export function crossoverDecks(
     };
   }
   return { deck: child, reasons: [] };
+}
+
+/**
+ * Carries a parent's construction onto a child, re-measured (M05.5).
+ *
+ * The *kind* is inherited: a plan-generated deck stays plan-generated however
+ * far the search drags it, because that is a fact about where it came from and
+ * a fresh set of cards cannot change it. Losing every package is a finding for
+ * the report, not a reason to relabel the deck as something it never was.
+ *
+ * The package readings are re-measured when a plan is available and **cleared**
+ * when one is not, because they describe cards and the cards just moved.
+ * Carrying stale ones forward would let a report claim an engine that a search
+ * dismantled ten generations ago.
+ */
+function withInheritedConstruction(
+  child: SimDeck,
+  parent: SimDeck,
+  plan: ResolvedPlan | null,
+): SimDeck {
+  if (plan) return withConstruction(child, conformanceOf(child, plan, parent.construction.kind));
+  return withConstruction(child, {
+    ...parent.construction,
+    packagesIntact: [],
+    packagesBroken: [],
+    offPlanCards: 0,
+  });
 }
 
 /** Card-count distance between two decks: how many single-card swaps apart they are. */

@@ -3,7 +3,8 @@ import { isColorIdentityLegal, type CardDefinition, type CardId, type Role } fro
 import { nextInt, type RngState } from '@tcg/rules-engine';
 import type { Environment } from '../environment.js';
 import { rngFor } from '../seed.js';
-import { checkDeck, deckSize, makeDeck, type SimDeck } from './deck.js';
+import { checkDeck, deckSize, makeDeck, withConstruction, type SimDeck } from './deck.js';
+import { conformanceOf, PlanResolutionError, resolvePlan, type ResolvedPlan } from './plan.js';
 
 /**
  * Legal random and stratified deck generation (CLAUDE.md §13.8).
@@ -46,6 +47,27 @@ export const generatorConfigSchema = z.strictObject({
     .default([]),
   /** Prefer decks containing at least this many units. Soft. */
   minUnits: z.number().int().min(0).default(8),
+  /**
+   * Seed every generated deck from an authored deck plan (M05.5).
+   *
+   * With a plan the generator stops producing legal piles: the plan's packages
+   * go in whole, in declared order, and only the slots the plan does not claim
+   * are filled by the weighted draw below. Without one, generation is exactly
+   * what it was, and the decks it produces are labelled `unconstrained` rather
+   * than being quietly credited with a strategy.
+   *
+   * The plan also fixes the Commander, because a plan is written for one.
+   */
+  planId: z.string().min(1).optional(),
+  /**
+   * Which of the plan's packages to seed.
+   *
+   * `all` reproduces the authored skeleton; `core` seeds only the packages the
+   * plan marks as defining its archetype and leaves the rest to the draw, which
+   * is the setting for asking what a search does with the *idea* of a deck
+   * rather than with the deck. Ignored without `planId`.
+   */
+  planPackages: z.enum(['all', 'core']).default('all'),
 });
 export type GeneratorConfig = z.infer<typeof generatorConfigSchema>;
 export type GeneratorConfigInput = z.input<typeof generatorConfigSchema>;
@@ -100,6 +122,27 @@ export function generateDeck(
   const diagnostics: GenerationDiagnostic[] = [];
   let rng = rngFor(seed);
 
+  // Resolved before anything else, because a plan decides the Commander and a
+  // plan that cannot be resolved must stop the generation rather than silently
+  // produce the unconstrained decks it was configured to replace.
+  let plan: ResolvedPlan | null = null;
+  if (config.planId !== undefined) {
+    try {
+      plan = resolvePlan(config.planId, environment);
+    } catch (cause) {
+      if (!(cause instanceof PlanResolutionError)) throw cause;
+      return { deck: null, diagnostics: [{ code: cause.code, message: cause.message }] };
+    }
+    if (options.commanderId !== undefined && options.commanderId !== plan.commanderId) {
+      diagnostics.push({
+        code: 'sim/plan_fixes_commander',
+        message:
+          `Deck plan "${plan.plan.id}" is written for "${plan.commanderId}"; ` +
+          `the requested Commander "${options.commanderId}" was not used.`,
+      });
+    }
+  }
+
   const allowedCommanders = environment.commanders
     .filter(
       (card) =>
@@ -120,11 +163,26 @@ export function generateDeck(
     };
   }
 
+  const requestedCommanderId = plan ? plan.commanderId : options.commanderId;
   const commander =
-    (options.commanderId
-      ? allowedCommanders.find((card) => card.id === options.commanderId)
+    (requestedCommanderId
+      ? allowedCommanders.find((card) => card.id === requestedCommanderId)
       : undefined) ?? pick(allowedCommanders);
-  if (options.commanderId && commander.id !== options.commanderId) {
+  if (plan && commander.id !== plan.commanderId) {
+    return {
+      deck: null,
+      diagnostics: [
+        ...diagnostics,
+        {
+          code: 'sim/plan_commander_excluded',
+          message:
+            `Deck plan "${plan.plan.id}" needs Commander "${plan.commanderId}", which this ` +
+            'generator configuration does not allow.',
+        },
+      ],
+    };
+  }
+  if (!plan && options.commanderId && commander.id !== options.commanderId) {
     diagnostics.push({
       code: 'sim/commander_unavailable',
       message: `Commander "${options.commanderId}" is not legal here; used "${commander.id}" instead.`,
@@ -168,8 +226,43 @@ export function generateDeck(
     counts.set(card.id, Math.min(required.quantity, limitOf(card)));
   }
 
-  const available = pool.filter((card) => (counts.get(card.id) ?? 0) < limitOf(card));
   const target = environment.deckFormat.deckSize;
+
+  // Packages go in whole or not at all, in the plan's declared order. That is
+  // the entire meaning of "seed coherent packages": a half-seeded engine is not
+  // a smaller engine, it is a deck that will be labelled with an archetype it
+  // cannot execute. A package that no longer fits — because required cards
+  // already filled the deck, or because a copy limit blocks one of its cards —
+  // is skipped and reported, never partially applied.
+  const seededPackages: string[] = [];
+  if (plan) {
+    const wanted =
+      config.planPackages === 'core'
+        ? plan.packages.filter((entry) => entry.definition.core)
+        : plan.packages;
+    for (const group of wanted) {
+      const additions = group.cardIds.filter((cardId) => (counts.get(cardId) ?? 0) === 0);
+      const blocked = group.cardIds.filter((cardId) => {
+        const card = pool.find((entry) => entry.id === cardId);
+        return card === undefined || (counts.get(cardId) ?? 0) >= limitOf(card);
+      });
+      if (blocked.length > 0 || total(counts) + additions.length > target) {
+        diagnostics.push({
+          code: 'sim/package_not_seeded',
+          message:
+            `Package "${group.definition.id}" of plan "${plan.plan.id}" was not seeded: ` +
+            (blocked.length > 0
+              ? `${blocked.join(', ')} could not be added.`
+              : `it needs ${additions.length} more slot(s) than the deck has left.`),
+        });
+        continue;
+      }
+      for (const cardId of additions) counts.set(cardId, 1);
+      seededPackages.push(group.definition.id);
+    }
+  }
+
+  const available = pool.filter((card) => (counts.get(card.id) ?? 0) < limitOf(card));
 
   while (total(counts) < target) {
     const remaining = available.filter((card) => (counts.get(card.id) ?? 0) < limitOf(card));
@@ -197,12 +290,25 @@ export function generateDeck(
     counts.set(chosen.id, (counts.get(chosen.id) ?? 0) + 1);
   }
 
-  const deck = makeDeck({
+  const drafted = makeDeck({
     commanderId: commander.id,
     cards: [...counts].map(([cardId, quantity]) => ({ cardId, quantity })),
     label: options.label ?? `${commander.name} ${seed.slice(-6)}`,
-    origin: { kind: 'random', parentHashes: [], generation: 0, changes: [], mutationSeed: seed },
+    origin: {
+      kind: plan ? 'stratified' : 'random',
+      parentHashes: [],
+      generation: 0,
+      changes: seededPackages.map((id) => `+package ${id}`),
+      mutationSeed: seed,
+    },
   });
+
+  // Recorded, not inferred. A deck seeded from a plan says so; a deck the draw
+  // produced says `unconstrained` even if it happens to hold a whole package.
+  const deck = withConstruction(
+    drafted,
+    conformanceOf(drafted, plan, plan ? 'plan_generated' : 'unconstrained'),
+  );
 
   const legality = checkDeck(deck, environment);
   if (!legality.legal) {
@@ -279,7 +385,11 @@ export function generatePopulation(
   const seen = new Set<string>();
 
   for (let index = 0; decks.length < size && index < size * 8; index += 1) {
-    const commander = commanders[index % Math.max(1, commanders.length)];
+    // A plan is written for one Commander, so the rotation is skipped rather
+    // than overridden — otherwise every deck would carry a diagnostic saying the
+    // Commander it asked for was ignored, which is noise, not information.
+    const commander =
+      config.planId === undefined ? commanders[index % Math.max(1, commanders.length)] : undefined;
     const result = generateDeck(environment, `${seed}|deck:${index}`, input, {
       ...(commander ? { commanderId: commander.id } : {}),
       label: `pop_${String(decks.length).padStart(3, '0')}`,

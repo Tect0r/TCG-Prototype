@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "id": "plan_bastion_guardians",
+  "name": "Bastion Guardians plan",
+  "archetypeId": "defensive_attrition",
+  "formatId": "precon_wave_1",
+  "commanderId": "bastion_commander",
+  "preconId": "precon_bastion_guardians",
+  "summary": "Block profitably, keep the Units that survive doing it, and turn the formation the opponent failed to break into the attack that wins.",
+  "packages": [
+    {
+      "id": "shield_wall",
+      "label": "Shield wall",
+      "role": "defense",
+      "rationale": "The authored Defenders. They are the resource every other package in this deck spends: a payoff that counts surviving blockers needs blockers that survive.",
+      "core": true,
+      "cardIds": [
+        "wall_initiate",
+        "vigilant_squire",
+        "shield_page",
+        "bastion_infantry",
+        "spear_guard",
+        "gate_sentinel",
+        "oathsworn_protector",
+        "ironbound_knight"
+      ]
+    },
+    {
+      "id": "combat_protection",
+      "label": "Combat protection",
+      "role": "defense",
+      "rationale": "Reactions that make a block survivable. They only read as good play alongside the wall, and alone they are four cards that do nothing on their own turn.",
+      "core": true,
+      "cardIds": [
+        "hold_the_line",
+        "orderly_withdrawal",
+        "emergency_interposition",
+        "unbreakable_formation"
+      ]
+    },
+    {
+      "id": "formation_engine",
+      "label": "Formation engine",
+      "role": "engine",
+      "rationale": "The Formation, Protection and Defensive Engine cards. Each one raises what the wall is worth rather than adding to it, which is the archetype's whole loop.",
+      "core": true,
+      "cardIds": ["shieldwall_sergeant", "banner_keeper", "bastion_armory", "fortress_gate"]
+    },
+    {
+      "id": "counterattack_payoff",
+      "label": "Counterattack payoff",
+      "role": "payoff",
+      "rationale": "The cards that convert a surviving formation into damage. Without them the deck defends indefinitely and never closes, which is the failure mode this package exists against.",
+      "core": true,
+      "cardIds": [
+        "counteroffensive_captain",
+        "watch_captain",
+        "shield_formation",
+        "stand_united",
+        "living_bulwark"
+      ]
+    },
+    {
+      "id": "guard_tokens",
+      "label": "Guard tokens",
+      "role": "curve",
+      "rationale": "Bodies on demand to fill gaps in the wall. Substitutable, so not core: any cheap Unit does most of this job.",
+      "core": false,
+      "cardIds": ["call_the_watch", "reinforce_the_gate", "refuge_warden"]
+    },
+    {
+      "id": "selection",
+      "label": "Selection",
+      "role": "consistency",
+      "rationale": "A defensive deck loses to the one card it did not draw; these are what let it find the missing half of the loop.",
+      "core": false,
+      "cardIds": ["tactical_assessment", "watchtower", "patrol_scout"]
+    }
+  ]
+}

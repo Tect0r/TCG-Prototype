@@ -246,6 +246,189 @@ describe('content source validation', () => {
     expect(errorCodes()).toContain('content/missing_manifest');
   });
 
+  /* --------------------------------------------------------- deck plans */
+
+  /**
+   * A deck plan is a claim about a deck (M05.5), so every part of the claim is
+   * checked at build time rather than trusted at search time: a plan that
+   * misdescribes its deck would steer a whole generated population wrong and
+   * would never fail visibly.
+   */
+  describe('deck plans', () => {
+    /** Twelve cards, a Commander, a format and a precon for a plan to describe. */
+    const CARDS = Array.from(
+      { length: 12 },
+      (_, index) => `c${String(index + 1).padStart(2, '0')}`,
+    );
+
+    const planFixture = () => {
+      write('content/sets/test_set/set.json', manifest({ status: 'development' }));
+      for (const id of [...CARDS, 'leader']) {
+        write(`content/sets/test_set/cards/${id}.json`, unitCard(id));
+      }
+      write('content/formats/test_format.json', {
+        schemaVersion: 1,
+        formatId: 'test_format',
+        name: 'Test Format',
+        setIds: ['test_set'],
+        // Twelve slots, so the 75% ceiling is nine and a legal plan has room.
+        deck: { size: 12, singleton: true, maxCommanderColors: 1 },
+      });
+      write('content/precons/test_precon.json', {
+        schemaVersion: 1,
+        id: 'test_precon',
+        name: 'Test Precon',
+        formatId: 'test_format',
+        strategy: 'Do the thing.',
+        commanderId: 'leader',
+        cardIds: CARDS,
+      });
+    };
+
+    const pack = (
+      id: string,
+      role: string,
+      cardIds: readonly string[],
+      core = false,
+    ): Record<string, unknown> => ({
+      id,
+      label: `Package ${id}`,
+      role,
+      rationale: 'These cards only mean anything together.',
+      core,
+      cardIds: [...cardIds],
+    });
+
+    /** A valid `sacrifice_value` plan: engine, payoff and interaction, six slots. */
+    const plan = (overrides: Record<string, unknown> = {}) => ({
+      schemaVersion: 1,
+      id: 'test_plan',
+      name: 'Test Plan',
+      archetypeId: 'sacrifice_value',
+      formatId: 'test_format',
+      commanderId: 'leader',
+      preconId: 'test_precon',
+      summary: 'Make things, spend things, be paid for spending them.',
+      packages: [
+        pack('engine_pack', 'engine', ['c01', 'c02'], true),
+        pack('payoff_pack', 'payoff', ['c03', 'c04'], true),
+        pack('answer_pack', 'interaction', ['c05', 'c06']),
+      ],
+      ...overrides,
+    });
+
+    it('accepts a plan whose claims all hold', () => {
+      planFixture();
+      write('content/deck-plans/test_plan.json', plan());
+      const built = buildContent(root);
+      expect(built.issues.filter((i) => i.severity === 'error')).toEqual([]);
+      expect(built.bundle?.deckPlans.map((entry) => entry.id)).toEqual(['test_plan']);
+      expect(built.bundle?.schemaVersion).toBe(2);
+    });
+
+    it('refuses a plan that omits a role its archetype requires', () => {
+      planFixture();
+      // `token_swarm` requires engine, payoff *and* curve; this plan has no curve.
+      write('content/deck-plans/test_plan.json', plan({ archetypeId: 'token_swarm' }));
+      expect(errorCodes()).toContain('content/deck_plan_incomplete');
+    });
+
+    it('refuses an archetype the registry does not publish', () => {
+      planFixture();
+      write('content/deck-plans/test_plan.json', plan({ archetypeId: 'ramp' }));
+      // Caught by the schema's own enum, before any cross-reference runs.
+      expect(buildContent(root).bundle?.deckPlans ?? []).toEqual([]);
+      expect(errorCodes().length).toBeGreaterThan(0);
+    });
+
+    it('refuses a plan that lists one card in two packages', () => {
+      planFixture();
+      write(
+        'content/deck-plans/test_plan.json',
+        plan({
+          packages: [
+            pack('engine_pack', 'engine', ['c01', 'c02'], true),
+            pack('payoff_pack', 'payoff', ['c02', 'c03']),
+            pack('answer_pack', 'interaction', ['c05', 'c06']),
+          ],
+        }),
+      );
+      expect(errorCodes()).toContain('content/package_card_overlap');
+    });
+
+    it('refuses a plan whose packages leave the search no room outside them', () => {
+      planFixture();
+      // Ten of twelve slots, over the 75% ceiling.
+      write(
+        'content/deck-plans/test_plan.json',
+        plan({
+          packages: [
+            pack('engine_pack', 'engine', ['c01', 'c02', 'c03', 'c04'], true),
+            pack('payoff_pack', 'payoff', ['c05', 'c06', 'c07', 'c08']),
+            pack('answer_pack', 'interaction', ['c09', 'c10']),
+          ],
+        }),
+      );
+      expect(errorCodes()).toContain('content/deck_plan_too_large');
+    });
+
+    it('refuses a plan that packages a card its precon does not run', () => {
+      planFixture();
+      write(
+        'content/deck-plans/test_plan.json',
+        plan({
+          packages: [
+            pack('engine_pack', 'engine', ['c01', 'leader'], true),
+            pack('payoff_pack', 'payoff', ['c03', 'c04']),
+            pack('answer_pack', 'interaction', ['c05', 'c06']),
+          ],
+        }),
+      );
+      expect(errorCodes()).toContain('content/deck_plan_card_not_in_precon');
+    });
+
+    it('refuses a plan whose Commander is not the precon’s', () => {
+      planFixture();
+      write('content/deck-plans/test_plan.json', plan({ commanderId: 'c01' }));
+      expect(errorCodes()).toContain('content/deck_plan_precon_commander');
+    });
+
+    it('refuses a plan naming a precon that does not exist', () => {
+      planFixture();
+      write('content/deck-plans/test_plan.json', plan({ preconId: 'no_such_precon' }));
+      expect(errorCodes()).toContain('content/deck_plan_unknown_precon');
+    });
+
+    it('refuses a plan naming a card outside the format pool', () => {
+      planFixture();
+      write('content/formats/test_format.json', {
+        schemaVersion: 1,
+        formatId: 'test_format',
+        name: 'Test Format',
+        setIds: ['test_set'],
+        bannedCardIds: ['c01'],
+        deck: { size: 12, singleton: true, maxCommanderColors: 1 },
+      });
+      write('content/deck-plans/test_plan.json', plan());
+      expect(errorCodes()).toContain('content/deck_plan_unknown_card');
+    });
+
+    it('refuses a plan whose file name and ID disagree', () => {
+      planFixture();
+      write('content/deck-plans/other_name.json', plan());
+      expect(errorCodes()).toContain('content/deck_plan_id_mismatch');
+    });
+
+    it('refuses a plan that marks no package core', () => {
+      planFixture();
+      write(
+        'content/deck-plans/test_plan.json',
+        plan({ packages: plan().packages.map((entry) => ({ ...entry, core: false })) }),
+      );
+      expect(errorCodes()).toContain('content/deck_plan_no_core');
+    });
+  });
+
   it('reports unparseable JSON against the file that contains it', () => {
     write('content/sets/test_set/set.json', manifest());
     mkdirSync(join(root, 'content/sets/test_set/cards'), { recursive: true });

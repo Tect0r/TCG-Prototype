@@ -24,6 +24,7 @@ import { buildSchedule } from './schedule.js';
 import { runBatch, type BatchProgress } from './run-batch.js';
 import { runSearch, type GenerationReport, type SearchCheckpoint } from './deck-search/evolve.js';
 import { generatePopulation } from './deck-search/generate.js';
+import { resolvePlan } from './deck-search/plan.js';
 import { aggregate, type Aggregate } from './analysis/aggregate.js';
 import { aggregateBoard, type BoardAggregate } from './analysis/board.js';
 import { clusterDecks, type ClusteringResult } from './analysis/clusters.js';
@@ -50,6 +51,7 @@ import { compareEnvironments, type ComparisonReport } from './analysis/compare.j
 import { computeFlags, type Flag, type SupportLimits } from './analysis/flags.js';
 import { analyzeMechanicSupport, supportLimitsOf } from './analysis/support.js';
 import { analyzeAgentClasses, agentEvidenceOf } from './analysis/agent-classes.js';
+import { analyzeDeckConstruction } from './analysis/construction.js';
 import { REPORT_SCHEMA_VERSION, renderReport } from './reporting/report.js';
 import { experimentPaths, ensureDir, writeCsv, writeJson } from './reporting/sinks.js';
 import { MatchStore } from './reporting/match-store.js';
@@ -504,6 +506,14 @@ async function runSearchExperiment(
   const allDecks: SimDeck[] = [];
   const diagnostics: string[] = [];
 
+  // Resolved once, outside the replicate loop, so every replicate of a planned
+  // search is measured against the same plan. `resolvePlan` throws rather than
+  // trimming: a search configured against a named plan runs that plan or stops.
+  const searchPlan =
+    config.generator.planId === undefined
+      ? null
+      : resolvePlan(config.generator.planId, environment);
+
   // Independent replicates, each on its own seed family. One evolutionary run is
   // one sample of a stochastic process; replicates are what make the difference
   // between "this card disappeared" and "this card disappears" (§11).
@@ -539,6 +549,8 @@ async function runSearchExperiment(
       generations: config.generations,
       eliteCount: config.eliteCount,
       mutationStrength: config.mutationStrength,
+      plan: searchPlan,
+      packagePolicy: config.packagePolicy,
       crossoverShare: config.crossoverShare,
       opponentsPerEvaluation: config.opponentsPerEvaluation,
       gamesPerOpponent: config.gamesPerOpponent,
@@ -755,6 +767,11 @@ async function runComparisonExperiment(
           generations: config.search.generations,
           eliteCount: config.search.eliteCount,
           mutationStrength: config.search.mutationStrength,
+          plan:
+            config.search.generator.planId === undefined
+              ? null
+              : resolvePlan(config.search.generator.planId, environment),
+          packagePolicy: config.search.packagePolicy,
           crossoverShare: config.search.crossoverShare,
           opponentsPerEvaluation: config.search.opponentsPerEvaluation,
           gamesPerOpponent: config.search.gamesPerOpponent,
@@ -1121,6 +1138,11 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     pilotIds: config.pilots.map((pilot: PilotSpec) => pilot.id),
   });
 
+  // And whose decks they were (M05.5). Independent of both readings above: a
+  // supported card, played by a heuristic, in a deck nobody designed, is still
+  // not evidence about a strategy.
+  const deckConstruction = analyzeDeckConstruction(inputs.decks);
+
   const flags = computeFlags({
     aggregate: agg,
     clustering,
@@ -1213,6 +1235,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     board: boardAggregate,
     mechanicSupport,
     agentClasses,
+    deckConstruction,
     clustering,
     inclusion,
     pairs,
@@ -1273,7 +1296,13 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     // be cited for. Not migratable from v5 for the same reason: the taxonomy did
     // not exist, and a v5 manifest's pilot list cannot be read against it
     // without assuming today's classification held then.
-    schemaVersion: 6,
+    //
+    // 7 (M05.5): every manifest carries `deckConstruction` — how each deck in
+    // the run was built, and how much of its authored plan it still holds. Not
+    // migratable from v6 for the third time for the same reason: a v6 run's
+    // decks never recorded where they came from, and defaulting them to
+    // `unconstrained` would be a claim rather than a reading.
+    schemaVersion: 7,
     experimentId: config.id,
     kind: config.kind,
     seed: config.seed,
@@ -1337,6 +1366,16 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
      */
     agentClasses,
     /**
+     * Whose decks these were (M05.5).
+     *
+     * The third independent half of "is this evidence", beside `mechanicSupport`
+     * (the cards) and `agentClasses` (the player). Hand-authored, plan-generated
+     * and unconstrained decks are counted apart and never pooled, and any deck
+     * measured against an authored plan records which packages it still holds.
+     * `registryVersion` pins the archetype taxonomy the labels were read against.
+     */
+    deckConstruction,
+    /**
      * The ordered matchup matrix this run produced, when it was asked for (M03.4).
      *
      * The counts are here rather than only in the artifact so that "every
@@ -1382,13 +1421,18 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     // 5 (M05.4): the agent class reading, and `aggregate.run.agentClassWinRates`
     // beside the pilot rates, so the per-class outcome the report prints has a
     // machine-readable original and is never re-derived by averaging.
-    schemaVersion: 5,
+    //
+    // 6 (M05.5): the deck-construction reading, so the report's construction
+    // section is a view of this JSON like every other section, and a plan's
+    // package integrity can be traced without opening the deck list.
+    schemaVersion: 6,
     configHash: configHashOf(config),
     thresholds: settings,
     aggregate: agg,
     board: boardAggregate,
     mechanicSupport,
     agentClasses,
+    deckConstruction,
     clusters: clustering.clusters,
     clusterMatchups: clustering.matchups,
     inclusion,

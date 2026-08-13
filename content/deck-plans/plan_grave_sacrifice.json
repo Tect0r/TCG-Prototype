@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "id": "plan_grave_sacrifice",
+  "name": "Grave Sacrifice plan",
+  "archetypeId": "sacrifice_value",
+  "formatId": "precon_wave_1",
+  "commanderId": "grave_matriarch",
+  "preconId": "precon_grave_sacrifice",
+  "summary": "Keep a supply of expendable Units, keep an outlet to spend them through, and be paid every time one of them is defeated.",
+  "packages": [
+    {
+      "id": "sacrifice_outlets",
+      "label": "Sacrifice outlets",
+      "role": "engine",
+      "rationale": "The only cards that turn a Unit into a defeat on demand. Every payoff in this deck is dead without one, and holding three is the reason the deck can rely on them.",
+      "core": true,
+      "cardIds": ["carrion_feeder", "ritual_butcher", "bone_altar"]
+    },
+    {
+      "id": "fodder_supply",
+      "label": "Fodder supply",
+      "role": "engine",
+      "rationale": "The other half of the outlet: Units and Tokens whose purpose is to be spent. Authored as Fodder, Fodder Generator or Recurring Fodder, so this membership is read off the cards rather than assigned.",
+      "core": true,
+      "cardIds": [
+        "doomed_acolyte",
+        "fading_wisp",
+        "bone_carrier",
+        "corpse_wagon",
+        "raise_a_thrall",
+        "funeral_march",
+        "divide_the_offering"
+      ]
+    },
+    {
+      "id": "death_payoff",
+      "label": "Death payoff",
+      "role": "payoff",
+      "rationale": "What the outlet is for. Each of these reads a defeat and converts it; between them they cover drain, Tokens, damage and a finisher, so the package is what makes the loop worth running.",
+      "core": true,
+      "cardIds": [
+        "cruel_preacher",
+        "ossuary_captain",
+        "soul_collector",
+        "soul_furnace",
+        "stitched_abomination",
+        "mass_offering"
+      ]
+    },
+    {
+      "id": "graveyard_recursion",
+      "label": "Graveyard recursion",
+      "role": "consistency",
+      "rationale": "Fodder that comes back is fodder spent twice. This is what stops the engine from running out, which is the archetype's real limiting resource.",
+      "core": true,
+      "cardIds": ["grave_robber", "corpse_stitcher", "unearth_the_remains", "grave_reassembly"]
+    },
+    {
+      "id": "sacrifice_removal",
+      "label": "Sacrifice removal",
+      "role": "interaction",
+      "rationale": "Removal that is paid for with the deck's own fodder, so interaction and engine are the same expenditure. Not core: the archetype still functions with different answers.",
+      "core": false,
+      "cardIds": [
+        "pit_executioner",
+        "feed_the_pit",
+        "equal_price",
+        "marked_for_death",
+        "throwing_knife"
+      ]
+    },
+    {
+      "id": "attrition_draw",
+      "label": "Attrition draw",
+      "role": "consistency",
+      "rationale": "Cards that pay Health or a Unit for cards. Substitutable, so not core, but this is where the deck's card advantage comes from once the board trade stalls.",
+      "core": false,
+      "cardIds": ["blood_scribe", "death_witness", "forbidden_offering", "bone_harvest"]
+    }
+  ]
+}

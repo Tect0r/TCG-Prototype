@@ -274,7 +274,7 @@ describe('a precon experiment', () => {
     expect(outcome.records.filter((record) => record.termination !== 'victory')).toEqual([]);
 
     const manifest = JSON.parse(readFileSync(experimentPaths(dir).manifest, 'utf8'));
-    expect(manifest.schemaVersion).toBe(6);
+    expect(manifest.schemaVersion).toBe(7);
     expect(manifest.failedMatches).toBe(0);
     expect(manifest.abnormalMatches).toBe(0);
     expect(manifest.precons.map((entry: { preconId: string }) => entry.preconId)).toEqual([
@@ -331,6 +331,41 @@ describe('a precon experiment', () => {
       'combo',
       'final_balance',
     ]);
+    // And whose decks they were (M05.5). Four shipped precons are hand-authored
+    // and nothing else, so no plan-generated or unconstrained row exists — and
+    // each is still measured against the authored plan that describes it, which
+    // is what makes "hand-authored" and "conforms to a plan" separate facts.
+    expect(outcome.report).toContain('## Deck construction');
+    expect(manifest.deckConstruction.registryVersion).toBeGreaterThan(0);
+    expect(manifest.deckConstruction.deckCount).toBe(4);
+    expect(manifest.deckConstruction.mixed).toBe(false);
+    expect(
+      manifest.deckConstruction.counts.find(
+        (entry: { kind: string }) => entry.kind === 'hand_authored',
+      ).decks,
+    ).toBe(4);
+    expect(
+      manifest.deckConstruction.plans.map((entry: { planId: string }) => entry.planId),
+    ).toEqual([
+      'plan_bastion_guardians',
+      'plan_containment_control',
+      'plan_goblin_swarm',
+      'plan_grave_sacrifice',
+    ]);
+    // Every shipped precon contains its own plan whole, and every one of them
+    // still has slots the plan does not claim.
+    for (const entry of manifest.deckConstruction.plans) {
+      expect(entry.decks).toBe(1);
+      expect(entry.offPlanCardsMin).toBeGreaterThan(0);
+    }
+    expect(manifest.deckConstruction.archetypes).toEqual([
+      'token_swarm',
+      'defensive_attrition',
+      'sacrifice_value',
+      'reactive_control',
+    ]);
+    expect(manifest.deckConstruction.decksOffPlan).toBe(0);
+
     // The frozen environment is what pins the definitions those IDs named.
     const snapshot = JSON.parse(readFileSync(experimentPaths(dir).resolvedEnvironment, 'utf8'));
     expect(snapshot.formatId).toBe(WAVE_1);

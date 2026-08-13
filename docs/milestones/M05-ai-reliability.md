@@ -273,12 +273,85 @@ seats, so uniform play is an unbiased probe of a turn-order advantage. That is
 the one outcome claim `random_legal` carries, and it is named
 `structural_asymmetry` rather than folded into play quality.
 
-## M05.5 — Archetype registry and deck plans
+## M05.5 — Archetype registry and deck plans — **done (2026-08-13)**
 
 Add a versioned archetype registry and deck-plan schema for the four Wave 1
 decks. Generation should seed coherent packages, mutation may protect or replace
 packages, and reports must distinguish hand-authored, plan-generated, and
 unconstrained decks. Search must remain able to explore outside plans.
+
+### Checklist
+
+- [x] `packages/card-data/src/archetype.ts` is the registry: four archetypes with
+      a label, a summary, a pilot note and the package roles a plan claiming that
+      archetype must supply. `ARCHETYPE_REGISTRY` is a total `Record` over
+      `ARCHETYPE_IDS`, so adding an archetype without deciding what it requires
+      is a compile error, and `archetypeGaps()` is the runtime twin — which
+      matters here more than anywhere, because every consumer arrives as JSON.
+      `ARCHETYPE_REGISTRY_VERSION` starts at 1 and pins the taxonomy a label was
+      read against. The registry names **no card**, which is what keeps the
+      vocabulary stable when the pool moves; that is asserted by name.
+- [x] `packages/card-data/src/schema/deck-plan.ts` is the plan schema: named
+      packages carrying a role, a rationale, a `core` flag and their cards, plus
+      the archetype, format, Commander and the precon the plan describes. A
+      package is present **all or nothing** — a half-present package would let
+      mutation dismantle an engine one card at a time and still report it
+      protected.
+- [x] Four authored plans in `content/deck-plans/`, one per Wave 1 precon, with
+      package membership derived from the cards' own `role` and
+      `design.identity` rather than assigned by hand.
+- [x] The content build checks every claim a plan makes: the archetype's required
+      roles are supplied, packages do not overlap, at least one is core, every
+      card is in the format pool, and — when the plan names a precon — the
+      Commander and every card belong to that precon. All errors in every set
+      status: a `development` set may hold an unimplemented card because that is
+      inventory, but a plan that misdescribes a deck is a search input that would
+      steer a whole population wrong. Bundle schema 1 → 2.
+- [x] `generatorConfig.planId` makes generation seed **whole packages** in
+      declared order and fills only the rest by the weighted draw;
+      `planPackages: 'core'` seeds only the defining ones. A package that cannot
+      go in whole is skipped and reported (`sim/package_not_seeded`), never
+      applied partially. The plan fixes the Commander, and an unresolvable plan
+      stops the generation instead of quietly producing the unconstrained decks
+      it was configured to replace.
+- [x] `mutateDeck` takes a `packagePolicy`: `protect` never removes a card of an
+      intact **core** package; `replace` removes one whole core package and
+      refills the freed slots **from the pool**, not from the plan. `none` is the
+      default and is byte-identical to the pre-M05.5 operator, which is asserted.
+- [x] Search remains able to explore outside plans, structurally rather than by
+      configuration: `MAX_PLAN_SHARE` caps a plan at 75% of the deck and the
+      content build enforces it, so every plan-generated deck has free slots and
+      no generator setting can take them away.
+- [x] `SimDeck.construction` records `hand_authored` / `plan_generated` /
+      `unconstrained`, the plan and archetype, and which packages are intact,
+      broken or off-plan. **Recorded, never inferred** — a random deck holding a
+      whole package is still a random deck — and outside the deck hash, because
+      two identical lists are the same deck to the engine whoever built them.
+- [x] `apps/simulator/src/analysis/construction.ts` projects it; the report gains
+      `## Deck construction` (report schema 6 → 7) between the agent classes and
+      the mechanic support, plus a limitations bullet; the manifest (6 → 7) and
+      `summary.json` (5 → 6) carry the block with the registry version.
+      `SEARCH_CHECKPOINT_VERSION` 1 → 2, a refusal: a v1 checkpoint never
+      recorded where its decks came from.
+- [x] `packages/card-data/src/archetype.test.ts` restates the required-role table
+      as a mapped type and holds the four shipped plans against their precons;
+      `apps/simulator/src/deck-plan.test.ts` covers resolution, whole-package
+      seeding, protection, replacement, the free-slot guarantee and the
+      three-way construction count; `precon-source.test.ts` asserts the block on
+      the real four-precon batch.
+
+### What the shipped content cannot support, and why that is recorded
+
+`goblin_warboss` is mono-red, so its colour-legal Wave 1 pool is **41 cards
+against a 40-card singleton deck** — one spare. Every package-scale move has
+nowhere to put the cards it frees, so `replace` correctly declines on a full-size
+Wave 1 deck with `no intact core package … short of legal size` rather than
+producing something smaller or putting the package back. This is a property of
+the shipped card pool and not of the operator: it is the same reason crossover
+between two full-size Wave 1 decks already reported "no legal change" before this
+tranche. The replacement behaviour is therefore exercised at a smaller deck size
+over the same pool, and the constraint is written down here rather than hidden
+behind a test fixture.
 
 ## M05.6 — Calibration before balance
 
