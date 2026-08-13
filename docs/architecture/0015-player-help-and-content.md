@@ -8,6 +8,10 @@ reason the corrections below were a data edit rather than a code change. Two
 statements about _what the content says_ are superseded in place: which keywords
 are inert, and what the rulebook admits is undecided.
 
+**Amended 2026-08-13 (M07.4).** One deferral has since happened: cards are one
+file per card, not one `prototype_core.json`. Superseded in place at the end of
+_Alternatives considered_.
+
 ## Context
 
 The game had no way to explain itself. A player could see a board and a hand,
@@ -172,3 +176,21 @@ what CLAUDE.md §11 forbids — and would be wrong in cases the client cannot se
 **Migrating cards to one file per card.** Deferred. `prototype_core.json` at 56
 cards is not yet inconvenient, the loader API already hides the physical layout
 from every consumer, and a move would touch saved data for no current benefit.
+
+> **Superseded 2026-08-13 (M07.4).** The deferral expired and the reasoning held.
+> Cards are now **one file per card** under
+> `content/sets/<setId>/cards/<cardId>.json`, with Tokens beside them in
+> `tokens/`, a per-set `set.json` manifest, and formats, precons and deck plans
+> in their own directories under `content/`. `npm run content:build` compiles all
+> of it into the generated bundle
+> `packages/card-data/src/data/generated/content-bundle.json`
+> (`CONTENT_BUNDLE_SCHEMA_VERSION`), and `npm run content:check` fails when the
+> committed bundle and the sources disagree. There is no `prototype_core.json`:
+> `prototype_core` is a **set ID**, and the second set beside `precon_wave_1`.
+>
+> The prediction in this paragraph is the part worth keeping: because the loader
+> API hid the physical layout, the migration changed no call site, and saved
+> decks — which store card IDs, not card bodies — were untouched. What made the
+> move necessary was not inconvenience but enforcement: the build now runs
+> per-card gates whose severity depends on the owning set's status, and a set
+> status cannot be a property of a file that holds every set's cards.

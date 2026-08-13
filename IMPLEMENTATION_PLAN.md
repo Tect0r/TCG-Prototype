@@ -21,7 +21,7 @@ After verification, update the evidence and stop.
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)               | Complete     |
 | [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)               | Complete     |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1–M06.3 done (2026-08-13) | Complete     |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1–M07.3 done (2026-08-13)               | M07.4        |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1–M07.4 done (2026-08-13)               | M07.5        |
 
 Since M01.2, an unfinished card makes a deck illegal by name. The spectator
 refuses such a precon and runs it only under a deliberately named developer
@@ -795,6 +795,49 @@ the count to `docs/status-audit.md`, since a `knownGaps` entry may move without 
 version bump. Nothing outside `docs/` changed and no version moved; the audit's
 ADR inventory went 17 → 22, which is the only derived number this tranche
 touched.
+
+Since M07.4, **Phase 4 is recorded complete** and `docs/project-status.md` says
+what that claim rests on. `PHASE4_HARDENING.md` §18 made completion conditional,
+and the last unmet condition was documentary rather than technical — "`CLAUDE.md`,
+project status, open questions, ADRs, examples and CLI help agree with the
+implemented state" — which M01, M07.2, M07.3 and this tranche finished. The
+hardening report is written to §19's shape: the fourteen defects and their
+corrections, the schema moves and their refusal-not-migration policy, the smoke
+runs and the benchmark, the free-for-all deadlock the pilots found, the
+analytical limitations that remain, and the four questions its output waits on
+(Q14, Q15, Q37, Q38). New beside it is a **before/after table in the words a
+reader sees**: `playRatePerDrawn: 112%` against `playsPerDraw: 1.12×`, a raw
+`6 → 3` displacement against `insufficient_evidence`, an inferred counter breadth
+of 0 against `unavailable`.
+
+The rest of the file is now M01–M07, one section each, and it deliberately
+**stopped counting things**. Card counts, current schema-version tables, per-suite
+test totals and coverage figures are gone, not refreshed; they are in
+`docs/status-audit.md`, where a stale number fails the suite rather than waiting
+to be noticed. The Phase 1–3 record is kept and corrected in place — Guardian is
+real, `resilient` is the only inert keyword, Commanders deploy and return,
+Reactions exist, and multiple blockers per attacker is still Q44 — with one note
+at the top of the history saying its `§` references are to the monolithic
+`CLAUDE.md` that M01 replaced. Every relative link and anchor in all 42 Markdown
+files resolves, checked mechanically; the one that did not was
+`../PLAYER_HELP_AND_CONTENT_SYSTEM.md`, deleted from the root before this
+milestone.
+
+Two documents said cards live in a monolithic `prototype_core.json`. They live
+one per file under `content/sets/<setId>/cards/`, so `project-status.md` is
+corrected and **ADR 0015** keeps its text and gains a supersession block: the
+deferral expired, its prediction held — the loader API hid the layout, so no call
+site and no saved deck changed — and what forced the move was enforcement, since
+per-card gates whose severity depends on the owning set's status cannot be a
+property of a file holding every set's cards. `prototype_core` is still a set ID
+and is not stale.
+
+`docs/testing/FIRST_CARD_BATCH_TEST_PLAN.md` is new and replaces a pre-authoring
+plan the batch never followed. It is the nine stages Wave 1 actually went
+through, in the cheap-and-local-first order they were applied in, each with its
+command, the failure it raises **by name**, and what it cannot catch — ending
+with what the protocol deliberately does not establish, balance above all. No
+version moved and no code changed.
 
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and

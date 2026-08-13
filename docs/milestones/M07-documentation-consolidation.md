@@ -217,12 +217,83 @@ M02–M05.
       `npm run audit:status` regenerated the audit (the ADR inventory is a
       derived fact — 17 records became 22), and `npm run verify` passes.
 
-## M07.4 — Project status and testing record
+## M07.4 — Project status and testing record — **done (2026-08-13)**
 
 Update `docs/project-status.md` with the Phase 4 hardening final report and all
 later milestones. Fix broken links and old references to monolithic
 `prototype_core.json`. Add `docs/testing/FIRST_CARD_BATCH_TEST_PLAN.md` with the
 actual staged protocol used for Wave 1, not the obsolete pre-authoring plan.
+
+### Checklist
+
+- [x] **Phase 4 is recorded complete, and the reason is stated rather than
+      assumed.** `PHASE4_HARDENING.md` §18 makes completion conditional, and the
+      last unmet condition was documentary — "`CLAUDE.md`, project status, open
+      questions, ADRs, examples and CLI help agree with the implemented state".
+      Everything technical held at the hardening commit; the documentary half was
+      finished by M01 (`CLAUDE.md`), M07.2 (rules and questions), M07.3 (ADRs)
+      and this tranche. The status line says so, so a reader can see what the
+      claim rests on.
+- [x] The hardening report is written to §19's shape: modules changed, the
+      fourteen defects and their corrections, schema versions with their
+      compatibility policy, verification counts, smoke experiments, the
+      benchmark, the engine bug Phase 4 found, remaining analytical limitations,
+      and the four designer questions its output waits on (Q14, Q15, Q37, Q38).
+      A **before/after table** of the corrected warnings in the words a reader
+      sees is new — `playRatePerDrawn: 112%` against `playsPerDraw: 1.12×`, a raw
+      `6 → 3` displacement against `insufficient_evidence`, an inferred counter
+      breadth of 0 against `unavailable`.
+- [x] **M01–M07 are recorded**, one section each: what the milestone made true
+      and the durable evidence for it, linked to the milestone file and the ADR
+      where there is one. The milestone table carries a completion date per
+      milestone, taken from the tranche headings rather than from memory.
+- [x] **Countable facts were removed rather than refreshed.** The file no longer
+      carries card counts, schema-version tables for current versions, test
+      totals per suite or coverage figures; it points at `docs/status-audit.md`,
+      whose derived half fails the suite when it is stale. The one number kept is
+      the `npm run verify` reading, which is a measurement of a run.
+- [x] Every stale claim in the Phase 1–3 history was checked and corrected in
+      place, without deleting the record: `guardian` is real and `resilient` is
+      the only inert keyword; Commanders deploy and return; Reactions and a
+      bounded priority window exist; the continuous layer and player targets
+      arrived in Phase 3. Multiple blockers per attacker is still unimplemented
+      and is named as Q44. The history section says once, at the top, that its
+      `§` references are to the historical monolithic `CLAUDE.md` that M01
+      replaced, so a reader does not chase a section number that no longer
+      exists.
+- [x] **Links.** The one broken link is gone — `project-status.md` pointed at
+      `../PLAYER_HELP_AND_CONTENT_SYSTEM.md`, deleted from the root before this
+      milestone. Every relative link and anchor in all 42 Markdown files in the
+      repository resolves, checked mechanically rather than by eye.
+- [x] **The monolithic `prototype_core.json` is gone from the record.** Two
+      places described it as current: `project-status.md`'s Phase 3 note and its
+      help-milestone deferral, and ADR 0015's _Alternatives considered_. The
+      first two are corrected; the ADR keeps its text and gains a
+      `> **Superseded 2026-08-13 (M07.4).**` block recording that the deferral
+      expired, that the prediction in it held (the loader API hid the layout, so
+      no call site and no saved deck changed), and what actually forced the move:
+      per-card gates whose severity depends on the owning set's status, which
+      cannot be a property of a file holding every set's cards. `prototype_core`
+      remains a **set ID** and is not stale.
+- [x] `docs/testing/FIRST_CARD_BATCH_TEST_PLAN.md` is the protocol Wave 1
+      actually went through, in the order it was actually applied —
+      cheap-and-local first, because a batch run is the most expensive way to
+      find a typo. Nine stages, each with the command that runs it, the failure
+      it produces **by name**, and what it cannot catch: authoring, content
+      build, behaviour contract, player-facing text in both directions, deck
+      legality, one whole match at 2–4 seats, batch evidence, pilot calibration,
+      and the repository gate. It ends with what the protocol deliberately does
+      not establish — balance above all — and a five-step recipe for the next
+      batch.
+- [x] Documentation only: nothing outside `docs/` and `IMPLEMENTATION_PLAN.md`
+      was touched, and no version constant moved.
+      Nothing this tranche changed is read by the status audit's derived half
+      (it scans `docs/architecture/`, `docs/milestones/`, the root file list and
+      the question ledger), so the audit is unchanged and `npm run audit:check`
+      still reports it current.
+- [x] Verified: `npm run verify` passes (2057 tests in 101 files),
+      `npm run audit:check` reports the audit current, and the link check above
+      is clean.
 
 ## M07.5 — Root and README cleanup
 
