@@ -193,6 +193,17 @@ export {
   type CardProjection,
 } from './mechanics.js';
 
+/**
+ * The generated bundle's own envelope version and where it lives. Exported from
+ * the package entry point so the status audit (M07.1) reads the version the
+ * content build writes rather than a number transcribed into a document.
+ */
+export {
+  CONTENT_BUNDLE_SCHEMA_VERSION,
+  CONTENT_SOURCE_DIR,
+  GENERATED_BUNDLE_PATH,
+} from './content/source.js';
+
 export { CardDatabase } from './database.js';
 export { loadCardSets, zodIssuesToIssues, type LoadedCardData } from './loader.js';
 export { migrateCardSet, canMigrateCardSet } from './migrate.js';

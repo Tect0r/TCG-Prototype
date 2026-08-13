@@ -1,0 +1,290 @@
+# Status audit
+
+GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every number below the derived-facts marker is read out of the code and content it describes, and `scripts/lib/status-audit.test.ts` fails when this file and the collector disagree.
+
+## Audit run
+
+A measurement rather than a derivation, so it is not re-checked by the drift test:
+reproducing it means running the suite again.
+
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `862b3e4e35b35a7525112e4be53fec68c69364ac`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-13                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | passed at this commit                       |
+
+### Verification chain
+
+`npm run verify` runs 7 steps, in order:
+
+1. `npm run content:check`
+2. `npm run typecheck`
+3. `npm run lint`
+4. `npm run format:check`
+5. `npm run validate:content`
+6. `npm run test`
+7. `npm run build`
+
+### Tests
+
+| Vitest project | Files   | Tests    |
+| -------------- | ------- | -------- |
+| packages       | 59      | 1384     |
+| scripts        | 3       | 34       |
+| server         | 4       | 63       |
+| simulator      | 23      | 434      |
+| web-client     | 12      | 142      |
+| **total**      | **101** | **2057** |
+
+Enumerated with `vitest list`, which collects every case without running it.
+
+<!-- audit:derived:start -->
+
+## Versions
+
+Read from the constants themselves. A version below is what the software
+stamps today, not what a document remembers it stamping.
+
+### Play contract
+
+What a client, a server and a saved deck must agree on to play at all.
+
+| Constant                        | Value | Pins                                                                                         |
+| ------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
+| `RULES_VERSION`                 | 0.4.0 | The rules configuration.                                                                     |
+| `PROTOCOL_VERSION`              | 6     | Every message shape, refused at the handshake.                                               |
+| `MATCH_SCHEMA_VERSION`          | 7     | Serialized match state.                                                                      |
+| `CARD_SCHEMA_VERSION`           | 4     | A card definition, owned per set by its manifest.                                            |
+| `DECK_SCHEMA_VERSION`           | 1     | A saved deck.                                                                                |
+| `FORMAT_SCHEMA_VERSION`         | 1     | A play format and its construction rules.                                                    |
+| `PRECON_SCHEMA_VERSION`         | 1     | A bundled precon definition.                                                                 |
+| `DECK_PLAN_SCHEMA_VERSION`      | 1     | A deck's authored package structure.                                                         |
+| `CONTENT_BUNDLE_SCHEMA_VERSION` | 2     | The generated bundle envelope (`packages/card-data/src/data/generated/content-bundle.json`). |
+| `GLOSSARY_SCHEMA_VERSION`       | 1     | The player-facing glossary.                                                                  |
+| `RULEBOOK_SCHEMA_VERSION`       | 1     | The in-app rulebook.                                                                         |
+
+### Recorded artifacts
+
+Documents a finished run leaves behind. Every move so far has been a refusal rather than a migration.
+
+| Constant                              | Value | Pins                                                           |
+| ------------------------------------- | ----- | -------------------------------------------------------------- |
+| `SPECTATOR_REPLAY_VERSION`            | 6     | A spectator replay log.                                        |
+| `BOARD_TELEMETRY_VERSION`             | 3     | The shared board-size and attack-opportunity schema.           |
+| `TELEMETRY_SCHEMA_VERSION`            | 6     | A simulator match record.                                      |
+| `MATCH_STREAM_HEADER_VERSION`         | 1     | `matches.header.json`, which decides whether a run may resume. |
+| `REPORT_SCHEMA_VERSION`               | 8     | `report.md`.                                                   |
+| `MANIFEST_SCHEMA_VERSION`             | 8     | `manifest.json`.                                               |
+| `SUMMARY_SCHEMA_VERSION`              | 7     | `summary.json`.                                                |
+| `MATCHUP_MATRIX_SCHEMA_VERSION`       | 2     | `matchup-matrix.json` and its CSV.                             |
+| `SEARCH_CHECKPOINT_VERSION`           | 2     | A deck-search checkpoint.                                      |
+| `RESOLVED_ENVIRONMENT_SCHEMA_VERSION` | 1     | A frozen environment snapshot.                                 |
+| `REFERENCE_POPULATION_VERSION`        | 1     | A shared reference population.                                 |
+| `CONFIG_SCHEMA_VERSION`               | 1     | An experiment configuration file.                              |
+| `SEED_DERIVATION_VERSION`             | 2     | How every seed in a run is derived.                            |
+| `HASH_VERSION`                        | 1     | How a hash over content or configuration is taken.             |
+
+### Registries and instruments
+
+Classifications a citation is made against. A move here re-judges evidence rather than refusing it.
+
+| Constant                          | Value | Pins                                                          |
+| --------------------------------- | ----- | ------------------------------------------------------------- |
+| `SUPPORT_REGISTRY_VERSION`        | 2     | How well each mechanic is supported, in four dimensions.      |
+| `ARCHETYPE_REGISTRY_VERSION`      | 1     | The archetype vocabulary and the roles each one requires.     |
+| `KEYWORD_REGISTRY_SCHEMA_VERSION` | 1     | The keyword registry entry shape.                             |
+| `AGENT_CLASS_REGISTRY_VERSION`    | 1     | Which agent class may make which evidence claim.              |
+| `CALIBRATION_SUITE_VERSION`       | 1     | The tactical fixtures a calibration standing was measured on. |
+| `STALL_DEFINITION_VERSION`        | 1     | The rule a quiet round is judged a stall by.                  |
+| `PERTURBATION_PROFILE_VERSION`    | 1.0.0 | How a pilot is perturbed for a robustness arm.                |
+| `pilot random_legal`              | 1.0.0 | Decision procedure; agent class `random_legal`.               |
+| `pilot aggressive`                | 1.1.0 | Decision procedure; agent class `generic_heuristic`.          |
+| `pilot defensive`                 | 1.1.0 | Decision procedure; agent class `generic_heuristic`.          |
+| `pilot value`                     | 1.1.0 | Decision procedure; agent class `generic_heuristic`.          |
+
+## Content
+
+### Sets
+
+| Set              | Status      | Card schema | Playable cards | Tokens | Unimplemented | No pilot values | No record observes |
+| ---------------- | ----------- | ----------- | -------------- | ------ | ------------- | --------------- | ------------------ |
+| `precon_wave_1`  | playtest    | v4          | 152            | 3      | 0             | 0               | 39                 |
+| `prototype_core` | development | v4          | 52             | 4      | 0             | 1               | 15                 |
+
+### Formats
+
+| Format          | Sets             | Pool | Deck size | Singleton | Max Commander colours | Banned |
+| --------------- | ---------------- | ---- | --------- | --------- | --------------------- | ------ |
+| `development`   | `prototype_core` | 56   | 30        | no        | 2                     | 0      |
+| `precon_wave_1` | `precon_wave_1`  | 155  | 40        | yes       | 2                     | 0      |
+
+### Precons
+
+| Precon                       | Format          | Commander                   | Colours | Cards | Legal | Plan                       | Colour-legal pool |
+| ---------------------------- | --------------- | --------------------------- | ------- | ----- | ----- | -------------------------- | ----------------- |
+| `precon_bastion_guardians`   | `precon_wave_1` | `bastion_commander`         | white   | 40    | yes   | `plan_bastion_guardians`   | 42 (+2)           |
+| `precon_containment_control` | `precon_wave_1` | `chief_containment_scholar` | blue    | 40    | yes   | `plan_containment_control` | 41 (+1)           |
+| `precon_goblin_swarm`        | `precon_wave_1` | `goblin_warboss`            | red     | 40    | yes   | `plan_goblin_swarm`        | 41 (+1)           |
+| `precon_grave_sacrifice`     | `precon_wave_1` | `grave_matriarch`           | black   | 40    | yes   | `plan_grave_sacrifice`     | 42 (+2)           |
+
+The last column is the cards a Commander's colour identity allows against the deck size it has to fill.
+
+### Deck plans
+
+| Plan                       | Precon                       | Archetype           | Packages | Core | Slots | Share of deck |
+| -------------------------- | ---------------------------- | ------------------- | -------- | ---- | ----- | ------------- |
+| `plan_bastion_guardians`   | `precon_bastion_guardians`   | defensive_attrition | 6        | 4    | 27    | 68%           |
+| `plan_containment_control` | `precon_containment_control` | reactive_control    | 6        | 5    | 29    | 73%           |
+| `plan_goblin_swarm`        | `precon_goblin_swarm`        | token_swarm         | 5        | 3    | 28    | 70%           |
+| `plan_grave_sacrifice`     | `precon_grave_sacrifice`     | sacrifice_value     | 6        | 4    | 29    | 73%           |
+
+A plan may cover at most 75% of a deck, enforced by the content build, so every
+plan-generated deck keeps free slots no generator setting can take away.
+
+## Coverage
+
+| Instrument                    | Reading                                 |
+| ----------------------------- | --------------------------------------- |
+| Card behaviour contracts      | 155 of 155 cards in `precon_wave_1`     |
+| Tactical calibration fixtures | 16, of which 8 record a known pilot gap |
+| Glossary entries              | 34                                      |
+| Rulebook sections             | 18                                      |
+
+| Pilot        | Fixtures it misses |
+| ------------ | ------------------ |
+| `aggressive` | 7                  |
+| `defensive`  | 8                  |
+| `value`      | 8                  |
+
+## Mechanic support
+
+63 classified mechanics across seven executable vocabularies.
+
+| Dimension | Levels                               |
+| --------- | ------------------------------------ |
+| engine    | full 62, none 1                      |
+| help      | full 63, partial 0, none 0           |
+| pilot     | full 4, approximate 58, legal_only 1 |
+| telemetry | full 10, partial 22, none 31         |
+
+The engine does not execute (1):
+
+`keyword:resilient`
+
+No pilot values (1):
+
+`keyword:resilient`
+
+No match record observes (31):
+
+`condition:active_turn`, `condition:count`, `condition:previous_step`, `condition:source_state`, `cost:exhaust_source`, `effect:counter`, `effect:exhaust`, `effect:grant_keyword`, `effect:modify_stats`, `effect:prevent_damage`, `effect:ready`, `effect:remove_keyword`, `effect:reorder_zone`, `effect:return_to_hand`, `effect:search_zone`, `keyword:armored`, `keyword:barrier`, `keyword:evasive`, `keyword:guardian`, `keyword:overwhelm`, `keyword:quick_strike`, `keyword:resilient`, `keyword:rush`, `keyword:siphon`, `keyword:untargetable_by_opponents`, `keyword:venom`, `static_effect:grant_keyword`, `static_effect:modify_stats`, `value:count`, `value:previous_targets`, `value:stat`
+
+## Known limitations
+
+- Keywords the engine does not execute: resilient. Barred from a `playtest` or `active` set by the content build, so no shipped card carries one (Q4).
+- Of 63 classified mechanics, no pilot values 1 and no counter records 31. Both lists are in the section above.
+- Set `precon_wave_1` (playtest): 0 card(s) marked `implemented: false`; no pilot values 0 of its cards; no match record observes 39.
+- `precon_bastion_guardians` has 42 colour-legal cards for a 40-card deck (2 spare). A package-scale mutation has nowhere to put what it frees.
+- `precon_containment_control` has 41 colour-legal cards for a 40-card deck (1 spare). A package-scale mutation has nowhere to put what it frees.
+- `precon_goblin_swarm` has 41 colour-legal cards for a 40-card deck (1 spare). A package-scale mutation has nowhere to put what it frees.
+- `precon_grave_sacrifice` has 42 colour-legal cards for a 40-card deck (2 spare). A package-scale mutation has nowhere to put what it frees.
+- No pilot in this build implements agent class(es): archetype_aware, human_playtest. Every claim resting on one is declined by every run this build can produce.
+- 8 of 16 calibration fixtures record a pilot that misses the characteristic decision. The record is asserted in both directions, so a closed gap fails as loudly as a regression.
+
+## Question ledger
+
+`docs/open-questions.md` against the owner-decision list in `IMPLEMENTATION_PLAN.md`.
+
+| Question | Title                                                                  | Question file | Listed open in the plan |
+| -------- | ---------------------------------------------------------------------- | ------------- | ----------------------- |
+| Q1       | Do `effects` and `abilities` collapse into one form? — 2026-08-07      | answered      | no                      |
+| Q2       | How are static / continuous abilities expressed? — 2026-08-07          | answered      | no                      |
+| Q3       | Is `sacrifice` a cost or an effect? — 2026-08-07                       | answered      | no                      |
+| Q4       | What does each keyword actually do?                                    | open          | yes                     |
+| Q5       | How long is Commander recovery, and what happens during it?            | open          | no                      |
+| Q6       | Is there an alternate victory condition?                               | open          | no                      |
+| Q7       | What is the client/server protocol contract? — 2026-08-07              | answered      | no                      |
+| Q8       | What is the turn/action timeout policy?                                | open          | no                      |
+| Q9       | Should a match survive a server restart?                               | open          | no                      |
+| Q10      | Multiplayer combat and targeting — 2026-08-07                          | answered      | no                      |
+| Q11      | Priority order for simultaneous triggers — 2026-08-07                  | answered      | no                      |
+| Q12      | Elimination semantics — 2026-08-07                                     | answered      | no                      |
+| Q13      | Team play — in or out? — 2026-08-07                                    | answered      | no                      |
+| Q14      | What thresholds should actually gate a card change?                    | open          | no                      |
+| Q15      | How is "a healthy plural meta" measured?                               | open          | no                      |
+| Q16      | Simulator determinism boundary — **answered 2026-08-08**               | answered      | no                      |
+| Q17      | Colour identity — names, count, and what each colour does              | open          | no                      |
+| Q18      | Does creating a coloured token leak colour identity into the creator?  | open          | no                      |
+| Q19      | Is 30 cards / 2 copies / 2 colours right?                              | open          | no                      |
+| Q20      | Should `displayText` be generated from structured effects?             | open          | no                      |
+| Q21      | Localisation                                                           | open          | no                      |
+| Q22      | Is 768 × 1024 px the right art size?                                   | open          | no                      |
+| Q23      | Should an effect be able to target a player directly? — 2026-08-07     | answered      | no                      |
+| Q24      | Does a sacrificed unit also trigger `on_defeated`? — 2026-08-07        | answered      | no                      |
+| Q25      | Must a search find something if a legal card exists? — 2026-08-07      | answered      | no                      |
+| Q26      | Is player healing capped? — 2026-08-07                                 | answered      | no                      |
+| Q27      | Is the activated-ability shape right, and should the placeholder ab... | answered      | no                      |
+| Q28      | Should a trigger created mid-card resolve before the rest of that c... | answered      | no                      |
+| Q29      | Confirm the `targetsSource` addition to the target schema — 2026-08-07 | answered      | no                      |
+| Q30      | Is strict stale-revision rejection the behaviour you want? — 2026-0... | answered      | no                      |
+| Q31      | How is seat order determined?                                          | open          | no                      |
+| Q32      | Is `removed` a real zone, and does elimination reveal hidden inform... | open          | no                      |
+| Q33      | What order does `all_players` resolve in?                              | open          | no                      |
+| Q34      | Does the disconnect grace window run while it is not that player's ... | open          | no                      |
+| Q35      | Do three- and four-player matches need different rule values?          | open          | no                      |
+| Q36      | Who controls the lobby, and can its size change after players join?    | open          | no                      |
+| Q37      | Should the pilots be better players than they are?                     | open          | no                      |
+| Q38      | When is a multiplayer balance run worth it?                            | open          | no                      |
+| Q39      | What is the final Reaction chaining and ordering policy?               | open          | no                      |
+| Q40      | Should `cards.json` and `precons.json` be deleted from the repo root?  | open          | no                      |
+| Q41      | Are unimplemented cards visible in the deck builder, and is there a... | open          | no                      |
+| Q42      | What makes two Tokens "identical" for visual stacking? — **answered... | answered      | no                      |
+| Q43      | What counts as a board stall? — **answered 2026-08-12**                | answered      | no                      |
+| Q44      | Do you want multiple blockers per attacker, and if so, when?           | open          | yes                     |
+| Q45      | Is Barrier consumed before or after other prevention and reduction?    | open          | yes                     |
+| Q46      | May a Reaction carry an additional cost?                               | open          | yes                     |
+| Q47      | (no entry in docs/open-questions.md)                                   | absent        | yes                     |
+| Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | open          | yes                     |
+
+23 question(s) are open in the question file and not on the plan's
+short list, which is the curated set a tranche might have to stop on rather than an index.
+
+The other direction is a contradiction, and there is one for each of:
+
+- Q47 is listed open in `IMPLEMENTATION_PLAN.md`, but `docs/open-questions.md` records it as absent.
+
+## Repository inventory
+
+| Reading                                  | Value                                                                                                                                                                                                                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspaces                               | `packages/board-telemetry`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
+| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `cards.json`, `eslint.config.js`, `package-lock.json`, `package.json`, `precons.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                        |
+| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                        |
+| Architecture decision records            | 17                                                                                                                                                                                                                                                                          |
+| Milestone documents                      | 7                                                                                                                                                                                                                                                                           |
+
+### Architecture decision records
+
+| File                                                     | Title                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `0001-monorepo-and-tooling.md`                           | ADR 0001 — Monorepo layout and toolchain                                             |
+| `0002-card-data-model.md`                                | ADR 0002 — Card data model and structured effects                                    |
+| `0003-deck-save-format.md`                               | ADR 0003 — Deck save format, migrations and persistence                              |
+| `0004-artwork-resolution.md`                             | ADR 0004 — Artwork resolution and the card frame                                     |
+| `0005-rules-engine.md`                                   | ADR 0005 — Deterministic rules engine (Phase 2A)                                     |
+| `0006-network-protocol.md`                               | ADR 0006 — Network boundary and authoritative server (Phase 2B)                      |
+| `0007-free-for-all-state.md`                             | ADR 0007 — Free-for-all state, choices and combat (Phase 3)                          |
+| `0008-continuous-effects.md`                             | ADR 0008 — Continuous effects and static abilities                                   |
+| `0009-bot-information-boundary.md`                       | ADR 0009 — The bot information boundary (Phase 4)                                    |
+| `0010-seed-derivation-and-reproducibility.md`            | ADR 0010 — Seed derivation and reproducibility (Phase 4)                             |
+| `0011-telemetry-and-provenance.md`                       | ADR 0011 — Telemetry, provenance and dead-hand categories (Phase 4)                  |
+| `0012-experiment-storage-and-checkpointing.md`           | ADR 0012 — Experiment storage, streaming and checkpointing (Phase 4)                 |
+| `0013-statistical-contracts.md`                          | ADR 0013 — Statistical contracts for the balance laboratory (Phase 4 hardening)      |
+| `0014-unified-match-stream-and-reference-populations.md` | ADR 0014 — One match stream, and immutable reference populations (Phase 4 hardening) |
+| `0015-player-help-and-content.md`                        | ADR 0015 — Player help and the data-driven content system                            |
+| `0016-precon-wave-1-ruleset.md`                          | 16. Precon Wave 1 ruleset — format, battlefield, Relics, Commanders, Reactions       |
+| `0017-optional-instructions-and-interactive-costs.md`    | 17. Optional instructions, "if you do", and costs a player chooses                   |
+
+<!-- audit:derived:end -->

@@ -314,9 +314,19 @@ export {
   type JsonlReadResult,
 } from './reporting/sinks.js';
 
-export { renderReport, type ReportInputs } from './reporting/report.js';
+export { REPORT_SCHEMA_VERSION, renderReport, type ReportInputs } from './reporting/report.js';
+
+/**
+ * The two artifact versions a run writes from modules the index otherwise keeps
+ * to itself. Exported so the status audit (M07.1) can read every artifact
+ * version the simulator stamps rather than transcribing two of them by hand.
+ */
+export { MATCH_STREAM_HEADER_VERSION } from './reporting/match-store.js';
+export { REFERENCE_POPULATION_VERSION } from './reference-population.js';
 
 export {
+  MANIFEST_SCHEMA_VERSION,
+  SUMMARY_SCHEMA_VERSION,
   detectSoftwareCommit,
   runExperiment,
   type ExperimentOutcome,

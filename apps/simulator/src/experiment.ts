@@ -82,6 +82,61 @@ import { ANALYSIS_STATS_VERSION } from './analysis/paired.js';
  * to write a final array (PHASE4_HARDENING §7).
  */
 
+/**
+ * Schema of `manifest.json`, the document that says what a run was.
+ *
+ * A constant rather than a literal at the write site (M07.1) so that the status
+ * audit reads the version the simulator actually writes instead of a number
+ * copied out of prose.
+ *
+ * - 4 (M03.4): an ordered-matchup-matrix run records the artifact beside the
+ *   hashes, including whether it was complete and whether every cell terminated
+ *   cleanly. Absent for every other run.
+ * - 5 (M05.1): every manifest carries `mechanicSupport` — the weakest engine,
+ *   help, pilot and telemetry support reached by each deck that played, the
+ *   mechanics responsible, and whether the pilots were legality-only. A v4
+ *   manifest cannot be migrated to it: the reading was never taken, and the
+ *   registry it is taken against did not exist.
+ * - 6 (M05.4): every manifest carries `agentClasses` — the honest agent class of
+ *   every pilot that flew, and claim by claim what the run may and may not be
+ *   cited for. Not migratable from v5 for the same reason: the taxonomy did not
+ *   exist, and a v5 manifest's pilot list cannot be read against it without
+ *   assuming today's classification held then.
+ * - 7 (M05.5): every manifest carries `deckConstruction` — how each deck in the
+ *   run was built, and how much of its authored plan it still holds. Not
+ *   migratable from v6 for the third time for the same reason: a v6 run's decks
+ *   never recorded where they came from, and defaulting them to `unconstrained`
+ *   would be a claim rather than a reading.
+ * - 8 (M05.6): every manifest carries `calibration` — whether the run is an
+ *   instrument reading or a balance conclusion, and what would have to change
+ *   for that to move. Not migratable from v7: the standing is derived from the
+ *   agent class taxonomy a run was judged against, and stamping today's reading
+ *   onto an older manifest would be re-judging it rather than reading it.
+ */
+export const MANIFEST_SCHEMA_VERSION = 8;
+
+/**
+ * Schema of `summary.json`, the machine-readable original of every number the
+ * report prints. Named here for the same reason as `MANIFEST_SCHEMA_VERSION`.
+ *
+ * - 3 (M04.3): the batch's unlimited-board reading, so the report's board
+ *   section is a view of the JSON like every other section rather than the only
+ *   place those numbers exist.
+ * - 4 (M05.1): the mechanic support reading, for the same reason — the report's
+ *   support section is a view of this, and a flag downgraded for missing support
+ *   can be traced back to the mechanic that caused it.
+ * - 5 (M05.4): the agent class reading, and `aggregate.run.agentClassWinRates`
+ *   beside the pilot rates, so the per-class outcome the report prints has a
+ *   machine-readable original and is never re-derived by averaging.
+ * - 6 (M05.5): the deck-construction reading, so the report's construction
+ *   section is a view of this JSON like every other section, and a plan's
+ *   package integrity can be traced without opening the deck list.
+ * - 7 (M05.6): the calibration standing, so "this is not a balance verdict" is a
+ *   machine-readable field a downstream tool can refuse to publish on rather
+ *   than a sentence in the prose.
+ */
+export const SUMMARY_SCHEMA_VERSION = 7;
+
 export interface RunExperimentOptions {
   readonly configPath?: string;
   readonly outputDir?: string;
@@ -1289,35 +1344,8 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   if (primarySnapshot) writeJson(paths.resolvedEnvironment, primarySnapshot);
 
   writeJson(paths.manifest, {
-    // 4 (M03.4): an ordered-matchup-matrix run records the artifact beside the
-    // hashes, including whether it was complete and whether every cell
-    // terminated cleanly. Absent for every other run.
-    //
-    // 5 (M05.1): every manifest carries `mechanicSupport` — the weakest engine,
-    // help, pilot and telemetry support reached by each deck that played, the
-    // mechanics responsible, and whether the pilots were legality-only. A v4
-    // manifest cannot be migrated to it: the reading was never taken, and the
-    // registry it is taken against did not exist.
-    //
-    // 6 (M05.4): every manifest carries `agentClasses` — the honest agent class
-    // of every pilot that flew, and claim by claim what the run may and may not
-    // be cited for. Not migratable from v5 for the same reason: the taxonomy did
-    // not exist, and a v5 manifest's pilot list cannot be read against it
-    // without assuming today's classification held then.
-    //
-    // 7 (M05.5): every manifest carries `deckConstruction` — how each deck in
-    // the run was built, and how much of its authored plan it still holds. Not
-    // migratable from v6 for the third time for the same reason: a v6 run's
-    // decks never recorded where they came from, and defaulting them to
-    // `unconstrained` would be a claim rather than a reading.
-    //
-    // 8 (M05.6): every manifest carries `calibration` — whether the run is an
-    // instrument reading or a balance conclusion, and what would have to change
-    // for that to move. Not migratable from v7: the standing is derived from the
-    // agent class taxonomy a run was judged against, and stamping today's
-    // reading onto an older manifest would be re-judging it rather than reading
-    // it.
-    schemaVersion: 8,
+    // Version history is on MANIFEST_SCHEMA_VERSION.
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
     experimentId: config.id,
     kind: config.kind,
     seed: config.seed,
@@ -1434,26 +1462,8 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   });
   writeJson(paths.decks, inputs.decks);
   writeJson(paths.summary, {
-    // 3 (M04.3): the batch's unlimited-board reading, so the report's board
-    // section is a view of the JSON like every other section rather than the only
-    // place those numbers exist.
-    //
-    // 4 (M05.1): the mechanic support reading, for the same reason — the
-    // report's support section is a view of this, and a flag downgraded for
-    // missing support can be traced back to the mechanic that caused it.
-    //
-    // 5 (M05.4): the agent class reading, and `aggregate.run.agentClassWinRates`
-    // beside the pilot rates, so the per-class outcome the report prints has a
-    // machine-readable original and is never re-derived by averaging.
-    //
-    // 6 (M05.5): the deck-construction reading, so the report's construction
-    // section is a view of this JSON like every other section, and a plan's
-    // package integrity can be traced without opening the deck list.
-    //
-    // 7 (M05.6): the calibration standing, so "this is not a balance verdict" is
-    // a machine-readable field a downstream tool can refuse to publish on rather
-    // than a sentence in the prose.
-    schemaVersion: 7,
+    // Version history is on SUMMARY_SCHEMA_VERSION.
+    schemaVersion: SUMMARY_SCHEMA_VERSION,
     configHash: configHashOf(config),
     thresholds: settings,
     aggregate: agg,

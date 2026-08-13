@@ -13,15 +13,15 @@ After verification, update the evidence and stop.
 
 ## Status
 
-| Milestone                                                                                 | State at baseline                           | Next tranche    |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------- | --------------- |
-| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)               | Complete        |
-| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done)       | Complete        |
-| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)               | Complete        |
-| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)               | Complete        |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)               | Complete        |
-| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1–M06.3 done (2026-08-13) | Complete        |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain             | Final milestone |
+| Milestone                                                                                 | State at baseline                           | Next tranche |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------- | ------------ |
+| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)               | Complete     |
+| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done)       | Complete     |
+| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)               | Complete     |
+| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)               | Complete     |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)               | Complete     |
+| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1–M06.3 done (2026-08-13) | Complete     |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1 done (2026-08-13)                     | M07.2        |
 
 Since M01.2, an unfinished card makes a deck illegal by name. The spectator
 refuses such a precon and runs it only under a deliberately named developer
@@ -682,6 +682,42 @@ byte-identical with stacking on and off, because the replay was recorded before
 the screen rendered anything. No schema, protocol, replay or telemetry version
 moves. M06 is complete.
 
+Since M07.1, the project's own status is **generated rather than remembered**.
+`docs/status-audit.md` is written by `npm run audit:status` and is two halves
+that are two different kinds of claim. The **derived facts** are read out of the
+code and content they describe: every play-contract, artifact and registry
+version taken from the constant that stamps it; the two sets, two formats, four
+precons and four deck plans with their counts, their legality as `reviewPrecon`
+judges it and the pool each Commander's colour identity allows; mechanic support
+in four dimensions; behaviour-contract, calibration, glossary and rulebook
+coverage; and the limitations all of that implies. The **run record** — commit,
+whether the tree was clean, the date, the chain and its outcome, and the test
+totals from a real `vitest list` — is a measurement taken once and says so.
+The derived half is compared byte-for-byte by `scripts/lib/status-audit.test.ts`
+and by `npm run audit:check`, so a stale number is a failing test rather than a
+sentence somebody has to notice; the run record is deliberately outside that
+comparison, because re-deriving it means running the suite from inside the suite.
+
+Five facts had to become reachable before they could be read. `manifest.json`
+and `summary.json` stamped integer literals at their write sites, so
+`MANIFEST_SCHEMA_VERSION` (8) and `SUMMARY_SCHEMA_VERSION` (7) now exist and
+carry the version history those comments held; `CONTENT_BUNDLE_SCHEMA_VERSION`,
+`MATCH_STREAM_HEADER_VERSION` and `REFERENCE_POPULATION_VERSION` are exported
+from their package entry points; and the card-contract registry has a
+`@tcg/rules-engine/card-contracts` subpath beside `./test-fixtures`. No behaviour
+moved and no version moved.
+
+Two findings are recorded rather than acted on, because they are M07.2's work.
+The audit re-derives M05.5's headroom limit from the content instead of from the
+sentence recording it — `goblin_warboss` has **41** colour-legal cards for a
+40-card deck — which is the check that the derivation is reading the same pool
+the operator does. And the **question ledger** finds exactly one contradiction
+between `docs/open-questions.md` and this file's owner-decision list: **Q47 is
+listed open here and has no entry in the question file at all**. The other
+direction is counted, not flagged: 23 questions are open in the file and not on
+this list, which is the curated set a tranche might have to stop on rather than
+an index.
+
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and
 `eslint.config.js` are held to the same strictness as shipped code. The separate
@@ -736,6 +772,9 @@ Only stop on these when the active tranche genuinely needs the answer:
 - `npm run verify` passing. It covers the root `tsconfig.json` since M01.5;
   nothing needs to be run separately.
 - No newly stale player-facing text.
+- `docs/status-audit.md` regenerated with `npm run audit:status` when the tranche
+  changed anything it counts. Since M07.1 the suite fails until it is, so this is
+  a reminder of the command rather than a duty to remember the numbers.
 - Status table and milestone checklist updated in the same change.
 
 ## Global stop conditions
