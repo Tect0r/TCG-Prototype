@@ -785,9 +785,20 @@ Both entries above are stale in their wording but still open in substance:
   What is still yours: whether to implement `resilient` — and under which of the
   two readings — or to delete it from `KEYWORD_IDS` outright. Until then the
   registry also records `pilot: 'legal_only'` for it, which is what a simulator
-  report now prints. Note that `scoring.ts` still pays a flat keyword bonus for
-  it through `keywordCount`; repairing that is M05.2's first bullet ("never value
-  unimplemented keywords"), and the registry entry says so.
+  report now prints.
+
+  **M05.2 closed the bot-valuation half.** `scoring.ts` used to pay a flat
+  `keywordBonus` for every printed keyword, so a card carrying the inert
+  `resilient` read as strictly better than the same card without it — a pilot
+  mulliganed toward it and protected it in combat, and a balance run would have
+  reported the difference as a property of the card rather than of the scorer.
+  `keywordIsValued` now reads this registry, so an `engine: 'none'` keyword is
+  worth zero everywhere a keyword is priced: on a printed statline, on a
+  `grant_keyword` instruction, on a `remove_keyword`, on a continuous
+  `grant_keyword` layer, and on the keyword a `replace_arrival` hands out. It is
+  derived rather than listed, so implementing `resilient` switches its valuation
+  on in the same change that switches its behaviour on. Only the design decision
+  is left.
 
 - **Q5** is now specifically the **post-battlefield-defeat** lifecycle, because
   Commanders became deployable. Does a defeated Commander return to the Commander

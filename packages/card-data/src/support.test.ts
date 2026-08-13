@@ -101,13 +101,18 @@ describe('mechanic support registry', () => {
     expect(inert.map(mechanicKey)).toEqual(['keyword:resilient']);
   });
 
-  it('records that no pilot values a counter', () => {
-    // The gap this registry exists to make visible: `ungatedEffectValue` has no
-    // `counter` case, so a Reaction whose whole text is a counter is priced as a
-    // blank card. M05.2 repairs it; until then a report must say so.
-    expect(mechanicSupport({ kind: 'effect', id: 'counter' }).pilot).toBe('legal_only');
+  it('records that a counter is now priced, and that only an inert keyword is not', () => {
+    // The gap this registry was written to expose: `ungatedEffectValue` had no
+    // `counter` case, so a Reaction whose whole text is a counter was priced as
+    // a blank card. M05.2 repaired it, and the registry has to say so — a level
+    // that stayed `legal_only` after the fix would make every Reaction deck's
+    // report decline a claim the run can now support.
+    expect(mechanicSupport({ kind: 'effect', id: 'counter' }).pilot).toBe('approximate');
+
+    // What is left is the honest remainder: `resilient` is deliberately inert
+    // pending Q4, so there is nothing for a pilot to play well.
     const blind = MECHANIC_SUPPORT_LIST.filter((entry) => entry.pilot === 'legal_only');
-    expect(blind.map(mechanicKey).sort()).toEqual(['effect:counter', 'keyword:resilient']);
+    expect(blind.map(mechanicKey).sort()).toEqual(['keyword:resilient']);
   });
 });
 
@@ -261,9 +266,6 @@ describe('the shipped catalog', () => {
       pilot: 'legal_only',
       telemetry: 'none',
     });
-    expect(limitingMechanics(refs, 'pilot').map(mechanicKey)).toEqual([
-      'effect:counter',
-      'keyword:resilient',
-    ]);
+    expect(limitingMechanics(refs, 'pilot').map(mechanicKey)).toEqual(['keyword:resilient']);
   });
 });

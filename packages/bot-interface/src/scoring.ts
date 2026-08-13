@@ -1,13 +1,18 @@
 import { z } from 'zod';
-import { isDistributedSelection } from '@tcg/card-data';
+import { EFFECT_TYPES, isDistributedSelection, mechanicSupport } from '@tcg/card-data';
 import type {
+  AbilityCost,
   CardDatabase,
   CardDefinition,
+  ContinuousScope,
+  Controller,
   DelayedAbilityDefinition,
   Duration,
   EffectDefinition,
+  EffectType,
   KeywordId,
   SignedValueExpression,
+  StaticAbilityDefinition,
   ValueExpression,
   ZoneId,
 } from '@tcg/card-data';
@@ -69,6 +74,20 @@ export const botWeightsSchema = z.strictObject({
   preventionValue: z.number().default(0.5),
   /** Value of exhausting an opposing unit / readying one of ours. */
   tapValue: z.number().default(0.6),
+  /**
+   * Value of countering the card a Reaction window named, before that card is
+   * known (M05.2).
+   *
+   * A card-shaped estimate rather than a board reading, because `effectValue`
+   * ranks a card in the abstract and the thing a counter answers has not been
+   * played yet. Roughly a mid-cost Wave 1 card: enough that a Reaction whose
+   * whole text is a counter is worth keeping in an opening hand, not so much
+   * that a pilot holds one over a board it needs to answer. `scoreReaction`
+   * replaces this estimate with the value of the card actually on the stack
+   * once the window exists, so this number only ever decides *holding* a
+   * counter, never spending one.
+   */
+  counterValue: z.number().default(3),
 
   /* ------------------------------------------------------------ board state */
   /** Multiplier on the value of a unit we already control. */
@@ -189,8 +208,37 @@ export function remainingHealthOf(unit: CardInstanceView): number {
   return unit.health - unit.markedDamage;
 }
 
-function keywordCount(keywords: readonly KeywordId[]): number {
-  return keywords.length;
+/* ------------------------------------------------------- keyword valuation */
+
+/**
+ * Whether a pilot may pay for this keyword at all, read off the mechanic support
+ * registry (M05.2).
+ *
+ * A keyword classified `engine: 'none'` is authored, filterable, printed and
+ * deliberately inert — it changes nothing about how the game plays. Paying the
+ * flat `keywordBonus` for one is not a rounding error but a false claim: it
+ * makes a card carrying it look strictly better than the same card without one,
+ * so a pilot mulligans toward it and protects it in combat, and a balance run
+ * then reports the difference as a property of the card rather than of the
+ * scorer. `resilient` is the only current member and the reason this exists
+ * (Q4).
+ *
+ * Derived rather than listed, so implementing a keyword switches its valuation
+ * on in the same change that switches its behaviour on, and this module and the
+ * registry cannot drift apart.
+ */
+export function keywordIsValued(keyword: KeywordId): boolean {
+  return mechanicSupport({ kind: 'keyword', id: keyword }).engine === 'full';
+}
+
+/** What one keyword is worth, or zero when the engine does not execute it. */
+function keywordValue(keyword: KeywordId, weights: BotWeights): number {
+  return keywordIsValued(keyword) ? weights.keywordBonus : 0;
+}
+
+/** What a keyword list is worth, inert members excluded. */
+function keywordsValue(keywords: readonly KeywordId[], weights: BotWeights): number {
+  return keywords.reduce((sum, keyword) => sum + keywordValue(keyword, weights), 0);
 }
 
 /* --------------------------------------------------------- card valuation */
@@ -332,164 +380,281 @@ export function effectValue(
   return effect.condition ? gross * CONDITION_DISCOUNT : gross;
 }
 
+/**
+ * How many members a plural selector is assumed to reach.
+ *
+ * `count: 'all'` names whatever is on the battlefield when the instruction
+ * resolves, and `effectValue` prices a card before there is a board to look at.
+ * The same middling assumption every other unknown count takes.
+ */
+const ASSUMED_TARGET_COUNT = 2;
+
+function targetCount(count: number | 'all'): number {
+  return count === 'all' ? ASSUMED_TARGET_COUNT : count;
+}
+
+/**
+ * How often a "unless its controller pays N" counter is assumed to resolve as a
+ * counter rather than as a tax. An even split: predicting whether an opponent
+ * can afford the tax is exactly the board reading this scorer does not do.
+ */
+const SOFT_COUNTER_ODDS = 0.5;
+
+/** Everything a pricer needs beyond the instruction it is pricing. */
+interface PricingContext {
+  readonly weights: BotWeights;
+  readonly database: CardDatabase;
+  /** The card's delayed bodies, so `schedule_delayed` can price its own body. */
+  readonly delayedAbilities: readonly DelayedAbilityDefinition[];
+}
+
+/** Prices one named member of the instruction vocabulary. */
+type EffectPricer<K extends EffectType> = (
+  effect: Extract<EffectDefinition, { type: K }>,
+  ctx: PricingContext,
+) => number;
+
+/**
+ * The instruction pricing table (M05.2).
+ *
+ * A total `Record` over `EffectType` rather than a `switch` with a `default: 0`,
+ * and the difference is the point of this tranche. The old switch answered "how
+ * much is this worth" with zero for anything nobody had thought about, and a
+ * zero there is indistinguishable from a deliberate "this is worth nothing" —
+ * which is how `counter` came to be priced as a blank card for the entire life
+ * of the Reaction mechanic without a single test noticing. Here a new
+ * instruction type is a **compile error** until somebody prices it, and
+ * `effectPricingGaps` makes the same check at runtime for the JSON-driven paths
+ * that never see the type.
+ *
+ * Deliberately shaped like `@tcg/card-data`'s support registry: same totality
+ * guarantee, read off the same schema-derived vocabulary.
+ */
+const EFFECT_PRICERS: { readonly [K in EffectType]: EffectPricer<K> } = {
+  draw: (effect, { weights }) =>
+    (effect.player === 'self' ? 1 : -1) * weights.cardDraw * estimateValue(effect.amount),
+
+  discard: (effect, { weights }) =>
+    (effect.player === 'self' ? -1 : 1) * weights.discardCard * estimateValue(effect.amount),
+
+  deal_damage: (effect, { weights }) => {
+    if (effect.target.kind === 'player') {
+      return (
+        (effect.target.relation === 'self' ? -1 : 1) *
+        weights.faceDamage *
+        estimateValue(effect.amount)
+      );
+    }
+    if (effect.target.kind === 'players') {
+      return weights.faceDamage * estimateValue(effect.amount);
+    }
+    if (effect.target.kind !== 'entity') {
+      // `source` and `trigger_subject` both aim at a card on our own side.
+      return -weights.unitDamage * estimateValue(effect.amount);
+    }
+    const selector = effect.target.selector;
+    const sign = selector.controller === 'self' ? -1 : 1;
+    // A divided amount is a *total* split across the set, not an amount each
+    // member takes, so it must not be multiplied by the size of the set — that
+    // would price "divide five damage" as five damage to every target (M02.5).
+    const reach = effect.divided === true ? 1 : targetCount(selector.count);
+    return sign * weights.unitDamage * estimateValue(effect.amount) * reach;
+  },
+
+  heal: (effect, { weights }) => {
+    if (effect.target.kind === 'player') {
+      return (
+        (effect.target.relation === 'self' ? 1 : -1) *
+        weights.healing *
+        estimateValue(effect.amount)
+      );
+    }
+    if (effect.target.kind === 'players') return 0;
+    return weights.healing * estimateValue(effect.amount);
+  },
+
+  modify_stats: (effect, { weights }) => {
+    const magnitude = estimateValue(effect.attack) + estimateValue(effect.health);
+    const sign =
+      effect.target.kind === 'entity' && effect.target.selector.controller === 'opponent' ? -1 : 1;
+    return sign * weights.buffValue * magnitude * durationScale(effect.duration);
+  },
+
+  // Granting a keyword the engine never reads changes nothing about the game, so
+  // it is worth nothing however long it lasts (M05.2).
+  grant_keyword: (effect, { weights }) =>
+    keywordValue(effect.keyword, weights) * durationScale(effect.duration),
+
+  remove_keyword: (effect, { weights }) => {
+    // Taking a keyword *off* one of our own units is a drawback, not a gain. The
+    // old pricing returned the same positive number either way, which made "this
+    // Unit loses Guardian" read as an upside on the card that prints it.
+    const ours =
+      effect.target.kind !== 'entity' || effect.target.selector.controller !== 'opponent';
+    return (
+      (ours ? -1 : 1) * keywordValue(effect.keyword, weights) * 0.5 * durationScale(effect.duration)
+    );
+  },
+
+  create_token: (effect, { weights, database }) => {
+    const token = database.get(effect.tokenCardId);
+    const body = token
+      ? (token.attack ?? 0) * weights.unitAttack +
+        (token.health ?? 0) * weights.unitHealth +
+        keywordsValue(token.keywords, weights)
+      : 1;
+    return weights.tokenValue * body * estimateValue(effect.amount);
+  },
+
+  destroy: (effect, { weights }) => {
+    const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
+    // `source` and `trigger_subject` both point at one of our own cards, so
+    // destroying through either is a cost, not a gain.
+    const sign = selector === null || selector.controller === 'self' ? -1 : 1;
+    const count = selector === null ? 1 : targetCount(selector.count);
+    return sign * weights.removalBonus * count;
+  },
+
+  sacrifice: (effect, { weights }) => {
+    const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
+    // "Each player sacrifices one" is not a self-cost: we give one up and so
+    // does every opponent, and everybody gives up their worst. What is left over
+    // is the tempo of choosing when it happens, which is small but real —
+    // pricing it as a pure cost would make the pilot mulligan a symmetrical
+    // removal spell away (M02.5).
+    if (selector !== null && isDistributedSelection(selector)) {
+      return weights.removalBonus * 0.6 * SYMMETRIC_EFFECT_EDGE;
+    }
+    return -weights.removalBonus * 0.6;
+  },
+
+  return_to_hand: (effect, { weights }) => {
+    const ours = effect.target.kind !== 'entity' || effect.target.selector.controller === 'self';
+    return (ours ? -0.2 : 1) * weights.bounceValue;
+  },
+
+  search_zone: (effect, { weights }) => weights.cardDraw * effect.amount * 1.1,
+
+  reorder_zone: (_effect, { weights }) => weights.cardDraw * 0.25,
+
+  modify_cost: (effect, { weights }) =>
+    effect.player === 'self'
+      ? -effect.delta * weights.energyEfficiency * durationScale(effect.duration)
+      : 0,
+
+  prevent_damage: (effect, { weights }) =>
+    weights.preventionValue * estimateValue(effect.amount) * durationScale(effect.duration),
+
+  exhaust: (_effect, { weights }) => weights.tapValue,
+
+  ready: (_effect, { weights }) => weights.tapValue,
+
+  skip_next_ready: (effect, { weights }) => {
+    // Costing a unit its next Ready Step is worth more than exhausting it now:
+    // the exhaustion it enforces lasts a whole turn cycle rather than until the
+    // owner's next untap. Aimed at one of our own cards it is a drawback.
+    const ours =
+      // `blocked_by_source` names the attackers we blocked, so it is always
+      // aimed at somebody else's units however the rest of the card reads.
+      effect.target.kind !== 'blocked_by_source' &&
+      (effect.target.kind !== 'entity' || effect.target.selector.controller === 'self');
+    const count = effect.target.kind === 'entity' ? targetCount(effect.target.selector.count) : 1;
+    return (ours ? -1 : 1) * weights.tapValue * 1.5 * count;
+  },
+
+  move_card: (effect, { weights }) => {
+    const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
+    const count = selector === null ? 1 : targetCount(selector.count);
+    // Putting a card onto the battlefield is worth more than moving one: the
+    // card arrives in play without being paid for. *Which* card cannot be known
+    // from the definition — it is whatever is in the pile at the time — so it is
+    // priced as a card gained, a little above a draw, and a pilot that cannot
+    // see anything to bring back is corrected where it can see the board rather
+    // than here (see `emptySourceZonePenalty`).
+    if (effect.toZone === 'battlefield') return weights.cardDraw * count * 1.2;
+    // Removing a card from the game. One of ours is a small price paid for
+    // whatever else the instruction list does; one of theirs denies them the
+    // card outright, which is worth about what making them discard it is.
+    if (effect.toZone === 'removed') {
+      const ours = selector === null || selector.controller === 'self';
+      return ours ? -weights.cardDraw * 0.2 * count : weights.discardCard * count;
+    }
+    return weights.cardDraw * 0.3;
+  },
+
+  schedule_delayed: (effect, ctx) => {
+    const ability = ctx.delayedAbilities.find((entry) => entry.id === effect.delayedAbilityId);
+    // An unresolvable reference cannot happen on validated card data, and a
+    // caller that did not pass the card's delayed list gets zero rather than an
+    // invented number.
+    if (!ability) return 0;
+    const scale = ability.trigger === undefined ? DELAYED_BOUNDARY_SCALE : DELAYED_WATCH_SCALE;
+    // Nested one level only — the schema forbids a delayed body scheduling
+    // another — so this cannot recur.
+    return effectsValue(ability.effects, ctx.weights, ctx.database) * scale;
+  },
+
+  /**
+   * Countering the card the window named (M05.2).
+   *
+   * Priced in the abstract, because `effectValue` ranks a card before any window
+   * exists: the thing this answers has not been played yet. `scoreReaction` is
+   * where the estimate is swapped for the value of the card actually on the
+   * stack, so this number decides whether a pilot *keeps* a counter and never
+   * whether it spends one.
+   *
+   * `unlessPays` softens it. Either the controller declines and the card is
+   * countered outright, or they pay and we bought that much Energy off their
+   * turn instead — so it is priced as an even split between the two outcomes
+   * rather than as a hard counter. The paid branch is capped at the value of the
+   * counter itself, because the branch is *their* choice: a controller who would
+   * rather lose the card than pay the tax simply lets it be countered, so a tax
+   * can never be worth more to us than countering outright however large the
+   * schema lets it be printed. Coarse and hard-coded like `durationScale` above
+   * it; `counterValue` is the tunable surface.
+   */
+  counter: (effect, { weights }) => {
+    if (effect.unlessPays === 0) return weights.counterValue;
+    const taxed = Math.min(weights.energyEfficiency * effect.unlessPays, weights.counterValue);
+    return SOFT_COUNTER_ODDS * weights.counterValue + (1 - SOFT_COUNTER_ODDS) * taxed;
+  },
+};
+
+/**
+ * Runtime twin of the type-level totality check on `EFFECT_PRICERS`.
+ *
+ * The mapped type already fails a build that adds an instruction without pricing
+ * it. This catches the other direction — a pricer for an instruction the schema
+ * no longer has — and gives the JSON-driven paths, which never see the type, the
+ * same guarantee. Returns the problems rather than throwing so a caller can
+ * report all of them at once, exactly like `supportRegistryGaps` beside it.
+ */
+export function effectPricingGaps(): string[] {
+  const problems: string[] = [];
+  const priced = new Set<string>(Object.keys(EFFECT_PRICERS));
+  for (const type of EFFECT_TYPES) {
+    if (!priced.has(type)) problems.push(`effect:${type} is in the schema but is not priced.`);
+  }
+  for (const type of priced) {
+    if (!(EFFECT_TYPES as readonly string[]).includes(type)) {
+      problems.push(`effect:${type} is priced but is not in the schema.`);
+    }
+  }
+  return problems;
+}
+
 function ungatedEffectValue(
   effect: EffectDefinition,
   weights: BotWeights,
   database: CardDatabase,
   delayedAbilities: readonly DelayedAbilityDefinition[],
 ): number {
-  switch (effect.type) {
-    case 'draw':
-      return effect.player === 'self'
-        ? weights.cardDraw * estimateValue(effect.amount)
-        : -weights.cardDraw * estimateValue(effect.amount);
-    case 'discard':
-      return effect.player === 'self'
-        ? -weights.discardCard * estimateValue(effect.amount)
-        : weights.discardCard * estimateValue(effect.amount);
-    case 'deal_damage': {
-      if (effect.target.kind === 'player') {
-        return effect.target.relation === 'self'
-          ? -weights.faceDamage * estimateValue(effect.amount)
-          : weights.faceDamage * estimateValue(effect.amount);
-      }
-      if (effect.target.kind === 'players') {
-        return weights.faceDamage * estimateValue(effect.amount);
-      }
-      if (effect.target.kind !== 'entity') {
-        // `source` and `trigger_subject` both aim at a card on our own side.
-        return -weights.unitDamage * estimateValue(effect.amount);
-      }
-      const selector = effect.target.selector;
-      const sign = selector.controller === 'self' ? -1 : 1;
-      // A divided amount is a *total* split across the set, not an amount each
-      // member takes, so it must not be multiplied by the size of the set —
-      // that would price "divide five damage" as five damage to every target
-      // (M02.5).
-      if (effect.divided === true) {
-        return sign * weights.unitDamage * estimateValue(effect.amount);
-      }
-      const count = selector.count === 'all' ? 2 : selector.count;
-      return sign * weights.unitDamage * estimateValue(effect.amount) * count;
-    }
-    case 'heal': {
-      if (effect.target.kind === 'player') {
-        return effect.target.relation === 'self'
-          ? weights.healing * estimateValue(effect.amount)
-          : -weights.healing * estimateValue(effect.amount);
-      }
-      if (effect.target.kind === 'players') return 0;
-      return weights.healing * estimateValue(effect.amount);
-    }
-    case 'modify_stats': {
-      const magnitude = estimateValue(effect.attack) + estimateValue(effect.health);
-      const sign =
-        effect.target.kind === 'entity' && effect.target.selector.controller === 'opponent'
-          ? -1
-          : 1;
-      return sign * weights.buffValue * magnitude * durationScale(effect.duration);
-    }
-    case 'grant_keyword':
-      return weights.keywordBonus * durationScale(effect.duration);
-    case 'remove_keyword':
-      return weights.keywordBonus * 0.5 * durationScale(effect.duration);
-    case 'create_token': {
-      const token = database.get(effect.tokenCardId);
-      const body = token
-        ? (token.attack ?? 0) * weights.unitAttack + (token.health ?? 0) * weights.unitHealth
-        : 1;
-      return weights.tokenValue * body * estimateValue(effect.amount);
-    }
-    case 'destroy': {
-      const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
-      // `source` and `trigger_subject` both point at one of our own cards, so
-      // destroying through either is a cost, not a gain.
-      const sign = selector === null || selector.controller === 'self' ? -1 : 1;
-      const count = selector === null ? 1 : selector.count === 'all' ? 2 : selector.count;
-      return sign * weights.removalBonus * count;
-    }
-    case 'sacrifice': {
-      const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
-      // "Each player sacrifices one" is not a self-cost: we give one up and so
-      // does every opponent, and everybody gives up their worst. What is left
-      // over is the tempo of choosing when it happens, which is small but real
-      // — pricing it as a pure cost would make the pilot mulligan a symmetrical
-      // removal spell away (M02.5).
-      if (selector !== null && isDistributedSelection(selector)) {
-        return weights.removalBonus * 0.6 * SYMMETRIC_EFFECT_EDGE;
-      }
-      return -weights.removalBonus * 0.6;
-    }
-    case 'return_to_hand': {
-      const ours = effect.target.kind !== 'entity' || effect.target.selector.controller === 'self';
-      return (ours ? -0.2 : 1) * weights.bounceValue;
-    }
-    case 'search_zone':
-      return weights.cardDraw * effect.amount * 1.1;
-    case 'reorder_zone':
-      return weights.cardDraw * 0.25;
-    case 'modify_cost':
-      return effect.player === 'self'
-        ? -effect.delta * weights.energyEfficiency * durationScale(effect.duration)
-        : 0;
-    case 'prevent_damage':
-      return (
-        weights.preventionValue * estimateValue(effect.amount) * durationScale(effect.duration)
-      );
-    case 'exhaust':
-      return weights.tapValue;
-    case 'ready':
-      return weights.tapValue;
-    case 'skip_next_ready': {
-      // Costing a unit its next Ready Step is worth more than exhausting it now:
-      // the exhaustion it enforces lasts a whole turn cycle rather than until
-      // the owner's next untap. Aimed at one of our own cards it is a drawback.
-      const ours =
-        // `blocked_by_source` names the attackers we blocked, so it is always
-        // aimed at somebody else's units however the rest of the card reads.
-        effect.target.kind !== 'blocked_by_source' &&
-        (effect.target.kind !== 'entity' || effect.target.selector.controller === 'self');
-      const count =
-        effect.target.kind === 'entity'
-          ? effect.target.selector.count === 'all'
-            ? 2
-            : effect.target.selector.count
-          : 1;
-      return (ours ? -1 : 1) * weights.tapValue * 1.5 * count;
-    }
-    case 'move_card': {
-      const selector = effect.target.kind === 'entity' ? effect.target.selector : null;
-      const count = selector === null ? 1 : selector.count === 'all' ? 2 : selector.count;
-      // Putting a card onto the battlefield is worth more than moving one: the
-      // card arrives in play without being paid for. *Which* card cannot be
-      // known from the definition — it is whatever is in the pile at the time —
-      // so it is priced as a card gained, a little above a draw, and a pilot
-      // that cannot see anything to bring back is corrected where it can see the
-      // board rather than here (see `emptySourceZonePenalty`).
-      if (effect.toZone === 'battlefield') return weights.cardDraw * count * 1.2;
-      // Removing a card from the game. One of ours is a small price paid for
-      // whatever else the instruction list does; one of theirs denies them the
-      // card outright, which is worth about what making them discard it is.
-      if (effect.toZone === 'removed') {
-        const ours = selector === null || selector.controller === 'self';
-        return ours ? -weights.cardDraw * 0.2 * count : weights.discardCard * count;
-      }
-      return weights.cardDraw * 0.3;
-    }
-    case 'schedule_delayed': {
-      const ability = delayedAbilities.find((entry) => entry.id === effect.delayedAbilityId);
-      // An unresolvable reference cannot happen on validated card data, and a
-      // caller that did not pass the card's delayed list gets zero rather than
-      // an invented number.
-      if (!ability) return 0;
-      const scale = ability.trigger === undefined ? DELAYED_BOUNDARY_SCALE : DELAYED_WATCH_SCALE;
-      // Nested one level only — the schema forbids a delayed body scheduling
-      // another — so this cannot recur.
-      return effectsValue(ability.effects, weights, database) * scale;
-    }
-    default:
-      return 0;
-  }
+  // The one cast in the module. Indexing a mapped type with a union key yields a
+  // union of function types, which TypeScript will not call even though every
+  // member accepts exactly the variant its own key selects; the mapped type is
+  // what makes that safe.
+  const pricer = EFFECT_PRICERS[effect.type] as EffectPricer<EffectType>;
+  return pricer(effect, { weights, database, delayedAbilities });
 }
 
 export function effectsValue(
@@ -504,14 +669,143 @@ export function effectsValue(
   );
 }
 
+/* ---------------------------------------------------- continuous abilities */
+
+/**
+ * How many recipients a board-wide continuous scope is assumed to reach.
+ *
+ * A lord's aura is worth what it buffs, and how much that is depends on a board
+ * `cardValue` has not been shown — it ranks a card in the abstract, for a
+ * mulligan or a discard, before anything is in play. Two units is the same
+ * middling assumption `ASSUMED_MATCH_COUNT` and `ASSUMED_TARGET_COUNT` make, and
+ * for the same reason: zero would read a lord as a vanilla body, and a large
+ * guess would read every lord as a finisher.
+ */
+const ASSUMED_SCOPE_UNITS = 2;
+
+/**
+ * What is left of a scope once a filter narrows it.
+ *
+ * "Your Goblins get +1/+1" reaches fewer cards than "your Units get +1/+1", and
+ * how many fewer is a deck question this module cannot answer. A flat discount
+ * is enough to keep the tribal lord below the unconditional one, which is the
+ * ordering that has to hold.
+ */
+const FILTERED_SCOPE_SCALE = 0.6;
+
+/**
+ * How many cards a continuous ability is assumed to apply to.
+ *
+ * The "scope" and "affected board" half of M05.2: an ability that reaches only
+ * the card it is printed on is worth a fraction of one that reaches a board, and
+ * the old `staticAbilities.length × buffValue × 2` proxy could not tell the two
+ * apart.
+ */
+function scopeReach(scope: ContinuousScope): number {
+  // "**This card** costs 1 less …" — one recipient, known exactly.
+  if (scope.onlySource === true) return 1;
+  const base = ASSUMED_SCOPE_UNITS;
+  return scope.filter === undefined ? base : base * FILTERED_SCOPE_SCALE;
+}
+
+/**
+ * Which side of the table a continuous ability lands on.
+ *
+ * `self` is ours and `opponent` is theirs, so a *negative* modifier aimed at
+ * opponents comes out positive and a buff handed to opponents comes out
+ * negative — the sign falls out of the arithmetic rather than being special-
+ * cased per effect. `any` is symmetrical: it applies to everybody's cards, most
+ * of its value cancels, and what is left is the edge of having chosen the moment
+ * — the same reading `sacrifice` already gives a distributed selector.
+ */
+function scopeSign(controller: Controller): number {
+  switch (controller) {
+    case 'self':
+      return 1;
+    case 'opponent':
+      return -1;
+    case 'any':
+      return SYMMETRIC_EFFECT_EDGE;
+  }
+}
+
+/**
+ * What one continuous ability is worth.
+ *
+ * Every branch reads magnitude, scope, duration and the side of the board it
+ * lands on (M05.2). The two standing-layer effects used to be priced as a flat
+ * `2 × buffValue` each — the same number for "+1/+0 to your Goblins" and
+ * "+3/+3 to every Unit you control" — which is the array-length proxy this
+ * tranche exists to remove.
+ *
+ * The duration is the same for every continuous ability and it is not
+ * `permanent`: a derived layer lasts exactly as long as its source stays where
+ * its `activeZone` says, so it is priced as `while_source_present`, which is the
+ * discount `effectValue` already applies to a source-bound instruction.
+ * `replace_arrival`'s granted keyword is the exception — what it hands out
+ * carries its own printed duration and outlives the arrival it rewrote.
+ */
+function staticAbilityValue(ability: StaticAbilityDefinition, weights: BotWeights): number {
+  const sign = scopeSign(ability.affects.controller);
+  const reach = scopeReach(ability.affects);
+  const standing = durationScale('while_source_present');
+  // "**While this Unit is Ready**, …". A gate that can be false is worth less
+  // than one that cannot, for the same reason a gated instruction is.
+  const gate = ability.sourceState === undefined ? 1 : CONDITION_DISCOUNT;
+
+  const effect = ability.effect;
+  switch (effect.type) {
+    case 'modify_stats':
+      return sign * weights.buffValue * (effect.attack + effect.health) * reach * standing * gate;
+
+    case 'grant_keyword':
+      return sign * keywordValue(effect.keyword, weights) * reach * standing * gate;
+
+    case 'reaction_discount':
+      // Energy, not board presence. `first_each_turn` is the printed default and
+      // reaches one Reaction a turn where `unlimited` reaches every one of them.
+      return (
+        weights.energyEfficiency *
+        effect.amount *
+        (effect.limit === 'first_each_turn' ? 0.5 : 1) *
+        gate
+      );
+
+    case 'cost_reduction':
+      // Also energy. `scopeReach` is what separates "**this card** costs 1 less"
+      // from a discount on everything in hand.
+      return weights.energyEfficiency * estimateValue(effect.amount) * reach * gate;
+
+    case 'replace_arrival': {
+      // Two different cards wear this shape and they are worth opposite things.
+      // Rewriting an *opponent's* arrival to be Exhausted is tempo denial, worth
+      // about what exhausting a unit is; handing your own arrivals a keyword is
+      // a buff, and it keeps its own printed duration because the keyword
+      // outlives the arrival that granted it.
+      const denial = effect.entersExhausted === true ? -sign * weights.tapValue : 0;
+      const granted =
+        effect.grantKeyword === undefined
+          ? 0
+          : sign * keywordValue(effect.grantKeyword, weights) * durationScale(effect.grantDuration);
+      // "The **first** … each turn" rewrites one arrival rather than all of them.
+      const throttle = effect.limit === 'first_each_turn' ? 0.5 : 1;
+      return (denial + granted) * reach * throttle * gate;
+    }
+
+    case 'replace_ready':
+      // Keeping an enemy unit Exhausted through its Ready Step is worth more than
+      // exhausting one during a turn — it costs the opponent a whole turn of that
+      // unit — but it is paid for, so the Energy comes back off.
+      return (
+        (-sign * weights.tapValue * 1.5 * (effect.limit === 'first_each_turn' ? 0.5 : 1) -
+          weights.energyEfficiency * effect.energyCost) *
+        gate
+      );
+  }
+}
+
 /**
  * What a card's continuous abilities are worth.
- *
- * Priced per ability rather than as `staticAbilities.length × buffValue × 2`,
- * which is what it used to be. That proxy read every continuous ability as a
- * lord's aura, and two of the three are not: a Reaction discount and a
- * `cost_reduction` are worth *energy*, not board presence, and the coarse
- * proxy over-valued both (M02.3).
  *
  * `activeZone` narrows the sum to the abilities that are switched on where the
  * card currently is. A cost reduction is worth nothing to a unit already
@@ -525,39 +819,42 @@ function staticAbilitiesValue(
 ): number {
   return definition.staticAbilities.reduce((sum, ability) => {
     if (activeZone !== undefined && ability.activeZone !== activeZone) return sum;
-    switch (ability.effect.type) {
-      case 'modify_stats':
-      case 'grant_keyword':
-        return sum + weights.buffValue * 2;
-      case 'reaction_discount':
-        return sum + weights.energyEfficiency * ability.effect.amount;
-      case 'cost_reduction':
-        return sum + weights.energyEfficiency * estimateValue(ability.effect.amount);
-      case 'replace_arrival': {
-        // Two different cards wear this shape. Rewriting an *opponent's* arrival
-        // to be Exhausted is tempo denial, worth about what exhausting a unit is;
-        // handing your own arrivals a keyword is a buff. A "first each turn"
-        // limit halves it, because it reaches one arrival rather than all of
-        // them.
-        const denial =
-          ability.effect.entersExhausted === true
-            ? (ability.affects.controller === 'opponent' ? 1 : -1) * weights.tapValue
-            : 0;
-        const granted = ability.effect.grantKeyword === undefined ? 0 : weights.keywordBonus * 2;
-        const throttle = ability.effect.limit === 'first_each_turn' ? 0.5 : 1;
-        return sum + (denial + granted) * throttle;
-      }
-      case 'replace_ready':
-        // Keeping an enemy unit Exhausted through its Ready Step is worth more
-        // than exhausting one during a turn — it costs the opponent a whole turn
-        // of that unit — but it is paid for, so the Energy comes back off.
-        return (
-          sum +
-          (ability.affects.controller === 'opponent' ? 1 : -1) * weights.tapValue * 1.5 -
-          weights.energyEfficiency * ability.effect.energyCost
-        );
-    }
+    return sum + staticAbilityValue(ability, weights);
   }, 0);
+}
+
+/* ------------------------------------------------------------------- costs */
+
+/**
+ * What paying one cost is worth — always a number a caller adds, so always
+ * negative or zero.
+ *
+ * Shared by the two places a cost is paid, and that sharing is the fix (M05.2):
+ * `scoreActivate` had its own private copy of this switch, so an *additional*
+ * cost on a played card — "as an additional cost, sacrifice a Unit" — was priced
+ * by nobody at all and `cardValue` read those cards as free.
+ *
+ * Energy is discounted hard against the rest. A pilot only ever sees an action
+ * it can already afford, so the Energy is a real but weak signal about whether
+ * spending it here is right; a discarded card or a sacrificed Unit is a
+ * resource gone whatever else happens.
+ */
+export function costValue(cost: AbilityCost, weights: BotWeights): number {
+  switch (cost.type) {
+    case 'energy':
+      return -weights.energyEfficiency * cost.amount * 0.2;
+    case 'discard':
+      return -weights.discardCard * cost.amount;
+    case 'sacrifice':
+      return -weights.removalBonus * cost.amount;
+    case 'exhaust_source':
+      return -weights.readyBlockerValue;
+  }
+}
+
+/** What a whole cost list is worth. Zero for a free ability or a free card. */
+export function costsValue(costs: readonly AbilityCost[], weights: BotWeights): number {
+  return costs.reduce((sum, cost) => sum + costValue(cost, weights), 0);
 }
 
 /**
@@ -574,7 +871,7 @@ export function cardValue(
   const body =
     (definition.attack ?? 0) * weights.unitAttack +
     (definition.health ?? 0) * weights.unitHealth +
-    keywordCount(definition.keywords) * weights.keywordBonus;
+    keywordsValue(definition.keywords, weights);
 
   const delayed = definition.delayedAbilities;
   const text =
@@ -584,13 +881,27 @@ export function cardValue(
       0,
     ) +
     definition.activatedAbilities.reduce(
-      (sum, ability) => sum + effectsValue(ability.effects, weights, database, delayed) * 0.5,
+      // Net, then discounted: what an activation is worth is what it does *less*
+      // what it charges, and the whole ability is halved because a card in hand
+      // may never get to use it. Pricing only the upside made "sacrifice a Unit:
+      // draw a card" read as "draw a card", which is the same defect the
+      // additional-cost line below fixes for a played card (M05.2).
+      (sum, ability) =>
+        sum +
+        (effectsValue(ability.effects, weights, database, delayed) +
+          costsValue(ability.costs, weights)) *
+          0.5,
       0,
     ) +
     staticAbilitiesValue(definition, weights);
 
   const chassis = definition.type === 'relic' ? weights.relicBase : 0;
-  return body + text + chassis;
+  // "**As an additional cost**, sacrifice a Unit." Charged here because it is
+  // paid to play the card at all — and because nothing else charged it: the
+  // activated-ability path had its own private cost switch, so a Spell with an
+  // additional cost read to every pilot as though it were free (M05.2).
+  const price = costsValue(definition.additionalCosts, weights);
+  return body + text + chassis + price;
 }
 
 /**
@@ -608,7 +919,7 @@ export function unitBoardValue(
   const base =
     unit.attack * weights.unitAttack +
     Math.max(0, remainingHealthOf(unit)) * weights.unitHealth +
-    keywordCount(unit.keywords) * weights.keywordBonus;
+    keywordsValue(unit.keywords, weights);
   const text = definition
     ? definition.abilities.reduce(
         (sum, ability) =>

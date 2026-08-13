@@ -65,7 +65,17 @@ import type { CardDefinition } from './schema/card.js';
  * type.
  */
 
-export const SUPPORT_REGISTRY_VERSION = 1;
+/**
+ * Bumped when a *classification* changes, so a manifest's claims can be read
+ * against the registry that made them rather than against today's.
+ *
+ * - 1 — M05.1, the first registry.
+ * - 2 — M05.2. `effect:counter` moved `legal_only` → `approximate` (the pilots
+ *   now price it), and the pilot notes on the keywords, the continuous effects
+ *   and the two additional-cost types were rewritten to describe valuation that
+ *   reads magnitude and scope rather than list length.
+ */
+export const SUPPORT_REGISTRY_VERSION = 2;
 
 export const ENGINE_SUPPORT_LEVELS = ['full', 'none'] as const;
 export type EngineSupport = (typeof ENGINE_SUPPORT_LEVELS)[number];
@@ -176,7 +186,7 @@ const EFFECT_SUPPORT: Readonly<Record<EffectType, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'effects.ts grant_keyword; scoring.ts prices a flat keywordBonus regardless of which keyword; no counter records a grant.',
+      "effects.ts grant_keyword; scoring.ts prices the granted keyword's own value × durationScale, which is a flat keywordBonus for every keyword the engine executes and zero for one it does not (M05.2); no counter records a grant.",
   },
   remove_keyword: {
     engine: 'full',
@@ -184,7 +194,7 @@ const EFFECT_SUPPORT: Readonly<Record<EffectType, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'effects.ts remove_keyword; scoring.ts prices half a keywordBonus; no counter records a removal.',
+      "effects.ts remove_keyword; scoring.ts prices half the removed keyword's value × durationScale, negative when the target is one of our own units (M05.2); no counter records a removal.",
   },
   create_token: {
     engine: 'full',
@@ -291,10 +301,10 @@ const EFFECT_SUPPORT: Readonly<Record<EffectType, MechanicSupportEntry>> = Objec
   counter: {
     engine: 'full',
     help: 'full',
-    pilot: 'legal_only',
+    pilot: 'approximate',
     telemetry: 'none',
     where:
-      'reactions.ts counters the card the window named. **No pilot values it**: `ungatedEffectValue` has no `counter` case and falls through to its zero default, so a Reaction whose whole text is a counter is priced as a blank card. No counter records a card being countered. Both are M05.2 work.',
+      "reactions.ts counters the card the window named. scoring.ts's `EFFECT_PRICERS.counter` prices it at `counterValue`, softened by `unlessPays`, and `scoreReaction` swaps that estimate for the value of the card actually on the stack once a window exists — so holding one is approximate and spending one is board-aware (M05.2). No counter records a card being countered.",
   },
 });
 
@@ -308,7 +318,7 @@ const STATIC_EFFECT_SUPPORT: Readonly<Record<StaticAbilityEffectType, MechanicSu
       pilot: 'approximate',
       telemetry: 'none',
       where:
-        'continuous.ts recomputes the layer; scoring.ts prices a flat 2 × buffValue per ability regardless of magnitude or how many units it reaches (M05.2); no counter records the layer.',
+        "continuous.ts recomputes the layer; scoring.ts's `staticAbilityValue` prices printed magnitude × the scope's assumed reach × a source-bound duration, signed by whose cards it lands on. The reach is assumed rather than counted, because `cardValue` ranks a card before there is a board (M05.2). No counter records the layer.",
     },
     grant_keyword: {
       engine: 'full',
@@ -316,7 +326,7 @@ const STATIC_EFFECT_SUPPORT: Readonly<Record<StaticAbilityEffectType, MechanicSu
       pilot: 'approximate',
       telemetry: 'none',
       where:
-        'continuous.ts recomputes the layer; scoring.ts prices a flat 2 × buffValue regardless of which keyword (M05.2); no counter records the layer.',
+        "continuous.ts recomputes the layer; scoring.ts's `staticAbilityValue` prices it as the granted keyword's own value × the scope's assumed reach, so granting an `engine: 'none'` keyword is worth nothing (M05.2). No counter records the layer.",
     },
     reaction_discount: {
       engine: 'full',
@@ -324,7 +334,7 @@ const STATIC_EFFECT_SUPPORT: Readonly<Record<StaticAbilityEffectType, MechanicSu
       pilot: 'approximate',
       telemetry: 'partial',
       where:
-        'playCostOf applies it; scoring.ts prices amount × energyEfficiency. card_played.energySpent shows the discounted price, but nothing attributes the difference to this ability.',
+        'playCostOf applies it; scoring.ts prices amount × energyEfficiency, halved for a `first_each_turn` limit. card_played.energySpent shows the discounted price, but nothing attributes the difference to this ability.',
     },
     cost_reduction: {
       engine: 'full',
@@ -332,7 +342,7 @@ const STATIC_EFFECT_SUPPORT: Readonly<Record<StaticAbilityEffectType, MechanicSu
       pilot: 'approximate',
       telemetry: 'partial',
       where:
-        'playCostOf applies it; scoring.ts prices the estimated amount × energyEfficiency. Same partial observation as reaction_discount.',
+        'playCostOf applies it; scoring.ts prices the estimated amount × energyEfficiency × the scope reach, so "**this card** costs less" is priced below a discount on a whole hand. Same partial observation as reaction_discount.',
     },
     replace_arrival: {
       engine: 'full',
@@ -340,7 +350,7 @@ const STATIC_EFFECT_SUPPORT: Readonly<Record<StaticAbilityEffectType, MechanicSu
       pilot: 'approximate',
       telemetry: 'partial',
       where:
-        'replacement.ts rewrites the arrival; scoring.ts prices denial or a grant, halved for a first-each-turn limit. arrival_replaced lands in the undifferentiated triggersFired counter.',
+        "replacement.ts rewrites the arrival; scoring.ts prices denial or a grant — the grant at the granted keyword's own value over its printed `grantDuration` — signed by whose arrivals it rewrites and halved for a first-each-turn limit. arrival_replaced lands in the undifferentiated triggersFired counter.",
     },
     replace_ready: {
       engine: 'full',
@@ -348,7 +358,7 @@ const STATIC_EFFECT_SUPPORT: Readonly<Record<StaticAbilityEffectType, MechanicSu
       pilot: 'approximate',
       telemetry: 'partial',
       where:
-        'replacement.ts rewrites the Ready Step; scoring.ts prices 1.5 × tapValue less the energy. ready_prevented lands in the undifferentiated triggersFired counter.',
+        'replacement.ts rewrites the Ready Step; scoring.ts prices 1.5 × tapValue, signed by whose Ready Step it rewrites and halved for a first-each-turn limit, less the energy it charges. ready_prevented lands in the undifferentiated triggersFired counter.',
     },
   });
 
@@ -411,7 +421,7 @@ const KEYWORD_SUPPORT: Readonly<Record<KeywordId, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'legal-actions.ts bypasses Newly Deployed. Pilots see the resulting legality but never value Rush beyond the flat per-keyword bonus in `keywordCount`.',
+      'legal-actions.ts bypasses Newly Deployed. Pilots see the resulting legality but never value Rush beyond the flat per-keyword bonus in `keywordsValue`.',
   },
   guardian: {
     engine: 'full',
@@ -419,7 +429,7 @@ const KEYWORD_SUPPORT: Readonly<Record<KeywordId, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'legal-actions.ts enforces the block requirement. Pilots block legally because the engine makes them, and value Guardian only through `keywordCount`.',
+      'legal-actions.ts enforces the block requirement. Pilots block legally because the engine makes them, and value Guardian only through the flat per-keyword bonus in `keywordsValue`.',
   },
   barrier: {
     engine: 'full',
@@ -427,7 +437,7 @@ const KEYWORD_SUPPORT: Readonly<Record<KeywordId, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'damage.ts prevents the first non-zero damage. Neither `wouldDefeat` nor `resolveHypotheticalCombat` models it, so a pilot trades into a Barrier as if it were not there; valued only through `keywordCount`.',
+      'damage.ts prevents the first non-zero damage. Neither `wouldDefeat` nor `resolveHypotheticalCombat` models it, so a pilot trades into a Barrier as if it were not there; valued only through the flat per-keyword bonus in `keywordsValue`.',
   },
   overwhelm: {
     engine: 'full',
@@ -435,7 +445,7 @@ const KEYWORD_SUPPORT: Readonly<Record<KeywordId, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'combat.ts splits against current blocker Health. Not modelled in the pilot combat estimate; valued only through `keywordCount`.',
+      'combat.ts splits against current blocker Health. Not modelled in the pilot combat estimate; valued only through the flat per-keyword bonus in `keywordsValue`.',
   },
   untargetable_by_opponents: {
     engine: 'full',
@@ -443,7 +453,7 @@ const KEYWORD_SUPPORT: Readonly<Record<KeywordId, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'targeting.ts drops the unit from an opposing chooser. Pilots only ever see legal target sets, so they never have to model it; valued through `keywordCount`.',
+      'targeting.ts drops the unit from an opposing chooser. Pilots only ever see legal target sets, so they never have to model it; valued through the flat per-keyword bonus in `keywordsValue`.',
   },
   evasive: {
     engine: 'full',
@@ -459,7 +469,7 @@ const KEYWORD_SUPPORT: Readonly<Record<KeywordId, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'damage.ts reduces each instance by RulesConfig.armoredReduction. Not modelled in the pilot combat estimate; valued only through `keywordCount`.',
+      'damage.ts reduces each instance by RulesConfig.armoredReduction. Not modelled in the pilot combat estimate; valued only through the flat per-keyword bonus in `keywordsValue`.',
   },
   siphon: {
     engine: 'full',
@@ -467,7 +477,7 @@ const KEYWORD_SUPPORT: Readonly<Record<KeywordId, MechanicSupportEntry>> = Objec
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      'combat.ts heals the controller for dealt combat damage. Not modelled when a pilot decides an attack; valued only through `keywordCount`.',
+      'combat.ts heals the controller for dealt combat damage. Not modelled when a pilot decides an attack; valued only through the flat per-keyword bonus in `keywordsValue`.',
   },
   venom: {
     engine: 'full',
@@ -491,7 +501,7 @@ const KEYWORD_SUPPORT: Readonly<Record<KeywordId, MechanicSupportEntry>> = Objec
     pilot: 'legal_only',
     telemetry: 'none',
     where:
-      'Deliberately inert pending open question Q4: the candidate readings differ sharply in power. The glossary says so in the words a player reads, which is why `help` is full. There is nothing to play well, so `pilot` is legal_only — note that `keywordCount` still pays a flat bonus for it, which is an M05.2 defect this entry exists to expose.',
+      'Deliberately inert pending open question Q4: the candidate readings differ sharply in power. The glossary says so in the words a player reads, which is why `help` is full. There is nothing to play well, so `pilot` is legal_only — and since M05.2 the pilots pay nothing for it either: `keywordIsValued` reads this table, so an `engine: "none"` keyword is worth zero everywhere a keyword is priced.',
   },
 });
 
@@ -576,7 +586,7 @@ const COST_SUPPORT: Readonly<Record<AbilityCostType, MechanicSupportEntry>> = Ob
     pilot: 'approximate',
     telemetry: 'full',
     where:
-      'costs.ts pays it atomically; `scoreActivate` penalises it; telemetry energySpent, per card and per seat.',
+      'costs.ts pays it atomically; `costValue` penalises it; telemetry energySpent, per card and per seat.',
   },
   exhaust_source: {
     engine: 'full',
@@ -584,7 +594,7 @@ const COST_SUPPORT: Readonly<Record<AbilityCostType, MechanicSupportEntry>> = Ob
     pilot: 'approximate',
     telemetry: 'none',
     where:
-      '`scoreActivate` penalises it by readyBlockerValue. Activation is counted, but nothing records that the source was exhausted to pay for it.',
+      '`costValue` penalises it by readyBlockerValue. Activation is counted, but nothing records that the source was exhausted to pay for it.',
   },
   discard: {
     engine: 'full',
@@ -592,7 +602,7 @@ const COST_SUPPORT: Readonly<Record<AbilityCostType, MechanicSupportEntry>> = Ob
     pilot: 'approximate',
     telemetry: 'partial',
     where:
-      '`scoreActivate` penalises it. The discarded card is counted, but the collector deliberately attributes the payment to the activation rather than marking the pitched card used. An *additional* cost on a played card is not priced by any pilot at all (M05.2).',
+      '`costValue` prices it, for an activation and for a played card’s additional cost alike (M05.2). The discarded card is counted, but the collector deliberately attributes the payment to the activation rather than marking the pitched card used.',
   },
   sacrifice: {
     engine: 'full',
@@ -600,7 +610,7 @@ const COST_SUPPORT: Readonly<Record<AbilityCostType, MechanicSupportEntry>> = Ob
     pilot: 'approximate',
     telemetry: 'full',
     where:
-      '`scoreActivate` penalises it; telemetry timesSacrificed on the victim. An *additional* cost on a played card is not priced by any pilot at all (M05.2).',
+      '`costValue` prices it, for an activation and for a played card’s additional cost alike (M05.2); telemetry timesSacrificed on the victim.',
   },
 });
 

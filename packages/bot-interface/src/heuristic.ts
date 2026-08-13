@@ -9,6 +9,8 @@ import {
   unitBoardValue,
   unitViewsOf,
   cardValue,
+  costsValue,
+  effectValue,
   effectsValue,
   type BotWeights,
 } from './scoring.js';
@@ -205,8 +207,18 @@ function scoreReaction(
   let score = cardValue(definition, weights, observation.database);
   score += weights.energyEfficiency * playable.energyCost;
 
-  const counters = definition.effects.some((effect) => effect.type === 'counter');
-  if (counters) {
+  const counters = definition.effects.filter((effect) => effect.type === 'counter');
+  if (counters.length > 0) {
+    // `cardValue` now prices a counter in the abstract, so that a Reaction whose
+    // whole text is a counter is not mulliganed away as a blank card (M05.2).
+    // Here the window names the card actually on the stack, so the estimate is
+    // taken back off and replaced by the truth rather than stacked on top of it.
+    score -= counters.reduce(
+      (sum, effect) =>
+        sum + effectValue(effect, weights, observation.database, definition.delayedAbilities),
+      0,
+    );
+
     const subjectId = window.subjectInstanceId;
     const subject = subjectId ? observation.view.instances[subjectId] : undefined;
     const subjectDefinition = subject ? observation.database.get(subject.definitionId) : undefined;
@@ -258,24 +270,11 @@ function scoreActivate(
   const ability = definition?.activatedAbilities.find((entry) => entry.id === action.abilityId);
   if (!definition || !ability) return 0;
 
-  const costPenalty = ability.costs.reduce((sum, cost) => {
-    switch (cost.type) {
-      case 'energy':
-        return sum - weights.energyEfficiency * cost.amount * 0.2;
-      case 'discard':
-        return sum - weights.discardCard * cost.amount;
-      case 'sacrifice':
-        return sum - weights.removalBonus * cost.amount;
-      case 'exhaust_source':
-        return sum - weights.readyBlockerValue;
-      default:
-        return sum;
-    }
-  }, 0);
-
+  // The same `costsValue` a played card's additional costs go through, so an
+  // activation and a play price a sacrifice identically (M05.2).
   return (
     effectsValue(ability.effects, weights, observation.database, definition.delayedAbilities) +
-    costPenalty
+    costsValue(ability.costs, weights)
   );
 }
 

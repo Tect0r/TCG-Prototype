@@ -65,8 +65,8 @@ Half-answered, deliberately. `resilient` is now structurally barred from playabl
 content by a derived check rather than by luck, and the registry records it as
 `engine: 'none'` / `pilot: 'legal_only'`. Whether to implement it — and under
 which reading — or delete it from `KEYWORD_IDS` is still an owner decision; see
-docs/open-questions.md. The bot-valuation half (`keywordCount` still pays a flat
-bonus for it) is M05.2's first bullet.
+docs/open-questions.md. The bot-valuation half was M05.2's first bullet and is
+now done: `keywordIsValued` reads this registry, so no pilot pays for it.
 
 ### Findings this tranche surfaced
 
@@ -76,12 +76,13 @@ tranches' work:
 - **No pilot values `effect: counter`.** `ungatedEffectValue` has no `counter`
   case and falls through to its zero default, so a Reaction whose whole text is a
   counter is priced as a blank card. Every shipped precon carries one, so every
-  precon deck now reports `pilot: legal_only`. M05.2.
+  precon deck now reports `pilot: legal_only`. M05.2. — **Fixed in M05.2**; the
+  registry entry now reads `pilot: 'approximate'`.
 - **`CardTelemetry.timesReturnedToHand` is never incremented.** The field is in
   the schema and the collector never writes it, so a bounce is invisible to a
   batch. Recorded as `effect: return_to_hand` → `telemetry: 'none'`.
 
-## M05.2 — Exhaustive valuation
+## M05.2 — Exhaustive valuation — **done (2026-08-13)**
 
 Repair `packages/bot-interface/src/scoring.ts`:
 
@@ -91,6 +92,42 @@ Repair `packages/bot-interface/src/scoring.ts`:
 - value static abilities by magnitude, scope, duration, and affected board, not
   array length;
 - add focused valuation tests for every Wave 1 primitive.
+
+### Checklist
+
+- [x] `keywordIsValued` derives what a keyword is worth from
+      `@tcg/card-data`'s mechanic support registry rather than from a second
+      list, so an `engine: 'none'` keyword is worth zero on a printed statline,
+      on `grant_keyword`, on `remove_keyword`, on a continuous `grant_keyword`
+      layer and on the keyword `replace_arrival` hands out. Answers the
+      bot-valuation half of Q4.
+- [x] `EFFECT_PRICERS` is a total `Record` over `EffectType` — a new instruction
+      is a compile error until it is priced — and `effectPricingGaps()` is its
+      runtime twin in both directions, for the JSON-driven paths that never see
+      the type. The `default: 0` that priced `counter` as a blank card is gone.
+- [x] `counter` is priced. `counterValue` is a new named weight, `unlessPays`
+      softens it as an even split, and the paid branch is capped at the counter's
+      own value because the branch is the opponent's choice. `scoreReaction`
+      subtracts the abstract estimate and substitutes the value of the card
+      actually on the stack, so holding a counter is approximate and spending one
+      is board-aware.
+- [x] `staticAbilityValue` prices magnitude × `scopeReach` × a source-bound
+      duration × a `sourceState` gate, signed by `scopeSign`. `onlySource` reaches
+      one card and a filtered scope is discounted against an unfiltered one, so
+      one large layer outranks two tiny ones — the array-length proxy is gone.
+      All six continuous effects have their own branch.
+- [x] `costValue` / `costsValue` are shared by `scoreActivate`, by a played
+      card's `additionalCosts` and by an activated ability priced inside
+      `cardValue`, so the same sacrifice costs the same wherever it is paid. A
+      played card with an additional cost is no longer read as free.
+- [x] `packages/bot-interface/src/scoring.test.ts` covers every Wave 1
+      primitive. Its instruction, cost and continuous tables are mapped types
+      over the schema's own vocabularies, so a mechanic added without a valuation
+      test does not compile — the acceptance criterion checked from the test side.
+- [x] The registry records the change rather than being contradicted by it:
+      `SUPPORT_REGISTRY_VERSION` 1 → 2, `effect:counter` `legal_only` →
+      `approximate`, and every rewritten `where` note names the function its
+      claim is now about.
 
 ## M05.3 — Choice provenance and intent
 

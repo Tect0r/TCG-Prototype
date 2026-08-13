@@ -19,7 +19,7 @@ After verification, update the evidence and stop.
 | [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
 | [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete                |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1 done (2026-08-12)               | M05.2                   |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.2 done (2026-08-13)         | M05.3                   |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
 
@@ -347,6 +347,42 @@ a Reaction, now honestly reports `pilot: legal_only`. And
 a bounce is invisible to a batch; `return_to_hand` is classified
 `telemetry: 'none'` on that basis.
 
+Since M05.2, a pilot pays for what a card actually does. The two gaps M05.1
+recorded are the shape of the repair. `EFFECT_PRICERS` replaces the effect
+`switch` with a total `Record` over `EffectType`, so a new instruction is a
+**compile error** until somebody prices it and a zero is a decision rather than
+an oversight — which is how `counter` came to be priced as a blank card for the
+whole life of the Reaction mechanic without a test noticing.
+`effectPricingGaps()` is its runtime twin in both directions. A counter is now
+worth `counterValue`, softened by `unlessPays` as an even split and **capped at
+the counter's own value**, because which branch happens is the opponent's choice;
+`scoreReaction` takes that abstract estimate back off and substitutes the value
+of the card actually on the stack, so holding one is approximate and spending one
+is board-aware. Every shipped precon therefore reports `pilot: approximate`
+instead of `legal_only`, and the balance flags those runs were declining are made
+again.
+
+Three more things stop being priced by proxy. A keyword the engine does not
+execute is worth **nothing** — `keywordIsValued` reads the support registry, so
+`resilient` costs a pilot nothing on a statline, a grant, a removal, a continuous
+layer or a `replace_arrival`, and implementing it will switch its valuation on in
+the same change that switches its behaviour on. That is the bot half of Q4; only
+the design decision is left. A continuous ability is priced by magnitude, scope
+reach, source-bound duration and which side of the table it lands on, so one
+large layer outranks two tiny ones and "**this card** costs 1 less" sits below a
+discount on a whole hand — the old `staticAbilities.length × buffValue × 2` could
+not tell any of those apart. And `costValue` is now shared by all three places a
+cost is paid: an activation, a played card's `additionalCosts`, and an activated
+ability priced inside `cardValue`. A Spell printing "as an additional cost,
+sacrifice a Unit" used to read as free.
+
+`scoring.test.ts` is new and is the acceptance criterion checked from the test
+side: its instruction, cost and continuous tables are mapped types over the
+schema's own vocabularies, so a mechanic added without a valuation test does not
+compile. `SUPPORT_REGISTRY_VERSION` moves 1 → 2 — a classification change, not a
+schema change, so nothing is refused; the version exists so a manifest's claims
+can be read against the registry that made them. No artefact pins it.
+
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and
 `eslint.config.js` are held to the same strictness as shipped code. The separate
@@ -374,8 +410,9 @@ Only stop on these when the active tranche genuinely needs the answer:
 
 - Q4: implement or remove `resilient`. M05.1 answered the content half — it is
   now a build error in a `playtest`/`active` set, derived from the mechanic
-  support registry — and left the design decision alone. Deleting it from
-  `KEYWORD_IDS` or implementing one of the two readings is still yours.
+  support registry — and M05.2 answered the bot half: no pilot pays anything for
+  it anywhere. Deleting it from `KEYWORD_IDS` or implementing one of the two
+  readings is still yours, and is now the only part left.
 - Q42: exact visual equivalence key for Token grouping.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.

@@ -301,10 +301,18 @@ describe('a precon experiment', () => {
     expect(manifest.mechanicSupport.decks).toHaveLength(4);
     expect(manifest.mechanicSupport.weakest.engine).toBe('full');
     expect(manifest.mechanicSupport.legalOnlyPilots).toBe(false);
-    // Every shipped precon carries a Reaction, and no pilot values a counter, so
-    // the report has to name those cards rather than quietly rate them.
-    expect(manifest.mechanicSupport.pilotBlindCards.length).toBeGreaterThan(0);
-    expect(outcome.report).toContain('Cards no pilot values a mechanic of');
+    // The inverse of the assertion this replaces. Every shipped precon carries a
+    // Reaction, and until M05.2 no pilot valued a counter, so all four decks
+    // named pilot-blind cards and every card-level signal about them was
+    // downgraded. The pilots price a counter now; a report still declining those
+    // claims would be understating evidence the run actually has.
+    expect(manifest.mechanicSupport.weakest.pilot).toBe('approximate');
+    expect(manifest.mechanicSupport.pilotBlindCards).toEqual([]);
+    expect(outcome.report).not.toContain('Cards no pilot values a mechanic of');
+    // The other half of the M05.1 finding is untouched and still declines: a
+    // bounce is invisible to a batch, so `timesReturnedToHand` cards stay named.
+    expect(manifest.mechanicSupport.telemetryBlindCards.length).toBeGreaterThan(0);
+    expect(outcome.report).toContain('Cards nothing in a match record observes');
     // The frozen environment is what pins the definitions those IDs named.
     const snapshot = JSON.parse(readFileSync(experimentPaths(dir).resolvedEnvironment, 'utf8'));
     expect(snapshot.formatId).toBe(WAVE_1);

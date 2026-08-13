@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadFormatCardData } from '@tcg/card-data';
+import { loadFormatCardData, type CardDefinitionInput } from '@tcg/card-data';
 import { analyzeMechanicSupport, supportLimitsOf } from './analysis/support.js';
 import { applySupportLimits, computeFlags, supportFlags, type Flag } from './analysis/flags.js';
 import { makeDeck } from './deck-search/deck.js';
@@ -17,6 +17,39 @@ import { tinyEnvironment, fixtureDeck } from './test-fixtures.js';
  */
 
 const env = tinyEnvironment();
+
+/**
+ * A body whose only text is the one keyword the engine deliberately does not
+ * execute (Q4).
+ *
+ * Layered on by this file rather than added to `FIXTURE_CARDS`, following the
+ * rule in `test-fixtures.ts`: that list is the default pool of every tiny
+ * environment, and adding to it changes what every seeded population in the
+ * suite can roll. Synthetic because it has to be — since M05.1 the content build
+ * refuses an `engine: 'none'` mechanic in a `playtest` set, so no shipped card
+ * can carry one.
+ */
+const INERT_KEYWORD_CARD: CardDefinitionInput = {
+  schemaVersion: 2,
+  id: 'fixture_inert_keyword_unit',
+  name: 'Fixture Inert Keyword Unit',
+  type: 'unit',
+  colorIdentity: [],
+  cost: 2,
+  attack: 2,
+  health: 2,
+  keywords: ['resilient'],
+  role: 'attacker',
+  powerClass: 'standard',
+  tags: ['fixture'],
+  displayText: 'Resilient.',
+};
+
+const inertEnv = tinyEnvironment({
+  id: 'inert',
+  copyLimit: 6,
+  cardOverrides: [INERT_KEYWORD_CARD],
+});
 
 const NEUTRAL_DECK = fixtureDeck('neutral', 'prototype_commander_blue', [
   ['prototype_drone', 2],
@@ -109,9 +142,12 @@ describe('mechanic support analysis', () => {
     expect(random.legalOnlyPilots).toBe(true);
   });
 
-  it('reports a precon deck as pilot-blind where it carries an unvalued mechanic', () => {
-    // The shipped catalog does contain Reactions that counter, and no pilot
-    // values a counter. A precon carrying one has to say so.
+  it('no longer reports a deck of Reactions as pilot-blind (M05.2)', () => {
+    // This assertion is the inverse of the one it replaces. Until M05.2 no pilot
+    // valued a counter, so a deck built entirely out of the shipped Reactions
+    // reported `legal_only` and every balance flag about it was downgraded. The
+    // pilots price a counter now, and a report that still declined those claims
+    // would be understating evidence the run actually has.
     const loaded = loadFormatCardData('precon_wave_1');
     if (!loaded.ok) throw new Error('precon_wave_1 failed to load');
     const { database } = loaded.value;
@@ -132,8 +168,27 @@ describe('mechanic support analysis', () => {
       database,
       pilotIds: ['value'],
     });
+    expect(analysis.decks[0]?.weakest.pilot).toBe('approximate');
+    expect(analysis.pilotBlindCards).toEqual([]);
+  });
+
+  it('still reports a card built on an inert mechanic as pilot-blind', () => {
+    // The path above stopped firing on the shipped catalog, so it is proved here
+    // instead — otherwise M05.2 would have quietly deleted the only coverage of
+    // the downgrade this analysis exists to drive. `resilient` is the remaining
+    // `pilot: legal_only` mechanic (Q4), and the content build bars it from a
+    // `playtest` set, so the card carrying it has to be synthetic.
+    const inert = fixtureDeck('inert', 'prototype_commander_blue', [
+      [INERT_KEYWORD_CARD.id, 6],
+      ['prototype_scout', 6],
+    ]);
+    const analysis = analyzeMechanicSupport({
+      decks: [inert],
+      database: inertEnv.database,
+      pilotIds: ['value'],
+    });
     expect(analysis.decks[0]?.weakest.pilot).toBe('legal_only');
-    expect(analysis.pilotBlindCards).toEqual(counterCards.map((card) => card.id).sort());
+    expect(analysis.pilotBlindCards).toEqual([INERT_KEYWORD_CARD.id]);
   });
 });
 
