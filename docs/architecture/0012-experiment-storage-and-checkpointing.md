@@ -7,6 +7,27 @@ a record's resume identity is `arm + matchId` rather than the match ID alone.
 The directory layout and the reasoning below stand; read 0014 for the corrected
 storage contract.
 
+**Amended 2026-08-13 (M07.3).** The layout and every decision below stand. Four
+things a reader should know about what those files now contain, none of which
+changes the contract:
+
+- `manifest.json` is schema **8** and `summary.json` schema **7**. Both stamp an
+  exported constant now (`MANIFEST_SCHEMA_VERSION`, `SUMMARY_SCHEMA_VERSION`)
+  rather than an integer literal at the write site, so `docs/status-audit.md`
+  can read the version instead of transcribing it.
+- A manifest also carries what a run may be **cited** for: the mechanic-support
+  floor its decks reach, the agent classes that flew it, and how its decks were
+  constructed ([ADR 0022](0022-evidence-claims.md)). It was already meant to be
+  sufficient on its own to say whether two result sets are comparable; these are
+  the fields that make it sufficient to say whether one is worth reading.
+- An experiment may name a precon as a deck source, and the manifest records
+  each precon ID with its format, Commander and resolved deck hash
+  ([ADR 0019](0019-precon-identity.md)).
+- `SEARCH_CHECKPOINT_VERSION` moved 1 → **2** as a refusal: a v1 checkpoint
+  never recorded where its decks came from, and a resumed search that could not
+  tell a plan-generated population from an unconstrained one would report the
+  wrong provenance for every deck it bred afterwards.
+
 ## Context
 
 A Phase 4 experiment can be a twelve-match smoke run or a multi-generation deck

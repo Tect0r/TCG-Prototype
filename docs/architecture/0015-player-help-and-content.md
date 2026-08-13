@@ -1,6 +1,12 @@
 # ADR 0015 — Player help and the data-driven content system
 
-**Status:** accepted · **Date:** 2026-08-09
+**Status:** accepted · **Date:** 2026-08-09 · **Superseded in part by:**
+[ADR 0016](0016-precon-wave-1-ruleset.md) (Guardian is real; Commanders deploy)
+
+**Amended 2026-08-13 (M07.3).** The content system is unchanged and is the
+reason the corrections below were a data edit rather than a code change. Two
+statements about _what the content says_ are superseded in place: which keywords
+are inert, and what the rulebook admits is undecided.
 
 ## Context
 
@@ -45,6 +51,19 @@ Every keyword definition was rewritten against the actual handler. Evasive is
 in the words a player reads, that they currently do nothing and why. That is
 less satisfying than a plausible rule and considerably more honest; a player
 told Guardian forces blocks would be actively misled.
+
+> **Superseded 2026-08-13 (M07.3).** The rule stands and its application moved,
+> which is the mechanism working. **Guardian is real**: a defender must block at
+> least as many aimed attacks as they control ready Guardians, though not
+> necessarily with the Guardians themselves, and attacks they could not legally
+> block do not count toward the obligation
+> ([ADR 0016](0016-precon-wave-1-ruleset.md)). Its definition was rewritten with
+> the handler, in the same change. **`resilient` is now the only inert keyword**
+> of the eleven, and it is inert in every direction that can be checked
+> mechanically: the content build refuses it in a `playtest` or `active` set, so
+> no shipped card carries one, and no pilot pays anything for it anywhere. Which
+> reading to implement, or whether to delete it, is **Q4** and is an owner
+> decision.
 
 ### Configuration is referenced, never quoted
 
@@ -126,6 +145,17 @@ client.
   callouts where a rule is deliberately undecided — Commander deployment,
   keyword semantics — rather than filling the gap with invention.
 - `npm run verify` now runs `validate:content` between lint and test.
+
+> **Superseded 2026-08-13 (M07.3).** The rulebook still carries an `unresolved`
+> callout and it is still the only honest thing to do, but it is down to one and
+> it is about something else. Commander deployment is decided and described:
+> Commanders deploy from the Command Zone, return there immediately on defeat,
+> and cost 1 more Energy per defeat to a total cap of 10. What the callout says
+> now is that every number in the book is a playtest setting, that `resilient`
+> is printed but does nothing, and that the Reaction window policy is
+> deliberately the smallest workable rule and may be replaced. The book
+> describes the engine, including where the engine and `CLAUDE.md` disagree
+> about whether a Reaction may answer another (**Q47**).
 
 ## Alternatives considered
 

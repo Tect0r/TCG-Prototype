@@ -9,7 +9,7 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `d94ed61fd94d3ac06f75d142d12ce4ad67075676`  |
+| Commit           | `7291756241c37dab4df0b272bd9392c845fa9d85`  |
 | Working tree     | dirty — the audit includes uncommitted work |
 | Taken on         | 2026-08-13                                  |
 | Node             | v24.15.0                                    |
@@ -260,7 +260,7 @@ No question the plan calls open is missing or answered in the question file.
 | Workspaces                               | `packages/board-telemetry`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
 | Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `cards.json`, `eslint.config.js`, `package-lock.json`, `package.json`, `precons.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                        |
 | Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                        |
-| Architecture decision records            | 17                                                                                                                                                                                                                                                                          |
+| Architecture decision records            | 22                                                                                                                                                                                                                                                                          |
 | Milestone documents                      | 7                                                                                                                                                                                                                                                                           |
 
 ### Architecture decision records
@@ -284,5 +284,10 @@ No question the plan calls open is missing or answered in the question file.
 | `0015-player-help-and-content.md`                        | ADR 0015 — Player help and the data-driven content system                            |
 | `0016-precon-wave-1-ruleset.md`                          | 16. Precon Wave 1 ruleset — format, battlefield, Relics, Commanders, Reactions       |
 | `0017-optional-instructions-and-interactive-costs.md`    | 17. Optional instructions, "if you do", and costs a player chooses                   |
+| `0018-delayed-and-replacement-effects.md`                | ADR 0018 — Delayed effects, replacements, and the Ready Step                         |
+| `0019-precon-identity.md`                                | ADR 0019 — A precon is an identity, not a decklist                                   |
+| `0020-board-telemetry-and-stall-definition.md`           | ADR 0020 — Board telemetry: one collector, two feeds, and a versioned stall          |
+| `0021-choice-contract.md`                                | ADR 0021 — The choice contract: who is asked, what the answer is, and why            |
+| `0022-evidence-claims.md`                                | ADR 0022 — What a run may be cited for: support, pilots, decks, calibration          |
 
 <!-- audit:derived:end -->

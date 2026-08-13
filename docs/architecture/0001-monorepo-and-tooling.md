@@ -69,3 +69,19 @@ which could not live in `card-data` (which must not know about the network) and
 would have made `shared` non-trivial. Rationale in
 [ADR 0006](0006-network-protocol.md). `bot-interface` and `simulator` remain
 absent, awaiting Phase 4.
+
+**Updated 2026-08-13 (M07.3):** the workspace is now twelve packages —
+`packages/board-telemetry`, `packages/bot-interface`, `packages/card-data`,
+`packages/deck`, `packages/help-content`, `packages/protocol`,
+`packages/rules-engine`, `packages/shared`, `packages/spectator`,
+`apps/multiplayer-server`, `apps/simulator`, `apps/web-client`. The three added
+after Phase 4 each exist because of the dependency rule above rather than in
+spite of it: `help-content` sits above the engine and below the client so no
+presentation code reaches the engine ([ADR 0015](0015-player-help-and-content.md)),
+`board-telemetry` sits below both the simulator and the spectator so one schema
+serves a live match and a finished replay
+([ADR 0020](0020-board-telemetry-and-stall-definition.md)), and `spectator`
+owns the replay format both the web client and the simulator write and read,
+which is why it is a package rather than a folder in either of them. The list is
+regenerated into `docs/status-audit.md` by `npm run audit:status`, so it is
+checked rather than remembered.

@@ -1,6 +1,21 @@
 # ADR 0013 — Statistical contracts for the balance laboratory (Phase 4 hardening)
 
-**Status:** accepted · **Date:** 2026-08-09
+**Status:** accepted · **Date:** 2026-08-09 · **Extended by:**
+[ADR 0022](0022-evidence-claims.md)
+
+**Amended 2026-08-13 (M07.3).** Every estimator decision below stands. What
+changed is the step **before** the estimator: a flag now has to be entitled to
+exist. Each review signal names the evidence claim it rests on (`FLAG_CLAIMS`),
+and a signal is declined outright when no pilot that flew the run carries that
+claim, or downgraded to `insufficient_data` — never dropped, with its evidence,
+interval and threshold intact — when the run's pilots value none of the subject
+card's mechanics or no record observes what it does. In this build that means
+card-pair `synergy` and counter-breadth `control` are declined by every run,
+because no shipped pilot is archetype-aware. That is the same principle as
+"multiplicity is reported, never used to suppress", applied one level up: the
+scan's width is disclosed, and so is the instrument's blindness. Report,
+manifest and summary schemas have moved well past the version 2 named in the
+Consequences below — they are **8**, **8** and **7** — every move a refusal.
 
 ## Context
 

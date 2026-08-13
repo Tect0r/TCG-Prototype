@@ -148,7 +148,7 @@ record. Do not convert it into a blanket rule.
       anchor in the three rewritten files resolves — as does every inbound link
       from elsewhere in the repository to a heading in them.
 
-## M07.3 — ADR amendments
+## M07.3 — ADR amendments — **done (2026-08-13)**
 
 Preserve accepted ADRs, but add clear supersession amendments where their body
 describes the old game. ADR 0016 especially must no longer say Commander defeat
@@ -158,6 +158,64 @@ visible.
 
 Add ADRs for new persisted/state-machine/statistical decisions introduced in
 M02–M05.
+
+### Checklist
+
+- [x] **Nothing was rewritten and nothing was deleted.** Every accepted ADR keeps
+      its original text; where a statement no longer describes the game it is
+      quoted back and corrected in a `> **Superseded 2026-08-13 (M07.3).**`
+      block **at the point where the stale claim is**, so a reader who lands in
+      the middle of a section cannot walk away believing it. Each amended file
+      also carries one line under its status naming what changed, so the
+      amendment is visible without scanning. Thirteen ADRs are amended: 0001, 0002,
+      0003, 0005, 0006, 0007, 0008, 0009, 0011, 0012, 0013, 0015, 0016.
+- [x] **ADR 0016 §4 no longer says the Commander defeat lifecycle is
+      unimplemented.** It records the built rule: an immediate return to the
+      Command Zone by one route for all four kinds of defeat
+      (`effects.ts#restDefeated`), `commanderCostPerDefeat` = **1** added per
+      defeat with the **total** capped by `commanderCostCap` = **10**
+      (`derive.ts#commanderDeployCost`), and no Recovery Zone, no timer and no
+      Commander-defeat loss condition. Both numbers are named as the dials they
+      are, and Q5 is named as a locked decision.
+- [x] Two further statements in ADR 0016 were stale and are superseded in place:
+      §5's priority order (`reactions.ts#draftWindow` uses `activeFirstOrder`
+      and says in the code that it supersedes "non-active player first") and
+      §5's "a Reaction cannot be responded to by another Reaction", which the
+      engine allows — that contradiction is **Q47** and is deliberately left to
+      the owner rather than resolved here. Its Consequences pointed at
+      `open-decisions.md` for open items, which M07.2 re-purposed; it now points
+      at the right file.
+- [x] **The Overwhelm divergence stays visible.** ADR 0016's flagged Q-D note is
+      untouched, and the amendment header says it was re-read against
+      `combat.ts#buildHits` at this date and still describes the code: the split
+      is against the blocker's **current Health**, before Barrier, and marked
+      damage does not increase the overflow.
+- [x] Five ADRs were added for decisions taken in M02–M05 that were only recorded
+      in milestone prose: **0018** delayed effects, replacements and the
+      three-stage Ready Step (state machine, persisted state); **0019** a precon
+      is an identity rather than a decklist (protocol, manifest, seed
+      derivation); **0020** board telemetry and the versioned stall definition
+      (persisted schema, statistical); **0021** the choice contract — who is
+      asked, what shape the answer is, and why the question exists (persisted
+      state, protocol); **0022** what a run may be cited for — mechanic support,
+      pilot agent classes, deck construction and calibration (statistical).
+- [x] Supersession is now visible from **both** ends. ADR 0016 said it superseded
+      parts of 0002, 0003, 0005 and 0008 and none of those four said so; each now
+      carries the back-link, and every new ADR is linked from the ADRs it
+      extends.
+- [x] Every fact in an amendment and in a new ADR was read from the code or the
+      generated content at this commit, not from another document. Where the
+      plan's own prose and the code disagreed — M05.6's calibration paragraph
+      says six fixtures are missed by every pilot; the registry has seven, plus
+      one missed by two pilots — the ADR records the code and points at
+      `docs/status-audit.md` for the count, since a `knownGaps` entry may move
+      without a version bump.
+- [x] No rule, schema, protocol or behaviour changed in this tranche. It is
+      documentation only: no source file outside `docs/` was edited, and no
+      version constant moved.
+- [x] Verified: every relative link and anchor in `docs/architecture/` resolves,
+      `npm run audit:status` regenerated the audit (the ADR inventory is a
+      derived fact — 17 records became 22), and `npm run verify` passes.
 
 ## M07.4 — Project status and testing record
 

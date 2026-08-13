@@ -6,6 +6,20 @@ from four causes to six and split into mechanical and strategic groups, and
 per-copy draw/play counters were added. The reasoning below stands; the table is
 superseded by the one in the section that follows it.
 
+**Amended 2026-08-13 (M07.3).** Card telemetry is unchanged and the decisions
+below stand. Two things sit beside it now. **Board** telemetry — how large the
+board got, what the largest and most expensive combats were, and whether a quiet
+round was a stall — is not part of `MatchRecord`'s card rows at all: it is its
+own package with its own version, fed identically by a live match and by a
+finished replay ([ADR 0020](0020-board-telemetry-and-stall-definition.md)). And
+what a counter does **not** observe is now recorded rather than assumed: the
+support registry classifies every mechanic's telemetry coverage, so
+`return_to_hand` is classified `telemetry: 'none'` on the honest basis that
+`CardTelemetry.timesReturnedToHand` is in the schema and is never incremented —
+a bounce is invisible to a batch, and a report that depends on one says so
+([ADR 0022](0022-evidence-claims.md)). `TELEMETRY_SCHEMA_VERSION` is now **6**;
+every move has been a refusal rather than a migration.
+
 ## Context
 
 The laboratory's job is to produce evidence about cards (CLAUDE.md §13.6). The

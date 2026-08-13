@@ -1,6 +1,13 @@
 # ADR 0002 — Card data model and structured effects
 
-**Status:** accepted · **Date:** 2026-08-07
+**Status:** accepted · **Date:** 2026-08-07 · **Superseded in part by:**
+[ADR 0016](0016-precon-wave-1-ruleset.md) (formats, Commanders, Reactions) and
+[ADR 0017](0017-optional-instructions-and-interactive-costs.md)
+(`additionalCosts`, `optional`)
+
+**Amended 2026-08-13 (M07.3).** Two statements below described the model as it
+was on 2026-08-07 and are superseded in place: where the `effects` /
+`on_deploy` overlap ended up, and what a display-text warning does.
 
 ## Context
 
@@ -30,6 +37,17 @@ The overlap between a unit's `effects` and an `on_deploy` ability is real and
 recorded in [open-decisions](../rules/open-decisions.md); it can be collapsed
 once the engine shows which form it actually wants.
 
+> **Superseded 2026-08-13 (M07.3).** The engine showed which form it wanted and
+> the overlap is gone (Q1, answered 2026-08-07). There is **no `on_deploy`
+> trigger** in the vocabulary: top-level `effects` is both spell resolution and
+> unit/relic deploy resolution, `abilities` carries non-deploy triggers only,
+> and the v1 → v2 card migration folded existing `on_deploy` abilities into
+> `effects`. What remains genuinely distinct is `deployed` versus
+> `entersBattlefield` — a card that arrives by revival reports the second and
+> never the first — and those are reviewed card by card in
+> [entry-trigger-review.md](../rules/entry-trigger-review.md), never
+> bulk-converted.
+
 Cross-field rules are enforced in the schema, not by convention:
 units/commanders/tokens must have a statline and others must not; commanders and
 tokens have `cost: null`; tokens are never collectible; spells need at least one
@@ -57,6 +75,19 @@ Drift between prose and effects is nevertheless a common authoring bug, so
 `lintDisplayText` warns when text clearly names a mechanic (`"Draw a card"`,
 `"+2/+2"`, a keyword name) with no matching structured effect. Warnings never
 block loading, and a test asserts the bundled set produces none.
+
+> **Superseded 2026-08-13 (M07.3).** The check still never parses prose into
+> behaviour — that rule is permanent — but it is no longer advisory and no
+> longer runs in one direction. Since M02.6 the content build turns every card
+> warning into a **hard error** for a set whose status is `playtest` or
+> `active`, and `precon_wave_1` is a `playtest` set; and the drift check reports
+> **both** directions, prose promising behaviour the card lacks _and_ behaviour
+> the card performs that the prose never mentions, with no exemption for a card
+> whose help text is hand-written. Two further build gates joined it: every card
+> in a strict-status set must have a behaviour contract
+> (`@tcg/rules-engine/card-contracts`), and a card using a mechanic the engine
+> does not execute fails the build outright, derived from the support registry
+> rather than claimed ([ADR 0022](0022-evidence-claims.md)).
 
 ## Validation and loading
 

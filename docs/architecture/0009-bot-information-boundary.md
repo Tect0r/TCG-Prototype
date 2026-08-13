@@ -1,6 +1,18 @@
 # ADR 0009 — The bot information boundary (Phase 4)
 
-**Status:** accepted · **Date:** 2026-08-08
+**Status:** accepted · **Date:** 2026-08-08 · **Extended by:**
+[ADR 0022](0022-evidence-claims.md)
+
+**Amended 2026-08-13 (M07.3).** The boundary is unchanged and was re-read at
+this date: `BotObservation` still has exactly six fields and none of them is
+`MatchState`. One consequence below is now understated rather than wrong. "Results
+describe what competent-ish heuristics do, which is stated in every report's
+limitations" is no longer a sentence in a limitations section — a pilot's
+**agent class** is a registry entry, every review signal names the evidence
+claim it rests on, and a run that did not fly a class carrying that claim
+declines the signal instead of printing it. What the pilots are actually blind
+to is measured one hand-authored decision at a time by the calibration suite.
+See [ADR 0022](0022-evidence-claims.md).
 
 ## Context
 

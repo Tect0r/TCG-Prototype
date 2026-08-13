@@ -1,6 +1,17 @@
 # ADR 0005 — Deterministic rules engine (Phase 2A)
 
-**Status:** accepted · **Date:** 2026-08-07
+**Status:** accepted · **Date:** 2026-08-07 · **Superseded in part by:**
+[ADR 0016](0016-precon-wave-1-ruleset.md) · **Extended by:**
+[ADR 0017](0017-optional-instructions-and-interactive-costs.md),
+[ADR 0018](0018-delayed-and-replacement-effects.md),
+[ADR 0021](0021-choice-contract.md)
+
+**Amended 2026-08-13 (M07.3).** The five structural decisions below — clone per
+action, no closures in state, one FIFO queue, derived stats, redaction as a
+projection — all stand and are still the shape of the engine. Three statements
+that described the Phase 2A scope are superseded in place: that there is no
+priority system, what it costs to add an effect type, and which effects the
+bundled set leaves unused. `MATCH_SCHEMA_VERSION` is now **7**.
 
 ## Context
 
@@ -54,6 +65,22 @@ definition — all three are needed, and all three are deterministic.
 There is deliberately no priority system and no player-orderable trigger stack;
 CLAUDE.md §4 rules both out for Phase 2.
 
+> **Superseded 2026-08-13 (M07.3).** Half of that is now wrong and half is
+> permanent. There is still **no player-orderable trigger stack**: simultaneous
+> triggers order by active player, then clockwise seat, then instance creation,
+> then trigger index, and nobody may re-arrange them. But the engine does have a
+> bounded priority mechanism — Reaction windows
+> ([ADR 0016](0016-precon-wave-1-ruleset.md) §5). It is not a general stack: a
+> window opens only at four named moments, only when somebody holds a playable
+> Reaction, priority runs active player first and then clockwise, and each
+> eligible seat may play at most `reactionsPerPlayerPerWindow` (**1**) card in
+> it. Pending Reactions resolve last in, first out.
+>
+> The queue also gained two things that resolve **without** a trigger and
+> without a window: delayed effects, which wait for a boundary, and
+> replacements, which rewrite an arrival or a readying as it happens
+> ([ADR 0018](0018-delayed-and-replacement-effects.md)).
+
 ### Derived stats, stored modifiers
 
 Current Attack/Health are never stored. They are computed from the printed
@@ -102,6 +129,26 @@ never derives legality itself.
   inventing cards for the shipped set.
 - `structuredClone` per action means the engine needs a modern runtime. Node 20+
   and every current browser have it.
+
+> **Superseded 2026-08-13 (M07.3).** The second and third bullets have moved, in
+> opposite directions.
+>
+> Adding an effect type is no longer one case. It is a compile error in **six**
+> total tables across four packages until every one of them is filled in —
+> `executeEffect`'s exhaustiveness guard, `EFFECT_SUPPORT` (does the engine
+> execute it, is it described, can a pilot play it, does a record observe it),
+> `EFFECT_INTENTS` (benefit / detriment / neutral), `EFFECT_REGISTRY` and the
+> explanation renderer table in `@tcg/help-content`, and `EFFECT_PRICERS` in
+> `@tcg/bot-interface` — plus the valuation test's own mapped type, so a
+> mechanic added without a pricing test does not compile. That is deliberate:
+> each table is a claim somebody would otherwise have made by silence
+> ([ADR 0022](0022-evidence-claims.md)).
+>
+> `ready` and `move_card` are both used by shipped cards now, and `move_card`
+> carries two zone transitions the catalogue prints: `toZone: "removed"` is
+> terminal, and `toZone: "battlefield"` is a revival that arrives as a fresh
+> permanent — Newly Deployed, reporting `entersBattlefield` and never
+> `deployed`.
 
 ## Alternatives considered
 

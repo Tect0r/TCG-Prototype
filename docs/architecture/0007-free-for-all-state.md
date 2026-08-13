@@ -1,6 +1,10 @@
 # ADR 0007 — Free-for-all state, choices and combat (Phase 3)
 
-**Status:** accepted · **Date:** 2026-08-08
+**Status:** accepted · **Date:** 2026-08-08 · **Extended by:**
+[ADR 0021](0021-choice-contract.md)
+
+**Amended 2026-08-13 (M07.3).** One consequence below described the Phase 3
+scope and is superseded in place. Everything in the Decision section stands.
 
 ## Context
 
@@ -108,3 +112,18 @@ information a living player would not have.
   structurally blocked: `blocks` is already a list of pairs.
 - There is still no priority system, no reactions and no player-controlled
   trigger ordering, all deliberately out of scope for this phase.
+
+> **Superseded 2026-08-13 (M07.3).** Reactions exist, and with them a bounded
+> priority mechanism: a window opens at four named moments, priority runs active
+> player first and then clockwise, and each eligible seat may play at most one
+> Reaction in it ([ADR 0016](0016-precon-wave-1-ruleset.md) §5). Player-controlled
+> trigger ordering is still absent and is not planned.
+>
+> Two other statements above are worth reading with today's dates. Multiple
+> blockers per attacker is still unimplemented and still not structurally
+> blocked — `blockersPerAttacker` is a dial at **1** over a list of pairs — and
+> it is now the owner question **Q44**. And a choice is no longer answered only
+> by one seat: an `each_player_choice` asks every seat in the selector's own
+> order and applies nothing until the last answer is in
+> ([ADR 0021](0021-choice-contract.md)), which is the multi-seat analogue of the
+> independent-blocker rule above.

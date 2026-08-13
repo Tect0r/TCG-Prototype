@@ -21,7 +21,7 @@ After verification, update the evidence and stop.
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)               | Complete     |
 | [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)               | Complete     |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1–M06.3 done (2026-08-13) | Complete     |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1–M07.2 done (2026-08-13)               | M07.3        |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | M07.1–M07.3 done (2026-08-13)               | M07.4        |
 
 Since M01.2, an unfinished card makes a deck illegal by name. The spectator
 refuses such a precon and runs it only under a deliberately named developer
@@ -761,6 +761,40 @@ ruling and a date each, so a decision cannot be silently re-opened and the ledge
 can still tell `answered` from `absent`. One factual correction fell out of it:
 Q40 called root `cards.json` / `precons.json` untracked and their deletion
 irreversible, and `git ls-files` says both are tracked.
+
+Since M07.3, the architecture record is **amended rather than rewritten**, and
+supersession is visible from both ends. Thirteen accepted ADRs kept every word
+they had; where a statement no longer describes the game it is quoted back and
+corrected in a `> **Superseded**` block sitting at the stale claim itself, so a
+reader who lands mid-section cannot walk away believing it, with one line under
+the status naming what moved. The big one is ADR 0016 §4, which said the
+Commander defeat lifecycle was unimplemented and now records the built rule:
+one return route for all four kinds of defeat, +1 Energy per defeat, the
+**total** capped at 10, and no loss condition. Two more of its statements were
+stale in the same section — priority runs active player first, not non-active,
+and the engine does let a Reaction answer a Reaction, which is Q47 and stays the
+owner's call. The flagged Overwhelm divergence is deliberately **kept**, re-read
+against `combat.ts#buildHits` and still exact. Elsewhere the corrections are the
+old game showing through: no priority system (0005, 0007), a static ability
+being two effects rather than five (0008), a continuous layer recomputed "over a
+board of at most twenty units" when the real worst board is 117 Tokens (0008),
+Guardian described to players as inert (0015), a rulebook whose unresolved
+callout named Commander deployment (0015), and a workspace of five packages
+(0001).
+
+Five ADRs were added for decisions that existed only in milestone prose:
+**0018** delayed effects, replacements and the three-stage Ready Step; **0019** a
+precon is an identity rather than a decklist; **0020** board telemetry and the
+versioned stall definition; **0021** the choice contract — who is asked, what
+shape the answer is, why the question exists; **0022** what a run may be cited
+for. Every fact in them was read from the code or the generated content rather
+than from another document, which is how the one disagreement surfaced: M05.6's
+paragraph above says six calibration fixtures are missed by every pilot, and the
+registry says seven plus one missed by two. The ADR records the code and defers
+the count to `docs/status-audit.md`, since a `knownGaps` entry may move without a
+version bump. Nothing outside `docs/` changed and no version moved; the audit's
+ADR inventory went 17 → 22, which is the only derived number this tranche
+touched.
 
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and

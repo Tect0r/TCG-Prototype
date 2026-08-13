@@ -1,6 +1,14 @@
 # ADR 0003 — Deck save format, migrations and persistence
 
-**Status:** accepted · **Date:** 2026-08-07
+**Status:** accepted · **Date:** 2026-08-07 · **Superseded in part by:**
+[ADR 0016](0016-precon-wave-1-ruleset.md) (construction rules are format data)
+
+**Amended 2026-08-13 (M07.3).** The save format itself is unchanged —
+`DECK_SCHEMA_VERSION` is still **1** and `DECK_MIGRATIONS` is still empty, so
+every deck ever saved by this project still loads. One statement below is
+superseded: where the construction limits live. A note on precons was added to
+the same section, because "copy a precon" produces an ordinary saved deck and a
+reader deserves to know that nothing marks it.
 
 ## Context
 
@@ -86,3 +94,22 @@ and fails against the old approach.
   limits without touching validation code.
 - Storage can never be silently wiped; the worst case is decks temporarily
   hidden behind a quarantined key.
+
+> **Superseded 2026-08-13 (M07.3).** Format limits are no longer "a config
+> object": a format is **content**, loaded and validated from
+> `content/formats/*.json` and flattened by `deckFormatOf`
+> ([ADR 0016](0016-precon-wave-1-ruleset.md) §1). Changing deck size or copy
+> limits is a data edit rather than a code edit, and `singleton` is its own flag
+> rather than `copyLimit: 1` because a singleton format must reject a repeated
+> card by identity even when an import splits it across several entries. The
+> consequence that mattered — `validateDeck` is pure and database-driven, so the
+> server calls the same function the builder does — stands, and the server
+> additionally re-validates every submitted deck against its own database.
+>
+> A precon copied out of the browser is an **ordinary saved deck**: `preconToDeck`
+> gives it a fresh ID and a non-colliding name, and nothing in `SavedDeck`
+> records that it came from a precon. That was a deliberate omission — precon
+> provenance would be a persisted schema change, and an edited precon has to be
+> judged on its contents rather than on its name. A precon played _unedited_
+> never becomes a saved deck at all; it travels as an ID
+> ([ADR 0019](0019-precon-identity.md)).

@@ -1,6 +1,13 @@
 # ADR 0008 — Continuous effects and static abilities
 
-**Status:** accepted · **Date:** 2026-08-08
+**Status:** accepted · **Date:** 2026-08-08 · **Superseded in part by:**
+[ADR 0016](0016-precon-wave-1-ruleset.md) (the battlefield is unbounded) ·
+**Extended by:** [ADR 0018](0018-delayed-and-replacement-effects.md)
+
+**Amended 2026-08-13 (M07.3).** The layer itself is unchanged and the recompute
+rule below is still the whole design. Two statements are superseded in place:
+what a static ability's `effect` may be, and how large a board it is recomputed
+over.
 
 ## Context
 
@@ -31,6 +38,30 @@ triggered `abilities`. A static ability declares:
 This is deliberately narrower than the one-shot effect vocabulary. A static
 ability cannot draw a card, deal damage or move anything: those are events, and
 events belong in the resolution queue where they can be ordered and logged.
+
+> **Superseded 2026-08-13 (M07.3).** The narrowness rule stands — a static
+> ability still cannot draw, damage or move anything — but `effect` is now five
+> variants rather than two, and the three additions are all standing facts that
+> no trigger is in a position to answer:
+>
+> - `reaction_discount` — "your first Reaction each turn costs 1 less, to a
+>   minimum of 1". It has to be true at the moment a cost is computed, usually
+>   on somebody else's turn.
+> - `cost_reduction` (M02.3) — a discount **derived from the board** rather than
+>   stamped on by a `modify_cost` delta, so a Unit defeated after the card was
+>   drawn makes it cheaper and a card that stops qualifying goes back to full
+>   price with nothing to clean up. `playCostOf` is the single answer to "what
+>   does this card cost right now" and is used by the play path, legal actions,
+>   Reactions, telemetry and the view.
+> - `replace_arrival` and `replace_ready` (M02.4) — the standing half of the
+>   replacement layer, pinned by the schema to `zone: "battlefield"`. A
+>   replacement is **not** a trigger and not a continuous modifier; it rewrites
+>   one event as it happens. See
+>   [ADR 0018](0018-delayed-and-replacement-effects.md).
+>
+> Neither `reaction_discount` nor `cost_reduction` contributes to an instance's
+> continuous layer: a cost reduction is a fact about its controller, not a
+> modifier on a card.
 
 ### The layer is recomputed, never accumulated
 
@@ -87,3 +118,15 @@ removing them (CLAUDE.md §12 step 3).
 - The layer is recomputed more often than strictly necessary. It is O(sources ×
   scope) over a board of at most twenty units, and correctness at this stage is
   worth more than avoiding that.
+
+> **Superseded 2026-08-13 (M07.3).** "A board of at most twenty units" was true
+> when the rules had five Unit slots per player. There is no Unit limit now, and
+> the cap was removed rather than raised
+> ([ADR 0016](0016-precon-wave-1-ruleset.md) §2). The largest board Wave 1
+> actually produces is **117 Tokens on one seat**, measured rather than
+> estimated ([ADR 0020](0020-board-telemetry-and-stall-definition.md)), so the
+> cost argument is now O(sources × scope) over a board an order of magnitude
+> larger. The trade is still deliberate — the layer is idempotent and that is
+> what makes it safe to call as often as it is called — and board size is
+> measured every run, so if this becomes the bottleneck it will show up as
+> evidence rather than as an impression.

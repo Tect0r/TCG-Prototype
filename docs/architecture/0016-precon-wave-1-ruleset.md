@@ -4,6 +4,16 @@ Date: 2026-08-10
 Status: Accepted
 Supersedes parts of: [0002](0002-card-data-model.md), [0003](0003-deck-save-format.md),
 [0005](0005-rules-engine.md), [0008](0008-continuous-effects.md)
+Extended by: [0018](0018-delayed-and-replacement-effects.md),
+[0019](0019-precon-identity.md), [0021](0021-choice-contract.md)
+
+**Amended 2026-08-13 (M07.3).** Three statements below described the game as it
+was on 2026-08-10 and are superseded in place, each marked where it stands: the
+Commander defeat lifecycle (§4), the priority order and the chaining rule (§5),
+and where the remaining open questions are tracked (Consequences). Everything
+else was re-read against the code on that date and stands — including the
+flagged Overwhelm divergence under Q-D, which `combat.ts#buildHits` still
+implements exactly as written and which is deliberately kept visible here.
 
 ## Context
 
@@ -76,10 +86,26 @@ never drawn. Playing it pays its printed cost and moves it to the battlefield as
 a Newly Deployed permanent that behaves as a Unit for readying, combat,
 targeting, damage and activation costs.
 
-Commander **defeat lifecycle is not implemented**, because §18 leaves it open.
-The zones and events are modeled so the policy can be dropped in later:
-a defeated Commander moves to `commander_zone` and the match continues. No
-recovery timer, replay tax, or Commander-defeat loss condition is invented.
+> **Superseded 2026-08-13 (M07.3).** This section originally said the Commander
+> **defeat lifecycle is not implemented**, because §18 left it open, and that
+> the zones and events were modelled so a policy could be dropped in later. The
+> policy has since been decided by the project owner (Q5) and built. It is now:
+>
+> - a defeated Commander returns **immediately** to its Command Zone. Lethal
+>   damage, a state-based zero-Health check, `destroy` and `sacrifice` are one
+>   route, not four, because a Commander that came back from three of them
+>   would be worse than one that came back from none
+>   (`effects.ts#restDefeated`);
+> - each defeat adds `commanderCostPerDefeat` (**1**) Energy to its future
+>   deployment cost, and the **total** cost — not the surcharge — is capped at
+>   `commanderCostCap` (**10**), which is the difference between expensive and
+>   unplayable (`derive.ts#commanderDeployCost`);
+> - there is still no Recovery Zone, no timer, and **no Commander-defeat loss
+>   condition**. Losing a Commander is not losing the match.
+>
+> Both numbers are dials in `config.ts`, and the rule is covered by
+> `commander.test.ts`. Q5 is a locked decision in `IMPLEMENTATION_PLAN.md`; do
+> not re-open it while implementing.
 
 ### 5. Reactions are a card type with bounded windows
 
@@ -104,6 +130,28 @@ documented in `docs/rules/open-decisions.md`, deliberately replaceable — is:
 
 This is the smallest policy that makes every authored Reaction playable while
 staying deterministic and bounded. It is not proposed as the final rule.
+
+> **Superseded 2026-08-13 (M07.3).** Two of those four bullets no longer
+> describe the engine. The middle one — one Reaction per eligible player per
+> window — is intact and is the dial `reactionsPerPlayerPerWindow` (**1**), and
+> so is the closing rule.
+>
+> - **Priority starts with the active player**, then goes clockwise, and is
+>   offered only to a seat with something legal to play. `reactions.ts#draftWindow`
+>   uses `activeFirstOrder` and says in the code that it deliberately supersedes
+>   the provisional "non-active player first" written here.
+> - **A Reaction can be answered by another Reaction.** Playing one clears
+>   `window.passedPlayerIds`, so the round of priority restarts and a player who
+>   has not yet acted may counter the counter; `reactions.test.ts` asserts it.
+>   `CLAUDE.md`'s product rules still say it may not, so one of the two is
+>   wrong. That contradiction is **Q47**, written up with both directions of the
+>   fix in [open-questions.md](../open-questions.md); it is an owner decision and
+>   is deliberately not settled here. The in-app rulebook currently describes the
+>   engine.
+>
+> Pending Reactions resolve **last in, first out**, with the spell the window
+> opened around at the bottom. Whether a Reaction may carry an interactive
+> additional cost is still open ([Q46](../open-questions.md), ADR 0017).
 
 ## Resolved §18 questions
 
@@ -167,3 +215,21 @@ For a blocked attacker with Overwhelm, in order:
   combat, and stall detection so the decision can be judged on evidence rather
   than reverted on impression.
 - Nine §18 items remain open and are tracked in `docs/rules/open-decisions.md`.
+
+> **Superseded 2026-08-13 (M07.3).** Both consequences have moved on.
+>
+> - The §17 telemetry is built and is a package of its own,
+>   `@tcg/board-telemetry`, fed identically by a live simulator match and by a
+>   finished spectator replay; the stall verdict it carries is a versioned rule
+>   rather than a reporting-layer judgement. See
+>   [ADR 0020](0020-board-telemetry-and-stall-definition.md). The unbounded
+>   battlefield is therefore measured: the worst board Wave 1 produces is 117
+>   Tokens on one seat, and no Unit cap has been reintroduced.
+> - Open items are no longer tracked in `docs/rules/open-decisions.md`. Since
+>   M07.2 that file holds only **implemented rules whose value is provisional**;
+>   questions with no answer live in [open-questions.md](../open-questions.md),
+>   and settled rules in [confirmed-rules.md](../rules/confirmed-rules.md). Of
+>   this ADR's §18 remainder, Q4 (`resilient`), Q44 (multiple blockers), Q45
+>   (Barrier ordering), Q46 (Reaction additional costs), Q47 (Reaction answering
+>   a Reaction) and Q48 (five Goblin entry triggers) are the ones still on the
+>   owner's list.
