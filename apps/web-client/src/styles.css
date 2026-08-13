@@ -1014,6 +1014,17 @@ code {
   border-radius: var(--radius);
 }
 
+/*
+ * The same tile in a flex row rather than on the battlefield grid: a stack of
+ * choice options or of ability sources (M06.2). The members still belong on a
+ * line of their own, or an expanded stack of sixty pushes the rest of the
+ * question off the end of the row.
+ */
+.choice__options .unit-group__members,
+.board__controls .unit-group__members {
+  flex-basis: 100%;
+}
+
 .board__controls {
   display: flex;
   gap: 0.5rem;

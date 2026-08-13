@@ -5,11 +5,13 @@ import { unwrap } from '@tcg/shared';
 import {
   DEFAULT_MINIMUM_GROUP_SIZE,
   entryInstanceIds,
-  groupBattlefield,
+  groupEntities,
   tokenGroupKey,
+  tokenGroupLabel,
   tokenGroupSummary,
+  tokenMemberLabel,
   TOKEN_GROUP_KEY_FIELDS,
-  type BoardEntry,
+  type TileEntry,
 } from './token-grouping.js';
 
 /**
@@ -96,17 +98,17 @@ function unitsOf(view: PlayerView): readonly string[] {
   return view.players.find((player) => player.playerId === 'player_1')?.units ?? [];
 }
 
-function layOut(view: PlayerView, enabled = true): BoardEntry[] {
-  const entries = groupBattlefield(view, unitsOf(view), { enabled });
+function layOut(view: PlayerView, enabled = true): TileEntry[] {
+  const entries = groupEntities(view, unitsOf(view), { enabled });
   // The invariant, asserted on every board these tests build rather than in one
   // test of its own: grouping loses nothing and invents nothing.
   expect([...entryInstanceIds(entries)].sort()).toEqual([...unitsOf(view)].sort());
   return entries;
 }
 
-function groups(entries: readonly BoardEntry[]): Extract<BoardEntry, { kind: 'group' }>[] {
+function groups(entries: readonly TileEntry[]): Extract<TileEntry, { kind: 'group' }>[] {
   return entries.filter(
-    (entry): entry is Extract<BoardEntry, { kind: 'group' }> => entry.kind === 'group',
+    (entry): entry is Extract<TileEntry, { kind: 'group' }> => entry.kind === 'group',
   );
 }
 
@@ -284,10 +286,18 @@ describe('token grouping', () => {
     expect(tokenGroupKey(token('t2'), { ...role, blockingInstanceId: 'enemy_1' })).not.toBe(
       reference,
     );
+    expect(tokenGroupKey(token('t2'), role, 'chosen')).not.toBe(reference);
     // Every field named in the exported list is one of the cases above, so a
     // field added to the key without a test here fails.
     expect([...TOKEN_GROUP_KEY_FIELDS].sort()).toEqual(
-      [...Object.keys(splitters), 'controller', 'definitionId', 'attacking', 'blocking'].sort(),
+      [
+        ...Object.keys(splitters),
+        'controller',
+        'definitionId',
+        'attacking',
+        'blocking',
+        'selection',
+      ].sort(),
     );
   });
 
@@ -298,5 +308,115 @@ describe('token grouping', () => {
       (playerId) => (playerId === 'player_2' ? 'Rival' : playerId),
     );
     expect(summary).toEqual(['1 / 2', '1 dmg', 'exhausted', 'barrier spent', 'attacking Rival']);
+  });
+});
+
+/* ------------------------------------------------- M06.2: individual interaction */
+
+describe('picking one Token out of a stack', () => {
+  const noSelection = { attackingPlayerId: null, blockingInstanceId: null };
+
+  it('splits the ones the viewer has already picked out of the tile', () => {
+    const view = boardOf([token('t1'), token('t2'), token('t3'), token('t4')]);
+    const entries = groupEntities(view, unitsOf(view), {
+      selectionOf: (instanceId) => (instanceId === 't2' ? '→ Rival' : null),
+    });
+    expect([...entryInstanceIds(entries)].sort()).toEqual([...unitsOf(view)].sort());
+
+    // The picked one leaves the tile at its own arrival position, and the three
+    // it came from stay one tile: the board says "three left, one aimed".
+    expect(entries.map((entry) => entry.kind)).toEqual(['group', 'single']);
+    expect(groups(entries)[0]?.instanceIds).toEqual(['t1', 't3', 't4']);
+    expect(entries[1]).toEqual({ kind: 'single', key: 't2', instanceId: 't2' });
+  });
+
+  it('gathers everything picked the same way into one tile', () => {
+    const aimed = new Set(['t1', 't3', 't4']);
+    const view = boardOf([token('t1'), token('t2'), token('t3'), token('t4'), token('t5')]);
+    const entries = groupEntities(view, unitsOf(view), {
+      selectionOf: (instanceId) => (aimed.has(instanceId) ? '→ Rival' : null),
+    });
+
+    // Three aimed at one seat are one tile; the two left are another. That is
+    // the same split the engine's own `attacking` produces the moment the
+    // declaration is confirmed, so confirming does not rearrange the board.
+    const [first, second] = groups(entries);
+    expect(first?.instanceIds).toEqual(['t1', 't3', 't4']);
+    expect(first?.selection).toBe('→ Rival');
+    expect(second?.instanceIds).toEqual(['t2', 't5']);
+    expect(second?.selection).toBeNull();
+  });
+
+  it('keeps two differently aimed picks apart', () => {
+    const view = boardOf([token('t1'), token('t2'), token('t3'), token('t4')]);
+    const aim: Record<string, string> = { t1: '→ Rival', t2: '→ Third', t3: '→ Rival' };
+    const entries = groupEntities(view, unitsOf(view), {
+      selectionOf: (instanceId) => aim[instanceId] ?? null,
+    });
+    expect(groups(entries)[0]?.instanceIds).toEqual(['t1', 't3']);
+    expect(entries.map((entry) => entry.kind)).toEqual(['group', 'single', 'single']);
+  });
+
+  /**
+   * M06.2's second requirement, in its own words: "when state diverges, the
+   * instance moves to the appropriate visual group deterministically".
+   */
+  it('moves a diverged Token into the tile its new state belongs to', () => {
+    const before = boardOf([
+      token('t1'),
+      token('t2'),
+      token('t3', { exhausted: true }),
+      token('t4', { exhausted: true }),
+    ]);
+    expect(groups(layOut(before)).map((group) => group.instanceIds)).toEqual([
+      ['t1', 't2'],
+      ['t3', 't4'],
+    ]);
+
+    // t2 Exhausts. It does not become a tile of its own: it joins the tile of
+    // everything already in that state, and the key of both tiles is unchanged.
+    const after = boardOf([
+      token('t1'),
+      token('t2', { exhausted: true }),
+      token('t3', { exhausted: true }),
+      token('t4', { exhausted: true }),
+    ]);
+    const entries = layOut(after);
+    expect(entries[0]).toEqual({ kind: 'single', key: 't1', instanceId: 't1' });
+    expect(groups(entries)[0]?.instanceIds).toEqual(['t2', 't3', 't4']);
+    // An open tile stays open across the move, because a tile is keyed by the
+    // state it stands for and that state has not changed.
+    expect(groups(entries)[0]?.key).toBe(groups(layOut(before))[1]?.key);
+  });
+
+  it('passes through anything the view does not describe as a Token', () => {
+    // A choice's options can be player IDs or the literals `yes`/`no`, and a
+    // list of them goes through the same layout function as the battlefield.
+    const view = boardOf([token('t1'), token('t2')]);
+    const entries = groupEntities(view, ['yes', 'no', 'player_2']);
+    expect(entries).toEqual([
+      { kind: 'single', key: 'yes', instanceId: 'yes' },
+      { kind: 'single', key: 'no', instanceId: 'no' },
+      { kind: 'single', key: 'player_2', instanceId: 'player_2' },
+    ]);
+  });
+
+  it('says the picked state last, after the state the board decided', () => {
+    expect(tokenGroupSummary(token('t1'), noSelection, (playerId) => playerId, '→ Rival')).toEqual([
+      '1 / 1',
+      'ready',
+      '→ Rival',
+    ]);
+  });
+
+  it('names a tile and its members for a screen reader', () => {
+    // The count is words rather than "×11", and the shared state comes with it.
+    expect(tokenGroupLabel('Goblin', 11, ['1 / 1', 'newly deployed'])).toBe(
+      'Goblin stack of 11 — 1 / 1, newly deployed',
+    );
+    expect(tokenGroupLabel('Goblin', 11, [])).toBe('Goblin stack of 11');
+    // Eleven identical cards are eleven distinguishable buttons.
+    expect(tokenMemberLabel('Goblin', 0, 11)).toBe('Goblin 1 of 11');
+    expect(tokenMemberLabel('Goblin', 10, 11)).toBe('Goblin 11 of 11');
   });
 });

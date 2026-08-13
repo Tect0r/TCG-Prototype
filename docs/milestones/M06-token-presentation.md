@@ -106,13 +106,63 @@ Show count, representative card, state summary, and clear expansion affordance.
       loses no Token and invents none) and 3 in `match-flow.test.tsx` driving
       the real board through the fake transport.
 
-## M06.2 — Individual interaction
+## M06.2 — Individual interaction — **done (2026-08-13)**
 
 From a group, players must still be able to select exact instances for attacks,
 blocks, targets, sacrifice, activation, and inspection. When state diverges, the
 instance moves to the appropriate visual group deterministically.
 
 Keyboard and screen-reader interaction must expose count and selectable members.
+
+### Checklist
+
+- [x] The grouping layer lays out **any** list of entities from one view, not
+      only a battlefield: `groupBattlefield` is now `groupEntities`, and it is
+      what draws a seat's units, a pending choice's `validEntityIds` and the
+      sources offering an activated ability. Anything the view does not describe
+      as a Token — a player ID, a `yes`/`no` option — comes back as its own tile
+      untouched.
+- [x] A thirteenth key field, `selection`: the viewer's own **uncommitted** pick
+      — an attacker aimed at a seat, a blocker assigned to an attacker, an
+      option ticked in a choice. Local, already on that player's screen, so no
+      boundary moves. Folding it into the key is what makes a half-built
+      declaration readable on a board of a hundred Tokens, and it puts the
+      picked Tokens in the same tile the engine's own `attacking` will put them
+      in a moment later, so confirming does not rearrange the board. The marker
+      is also the words the tile prints, so the two cannot disagree.
+- [x] A tile is still **not** a targeting unit (M06.1's recorded decision):
+      clicking one only expands it. Every action — attack, block, target,
+      sacrifice, activation, inspection — leaves through a member rendered by
+      the caller's own `renderEntity`, the same function that draws a lone
+      entity, so there is one interaction path and one instance ID on the wire.
+- [x] Divergence is deterministic and tested in both places it shows: a Token
+      whose state changes joins the **existing** tile for its new state rather
+      than starting one, and an open tile stays open across the move because a
+      tile is keyed by the state it stands for. Expansion is keyed by list plus
+      grouping key, so two lists showing the same Tokens never share a tile or a
+      DOM id.
+- [x] Activated abilities are one row per ability rather than one per source,
+      and each button **names its source**. Two identical Tokens offering the
+      same ability used to be two identical buttons with no way to tell which
+      was about to fire.
+- [x] Keyboard and screen reader: the tile's accessible name carries the count
+      and the shared state in words rather than "×11"; the members are a
+      labelled `group` region reached by Tab, each named "… 3 of 11", so eleven
+      identical cards are eleven distinguishable buttons; Enter or Space opens a
+      stack and Escape anywhere inside closes it and returns focus to the tile.
+- [x] `token_stack` glossary entry extended: a stack is never what you pick,
+      a picked Token leaves its stack, the same stacks appear wherever a
+      question lists your Tokens, and the keyboard works.
+- [x] No protocol, schema, replay or telemetry version moves. Nothing here
+      leaves the client: the layer reads a `PlayerView` and the viewer's own
+      local, uncommitted selection.
+- [x] Tests: 28 in `token-grouping.test.ts` (7 new: the selection field splits
+      and re-gathers, two aims stay apart, a diverged Token joins the existing
+      tile, non-Token entities pass through, the summary says the picked state
+      last, and the two accessible-name builders) and 25 in `match-flow.test.tsx`
+      (4 new: attacking with exact Tokens out of a stack, answering a sacrifice
+      choice with one exact Token, activating the exact source of two identical
+      ones, and opening/naming/closing a stack from the keyboard alone).
 
 ## M06.3 — Cross-view consistency
 

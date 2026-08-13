@@ -151,7 +151,7 @@ const RAW_GLOSSARY = {
       id: 'token_stack',
       term: 'Token stack',
       definition:
-        'A way of drawing the board, not a game object. Tokens appear as one card with a count only when they match in every way that matters: same token, stats, damage, Ready or Exhausted state, Newly Deployed, keywords, Barrier, and job in the current combat. Any token that differs is drawn on its own, because it is not interchangeable. Expand a stack and every token is there, each still its own unit with its own damage. A card that affects every token of the same kind reaches them whatever state they are in, so it may cross several stacks.',
+        'A way of drawing the board, not a game object. Tokens share one card with a count only when they match in every way that matters: same token, stats, damage, Ready or Exhausted, Newly Deployed, keywords, Barrier, and job in this combat. Any token that differs is drawn on its own. A stack is never what you pick: open it — by click, or Enter, with Escape to close — and every token is there by name, each still its own unit to attack, block, target, sacrifice or activate with. A token you pick leaves its stack. A card affecting every token of a kind may cross several stacks.',
       seeAlso: ['instance', 'marked_damage', 'newly_deployed'],
       relatedRuleSections: ['card_types'],
     },

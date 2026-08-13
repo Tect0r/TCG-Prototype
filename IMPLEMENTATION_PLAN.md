@@ -13,15 +13,15 @@ After verification, update the evidence and stop.
 
 ## Status
 
-| Milestone                                                                                 | State at baseline                     | Next tranche    |
-| ----------------------------------------------------------------------------------------- | ------------------------------------- | --------------- |
-| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)         | Complete        |
-| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete        |
-| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete        |
-| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete        |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)         | Complete        |
-| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1 done (2026-08-13) | M06.2           |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone |
+| Milestone                                                                                 | State at baseline                           | Next tranche    |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------- | --------------- |
+| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | M01.1–M01.5 done (2026-08-11)               | Complete        |
+| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done)       | Complete        |
+| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)               | Complete        |
+| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)               | Complete        |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.6 done (2026-08-13)               | Complete        |
+| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Q42 answered; M06.1–M06.2 done (2026-08-13) | M06.3           |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain             | Final milestone |
 
 Since M01.2, an unfinished card makes a deck illegal by name. The spectator
 refuses such a precon and runs it only under a deliberately named developer
@@ -617,6 +617,42 @@ not a new disclosure — `barrier_consumed` is already an unredacted log event.
 `CardInstance` since Barrier shipped, and it is the projection that changed
 rather than the state. No replay, telemetry or manifest version moves, because no
 artefact carries a view.
+
+Since M06.2, a stack is something you can pick **out of**, and the layer that
+draws one draws every list a Token can appear in. `groupBattlefield` is now
+`groupEntities`, and the same call lays out a seat's units, a pending choice's
+`validEntityIds` and the sources offering an activated ability — so sacrificing
+one of sixty identical Tokens is one tile with an expansion rather than sixty
+identical buttons, and a player ID or a `yes`/`no` option passes through as its
+own tile because the view never described it as a Token. A tile is still not a
+targeting unit: clicking one only expands it, and every action leaves through a
+member drawn by the **same** function that draws a lone entity, so there is one
+interaction path and one exact instance ID on the wire.
+
+The key gains a thirteenth field, `selection`: the viewer's own uncommitted pick
+— an attacker aimed at a seat, a blocker assigned to an attacker, an option
+ticked in a choice. It is local and already on that player's screen, so no
+observation boundary moves, and it earns its place twice. It makes a half-built
+declaration readable on a board of a hundred Tokens, and it puts the aimed
+Tokens in the same tile the engine's own `attacking` will put them in a moment
+later, so confirming does not rearrange the board underneath the player. The
+marker is also the words the tile prints, so a tile still cannot summarise a
+group by anything that did not decide it. Divergence is deterministic in both
+directions: a Token whose state changes joins the **existing** tile for its new
+state rather than starting one, an open tile stays open across the move because
+a tile is keyed by the state it stands for, and expansion is keyed by list plus
+grouping key so two lists showing the same Tokens never share a tile or a DOM
+id.
+
+Two smaller repairs fell out of it. An activated ability is now one row per
+ability with its sources laid out underneath, and each button **names its
+source** — two identical Tokens offering the same ability were previously two
+identical buttons with no way to tell which was about to fire. And the stack is
+operable without a mouse: the tile's accessible name carries the count and the
+shared state in words rather than "×11", the members are a labelled `group`
+region whose entries are named "… 3 of 11", and Escape inside an open stack
+closes it and hands focus back rather than making a player tab out past a
+hundred Tokens. No version moves anywhere — nothing here leaves the client.
 
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and

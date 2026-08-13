@@ -47,6 +47,25 @@ import type { CardInstanceView, PlayerView } from '@tcg/rules-engine';
  * by the same player, whatever state they are in — so a card that hits "a Token
  * stack" reaches across several tiles on purpose. A tile is a way to read the
  * board, and the engine's answer to "what did that card hit" is unchanged by it.
+ *
+ * ## The viewer's own half-made decision (M06.2)
+ *
+ * A thirteenth field joins the key: `selection`, the marker the caller puts on
+ * an entity the viewer has already picked but not yet committed — an attacker
+ * aimed at a seat, a blocker assigned to an attacker, an option ticked in a
+ * pending choice. It is local, uncommitted and on the viewer's own screen, so
+ * reading it crosses no boundary; and folding it into the key is what makes
+ * three Tokens aimed at one seat a tile of their own **before** the declaration
+ * is confirmed, exactly as the engine's `attacking` will split them the moment
+ * it is. The marker is also the words the tile shows, so a tile can never
+ * summarise a group by something that did not decide it.
+ *
+ * ## Not only the battlefield
+ *
+ * The same rule lays out any list of entity IDs drawn from one view — a seat's
+ * units, a pending choice's `validEntityIds`, the sources offering an activated
+ * ability. Anything the view does not describe as a Token comes back as its own
+ * tile, so a player ID or a `yes`/`no` option is passed through untouched.
  */
 
 /** Which fields of the view a Token's tile identity is cut from. */
@@ -63,6 +82,8 @@ export const TOKEN_GROUP_KEY_FIELDS = [
   'barrierSpent',
   'attacking',
   'blocking',
+  /** The viewer's own uncommitted pick, if any (M06.2). */
+  'selection',
 ] as const;
 
 /** What this Token is doing in the combat currently on the board. */
@@ -113,7 +134,11 @@ function combatRoles(view: PlayerView): ReadonlyMap<string, TokenCombatRole> {
  * list is sorted so that two Tokens granted the same keywords in a different
  * order are still the same Token. The string is opaque: nothing parses it back.
  */
-export function tokenGroupKey(instance: CardInstanceView, role: TokenCombatRole): string {
+export function tokenGroupKey(
+  instance: CardInstanceView,
+  role: TokenCombatRole,
+  selection: SelectionMarker = null,
+): string {
   return [
     instance.controller,
     instance.definitionId,
@@ -127,11 +152,20 @@ export function tokenGroupKey(instance: CardInstanceView, role: TokenCombatRole)
     instance.barrierSpent ? 'barrier_spent' : 'barrier_intact',
     role.attackingPlayerId ?? '-',
     role.blockingInstanceId ?? '-',
+    selection ?? '-',
   ].join('|');
 }
 
-/** One tile on a battlefield: a lone Unit, or a run of identical Tokens. */
-export type BoardEntry =
+/**
+ * What the viewer has already picked, in the words shown on the tile.
+ *
+ * `null` is "not picked". Anything else both splits the group and is printed on
+ * it, which is what keeps the two from disagreeing.
+ */
+export type SelectionMarker = string | null;
+
+/** One tile in a laid-out list: a lone entity, or a run of identical Tokens. */
+export type TileEntry =
   | {
       readonly kind: 'single';
       /** Stable React key. For a single, the instance's own ID. */
@@ -155,9 +189,11 @@ export type BoardEntry =
        */
       readonly representativeInstanceId: string;
       readonly role: TokenCombatRole;
+      /** The uncommitted pick every member shares, or `null` if none has one. */
+      readonly selection: SelectionMarker;
     };
 
-export interface GroupBattlefieldOptions {
+export interface GroupEntitiesOptions {
   /**
    * Off returns one `single` entry per unit, in the seat's own order — the
    * pre-M06 board exactly. Kept as a real code path rather than a debug flag
@@ -167,23 +203,32 @@ export interface GroupBattlefieldOptions {
   readonly enabled?: boolean;
   /** Tokens are only worth a tile once there are at least this many. */
   readonly minimumGroupSize?: number;
+  /**
+   * The viewer's own uncommitted pick for one entity, as words (M06.2).
+   *
+   * Part of the key, so a picked Token leaves the tile it was in and joins the
+   * tile of everything picked the same way — which is the same movement the
+   * engine's own state produces once the decision is committed.
+   */
+  readonly selectionOf?: (instanceId: string) => SelectionMarker;
 }
 
 /** Below this a group costs a player a click and saves them nothing. */
 export const DEFAULT_MINIMUM_GROUP_SIZE = 2;
 
 /**
- * Lays one seat's battlefield out as tiles.
+ * Lays a list of entities out as tiles.
  *
- * Order is the seat's own `units` order — arrival order — taken from the
- * position of each group's **first** member, so a tile does not jump to the end
- * of the row when a Token is added to it.
+ * Order is the list's own order — arrival order for a battlefield — taken from
+ * the position of each group's **first** member, so a tile does not jump to the
+ * end of the row when a Token is added to it, and a member that leaves a group
+ * takes its own arrival position rather than the group's.
  */
-export function groupBattlefield(
+export function groupEntities(
   view: PlayerView,
   instanceIds: readonly string[],
-  options: GroupBattlefieldOptions = {},
-): BoardEntry[] {
+  options: GroupEntitiesOptions = {},
+): TileEntry[] {
   const enabled = options.enabled ?? true;
   const minimum = options.minimumGroupSize ?? DEFAULT_MINIMUM_GROUP_SIZE;
 
@@ -193,20 +238,23 @@ export function groupBattlefield(
 
   const roles = combatRoles(view);
   // Built in one pass so a group keeps the position of its first member.
-  const entries: BoardEntry[] = [];
+  const entries: TileEntry[] = [];
   const groupIndex = new Map<string, number>();
 
   for (const instanceId of instanceIds) {
     const instance = view.instances[instanceId];
-    // A unit the view does not describe cannot be grouped by state it has not
-    // been told, so it stays its own tile rather than joining one on a guess.
+    // An entity the view does not describe cannot be grouped by state it has
+    // not been told, so it stays its own tile rather than joining one on a
+    // guess. That is also what passes a player ID or a `yes`/`no` option
+    // through a choice's option list untouched.
     if (!instance || !instance.isToken) {
       entries.push({ kind: 'single', key: instanceId, instanceId });
       continue;
     }
 
     const role = roles.get(instanceId) ?? NOT_IN_COMBAT;
-    const key = tokenGroupKey(instance, role);
+    const selection = options.selectionOf?.(instanceId) ?? null;
+    const key = tokenGroupKey(instance, role, selection);
     const existing = groupIndex.get(key);
     if (existing === undefined) {
       groupIndex.set(key, entries.length);
@@ -217,6 +265,7 @@ export function groupBattlefield(
         instanceIds: [instanceId],
         representativeInstanceId: instanceId,
         role,
+        selection,
       });
       continue;
     }
@@ -248,6 +297,7 @@ export function tokenGroupSummary(
   instance: CardInstanceView,
   role: TokenCombatRole,
   nameOf: (playerId: string) => string,
+  selection: SelectionMarker = null,
 ): string[] {
   const parts: string[] = [];
   parts.push(`${instance.attack} / ${Math.max(0, instance.health - instance.markedDamage)}`);
@@ -261,11 +311,40 @@ export function tokenGroupSummary(
   if (instance.barrierSpent) parts.push('barrier spent');
   if (role.attackingPlayerId !== null) parts.push(`attacking ${nameOf(role.attackingPlayerId)}`);
   if (role.blockingInstanceId !== null) parts.push('blocking');
+  // Last, because it is the one part of the summary the viewer decided rather
+  // than the board (M06.2).
+  if (selection !== null) parts.push(selection);
   return parts;
 }
 
-/** Every instance behind a laid-out board, in order. The inverse of grouping. */
-export function entryInstanceIds(entries: readonly BoardEntry[]): string[] {
+/**
+ * The accessible name of a tile (M06.2).
+ *
+ * A screen reader is read the count and the shared state as words. The visible
+ * tile prints "×11", which is read out as a symbol and a number by some
+ * screen readers and skipped entirely by others; and the expansion state is
+ * `aria-expanded`'s job, so it is deliberately not in the name.
+ */
+export function tokenGroupLabel(name: string, count: number, summary: readonly string[]): string {
+  const head = `${name} stack of ${count}`;
+  return summary.length > 0 ? `${head} — ${summary.join(', ')}` : head;
+}
+
+/**
+ * The accessible name of one member of an expanded tile (M06.2).
+ *
+ * Identical Tokens are, by construction, identical: without an ordinal a
+ * screen-reader user hears the same button eleven times and cannot tell which
+ * one they are about to sacrifice. The ordinal is presentation — it is the
+ * member's position in the tile, not an engine identity — and every action it
+ * leads to still carries the member's own instance ID.
+ */
+export function tokenMemberLabel(name: string, index: number, count: number): string {
+  return `${name} ${index + 1} of ${count}`;
+}
+
+/** Every instance behind a laid-out list, in order. The inverse of grouping. */
+export function entryInstanceIds(entries: readonly TileEntry[]): string[] {
   return entries.flatMap((entry) =>
     entry.kind === 'single' ? [entry.instanceId] : [...entry.instanceIds],
   );

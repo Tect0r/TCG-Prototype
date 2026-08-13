@@ -693,9 +693,13 @@ describe('free-for-all match board', () => {
   }
 
   const ownBoard = (): HTMLElement => screen.getByLabelText('Your battlefield');
-  /** The stack tile, named by its count so it cannot match a single card. */
+  /**
+   * The stack tile, found by its accessible name (M06.2). It says "stack of
+   * 11" in words rather than "×11", which is also what keeps it distinct from
+   * the eleven members named "Soldier 1 of 11" underneath it.
+   */
   const stackTile = (): HTMLElement =>
-    within(ownBoard()).getByRole('button', { name: /Soldier.*11/ });
+    within(ownBoard()).getByRole('button', { name: /Soldier stack of 11/ });
 
   it('draws identical Tokens as one counted tile, and the odd one out on its own', async () => {
     await boardWithView(tokenBoard());
@@ -727,10 +731,184 @@ describe('free-for-all match board', () => {
     // grouping is presentation and the toggle proves it.
     expect(within(ownBoard()).getAllByRole('button')).toHaveLength(12);
     expect(
-      within(ownBoard()).queryByRole('button', { name: /Soldier.*11/ }),
+      within(ownBoard()).queryByRole('button', { name: /Soldier stack of 11/ }),
     ).not.toBeInTheDocument();
     expect(harness.transport().sent.some((message) => message.type === 'submit_action')).toBe(
       false,
     );
+  });
+
+  /* ------------------------------------ M06.2: picking one Token out of a stack */
+
+  /** The same crowd, with every Token a legal attacker. */
+  function attackReadyTokenBoard(): PlayerView {
+    const base = tokenBoard();
+    const units = base.players.find((player) => player.playerId === 'player_1')?.units ?? [];
+    return {
+      ...base,
+      phase: 'declare_attackers',
+      legalActions: {
+        ...base.legalActions,
+        mulligan: null,
+        canPassPhase: false,
+        attacking: {
+          legalAttackers: [...units],
+          legalDefenders: ['player_2', 'player_3', 'player_4'],
+        },
+      },
+    };
+  }
+
+  it('aims exact Tokens out of a stack, and gathers the aimed ones into their own tile', async () => {
+    const harness = await boardWithView(attackReadyTokenBoard());
+    const member = (name: string): HTMLElement => within(ownBoard()).getByRole('button', { name });
+
+    await harness.user.click(stackTile());
+    // Eleven identical Tokens are eleven individually named buttons, so a
+    // person and a screen reader can both say which one is attacking.
+    await harness.user.click(member('Soldier 1 of 11'));
+    await harness.user.click(screen.getByRole('button', { name: 'Attack Rival' }));
+
+    // The aimed Token has left the tile it was drawn in.
+    expect(within(ownBoard()).getByRole('button', { name: /Soldier stack of 10/ })).toBeVisible();
+
+    await harness.user.click(member('Soldier 1 of 10'));
+    await harness.user.click(screen.getByRole('button', { name: 'Attack Rival' }));
+
+    // And the two aimed the same way are one tile of their own — which is
+    // exactly where the engine's `attacking` puts them once this is confirmed,
+    // so confirming does not rearrange the board under the player.
+    expect(
+      within(ownBoard()).getByRole('button', { name: /Soldier stack of 2 —.*→ Rival/ }),
+    ).toBeVisible();
+    expect(within(ownBoard()).getByRole('button', { name: /Soldier stack of 9/ })).toBeVisible();
+
+    await harness.user.click(screen.getByRole('button', { name: 'Confirm 2 attacker(s)' }));
+    // Exact instances, not a stack: the engine is told which two Tokens.
+    expect(harness.transport().last('submit_action')?.action).toEqual({
+      type: 'declare_attackers',
+      playerId: 'player_1',
+      attacks: [
+        { attackerInstanceId: 'tok_1', defenderPlayerId: 'player_2' },
+        { attackerInstanceId: 'tok_2', defenderPlayerId: 'player_2' },
+      ],
+    });
+  });
+
+  /** The same crowd, with the game asking which one to sacrifice. */
+  function sacrificeChoiceBoard(): PlayerView {
+    const base = tokenBoard();
+    const units = base.players.find((player) => player.playerId === 'player_1')?.units ?? [];
+    return {
+      ...base,
+      awaitingChoiceFrom: 'player_1',
+      pendingChoice: {
+        id: 'choice_sac',
+        playerId: 'player_1',
+        type: 'select_units',
+        reason: 'sacrifice_cost',
+        zone: 'battlefield',
+        minimum: 1,
+        maximum: 1,
+        validEntityIds: [...units],
+        ordered: false,
+        sourceInstanceId: null,
+        provenance: {
+          origin: 'cost',
+          itemId: null,
+          effectIndex: null,
+          effectType: null,
+          sourceControllerId: 'player_1',
+          chooser: 'source_controller',
+          targetRelation: 'self',
+          intent: 'detriment',
+        },
+        continuation: {
+          kind: 'cost_selection',
+          intent: { kind: 'play_card', instanceId: 'tok_1' },
+          paid: {},
+          costIndex: 0,
+        },
+      },
+    };
+  }
+
+  it('answers a choice with one exact Token out of a stack', async () => {
+    const harness = await boardWithView(sacrificeChoiceBoard());
+    // Scoped to the question: the same Tokens are on the battlefield above it.
+    const panel = (): HTMLElement => screen.getByLabelText('Pending choice');
+
+    await harness.user.click(within(panel()).getByRole('button', { name: /Soldier stack of 11/ }));
+    await harness.user.click(within(panel()).getByRole('button', { name: 'Soldier 3 of 11' }));
+
+    // The ticked option leaves the tile, so what has been answered is legible
+    // without expanding anything.
+    expect(within(panel()).getByRole('button', { name: /Soldier stack of 10/ })).toBeVisible();
+
+    await harness.user.click(within(panel()).getByRole('button', { name: 'Confirm' }));
+    expect(harness.transport().last('submit_action')?.action).toEqual({
+      type: 'submit_choice',
+      playerId: 'player_1',
+      choiceId: 'choice_sac',
+      selectedIds: ['tok_3'],
+    });
+  });
+
+  /** The same crowd, with two of them offering the same activated ability. */
+  function abilityTokenBoard(): PlayerView {
+    const base = tokenBoard();
+    return {
+      ...base,
+      legalActions: {
+        ...base.legalActions,
+        mulligan: null,
+        activatableAbilities: [
+          { sourceInstanceId: 'tok_1', abilityId: 'scrap_charge', energyCost: 1 },
+          { sourceInstanceId: 'tok_2', abilityId: 'scrap_charge', energyCost: 1 },
+        ],
+      },
+    };
+  }
+
+  it('activates the exact source, even when two identical Tokens offer the ability', async () => {
+    const harness = await boardWithView(abilityTokenBoard());
+
+    // One row per ability rather than one per source, and it says which cards
+    // are offering it: two bare "Ability: scrap charge" buttons named nothing.
+    await harness.user.click(
+      screen.getByRole('button', { name: /Ability: scrap charge \(1⚡\) stack of 2/ }),
+    );
+    await harness.user.click(
+      screen.getByRole('button', { name: 'Ability: scrap charge (1⚡) — Soldier 2 of 2' }),
+    );
+
+    expect(harness.transport().last('submit_action')?.action).toEqual({
+      type: 'activate_ability',
+      playerId: 'player_1',
+      sourceInstanceId: 'tok_2',
+      abilityId: 'scrap_charge',
+    });
+  });
+
+  it('opens, names and closes a stack from the keyboard alone', async () => {
+    const harness = await boardWithView(attackReadyTokenBoard());
+
+    stackTile().focus();
+    await harness.user.keyboard('{Enter}');
+    expect(stackTile()).toHaveAttribute('aria-expanded', 'true');
+
+    // The members are a labelled region carrying the count, and every member
+    // has a name of its own.
+    const members = within(ownBoard()).getByRole('group', { name: 'Soldier, 11 selectable' });
+    expect(within(members).getAllByRole('button')).toHaveLength(11);
+    expect(stackTile()).toHaveAttribute('aria-controls', members.id);
+
+    within(members).getByRole('button', { name: 'Soldier 7 of 11' }).focus();
+    await harness.user.keyboard('{Escape}');
+
+    // Escape closes the stack and hands focus back to it, rather than leaving
+    // the player to tab out past a hundred Tokens.
+    expect(stackTile()).toHaveAttribute('aria-expanded', 'false');
+    expect(stackTile()).toHaveFocus();
   });
 });
