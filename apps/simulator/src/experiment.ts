@@ -49,6 +49,7 @@ import {
 import { compareEnvironments, type ComparisonReport } from './analysis/compare.js';
 import { computeFlags, type Flag, type SupportLimits } from './analysis/flags.js';
 import { analyzeMechanicSupport, supportLimitsOf } from './analysis/support.js';
+import { analyzeAgentClasses, agentEvidenceOf } from './analysis/agent-classes.js';
 import { REPORT_SCHEMA_VERSION, renderReport } from './reporting/report.js';
 import { experimentPaths, ensureDir, writeCsv, writeJson } from './reporting/sinks.js';
 import { MatchStore } from './reporting/match-store.js';
@@ -939,6 +940,12 @@ async function runRobustnessExperiment(
       pilotIds: config.pilots.map((pilot: PilotSpec) => pilot.id),
     }),
   );
+  // Likewise for the agent class: perturbing a heuristic's weights changes how
+  // it plays, never what class of agent it is, so every arm is judged under one
+  // set of claim limits (M05.4).
+  const profileAgents = agentEvidenceOf(
+    analyzeAgentClasses({ pilotIds: config.pilots.map((pilot: PilotSpec) => pilot.id) }),
+  );
 
   const perProfile = arms.map((arm) => {
     const agg = aggregate(arm.records, { confidence: config.analysis.confidence });
@@ -958,6 +965,7 @@ async function runRobustnessExperiment(
         settings: config.analysis,
         inclusion,
         support: profileSupport,
+        agentEvidence: profileAgents,
         deckCount: resolved.decks.length,
       }),
     };
@@ -1105,6 +1113,14 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     telemetryBlindCards: mechanicSupport.telemetryBlindCards,
   };
 
+  // What class of agent flew it, and therefore which of the flags below this run
+  // is entitled to make at all (M05.4). Independent of the support reading
+  // above: supported cards played by a random pilot are still not evidence
+  // about play.
+  const agentClasses = analyzeAgentClasses({
+    pilotIds: config.pilots.map((pilot: PilotSpec) => pilot.id),
+  });
+
   const flags = computeFlags({
     aggregate: agg,
     clustering,
@@ -1114,6 +1130,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     inclusion,
     sensitivity,
     support: supportLimits,
+    agentEvidence: agentEvidenceOf(agentClasses),
     deckCount: inputs.decks.length,
     ...(displacement.length > 0 ? { displacement } : {}),
     ...(counters ? { counters } : {}),
@@ -1195,6 +1212,7 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     aggregate: agg,
     board: boardAggregate,
     mechanicSupport,
+    agentClasses,
     clustering,
     inclusion,
     pairs,
@@ -1249,7 +1267,13 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     // mechanics responsible, and whether the pilots were legality-only. A v4
     // manifest cannot be migrated to it: the reading was never taken, and the
     // registry it is taken against did not exist.
-    schemaVersion: 5,
+    //
+    // 6 (M05.4): every manifest carries `agentClasses` — the honest agent class
+    // of every pilot that flew, and claim by claim what the run may and may not
+    // be cited for. Not migratable from v5 for the same reason: the taxonomy did
+    // not exist, and a v5 manifest's pilot list cannot be read against it
+    // without assuming today's classification held then.
+    schemaVersion: 6,
     experimentId: config.id,
     kind: config.kind,
     seed: config.seed,
@@ -1303,6 +1327,16 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
      */
     mechanicSupport,
     /**
+     * What class of agent flew this run, and what it may be cited for (M05.4).
+     *
+     * Beside `mechanicSupport` because the two are independent halves of "is
+     * this evidence": one is about the cards, one is about the player.
+     * `registryVersion` pins the taxonomy the citation was made against, and
+     * `pilots` records the classification of each pilot at the time rather than
+     * leaving it to be re-derived from an ID by a later build.
+     */
+    agentClasses,
+    /**
      * The ordered matchup matrix this run produced, when it was asked for (M03.4).
      *
      * The counts are here rather than only in the artifact so that "every
@@ -1344,12 +1378,17 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     // 4 (M05.1): the mechanic support reading, for the same reason — the
     // report's support section is a view of this, and a flag downgraded for
     // missing support can be traced back to the mechanic that caused it.
-    schemaVersion: 4,
+    //
+    // 5 (M05.4): the agent class reading, and `aggregate.run.agentClassWinRates`
+    // beside the pilot rates, so the per-class outcome the report prints has a
+    // machine-readable original and is never re-derived by averaging.
+    schemaVersion: 5,
     configHash: configHashOf(config),
     thresholds: settings,
     aggregate: agg,
     board: boardAggregate,
     mechanicSupport,
+    agentClasses,
     clusters: clustering.clusters,
     clusterMatchups: clustering.matchups,
     inclusion,

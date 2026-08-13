@@ -193,7 +193,7 @@ wrong half the time — the same reason is raised at your own Ready Step and at
 somebody else's. The prompt now reads `provenance.targetRelation` and asks the
 question the player is actually being asked.
 
-## M05.4 — Honest agent classes
+## M05.4 — Honest agent classes — **done (2026-08-13)**
 
 Encode and report distinct claims:
 
@@ -203,6 +203,75 @@ Encode and report distinct claims:
 - human playtest: required before final balance conclusions.
 
 Never pool these as one skill distribution.
+
+### Checklist
+
+- [x] `packages/bot-interface/src/agent-class.ts` is the registry: four classes
+      and twelve evidence claims, with `AGENT_CLASS_CLAIMS` a total `Record` over
+      **both** vocabularies, so adding a class or a claim without deciding every
+      pair is a compile error. `agentClassGaps()` is its runtime twin in both
+      directions. `AGENT_CLASS_REGISTRY_VERSION` starts at 1 and moves when a
+      classification does.
+- [x] Claims are monotone along the published order and that is **asserted, not
+      assumed**: nothing folds a class set to a rank, so a future class that is
+      genuinely incomparable fails a test instead of being averaged into a skill
+      axis.
+- [x] `PILOT_AGENT_CLASSES` is total over `PILOT_IDS` — a new pilot cannot ship
+      without deciding what a run it flies may be cited for. `aggressive`,
+      `defensive` and `value` are one class with three weight vectors, not three
+      skill levels. `LEGAL_ONLY_PILOT_IDS` is now a **view** of that table (the
+      pilots whose class cannot carry `play_quality`) rather than a second list
+      beside it, so the M05.1 downgrade and this taxonomy cannot disagree.
+- [x] `AGENT_CLASSES_WITHOUT_PILOTS` states that nothing in this build is
+      archetype-aware or a human, so the absence of synergy/sacrifice/control/
+      combo/final-balance evidence is a printed fact rather than an omission a
+      reader has to notice.
+- [x] `FLAG_CLAIMS` maps every flag reason to the claim it rests on, total over
+      `FLAG_REASONS`, so a new review signal is a compile error until somebody
+      decides which class of agent is entitled to make it. `flagClaimGaps()` is
+      the runtime twin.
+- [x] `applyAgentClassLimits` downgrades a signal to `insufficient_data` — never
+      drops it, evidence and interval intact — when the run's classes cannot
+      carry its claim. A set of classes carries a claim only when **all** of them
+      do, because the numbers a flag is computed from pool every seat.
+      `agentClassFlags` raises one `run_quality` note naming the classes and both
+      lists, emitted even when nothing was downgraded.
+- [x] `aggregate`'s `RunSummary` gains `agentClassWinRates`, reported beside the
+      pilot rates and never combined with them; an unrecognised pilot ID gets its
+      own `unclassified` bucket rather than a guess.
+- [x] The report gains `## Agent classes` (report schema 5 → 6) between the
+      review signals and mechanic support, plus a per-class outcome table and a
+      limitations bullet. The manifest (5 → 6) and `summary.json` (4 → 5) carry
+      the `agentClasses` block with the registry version that made the citation.
+- [x] `packages/bot-interface/src/agent-class.test.ts` restates the claim table
+      independently as a mapped type, and `apps/simulator/src/agent-class.test.ts`
+      covers the downgrade, the mixed run, the unclassified pilot, the per-class
+      win rates and the rendered section. `precon-source.test.ts` asserts the
+      block on a real four-precon batch.
+
+### What this changed about existing runs
+
+Two behaviours moved, both deliberately, and both in the direction of claiming
+less:
+
+- **A card-pair or counter-breadth signal is now declined by every run this
+  build can produce.** `strong_card_pair` rests on `synergy` and
+  `single_narrow_counter` on `control`, and no shipped pilot is archetype-aware.
+  This is the milestone's own rule — "archetype-aware: required for synergy,
+  sacrifice, control, and combo evidence" — encoded rather than described. M05.5
+  is what turns them back on.
+- **A run mixing `random_legal` with a heuristic now declines its play-quality
+  signals.** M05.1 deliberately made its own `legalOnlyPilots` switch "every, not
+  any", so as not to throw away a properly flown arm. That reading is superseded
+  here for the pooled columns only: a pooled win rate genuinely mixes both seats,
+  and citing it as play quality is exactly the pooled skill distribution this
+  tranche exists to forbid. The properly flown arm is not thrown away — it is
+  reported in its own row, which is what M05.1 had no place to put.
+
+`seat_sensitivity` deliberately survives a random-legal run: the schedule mirrors
+seats, so uniform play is an unbiased probe of a turn-order advantage. That is
+the one outcome claim `random_legal` carries, and it is named
+`structural_asymmetry` rather than folded into play quality.
 
 ## M05.5 — Archetype registry and deck plans
 

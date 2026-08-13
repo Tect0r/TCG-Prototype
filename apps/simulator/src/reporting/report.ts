@@ -18,7 +18,13 @@ import type { GenerationReport } from '../deck-search/evolve.js';
 import type { MatchupMatrix } from '../matchup-matrix.js';
 import type { BoardAggregate, BoardMeasure } from '../analysis/board.js';
 import type { MechanicSupportAnalysis } from '../analysis/support.js';
+import {
+  agentClassLabel,
+  describeAgentClass,
+  type AgentClassAnalysis,
+} from '../analysis/agent-classes.js';
 import { SUPPORT_DIMENSIONS } from '@tcg/card-data';
+import { EVIDENCE_CLAIM_QUESTIONS, type AgentClass, type EvidenceClaim } from '@tcg/bot-interface';
 import { describeStallDefinition } from '@tcg/board-telemetry';
 import { round } from '../analysis/stats.js';
 
@@ -57,8 +63,12 @@ import { round } from '../analysis/stats.js';
  * deck, the weakest engine/help/pilot/telemetry support its cards reach and the
  * mechanics responsible; and the flag table may now carry review signals that
  * were downgraded because the run's own support could not carry them.
+ *
+ * Version 6 (M05.4): every batch gains an agent-class section naming the class
+ * of agent that flew it and, claim by claim, what it may and may not be cited
+ * for; and the outcome section reports win rate per class, never pooled.
  */
-export const REPORT_SCHEMA_VERSION = 5;
+export const REPORT_SCHEMA_VERSION = 6;
 
 export interface ReportPilot {
   readonly id: string;
@@ -118,6 +128,12 @@ export interface ReportInputs {
    * Derived from the mechanic support registry, never from a card's own flag.
    */
   readonly mechanicSupport: MechanicSupportAnalysis;
+  /**
+   * What class of agent flew this run, and what that lets it be cited for
+   * (M05.4). Separate from mechanic support on purpose: supported cards played
+   * by a random pilot are still not evidence about play.
+   */
+  readonly agentClasses: AgentClassAnalysis;
   readonly clustering: ClusteringResult;
   readonly inclusion: InclusionAnalysis;
   readonly pairs: readonly CardPair[];
@@ -195,6 +211,7 @@ export function renderReport(inputs: ReportInputs): string {
   section(lines, environmentDiff(inputs));
   section(lines, referencePopulation(inputs));
   section(lines, flagSection(inputs));
+  section(lines, agentClassSection(inputs));
   section(lines, mechanicSupportSection(inputs));
   section(lines, outcomes(inputs));
   section(lines, boardSection(inputs));
@@ -232,6 +249,12 @@ function limitations(inputs: ReportInputs): string[] {
     `Pilots are transparent heuristics, not skilled players: ` +
       `${inputs.pilots.map((pilot) => `${pilot.id}@${pilot.version}`).join(', ')}. ` +
       'A card that rewards play the pilots cannot perform will look weak here.',
+    `Agent class(es) flown: ` +
+      `${inputs.agentClasses.classes.map(agentClassLabel).join(', ') || 'none recorded'}. ` +
+      `This run may be cited for ${inputs.agentClasses.carried.join(', ') || 'nothing'} and not ` +
+      `for ${inputs.agentClasses.declined.map((entry) => entry.claim).join(', ') || 'nothing'}. ` +
+      'The classes are different instruments rather than skill levels, and their results are ' +
+      'never pooled into one distribution; the agent class section says which is which.',
     `${agg.run.usableMatches} usable matches over ${inputs.deckCount} decks. ` +
       `Card conclusions need ${settings.minMatchesPerCard} seat-matches; pair conclusions need ` +
       `${settings.minPairSupport} co-occurrences in the "both" cell and ` +
@@ -609,6 +632,125 @@ function outcomes(inputs: ReportInputs): string[] {
     }
   }
 
+  // Reported separately from the pilot table and never combined with it (M05.4).
+  // Two pilots of one class are two settings of one instrument; two classes are
+  // two instruments, and the difference is what a row may be cited for.
+  if (agg.run.agentClassWinRates.length > 1) {
+    lines.push('');
+    lines.push(
+      '**Win rate by agent class.** These rows are different instruments, not different skill ' +
+        'levels, and they are deliberately not averaged into one distribution:',
+    );
+    lines.push('');
+    lines.push('| Agent class | Pilots | Win rate | Interval | Seat-matches |');
+    lines.push('| --- | --- | --- | --- | --- |');
+    for (const entry of agg.run.agentClassWinRates) {
+      lines.push(
+        `| ${entry.agentClass} | ${entry.pilotIds.join(', ')} | ${pct(entry.rate.point)} | ` +
+          `${interval(entry.rate.low, entry.rate.high, pct)} | ${entry.rate.total} |`,
+      );
+    }
+  }
+
+  return lines;
+}
+
+/* ------------------------------------------------------------ agent classes */
+
+/**
+ * Which class of agent flew this run, and what that entitles it to claim
+ * (M05.4).
+ *
+ * Placed beside the mechanic support section because the two answer halves of
+ * one question and neither substitutes for the other: support says whether the
+ * *cards* were something a pilot could play, and this says whether the *pilot*
+ * was the kind of agent whose results mean what the report is about to say. A
+ * run of perfectly supported cards flown by `random_legal` scores full marks in
+ * the section below and is still not evidence about play.
+ *
+ * It is an *observation*. There is no score and no threshold: a class either
+ * carries a claim or it does not, and the table prints the registry.
+ */
+function agentClassSection(inputs: ReportInputs): string[] {
+  const analysis = inputs.agentClasses;
+  if (analysis.pilots.length === 0) return [];
+
+  const rates = new Map(
+    inputs.aggregate.run.agentClassWinRates.map((entry) => [entry.agentClass, entry.rate]),
+  );
+
+  const lines = ['## Agent classes *(observation)*', ''];
+  lines.push(
+    'A pilot is an instrument, not a skill level. What a run may be cited for is decided by the ' +
+      'class of agent that flew it, and these classes are **never pooled into one skill ' +
+      'distribution** — each one gets its own row below, and a signal resting on a claim the ' +
+      'run cannot carry is downgraded to insufficient data rather than printed.',
+  );
+  lines.push('');
+
+  lines.push('| Class | Pilots | Seat-matches | Win rate | What it is |');
+  lines.push('| --- | --- | --- | --- | --- |');
+  for (const agentClass of analysis.classes) {
+    const pilots = analysis.pilots
+      .filter((pilot) => pilot.agentClass === agentClass)
+      .map((pilot) => `\`${pilot.pilotId}\``);
+    const rate = rates.get(agentClass);
+    lines.push(
+      `| ${agentClassLabel(agentClass)} | ${pilots.join(', ')} | ${rate?.total ?? 0} | ` +
+        `${rate ? pct(rate.point) : '—'} | ${describeAgentClass(agentClass)} |`,
+    );
+  }
+  if (analysis.unclassifiedPilotIds.length > 0) {
+    const rate = rates.get('unclassified');
+    lines.push(
+      `| unclassified | ${analysis.unclassifiedPilotIds.map((id) => `\`${id}\``).join(', ')} | ` +
+        `${rate?.total ?? 0} | ${rate ? pct(rate.point) : '—'} | ` +
+        'A pilot ID this build does not know. Not a weak agent — an unvouched-for one. |',
+    );
+  }
+  lines.push('');
+
+  if (analysis.classes.length > 1) {
+    lines.push(
+      '**More than one class flew this run.** The rows above are reported apart and are not ' +
+        'averaged. Every pooled number elsewhere in this report mixes them, so a pooled number ' +
+        'is only as good as the weakest class in the run.',
+    );
+    lines.push('');
+  }
+
+  lines.push('| Claim | Question | This run |');
+  lines.push('| --- | --- | --- |');
+  const blocked = new Map<EvidenceClaim, readonly AgentClass[]>(
+    analysis.declined.map((entry) => [entry.claim, entry.blockedBy]),
+  );
+  for (const claim of analysis.carried) {
+    lines.push(`| \`${claim}\` | ${EVIDENCE_CLAIM_QUESTIONS[claim]} | **carried** |`);
+  }
+  for (const entry of analysis.declined) {
+    const by = blocked.get(entry.claim) ?? [];
+    const why = entry.unclassifiedPilots
+      ? 'no classifiable pilot flew this run'
+      : `${by.map(agentClassLabel).join(', ')} cannot support it`;
+    lines.push(
+      `| \`${entry.claim}\` | ${EVIDENCE_CLAIM_QUESTIONS[entry.claim]} | declined — ${why} |`,
+    );
+  }
+  lines.push('');
+
+  if (analysis.classesWithoutPilots.length > 0) {
+    lines.push(
+      `**No pilot in this build implements ${analysis.classesWithoutPilots.map(agentClassLabel).join(' or ')}.** ` +
+        'That is a fact about the software, not about this configuration: no run it can produce ' +
+        'today is evidence for the claims those classes carry, however many matches it plays.',
+    );
+    lines.push('');
+  }
+
+  lines.push(
+    `Agent class registry v${analysis.registryVersion}; agent class analysis schema ` +
+      `v${analysis.schemaVersion}.`,
+  );
   return lines;
 }
 

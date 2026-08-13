@@ -67,13 +67,38 @@ export {
   createPilot,
   pilotIdSchema,
   pilotSpecSchema,
+  agentClassOf,
+  pilotsInAgentClass,
   PILOT_IDS,
   PILOT_BASE_WEIGHTS,
+  PILOT_AGENT_CLASSES,
+  AGENT_CLASSES_WITHOUT_PILOTS,
   LEGAL_ONLY_PILOT_IDS,
   type PilotId,
   type PilotSpec,
   type PilotSpecInput,
 } from './registry.js';
+
+export {
+  agentClassDefinition,
+  agentClassGaps,
+  agentClassSchema,
+  agentClassSupports,
+  assertAgentClassRegistryComplete,
+  claimCarriedBy,
+  claimsCarriedBy,
+  claimsOf,
+  classesBlocking,
+  evidenceClaimSchema,
+  AGENT_CLASSES,
+  AGENT_CLASS_REGISTRY,
+  AGENT_CLASS_REGISTRY_VERSION,
+  EVIDENCE_CLAIMS,
+  EVIDENCE_CLAIM_QUESTIONS,
+  type AgentClass,
+  type AgentClassDefinition,
+  type EvidenceClaim,
+} from './agent-class.js';
 
 export {
   perturbPilot,

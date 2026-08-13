@@ -1,4 +1,13 @@
 import { z } from 'zod';
+import {
+  AGENT_CLASS_REGISTRY,
+  EVIDENCE_CLAIMS,
+  claimCarriedBy,
+  classesBlocking,
+  type AgentClass,
+  type EvidenceClaim,
+} from '@tcg/bot-interface';
+import type { AgentEvidence } from './agent-classes.js';
 import type { AnalysisSettings } from '../config.js';
 import type { Aggregate, CardSummary } from './aggregate.js';
 import type { Cluster, ClusterMatchup, ClusteringResult } from './clusters.js';
@@ -64,9 +73,72 @@ export const FLAG_REASONS = [
    * been downgraded.
    */
   'unsupported_mechanics',
+  /**
+   * What class of agent flew this run and what that lets it be cited for
+   * (M05.4). A `run_quality` note, always emitted, and the reason a balance
+   * signal beside it may have been downgraded.
+   */
+  'agent_class_evidence',
 ] as const;
 export const flagReasonSchema = z.enum(FLAG_REASONS);
 export type FlagReason = z.infer<typeof flagReasonSchema>;
+
+/**
+ * The evidence claim each flag rests on (M05.4).
+ *
+ * A total `Record` over `FLAG_REASONS`, so a new review signal is a compile
+ * error until somebody decides what class of agent is entitled to make it —
+ * the same device `EFFECT_PRICERS` uses for valuation. Getting this wrong is
+ * visible: a card-pair flag that claimed `play_quality` would be printed by a
+ * run of deck-agnostic heuristics that have no idea the two cards go together.
+ *
+ * The `run_quality` reasons map to `run_integrity`, which every class carries.
+ * They are excluded from the downgrade by level anyway — "3 matches ended
+ * abnormally" stays true however blindly the pilots played — but the mapping is
+ * stated rather than left to that coincidence.
+ */
+export const FLAG_CLAIMS: Readonly<Record<FlagReason, EvidenceClaim>> = Object.freeze({
+  broad_cross_cluster_inclusion: 'play_quality',
+  high_inclusion_win_rate_lift: 'play_quality',
+  large_replacement_impact: 'play_quality',
+  /** Two cards being worth more together is precisely the synergy claim. */
+  strong_card_pair: 'synergy',
+  no_unfavourable_context: 'play_quality',
+  /** An answer is only measurable if somebody knew when to hold and play it. */
+  single_narrow_counter: 'control',
+  matchup_polarization: 'play_quality',
+  candidate_displacement: 'play_quality',
+  /** A card left in hand is a pilot's decision before it is a card's problem. */
+  high_dead_hand_rate: 'play_quality',
+  /** Mirrored seats make even uniform random play an unbiased probe of this. */
+  seat_sensitivity: 'structural_asymmetry',
+  pilot_sensitivity: 'run_integrity',
+  opponent_field_sensitivity: 'play_quality',
+  abnormal_terminations: 'run_integrity',
+  excessive_match_length: 'run_integrity',
+  diversity_collapse: 'run_integrity',
+  unsupported_mechanics: 'run_integrity',
+  agent_class_evidence: 'run_integrity',
+});
+
+/**
+ * Runtime twin of the totality check above, in both directions, for the
+ * JSON-driven paths that never see the type.
+ */
+export function flagClaimGaps(): string[] {
+  const problems: string[] = [];
+  const claims = new Set<string>(EVIDENCE_CLAIMS);
+  for (const reason of FLAG_REASONS) {
+    if (!(reason in FLAG_CLAIMS)) problems.push(`flag reason "${reason}" claims nothing.`);
+  }
+  for (const [reason, claim] of Object.entries(FLAG_CLAIMS)) {
+    if (!(FLAG_REASONS as readonly string[]).includes(reason)) {
+      problems.push(`"${reason}" has a claim but is not a flag reason.`);
+    }
+    if (!claims.has(claim)) problems.push(`flag reason "${reason}" claims unknown "${claim}".`);
+  }
+  return problems;
+}
 
 export const flagSchema = z.strictObject({
   level: flagLevelSchema,
@@ -104,6 +176,12 @@ export interface FlagInputs {
    * experiment passes it.
    */
   readonly support?: SupportLimits;
+  /**
+   * What class of agent flew the run, and therefore which claims it may make
+   * (M05.4). Absent means "no class known", which declines nothing — only a
+   * caller with no pilots at all should omit it.
+   */
+  readonly agentEvidence?: AgentEvidence;
   /** Deck count, for the support note's sample size. */
   readonly deckCount?: number;
 }
@@ -121,14 +199,25 @@ export function computeFlags(inputs: FlagInputs): Flag[] {
     ...counterFlags(inputs),
   ];
 
-  // The downgrade runs last and over everything, so a flag added later cannot
-  // quietly escape it by being computed in a new helper (M05.1).
-  const flags = inputs.support
+  // The downgrades run last and over everything, so a flag added later cannot
+  // quietly escape them by being computed in a new helper (M05.1, M05.4).
+  //
+  // Agent class first, because it is the stronger statement: "no pilot in this
+  // run is the kind of agent that can judge this" outranks "one card on the
+  // list is unvalued", and a flag already downgraded is left alone by the second
+  // pass rather than collecting a second sentence.
+  const classLimited = inputs.agentEvidence
     ? [
-        ...applySupportLimits(raw, inputs.support),
-        ...supportFlags(inputs.support, inputs.deckCount ?? 0),
+        ...applyAgentClassLimits(raw, inputs.agentEvidence),
+        ...agentClassFlags(inputs.agentEvidence, inputs.aggregate.run.usableMatches),
       ]
     : raw;
+  const flags = inputs.support
+    ? [
+        ...applySupportLimits(classLimited, inputs.support),
+        ...supportFlags(inputs.support, inputs.deckCount ?? 0),
+      ]
+    : classLimited;
 
   // Stable order: most actionable first, then alphabetically, so two runs of
   // the analyser print the same list in the same order.
@@ -257,6 +346,109 @@ export function supportFlags(limits: SupportLimits, deckCount: number): Flag[] {
         telemetryBlindCards: limits.telemetryBlindCards.join(',') || 'none',
       },
       sampleSize: deckCount,
+      interval: null,
+      threshold: null,
+    },
+  ];
+}
+
+/* ------------------------------------------------- agent-class-limited evidence */
+
+const classList = (classes: readonly AgentClass[]): string =>
+  classes.map((agentClass) => AGENT_CLASS_REGISTRY[agentClass].label).join(', ') || 'none';
+
+/**
+ * Declines the claims the run's *pilots* are not the kind of agent to make
+ * (M05.4).
+ *
+ * Every flag reason names the claim it rests on in `FLAG_CLAIMS`, and a set of
+ * agent classes carries a claim only when all of them do. So:
+ *
+ * - a run of generic heuristics keeps its inclusion, replacement and
+ *   polarization signals and loses its card-pair and counter-breadth ones,
+ *   because synergy and control need a pilot that knows what its deck is for;
+ * - a run mixing a heuristic with `random_legal` loses everything about play
+ *   quality, because the numbers those flags are computed from pool both seats
+ *   into one column — which is exactly the pooling M05.4 forbids;
+ * - a run whose pilot this build cannot identify loses everything, because an
+ *   unknown pilot is not a weak one, it is an unvouched-for one.
+ *
+ * Downgraded to `insufficient_data`, never dropped, and the evidence, interval
+ * and threshold are preserved, for the same reason as every other downgrade
+ * here: a suppressed flag looks exactly like a clean bill of health. Seat
+ * sensitivity deliberately survives a random-legal run — mirrored seats make
+ * uniform play an unbiased probe of a turn-order advantage, and that is the one
+ * outcome claim the class carries.
+ */
+export function applyAgentClassLimits(flags: readonly Flag[], evidence: AgentEvidence): Flag[] {
+  const unknown = evidence.unclassifiedPilotIds.length > 0;
+  const usable = unknown ? [] : evidence.classes;
+
+  return flags.map((flag) => {
+    if (!BALANCE_LEVELS.includes(flag.level)) return flag;
+    const claim = FLAG_CLAIMS[flag.reason];
+    if (claimCarriedBy(usable, claim)) return flag;
+
+    const blocking = classesBlocking(evidence.classes, claim);
+    const why = unknown
+      ? `this run was flown by pilot(s) this build cannot classify (${evidence.unclassifiedPilotIds.join(', ')})`
+      : evidence.classes.length === 0
+        ? 'this run records no pilot at all'
+        : `${classList(blocking)} pilot(s) flew this run and cannot support a "${claim}" claim`;
+
+    return {
+      ...flag,
+      level: 'insufficient_data' as FlagLevel,
+      message: `${flag.message} Downgraded: ${why}.`,
+      evidence: { ...flag.evidence, agentClassDowngraded: true, requiredClaim: claim },
+    };
+  });
+}
+
+/**
+ * One `run_quality` note naming the classes that flew and what they buy (M05.4).
+ *
+ * Always emitted, even when nothing was downgraded, because "these are generic
+ * heuristics and this is therefore not synergy evidence" is the sentence a
+ * reader most needs and the one a clean-looking report is least likely to
+ * volunteer. `classes` is a list rather than a level: the four classes are
+ * different instruments, and this note must not read as a skill rating.
+ */
+export function agentClassFlags(evidence: AgentEvidence, matches: number): Flag[] {
+  const unknown = evidence.unclassifiedPilotIds.length > 0;
+  const usable = unknown ? [] : evidence.classes;
+  const carried = EVIDENCE_CLAIMS.filter((claim) => claimCarriedBy(usable, claim));
+  const declined = EVIDENCE_CLAIMS.filter((claim) => !claimCarriedBy(usable, claim));
+
+  return [
+    {
+      level: 'run_quality',
+      reason: 'agent_class_evidence',
+      subject: 'pilots',
+      message:
+        `Agent class(es) in this run: ${classList(evidence.classes)}` +
+        (unknown
+          ? `, plus ${evidence.unclassifiedPilotIds.length} pilot(s) this build cannot classify ` +
+            `(${evidence.unclassifiedPilotIds.join(', ')}), which withdraws every claim below.`
+          : '.') +
+        (evidence.classes.length > 1
+          ? ' More than one class flew: their win rates are reported separately and are never ' +
+            'averaged into one skill distribution, and a pooled column is only as good as the ' +
+            'weakest class in it.'
+          : '') +
+        ` This run may be cited for: ${carried.join(', ') || 'nothing'}.` +
+        (declined.length > 0
+          ? ` It may not be cited for: ${declined.join(', ')}; signals resting on those are ` +
+            'downgraded to insufficient data rather than dropped.'
+          : ''),
+      evidence: {
+        agentClasses: evidence.classes.join(',') || 'none',
+        unclassifiedPilots: evidence.unclassifiedPilotIds.join(',') || 'none',
+        mixedClasses: evidence.classes.length > 1,
+        carriedClaims: carried.join(',') || 'none',
+        declinedClaims: declined.join(','),
+      },
+      sampleSize: matches,
       interval: null,
       threshold: null,
     },

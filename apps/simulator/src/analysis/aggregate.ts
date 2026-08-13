@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { agentClassOf } from '@tcg/bot-interface';
 import {
   DEAD_HAND_CATEGORIES,
   DEAD_IN_HAND_CATEGORIES,
@@ -62,6 +63,22 @@ export const runSummarySchema = z.strictObject({
   seatWinRates: z.array(z.strictObject({ seatIndex: z.number().int(), rate: proportionSchema })),
   /** Win rate by pilot: the pilot-sensitivity check. */
   pilotWinRates: z.array(z.strictObject({ pilotId: z.string(), rate: proportionSchema })),
+  /**
+   * Win rate by honest agent class (M05.4).
+   *
+   * Reported *beside* the pilot rates rather than instead of them, and
+   * deliberately never combined into one number: `random_legal` and a heuristic
+   * are two instruments, not two skill levels, and averaging them would produce
+   * exactly the pooled skill distribution M05.4 forbids. `agentClass` is a class
+   * ID, or `unclassified` for a pilot this build does not know.
+   */
+  agentClassWinRates: z.array(
+    z.strictObject({
+      agentClass: z.string(),
+      pilotIds: z.array(z.string()),
+      rate: proportionSchema,
+    }),
+  ),
   environments: z.array(z.string()),
 });
 export type RunSummary = z.infer<typeof runSummarySchema>;
@@ -205,6 +222,7 @@ function summarizeRun(
   const turns = usable.map((record) => record.turns);
   const seatWins = new Map<number, { wins: number; total: number }>();
   const pilotWins = new Map<string, { wins: number; total: number }>();
+  const classWins = new Map<string, { wins: number; total: number; pilots: Set<string> }>();
 
   for (const record of usable) {
     for (const seat of record.seats) {
@@ -217,6 +235,15 @@ function summarizeRun(
       byPilot.total += 1;
       if (seat.won) byPilot.wins += 1;
       pilotWins.set(seat.pilotId, byPilot);
+
+      // A pilot this build does not know is bucketed apart rather than guessed
+      // at: an unrecognised ID is an unvouched-for agent, not a weak one.
+      const key = agentClassOf(seat.pilotId) ?? 'unclassified';
+      const byClass = classWins.get(key) ?? { wins: 0, total: 0, pilots: new Set<string>() };
+      byClass.total += 1;
+      if (seat.won) byClass.wins += 1;
+      byClass.pilots.add(seat.pilotId);
+      classWins.set(key, byClass);
     }
   }
 
@@ -247,6 +274,13 @@ function summarizeRun(
       .sort((left, right) => left[0].localeCompare(right[0]))
       .map(([pilotId, tally]) => ({
         pilotId,
+        rate: rounded(proportion(tally.wins, tally.total, confidence)),
+      })),
+    agentClassWinRates: [...classWins]
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .map(([agentClass, tally]) => ({
+        agentClass,
+        pilotIds: [...tally.pilots].sort(),
         rate: rounded(proportion(tally.wins, tally.total, confidence)),
       })),
     environments: [...new Set(all.map((record) => record.environmentId))].sort(),

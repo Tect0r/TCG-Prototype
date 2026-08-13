@@ -445,7 +445,7 @@ describe('a matrix experiment over the four precons', () => {
     expect(csv[0]).toContain('seed_path');
 
     const manifest = JSON.parse(readFileSync(experimentPaths(dir).manifest, 'utf8'));
-    expect(manifest.schemaVersion).toBe(5);
+    expect(manifest.schemaVersion).toBe(6);
     expect(manifest.matchupMatrix).toMatchObject({
       path: 'matchup-matrix.json',
       expectedCells: 16,

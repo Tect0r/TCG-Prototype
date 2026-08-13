@@ -19,7 +19,7 @@ After verification, update the evidence and stop.
 | [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
 | [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete                |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.3 done (2026-08-13)         | M05.4                   |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.4 done (2026-08-13)         | M05.5                   |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
 
@@ -426,6 +426,46 @@ has to be traceable to the pilot that produced it. `SUPPORT_REGISTRY_VERSION`
 stays at 2: no mechanic's support level moved. One player-facing wording bug fell
 out of it and is fixed: `keep_exhausted` said "one **enemy** unit" and was wrong
 whenever the offer was made at its own controller's Ready Step.
+
+Since M05.4, a pilot is an **instrument rather than a skill level**, and a run
+states which instrument flew it and what that entitles it to claim.
+`@tcg/bot-interface`'s agent class registry holds four classes — random-legal,
+generic heuristic, archetype-aware, human playtest — against twelve evidence
+claims, as a table total in both directions, so adding either without deciding
+every pair is a compile error. `PILOT_AGENT_CLASSES` is total over `PILOT_IDS`:
+`aggressive`, `defensive` and `value` are one class with three weight vectors,
+and calling one of them the better player would be the pooled skill axis this
+tranche exists to refuse. `LEGAL_ONLY_PILOT_IDS` is now a view of that table
+rather than a second list beside it.
+
+The claims are load-bearing rather than descriptive. `FLAG_CLAIMS` maps every
+review signal to the claim it rests on — also total, so a new signal is a compile
+error until somebody decides who may make it — and a set of classes carries a
+claim only when **all** of them do, because the numbers a flag is computed from
+pool every seat. Two consequences, both in the direction of claiming less. A
+card-pair signal (`synergy`) and a counter-breadth signal (`control`) are now
+declined by every run this build can produce, because no shipped pilot is
+archetype-aware; that is M05.4's own rule encoded, and M05.5 turns them back on.
+And a run mixing `random_legal` with a heuristic declines its play-quality
+signals, superseding M05.1's "every, not any" reading for the pooled columns
+only — the properly flown arm is not discarded, it is reported in its own row,
+which is what M05.1 had no place to put. `seat_sensitivity` deliberately survives
+a random-legal run: mirrored seats make uniform play an unbiased probe of a
+turn-order advantage, and that claim is named `structural_asymmetry` rather than
+folded into play quality.
+
+Nothing is pooled. `RunSummary` gains `agentClassWinRates` beside the pilot
+rates, with an `unclassified` bucket for a pilot ID this build does not know —
+an unrecognised pilot is not a weak agent, it is an unvouched-for one, and it
+withdraws every claim rather than being read as random-legal. The report gains
+`## Agent classes` between the review signals and mechanic support, printing the
+class of each pilot, a row per class in the outcome table, and a claim-by-claim
+table of what the run may and may not be cited for; it also states that **no
+pilot in this build implements archetype-aware or human playtest**, as a fact
+about the software rather than an omission. Three version moves, all refusals:
+report 5 → 6, manifest 5 → 6, `summary.json` 4 → 5.
+`AGENT_CLASS_REGISTRY_VERSION` starts at 1 and pins the taxonomy a citation was
+made against.
 
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and

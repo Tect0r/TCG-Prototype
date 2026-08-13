@@ -274,7 +274,7 @@ describe('a precon experiment', () => {
     expect(outcome.records.filter((record) => record.termination !== 'victory')).toEqual([]);
 
     const manifest = JSON.parse(readFileSync(experimentPaths(dir).manifest, 'utf8'));
-    expect(manifest.schemaVersion).toBe(5);
+    expect(manifest.schemaVersion).toBe(6);
     expect(manifest.failedMatches).toBe(0);
     expect(manifest.abnormalMatches).toBe(0);
     expect(manifest.precons.map((entry: { preconId: string }) => entry.preconId)).toEqual([
@@ -313,6 +313,24 @@ describe('a precon experiment', () => {
     // bounce is invisible to a batch, so `timesReturnedToHand` cards stay named.
     expect(manifest.mechanicSupport.telemetryBlindCards.length).toBeGreaterThan(0);
     expect(outcome.report).toContain('Cards nothing in a match record observes');
+
+    // And what class of agent flew it, which is the other half of "is this
+    // evidence" (M05.4). A four-precon batch flown by one heuristic is play
+    // evidence and is not synergy, sacrifice, control or combo evidence, and the
+    // report says both rather than only the flattering half.
+    expect(outcome.report).toContain('## Agent classes');
+    expect(manifest.agentClasses.registryVersion).toBeGreaterThan(0);
+    expect(manifest.agentClasses.classes).toEqual(['generic_heuristic']);
+    expect(manifest.agentClasses.mixed).toBe(false);
+    expect(manifest.agentClasses.unclassifiedPilotIds).toEqual([]);
+    expect(manifest.agentClasses.carried).toContain('play_quality');
+    expect(manifest.agentClasses.declined.map((entry: { claim: string }) => entry.claim)).toEqual([
+      'synergy',
+      'sacrifice',
+      'control',
+      'combo',
+      'final_balance',
+    ]);
     // The frozen environment is what pins the definitions those IDs named.
     const snapshot = JSON.parse(readFileSync(experimentPaths(dir).resolvedEnvironment, 'utf8'));
     expect(snapshot.formatId).toBe(WAVE_1);
