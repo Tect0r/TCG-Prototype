@@ -1,4 +1,4 @@
-import type { CardDefinition, EffectDefinition } from '@tcg/card-data';
+import type { CardDefinition, ChoiceIntent } from '@tcg/card-data';
 import { nextInt, type Action, type CardInstanceView, type RngState } from '@tcg/rules-engine';
 import { candidateActions, rankChoiceOptions, type RankedOption } from './candidates.js';
 import {
@@ -419,29 +419,23 @@ function scoreMulligan(
 }
 
 /**
- * Effect types that make being selected bad for the selected entity. Used to
- * work out whether a `select_units` choice is "pick their best" or "pick my
- * worst" without keying off any card ID.
+ * Which way an option's value points for the seat being asked (M05.3).
+ *
+ * `+1` means "name your best", `-1` means "name your worst", `0` means the
+ * instruction does nothing to the thing selected that can be called good or bad.
+ * Two facts decide it and both are given: what the resolving instruction does to
+ * whatever is selected, and whether the option belongs to somebody else.
+ *
+ * This replaces a scan of the source card's entire effect list for anything that
+ * looked hostile. That scan was wrong in one specific, invisible way: a card that
+ * removed one unit and buffed another was hostile *for both of its questions*, so
+ * a pilot handed the buff picked its worst unit — and a match result cannot show
+ * you that. It also required a hard-coded list of "always costly" choice reasons,
+ * which is now just `intent: 'detriment'` on an option the chooser owns.
  */
-const HOSTILE_EFFECTS: ReadonlySet<EffectDefinition['type']> = new Set([
-  'destroy',
-  'sacrifice',
-  'deal_damage',
-  'exhaust',
-  'return_to_hand',
-  'discard',
-  'move_card',
-  'remove_keyword',
-]);
-
-function sourceIsHostile(definition: CardDefinition | undefined): boolean {
-  if (!definition) return true;
-  const effects = [
-    ...definition.effects,
-    ...definition.abilities.flatMap((ability) => ability.effects),
-    ...definition.activatedAbilities.flatMap((ability) => ability.effects),
-  ];
-  return effects.some((effect) => HOSTILE_EFFECTS.has(effect.type));
+function optionDirection(intent: ChoiceIntent, enemy: boolean): number {
+  const valence = intent === 'benefit' ? 1 : intent === 'detriment' ? -1 : 0;
+  return valence * (enemy ? -1 : 1);
 }
 
 function scoreChoice(
@@ -454,46 +448,31 @@ function scoreChoice(
 
   const ranked = rankChoiceOptions(observation, choice, weights);
   const byId = new Map(ranked.map((entry) => [entry.id, entry] as const));
+  const intent = choice.provenance.intent;
 
   if (choice.ordered) {
     // Reordering puts cards back on top of a deck: the earlier the position, the
-    // sooner it is drawn, so weight by position.
+    // sooner it is drawn, so weight by position. An early position is a benefit
+    // to whoever owns the zone, which is what makes ordering somebody else's
+    // deck come out the right way round without a rule of its own.
     const n = action.selectedIds.length;
     return action.selectedIds.reduce((sum, id, index) => {
       const entry = byId.get(id);
-      return sum + (entry ? entry.value * (n - index) : 0);
+      if (!entry) return sum;
+      return sum + optionDirection(intent, entry.enemy) * entry.value * (n - index);
     }, 0);
   }
 
-  // A confirm has no entity to be for or against. "yes" is not a card that
-  // could belong to an opponent, so the enemy/hostile reasoning below would be
-  // reading a ranked option that means nothing — and, because the source of an
-  // optional step is routinely a removal card, it would score it hostile and
-  // decline every "you may".
+  // A confirm has no entity to be for or against. "yes" is not a card that could
+  // belong to an opponent, so there is no option for the direction above to read
+  // — which is why the engine records `targetRelation: 'none'` on exactly these.
   if (choice.type === 'confirm') {
     return action.selectedIds.includes('yes') ? weights.confirmYes : 0;
   }
 
-  const sourceDefinition = choice.sourceInstanceId
-    ? observation.database.get(
-        observation.view.instances[choice.sourceInstanceId]?.definitionId ?? '',
-      )
-    : undefined;
-
-  // Reasons whose selection is always a cost to the chooser, whatever asked.
-  const alwaysCostly =
-    choice.reason === 'discard_effect' ||
-    choice.reason === 'discard_cost' ||
-    choice.reason === 'hand_size_discard' ||
-    choice.reason === 'sacrifice_cost';
-
-  const hostile = alwaysCostly || sourceIsHostile(sourceDefinition);
-
   return action.selectedIds.reduce((sum, id) => {
     const entry: RankedOption | undefined = byId.get(id);
     if (!entry) return sum;
-    if (alwaysCostly) return sum - entry.value;
-    if (entry.enemy) return sum + (hostile ? entry.value : -entry.value);
-    return sum + (hostile ? -entry.value : entry.value);
+    return sum + optionDirection(intent, entry.enemy) * entry.value;
   }, 0);
 }

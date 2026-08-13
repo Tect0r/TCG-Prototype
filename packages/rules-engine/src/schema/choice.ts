@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { zoneIdSchema } from '@tcg/card-data';
+import { choiceIntentSchema, EFFECT_TYPES, zoneIdSchema } from '@tcg/card-data';
 import { instanceIdSchema, playerIdSchema } from './primitives.js';
 
 /**
@@ -186,6 +186,88 @@ export const choiceReasonSchema = z.enum(CHOICE_REASONS);
 export type ChoiceReason = z.infer<typeof choiceReasonSchema>;
 
 /**
+ * Where the question came from, at the coarsest useful grain.
+ *
+ * Not the same axis as `ChoiceReason`, and both are needed. A reason says what
+ * the player is being asked ("discard for the hand size limit"); an origin says
+ * which part of the engine is asking, which is what decides whether the rest of
+ * the provenance can be filled in at all — only an `instruction` has a
+ * resolution item and an effect index.
+ */
+export const CHOICE_ORIGINS = [
+  /** A resolving instruction on a card asked. */
+  'instruction',
+  /** An interactive cost, chosen before the action it pays for commits (M02.4). */
+  'cost',
+  /** A `replace_ready` offer inside a Ready Step (M02.4). */
+  'replacement',
+  /** Turn structure itself asked: the hand-size discard at end of turn. */
+  'turn_structure',
+] as const;
+export const choiceOriginSchema = z.enum(CHOICE_ORIGINS);
+export type ChoiceOrigin = z.infer<typeof choiceOriginSchema>;
+
+/**
+ * How the seat being asked stands to the seat whose card asked.
+ *
+ * `none` is not "unknown": it means no card asked at all, which is true of the
+ * hand-size discard and of nothing else.
+ */
+export const CHOICE_CHOOSER_RELATIONS = ['source_controller', 'opponent', 'none'] as const;
+export const choiceChooserRelationSchema = z.enum(CHOICE_CHOOSER_RELATIONS);
+export type ChoiceChooserRelation = z.infer<typeof choiceChooserRelationSchema>;
+
+/**
+ * Whose entities the options may include, **read from the seat being asked**.
+ *
+ * Relative to the chooser rather than to the ability's controller, because the
+ * chooser is the one who has to decide, and "a Unit you control" means a
+ * different set of cards depending on who was handed the question — which is
+ * exactly what an `each_player_choice` does (M02.5).
+ *
+ * `any` covers both the selector that genuinely says "any Unit" and the case a
+ * seat cannot pin down from where it sits: an ability whose controller pointed
+ * at "an opponent's Unit" and then handed the choice to one of those opponents
+ * is naming a set that mixes that seat's own cards with a third seat's.
+ * `none` is for a question with no entity behind it at all — a `confirm`.
+ */
+export const CHOICE_TARGET_RELATIONS = ['self', 'opponent', 'any', 'none'] as const;
+export const choiceTargetRelationSchema = z.enum(CHOICE_TARGET_RELATIONS);
+export type ChoiceTargetRelation = z.infer<typeof choiceTargetRelationSchema>;
+
+/**
+ * Why this choice exists, in structured form (M05.3).
+ *
+ * The thing this replaces is a pilot reading the *whole source card* and
+ * deciding it was "hostile" if anything on it was: a card that removed one unit
+ * and buffed another was hostile for both of its questions, so the pilot picked
+ * its worst unit to buff. The valence of a choice belongs to the instruction
+ * that asked, and this is that instruction, named.
+ *
+ * Deliberately carries **no card identity**. `sourceInstanceId` beside it
+ * already attributes the question, and adding the source's `definitionId` would
+ * hand the seat being asked the printed identity of a card it may never have
+ * been shown — a question you are asked is not a card you have seen
+ * (CLAUDE.md §11).
+ */
+export const choiceProvenanceSchema = z.strictObject({
+  origin: choiceOriginSchema,
+  /** Resolution item that asked. Null for every non-`instruction` origin. */
+  itemId: z.string().min(1).nullable(),
+  /** Index of the asking instruction in the list it was printed in. */
+  effectIndex: z.number().int().min(0).nullable(),
+  /** The instruction that asked. Null when no instruction did. */
+  effectType: z.enum(EFFECT_TYPES).nullable(),
+  /** Who controls the asking source. Null when nothing on the board asked. */
+  sourceControllerId: playerIdSchema.nullable(),
+  chooser: choiceChooserRelationSchema,
+  targetRelation: choiceTargetRelationSchema,
+  /** What being selected does to the selected entity. */
+  intent: choiceIntentSchema,
+});
+export type ChoiceProvenance = z.infer<typeof choiceProvenanceSchema>;
+
+/**
  * A mandatory pause. While one is set, the engine accepts only the expected
  * player's matching `submit_choice`, a concession, or a server timeout
  * (CLAUDE.md §9).
@@ -208,6 +290,8 @@ export const pendingChoiceSchema = z.strictObject({
   ordered: z.boolean(),
   /** The instance whose effect asked, for UI attribution. */
   sourceInstanceId: instanceIdSchema.nullable(),
+  /** Structured account of what asked and what an answer does (M05.3). */
+  provenance: choiceProvenanceSchema,
   continuation: continuationSchema,
 });
 export type PendingChoice = z.infer<typeof pendingChoiceSchema>;

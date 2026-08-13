@@ -19,7 +19,7 @@ After verification, update the evidence and stop.
 | [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | 155/155 executable (M02.1–M02.6 done) | Complete                |
 | [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | M03.1–M03.4 done (2026-08-12)         | Complete                |
 | [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | M04.1–M04.3 done (2026-08-12)         | Complete                |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.2 done (2026-08-13)         | M05.3                   |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | M05.1–M05.3 done (2026-08-13)         | M05.4                   |
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Spectator grouping only               | Q42 decision checkpoint |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Stale/contradictory docs remain       | Final milestone         |
 
@@ -382,6 +382,50 @@ schema's own vocabularies, so a mechanic added without a valuation test does not
 compile. `SUPPORT_REGISTRY_VERSION` moves 1 → 2 — a classification change, not a
 schema change, so nothing is refused; the version exists so a manifest's claims
 can be read against the registry that made them. No artefact pins it.
+
+Since M05.3, a pending choice says **why it exists**, and nothing downstream
+reads the source card to find out. `PendingChoice.provenance` carries the
+resolution item and effect index that asked, the asking instruction, the source's
+controller, how the seat being asked relates to that controller, whose entities
+the options are, and what selecting one does to the thing selected. The valence
+comes from `@tcg/card-data`'s new `EFFECT_INTENTS` — `benefit` / `detriment` /
+`neutral`, a total mapped type over `EffectType`, so an unclassified instruction
+is a compile error and `effectIntentGaps()` says the same at runtime. Four
+instructions read a printed parameter rather than a constant, because for those
+four the number is the direction: a stat modifier's sign, a cost delta's sign, a
+search's destination, and a zone move's **journey** — `move_card … toZone: hand`
+is recursion out of a discard pile and a bounce off a battlefield, and those are
+opposite.
+
+The thing this deletes is `sourceIsHostile`, which read a card's whole effect
+list and called the card hostile if anything on it was. A card that removed one
+unit and buffed another was therefore hostile for **both** of its questions, and
+the pilot handed the buff picked its worst unit — a defect no match result can
+show you, because the action is legal and the match finishes. `scoreChoice` now
+multiplies the instruction's valence by whether the option belongs to somebody
+else, which also subsumes the hard-coded list of "always costly" choice reasons:
+a cost is a detriment aimed at cards the chooser owns, and says so in its own
+provenance. The ordered branch uses the same direction, so reordering an
+opponent's deck comes out the right way round without a rule of its own.
+
+Two readings are deliberate. `targetRelation` is read **from the seat being
+asked** rather than from the ability's controller, which is what makes "a Unit
+you control" mean each seat's own units in an `each_player_choice`; where that
+cannot be pinned down — an `opponent` selector handed to one of those opponents —
+it is `any` rather than a guess. And provenance carries **no card identity**:
+`sourceInstanceId` beside it already attributes the question, and adding the
+source's `definitionId` would hand the seat being asked the printed identity of a
+card it may never have been shown. That is asserted by name.
+
+Provenance rides on the `choice_requested` event as well as on the choice,
+because the choice is gone the moment it is answered. Four version moves, all
+refusals: `MATCH_SCHEMA_VERSION` 6 → 7, `PROTOCOL_VERSION` 4 → 5 (the view shape
+a client validates changed), `SPECTATOR_REPLAY_VERSION` 5 → 6, and the three
+heuristic pilots 1.0.0 → 1.1.0 — their decision procedure changed, and a record
+has to be traceable to the pilot that produced it. `SUPPORT_REGISTRY_VERSION`
+stays at 2: no mechanic's support level moved. One player-facing wording bug fell
+out of it and is fixed: `keep_exhausted` said "one **enemy** unit" and was wrong
+whenever the offer was made at its own controller's Ready Step.
 
 Since M01.5, `npm run verify` is the whole gate: its `typecheck` step covers the
 workspaces and then the root project, so `scripts/`, `vitest.config.ts` and

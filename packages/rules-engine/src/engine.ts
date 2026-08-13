@@ -1080,6 +1080,21 @@ function requestCostSelection(
     validEntityIds: [...request.candidates],
     ordered: false,
     sourceInstanceId: request.sourceInstanceId,
+    provenance: {
+      // Nothing has resolved and nothing is queued, so there is no resolution
+      // item: a cost is chosen *before* the thing it pays for commits (M02.4).
+      origin: 'cost',
+      itemId: null,
+      effectIndex: null,
+      effectType: null,
+      sourceControllerId: request.chooserId,
+      chooser: 'source_controller',
+      // You always pay a cost with your own cards, and paying is always a loss
+      // to the payer — which is the whole of what the pilots used to hard-code
+      // as a list of "always costly" reasons.
+      targetRelation: 'self',
+      intent: 'detriment',
+    },
     continuation: {
       kind: 'cost_selection',
       intent,
@@ -1101,6 +1116,7 @@ function requestCostSelection(
     minimum: choice.minimum,
     maximum: choice.maximum,
     validEntityIds: [...choice.validEntityIds],
+    provenance: { ...choice.provenance },
   });
   return null;
 }

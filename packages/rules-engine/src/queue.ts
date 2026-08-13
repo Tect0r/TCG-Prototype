@@ -173,6 +173,7 @@ export function pumpQueue(ctx: MatchContext): void {
         minimum: outcome.choice.minimum,
         maximum: outcome.choice.maximum,
         validEntityIds: [...outcome.choice.validEntityIds],
+        provenance: { ...outcome.choice.provenance },
       });
       return;
     }

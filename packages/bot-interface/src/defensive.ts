@@ -10,7 +10,8 @@ import type { BotPolicy } from './types.js';
  * generously, and its own remaining Health is treated as a resource rather than
  * a buffer to spend. It will stall matches it could have closed.
  */
-export const DEFENSIVE_VERSION = '1.0.0';
+/** 1.1.0 (M05.3): choices are answered from the resolving instruction's intent. */
+export const DEFENSIVE_VERSION = '1.1.0';
 
 export const DEFENSIVE_WEIGHTS: BotWeights = Object.freeze(
   botWeightsSchema.parse({

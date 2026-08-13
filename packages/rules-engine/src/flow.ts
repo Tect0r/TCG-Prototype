@@ -197,6 +197,24 @@ function runReadyStep(
       validEntityIds: [...offer.candidateIds],
       ordered: false,
       sourceInstanceId: offer.sourceInstanceId,
+      provenance: {
+        // A replacement is not an instruction and has no resolution item to name
+        // (M02.4), so the two resolution fields are honestly null rather than
+        // filled with the Ready Step's own bookkeeping.
+        origin: 'replacement',
+        itemId: null,
+        effectIndex: null,
+        effectType: null,
+        sourceControllerId: offer.controllerId,
+        // The offer is always made to the seat that controls the replacement.
+        chooser: 'source_controller',
+        // The candidates are permanents readying at *this* Ready Step, which is
+        // not necessarily the offering seat's: "at somebody else's Ready Step"
+        // is what `replace_ready` is for.
+        targetRelation: playerId === offer.controllerId ? 'self' : 'opponent',
+        // Keeping a permanent Exhausted is a detriment to whoever controls it.
+        intent: 'detriment',
+      },
       continuation: {
         kind: 'ready_step_replacement',
         playerId,
@@ -215,6 +233,7 @@ function runReadyStep(
       minimum: 0,
       maximum: 1,
       validEntityIds: [...offer.candidateIds],
+      provenance: { ...ctx.state.pendingChoice.provenance },
     });
     return;
   }
@@ -391,6 +410,19 @@ function performTurnEnd(ctx: MatchContext): boolean {
       validEntityIds: [...player.hand],
       ordered: false,
       sourceInstanceId: null,
+      provenance: {
+        // The only choice in the engine that no card asked for. `chooser: none`
+        // says exactly that: there is no source, so there is nobody for the seat
+        // being asked to stand in relation to.
+        origin: 'turn_structure',
+        itemId: null,
+        effectIndex: null,
+        effectType: null,
+        sourceControllerId: null,
+        chooser: 'none',
+        targetRelation: 'self',
+        intent: 'detriment',
+      },
       continuation: { kind: 'turn_end_discard' },
     };
     ctx.state.status = 'waiting_for_choice';
@@ -403,6 +435,7 @@ function performTurnEnd(ctx: MatchContext): boolean {
       minimum: excess,
       maximum: excess,
       validEntityIds: [...player.hand],
+      provenance: { ...ctx.state.pendingChoice.provenance },
     });
     return false;
   }

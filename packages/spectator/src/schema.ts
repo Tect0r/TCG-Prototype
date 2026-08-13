@@ -60,8 +60,18 @@ import {
  * `livingSeats`, so for any match that lost a player there is no way to tell a
  * unanimous round from one that skipped a seat. Deriving the verdict anyway would
  * mean guessing, under the identity of a build that never guessed.
+ *
+ * Bumped to 6 for M05.3, and refused rather than migrated for the fifth time.
+ * Every `choice_requested` event now carries the provenance of the question —
+ * the instruction that asked, whose it was, whose entities the options were and
+ * what selecting one does to it. A version 5 log records that a choice happened
+ * and what was picked, and nothing about what picking it meant; reconstructing
+ * that would mean re-reading the card the way the pilots used to, which is the
+ * inference this tranche exists to delete. The replay's `matchSchemaVersion`
+ * literal (6 → 7) would refuse a v5 file on its own; the version is moved anyway
+ * so the refusal names the format rather than one field inside it.
  */
-export const SPECTATOR_REPLAY_VERSION = 5;
+export const SPECTATOR_REPLAY_VERSION = 6;
 
 /**
  * Whether a recorded match is evidence about the game at all.

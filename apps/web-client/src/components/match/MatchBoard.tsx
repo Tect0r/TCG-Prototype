@@ -4,6 +4,7 @@ import type { SeatId } from '@tcg/protocol';
 import type {
   AttackDeclaration,
   CardInstanceView,
+  PendingChoice,
   PlayerView,
   PlayerViewSummary,
 } from '@tcg/rules-engine';
@@ -49,7 +50,6 @@ const CHOICE_PROMPTS: Readonly<Record<string, string>> = {
   select_opponent: 'Choose an opponent',
   pay_additional_cost: 'Pay the additional cost to stop this being countered?',
   optional_effect: 'You may do this. Do you want to?',
-  keep_exhausted: 'Pay to keep one enemy unit Exhausted, or choose nothing',
   // Every seat is answering this same question, and none of the answers has
   // happened yet. Saying so is the point: a prompt that read like an ordinary
   // targeting choice would invite the player to plan around a board that is
@@ -57,6 +57,24 @@ const CHOICE_PROMPTS: Readonly<Record<string, string>> = {
   each_player_choice: 'Every player is choosing. Pick yours — nothing happens until all are in',
   divide_damage: 'Split the damage — click a target once for each point',
 };
+
+/**
+ * The sentence for one pending choice.
+ *
+ * Most reasons say everything on their own. `keep_exhausted` does not: the same
+ * reason is raised at your own Ready Step and at somebody else's, so it used to
+ * be worded "one enemy unit" and was wrong half the time. The engine now says
+ * whose units are on offer, read from the seat being asked (M05.3), so the
+ * prompt asks the question the player is actually being asked.
+ */
+function choicePrompt(choice: PendingChoice): string {
+  if (choice.reason === 'keep_exhausted') {
+    return choice.provenance.targetRelation === 'self'
+      ? 'Pay to keep one of your own units Exhausted, or choose nothing'
+      : 'Pay to keep one enemy unit Exhausted, or choose nothing';
+  }
+  return CHOICE_PROMPTS[choice.reason] ?? choice.reason.replace(/_/g, ' ');
+}
 
 /** A `confirm` choice's options are the literals `yes` and `no`, not entities. */
 const CONFIRM_LABELS: Readonly<Record<string, string>> = { yes: 'Yes', no: 'No' };
@@ -782,7 +800,7 @@ export function MatchBoard() {
       {choice && (
         <div className="choice" role="group" aria-label="Pending choice">
           <p className="choice__prompt">
-            {CHOICE_PROMPTS[choice.reason] ?? choice.reason.replace(/_/g, ' ')}
+            {choicePrompt(choice)}
             {/* A yes/no needs no count: "choose 1" of two buttons reads as a
                 puzzle rather than a question. */}
             {choice.type === 'confirm'

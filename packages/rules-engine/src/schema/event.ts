@@ -12,7 +12,7 @@ import {
   matchPhaseSchema,
   playerIdSchema,
 } from './primitives.js';
-import { choiceReasonSchema, choiceTypeSchema } from './choice.js';
+import { choiceProvenanceSchema, choiceReasonSchema, choiceTypeSchema } from './choice.js';
 
 /**
  * Causal provenance for an event: which action, which resolution item and which
@@ -516,6 +516,15 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     maximum: z.number().int().min(0),
     /** Redacted to null for players who cannot see the option set. */
     validEntityIds: z.array(z.string()).nullable(),
+    /**
+     * What asked and what an answer does (M05.3).
+     *
+     * Recorded on the event as well as on the pending choice, because the choice
+     * is gone the moment it is answered and a replay would otherwise be able to
+     * say what was picked but not what picking it meant. Never redacted: it
+     * carries no card identity by construction — see `choiceProvenanceSchema`.
+     */
+    provenance: choiceProvenanceSchema,
   }),
   event('choice_resolved', {
     choiceId: z.string(),

@@ -233,6 +233,13 @@ export {
 } from './artwork.js';
 export { lintDisplayText } from './display-text.js';
 export {
+  CHOICE_INTENTS,
+  choiceIntentSchema,
+  effectIntent,
+  effectIntentGaps,
+  type ChoiceIntent,
+} from './intent.js';
+export {
   KEYWORD_REGISTRY,
   KEYWORD_LIST,
   KEYWORD_CATEGORIES,

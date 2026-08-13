@@ -29,8 +29,15 @@ import { z } from 'zod';
  * interactive costs: `ResolutionItem.previousStepActed`, which is what "if you
  * do" reads, and the `cost_selection` continuation, which is a paused *action*
  * rather than a paused resolution. No migration, for the reason given for v3.
+ *
+ * v7 (M05.3) added `PendingChoice.provenance`: the resolution item and effect
+ * index that asked, the asking instruction, the source's controller, how the
+ * seat being asked relates to it, whose entities the options are, and what being
+ * selected does to the thing selected. No migration, for the reason given for
+ * v3 — and a v6 document could not be migrated anyway, because the intent of a
+ * question that has already been asked is not recoverable from the answer.
  */
-export const MATCH_SCHEMA_VERSION = 6;
+export const MATCH_SCHEMA_VERSION = 7;
 
 /** Seats a single match may hold. Two is 1v1; three and four are free-for-all. */
 export const MIN_PLAYERS = 2;

@@ -129,12 +129,69 @@ Repair `packages/bot-interface/src/scoring.ts`:
       `approximate`, and every rewritten `where` note names the function its
       claim is now about.
 
-## M05.3 — Choice provenance and intent
+## M05.3 — Choice provenance and intent — **done (2026-08-13)**
 
 Stop inferring whether a choice is helpful/hostile by scanning the entire source
 card. Add structured provenance to pending choices: resolution item/effect index,
 source, chooser, target relation, and semantic intent. Test mixed helpful/hostile
 cards, optional sacrifice, divided damage, and multiplayer choices.
+
+### Checklist
+
+- [x] `@tcg/card-data`'s `intent.ts` classifies the valence of every member of
+      the instruction vocabulary — `benefit` / `detriment` / `neutral`, meaning
+      what happens **to the thing selected**. `EFFECT_INTENTS` is a total mapped
+      type over `EffectType`, so an unclassified instruction is a compile error,
+      and `effectIntentGaps()` is its runtime twin in both directions. Four
+      entries read a printed parameter instead of returning a constant, because
+      for those four the number is the direction: a stat modifier's sign, a cost
+      delta's sign, a search's destination, and a zone move's journey (a revival
+      and a bounce are one instruction).
+- [x] `PendingChoice.provenance` carries the resolution item and effect index
+      that asked, the asking instruction, the source's controller, how the seat
+      being asked relates to that controller, whose entities the options are, and
+      the intent. It is stamped at all four places a choice is built —
+      `effects.ts`, the Ready Step replacement offer, the hand-size discard and
+      the interactive cost — and the three non-instruction origins say so
+      (`cost`, `replacement`, `turn_structure`) rather than filling the
+      resolution fields with something that is not one.
+- [x] `targetRelation` is read **from the seat being asked**, not from the
+      ability's controller, so "a Unit you control" in an `each_player_choice`
+      means each seat's own units. `any` is the honest answer when the chooser is
+      not the controller and the selector said `opponent`.
+- [x] Provenance carries **no card identity**. `sourceInstanceId` beside it
+      already attributes the question; adding the source's `definitionId` would
+      hand the seat being asked the printed identity of a card it may never have
+      been shown. Asserted by name in `choice-provenance.test.ts`.
+- [x] `heuristic.ts`'s `scoreChoice` reads `provenance.intent` and the option's
+      owner. `sourceIsHostile`, the `HOSTILE_EFFECTS` set and the hard-coded list
+      of "always costly" reasons are all deleted; a cost is now just a detriment
+      aimed at cards the chooser owns. The ordered branch uses the same direction,
+      so reordering somebody else's deck comes out the right way round.
+- [x] The `choice_requested` event carries the provenance too, because the
+      pending choice is gone the moment it is answered and a replay would
+      otherwise record what was picked but not what picking it meant.
+- [x] Versions moved as refusals, not migrations: `MATCH_SCHEMA_VERSION` 6 → 7,
+      `PROTOCOL_VERSION` 4 → 5 (the view shape a client validates changed),
+      `SPECTATOR_REPLAY_VERSION` 5 → 6, and the three heuristic pilots 1.0.0 →
+      1.1.0, since their decision procedure changed and a record has to be
+      traceable to the pilot that produced it. `SUPPORT_REGISTRY_VERSION` stays
+      at 2: no mechanic's support level changed.
+- [x] `packages/rules-engine/src/choice-provenance.test.ts` covers a mixed
+      helpful/hostile card, the optional sacrifice (confirm then selection), the
+      divided-damage allocation, a four-seat `each_player_choice`, the
+      `select_opponent`-then-discard chain, the interactive cost and the
+      hand-size discard, plus the event, the view and a serialisation round trip.
+      `packages/bot-interface/src/choice-intent.test.ts` holds the board fixed and
+      moves only the provenance, so the preference flip is the assertion.
+      `packages/card-data/src/intent.test.ts` is a mapped type over `EffectType`.
+
+### The rule the UI gained
+
+`keep_exhausted` was worded "Pay to keep one **enemy** unit Exhausted" and was
+wrong half the time — the same reason is raised at your own Ready Step and at
+somebody else's. The prompt now reads `provenance.targetRelation` and asks the
+question the player is actually being asked.
 
 ## M05.4 — Honest agent classes
 

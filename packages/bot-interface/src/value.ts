@@ -12,7 +12,8 @@ import type { BotPolicy } from './types.js';
  * It is the closest thing here to a competent generalist, which is exactly why
  * it must never be the only pilot an experiment runs.
  */
-export const VALUE_VERSION = '1.0.0';
+/** 1.1.0 (M05.3): choices are answered from the resolving instruction's intent. */
+export const VALUE_VERSION = '1.1.0';
 
 export const VALUE_WEIGHTS: BotWeights = Object.freeze(
   botWeightsSchema.parse({

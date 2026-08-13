@@ -942,10 +942,10 @@ describe('a replacement is priced as what it replaces (M02.4)', () => {
 describe('a "you may" is answered rather than reflexively refused', () => {
   /**
    * Ruleset update §15. A `confirm` has no entity behind it, so the
-   * enemy/hostile reasoning every other choice uses has nothing to read — and
-   * because the source of an optional step is routinely a removal card, a pilot
-   * that fell through to that reasoning would score "yes" as hostile and
-   * decline every optional line in the pool. That failure is invisible in a
+   * intent/ownership reasoning every other choice uses has nothing to read —
+   * and because the source of an optional step is routinely a removal card, a
+   * pilot that fell through to that reasoning would score "yes" as a detriment
+   * and decline every optional line in the pool. That failure is invisible in a
    * match result, so it is scored directly.
    */
   function confirmScore(state: MatchState, playerId: PlayerId, answer: 'yes' | 'no'): number {
@@ -978,6 +978,19 @@ describe('a "you may" is answered rather than reflexively refused', () => {
       validEntityIds: ['yes', 'no'],
       ordered: false,
       sourceInstanceId: null,
+      provenance: {
+        origin: 'instruction',
+        itemId: 'res_0001',
+        effectIndex: 0,
+        // A removal instruction, deliberately: the failure this test guards is
+        // a pilot that reads the source's valence onto the yes/no and declines
+        // every "you may" printed on a removal card.
+        effectType: 'destroy',
+        sourceControllerId: playerId,
+        chooser: 'source_controller',
+        targetRelation: 'none',
+        intent: 'detriment',
+      },
       continuation: {
         kind: 'resolution',
         itemId: 'res_0001',

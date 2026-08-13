@@ -195,6 +195,16 @@ function fixtureEvents(): GameEvent[] {
       minimum: 1,
       maximum: 1,
       validEntityIds: ['t2'],
+      provenance: {
+        origin: 'instruction',
+        itemId: 'res_0001',
+        effectIndex: 0,
+        effectType: 'destroy',
+        sourceControllerId: 'player_1',
+        chooser: 'source_controller',
+        targetRelation: 'opponent',
+        intent: 'detriment',
+      },
     },
     { type: 'phase_changed', from: 'resolve_combat', to: 'main_2' },
     // After the combat, so it is not counted as part of resolving it.

@@ -135,7 +135,7 @@ export const botWeightsSchema = z.strictObject({
   /**
    * Value of answering "yes" to a `confirm` choice.
    *
-   * A confirm has no entity behind it, so the enemy/hostile reasoning every
+   * A confirm has no entity behind it, so the intent/ownership reasoning every
    * other choice uses has nothing to read. Both confirms the engine asks are
    * upside for the player being asked — carrying out a step of your own card,
    * or paying to save one an opponent is countering — and the engine never asks

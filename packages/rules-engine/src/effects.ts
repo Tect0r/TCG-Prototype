@@ -1,5 +1,7 @@
 import {
+  effectIntent,
   isDistributedSelection,
+  type Controller,
   type EffectDefinition,
   type PlayerSelector,
   type SignedValueExpression,
@@ -33,7 +35,12 @@ import { scheduleDelayed } from './delayed.js';
 import { enqueue } from './triggers.js';
 import { evaluateCondition, evaluateSignedValue, evaluateValue } from './values.js';
 import { createInstance, discardCard, drawCards, moveToZone, shuffleDeck } from './zones.js';
-import type { ChoiceReason, ChoiceType, PendingChoice } from './schema/choice.js';
+import type {
+  ChoiceReason,
+  ChoiceTargetRelation,
+  ChoiceType,
+  PendingChoice,
+} from './schema/choice.js';
 import type { InstanceId, PlayerId } from './schema/primitives.js';
 import type { ResolutionItem } from './schema/state.js';
 
@@ -68,10 +75,37 @@ export function nextChoiceId(ctx: MatchContext): string {
   return id;
 }
 
+/**
+ * Whose entities the options are, read from the seat being asked (M05.3).
+ *
+ * A selector's `controller` is written relative to the ability's controller, and
+ * the seat holding the question is not always that player: `chooser` can hand it
+ * to somebody else, and an `each_player_choice` hands the same instruction to
+ * every seat in turn. Re-reading it from the chooser's seat is what makes
+ * "a Unit you control" mean the same thing to the pilot as it does to the
+ * player, and it is the only reading a UI could put in a sentence.
+ *
+ * When the chooser is *not* the ability's controller, `opponent` stops being
+ * answerable: "an opponent's Unit", handed to one of those opponents, names a
+ * set holding that seat's own cards and possibly a third seat's. `any` is the
+ * honest answer, not a guess dressed as one.
+ */
+function targetRelationFor(
+  controller: Controller,
+  chooserId: PlayerId,
+  controllerId: PlayerId,
+): ChoiceTargetRelation {
+  if (controller === 'any') return 'any';
+  if (chooserId === controllerId) return controller;
+  return controller === 'self' ? 'opponent' : 'any';
+}
+
 function buildChoice(
   ctx: MatchContext,
   item: ResolutionItem,
   effectIndex: number,
+  /** The instruction that is asking. Its own valence, not its card's (M05.3). */
+  effect: EffectDefinition,
   options: {
     readonly playerId: PlayerId;
     readonly type: ChoiceType;
@@ -83,6 +117,8 @@ function buildChoice(
     readonly ordered?: boolean;
     /** Defaults to the effect index; set when one instruction asks twice. */
     readonly selectionKey?: string;
+    /** Whose entities the options are, from the chooser's seat. */
+    readonly targetRelation: ChoiceTargetRelation;
   },
 ): PendingChoice {
   return {
@@ -96,6 +132,16 @@ function buildChoice(
     validEntityIds: [...options.validEntityIds],
     ordered: options.ordered ?? false,
     sourceInstanceId: item.sourceInstanceId,
+    provenance: {
+      origin: 'instruction',
+      itemId: item.id,
+      effectIndex,
+      effectType: effect.type,
+      sourceControllerId: item.controllerId,
+      chooser: options.playerId === item.controllerId ? 'source_controller' : 'opponent',
+      targetRelation: options.targetRelation,
+      intent: effectIntent(effect),
+    },
     continuation: {
       kind: 'resolution',
       itemId: item.id,
@@ -158,6 +204,7 @@ function resolveEffectPlayers(
   ctx: MatchContext,
   item: ResolutionItem,
   effectIndex: number,
+  effect: EffectDefinition,
   selector: PlayerSelector,
   /**
    * Namespace for the stored answer. One instruction can resolve two different
@@ -182,7 +229,7 @@ function resolveEffectPlayers(
   );
   return {
     kind: 'choice',
-    choice: buildChoice(ctx, item, effectIndex, {
+    choice: buildChoice(ctx, item, effectIndex, effect, {
       playerId: item.controllerId,
       type: 'select_players',
       reason: 'select_opponent',
@@ -191,6 +238,7 @@ function resolveEffectPlayers(
       maximum: 1,
       validEntityIds: candidates,
       selectionKey: key,
+      targetRelation: 'opponent',
     }),
   };
 }
@@ -231,11 +279,19 @@ function resolveDistributed(
   ctx: MatchContext,
   item: ResolutionItem,
   effectIndex: number,
+  effect: EffectDefinition,
   target: Extract<TargetDefinition, { kind: 'entity' }>,
   scope: TargetScope,
 ): TargetResolution {
   const selector = target.selector;
-  const resolved = resolveEffectPlayers(ctx, item, effectIndex, selector.chooser, 'chooser');
+  const resolved = resolveEffectPlayers(
+    ctx,
+    item,
+    effectIndex,
+    effect,
+    selector.chooser,
+    'chooser',
+  );
   if (resolved.kind === 'choice') return { kind: 'choice', choice: resolved.choice };
 
   const collected: InstanceId[] = [];
@@ -256,7 +312,7 @@ function resolveDistributed(
     const wanted = requestedCount(selector, own.length);
     return {
       kind: 'choice',
-      choice: buildChoice(ctx, item, effectIndex, {
+      choice: buildChoice(ctx, item, effectIndex, effect, {
         playerId: chooserId,
         type: selector.zone === 'battlefield' ? 'select_units' : 'select_cards',
         reason: 'each_player_choice',
@@ -265,6 +321,9 @@ function resolveDistributed(
         maximum: wanted,
         validEntityIds: own,
         selectionKey: chooserKey,
+        // The legal set was computed with this seat as the controller, so the
+        // selector's own `controller` already reads from where it is sitting.
+        targetRelation: selector.controller,
       }),
     };
   }
@@ -290,6 +349,7 @@ function resolveTargets(
   ctx: MatchContext,
   item: ResolutionItem,
   effectIndex: number,
+  effect: EffectDefinition,
   target: TargetDefinition,
 ): TargetResolution {
   if (target.kind === 'player' || target.kind === 'players') {
@@ -304,7 +364,7 @@ function resolveTargets(
 
     return {
       kind: 'choice',
-      choice: buildChoice(ctx, item, effectIndex, {
+      choice: buildChoice(ctx, item, effectIndex, effect, {
         playerId: item.controllerId,
         type: 'select_players',
         reason: 'select_opponent',
@@ -312,6 +372,7 @@ function resolveTargets(
         minimum: 1,
         maximum: 1,
         validEntityIds: candidates,
+        targetRelation: 'opponent',
       }),
     };
   }
@@ -376,7 +437,7 @@ function resolveTargets(
   // all, because that set was computed from the controller's point of view and
   // a distributed selection has as many points of view as it has seats.
   if (isDistributedSelection(selector)) {
-    const distributed = resolveDistributed(ctx, item, effectIndex, target, scopeOf(item));
+    const distributed = resolveDistributed(ctx, item, effectIndex, effect, target, scopeOf(item));
     return distributed.kind === 'entities'
       ? { kind: 'entities', ids: remember(group(distributed.ids)) }
       : distributed;
@@ -388,16 +449,18 @@ function resolveTargets(
 
   if (selector.selection === 'player_choice') {
     const maximum = requestedCount(selector, candidates.length);
+    const chooserId = chooserFor(ctx, selector, item.controllerId);
     return {
       kind: 'choice',
-      choice: buildChoice(ctx, item, effectIndex, {
-        playerId: chooserFor(ctx, selector, item.controllerId),
+      choice: buildChoice(ctx, item, effectIndex, effect, {
+        playerId: chooserId,
         type: selector.zone === 'battlefield' ? 'select_units' : 'select_cards',
         reason: 'effect_target',
         zone: selector.zone,
         minimum: selector.optional ? 0 : maximum,
         maximum,
         validEntityIds: candidates,
+        targetRelation: targetRelationFor(selector.controller, chooserId, item.controllerId),
       }),
     };
   }
@@ -439,6 +502,7 @@ function damageIsLethal(ctx: MatchContext, sourceInstanceId: InstanceId | null):
 function divideDamage(
   ctx: MatchContext,
   item: ResolutionItem,
+  effect: Extract<EffectDefinition, { type: 'deal_damage' }>,
   target: Extract<TargetDefinition, { kind: 'entity' }>,
   effectIndex: number,
   total: number,
@@ -450,16 +514,18 @@ function divideDamage(
 
   const stored = item.selections[String(effectIndex)];
   if (stored === undefined) {
+    const chooserId = chooserFor(ctx, target.selector, item.controllerId);
     return {
       kind: 'awaiting_choice',
-      choice: buildChoice(ctx, item, effectIndex, {
-        playerId: chooserFor(ctx, target.selector, item.controllerId),
+      choice: buildChoice(ctx, item, effectIndex, effect, {
+        playerId: chooserId,
         type: 'divide_damage',
         reason: 'divide_damage',
         zone: target.selector.zone,
         minimum: total,
         maximum: total,
         validEntityIds: candidates,
+        targetRelation: targetRelationFor(target.selector.controller, chooserId, item.controllerId),
       }),
     };
   }
@@ -526,7 +592,7 @@ export function executeEffect(
       if (!hasRecipient(ctx, item, effect)) return { kind: 'fizzled', reason: 'no_legal_target' };
       return {
         kind: 'awaiting_choice',
-        choice: buildChoice(ctx, item, effectIndex, {
+        choice: buildChoice(ctx, item, effectIndex, effect, {
           playerId: item.controllerId,
           type: 'confirm',
           reason: 'optional_effect',
@@ -535,6 +601,10 @@ export function executeEffect(
           maximum: 1,
           validEntityIds: ['yes', 'no'],
           selectionKey: mayKey,
+          // "Yes" is not a card anybody controls, so there is no entity for the
+          // relation to be about. The intent recorded beside it is still the
+          // instruction's own: it says what saying yes would go on to do.
+          targetRelation: 'none',
         }),
       };
     }
@@ -573,14 +643,14 @@ export function executeEffect(
 
   switch (effect.type) {
     case 'draw': {
-      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect, effect.player);
       if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
       for (const playerId of players.ids) drawCards(ctx, playerId, value(effect.amount));
       return RESOLVED;
     }
 
     case 'discard': {
-      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect, effect.player);
       if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
 
       // Each discarding player answers separately, in the order the selector
@@ -607,7 +677,7 @@ export function executeEffect(
         if (effect.selection === 'player_choice') {
           return {
             kind: 'awaiting_choice',
-            choice: buildChoice(ctx, item, effectIndex, {
+            choice: buildChoice(ctx, item, effectIndex, effect, {
               playerId,
               type: 'select_cards',
               reason: 'discard_effect',
@@ -616,6 +686,9 @@ export function executeEffect(
               maximum: amount,
               validEntityIds: hand,
               selectionKey: playerKey,
+              // A discard is always out of the discarding seat's own hand,
+              // whoever printed the instruction that is making them do it.
+              targetRelation: 'self',
             }),
           };
         }
@@ -635,10 +708,10 @@ export function executeEffect(
       // underneath: one total, allocated by a player, rather than one amount
       // repeated at every recipient (M02.5).
       if (effect.divided === true && effect.target.kind === 'entity') {
-        return divideDamage(ctx, item, effect.target, effectIndex, value(effect.amount));
+        return divideDamage(ctx, item, effect, effect.target, effectIndex, value(effect.amount));
       }
 
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -664,7 +737,7 @@ export function executeEffect(
     }
 
     case 'heal': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -678,7 +751,7 @@ export function executeEffect(
     }
 
     case 'modify_stats': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -710,7 +783,7 @@ export function executeEffect(
 
     case 'grant_keyword':
     case 'remove_keyword': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -745,7 +818,7 @@ export function executeEffect(
     }
 
     case 'create_token': {
-      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.controller);
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect, effect.controller);
       if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
       const definition = ctx.database.get(effect.tokenCardId);
       if (!definition) return { kind: 'fizzled', reason: 'unsupported' };
@@ -822,7 +895,7 @@ export function executeEffect(
 
     case 'destroy':
     case 'sacrifice': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -832,7 +905,7 @@ export function executeEffect(
     }
 
     case 'return_to_hand': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -861,7 +934,7 @@ export function executeEffect(
           if (controller.energy >= effect.unlessPays) {
             return {
               kind: 'awaiting_choice',
-              choice: buildChoice(ctx, item, effectIndex, {
+              choice: buildChoice(ctx, item, effectIndex, effect, {
                 playerId: entry.controllerId,
                 type: 'confirm',
                 reason: 'pay_additional_cost',
@@ -869,6 +942,7 @@ export function executeEffect(
                 minimum: 1,
                 maximum: 1,
                 validEntityIds: ['yes', 'no'],
+                targetRelation: 'none',
               }),
             };
           }
@@ -884,7 +958,7 @@ export function executeEffect(
     }
 
     case 'move_card': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -900,7 +974,7 @@ export function executeEffect(
 
     case 'exhaust':
     case 'ready': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -919,7 +993,7 @@ export function executeEffect(
     }
 
     case 'skip_next_ready': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind !== 'entities') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -930,7 +1004,7 @@ export function executeEffect(
     }
 
     case 'prevent_damage': {
-      const resolution = resolveTargets(ctx, item, effectIndex, effect.target);
+      const resolution = resolveTargets(ctx, item, effectIndex, effect, effect.target);
       if (resolution.kind === 'choice')
         return { kind: 'awaiting_choice', choice: resolution.choice };
       if (resolution.kind === 'fizzle') return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -959,7 +1033,7 @@ export function executeEffect(
     }
 
     case 'modify_cost': {
-      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect, effect.player);
       if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
       for (const playerId of players.ids) {
         playerOf(ctx.state, playerId).costModifiers.push({
@@ -980,7 +1054,7 @@ export function executeEffect(
     }
 
     case 'search_zone': {
-      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect, effect.player);
       if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
       const searcher = players.ids[0];
       if (searcher === undefined) return RESOLVED;
@@ -1079,7 +1153,7 @@ export function executeEffect(
 
       return {
         kind: 'awaiting_choice',
-        choice: buildChoice(ctx, item, effectIndex, {
+        choice: buildChoice(ctx, item, effectIndex, effect, {
           playerId: searcher,
           type: 'select_cards',
           reason: 'search_zone',
@@ -1087,12 +1161,14 @@ export function executeEffect(
           minimum: mandatory ? maximum : 0,
           maximum,
           validEntityIds: candidates,
+          // A search always rummages through the searcher's own zone.
+          targetRelation: 'self',
         }),
       };
     }
 
     case 'reorder_zone': {
-      const players = resolveEffectPlayers(ctx, item, effectIndex, effect.player);
+      const players = resolveEffectPlayers(ctx, item, effectIndex, effect, effect.player);
       if (players.kind === 'choice') return { kind: 'awaiting_choice', choice: players.choice };
       const playerId = players.ids[0];
       if (playerId === undefined) return RESOLVED;
@@ -1118,7 +1194,7 @@ export function executeEffect(
 
       return {
         kind: 'awaiting_choice',
-        choice: buildChoice(ctx, item, effectIndex, {
+        choice: buildChoice(ctx, item, effectIndex, effect, {
           playerId,
           type: 'order_cards',
           reason: 'reorder_zone',
@@ -1127,6 +1203,8 @@ export function executeEffect(
           maximum: window.length,
           validEntityIds: window,
           ordered: true,
+          // The seat asked to order a zone is the seat whose zone it is.
+          targetRelation: 'self',
         }),
       };
     }

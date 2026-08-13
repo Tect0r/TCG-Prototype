@@ -10,7 +10,8 @@ import type { BotPolicy } from './types.js';
  * attack barely registers, and blocking is only worth doing to survive. It will
  * happily race and will lose to a board it could have stabilised against.
  */
-export const AGGRESSIVE_VERSION = '1.0.0';
+/** 1.1.0 (M05.3): choices are answered from the resolving instruction's intent. */
+export const AGGRESSIVE_VERSION = '1.1.0';
 
 export const AGGRESSIVE_WEIGHTS: BotWeights = Object.freeze(
   botWeightsSchema.parse({

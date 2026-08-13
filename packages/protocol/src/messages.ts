@@ -18,7 +18,13 @@ import {
  * handshake compares versions and refuses to start rather than failing halfway
  * through a match with a confusing error.
  */
-export const PROTOCOL_VERSION = 4;
+/**
+ * 5 (M05.3): `PlayerView.pendingChoice` and the `choice_requested` event both
+ * carry `provenance`, so the shape a server sends is not one a v4 client can
+ * validate. The handshake refuses rather than letting a strict-object parse fail
+ * mid-match on the first choice.
+ */
+export const PROTOCOL_VERSION = 5;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({
