@@ -70,6 +70,12 @@ import {
   type PilotId,
 } from '@tcg/bot-interface';
 import { CALIBRATION_FIXTURES, CALIBRATION_SUITE_VERSION } from '@tcg/bot-interface/calibration';
+import {
+  AVAILABLE_DIFFICULTIES,
+  BOT_CONFIG_SCHEMA_VERSION,
+  DIFFICULTY_REGISTRY_VERSION,
+  PACING_CONFIG_VERSION,
+} from '@tcg/bot-config';
 import { BOARD_TELEMETRY_VERSION, STALL_DEFINITION_VERSION } from '@tcg/board-telemetry';
 import { DECK_SCHEMA_VERSION, deckFormatOf, reviewPrecon } from '@tcg/deck';
 import { GLOSSARY_ENTRIES, GLOSSARY_SCHEMA_VERSION } from '@tcg/help-content';
@@ -473,6 +479,27 @@ function versionGroups(): readonly VersionGroup[] {
           constant: 'HASH_VERSION',
           value: String(HASH_VERSION),
           pins: 'How a hash over content or configuration is taken.',
+        },
+      ],
+    },
+    {
+      title: 'Bot seats',
+      note: 'What a bot seat is configured by. Independent of the play contract on purpose (ADR 0024 §7): a difficulty can improve, and a pacing dial can move, without a card, a rule or a message shape changing.',
+      entries: [
+        {
+          constant: 'BOT_CONFIG_SCHEMA_VERSION',
+          value: String(BOT_CONFIG_SCHEMA_VERSION),
+          pins: "One bot seat's configuration — controller, difficulty, style, deck source and pacing.",
+        },
+        {
+          constant: 'DIFFICULTY_REGISTRY_VERSION',
+          value: String(DIFFICULTY_REGISTRY_VERSION),
+          pins: `Which difficulty IDs exist and what each claims. Available today: ${AVAILABLE_DIFFICULTIES.join(', ')}.`,
+        },
+        {
+          constant: 'PACING_CONFIG_VERSION',
+          value: String(PACING_CONFIG_VERSION),
+          pins: 'The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.',
         },
       ],
     },

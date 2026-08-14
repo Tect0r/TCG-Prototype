@@ -301,7 +301,7 @@ and which of those does move and when.
 
 ---
 
-## M09.1 — Bot configuration contracts
+## M09.1 — Bot configuration contracts — **done (2026-08-14)**
 
 Define the complete strict configuration before any of it crosses the wire:
 versioned schemas for bot controller metadata, difficulty, style, deck choice,
@@ -322,12 +322,80 @@ no UI.
 
 ### Checklist
 
-- [ ] Strict versioned schemas for controller metadata, difficulty, style, deck
-      choice, pacing and generated-deck provenance.
-- [ ] Deck choice is a four-member discriminated union.
-- [ ] Public projection separate from private configuration, and tested as such.
-- [ ] Percentage-to-delay, safety margin, limits and decision categories defined.
-- [ ] Total difficulty registry with versions; a future version refused.
+- [x] **Strict versioned schemas for controller metadata, difficulty, style, deck
+      choice, pacing and generated-deck provenance**, in a new contract package,
+      `packages/bot-config` (`@tcg/bot-config`). Every object is a `strictObject`,
+      so an unknown member is a parse failure rather than a field that survives
+      to be read later by something that trusts it.
+- [x] **Deck choice is a four-member discriminated union** over `exact_precon`,
+      `exact_saved_deck`, `commander_generated` and `autonomous_generated`, in
+      `deck-source.ts`. There is no fifth: AI Lab finalists as a deck source need
+      M08 to exist, and `DECK_MODE_SUPPORT` records which tranche owns each mode
+      that a build cannot yet honour, so M09.3 refuses one **by name** from data
+      rather than from a hard-coded list of what is finished.
+- [x] **Public projection separate from private configuration, and tested as
+      such.** `publicDeckSourceOf` and `publicBotSeatOf` are the only routes from
+      one to the other, and the public unions have no card list, generator seed,
+      deck hash or saved-deck identity to strip — the privacy rule is a type
+      rather than a habit. The tests assert it by serialising the whole
+      projection and searching the text for every private value, because the
+      failure being guarded against is a field being _added_ later.
+- [x] **Percentage-to-delay, safety margin, limits and decision categories
+      defined** in `pacing.ts`. `pacingDelayMs` is a pure integer function: 0% is
+      exactly zero, 50% is half the budget, and 100% stops one
+      `PACING_SAFETY_MARGIN_MS` short of it so the decision still lands inside
+      the budget being measured. Three categories — `ordinary`, `pending_choice`
+      and `reaction` — draw on two budgets through a total map; classifying a
+      live opportunity into one of them stays M09.12's.
+- [x] **Total difficulty registry with versions; a future version refused.**
+      `DIFFICULTY_REGISTRY` is a total `Record` over `easy`, `normal` and `hard`;
+      `normal` is `available` with a behaviour version, and the other two are
+      `planned`, name the tranche that owns them, and carry a `null` behaviour
+      version because nothing implements them yet. `readBotSeatConfig` refuses a
+      future `schemaVersion` or `difficultyRegistryVersion` before parsing, so a
+      record from a newer build is told it is from a newer build rather than
+      handed complaints about fields this build has not learned about.
+- [x] **The four axes cannot be collapsed into each other**, and a test says so:
+      no identifier is shared between the difficulty and style vocabularies, and
+      neither schema accepts a member of the other. `random_legal` is not offered
+      as a style, and `automatic` is absent until M09.16 gives it a mapping.
+- [x] **A bot controller has no connection identity.**
+      `FIELDS_A_BOT_CONTROLLER_NEVER_HAS` names `connectionId`,
+      `reconnectToken`, `disconnectDeadline` and `graceSeconds`, and the strict
+      controller schema refuses each one, so [ADR 0024](../architecture/0024-live-bot-seats.md)
+      §1 is a test rather than a sentence.
+- [x] **The dependency direction is enforced, not described.** `@tcg/bot-config`
+      depends only on `@tcg/card-data`, `@tcg/shared` and `zod`, and an ESLint
+      rule refuses an import of the engine, the UI, the protocol or the pilots
+      from inside it — so a client validating a bot seat view never drags a
+      decision procedure in with it. The one seam that needs both sides,
+      "every style names a real heuristic pilot", is a test in
+      `packages/bot-interface`, which is the layer above.
+- [x] Verified: the 79 focused tests above, `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` all pass.
+
+### Versions
+
+Three new constants, and nothing existing moved.
+
+| Constant                      | Value | Pins                                                      |
+| ----------------------------- | ----- | --------------------------------------------------------- |
+| `BOT_CONFIG_SCHEMA_VERSION`   | 1     | One bot seat's configuration record.                      |
+| `DIFFICULTY_REGISTRY_VERSION` | 1     | Which difficulty IDs exist and what each claims.          |
+| `PACING_CONFIG_VERSION`       | 1     | The budget shape and the percentage-to-delay calculation. |
+
+`PROTOCOL_VERSION` stays 6: nothing here is on a wire yet, and moving it now
+would refuse compatible builds for a shape they never send. It moves once, in
+M09.2. `MATCH_SCHEMA_VERSION`, `RULES_VERSION` and `CARD_SCHEMA_VERSION` stay
+where they are for the reasons [ADR 0024](../architecture/0024-live-bot-seats.md)
+§7 already gives — a bot seat is a controller above the engine, and pacing is
+configuration rather than a rule. `PACING_CONFIG_VERSION` pins the _calculation_
+and not the numbers, which is what makes changing the 30-second budget after a
+playtest a configuration change rather than a version bump.
+
+`generatedDeckProvenanceSchema.generatorVersion` is a plain string this package
+does not own: the shared generator carries its own constant from M09.8, and
+copying the number here would give it two owners.
 
 ## M09.2 — Bot lobby protocol
 

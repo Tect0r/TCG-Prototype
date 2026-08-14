@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.1        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.2        |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -42,20 +42,24 @@ part of it is scaffolded while M09 is open.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
-changed.
+changed. M09.1 added the contract those decisions describe — `@tcg/bot-config`,
+a schema-only package holding controller metadata, the difficulty and style
+registries, the four-member deck-source union, pacing, and the two privacy
+projections — and nothing that acts on it.
 
 ## The next bounded task
 
-**M09.1 — Bot configuration contracts.** Define the complete strict, versioned
-configuration for a bot seat before any of it crosses the wire: controller
-metadata, difficulty, style, deck choice as a four-member discriminated union,
-pacing percentage and Reaction override, pacing budgets, and generated-deck
-provenance — with the public lobby projection defined separately from the private
-host and server configuration, and a total difficulty registry that carries
-versions without implementing Easy or Hard yet. Schemas and tests only: no
-protocol messages, no pilot implementation, no deck generation, no UI. The scope,
-the exclusions and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m091--bot-configuration-contracts).
+**M09.2 — Bot lobby protocol.** Put the contract M09.1 defined on the wire: four
+host-only messages (`add_bot`, `update_bot`, `reroll_bot`, `remove_bot`), a lobby
+seat view extended with controller kind and the _safe subset_ of bot
+configuration, and seven named structured errors — full table, non-host sender,
+unknown bot seat, invalid configuration, illegal deck, unsupported mode, and a
+started or locked lobby. Exact and generated card lists and the private generator
+seed never appear in another player's lobby view; `botSeatPublicSchema` is
+already the shape that guarantees it. `PROTOCOL_VERSION` moves once, here, with
+the reasoning recorded beside it. The server does not act on the new messages
+yet. The scope, the exclusions and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m092--bot-lobby-protocol).
 
 ## The parallel non-code activity
 

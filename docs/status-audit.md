@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `9ba3007363e5480dafe3bc8df274c5bd1fb89b4b` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-14                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `dca30635228ed67083baf7493f5524079b8c1528`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-14                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 60      | 1408     |
+| packages       | 65      | 1487     |
 | scripts        | 4       | 69       |
 | server         | 4       | 63       |
 | simulator      | 23      | 434      |
 | web-client     | 12      | 142      |
-| **total**      | **103** | **2116** |
+| **total**      | **108** | **2195** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -85,6 +85,16 @@ Documents a finished run leaves behind. Every move so far has been a refusal rat
 | `CONFIG_SCHEMA_VERSION`               | 1     | An experiment configuration file.                              |
 | `SEED_DERIVATION_VERSION`             | 2     | How every seed in a run is derived.                            |
 | `HASH_VERSION`                        | 1     | How a hash over content or configuration is taken.             |
+
+### Bot seats
+
+What a bot seat is configured by. Independent of the play contract on purpose (ADR 0024 §7): a difficulty can improve, and a pacing dial can move, without a card, a rule or a message shape changing.
+
+| Constant                      | Value | Pins                                                                                      |
+| ----------------------------- | ----- | ----------------------------------------------------------------------------------------- |
+| `BOT_CONFIG_SCHEMA_VERSION`   | 1     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.     |
+| `DIFFICULTY_REGISTRY_VERSION` | 1     | Which difficulty IDs exist and what each claims. Available today: normal.                 |
+| `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version. |
 
 ### Registries and instruments
 
@@ -255,13 +265,13 @@ No question the plan calls open is missing or answered in the question file.
 
 ## Repository inventory
 
-| Reading                                  | Value                                                                                                                                                                                                                                                                       |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspaces                               | `packages/board-telemetry`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
-| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                      |
-| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                        |
-| Architecture decision records            | 24                                                                                                                                                                                                                                                                          |
-| Milestone documents                      | 9                                                                                                                                                                                                                                                                           |
+| Reading                                  | Value                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspaces                               | `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
+| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                             |
+| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                               |
+| Architecture decision records            | 24                                                                                                                                                                                                                                                                                                 |
+| Milestone documents                      | 9                                                                                                                                                                                                                                                                                                  |
 
 ### Architecture decision records
 
