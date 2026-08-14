@@ -4,6 +4,8 @@ import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
 import { preconsForFormat } from '@tcg/card-data';
 import { reviewPrecon, validateDeck } from '@tcg/deck';
 import { RulebookPanel } from '../help/RulebookPanel.js';
+import { BotSeatPanel, isBotSeatError } from './BotSeatPanel.js';
+import { botSeatLabels } from '../../lib/bot-seat-labels.js';
 
 /**
  * What the deck picker is currently pointing at.
@@ -73,6 +75,14 @@ export function LobbyScreen() {
     else if (selectedPrecon) client.submitPrecon(selectedPrecon.id);
   };
 
+  // A refusal about a bot seat belongs beside the bot form, not in the banner at
+  // the top of a screen that is mostly about the player's own deck. Only the
+  // four codes that can *only* mean a bot move there; the three M09.2
+  // deliberately reused stay here, because they say the same thing about the
+  // lobby whatever caused them.
+  const botError = isBotSeatError(lastError) ? lastError : null;
+  const screenError = botError ? null : lastError;
+
   return (
     <section className="lobby" aria-label="Match lobby">
       <header className="lobby__header">
@@ -92,10 +102,12 @@ export function LobbyScreen() {
         onSectionChange={setRulebookSection}
       />
 
-      {lastError && (
+      {screenError && (
         <p className="lobby__error" role="alert">
-          {lastError.message}
-          {'details' in lastError && lastError.details ? ` (${lastError.details.join('; ')})` : ''}
+          {screenError.message}
+          {'details' in screenError && screenError.details
+            ? ` (${screenError.details.join('; ')})`
+            : ''}
         </p>
       )}
 
@@ -176,34 +188,59 @@ export function LobbyScreen() {
             </label>
           )}
 
-          <ul className="lobby__seats">
-            {lobby.seats.map((seat) => (
-              <li key={seat.seatId} className="lobby__seat">
-                <span className="lobby__seat-name">
-                  {seat.displayName}
-                  {seat.seatId === seatId ? ' (you)' : ''}
-                  {seat.isHost ? ' · host' : ''}
-                </span>
-                <span className={seat.connected ? 'tag tag--ok' : 'tag tag--warn'}>
-                  {seat.connected ? 'connected' : 'disconnected'}
-                </span>
-                <span className="tag">{seat.deckName ?? 'no deck'}</span>
-                {seat.deckName && (
-                  <span className={seat.deckLegal ? 'tag tag--ok' : 'tag tag--error'}>
-                    {seat.deckLegal ? 'legal' : 'illegal'}
+          <ul className="lobby__seats" aria-label="Seats">
+            {lobby.seats.map((seat) => {
+              // Read from the seat's public projection, which carries no card
+              // list, seed or hash to leak (ADR 0024 §3).
+              const bot = seat.controller === 'bot' ? botSeatLabels(seat.bot, database) : null;
+              return (
+                <li key={seat.seatId} className="lobby__seat">
+                  <span className="lobby__seat-name">
+                    {seat.displayName}
+                    {seat.seatId === seatId ? ' (you)' : ''}
+                    {seat.isHost ? ' · host' : ''}
                   </span>
-                )}
-                <span className={seat.ready ? 'tag tag--ok' : 'tag'}>
-                  {seat.ready ? 'ready' : 'not ready'}
-                </span>
-              </li>
-            ))}
+                  {/* What is in the seat, said rather than inferred from the
+                      absence of a disconnect tag. */}
+                  {bot ? (
+                    <span className="tag tag--bot">bot</span>
+                  ) : (
+                    <span className={seat.connected ? 'tag tag--ok' : 'tag tag--warn'}>
+                      {seat.connected ? 'connected' : 'disconnected'}
+                    </span>
+                  )}
+                  {bot ? (
+                    <>
+                      <span className="tag">{bot.deckName ?? 'deck hidden'}</span>
+                      {bot.commanderName && <span className="tag">{bot.commanderName}</span>}
+                      <span className="tag">{bot.difficulty}</span>
+                      <span className="tag">{bot.style}</span>
+                    </>
+                  ) : (
+                    <span className="tag">{seat.deckName ?? 'no deck'}</span>
+                  )}
+                  {(bot ? bot.deckName !== null : seat.deckName !== null) && (
+                    <span className={seat.deckLegal ? 'tag tag--ok' : 'tag tag--error'}>
+                      {seat.deckLegal ? 'legal' : 'illegal'}
+                    </span>
+                  )}
+                  <span className={seat.ready ? 'tag tag--ok' : 'tag'}>
+                    {seat.ready ? 'ready' : 'not ready'}
+                  </span>
+                </li>
+              );
+            })}
             {Array.from({ length: Math.max(0, emptySeats) }, (_, index) => (
               <li key={`empty_${index}`} className="lobby__seat lobby__seat--empty">
                 Waiting for a player…
               </li>
             ))}
           </ul>
+
+          {/* Host-only, because every bot message is host-only on the wire and
+              the server refuses the rest by name (M09.2). A guest sees the bot
+              seat in the list above, and no controls for it. */}
+          {isHost && <BotSeatPanel lobby={lobby} error={botError} />}
 
           <div className="lobby__deck">
             <label className="field">
@@ -262,8 +299,15 @@ export function LobbyScreen() {
                 {mySeat?.ready ? 'Not ready' : 'Ready'}
               </button>
               {/* A larger table does not start by itself: two of four seats
-                  being ready is a legal state the host may still be filling. */}
-              {isHost && lobby.maxSeats > 2 && (
+                  being ready is a legal state the host may still be filling.
+
+                  A two-seat table starts itself when the *human* readies up,
+                  which is the last thing that happens in the ordinary flow. It
+                  is not the last thing when the host readies first and then
+                  seats a bot, so the button also appears whenever the server
+                  says the host could start right now — never disabled, because
+                  in that case it is the only way out. */}
+              {isHost && (lobby.maxSeats > 2 || lobby.canStart) && (
                 <button
                   type="button"
                   onClick={() => client.startMatch()}

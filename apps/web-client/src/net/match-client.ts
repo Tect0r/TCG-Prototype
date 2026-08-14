@@ -2,6 +2,7 @@ import {
   CURRENT_VERSIONS,
   decodeServerMessage,
   encode,
+  type BotSetup,
   type ClientMessageInput,
   type LobbyView,
   type ProtocolError,
@@ -160,6 +161,29 @@ export class MatchClient {
   /** Host-only; needed for three- and four-seat tables (open-questions.md Q36). */
   startMatch(): void {
     this.dispatch({ type: 'start_match' });
+  }
+
+  /**
+   * Host-only: seat a bot in the next free seat.
+   *
+   * No seat ID travels, because the server allocates one deterministically and a
+   * bot never displaces anybody (ADR 0024 §1). There is deliberately no
+   * `rerollBot` here: rerolling builds a new deck, only a generated deck mode
+   * does that, and this build supports none — a method that could only ever be
+   * refused is a control the UI would then have to explain away.
+   */
+  addBot(setup: BotSetup): void {
+    this.dispatch({ type: 'add_bot', setup });
+  }
+
+  /** Host-only: replace one bot seat's configuration wholesale, keeping its seat. */
+  updateBot(seatId: SeatId, setup: BotSetup): void {
+    this.dispatch({ type: 'update_bot', seatId, setup });
+  }
+
+  /** Host-only: free the seat. A human joining never does this implicitly. */
+  removeBot(seatId: SeatId): void {
+    this.dispatch({ type: 'remove_bot', seatId });
   }
 
   joinLobby(inviteCode: string, displayName: string): void {

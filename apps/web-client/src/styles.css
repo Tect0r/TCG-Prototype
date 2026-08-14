@@ -826,6 +826,27 @@ code {
   color: var(--text-dim);
 }
 
+/* The host's bot controls (M09.5). Same card as the deck panel beside it. */
+.lobby__bots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.lobby__bots h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.tag--bot {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Board */
 
 .board {

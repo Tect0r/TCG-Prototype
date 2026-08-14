@@ -742,7 +742,7 @@ exactly this: it moves "only if bot seed derivation changes an existing path".
 simulator's hierarchy, the spectator's `derivePilotSeed` and every recorded result
 derive their seeds exactly as they did.
 
-## M09.5 — First playable human-versus-precon-bot flow
+## M09.5 — First playable human-versus-precon-bot flow — **done (2026-08-14)**
 
 The earliest useful slice: one human can start and finish a match against a
 chosen precon bot. Host controls add and remove one bot, choose its shipped
@@ -762,11 +762,117 @@ continue to M09.6.
 
 ### Checklist
 
-- [ ] Add, configure and remove exactly one bot from the lobby UI.
-- [ ] Bot seat labelled with controller, Commander, precon and readiness.
-- [ ] Unsupported options absent, not disabled decoration.
-- [ ] Match and result unchanged, rendered by the existing board.
-- [ ] Keyboard-accessible controls and designed error states.
+- [x] **Add, configure and remove exactly one bot from the lobby UI.**
+      `BotSeatPanel` in `apps/web-client/src/components/match/BotSeatPanel.tsx`
+      is host-only — the same rule `HOST_ONLY_CLIENT_MESSAGE_TYPES` states on the
+      wire — and `MatchClient` gained `addBot`, `updateBot` and `removeBot` and
+      deliberately **not** `rerollBot`: rerolling builds a new deck, only a
+      generated mode does that, and the server refuses every reroll in this build
+      by name. The Add control is absent once a seat holds a bot, because M09.5
+      is one bot and M09.7 is what opens the table. `Apply bot changes` is
+      disabled until something actually differs from the seated configuration,
+      and an in-flight request disables the control that sent it, so a double
+      press cannot seat two bots before the first broadcast lands.
+- [x] **Bot seat labelled with controller, Commander, precon and readiness.**
+      `botSeatLabels` in `apps/web-client/src/lib/bot-seat-labels.ts` reads the
+      **public** projection a seat view carries and shipped precon content, so
+      the labels have no card list, seed or hash available to them to leak
+      ([ADR 0024](../architecture/0024-live-bot-seats.md) §3). The row shows a
+      `bot` tag **instead of** the connected/disconnected tag a person gets: a
+      bot has no connection to report, and the wire already narrows `connected`
+      to `true`, so printing "connected" would be describing something that
+      cannot be otherwise. The function is total over all four deck modes even
+      though one is configurable, and answers every private mode the honest way —
+      Commander shown, deck name withheld.
+- [x] **Unsupported options absent, not disabled decoration.** The difficulty
+      control is built from `AVAILABLE_DIFFICULTIES`, so Easy and Hard are not
+      on screen at all and M09.13 turns its own option on by changing the
+      registry entry it already owns. There is no deck-mode control, because
+      `exact_precon` is the only supported mode; no timing control, because
+      pacing is not live; and no reroll. A test asserts each absence by name,
+      driven from `PLANNED_DIFFICULTIES` rather than from a hard-coded list.
+- [x] **Match and result unchanged, rendered by the existing board.** No file
+      under `components/match/MatchBoard.tsx` was touched. A test starts a
+      human-versus-bot match from a real engine `PlayerView` and asserts the bot
+      renders as an ordinary opponent — a seat and a name, with no controller
+      label, difficulty, style or bot control anywhere on the board.
+- [x] **Keyboard-accessible controls and designed error states.** Every control
+      is a native labelled `<select>` or `<button>`; a test tabs through the
+      three selects into the Add button and presses Enter. Four states exist and
+      are tested: no precons published for the format, the table full, the lobby
+      locked after start, and a refusal. The four `protocol/bot_*` codes print
+      beside the form; `protocol/lobby_full`, `protocol/not_host` and
+      `protocol/already_started` stay in the screen's own banner, because M09.2
+      reused them precisely for saying the same thing about the lobby whatever
+      caused them, and routing them to the bot form would sometimes misattribute
+      a lobby-wide refusal.
+- [x] Verified: the 15 focused tests in
+      `apps/web-client/src/bot-lobby-flow.test.tsx`, the 142 existing web-client
+      tests, `npm run check:consistency`, `npm run audit:check` and
+      `npm run verify` all pass.
+
+### The first playable checkpoint
+
+**Reported explicitly, as the milestone requires.** A person can now create a
+lobby, seat a bot on a shipped precon at a chosen style, submit their own deck,
+ready up and play a complete match against the software. Nothing after this
+tranche was started.
+
+What is genuinely usable is exactly what the checkpoint table promises and no
+more: one human, one bot, `exact_precon`, Normal, instant. The three other deck
+modes, Easy, Hard, pacing, reroll, multi-bot tables and the pacing summary are
+absent from the screen rather than present and refused.
+
+The UI's half of the flow is proven against the real codec — every message this
+screen sends is parsed by `clientMessageSchema` on the way out of the fake
+transport, so a setup it builds is one the wire accepts. The server's half is
+proven by the M09.3 and M09.4 suites, which drive `add_bot` → `submit_precon` →
+`set_ready` and play the match out; this tranche presents those three in that
+order and adds nothing to the sequence.
+
+### Findings recorded rather than fixed
+
+- **A two-seat table does not start itself when the bot is seated after the host
+  readies up.** `set_ready` is the only handler that auto-starts a `MIN_SEATS`
+  lobby, so a host who readies first and adds a bot second reaches `canStart`
+  with nothing to press — the Start button existed only for tables of three or
+  four. M09.5 answers this in the client: the button also appears whenever the
+  server says the host could start right now, never disabled. The server was
+  left alone deliberately. Moving the auto-start into the bot handlers would mean
+  seating a bot could begin a match the host was still configuring, which is a
+  worse failure than an extra button, and it would change a human-versus-human
+  path this tranche has no business changing.
+- **The panel infers "sent, waiting" from the lobby view rather than an
+  acknowledgement.** There is no per-request ack on this wire, so `Adding…`
+  clears when the seat list or the error changes. That is sufficient for one bot
+  and one host, and it avoids putting a second idea of "the current
+  configuration" on the client — but M09.7's concurrent seats should decide
+  whether it stays sufficient, because two mutations in flight are
+  indistinguishable to it.
+- **The client does not preview a bot deck's legality, and this is deliberate.**
+  A human's own deck gets a `reviewPrecon` preview because the player is
+  assembling it; a bot's precon is shipped content the server resolves from its
+  own bundle, so previewing it here would be a second opinion about a deck this
+  client never sends. The picker is scoped through the same `preconsForFormat`
+  the server and the deck browser use, so it cannot offer a deck the server would
+  refuse for being off-format.
+
+### Versions — deliberately unchanged
+
+Nothing moved. `PROTOCOL_VERSION` stays 7: M09.5 sends the four messages M09.2
+put on the wire and reads the seat view M09.2 widened, and changes neither shape.
+`BOT_CONFIG_SCHEMA_VERSION`, `DIFFICULTY_REGISTRY_VERSION` and
+`PACING_CONFIG_VERSION` stay 1 — the client writes all three into every setup it
+builds and widens none of them. `MATCH_SCHEMA_VERSION`, `RULES_VERSION` and
+`CARD_SCHEMA_VERSION` stay where they are for the reason
+[ADR 0024](../architecture/0024-live-bot-seats.md) §7 gives, and because a screen
+is not a rule.
+
+**One new dependency edge:** `@tcg/web-client` now depends on `@tcg/bot-config`.
+That is the direction ADR 0024 §7 chose. `@tcg/bot-config` depends only on
+`@tcg/card-data`, `@tcg/shared` and `zod`, so a client rendering a bot seat drags
+no pilot, engine or server code in with it, and the ESLint rule that keeps it
+that way is unchanged.
 
 ## M09.6 — Exact saved-deck mode
 

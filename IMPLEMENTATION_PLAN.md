@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.5        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.6        |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -63,32 +63,41 @@ asks `decideSafely`, discards the answer if the board moved while the pilot was
 thinking, and submits through the same `applyAction` path and the same
 `appliedActions` identity map a human uses. A bot is only asked when the engine
 is actually offering it something — `canConcede` is not a decision — which is
-what contains the M09.0 finding without ever letting a live bot concede. A
-complete human-versus-bot match now runs on the server, at 0% pacing, with no UI
-for it yet: that is M09.5's.
+what contains the M09.0 finding without ever letting a live bot concede.
+
+**M09.5 reached the milestone's first playable checkpoint.** A person can create
+a lobby, seat a bot on a shipped precon at a chosen style, submit their own deck,
+ready up, and play a complete match against the software. The host's controls are
+host-only, exactly as the wire is; the bot seat is labelled with its controller,
+deck, Commander, difficulty, style and readiness, all read from the public
+projection that has no card list to leak; and every option this build cannot
+honour — the three other deck modes, Easy, Hard, pacing, reroll — is **absent
+rather than disabled**, derived from the registries that own it rather than from
+a list in the screen. The board and the result are untouched: a bot renders as an
+ordinary opponent. What is usable is exactly the checkpoint table's promise —
+one human, one bot, `exact_precon`, Normal, instant — and nothing after it was
+started.
 
 ## The next bounded task
 
-**M09.5 — First playable human-versus-precon-bot flow.** The earliest useful
-slice, and the milestone's **first playable checkpoint**: one human can add,
-configure and remove a single bot from the lobby UI, choose its shipped precon,
-choose Normal and one existing style, start the match, and play it to a finish.
-The bot seat is labelled with its controller, Commander, precon and readiness.
-Unsupported generated-deck, timing and difficulty controls are **absent rather
-than decorative**. Match and result render through the existing player MatchBoard,
-unchanged. Loading, error, empty and locked states exist, and every control is
-keyboard-accessible. Report the checkpoint explicitly and do not continue into
-M09.6. The scope, the exclusions and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m095--first-playable-human-versus-precon-bot-flow).
+**M09.6 — Exact saved-deck mode.** Let the host choose one of their own saved
+legal decks for a bot: the selected immutable contents are submitted privately as
+bot configuration and validated against the server's active format and card pool
+exactly as a human's submitted deck is. The list is snapshotted at configuration
+or start, so a later local edit cannot alter the live bot deck. Name, Commander,
+legality and deck hash or provenance are shown without broadcasting the card list
+to opponents. Deleted, edited, stale and illegal saved decks produce actionable
+errors. The scope, the exclusions and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m096--exact-saved-deck-mode).
 
 ## The parallel non-code activity
 
 **Run structured manual playtests using the four current 40-card precons.** M09
 does not replace this and is not blocked on it: nothing in the record still says
 what the game is like to play, and every remaining _content_ choice depends on
-that. What M09 changes is who the other seat can be — from its first playable
-checkpoint at M09.5 a solo tester has an opponent, and the playtest notes below
-are exactly what that opponent exists to produce.
+that. What M09 changes is who the other seat can be — **as of M09.5 a solo tester has
+an opponent**, and the playtest notes below are exactly what that opponent exists
+to produce.
 
 It is deliberately not a framework. Play the decks, write down what happened, and
 keep the notes somewhere durable — a large playtest harness is itself a milestone
