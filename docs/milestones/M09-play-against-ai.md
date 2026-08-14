@@ -397,7 +397,7 @@ playtest a configuration change rather than a version bump.
 does not own: the shared generator carries its own constant from M09.8, and
 copying the number here would give it two owners.
 
-## M09.2 — Bot lobby protocol
+## M09.2 — Bot lobby protocol — **done (2026-08-14)**
 
 Give host, client and server one versioned wire contract for bot seats: host-only
 `add_bot`, `update_bot`, `reroll_bot` and `remove_bot` messages; lobby seat views
@@ -415,10 +415,85 @@ unknown-field refusal, privacy, and every structured error.
 
 ### Checklist
 
-- [ ] Four host-only bot messages, strict and versioned.
-- [ ] Seat view carries controller kind and safe configuration only.
-- [ ] Seven named structured errors, each tested.
-- [ ] `PROTOCOL_VERSION` moved, with the reasoning recorded beside it.
+- [x] **Four host-only bot messages, strict and versioned.** `add_bot`,
+      `update_bot`, `reroll_bot` and `remove_bot` are `strictObject` members of
+      `clientMessageSchema` in `packages/protocol/src/messages.ts`, and the
+      configuration they carry, `botSetupSchema`, is **derived** from
+      `botSeatConfigSchema` by `.omit({ controller: true })` rather than
+      restated — so the wire cannot fall behind the contract M09.1 defined. Both
+      `.omit` and `.extend` preserve the strict object, which a test asserts.
+      Three things are deliberately not on this wire: `add_bot` names no seat,
+      because the server allocates seats deterministically and a bot never
+      displaces anybody; no message carries a `botId`, because a client that
+      could choose one could collide with another seat's; and `reroll_bot`
+      carries no seed, because a client-supplied seed would make the recorded
+      seed transition something a client invented.
+- [x] **Seat view carries controller kind and safe configuration only.**
+      `lobbySeatViewSchema` is now a discriminated union on `controller`, so the
+      invariant is structural rather than a refinement: a `human` seat's `bot` is
+      `z.null()` and cannot hold configuration, and a `bot` seat's is
+      `botSeatPublicSchema` — the projection `publicBotSeatOf` produces, which
+      has no card list, generator seed, deck hash or saved-deck identity to
+      strip. A bot seat additionally narrows `connected` to `true` and
+      `graceSeconds` to `null`, so a disconnected bot or one counting down a
+      reconnect window is not something the wire can describe
+      ([ADR 0024](../architecture/0024-live-bot-seats.md) §1). The privacy test
+      serialises a whole lobby view holding two bot seats and searches the text
+      for every private value, and a companion test asserts those values really
+      are in the private fixture, so it cannot pass by searching for nothing.
+- [x] **Seven named structured errors, each tested.** `BOT_LOBBY_CONDITIONS`
+      names the seven conditions and `botLobbyError` is the only place a refusal
+      is built. Four are new codes, because the condition is about a bot seat and
+      has no equivalent: `protocol/unknown_bot_seat`,
+      `protocol/bot_config_invalid`, `protocol/bot_deck_illegal` and
+      `protocol/bot_mode_unsupported`. Three reuse a code that already means
+      exactly the same thing about the sender or the lobby —
+      `protocol/lobby_full`, `protocol/not_host` and `protocol/already_started` —
+      because minting `protocol/bot_not_host` beside `protocol/not_host` would be
+      a second name for one fact. `protocol/bot_deck_illegal` is deliberately
+      **not** `protocol/deck_illegal`: that one is about the deck the recipient
+      submitted themselves and travels in `deck_rejected`, so reusing it would
+      leave a host unable to tell whose deck the server means.
+      `HOST_ONLY_CLIENT_MESSAGE_TYPES` makes "host-only" a list the server checks
+      rather than a comment per handler, which is what `not_host` is refused
+      from.
+- [x] **`PROTOCOL_VERSION` moved, with the reasoning recorded beside it.** 6 → 7,
+      in the constant's own comment: a v6 client validates a seat view against a
+      strict object with no `controller` member, so the first lobby view a v7
+      server sent it would fail to parse mid-lobby, and the handshake refuses
+      first and says which side is older.
+      [ADR 0006](../architecture/0006-network-protocol.md) carries the same
+      number and a second amendment note.
+- [x] **The server does not act on the new messages**, as the exclusion requires.
+      The only change in `apps/multiplayer-server` is that `seatView` now
+      publishes `controller: 'human'` and `bot: null`, which is what the widened
+      view obliges it to say; M09.3 owns bot seats themselves. All 63 existing
+      server tests and all 142 web-client tests pass unchanged apart from four
+      lobby fixtures that gained the two new fields.
+- [x] Verified: the 27 focused tests in
+      `packages/protocol/src/bot-lobby.test.ts`, `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` all pass.
+
+### Versions
+
+| Constant           | Move  | Why                                                            |
+| ------------------ | ----- | -------------------------------------------------------------- |
+| `PROTOCOL_VERSION` | 6 → 7 | The seat view and the client message union both changed shape. |
+
+Nothing else moved. `BOT_CONFIG_SCHEMA_VERSION`, `DIFFICULTY_REGISTRY_VERSION`
+and `PACING_CONFIG_VERSION` stay at 1: M09.2 put M09.1's shapes on a wire without
+changing one of them, and folding them into `PROTOCOL_VERSION` would teach that a
+difficulty improving is a message shape changing.
+`MATCH_SCHEMA_VERSION`, `RULES_VERSION` and `CARD_SCHEMA_VERSION` stay where they
+are for the reasons [ADR 0024](../architecture/0024-live-bot-seats.md) §7 gives —
+a bot seat is a controller above the engine, and a bot waiting is not a rule.
+`versionsSchema` still carries three fields, not five: a bot's configuration is
+not something two builds must agree on in order to play at all.
+
+**Compatibility.** A v6 and a v7 build refuse each other at the handshake with
+`protocol 6 vs server 7`, which is the existing refusal working as designed and
+is tested. Nothing is migrated: there is no stored artifact in this tranche, and
+a lobby is in memory, so a version move ends no saved data.
 
 ## M09.3 — Server-side bot lobby seats
 

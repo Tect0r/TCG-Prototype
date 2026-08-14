@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { botDisplayNameSchema, botSeatConfigSchema, botSeatPublicSchema } from '@tcg/bot-config';
 import { CARD_SCHEMA_VERSION } from '@tcg/card-data';
 import { savedDeckSchema } from '@tcg/deck';
 import {
@@ -43,8 +44,29 @@ import {
  * answer: `cardSchema` is a separate entry in `versionsSchema` and the handshake
  * below refuses on it independently. Bumping this too would refuse the same pair
  * twice and, worse, would teach that the two versions move together.
+ *
+ * 7 (M09.2): a lobby seat now says what controls it. `lobbySeatViewSchema` is a
+ * discriminated union on `controller`, and a bot seat carries the safe subset of
+ * its configuration — difficulty, style, pacing and the Commander-level deck
+ * projection — beside the fields a human seat already had. A v6 client validates
+ * a seat view against a strict object with no `controller` member, so the first
+ * lobby view a v7 server sent it would fail to parse in the middle of a lobby;
+ * the handshake refuses first and says which side is older. The four host-only
+ * bot messages travel the other way and a v6 server would reject them as
+ * malformed for the same reason.
+ *
+ * This is the **one** move M09 makes to this constant
+ * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §7), and it is
+ * made here rather than in M09.1 because M09.1 put nothing on a wire: moving it
+ * then would have refused compatible builds over a shape they never sent. The
+ * bot configuration's own versions — `BOT_CONFIG_SCHEMA_VERSION`,
+ * `DIFFICULTY_REGISTRY_VERSION` and `PACING_CONFIG_VERSION` — stay separate and
+ * deliberately do **not** move with it, because a difficulty can improve without
+ * a message shape changing. `MATCH_SCHEMA_VERSION` and `RULES_VERSION` do not
+ * move either: a bot seat is a controller above the engine, `MatchState` never
+ * learns what a bot is, and a bot waiting is not a rules change.
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({
@@ -82,7 +104,8 @@ export const LOBBY_STATUSES = ['waiting', 'ready', 'in_match', 'finished', 'clos
 export const lobbyStatusSchema = z.enum(LOBBY_STATUSES);
 export type LobbyStatus = z.infer<typeof lobbyStatusSchema>;
 
-export const lobbySeatViewSchema = z.strictObject({
+/** What a seat shows whatever is sitting in it. Never published on its own. */
+const lobbySeatViewBase = z.strictObject({
   seatId: seatIdSchema,
   displayName: displayNameSchema,
   connected: z.boolean(),
@@ -96,6 +119,49 @@ export const lobbySeatViewSchema = z.strictObject({
   /** Out of the match, watching only (CLAUDE.md §12). */
   eliminated: z.boolean(),
 });
+
+/**
+ * A seat with a person in it. `bot` is `z.null()` rather than absent, so a human
+ * seat cannot carry bot configuration even by accident.
+ */
+export const humanLobbySeatViewSchema = lobbySeatViewBase.extend({
+  controller: z.literal('human'),
+  bot: z.null(),
+});
+export type HumanLobbySeatView = z.infer<typeof humanLobbySeatViewSchema>;
+
+/**
+ * A seat with a bot in it, carrying **only** the safe subset of its
+ * configuration: `botSeatPublicSchema` is the projection `publicBotSeatOf`
+ * produces, and it has no card list, generator seed, deck hash or saved-deck
+ * identity to leak — the privacy rule is a type rather than a habit
+ * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §3).
+ *
+ * `connected` and `graceSeconds` are narrowed to `true` and `null`. A bot
+ * controller lives inside the authoritative server: it has no connection to
+ * lose and no reconnect window to count down, and pinning both here means a
+ * disconnected bot is not something the wire can even describe (§1).
+ */
+export const botLobbySeatViewSchema = lobbySeatViewBase.extend({
+  controller: z.literal('bot'),
+  connected: z.literal(true),
+  graceSeconds: z.null(),
+  bot: botSeatPublicSchema,
+});
+export type BotLobbySeatView = z.infer<typeof botLobbySeatViewSchema>;
+
+/**
+ * A seat, discriminated by what controls it.
+ *
+ * A union rather than one object with an optional `bot` member, because the
+ * invariant worth having — bot configuration appears exactly when the controller
+ * is a bot — is then structural instead of a refinement somebody can forget to
+ * run.
+ */
+export const lobbySeatViewSchema = z.discriminatedUnion('controller', [
+  humanLobbySeatViewSchema,
+  botLobbySeatViewSchema,
+]);
 export type LobbySeatView = z.infer<typeof lobbySeatViewSchema>;
 
 export const lobbyViewSchema = z.strictObject({
@@ -109,6 +175,28 @@ export const lobbyViewSchema = z.strictObject({
   seats: z.array(lobbySeatViewSchema),
 });
 export type LobbyView = z.infer<typeof lobbyViewSchema>;
+
+/* ---------------------------------------------------------------- bot setup */
+
+/**
+ * What a host sends to configure a bot seat: a bot's whole configuration except
+ * the identity the server owns.
+ *
+ * Derived from `botSeatConfigSchema` by omission rather than restated, so the
+ * shape has exactly one definition and widening it in `@tcg/bot-config` cannot
+ * leave the wire behind. `botId` is deliberately not on this wire at all — it is
+ * server-generated and stable for the life of the seat, and a client able to
+ * choose one could collide with another seat's. `displayName` is nullable
+ * because naming the seat is the server's job when the host does not care.
+ *
+ * `.omit` and `.extend` both preserve the strict object, so an unknown member is
+ * still a parse failure rather than a field that survives to be read later by
+ * something that trusts it.
+ */
+export const botSetupSchema = botSeatConfigSchema
+  .omit({ controller: true })
+  .extend({ displayName: botDisplayNameSchema.nullable() });
+export type BotSetup = z.infer<typeof botSetupSchema>;
 
 /* ----------------------------------------------------------- client → server */
 
@@ -131,6 +219,44 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
    * four seats and only the host knows whether they are still waiting.
    */
   z.strictObject({ type: z.literal('start_match') }),
+  /**
+   * Host-only: put a bot in a free seat.
+   *
+   * No seat ID, because the server allocates seats deterministically in seat
+   * order and a client picking one could race a joining human for it — and
+   * because a bot never displaces anybody: a full table is refused rather than
+   * resolved (ADR 0024 §1).
+   */
+  z.strictObject({
+    type: z.literal('add_bot'),
+    setup: botSetupSchema,
+  }),
+  /**
+   * Host-only: replace one bot seat's configuration wholesale.
+   *
+   * A whole configuration rather than a patch, so that "what this seat is set to"
+   * has one representation on the wire and a partial update cannot leave a seat
+   * in a combination nothing validated.
+   */
+  z.strictObject({
+    type: z.literal('update_bot'),
+    seatId: seatIdSchema,
+    setup: botSetupSchema,
+  }),
+  /**
+   * Host-only: build this bot a new deck. Meaningful only for the generated
+   * modes, and the new seed is derived by the server — a client-supplied seed
+   * would make the recorded seed transition something a client could invent.
+   */
+  z.strictObject({
+    type: z.literal('reroll_bot'),
+    seatId: seatIdSchema,
+  }),
+  /** Host-only: free the seat. A human joining never does this implicitly. */
+  z.strictObject({
+    type: z.literal('remove_bot'),
+    seatId: seatIdSchema,
+  }),
   z.strictObject({
     type: z.literal('join_lobby'),
     versions: versionsSchema,
@@ -181,6 +307,30 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 export type ClientMessageInput = z.input<typeof clientMessageSchema>;
 
+/**
+ * The messages only the host may send, in one place rather than in a condition
+ * per handler.
+ *
+ * It was a two-member list of comments until M09.2 tripled it, and a rule about
+ * who may send what is worth stating once: the server checks membership here, so
+ * adding a host-only message and forgetting the check is not a thing that can
+ * happen quietly. Every member is refused from another seat with
+ * `protocol/not_host`.
+ */
+export const HOST_ONLY_CLIENT_MESSAGE_TYPES = [
+  'set_max_seats',
+  'start_match',
+  'add_bot',
+  'update_bot',
+  'reroll_bot',
+  'remove_bot',
+] as const satisfies readonly ClientMessage['type'][];
+export type HostOnlyClientMessageType = (typeof HOST_ONLY_CLIENT_MESSAGE_TYPES)[number];
+
+export function isHostOnlyClientMessage(type: ClientMessage['type']): boolean {
+  return (HOST_ONLY_CLIENT_MESSAGE_TYPES as readonly string[]).includes(type);
+}
+
 /* ----------------------------------------------------------- server → client */
 
 export const PROTOCOL_ERROR_CODES = [
@@ -201,6 +351,11 @@ export const PROTOCOL_ERROR_CODES = [
   'protocol/not_host',
   'protocol/not_enough_players',
   'protocol/internal',
+  /* --- bot seats (M09.2). See `BOT_LOBBY_ERROR_CODES` for why only four. --- */
+  'protocol/unknown_bot_seat',
+  'protocol/bot_config_invalid',
+  'protocol/bot_deck_illegal',
+  'protocol/bot_mode_unsupported',
 ] as const;
 export const protocolErrorCodeSchema = z.enum(PROTOCOL_ERROR_CODES);
 export type ProtocolErrorCode = z.infer<typeof protocolErrorCodeSchema>;
@@ -212,6 +367,84 @@ export const protocolErrorSchema = z.strictObject({
   details: z.array(z.string()).optional(),
 });
 export type ProtocolError = z.infer<typeof protocolErrorSchema>;
+
+/* ------------------------------------------------- the seven bot refusals */
+
+/**
+ * Every way a bot-seat request can be refused, named by the condition rather
+ * than by the code, because the condition is what the host has to fix.
+ *
+ * M09.3 acts on these; M09.2 owns the vocabulary so that the server does not
+ * have to invent a wording per call site, and so that "the seven refusals" is a
+ * list something can be tested against.
+ */
+export const BOT_LOBBY_CONDITIONS = [
+  'table_full',
+  'not_host',
+  'unknown_bot_seat',
+  'config_invalid',
+  'deck_illegal',
+  'mode_unsupported',
+  'lobby_locked',
+] as const;
+export const botLobbyConditionSchema = z.enum(BOT_LOBBY_CONDITIONS);
+export type BotLobbyCondition = z.infer<typeof botLobbyConditionSchema>;
+
+/**
+ * The code each condition is reported with. Seven conditions, four new codes.
+ *
+ * Three reuse a code that already means exactly this, because the condition is
+ * about the **sender or the lobby** and is identical whether the request was
+ * about a bot or a person: a table with no free seat is `protocol/lobby_full`
+ * whoever wanted the seat, a sender who is not the host is `protocol/not_host`
+ * whatever they asked for, and a lobby that has started is
+ * `protocol/already_started` regardless. Minting `protocol/bot_not_host` beside
+ * `protocol/not_host` would be a second name for one fact, and a client would
+ * have to learn both to handle either.
+ *
+ * The other four are about a **bot seat or its configuration**, and have no
+ * existing equivalent. `protocol/bot_deck_illegal` is deliberately not
+ * `protocol/deck_illegal`: that one is about the deck the *recipient themselves*
+ * submitted and travels in `deck_rejected`, so reusing it would leave a host
+ * unable to tell whose deck the server is complaining about without remembering
+ * which message they sent last.
+ */
+export const BOT_LOBBY_ERROR_CODES: Readonly<Record<BotLobbyCondition, ProtocolErrorCode>> =
+  Object.freeze({
+    table_full: 'protocol/lobby_full',
+    not_host: 'protocol/not_host',
+    unknown_bot_seat: 'protocol/unknown_bot_seat',
+    config_invalid: 'protocol/bot_config_invalid',
+    deck_illegal: 'protocol/bot_deck_illegal',
+    mode_unsupported: 'protocol/bot_mode_unsupported',
+    lobby_locked: 'protocol/already_started',
+  });
+
+/** What each refusal says. Written for the host, who is the only one who sees it. */
+const BOT_LOBBY_MESSAGES: Readonly<Record<BotLobbyCondition, string>> = Object.freeze({
+  table_full:
+    'Every seat at this table is taken. Open more seats or remove one before adding a bot.',
+  not_host: 'Only the host can add, configure, reroll or remove a bot.',
+  unknown_bot_seat: 'That seat does not hold a bot.',
+  config_invalid: 'That bot configuration cannot be read.',
+  deck_illegal: "That bot's deck is not legal in this format.",
+  mode_unsupported: 'This build cannot play that bot deck mode yet.',
+  lobby_locked: 'The match has started, so bot seats are locked.',
+});
+
+/**
+ * The one place a bot refusal is built.
+ *
+ * `details` carries the actionable specifics the condition alone cannot — which
+ * deck rules failed, which tranche owns the unsupported mode, which version a
+ * configuration was written against.
+ */
+export function botLobbyError(
+  condition: BotLobbyCondition,
+  details?: readonly string[],
+): ProtocolError {
+  return protocolError(BOT_LOBBY_ERROR_CODES[condition], BOT_LOBBY_MESSAGES[condition], details);
+}
 
 export const serverMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({

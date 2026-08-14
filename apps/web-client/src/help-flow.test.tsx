@@ -297,6 +297,8 @@ describe('lobby rulebook', () => {
             isHost: true,
             graceSeconds: null,
             eliminated: false,
+            controller: 'human',
+            bot: null,
           },
         ],
       },

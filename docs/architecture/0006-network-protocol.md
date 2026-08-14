@@ -4,18 +4,23 @@
 [ADR 0007](0007-free-for-all-state.md) (two to four seats),
 [ADR 0019](0019-precon-identity.md) (`submit_precon`)
 
-**Amended 2026-08-13 (M07.3).** Every decision below stands as written; the
-boundary has not moved. What has changed is the traffic on it, and one line of
-the Context is now narrow: the server has run two-to-four-seat free-for-all
-since Phase 3, not only 1v1. `PROTOCOL_VERSION` is **6** — every move has been a
-refusal at the handshake rather than a negotiation, which is the decision below
-working as intended. Since M03.2 a seat may submit a precon by ID
-(`submit_precon`), which the server resolves and validates itself rather than
-trusting a list on the wire; since M05.3 a pending choice crosses with
-`provenance` saying why it exists and carrying no card identity
-([ADR 0021](0021-choice-contract.md)); and since M06.1 a card view carries
+**Amended 2026-08-13 (M07.3), and again 2026-08-14 (M09.2).** Every decision
+below stands as written; the boundary has not moved. What has changed is the
+traffic on it, and one line of the Context is now narrow: the server has run
+two-to-four-seat free-for-all since Phase 3, not only 1v1. `PROTOCOL_VERSION` is
+**7** — every move has been a refusal at the handshake rather than a
+negotiation, which is the decision below working as intended. Since M03.2 a seat
+may submit a precon by ID (`submit_precon`), which the server resolves and
+validates itself rather than trusting a list on the wire; since M05.3 a pending
+choice crosses with `provenance` saying why it exists and carrying no card
+identity ([ADR 0021](0021-choice-contract.md)); since M06.1 a card view carries
 `barrierSpent`, because "has Barrier" and "has Barrier left" are different
-questions and only the first used to reach a client.
+questions and only the first used to reach a client; and since M09.2 a lobby
+seat says what controls it, with four host-only bot messages travelling the
+other way ([ADR 0024](0024-live-bot-seats.md)). The last of those is the first
+traffic on this boundary that is not about a person, and it changes nothing
+here: a bot seat's view is validated at both ends like any other, and a bot's
+card list is not on it.
 
 ## Context
 

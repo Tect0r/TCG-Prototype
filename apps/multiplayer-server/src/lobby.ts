@@ -153,6 +153,14 @@ function seatView(
     isHost: seat.seatId === lobby.hostSeatId,
     graceSeconds,
     eliminated,
+    /**
+     * Every seat is a human until M09.3 gives the lobby a bot controller. The
+     * field is published now because M09.2 moved it onto the wire, and stating
+     * it is what makes an older client refuse at the handshake rather than fail
+     * to parse its first lobby view.
+     */
+    controller: 'human',
+    bot: null,
   };
 }
 
