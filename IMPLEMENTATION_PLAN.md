@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.3        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.4        |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -47,23 +47,32 @@ a schema-only package holding controller metadata, the difficulty and style
 registries, the four-member deck-source union, pacing, and the two privacy
 projections — and nothing that acts on it. M09.2 put that contract on the wire:
 four host-only messages, a seat view that is now a discriminated union on
-`controller`, seven named refusals, and `PROTOCOL_VERSION` 6 → 7. The server
-still does not act on any of it.
+`controller`, seven named refusals, and `PROTOCOL_VERSION` 6 → 7, with the server
+still not acting on any of it. M09.3 made the authoritative lobby act: `Seat` is
+now a union whose bot half has no connection identity **by type**, the four
+messages are handled host-only and before start only, seats are allocated
+deterministically without ever evicting a human, and a deck mode or difficulty
+this build cannot honour is refused by name from `DECK_MODE_SUPPORT` and the
+difficulty registry. A configured precon bot is ready and startable — and does
+not yet act, which is M09.4's subject.
 
 ## The next bounded task
 
-**M09.3 — Server-side bot lobby seats.** Let the authoritative lobby own bot
-seats: an explicit per-seat controller, with bot seats given no connection ID,
-reconnect token or disconnect timer; host-only mutation and only before the match
-starts; deterministic seat allocation that never evicts a human. Exact precon
-configuration is validated immediately, and the generated and saved modes are
-refused **by name** from `DECK_MODE_SUPPORT` rather than from a hard-coded list
-of what is finished. A valid configured bot is automatically ready; an invalid or
-unsupported one is visibly not startable. Every existing human join, resize,
-ready, leave and reconnect behaviour is preserved and regression-tested. Bots do
-not take match actions — that is M09.4. The scope, the exclusions and the
-checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m093--server-side-bot-lobby-seats).
+**M09.4 — Immediate authoritative bot runner.** Make an exact-precon bot play a
+complete live server match at 0% delay: one pilot instance and one independent
+deterministic RNG stream per bot seat, instantiated at match start; every newly
+eligible bot decision scheduled exactly once after each accepted action or state
+transition; the observation and legal actions rebuilt **at decision time**,
+`decideSafely` asked then, and the answer revalidated before it is submitted
+through the normal engine path with an idempotent action identity. Pilot failure
+and fallback are recorded rather than disguised as an intentional play —
+including the case M09.0 found, where the random-legal fallback itself has no
+legal action to offer, which must **not** be answered by letting a live bot
+concede. Immediate decisions yield through the scheduler or a microtask boundary
+instead of recursing for a whole match, and all work stops and cancels at
+completion. No player-facing bot controls, and no multi-bot concurrency claim.
+The scope, the exclusions and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m094--immediate-authoritative-bot-runner).
 
 ## The parallel non-code activity
 

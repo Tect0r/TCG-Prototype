@@ -8,12 +8,16 @@ import {
   type SavedDeck,
 } from '@tcg/deck';
 import {
+  botLobbyError,
   CURRENT_VERSIONS,
   decodeClientMessage,
   protocolError,
   versionMismatch,
+  type BotLobbyCondition,
+  type BotSetup,
   type ClientMessage,
   type ProtocolError,
+  type SeatId,
   type ServerMessage,
   type Versions,
 } from '@tcg/protocol';
@@ -29,18 +33,30 @@ import {
 } from '@tcg/rules-engine';
 import { errorsOf, isErr } from '@tcg/shared';
 import {
+  botIdFor,
+  rerollUnsupportedDetails,
+  resolveBotSeat,
+  type BotSeatContext,
+} from './bot-seats.js';
+import {
   canStart,
-  createSeat,
+  createBotSeat,
+  createHumanSeat,
+  freeBotSeats,
   freeSeats,
   generateInviteCode,
   generateReconnectToken,
   graceSecondsFor,
+  isBotSeat,
+  isHumanSeat,
   lobbyView,
   MAX_SEATS,
   MIN_SEATS,
   PLAYER_ID_BY_SEAT,
   seatByToken,
   seatsOf,
+  type BotSeat,
+  type HumanSeat,
   type Lobby,
   type Seat,
 } from './lobby.js';
@@ -74,9 +90,19 @@ export interface MatchServerOptions {
   readonly now?: () => number;
 }
 
+/**
+ * A live connection and the seat it holds.
+ *
+ * The seat is a `HumanSeat` by type: a connection can only ever be attached to
+ * a seat a person is sitting in, and a bot seat has no connection to attach
+ * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §1). Every
+ * handler below reads its seat from here, so "a bot cannot submit a deck, ready
+ * up, reconnect or act as a client" is a property of the type rather than a
+ * check each handler has to remember.
+ */
 interface Attachment {
   readonly lobby: Lobby;
-  readonly seat: Seat;
+  readonly seat: HumanSeat;
 }
 
 const defaultSchedule: ScheduleTimer = (delayMs, callback) => {
@@ -146,6 +172,18 @@ export class MatchServer {
         return;
       case 'start_match':
         this.requestStart(connection);
+        return;
+      case 'add_bot':
+        this.addBot(connection, message.setup);
+        return;
+      case 'update_bot':
+        this.updateBot(connection, message.seatId, message.setup);
+        return;
+      case 'reroll_bot':
+        this.rerollBot(connection, message.seatId);
+        return;
+      case 'remove_bot':
+        this.removeBot(connection, message.seatId);
         return;
       case 'reconnect':
         this.reconnect(connection, message.versions, message.reconnectToken);
@@ -226,12 +264,13 @@ export class MatchServer {
     if (this.rejectVersions(connection, versions)) return;
 
     const inviteCode = generateInviteCode(this.#random, new Set(this.#lobbies.keys()));
-    const seat = createSeat('seat_1', displayName, generateReconnectToken(this.#random));
+    const seat = createHumanSeat('seat_1', displayName, generateReconnectToken(this.#random));
     const lobby: Lobby = {
       inviteCode,
       hostSeatId: 'seat_1',
       seats: new Map([['seat_1', seat]]),
       maxSeats: Math.min(MAX_SEATS, Math.max(MIN_SEATS, maxSeats)),
+      botsCreated: 0,
       status: 'waiting',
       state: null,
     };
@@ -312,6 +351,172 @@ export class MatchServer {
     this.startMatch(lobby);
   }
 
+  /* ------------------------------------------------------------- bot seats */
+
+  private refuseBot(
+    connection: ServerConnection,
+    condition: BotLobbyCondition,
+    details?: readonly string[],
+  ): void {
+    connection.send({ type: 'error', error: botLobbyError(condition, details) });
+  }
+
+  /**
+   * The preamble every bot message shares: the sender is seated, is the host,
+   * and the lobby has not started.
+   *
+   * One helper rather than four copies, because these three conditions are the
+   * ones a fifth bot message would be most likely to forget — and because
+   * `HOST_ONLY_CLIENT_MESSAGE_TYPES` names the messages that must pass through
+   * it, so the list and the check can be tested against each other.
+   */
+  private hostLobbyFor(connection: ServerConnection): Lobby | null {
+    const attachment = this.#attachments.get(connection.id);
+    if (!attachment) {
+      this.fail(connection, 'protocol/not_in_lobby', 'Join a lobby first.');
+      return null;
+    }
+    const { lobby, seat } = attachment;
+    if (seat.seatId !== lobby.hostSeatId) {
+      this.refuseBot(connection, 'not_host');
+      return null;
+    }
+    if (lobby.status === 'in_match' || lobby.status === 'finished') {
+      this.refuseBot(connection, 'lobby_locked');
+      return null;
+    }
+    return lobby;
+  }
+
+  /** The seat named by a bot message, or a refusal saying it holds no bot. */
+  private botSeatIn(connection: ServerConnection, lobby: Lobby, seatId: SeatId): BotSeat | null {
+    const seat = lobby.seats.get(seatId);
+    if (!seat || !isBotSeat(seat)) {
+      this.refuseBot(connection, 'unknown_bot_seat', [
+        seat ? `${seatId} holds a player, not a bot.` : `${seatId} is empty.`,
+      ]);
+      return null;
+    }
+    return seat;
+  }
+
+  private botSeatContext(): BotSeatContext {
+    return { database: this.#database, deckFormat: this.#deckFormat, now: this.#now };
+  }
+
+  /**
+   * Host-only: seat a bot.
+   *
+   * The seat is chosen by the server, deterministically, from the seats that are
+   * genuinely free — the message carries no seat ID precisely so that a client
+   * cannot race a joining human for one. Nothing is written until the setup has
+   * resolved completely, so a refused configuration leaves the lobby exactly as
+   * it was.
+   */
+  private addBot(connection: ServerConnection, setup: BotSetup): void {
+    const lobby = this.hostLobbyFor(connection);
+    if (!lobby) return;
+
+    const seatId = freeBotSeats(lobby)[0];
+    if (!seatId) {
+      this.refuseBot(connection, 'table_full', [
+        `This table has ${lobby.maxSeats} seats and every one of them is taken.`,
+      ]);
+      return;
+    }
+
+    const botId = botIdFor(lobby.botsCreated + 1);
+    const resolved = resolveBotSeat(setup, { botId, seatId }, this.botSeatContext());
+    if (isErr(resolved)) {
+      connection.send({ type: 'error', error: resolved.error });
+      return;
+    }
+
+    lobby.botsCreated += 1;
+    lobby.seats.set(seatId, createBotSeat(seatId, resolved.value.config, resolved.value.deck));
+    this.restatus(lobby);
+    this.broadcastLobby(lobby);
+  }
+
+  /**
+   * Host-only: replace one bot seat's configuration wholesale.
+   *
+   * The seat keeps its identity — the same `botId`, the same seat — because
+   * identity and configuration are separate halves of a bot on purpose. A
+   * refused setup leaves the previous configuration in place rather than
+   * emptying the seat.
+   */
+  private updateBot(connection: ServerConnection, seatId: SeatId, setup: BotSetup): void {
+    const lobby = this.hostLobbyFor(connection);
+    if (!lobby) return;
+    const seat = this.botSeatIn(connection, lobby, seatId);
+    if (!seat) return;
+
+    const resolved = resolveBotSeat(
+      setup,
+      { botId: seat.config.controller.botId, seatId },
+      this.botSeatContext(),
+    );
+    if (isErr(resolved)) {
+      connection.send({ type: 'error', error: resolved.error });
+      return;
+    }
+
+    const { config, deck } = resolved.value;
+    seat.config = config;
+    seat.displayName = config.controller.displayName;
+    seat.deck = deck;
+    seat.deckLegal = deck !== null;
+    seat.ready = deck !== null;
+    this.restatus(lobby);
+    this.broadcastLobby(lobby);
+  }
+
+  /**
+   * Host-only: build this bot a new deck.
+   *
+   * Rerolling is only meaningful for a mode that *generates* a list, and this
+   * build supports none of them yet — so every reroll is refused by name, with
+   * the tranches that own the two generated modes in the details. It is refused
+   * rather than treated as a harmless no-op because a host who asked for a new
+   * deck and silently got the old one has been told nothing.
+   */
+  private rerollBot(connection: ServerConnection, seatId: SeatId): void {
+    const lobby = this.hostLobbyFor(connection);
+    if (!lobby) return;
+    const seat = this.botSeatIn(connection, lobby, seatId);
+    if (!seat) return;
+
+    this.refuseBot(
+      connection,
+      'mode_unsupported',
+      rerollUnsupportedDetails(seatId, seat.config.deck.mode),
+    );
+  }
+
+  /** Host-only: free the seat. A human joining never does this implicitly. */
+  private removeBot(connection: ServerConnection, seatId: SeatId): void {
+    const lobby = this.hostLobbyFor(connection);
+    if (!lobby) return;
+    const seat = this.botSeatIn(connection, lobby, seatId);
+    if (!seat) return;
+
+    lobby.seats.delete(seatId);
+    this.restatus(lobby);
+    this.broadcastLobby(lobby);
+  }
+
+  /**
+   * Keeps `status` agreeing with `canStart` after a seat appears or changes.
+   *
+   * The same line `set_ready` runs, for the same reason: a lobby that says
+   * `ready` while the host cannot start is lying to its own header.
+   */
+  private restatus(lobby: Lobby): void {
+    if (lobby.status === 'in_match' || lobby.status === 'finished') return;
+    lobby.status = canStart(lobby) ? 'ready' : 'waiting';
+  }
+
   private joinLobby(
     connection: ServerConnection,
     versions: Versions,
@@ -337,7 +542,11 @@ export class MatchServer {
       return;
     }
 
-    const seat = createSeat(freeSeat, displayName, generateReconnectToken(this.#random));
+    // A configured bot already occupies its seat, so `freeSeats` never offers
+    // one: a joining human takes the next genuinely empty seat, and never
+    // silently replaces a bot the host set up (ADR 0024 §1). Freeing a bot's
+    // seat is the host's explicit `remove_bot`.
+    const seat = createHumanSeat(freeSeat, displayName, generateReconnectToken(this.#random));
     lobby.seats.set(freeSeat, seat);
     this.attach(connection, lobby, seat);
 
@@ -654,7 +863,7 @@ export class MatchServer {
     this.disconnect(connection);
   }
 
-  private timeOutSeat(lobby: Lobby, seat: Seat): void {
+  private timeOutSeat(lobby: Lobby, seat: HumanSeat): void {
     if (!lobby.state || lobby.state.status === 'complete') return;
     const result = applyAction(
       lobby.state,
@@ -668,14 +877,22 @@ export class MatchServer {
 
   /* ---------------------------------------------------------------- output */
 
-  private attach(connection: ServerConnection, lobby: Lobby, seat: Seat): void {
+  private attach(connection: ServerConnection, lobby: Lobby, seat: HumanSeat): void {
     this.#connections.set(connection.id, connection);
     this.#attachments.set(connection.id, { lobby, seat });
     seat.connectionId = connection.id;
   }
 
+  /**
+   * The socket a seat's messages go to, if it has one.
+   *
+   * A bot seat never has one, which is what makes every existing broadcast
+   * correct for a bot table without a bot-shaped branch: the loops still visit
+   * the seat, and there is simply nowhere to send.
+   */
   private connectionFor(seat: Seat): ServerConnection | undefined {
-    return seat.connectionId ? this.#connections.get(seat.connectionId) : undefined;
+    if (!isHumanSeat(seat) || !seat.connectionId) return undefined;
+    return this.#connections.get(seat.connectionId);
   }
 
   private fail(connection: ServerConnection, code: ProtocolError['code'], message: string): void {
@@ -695,7 +912,7 @@ export class MatchServer {
   }
 
   /** Tells every *other* seat that one seat's connection changed. */
-  private broadcastConnection(lobby: Lobby, changed: Seat): void {
+  private broadcastConnection(lobby: Lobby, changed: HumanSeat): void {
     const graceSeconds = graceSecondsFor(changed, this.#now);
     for (const seat of lobby.seats.values()) {
       if (seat.seatId === changed.seatId) continue;
@@ -730,9 +947,17 @@ export class MatchServer {
     connection.send({ type: 'match_state', view, events });
   }
 
-  /** Drops a lobby once nobody is connected and nothing is in progress. */
+  /**
+   * Drops a lobby once nobody is connected and nothing is in progress.
+   *
+   * "Nobody" means no *person*: a bot seat is not company, and a lobby holding
+   * only bots is an abandoned one. This is also what keeps a table from
+   * outliving its last human without M09.7's explicit rule having landed yet.
+   */
   private closeIfAbandoned(lobby: Lobby): void {
-    const anyConnected = [...lobby.seats.values()].some((seat) => seat.connectionId !== null);
+    const anyConnected = [...lobby.seats.values()].some(
+      (seat) => isHumanSeat(seat) && seat.connectionId !== null,
+    );
     if (anyConnected) return;
     if (lobby.status === 'in_match') return;
     lobby.status = 'closed';

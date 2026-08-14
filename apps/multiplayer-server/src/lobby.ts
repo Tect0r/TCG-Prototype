@@ -1,3 +1,4 @@
+import { publicBotSeatOf, type BotSeatConfig } from '@tcg/bot-config';
 import type { SavedDeck } from '@tcg/deck';
 import {
   MAX_SEATS,
@@ -27,12 +28,18 @@ export const SEAT_BY_PLAYER_ID: Record<PlayerId, SeatId> = Object.fromEntries(
 
 export { SEAT_IDS, MIN_SEATS, MAX_SEATS };
 
-export interface Seat {
+/**
+ * What every seat has, whoever or whatever is in it: a name, a deck and a
+ * verdict on it, a readiness flag, and the action bookkeeping the match needs.
+ *
+ * `appliedActions` and `lastSentSequence` are here rather than on the human seat
+ * because a bot submits through the same `applyAction` path with the same
+ * idempotent action identity (ADR 0024 §2). M09.4 is what starts using them for
+ * a bot; the shape says now that a bot is not a second kind of actor.
+ */
+interface SeatBase {
   readonly seatId: SeatId;
   displayName: string;
-  /** Opaque token the client stores to reclaim this seat after a refresh. */
-  readonly reconnectToken: string;
-  connectionId: string | null;
   deck: SavedDeck | null;
   deckLegal: boolean;
   ready: boolean;
@@ -43,6 +50,17 @@ export interface Seat {
   readonly appliedActions: Map<string, number>;
   /** Highest event sequence this seat has been sent. */
   lastSentSequence: number;
+}
+
+/**
+ * A seat with a person in it — the only kind that existed before M09.3, and the
+ * only kind that owns a connection.
+ */
+export interface HumanSeat extends SeatBase {
+  readonly controller: 'human';
+  /** Opaque token the client stores to reclaim this seat after a refresh. */
+  readonly reconnectToken: string;
+  connectionId: string | null;
   /**
    * Cancels this seat's pending disconnect-timeout loss. Each seat has its own
    * window: one player dropping does not stop the match (CLAUDE.md §12).
@@ -51,12 +69,48 @@ export interface Seat {
   disconnectDeadline: number | null;
 }
 
+/**
+ * A seat the server itself occupies.
+ *
+ * The four fields above that a human seat carries — reconnect token, connection
+ * ID, disconnect timer and deadline — are **absent by type**, not null. Every
+ * one of them describes a network participant that can go away, and a bot
+ * controller lives inside this process: it cannot disconnect because there is
+ * nothing for it to disconnect from ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md)
+ * §1, and `FIELDS_A_BOT_CONTROLLER_NEVER_HAS` in `@tcg/bot-config`). Writing
+ * `seat.connectionId` on a bot seat is a compile error rather than a review
+ * note, which is the whole reason this is a union and not one widened object.
+ *
+ * `config` is the private configuration. It never reaches a client as it is;
+ * `publicBotSeatOf` is the only route to what other seats may see.
+ */
+export interface BotSeat extends SeatBase {
+  readonly controller: 'bot';
+  config: BotSeatConfig;
+}
+
+export type Seat = HumanSeat | BotSeat;
+
+export function isHumanSeat(seat: Seat): seat is HumanSeat {
+  return seat.controller === 'human';
+}
+
+export function isBotSeat(seat: Seat): seat is BotSeat {
+  return seat.controller === 'bot';
+}
+
 export interface Lobby {
   readonly inviteCode: string;
   readonly hostSeatId: SeatId;
   readonly seats: Map<SeatId, Seat>;
   /** Table size, host-controlled until the match starts. */
   maxSeats: number;
+  /**
+   * How many bot seats this lobby has ever created. Only ever increases, so a
+   * removed-and-re-added bot is a *different* bot with a different ID rather
+   * than the previous one's identity handed to a new configuration.
+   */
+  botsCreated: number;
   status: LobbyStatus;
   state: MatchState | null;
 }
@@ -84,8 +138,9 @@ export function generateReconnectToken(random: () => number): string {
   return pick(TOKEN_ALPHABET, 32, random);
 }
 
-export function createSeat(seatId: SeatId, displayName: string, token: string): Seat {
+export function createHumanSeat(seatId: SeatId, displayName: string, token: string): HumanSeat {
   return {
+    controller: 'human',
     seatId,
     displayName,
     reconnectToken: token,
@@ -100,6 +155,33 @@ export function createSeat(seatId: SeatId, displayName: string, token: string): 
   };
 }
 
+/**
+ * A configured bot seat.
+ *
+ * A bot with a legal deck is ready the moment it is configured: there is nobody
+ * to press a button, and a seat the server has already validated has nothing
+ * left to wait for. A bot with **no** deck is deliberately not ready and not
+ * legal, so it is visibly unstartable rather than quietly holding the table up —
+ * the state the generated modes pass through before M09.9 builds their list.
+ */
+export function createBotSeat(
+  seatId: SeatId,
+  config: BotSeatConfig,
+  deck: SavedDeck | null,
+): BotSeat {
+  return {
+    controller: 'bot',
+    seatId,
+    displayName: config.controller.displayName,
+    config,
+    deck,
+    deckLegal: deck !== null,
+    ready: deck !== null,
+    appliedActions: new Map(),
+    lastSentSequence: 0,
+  };
+}
+
 /** Occupied seats, always in seat order. */
 export function seatsOf(lobby: Lobby): Seat[] {
   return SEAT_IDS.map((seatId) => lobby.seats.get(seatId)).filter(
@@ -107,14 +189,35 @@ export function seatsOf(lobby: Lobby): Seat[] {
   );
 }
 
+export function humanSeatsOf(lobby: Lobby): HumanSeat[] {
+  return seatsOf(lobby).filter(isHumanSeat);
+}
+
+export function botSeatsOf(lobby: Lobby): BotSeat[] {
+  return seatsOf(lobby).filter(isBotSeat);
+}
+
 /** The seat IDs a new player could take, within the host's chosen table size. */
 export function freeSeats(lobby: Lobby): SeatId[] {
   return SEAT_IDS.slice(0, lobby.maxSeats).filter((seatId) => !lobby.seats.has(seatId));
 }
 
-export function seatByToken(lobby: Lobby, token: string): Seat | undefined {
+/**
+ * The seat IDs a bot could take: the free ones, minus the host's.
+ *
+ * Free seats are allocated deterministically in seat order, and an *occupied*
+ * seat is never in the list — so adding a bot cannot evict anybody, and a human
+ * joining later takes the next free seat rather than the bot's. The host seat is
+ * excluded even when it is vacant, because a bot must never end up holding the
+ * seat the lobby takes its host from.
+ */
+export function freeBotSeats(lobby: Lobby): SeatId[] {
+  return freeSeats(lobby).filter((seatId) => seatId !== lobby.hostSeatId);
+}
+
+export function seatByToken(lobby: Lobby, token: string): HumanSeat | undefined {
   for (const seat of lobby.seats.values()) {
-    if (seat.reconnectToken === token) return seat;
+    if (isHumanSeat(seat) && seat.reconnectToken === token) return seat;
   }
   return undefined;
 }
@@ -128,7 +231,9 @@ function isSeatReady(seat: Seat): boolean {
  *
  * A free-for-all needs at least two ready seats but does not need every opened
  * seat filled: a four-seat lobby may legally start with three (CLAUDE.md §12).
- * Everyone who *is* seated must be ready, so nobody is dragged in mid-setup.
+ * Everyone who *is* seated must be ready, so nobody is dragged in mid-setup —
+ * and a bot seat is judged by exactly the same three conditions, so one that
+ * holds no legal deck gates the start instead of stalling the match later.
  */
 export function canStart(lobby: Lobby): boolean {
   if (lobby.status === 'in_match' || lobby.status === 'finished') return false;
@@ -137,28 +242,54 @@ export function canStart(lobby: Lobby): boolean {
   return seats.every(isSeatReady);
 }
 
+/**
+ * The deck name a bot seat publishes.
+ *
+ * A precon is shipped public content — every client already has the list — so
+ * naming it says nothing an opponent could not read off the ID that is public
+ * anyway. Every other mode publishes nothing here: a saved deck's name is
+ * M09.6's decision and a generated list's is M09.9's, and defaulting to "show
+ * it" would make that decision by accident, in the direction that leaks
+ * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §3).
+ */
+function botDeckNameOf(seat: BotSeat): string | null {
+  return seat.config.deck.mode === 'exact_precon' ? (seat.deck?.name ?? null) : null;
+}
+
 function seatView(
   seat: Seat,
   lobby: Lobby,
   graceSeconds: number | null,
   eliminated: boolean,
 ): LobbySeatView {
-  return {
+  const shared = {
     seatId: seat.seatId,
     displayName: seat.displayName,
-    connected: seat.connectionId !== null,
     ready: seat.ready,
-    deckName: seat.deck?.name ?? null,
     deckLegal: seat.deckLegal,
     isHost: seat.seatId === lobby.hostSeatId,
-    graceSeconds,
     eliminated,
-    /**
-     * Every seat is a human until M09.3 gives the lobby a bot controller. The
-     * field is published now because M09.2 moved it onto the wire, and stating
-     * it is what makes an older client refuse at the handshake rather than fail
-     * to parse its first lobby view.
-     */
+  };
+
+  if (isBotSeat(seat)) {
+    return {
+      ...shared,
+      // A bot is always connected and never counting down a reconnect window.
+      // The wire narrows both to these values; the server states them because
+      // they are facts about the controller, not defaults.
+      connected: true,
+      graceSeconds: null,
+      deckName: botDeckNameOf(seat),
+      controller: 'bot',
+      bot: publicBotSeatOf(seat.config),
+    };
+  }
+
+  return {
+    ...shared,
+    connected: seat.connectionId !== null,
+    graceSeconds,
+    deckName: seat.deck?.name ?? null,
     controller: 'human',
     bot: null,
   };
@@ -179,7 +310,7 @@ export function lobbyView(lobby: Lobby, now: () => number = Date.now): LobbyView
 }
 
 export function graceSecondsFor(seat: Seat, now: () => number = Date.now): number | null {
-  if (seat.disconnectDeadline === null) return null;
+  if (!isHumanSeat(seat) || seat.disconnectDeadline === null) return null;
   return Math.max(0, Math.round((seat.disconnectDeadline - now()) / 1000));
 }
 

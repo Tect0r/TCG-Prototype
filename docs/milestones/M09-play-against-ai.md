@@ -495,7 +495,7 @@ not something two builds must agree on in order to play at all.
 is tested. Nothing is migrated: there is no stored artifact in this tranche, and
 a lobby is in memory, so a version move ends no saved data.
 
-## M09.3 — Server-side bot lobby seats
+## M09.3 — Server-side bot lobby seats — **done (2026-08-14)**
 
 Let the authoritative lobby own bot seats safely: human and bot controllers
 stored explicitly per seat; only the host may add, configure, reroll or remove a
@@ -514,11 +514,92 @@ human join, bot non-disconnect and start-gating tests.
 
 ### Checklist
 
-- [ ] Explicit per-seat controller; bot seats have no connection identity.
-- [ ] Host-only mutation, before start only.
-- [ ] Deterministic seat allocation that never evicts a human.
-- [ ] Unsupported modes refused by name, not silently accepted.
-- [ ] Existing human lobby behaviour unchanged, and regression-tested.
+- [x] **Explicit per-seat controller; bot seats have no connection identity.**
+      `Seat` in `apps/multiplayer-server/src/lobby.ts` is a discriminated union
+      on `controller`: `HumanSeat` keeps `reconnectToken`, `connectionId`,
+      `cancelDisconnectTimer` and `disconnectDeadline`, and `BotSeat` does not
+      have them **by type** rather than by holding `null` — writing
+      `seat.connectionId` on a bot seat is a compile error. `Attachment.seat` is
+      a `HumanSeat`, so "a bot cannot submit a deck, ready up, reconnect or act
+      as a client" is a property of the type instead of a check per handler. A
+      test asserts that a live bot seat carries none of
+      `FIELDS_A_BOT_CONTROLLER_NEVER_HAS`, that `seatByToken` never returns one,
+      and that a human dropping out of a bot match opens exactly one disconnect
+      window — the one seat that can lose a connection.
+- [x] **Host-only mutation, before start only.** `hostLobbyFor` is the one
+      preamble all four handlers share: seated, host, not started. A test drives
+      every member of `HOST_ONLY_CLIENT_MESSAGE_TYPES` from a non-host seat and
+      requires `protocol/not_host` from each, so the list M09.2 introduced is
+      checked against the server rather than trusted. After the match starts all
+      four are refused with `protocol/already_started` and the seat is untouched.
+- [x] **Deterministic seat allocation that never evicts a human.** `add_bot`
+      carries no seat ID; the server takes the first seat from `freeBotSeats`,
+      which is `freeSeats` minus the host's — so a bot never lands on the seat
+      the lobby takes its host from, and never on an occupied one. A joining
+      human takes the next genuinely empty seat and gets `protocol/lobby_full`
+      when there is none, rather than displacing a configured bot. A bot counts
+      as an occupant when the host shrinks the table, exactly as a person does.
+- [x] **Unsupported modes refused by name, not silently accepted.**
+      `resolveBotSeat` reads `DECK_MODE_SUPPORT` and the difficulty registry's
+      own `status`: each of the three unsupported modes is refused with
+      `protocol/bot_mode_unsupported` naming M09.6, M09.9 or M09.10, and `easy`
+      and `hard` with `protocol/bot_config_invalid` naming M09.13 and M09.15 —
+      from the data, so flipping one entry is how a later tranche turns its own
+      option on. `reroll_bot` is refused for the same reason rather than treated
+      as a no-op: rerolling builds a new deck, only a generated mode does that,
+      and this build has none. An unknown or off-format precon is
+      `protocol/bot_deck_illegal`, judged by the same `reviewPrecon` a person's
+      `submit_precon` gets. Nothing is written until a setup resolves whole, so a
+      refused `update_bot` leaves the previous configuration in place.
+- [x] **Existing human lobby behaviour unchanged, and regression-tested.** All 63
+      pre-existing server tests pass untouched, and the 44 new ones in
+      `apps/multiplayer-server/src/bot-lobby.test.ts` cover join, resize,
+      readiness, start-gating, disconnect and lobby closure alongside the bot
+      paths. The only behavioural change to a human path is that `status` is
+      recomputed after a bot mutation, the line `set_ready` already ran.
+- [x] **A configured bot is ready; a deckless one is visibly not startable.**
+      `createBotSeat` derives `ready` and `deckLegal` from whether a deck was
+      resolved, and `canStart` judges a bot seat by the same three conditions it
+      judges a person by — so a seat with no legal deck gates the start instead
+      of stalling the match later. No message can produce that state in M09.3;
+      the test builds one directly, because the point is that M09.9 cannot
+      introduce it quietly. The same test covers `deckName`, which a bot seat
+      publishes only for `exact_precon` — shipped public content — and never for
+      a mode whose list is private.
+- [x] Verified: the 44 focused tests above, the 63 existing server tests,
+      `npm run check:consistency`, `npm run audit:check` and `npm run verify` all
+      pass.
+
+### Findings recorded rather than fixed
+
+- **A bot seat can start a match it cannot then play.** Nothing in M09.3 blocks
+  `start_match` on a table holding a bot, and nothing in M09.3 makes the bot act
+  — that is M09.4's whole subject, and the exclusion above says so. Between the
+  two tranches a started human-versus-bot match stalls on the bot's first
+  decision. It is recorded here rather than papered over with a temporary block,
+  because a block would have to be removed by the next tranche and would make
+  the start path untestable in this one. A test asserts the state honestly: the
+  match starts, the bot is an ordinary player, and its `appliedActions` is empty.
+- **A future `BOT_CONFIG_SCHEMA_VERSION` is refused as a malformed message, not
+  as a bot configuration.** `botSetupSchema` is derived from
+  `botSeatConfigSchema`, whose `schemaVersion` is bounded by the constant, so an
+  unreadable version fails at the codec before `readBotSeatConfig` sees it. The
+  server still runs `readBotSeatConfig` over the assembled record — a
+  configuration it has not validated whole is never stored — but the readable
+  "written by a newer build" wording is not what a v7 host would see today. Worth
+  deciding in M09.18's compatibility pass; it is not a defect in this tranche.
+
+### Versions — deliberately unchanged
+
+Nothing moved. `PROTOCOL_VERSION` stays 7: M09.2 put the messages and the widened
+seat view on the wire and M09.3 only acts on them, so no shape changed.
+`BOT_CONFIG_SCHEMA_VERSION`, `DIFFICULTY_REGISTRY_VERSION` and
+`PACING_CONFIG_VERSION` stay 1 — no schema widened, no difficulty appeared, and
+the pacing calculation was not touched. `MATCH_SCHEMA_VERSION` and
+`RULES_VERSION` stay where they are for the reason
+[ADR 0024](../architecture/0024-live-bot-seats.md) §7 gives: a bot seat is a
+controller above the engine, `createMatch` is handed an ordinary seat list, and
+`MatchState` still does not know what a bot is.
 
 ## M09.4 — Immediate authoritative bot runner
 
