@@ -9,11 +9,11 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `f97a88418f6bba18f2181d72b938dd1a93ab50e3` |
+| Commit           | `20d4c54e80987c7a29ddd1e8627e70965c557a2c` |
 | Working tree     | clean                                      |
 | Taken on         | 2026-08-14                                 |
 | Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| `npm run verify` | not run for this audit                     |
 
 ### Verification chain
 
@@ -33,10 +33,10 @@ reproducing it means running the suite again.
 | -------------- | ------- | -------- |
 | packages       | 66      | 1514     |
 | scripts        | 4       | 69       |
-| server         | 4       | 63       |
+| server         | 5       | 107      |
 | simulator      | 23      | 434      |
 | web-client     | 12      | 142      |
-| **total**      | **109** | **2222** |
+| **total**      | **110** | **2266** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
