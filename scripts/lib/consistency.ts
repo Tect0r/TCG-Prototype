@@ -2,17 +2,24 @@
  * The repository consistency check — M07's closing gate.
  *
  * M07 removed the drift between the documents and the software one tranche at a
- * time, by hand. This module is what stops it coming back: each of the six
- * things M07.7 names is a function here, and `consistency.test.ts` runs all of
- * them, so a document that starts teaching a rule the game does not have fails
- * the suite rather than waiting for somebody to notice.
+ * time, by hand. This module is what stops it coming back: each thing M07.7
+ * names is a function here, and `consistency.test.ts` runs all of them, so a
+ * document that starts teaching a rule the game does not have fails the suite
+ * rather than waiting for somebody to notice.
  *
- * Two of the six were already enforced elsewhere and are *retained* rather than
- * rebuilt — an unimplemented card in a playable set is a content-build error
- * (`content/build.ts`), and the counts in `docs/status-audit.md` are compared
- * byte-for-byte by `status-audit.test.ts`. They are re-run here anyway, against
- * the same registries, so one command answers the whole question instead of
- * three commands answering a third of it each.
+ * Several checks were already enforced elsewhere and are *retained* rather than
+ * rebuilt — an unimplemented card or an inert mechanic in a playable set is a
+ * content-build error and a mistargeted card is a display-text lint warning
+ * promoted to one (`content/build.ts`), and the counts in `docs/status-audit.md`
+ * are compared byte-for-byte by `status-audit.test.ts`. They are re-run here
+ * anyway, against the same registries, so one command answers the whole question
+ * instead of four commands answering a quarter of it each.
+ *
+ * M07.8 added the three the pass found missing: an **inert mechanic** in a
+ * playable set (the `implemented: false` check beside it only reads a flag an
+ * author typed), the **target-semantic** class where prose and structured
+ * targets disagree about who an effect reaches, and the **question ledger**,
+ * which `audit:status` rendered into a document without ever failing on it.
  *
  * The judgement calls, all of them deliberate:
  *
@@ -43,7 +50,11 @@ import {
   KEYWORD_IDS,
   KEYWORD_LIST,
   STRICT_SET_STATUSES,
+  describeCardSupport,
+  limitingMechanics,
+  lintDisplayText,
   loadBundledCardData,
+  mechanicKey,
 } from '@tcg/card-data';
 import { GLOSSARY_ENTRIES, loadRulebook, resolvedKeywords } from '@tcg/help-content';
 import { DEFAULT_RULES_CONFIG } from '@tcg/rules-engine';
@@ -68,6 +79,12 @@ export const CONSISTENCY_CHECK_IDS = [
   'documented-value',
   'unimplemented-card',
   'count-claim',
+  /** A card in a playable set built on a mechanic the engine does not execute. */
+  'inert-mechanic',
+  /** Prose and structured targets that disagree about who an effect reaches. */
+  'target-semantics',
+  /** The two question documents contradicting each other about what is open. */
+  'question-ledger',
 ] as const;
 export type ConsistencyCheckId = (typeof CONSISTENCY_CHECK_IDS)[number];
 
@@ -81,7 +98,25 @@ export interface ConsistencyReport {
     readonly pathReferences: number;
     readonly documentedValues: number;
     readonly countClaims: number;
+    /**
+     * Cards in a `playtest` or `active` set, which is the population the
+     * unimplemented-card, inert-mechanic and target-semantic checks walk.
+     *
+     * Reported for the same reason `countClaims` is: a content check that found
+     * no cards to look at reports a clean repository in the same words as one
+     * that works, so the suite asserts this is non-zero.
+     */
+    readonly playableCards: number;
+    /** Questions compared between the plan's short list and the question file. */
+    readonly questions: number;
   };
+}
+
+/** Cards in every set people are expected to play with. */
+function playableCardCount(): number {
+  return loadBundledCardData()
+    .sets.filter((set) => STRICT_SET_STATUSES.includes(set.status))
+    .reduce((total, set) => total + set.cards.length, 0);
 }
 
 function finding(
@@ -846,6 +881,202 @@ export function checkUnimplementedCards(): readonly ConsistencyFinding[] {
   return findings;
 }
 
+/* ------------------- 5b. inert mechanics and mistargeted prose in playable sets */
+
+/**
+ * No card in a `playtest` or `active` set is built on a mechanic the engine does
+ * not execute.
+ *
+ * The sibling of {@link checkUnimplementedCards}, and the more important half:
+ * `implemented: false` is a sentence an author typed, while this walks the
+ * structured data the engine really runs and asks the mechanic support registry
+ * about every piece of it. A card can be marked implemented and still be built
+ * on `resilient`.
+ *
+ * Retained rather than rebuilt — `content/build.ts` already refuses to build such
+ * a bundle — and re-asserted here against the shipped content, so the build gate
+ * protects the input and this protects what actually got bundled.
+ */
+export function checkInertMechanics(): readonly ConsistencyFinding[] {
+  const findings: ConsistencyFinding[] = [];
+
+  for (const set of loadBundledCardData().sets) {
+    if (!STRICT_SET_STATUSES.includes(set.status)) continue;
+    for (const card of set.cards) {
+      const support = describeCardSupport(card);
+      if (support.executable) continue;
+      const inert = limitingMechanics(support.mechanics, 'engine').map(mechanicKey);
+      findings.push(
+        finding(
+          'inert-mechanic',
+          `content/sets/${set.setId}/cards/${card.id}.json`,
+          null,
+          `"${card.name}" (${card.id}) is built on ${inert.join(', ')}, which the rules engine does not execute, in \`${set.setId}\` (status \`${set.status}\`).`,
+        ),
+      );
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * Shipped card prose agrees with its structured targets about **who is reached**.
+ *
+ * `lintDisplayText` owns the rule and the content build already promotes its
+ * warnings to errors for a strict set. This re-runs it over the bundled content
+ * and reports only the semantic codes, because those are the class M07.8 found:
+ * `goblin_powder_runner` printed damage at a battlefield permanent when the rule
+ * says an opponent, `mourning_keeper` said "your Commander" where the engine
+ * healed the player, and every mechanic marker passed both.
+ *
+ * Deliberately narrower than the linter as a whole. The mechanic and keyword
+ * codes are a different check that the content build already fails on; repeating
+ * them here would report the same drift twice under two names.
+ */
+const TARGET_SEMANTIC_CODES: ReadonlySet<string> = new Set([
+  'display_text/player_as_commander',
+  'display_text/unstated_player_target',
+  'display_text/entry_timing',
+]);
+
+export function checkTargetSemantics(): readonly ConsistencyFinding[] {
+  const findings: ConsistencyFinding[] = [];
+
+  for (const set of loadBundledCardData().sets) {
+    if (!STRICT_SET_STATUSES.includes(set.status)) continue;
+    for (const card of set.cards) {
+      for (const issue of lintDisplayText(card)) {
+        if (!TARGET_SEMANTIC_CODES.has(issue.code)) continue;
+        findings.push(
+          finding(
+            'target-semantics',
+            `content/sets/${set.setId}/cards/${card.id}.json`,
+            null,
+            `${issue.message} (${issue.code})`,
+          ),
+        );
+      }
+    }
+  }
+
+  return findings;
+}
+
+/* --------------------------------------------------- 5c. the question ledger */
+
+const OPEN_QUESTIONS = 'docs/open-questions.md';
+const PLAN = 'IMPLEMENTATION_PLAN.md';
+
+interface QuestionEntry {
+  readonly id: string;
+  readonly line: number;
+  readonly answered: boolean;
+}
+
+/** Every `### Qn.` heading in the question file, and whether it is answered. */
+function questionsIn(markdown: string): readonly QuestionEntry[] {
+  const entries: QuestionEntry[] = [];
+  let section = '';
+
+  for (const [index, line] of markdown.split(/\r?\n/).entries()) {
+    const heading = /^##\s+(.*)$/.exec(line);
+    if (heading?.[1] !== undefined) section = heading[1];
+    const question = /^###\s+(Q\d+)\.\s+(.*)$/.exec(line);
+    if (question?.[1] === undefined || question[2] === undefined) continue;
+    entries.push({
+      id: question[1],
+      line: index + 1,
+      // Two independent signals, because the document uses both: the entry
+      // lives under `## Answered`, and its own title carries the ruling date.
+      answered: /^answered$/i.test(section.trim()) || /answered/i.test(question[2]),
+    });
+  }
+
+  return entries;
+}
+
+/** Question IDs the plan's owner-decision list calls open, with their lines. */
+function planOpenQuestions(markdown: string): ReadonlyMap<string, number> {
+  const found = new Map<string, number>();
+  let inSection = false;
+
+  for (const [index, line] of markdown.split(/\r?\n/).entries()) {
+    const heading = /^##\s+(.*)$/.exec(line);
+    if (heading) inSection = /owner decisions still open/i.test(heading[1] ?? '');
+    if (!inSection) continue;
+    const listed = /^-\s+(Q\d+):/.exec(line);
+    if (listed?.[1] !== undefined && !found.has(listed[1])) found.set(listed[1], index + 1);
+  }
+
+  return found;
+}
+
+/**
+ * The two question documents agree about what is still open.
+ *
+ * `npm run audit:status` already *renders* this comparison into the audit, but
+ * rendering a contradiction is not failing on one: the audit stayed byte-current
+ * and the contradiction sat inside it. M07.7 asks for the check, so this is the
+ * check.
+ *
+ * Only one direction is a contradiction, and the asymmetry is deliberate. The
+ * plan's list is the curated short set a tranche might have to **stop** on, so a
+ * question open in the file and absent from the plan is ordinary. A question the
+ * plan calls open that the file has answered — or has no entry for at all — is
+ * the plan asking a tranche to stop on a decision that has already been made, or
+ * on one with no durable record to read.
+ */
+export function checkQuestionLedger(repoRoot: string): readonly ConsistencyFinding[] {
+  const findings: ConsistencyFinding[] = [];
+  const questions = questionsIn(readFileSync(join(repoRoot, OPEN_QUESTIONS), 'utf8'));
+  const planOpen = planOpenQuestions(readFileSync(join(repoRoot, PLAN), 'utf8'));
+  const byId = new Map(questions.map((entry) => [entry.id, entry]));
+
+  for (const [id, line] of planOpen) {
+    const entry = byId.get(id);
+    if (entry === undefined) {
+      findings.push(
+        finding(
+          'question-ledger',
+          PLAN,
+          line,
+          `lists ${id} as an open owner decision, but \`${OPEN_QUESTIONS}\` has no entry for it — an open question with no durable record.`,
+        ),
+      );
+      continue;
+    }
+    if (entry.answered) {
+      findings.push(
+        finding(
+          'question-ledger',
+          PLAN,
+          line,
+          `lists ${id} as an open owner decision, but \`${OPEN_QUESTIONS}:${entry.line}\` records it as answered.`,
+        ),
+      );
+    }
+  }
+
+  // The same question written twice is a record that can disagree with itself.
+  const seen = new Set<string>();
+  for (const entry of questions) {
+    if (seen.has(entry.id)) {
+      findings.push(
+        finding(
+          'question-ledger',
+          OPEN_QUESTIONS,
+          entry.line,
+          `has a second entry for ${entry.id}; a question has exactly one durable record.`,
+        ),
+      );
+    }
+    seen.add(entry.id);
+  }
+
+  return findings;
+}
+
 /* ------------------------------------------- 6. counts claimed in active prose */
 
 /**
@@ -938,6 +1169,9 @@ export function runConsistencyChecks(repoRoot: string): ConsistencyReport {
     ...paths.findings,
     ...values.findings,
     ...checkUnimplementedCards(),
+    ...checkInertMechanics(),
+    ...checkTargetSemantics(),
+    ...checkQuestionLedger(repoRoot),
     ...counts.findings,
   ];
 
@@ -951,6 +1185,8 @@ export function runConsistencyChecks(repoRoot: string): ConsistencyReport {
       pathReferences: paths.references,
       documentedValues: values.values,
       countClaims: counts.claims,
+      playableCards: playableCardCount(),
+      questions: planOpenQuestions(readFileSync(join(repoRoot, PLAN), 'utf8')).size,
     },
   };
 }
@@ -963,7 +1199,9 @@ export function formatConsistencyReport(report: ConsistencyReport): string {
   lines.push(
     `Checked ${counts.documents} Markdown documents (${counts.activeDocuments} active), ` +
       `${counts.links} internal links, ${counts.pathReferences} path references, ` +
-      `${counts.documentedValues} documented values, ${counts.countClaims} count claims.`,
+      `${counts.documentedValues} documented values, ${counts.countClaims} count claims, ` +
+      `${counts.playableCards} cards in playable sets, ` +
+      `${counts.questions} owner decisions on the plan's short list.`,
   );
 
   if (report.ok) {

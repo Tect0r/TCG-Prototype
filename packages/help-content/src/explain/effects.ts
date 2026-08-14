@@ -211,6 +211,12 @@ const RENDERERS: RendererTable = {
         notes: [
           ...amountNotes(effect.amount),
           'every point has to go somewhere legal, and a target takes its whole share as one hit',
+          // Only worth saying when a player is actually in the pool, and worth
+          // saying plainly then: a share aimed at a seat is player damage, which
+          // is a different thing from damaging anything that seat controls.
+          ...(effect.target.kind === 'entity_or_player'
+            ? ['a share aimed at a player comes off their Health, not off anything they control']
+            : []),
           'damage with nowhere to go is lost',
         ],
       };

@@ -47,6 +47,7 @@ export {
   targetCountSchema,
   entityTarget,
   targetsPlayers,
+  entitySelectorOf,
   isDistributedSelection,
   CONTROLLERS,
   DURATIONS,

@@ -34,9 +34,39 @@ explicitly rather than relying on a default. `validateDeck(deck, database,
 format)` takes the format as an argument, and the multiplayer server validates
 every submitted deck with the same function.
 
-**Provisional:** whether 40-card singleton gives enough consistency, and whether
-the two-colour Commander cap should open to three once the colour pie exists.
-Playtest question — Q19.
+### 40 is a scope decision, not a leftover — owner, 2026-08-14
+
+An earlier project-level decision named **50 singleton cards** as the deck size,
+and the repository has shipped 40 everywhere since. That was never reconciled, so
+40 was true by default rather than on purpose. It is now on purpose: **40 for the
+first playtest, with a 50-card target kept for later.**
+
+The reason is content, not code. `deck.size` is one number in
+`content/formats/precon_wave_1.json` and changing it is a config edit — but a
+deck must also be legal, and a singleton deck can only be as large as its
+Commander's colour-legal pool. Measured against the shipped set:
+
+| Precon                       | Commander                   | Colour | Colour-legal pool |
+| ---------------------------- | --------------------------- | ------ | ----------------- |
+| `precon_bastion_guardians`   | `bastion_commander`         | white  | 42                |
+| `precon_containment_control` | `chief_containment_scholar` | blue   | 41                |
+| `precon_goblin_swarm`        | `goblin_warboss`            | red    | 41                |
+| `precon_grave_sacrifice`     | `grave_matriarch`           | black  | 42                |
+
+Each pool already includes the six colourless cards, which every Commander can
+play, so they cannot close the gap. A legal 50-card deck therefore needs
+**8–9 further colour-legal cards per Commander** — or a shared neutral package
+that solves the same deficit for all four, or a construction-rule change such as
+lifting the singleton limit. Moving to 50 before any of those exist would make
+every bundled precon illegal.
+
+Reaching 50 is authoring work and a gameplay decision, deliberately not something
+a consistency pass performs: inventing cards, duplicating singleton entries or
+weakening colour identity would each be a design change made silently.
+
+**Provisional:** whether 40-card singleton gives enough consistency, when the
+content for 50 gets authored, and whether the two-colour Commander cap should
+open to three once the colour pie exists. Playtest question — Q19.
 
 ---
 
@@ -154,18 +184,26 @@ Implemented, versioned and deliberately minimal (ADR 0016; `reactions.ts`):
   with something legal to play;
 - each eligible player plays at most `reactionsPerPlayerPerWindow` (1) Reaction
   per window;
-- playing a Reaction restarts the round of priority, so a player who had already
-  declined is asked again;
-- the window closes when everybody declines in a row;
+- priority goes round the table **once**: playing a Reaction moves priority on
+  exactly as passing does and never re-offers a seat that has already answered;
+- the window closes when there is nobody left to offer it to;
 - pending cards resolve last in, first out, with the spell the window opened
   around at the bottom;
 - nothing already resolving is interruptible, and countering refunds nothing.
 
-**Provisional:** whether "playing a Reaction restarts the round" is the wanted
-rule. It is the one point where the engine and `CLAUDE.md`'s product rules
-currently disagree, and the in-app rulebook describes the engine — Q47. Whether a
-Reaction may carry an additional cost is Q46; the schema rejects one today rather
-than accepting it and quietly not charging it.
+The fourth bullet is Q47, **answered on 2026-08-14**: the engine used to clear
+`passedPlayerIds` on a play, restarting the round, and `CLAUDE.md`'s product
+rules said no Reaction answers another Reaction. The engine was changed to match
+the product rules. Two different seats can still each spend their one Reaction in
+the same window and the later one still resolves first; what is gone is coming
+back after passing. The write-up is under
+[Answered](../open-questions.md#answered), and `reactions.test.ts` holds the
+three tests that enforce it.
+
+**Provisional:** whether one round of priority is enough interaction once more
+Reactions exist. Nothing about it is a gap — every layer describes the same rule
+today. Whether a Reaction may carry an additional cost is Q46; the schema rejects
+one today rather than accepting it and quietly not charging it.
 
 ---
 

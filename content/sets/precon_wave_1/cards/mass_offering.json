@@ -11,7 +11,7 @@
     "identity": "Sacrifice Spell — Finisher",
     "power": "high"
   },
-  "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or Commander. The damage may be divided among targets.",
+  "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or opponent. The damage may be divided among targets.",
   "effects": [
     {
       "type": "sacrifice",
@@ -37,7 +37,7 @@
       },
       "divided": true,
       "target": {
-        "kind": "entity",
+        "kind": "entity_or_player",
         "selector": {
           "zone": "battlefield",
           "controller": "opponent",
@@ -47,7 +47,8 @@
           "count": "all",
           "selection": "player_choice",
           "chooser": "self"
-        }
+        },
+        "players": "each_opponent"
       }
     }
   ],
@@ -56,12 +57,13 @@
     "notes": [
       "\"Up to five\" really is up to: you may sacrifice none, in which case there is no damage to divide and the Spell does nothing else. Tokens count as Units and are the usual fodder.",
       "The total is the number of Units you sacrificed with this Spell — not everything that died this turn.",
-      "You then split that total however you like. A target takes its whole share as a single hit, so Barrier stops one allocation once rather than once per point.",
-      "Every point has to be allocated to a legal target. If nothing enemy is on the battlefield the damage is lost, and the Units are still sacrificed."
+      "You then split that total however you like, between enemy Units and the opponents themselves. A target takes its whole share as a single hit, so Barrier stops one allocation once rather than once per point.",
+      "A share aimed at an opponent comes off their Health. It is not damage to anything they control, so a deployed enemy Commander only takes damage you aim at it as a Unit.",
+      "Every point has to be allocated to a legal target. An opponent is always one while they are alive, so a cleared board no longer wastes the Spell."
     ],
     "effectExplanations": [
       "Choose up to five of your own Units and sacrifice them.",
-      "Divide that many damage among enemy Units and Commanders."
+      "Divide that many damage among enemy Units, enemy Commanders and the opponents themselves."
     ]
   }
 }

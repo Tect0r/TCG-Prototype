@@ -282,9 +282,12 @@ describe('the rulebook teaches the implemented ruleset', () => {
     expect(text).toMatch(/opens only if somebody could actually use it/);
     expect(text).toMatch(/active player first, then clockwise/);
     expect(text).toMatch(/last in, first out/);
-    // Implemented behaviour: a play restarts the round, which is the one way a
-    // Reaction can answer another (reactions.ts#handlePlayReaction).
-    expect(text).toMatch(/playing a reaction restarts the round/);
+    // Implemented behaviour since Q47: priority goes round once and a play does
+    // not start it again, so a seat that passed is never asked twice
+    // (reactions.ts#handlePlayReaction).
+    expect(text).toMatch(/priority goes round the table once/);
+    expect(text).toMatch(/does not start the round again/);
+    expect(text).not.toMatch(/restarts the round/);
     expect(text).toMatch(/countered card goes to its owner's discard pile/);
     expect(text).toMatch(/cost is not refunded/);
   });

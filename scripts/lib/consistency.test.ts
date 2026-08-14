@@ -7,9 +7,12 @@ import {
   assertedText,
   checkCountClaims,
   checkDocumentedValues,
+  checkInertMechanics,
   checkMarkdownLinks,
   checkPathReferences,
+  checkQuestionLedger,
   checkRetiredTerms,
+  checkTargetSemantics,
   checkUnimplementedCards,
   headingAnchors,
   headingSlug,
@@ -296,6 +299,90 @@ describe('checkCountClaims', () => {
   });
 });
 
+describe('checkQuestionLedger', () => {
+  /** A plan whose owner-decision list names exactly `ids`. */
+  function plan(ids: readonly string[]): string {
+    return [
+      '# Implementation plan',
+      '',
+      '## Owner decisions still open',
+      '',
+      ...ids.map((id) => `- ${id}: something the owner has to decide.`),
+      '',
+    ].join('\n');
+  }
+
+  it('reports a question the plan calls open that the record has answered', () => {
+    const root = fixtureRoot({
+      'IMPLEMENTATION_PLAN.md': plan(['Q47']),
+      'docs/open-questions.md': [
+        '# Open questions',
+        '',
+        '## Answered',
+        '',
+        '### Q47. May a Reaction answer another Reaction? — answered 2026-08-14',
+        '',
+        'No.',
+        '',
+      ].join('\n'),
+    });
+
+    const findings = checkQuestionLedger(root);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.check).toBe('question-ledger');
+    expect(findings[0]?.message).toContain('records it as answered');
+  });
+
+  it('reports an open question with no durable record at all', () => {
+    const root = fixtureRoot({
+      'IMPLEMENTATION_PLAN.md': plan(['Q99']),
+      'docs/open-questions.md': '# Open questions\n\n## Owner decisions a tranche may stop on\n',
+    });
+
+    const findings = checkQuestionLedger(root);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('no entry for it');
+  });
+
+  it('reports the same question recorded twice', () => {
+    const root = fixtureRoot({
+      'IMPLEMENTATION_PLAN.md': plan([]),
+      'docs/open-questions.md': [
+        '# Open questions',
+        '',
+        '## Owner decisions a tranche may stop on',
+        '',
+        '### Q44. Multiple blockers?',
+        '',
+        '### Q44. Multiple blockers, again?',
+        '',
+      ].join('\n'),
+    });
+
+    expect(checkQuestionLedger(root).map((entry) => entry.message)).toEqual([
+      expect.stringContaining('second entry for Q44'),
+    ]);
+  });
+
+  it('does not report a question open in the record and absent from the plan', () => {
+    // The plan's list is the curated set a tranche might have to stop on, not an
+    // index, so this direction is ordinary rather than a contradiction.
+    const root = fixtureRoot({
+      'IMPLEMENTATION_PLAN.md': plan([]),
+      'docs/open-questions.md': [
+        '# Open questions',
+        '',
+        '## Design questions, nothing blocked',
+        '',
+        '### Q19. Is 40-card singleton right?',
+        '',
+      ].join('\n'),
+    });
+
+    expect(checkQuestionLedger(root)).toEqual([]);
+  });
+});
+
 /* --------------------------------------------------- this repository, right now */
 
 describe('the repository', () => {
@@ -317,10 +404,37 @@ describe('the repository', () => {
     expect(report.counts.pathReferences).toBeGreaterThan(0);
     expect(report.counts.documentedValues).toBeGreaterThan(0);
     expect(report.counts.countClaims).toBeGreaterThan(0);
+    // The three content checks walk the same population; a bundle that loaded
+    // no playable set would pass all three by looking at nothing.
+    expect(report.counts.playableCards).toBeGreaterThan(0);
+    expect(report.counts.questions).toBeGreaterThan(0);
   });
 
   it('ships no unimplemented card in a playable set', () => {
     expect(checkUnimplementedCards()).toEqual([]);
+  });
+
+  it('ships no inert mechanic in a playable set', () => {
+    expect(checkInertMechanics()).toEqual([]);
+  });
+
+  it('ships no card whose prose and structured targets disagree about who is reached', () => {
+    // The M07.8 class: `goblin_powder_runner` damaging a permanent where the
+    // rule says an opponent, `mourning_keeper` healing the player while its text
+    // said "your Commander", and five Goblins printing an arrival their
+    // structure does not implement.
+    //
+    // The planted-failure half of these two content checks lives with the rule
+    // rather than here, because the rule is what would stop matching: each of the
+    // three pre-correction cards is reproduced verbatim and asserted to be
+    // rejected in `card-data/src/display-text.test.ts`, and an inert mechanic in
+    // a strict set is rejected in `card-data/src/content/build.test.ts`. This
+    // side asserts the shipped bundle is clean.
+    expect(checkTargetSemantics()).toEqual([]);
+  });
+
+  it('has no question the plan calls open that the record has answered or lost', () => {
+    expect(checkQuestionLedger(REPO_ROOT)).toEqual([]);
   });
 
   it('documents every RulesConfig dial', () => {

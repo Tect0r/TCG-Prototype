@@ -46,8 +46,9 @@ implicit form does. All confirmed correct with no change:
 `pit_executioner`, `refuge_warden`, `rift_displacer`, `rift_scholar`,
 `senior_researcher`, `shield_page`, `static_adept`.
 
-Five print **"When this Unit enters the battlefield, …"** and behave as deploy
-effects, so their wording promises an arrival the structure does not honour:
+Five used to print **"When this Unit enters the battlefield, …"** while behaving
+as deploy effects, so their wording promised an arrival the structure does not
+honour:
 
 - `goblin_bomb_thrower`
 - `goblin_lookout`
@@ -55,29 +56,40 @@ effects, so their wording promises an arrival the structure does not honour:
 - `goblin_recruiter`
 - `goblin_siege_leader`
 
-This is a genuine disagreement, and it is observable: a `goblin_recruiter`
-returned to play by `grave_reassembly` creates no Goblin Token, which its
-printed text says it should. Confirmed by driving the engine, not inferred.
+That was a genuine disagreement, and it was observable: a `goblin_recruiter`
+returned to play by `grave_reassembly` creates no Goblin Token, which its printed
+text said it should. Confirmed by driving the engine, not inferred.
 
-**Left unchanged, and recorded as Q48.** Both resolutions are one-line edits and
-they are not equivalent:
+**Answered as Q48 on 2026-08-14: the prose was corrected, the structure was
+not.** All five now print "When deployed, …", which is exactly what the implicit
+form does, and every one of the twenty implicit uses is now worded correctly.
 
-- Correcting the **prose** to "When deployed" keeps every current behaviour and
-  makes five cards honest. Nothing about the game changes.
-- Converting the **structure** to `on_entered_battlefield` makes the cards do
-  what they say and hands the Goblin deck a revival payoff it does not have
-  today. That is a gameplay change, and M02 excludes those.
+The two resolutions were one-line edits and they were not equivalent:
 
-Picking either one silently would be inventing a design decision, which
-`CLAUDE.md` forbids. The five are listed together because they share one
-question, **not** because they should be converted together: if the answer is
-the structural one, each still gets its own judgement about whether revival
-should re-fire it.
+- Correcting the **prose** keeps every current behaviour and makes five cards
+  honest. Nothing about the game changes — which is why it was chosen in a
+  consistency pass.
+- Converting the **structure** to `on_entered_battlefield` would make the cards
+  do what they say and hand the Goblin deck a revival payoff it does not have
+  today. That is a gameplay change, and it stays out of scope.
 
-## Why the drift linter does not catch this
+The behaviour is therefore unchanged and still verifiable: returning one of the
+five with `grave_reassembly` fires no deploy effect. The five were listed
+together because they shared one question, **not** because they should be
+converted together; if the structural route is ever taken, each still gets its
+own judgement about whether revival should re-fire it.
 
-`lintDisplayText` checks that prose and structure name the same _mechanics_; all
-five cards genuinely create Tokens, deal damage or search, so both directions
-pass. The mismatch is about **when**, and a marker for it would fail the content
-build for `precon_wave_1` — now a strict `playtest` set — before Q48 is
-answered. The check belongs with the answer, not ahead of it.
+## The drift linter now catches this
+
+When this review was written, `lintDisplayText` checked only that prose and
+structure named the same _mechanics_ — all five cards genuinely create Tokens,
+deal damage or search, so both directions passed. The mismatch was about
+**when**, and a marker for it would have failed the content build for
+`precon_wave_1` — a strict `playtest` set — before Q48 was answered. The check
+belonged with the answer rather than ahead of it.
+
+Q48 is answered, so the check exists: `display_text/entry_timing` reports a card
+whose prose says it arrives on the battlefield while its structure is the
+implicit deploy form, and a warning on a `playtest` or `active` card is a build
+error. Re-introducing the old wording on any of the five now fails
+`npm run content:check`.

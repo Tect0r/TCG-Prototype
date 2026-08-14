@@ -20,13 +20,14 @@ import type { CardInstance, PendingReaction, ReactionWindowState } from './schem
  * Bounded Reaction windows (rule adjustment §5).
  *
  * This is deliberately **not** a priority system and **not** a stack. A window
- * opens around one named event, each eligible player may answer it at most once,
- * and the window closes the moment everybody has passed consecutively. The only
- * thing that resolves out of order is the window's own pending queue, which
- * drains last-in-first-out so a counter played on top of a Spell resolves before
- * the Spell it is answering.
+ * opens around one named event, priority goes round the table **once** starting
+ * with the active player, each eligible player may answer at most once, and the
+ * window closes when the last seat has had its offer. The only thing that
+ * resolves out of order is the window's own pending queue, which drains
+ * last-in-first-out so a counter played on top of a Spell resolves before the
+ * Spell it is answering.
  *
- * Two structural decisions carry most of the weight:
+ * Three structural decisions carry most of the weight:
  *
  *  1. **A window only opens when somebody could actually use it.** Eligibility
  *     is a pure function of state — whose turn it is, who holds what, what they
@@ -36,6 +37,18 @@ import type { CardInstance, PendingReaction, ReactionWindowState } from './schem
  *  2. **Closing and resolving are separate states.** The window survives its own
  *     priority round, because a counter has to be able to name what is still
  *     waiting below it in the queue.
+ *  3. **One round, and playing does not start another** (Q47, answered
+ *     2026-08-14). A play moves priority on exactly as a pass does; it never
+ *     re-offers a seat that has already answered. So there is no generic
+ *     Reaction-on-Reaction exchange: a seat that has passed cannot come back to
+ *     counter what was played after it.
+ *
+ * That is not the same as "a Reaction can never be countered". Two *different*
+ * seats may each spend their one Reaction in the same window, and the pending
+ * queue still drains last in, first out — so an explicit counter played after
+ * another Reaction does answer it. What the rule removes is the unbounded
+ * exchange, not the interaction: depth is bounded by the seats that had not yet
+ * been offered priority, and nothing already resolving is interruptible.
  */
 
 /** What a window is about, when it is about a card. */
@@ -270,10 +283,10 @@ export function openReactionWindow(ctx: MatchContext, opening: ReactionOpening):
 /**
  * Moves priority to the next player who could use it, or closes the window.
  *
- * Termination is structural rather than a guard: every play permanently removes
- * its player from eligibility (one Reaction per player per window), and between
- * plays each player may pass at most once, so the number of steps is bounded by
- * seats × (plays + 1).
+ * Termination is structural rather than a guard, and since Q47 it is simply one
+ * round: every seat is offered priority at most once, because passing records
+ * the seat permanently and playing moves priority on without clearing anybody's
+ * pass. The number of steps is bounded by the number of seats.
  */
 function advancePriority(ctx: MatchContext): void {
   const window = ctx.state.reactionWindow;
@@ -291,7 +304,7 @@ function advancePriority(ctx: MatchContext): void {
   closeWindow(ctx);
 }
 
-/** Everybody has passed consecutively: stop offering priority and start resolving. */
+/** Nobody is left to offer: stop offering priority and start resolving. */
 function closeWindow(ctx: MatchContext): void {
   const window = ctx.state.reactionWindow;
   if (!window || window.closed) return;
@@ -384,9 +397,17 @@ export function handlePlayReaction(
   if (handIndex >= 0) player.hand.splice(handIndex, 1);
 
   window.playsByPlayer[playerId] = (window.playsByPlayer[playerId] ?? 0) + 1;
-  // A play restarts the round: everyone who had declined gets to answer the new
-  // card, which is what lets a counter be countered.
-  window.passedPlayerIds = [];
+  // A play does **not** restart the round (Q47, answered 2026-08-14). Priority
+  // moves on from here and a player who has already passed is not offered the
+  // window again, so one round of priority is exactly one offer per seat and the
+  // window closes when the last seat has had theirs.
+  //
+  // `passedPlayerIds` is therefore never cleared while a window is open. It used
+  // to be, which is what let a counter be countered; the product rules say no
+  // Reaction answers another Reaction, and this is the line that decides it.
+  // Depth is now bounded by the priority order rather than by the per-player
+  // limit, so a seat holding a counter has to spend it on the card in front of
+  // it or not at all.
   window.pending.push({
     instanceId,
     definitionId: definition.id,

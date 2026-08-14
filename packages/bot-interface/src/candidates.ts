@@ -519,20 +519,31 @@ export function rankChoiceOptions(
   const { view, database } = observation;
   const viewerId = view.viewerId;
 
+  /** A seat option, valued the way `select_players` values one. */
+  const rankSeat = (id: string): RankedOption | null => {
+    const summary = summaryOf(view, id);
+    if (!summary) return null;
+    const enemy = summary.playerId !== viewerId;
+    return {
+      id,
+      value: enemy ? opponentPriority(view, summary, weights, database) : -summary.health,
+      enemy,
+    };
+  };
+
   const scored = choice.validEntityIds.map((id): RankedOption => {
     if (choice.type === 'select_players') {
-      const summary = summaryOf(view, id);
-      if (!summary) return { id, value: 0, enemy: true };
-      const enemy = summary.playerId !== viewerId;
-      return {
-        id,
-        value: enemy ? opponentPriority(view, summary, weights, database) : -summary.health,
-        enemy,
-      };
+      return rankSeat(id) ?? { id, value: 0, enemy: true };
     }
 
     const instance = view.instances[id];
     if (!instance) {
+      // A `divide_damage` pool may hold seats as well as instances — "divide it
+      // among enemy Units and opponents" (M07.8). Valued as a seat rather than
+      // left at the unrecognised-option zero, which would have ranked hitting a
+      // player below every unit on the board and marked it friendly.
+      const seat = rankSeat(id);
+      if (seat) return seat;
       const definition = database.get(id);
       if (definition) return { id, value: cardValue(definition, weights, database), enemy: false };
       return { id, value: 0, enemy: false };

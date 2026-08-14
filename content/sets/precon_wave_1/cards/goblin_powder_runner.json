@@ -14,7 +14,7 @@
     "identity": "Swarm Unit — Interaction",
     "power": "medium"
   },
-  "displayText": "When this Unit is defeated, deal 1 damage to an enemy Unit or Commander.",
+  "displayText": "When this Unit is defeated, deal 1 damage to an opponent.",
   "abilities": [
     {
       "id": "powder_blast",
@@ -22,20 +22,11 @@
       "effects": [
         {
           "type": "deal_damage",
-          "amount": 1,
           "target": {
-            "kind": "entity",
-            "selector": {
-              "zone": "battlefield",
-              "controller": "opponent",
-              "filter": {
-                "cardTypes": ["unit", "token", "commander"]
-              },
-              "count": 1,
-              "selection": "player_choice",
-              "chooser": "self"
-            }
-          }
+            "kind": "player",
+            "relation": "opponent"
+          },
+          "amount": 1
         }
       ]
     }

@@ -55,6 +55,98 @@ Run the authoritative multiplayer server separately when needed:
 npm run dev:server
 ```
 
+## Playing a match with other people
+
+Invite-code lobbies are implemented and the server is authoritative for 2–4
+players. There is **no matchmaking**: somebody runs the server, everybody else
+connects to it, and a six-character code is how they find each other.
+
+### Local development — one machine
+
+`npm run dev` and `npm run dev:server` are two separate processes and you need
+both. The defaults are deliberately loopback-only:
+
+| Setting             | Default               | Where                                                              |
+| ------------------- | --------------------- | ------------------------------------------------------------------ |
+| Server bind address | `127.0.0.1`           | `HOST`, `apps/multiplayer-server/src/main.ts`                      |
+| Server port         | `8787`                | `PORT`, same file                                                  |
+| Server card pool    | `precon_wave_1`       | `TCG_FORMAT`, same file                                            |
+| Client's server URL | `ws://127.0.0.1:8787` | `VITE_MATCH_SERVER_URL`, `apps/web-client/src/net/match-client.ts` |
+| Client dev server   | `localhost:5173`      | `apps/web-client/vite.config.ts`                                   |
+
+Because the server binds `127.0.0.1`, **it is reachable only from the machine it
+runs on.** Two browser windows on that machine can play each other with no
+configuration at all; nothing else can reach it until you change `HOST`.
+
+`TCG_FORMAT` must match on both sides. The server validates every submitted deck
+against its own format's pool, so a client pointed at a `development` server will
+have its `precon_wave_1` decks rejected with reasons rather than silently
+accepted.
+
+### Playing with friends on separate machines
+
+Two things have to change, and they are different problems.
+
+**Reaching the server on a LAN.** Bind it to an address other machines can route
+to and tell the clients where it is:
+
+```bash
+HOST=0.0.0.0 PORT=8787 npm run dev:server
+VITE_MATCH_SERVER_URL=ws://192.168.1.42:8787 npm run dev -- --host
+```
+
+Substitute the server machine's own LAN address. `--host` is needed on the Vite
+side for the same reason: by default it only serves `localhost`. Everyone must be
+on the same network, and the host firewall has to allow the port.
+
+**Reaching it over the internet is a different thing entirely, and this
+repository does not do it for you.** There is no deployment, no TLS termination,
+no authentication and no rate limiting here. Forwarding a port on a home router
+straight to this process is not the recommended answer: it exposes an
+unauthenticated development server to the internet. A tunnelling service, a VPN
+between the players, or a proper hosted deployment behind a reverse proxy are all
+better, and all of them are outside this repository's scope.
+
+If the client is served over **HTTPS**, browsers will refuse a plain `ws://`
+connection from it. The endpoint must then be `wss://`, which means the server
+sits behind something that terminates TLS — it does not do so itself.
+
+### Limitations to plan the session around
+
+- **Lobbies and matches live in memory.** Restarting the server ends every match
+  in progress, and there is no persistence and no resumption after a restart.
+- **A dropped connection has a grace window**, not an immediate loss: the seat is
+  marked disconnected and can reconnect with its token. When the window expires
+  the server submits an explicit timeout for that seat. The window is
+  `disconnectGraceSeconds`, listed with the other dials in
+  [`docs/rules/open-decisions.md`](docs/rules/open-decisions.md#match-rules--provisional-numbers)
+  and printed by the server on startup.
+- **Leaving a live match concedes it.** Losing the socket does not; that starts
+  the grace window instead.
+- There are no accounts. A display name is typed per session and is not reserved.
+
+### Two-browser smoke test
+
+On one machine, with `npm run dev` and `npm run dev:server` both running:
+
+1. Open `http://localhost:5173` in a normal window and again in a private window,
+   so the two seats do not share saved decks.
+2. In the first window, type a display name, choose **2 — one on one**, and press
+   **Create a lobby**. A six-character invite code appears.
+3. In the second window, type a display name, enter that code, and press
+   **Join**. Both seats should now be listed as `connected` in both windows.
+4. In each window, pick a precon from the **Deck** list and press **Submit deck**.
+   The seat should be tagged `legal`.
+5. Press **Ready** in each window. At a two-seat table the match starts as soon
+   as both seats are ready — the explicit **Start match** button only appears for
+   the host at three and four seats.
+6. The board replaces the lobby in both windows, and only the active player is
+   offered actions.
+
+If step 3 fails with a connection error, the client is not pointing at the
+running server: check `VITE_MATCH_SERVER_URL` and the server's startup line,
+which prints the address it actually bound.
+
 ## Useful commands
 
 ```bash
@@ -81,9 +173,12 @@ same strictness as shipped code. `npm run typecheck:root` runs that part alone.
 
 `npm run check:consistency` holds the documents to the software: retired rule
 vocabulary in anything still describing the current game, internal links and
-anchors, backticked paths that no longer exist, and every value a document
-copies out of a config or registry. It runs inside the suite as well, so
-`npm run verify` already covers it; the command is for reading the findings.
+anchors, backticked paths that no longer exist, every value a document copies out
+of a config or registry, unfinished cards and inert mechanics in a set people
+will play with, card prose that disagrees with its structured targets about who
+an effect reaches, and questions the plan calls open that the record has already
+answered. It runs inside the suite as well, so `npm run verify` already covers
+it; the command is for reading the findings.
 
 ## Content and formats
 

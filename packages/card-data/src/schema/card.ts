@@ -20,7 +20,7 @@ import {
   staticAbilityDefinitionSchema,
   type EffectDefinition,
 } from './effect.js';
-import { cardFilterSchema, type TargetSelector } from './target.js';
+import { cardFilterSchema, entitySelectorOf, type TargetSelector } from './target.js';
 import {
   isPreviousTargetsValue,
   isStatValue,
@@ -250,11 +250,12 @@ function valueFieldsOf(
  * `source`, `trigger_subject`, `blocked_by_source`, `previous_target` and the
  * two player kinds all name a set nobody picks from, so there is no selector to
  * validate — which is exactly why the checks below skip them rather than
- * guessing at a shape.
+ * guessing at a shape. `entity_or_player` does carry one, and it is the same
+ * shape meaning the same thing, so it is validated by every rule below.
  */
 function selectorOf(effect: EffectDefinition): TargetSelector | null {
   if (!('target' in effect)) return null;
-  return effect.target.kind === 'entity' ? effect.target.selector : null;
+  return entitySelectorOf(effect.target);
 }
 
 export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
@@ -540,6 +541,25 @@ export const cardDefinitionSchema = baseCardSchema.superRefine((card, ctx) => {
             'A "previous_targets" amount counts what the instruction before it acted on; the first instruction has none.',
         });
       }
+    });
+  }
+
+  // "An enemy Unit **or** an opponent" is one pool spanning two namespaces, and
+  // only an allocation knows how to draw from it: a divided total already
+  // decides which members of its pool it touches, so adding players costs
+  // nothing there. A single-target choice spanning both is a different
+  // interaction that nothing prints and nothing tests, and shipping it untested
+  // is what this rejection prevents (M07.8).
+  for (const list of effectLists(card)) {
+    list.effects.forEach((effect, index) => {
+      if (!('target' in effect) || effect.target.kind !== 'entity_or_player') return;
+      if (effect.type === 'deal_damage' && effect.divided === true) return;
+      ctx.addIssue({
+        code: 'custom',
+        path: [...list.path, index, 'target', 'kind'],
+        message:
+          'A pool of entities and players is only allocatable by a divided total; use "entity_or_player" on a `deal_damage` with `divided: true`, or point at one or the other.',
+      });
     });
   }
 

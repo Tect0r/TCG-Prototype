@@ -273,11 +273,12 @@ describe('priority and the one-per-window limit', () => {
     return { state: played, active, rival, spellId: cast.instanceId, activeReactionId };
   }
 
-  it('refuses a second Reaction from the same player in one window', () => {
-    // Both seats hold a Reaction, so the window survives the rival's play and
-    // there is still a window in which to refuse them a second. This is also
-    // the rule-§5.5 shape: the active player may counter the counter.
-    const { state, active, rival } = loaded(true);
+  it('does not re-offer a seat that already passed, and closes instead (Q47)', () => {
+    // Both seats hold a Reaction. The active player declines, the rival answers
+    // — and that is the whole window. Before Q47 was answered, playing cleared
+    // every recorded pass and the active player was asked again, which is what
+    // let a counter be countered by somebody who had already declined.
+    const { state, active, rival, activeReactionId } = loaded(true);
 
     expect(priorityHolder(state)).toBe(active);
     const passed = apply(state, { type: 'pass_reaction', playerId: active }, context);
@@ -291,19 +292,41 @@ describe('priority and the one-per-window limit', () => {
       context,
     );
 
-    // Playing restarts the round, so the active player — who had already
-    // declined — is offered priority again. The rival is finished regardless.
-    expect(priorityHolder(answered)).toBe(active);
-    expect(window(answered).playsByPlayer[rival]).toBe(1);
-    expect(legalActions(answered, rival, context).reaction).toBeNull();
+    // The pass survived the play, so nobody was left to offer: the window closed
+    // and drained on the spot rather than coming back round to the active
+    // player. It is gone entirely, which is the strongest form of "not
+    // re-offered" the state can express.
+    expect(answered.reactionWindow).toBeNull();
+    expect(answered.phase).toBe('main_1');
+    expect(legalActions(answered, active, context).reaction).toBeNull();
+    // Exactly one Reaction was played in the whole window.
+    expect(eventsOfType(answered, 'reaction_played')).toHaveLength(1);
+    // And the active player still holds theirs, unspent and unofferable.
+    expect(answered.players[active]?.hand).toContain(activeReactionId);
+  });
 
-    const second = answered.players[rival]?.hand.find(
-      (id) => instanceIn(answered, id).definitionId === 'test_denial',
+  it('refuses a second Reaction from the same player in one window', () => {
+    const { state, active, rival } = loaded(true);
+
+    // The active player spends their one Reaction first, which hands priority to
+    // the rival rather than ending the round — so the window is still open and
+    // there is somewhere to refuse the active player a second.
+    const own = legalActions(state, active, context).reaction?.playableCards[0];
+    expect(own).toBeDefined();
+    const answered = apply(
+      state,
+      { type: 'play_reaction', playerId: active, instanceId: own?.instanceId ?? '' },
+      context,
     );
-    expect(second).toBeDefined();
+
+    expect(priorityHolder(answered)).toBe(rival);
+    expect(window(answered).playsByPlayer[active]).toBe(1);
+    // Refused twice over: they no longer hold priority, and the per-window limit
+    // would refuse them even if they did.
+    expect(legalActions(answered, active, context).reaction).toBeNull();
     const error = expectRejected(
       answered,
-      { type: 'play_reaction', playerId: rival, instanceId: second ?? '' },
+      { type: 'play_reaction', playerId: active, instanceId: own?.instanceId ?? '' },
       context,
     );
     expect(error.code).toBe('engine/wrong_player');
@@ -312,30 +335,31 @@ describe('priority and the one-per-window limit', () => {
   it('resolves the window last in, first out', () => {
     const { state, active, rival, spellId, activeReactionId } = loaded(true);
 
-    // Rival counters the Spell; the active player counters the counter — the
-    // one case in which a Reaction may answer another Reaction (§5.5).
-    const passed = apply(state, { type: 'pass_reaction', playerId: active }, context);
-    const rivalReaction = legalActions(passed, rival, context).reaction?.playableCards[0]
-      ?.instanceId as string;
+    // Two seats, one Reaction each, both spent in the same window — which is
+    // still legal after Q47, because each seat had its single offer. What is
+    // gone is the *re-offer*, not the interaction.
     const answered = apply(
-      passed,
-      { type: 'play_reaction', playerId: rival, instanceId: rivalReaction },
+      state,
+      { type: 'play_reaction', playerId: active, instanceId: activeReactionId ?? '' },
       context,
     );
+    const rivalReaction = legalActions(answered, rival, context).reaction?.playableCards[0]
+      ?.instanceId as string;
     const countered = apply(
       answered,
-      { type: 'play_reaction', playerId: active, instanceId: activeReactionId ?? '' },
+      { type: 'play_reaction', playerId: rival, instanceId: rivalReaction },
       context,
     );
 
     const closed = passUntilClosed(countered);
 
-    // Last in, first out: the active player's counter resolved first and took
-    // the rival's with it, so the original Spell survived and resolved.
+    // Last in, first out: the rival's counter was played last, so it resolved
+    // first and took the active player's with it. The original Spell was two
+    // places down the queue and survived to resolve.
     expect(eventsOfType(closed, 'card_countered').map((event) => event.instanceId)).toEqual([
-      rivalReaction,
+      activeReactionId,
     ]);
-    expect(instanceIn(closed, rivalReaction).zone).toBe('discard');
+    expect(instanceIn(closed, activeReactionId as string).zone).toBe('discard');
     expect(eventsOfType(closed, 'spell_resolved').map((event) => event.instanceId)).toContain(
       spellId,
     );

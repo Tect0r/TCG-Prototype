@@ -140,14 +140,28 @@ staying deterministic and bounded. It is not proposed as the final rule.
 >   offered only to a seat with something legal to play. `reactions.ts#draftWindow`
 >   uses `activeFirstOrder` and says in the code that it deliberately supersedes
 >   the provisional "non-active player first" written here.
-> - **A Reaction can be answered by another Reaction.** Playing one clears
->   `window.passedPlayerIds`, so the round of priority restarts and a player who
->   has not yet acted may counter the counter; `reactions.test.ts` asserts it.
->   `CLAUDE.md`'s product rules still say it may not, so one of the two is
->   wrong. That contradiction is **Q47**, written up with both directions of the
->   fix in [open-questions.md](../open-questions.md); it is an owner decision and
->   is deliberately not settled here. The in-app rulebook currently describes the
->   engine.
+> - **A Reaction can be answered by another Reaction.** Playing one cleared
+>   `window.passedPlayerIds`, so the round of priority restarted and a player who
+>   had not yet acted could counter the counter. `CLAUDE.md`'s product rules said
+>   it may not, so one of the two was wrong. That contradiction was **Q47**.
+>
+> **Amended 2026-08-14 (M07.8), and Q47 is answered.** The engine was changed to
+> match the product rules rather than the other way round. `handlePlayReaction`
+> no longer clears `passedPlayerIds`: priority goes round the table **once**, a
+> play moves it on exactly as a pass does, and a seat that has already answered is
+> never re-offered. The third bullet of the original policy above — "a Reaction
+> cannot be responded to by another Reaction" — is therefore **restored as the
+> bounded rule it was written to be**, and the window closes when there is nobody
+> left to offer it to.
+>
+> What that removes is the unbounded exchange, not the interaction. Two different
+> seats may still each spend their one Reaction in the same window, and the
+> pending queue still drains last in, first out, so an explicit counter played
+> after another Reaction does answer it. The depth is now bounded by the seats
+> that had not yet been offered priority rather than by the per-player limit.
+> Enforced by `reactions.test.ts` — "does not re-offer a seat that already passed
+> (Q47)", "refuses a second Reaction from the same player in one window" and
+> "resolves the window last in, first out".
 >
 > Pending Reactions resolve **last in, first out**, with the spell the window
 > opened around at the bottom. Whether a Reaction may carry an interactive
@@ -230,6 +244,7 @@ For a blocked attacker with Overwhelm, in order:
 >   questions with no answer live in [open-questions.md](../open-questions.md),
 >   and settled rules in [confirmed-rules.md](../rules/confirmed-rules.md). Of
 >   this ADR's §18 remainder, Q4 (`resilient`), Q44 (multiple blockers), Q45
->   (Barrier ordering), Q46 (Reaction additional costs), Q47 (Reaction answering
->   a Reaction) and Q48 (five Goblin entry triggers) are the ones still on the
->   owner's list.
+>   (Barrier ordering) and Q46 (Reaction additional costs) are the ones still on
+>   the owner's list. Q47 (Reaction answering a Reaction) and Q48 (five Goblin
+>   entry triggers) were both answered on 2026-08-14 by M07.8 and are recorded
+>   under [Answered](../open-questions.md#answered).

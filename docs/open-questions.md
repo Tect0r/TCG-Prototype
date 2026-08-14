@@ -24,8 +24,9 @@ re-opened months later.
 
 ## Owner decisions a tranche may stop on
 
-These six are the plan's short list. Each is genuinely a design call rather than
-an engineering one.
+These four are the plan's short list. Each is genuinely a design call rather than
+an engineering one. Q47 and Q48 were on it until 2026-08-14 and are now under
+[Answered](#answered).
 
 ### Q4. What should `resilient` do, or should it be deleted?
 
@@ -136,72 +137,6 @@ Answer it when a Reaction is authored that needs one, not before.
 
 ---
 
-### Q47. May a Reaction answer another Reaction?
-
-**Open, and it is a live contradiction between two current documents.** Raised by
-M01.4; recorded here in M07.2.
-
-The engine says **yes**. Playing a Reaction clears `window.passedPlayerIds`
-(`reactions.ts`), so the round of priority restarts and a player who has not yet
-used their one Reaction in that window may counter the counter. `reactions.test.ts`
-asserts exactly that, the in-app rulebook describes it in those words, and it is
-bounded twice over: one Reaction per player per window, and nothing already
-resolving is interruptible.
-
-`CLAUDE.md`'s product rules say **no** — "no Reaction responds to another Reaction
-unless a future explicit counter rule says otherwise".
-
-One of the two is wrong, and they cannot both stay. The choice is small in code
-and not small in feel:
-
-- **Keep the engine's rule** and amend `CLAUDE.md`. Depth is naturally bounded by
-  the per-player limit, so a four-seat window can hold at most four Reactions.
-  Counter-magic exists, and holding a Reaction has a use beyond the first play.
-- **Keep `CLAUDE.md`'s rule** and change the engine: do not clear
-  `passedPlayerIds` on a play, so the window closes once everyone has had one
-  offer. Simpler and more predictable; `calculated_response`'s pay-or-counter
-  choice becomes the only interaction in the game.
-
-Whichever you pick, the loser gets rewritten in the same change: the product
-rules, `reactions.ts` and its tests, the rulebook's Reactions section, and
-[open-decisions.md](rules/open-decisions.md#reaction-chaining-policy).
-
-**Answered by:** you. Nothing is blocked meanwhile — the engine is
-self-consistent and tested; it is the documentation that disagrees with it.
-
----
-
-### Q48. Five Goblin cards say "enters the battlefield" and behave as "when deployed"
-
-**Open. Blocks nothing; the cards work and every precon is legal.** Raised by the
-M02.6 entry-trigger review — see
-[rules/entry-trigger-review.md](rules/entry-trigger-review.md) for the full
-card-by-card record.
-
-`goblin_bomb_thrower`, `goblin_lookout`, `goblin_mob_caller`, `goblin_recruiter`
-and `goblin_siege_leader` all print "When this Unit **enters the battlefield**, …"
-and are authored as top-level `effects` — the implicit _deploy_ form. That form
-runs when the card is played and when a Token is created, and **not** when a
-permanent is put onto the battlefield by an effect. So a `goblin_recruiter`
-returned by `grave_reassembly` creates no Goblin Token, which is not what the card
-says. Confirmed against the engine, not inferred.
-
-Two answers, and they are not equivalent:
-
-- **Fix the prose** to "When deployed". No behaviour changes anywhere; five cards
-  stop over-promising. This is what "structured data is authoritative" implies on
-  its own.
-- **Fix the structure** to `on_entered_battlefield`. The cards then do what they
-  print — and the Goblin deck gains a revival payoff it does not have today, which
-  is a gameplay change.
-
-The fifteen cards that print "When deployed" and use the same implicit form are
-correct as they stand and are **not** part of this question. Nothing was converted
-in bulk, and whichever answer you give, the structural route still needs a
-per-card judgement about whether revival should re-fire each one.
-
----
-
 ## Design questions, nothing blocked
 
 ### Q6. Is there an alternate victory condition?
@@ -226,10 +161,18 @@ if it becomes a hard rule; the bundled sets already comply.
 
 ### Q19. Is 40-card singleton with a two-colour Commander cap right?
 
-The format is data rather than a constant, so changing it is a config edit — but
-whether 40 singleton cards give enough consistency, and whether the Commander
-colour cap should open to three once the colour pie exists, are playtest
-questions. See [open-decisions.md](rules/open-decisions.md#deck-construction).
+**Scoped, not closed.** The owner confirmed on 2026-08-14 that **40 is the
+deliberate size for the first playtest and a 50-card target remains for later**,
+replacing an earlier project-level decision the repository had never reflected.
+What is still open is when 50 arrives and whether the Commander colour cap should
+open to three.
+
+Fifty is blocked on content rather than on code. `deck.size` is one field in
+`content/formats/precon_wave_1.json`, but each Commander's colour-legal singleton
+pool is only 41–42 cards, so 50 needs 8–9 more legal cards per Commander — or a
+shared neutral package, or a construction-rule change. The measurement, per
+precon, is in
+[open-decisions.md](rules/open-decisions.md#40-is-a-scope-decision-not-a-leftover--owner-2026-08-14).
 
 ### Q20. Should `displayText` be generated from structured effects?
 
@@ -537,10 +480,10 @@ declines in a row; pending cards resolve last in, first out with the spell the
 window opened around at the bottom. Recorded in full in
 [open-decisions.md](rules/open-decisions.md#reaction-chaining-policy).
 
-One part of the original question is **not** settled by the implementation and is
-now tracked separately as **Q47**: playing a Reaction restarts the round of
-priority, which lets one Reaction answer another, and `CLAUDE.md`'s product rules
-say it should not. Recorded here in M07.2.
+One part of the original question was **not** settled by the implementation and
+was tracked separately as **Q47**, which is now answered below. The summary above
+is the policy as it stood before that: the window now closes when there is nobody
+left to offer it to, rather than when everybody declines in a row.
 
 ### Q40. Should root `cards.json` and `precons.json` be deleted? — answered 2026-08-13
 
@@ -580,6 +523,62 @@ have hidden that 64 of them could not attack.
 A tile is **not** a targeting unit: `groupByTokenDefinition` still expands a chosen
 Token across every Token of the same definition, whatever state it is in.
 Implemented in M06.1–M06.3, on both surfaces that draw a battlefield.
+
+### Q47. May a Reaction answer another Reaction? — answered 2026-08-14
+
+**No — the engine was changed to match the product rules.** Raised by M01.4,
+written up in M07.2, settled in M07.8.
+
+The engine used to clear `window.passedPlayerIds` when a Reaction was played, so
+the round of priority restarted and a player who had already declined was asked
+again. `CLAUDE.md` said "no Reaction responds to another Reaction unless a future
+explicit counter rule says otherwise". The engine lost.
+
+`handlePlayReaction` no longer clears `passedPlayerIds`. Priority goes round the
+table **once**: a play moves priority on exactly as a pass does, a seat that has
+answered is never re-offered, and the window closes when there is nobody left to
+offer it to. Termination is now bounded by the number of seats rather than by
+seats × plays.
+
+This removes the unbounded exchange, not the interaction. Two different seats may
+still each spend their one Reaction in the same window, and the pending queue
+still drains last in, first out, so an explicit counter played after another
+Reaction does answer it — which is exactly the "explicit counter effect" the
+product rules carve out. What is gone is passing and then coming back.
+
+**Enforced by** three tests in `packages/rules-engine/src/reactions.test.ts`:
+"does not re-offer a seat that already passed, and closes instead (Q47)",
+"refuses a second Reaction from the same player in one window", and "resolves the
+window last in, first out". The rulebook's Reactions section, the
+`reaction_window` glossary entry, `PHASE_DESCRIPTIONS`,
+[ADR 0016](architecture/0016-precon-wave-1-ruleset.md) and
+[open-decisions.md](rules/open-decisions.md#reaction-chaining-policy) all describe
+this one rule.
+
+### Q48. Five Goblin cards say "enters the battlefield" and behave as "when deployed" — answered 2026-08-14
+
+**The prose was corrected; the structure was not.** Raised by the M02.6
+entry-trigger review, settled in M07.8. The full card-by-card record is in
+[rules/entry-trigger-review.md](rules/entry-trigger-review.md).
+
+`goblin_bomb_thrower`, `goblin_lookout`, `goblin_mob_caller`, `goblin_recruiter`
+and `goblin_siege_leader` printed "When this Unit **enters the battlefield**, …"
+while being authored as top-level `effects` — the implicit _deploy_ form, which
+does not run when a permanent is put onto the battlefield by an effect. All five
+now print "When deployed, …", which is what they have always done.
+
+The rationale is deliberately **non-gameplay**: rewording makes five cards honest
+and changes nothing a player can observe, where rewiring them to
+`on_entered_battlefield` would hand the Goblin deck a revival payoff it does not
+have. Returning one with `grave_reassembly` still fires no deploy effect. If the
+structural route is ever wanted it remains available, and each card still needs
+its own judgement about whether revival should re-fire it.
+
+**Enforced by** `display_text/entry_timing` in `lintDisplayText`: a card whose
+prose says it acts when it enters the battlefield while carrying no
+`on_entered_battlefield` ability is a warning, and a warning on a `playtest` or
+`active` card is a content-build error. The five behaviour contracts in
+`contracts-goblin.ts` claim "when it is deployed" and are unchanged otherwise.
 
 ### Q43. What counts as a board stall? — answered 2026-08-12
 

@@ -1,5 +1,6 @@
 import {
   effectIntent,
+  entitySelectorOf,
   isDistributedSelection,
   type Controller,
   type EffectDefinition,
@@ -167,7 +168,14 @@ function hasRecipient(ctx: MatchContext, item: ResolutionItem, effect: EffectDef
   }
   // An optional selector already means "you may pick nothing", so the set being
   // empty is a legal outcome rather than a reason to skip the question.
-  if (target.kind === 'entity' && target.selector.optional) return true;
+  if (entitySelectorOf(target)?.optional === true) return true;
+  // A mixed pool has a recipient as soon as *either* half does. Asking only the
+  // entity half would skip "divide it among enemy Units and opponents" against an
+  // empty enemy board, where the opponent is still a perfectly legal destination.
+  if (target.kind === 'entity_or_player') {
+    const players = resolvePlayerSelector(ctx, target.players, item.controllerId) ?? [];
+    if (players.length > 0) return true;
+  }
   return legalTargets(ctx, target, scopeOf(item)).length > 0;
 }
 
@@ -280,7 +288,11 @@ function resolveDistributed(
   item: ResolutionItem,
   effectIndex: number,
   effect: EffectDefinition,
-  target: Extract<TargetDefinition, { kind: 'entity' }>,
+  // Both kinds that carry a selector, because this function reads nothing else
+  // off the target. A distributed `entity_or_player` is rejected by the card
+  // schema today; widening the parameter is still cheaper and safer than a cast
+  // that would go stale the moment that changes.
+  target: Extract<TargetDefinition, { kind: 'entity' | 'entity_or_player' }>,
   scope: TargetScope,
 ): TargetResolution {
   const selector = target.selector;
@@ -408,8 +420,9 @@ function resolveTargets(
   // definition and controller. Expanded here, after the choice, because the
   // group is a consequence of naming one Token rather than a wider option set
   // (rule adjustment §8).
+  const groupSelector = entitySelectorOf(target);
   const group = (ids: readonly InstanceId[]): InstanceId[] =>
-    target.kind === 'entity' ? expandTokenGroup(ctx, target.selector, ids) : [...ids];
+    groupSelector ? expandTokenGroup(ctx, groupSelector, ids) : [...ids];
 
   if (stored !== undefined) {
     return {
@@ -498,16 +511,29 @@ function damageIsLethal(ctx: MatchContext, sourceInstanceId: InstanceId | null):
  * The targets are damaged in board order rather than in the order the chooser
  * happened to click, so two answers that describe the same allocation produce
  * the same match, event for event.
+ *
+ * An `entity_or_player` pool adds players to that same allocation — "divide it
+ * among enemy Units **and opponents**" (M07.8). Nothing about the allocation
+ * changes: every point still names one member of one pool, a member still takes
+ * its whole share as a single event, and the players are damaged after the
+ * entities in seat order, so the ordering stays fixed. Only the dispatch differs,
+ * because a player takes damage through `damagePlayer` and a unit through
+ * `damageUnit`.
  */
 function divideDamage(
   ctx: MatchContext,
   item: ResolutionItem,
   effect: Extract<EffectDefinition, { type: 'deal_damage' }>,
-  target: Extract<TargetDefinition, { kind: 'entity' }>,
+  target: Extract<TargetDefinition, { kind: 'entity' | 'entity_or_player' }>,
   effectIndex: number,
   total: number,
 ): EffectOutcome {
-  const candidates = legalTargets(ctx, target, scopeOf(item));
+  const entityCandidates = legalTargets(ctx, target, scopeOf(item));
+  const playerPool =
+    target.kind === 'entity_or_player'
+      ? (resolvePlayerSelector(ctx, target.players, item.controllerId) ?? [])
+      : [];
+  const candidates = [...entityCandidates, ...playerPool];
   // Nothing to divide is not an error: "sacrifice up to five Units" that took
   // none leaves a total of zero, and the card simply deals no damage.
   if (total <= 0 || candidates.length === 0) return { kind: 'fizzled', reason: 'no_legal_target' };
@@ -533,23 +559,37 @@ function divideDamage(
   // Re-validated on resume like every other stored selection: a target that has
   // left the legal set drops out, and its share of the damage is simply not
   // dealt. The rest of the allocation still lands.
-  const allocation = new Map<InstanceId, number>();
-  for (const instanceId of stored) {
-    if (!candidates.includes(instanceId)) continue;
-    allocation.set(instanceId, (allocation.get(instanceId) ?? 0) + 1);
+  //
+  // The two pools are re-derived separately rather than classified by the shape
+  // of the ID, so an entry is a seat only when it really is one of the seats this
+  // instruction offered. The player pool is consulted first; seat IDs are chosen
+  // by the lobby and instance IDs are minted by the engine as `inst_NNNN`, so the
+  // two namespaces do not overlap in practice, and the precedence is written down
+  // rather than left to whichever lookup ran first.
+  const allocation = new Map<string, number>();
+  for (const id of stored) {
+    if (!playerPool.includes(id) && !entityCandidates.includes(id)) continue;
+    allocation.set(id, (allocation.get(id) ?? 0) + 1);
   }
   if (allocation.size === 0) return { kind: 'fizzled', reason: 'no_legal_target' };
 
   const lethal = damageIsLethal(ctx, item.sourceInstanceId);
   const dealt: InstanceId[] = [];
-  for (const instanceId of candidates) {
+  for (const instanceId of entityCandidates) {
     const amount = allocation.get(instanceId);
     if (amount === undefined) continue;
     dealt.push(instanceId);
     damageUnit(ctx, instanceId, amount, { sourceInstanceId: item.sourceInstanceId, lethal });
   }
+  for (const playerId of playerPool) {
+    const amount = allocation.get(playerId);
+    if (amount === undefined) continue;
+    damagePlayer(ctx, playerId, amount, { sourceInstanceId: item.sourceInstanceId });
+  }
   // Filed like any other instruction's targets, so a following "it" or
-  // `previous_targets` sees what this step actually hit.
+  // `previous_targets` sees what this step actually hit. Players are left out
+  // deliberately: the record is a list of instances, and a following "it" that
+  // found a seat in it would be pointing at something with no card to act on.
   item.selections[targetsKey(effectIndex)] = dealt;
   return RESOLVED;
 }
@@ -707,7 +747,10 @@ export function executeEffect(
       // "The damage may be divided among targets" is a different instruction
       // underneath: one total, allocated by a player, rather than one amount
       // repeated at every recipient (M02.5).
-      if (effect.divided === true && effect.target.kind === 'entity') {
+      if (
+        effect.divided === true &&
+        (effect.target.kind === 'entity' || effect.target.kind === 'entity_or_player')
+      ) {
         return divideDamage(ctx, item, effect, effect.target, effectIndex, value(effect.amount));
       }
 

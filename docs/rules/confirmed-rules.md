@@ -112,10 +112,15 @@ the phase to return to; `complete` ends the match.
   somebody holds a Reaction whose timing fits and whose cost they can pay.
 - Priority is offered to the active player first, then clockwise, and only to a
   player with something legal to play. Each eligible player may play at most
-  `reactionsPerPlayerPerWindow` Reaction per window. Playing one restarts the
-  round of priority. The window closes when everybody declines in a row.
+  `reactionsPerPlayerPerWindow` Reaction per window. Priority goes round the
+  table **once**: playing a Reaction moves priority on exactly as passing does
+  and never re-offers a seat that has already answered. The window closes when
+  there is nobody left to offer it to.
 - Pending cards resolve **last in, first out**; the spell a window opened around
-  sits at the bottom and resolves last.
+  sits at the bottom and resolves last. Two different seats may each spend their
+  one Reaction in a window, so an explicit counter played after another Reaction
+  does answer it — what the one-round rule removes is the unbounded exchange, not
+  the interaction.
 - Costs are **atomic**. An interactive cost pauses before anything is committed
   and is revalidated when it is answered. A card's own `additionalCosts` are
   paid before an opponent's Reaction window opens, so **countering never refunds

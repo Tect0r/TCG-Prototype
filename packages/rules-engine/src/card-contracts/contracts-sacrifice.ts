@@ -301,14 +301,21 @@ export const SACRIFICE_CONTRACTS: Record<CardId, CardContract> = {
   },
 
   mass_offering: {
-    claim: 'divides one damage per sacrificed Unit among enemy targets',
+    claim: 'sacrifices Tokens as Units and divides the total among enemy Units and the opponent',
     run: (table) => {
       table.token('thrall_token');
       table.token('thrall_token');
       const target = table.board('veil_adept', table.foe);
+      const before = table.player(table.foe).health;
+
+      // One point onto the Unit and one onto the opponent, which is the split
+      // the card could not make before M07.8.
+      table.choose((choice) => (choice.type === 'divide_damage' ? [target, table.foe] : null));
       table.cast('mass_offering');
+
       checkEqual(table.unitCount(), 0, 'friendly Units left after the offering');
-      checkEqual(table.instance(target).markedDamage, 2, 'damage divided onto the enemy Unit');
+      checkEqual(table.instance(target).markedDamage, 1, 'damage divided onto the enemy Unit');
+      checkEqual(table.player(table.foe).health, before - 1, "the opponent's Health");
     },
   },
 

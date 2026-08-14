@@ -2736,7 +2736,7 @@
           "staticAbilities": [],
           "delayedAbilities": [],
           "implemented": true,
-          "displayText": "When this Unit enters the battlefield, deal 2 damage to an enemy Unit."
+          "displayText": "When deployed, deal 2 damage to an enemy Unit."
         },
         {
           "schemaVersion": 4,
@@ -3187,7 +3187,7 @@
           "staticAbilities": [],
           "delayedAbilities": [],
           "implemented": true,
-          "displayText": "When this Unit enters the battlefield, look at the top three cards of your deck. You may put a Goblin card into your hand. Put the others on the bottom."
+          "displayText": "When deployed, look at the top three cards of your deck. You may put a Goblin card into your hand. Put the others on the bottom."
         },
         {
           "schemaVersion": 4,
@@ -3227,7 +3227,7 @@
           "staticAbilities": [],
           "delayedAbilities": [],
           "implemented": true,
-          "displayText": "When this Unit enters the battlefield, create two Goblin Tokens."
+          "displayText": "When deployed, create two Goblin Tokens."
         },
         {
           "schemaVersion": 4,
@@ -3330,23 +3330,9 @@
                 {
                   "type": "deal_damage",
                   "target": {
-                    "kind": "entity",
-                    "selector": {
-                      "zone": "battlefield",
-                      "controller": "opponent",
-                      "filter": {
-                        "cardTypes": [
-                          "unit",
-                          "token",
-                          "commander"
-                        ]
-                      },
-                      "count": 1,
-                      "selection": "player_choice",
-                      "chooser": "self",
-                      "optional": false,
-                      "excludeSource": false
-                    }
+                    "kind": "player",
+                    "relation": "opponent",
+                    "selection": "player_choice"
                   },
                   "amount": 1
                 }
@@ -3357,7 +3343,7 @@
           "staticAbilities": [],
           "delayedAbilities": [],
           "implemented": true,
-          "displayText": "When this Unit is defeated, deal 1 damage to an enemy Unit or Commander."
+          "displayText": "When this Unit is defeated, deal 1 damage to an opponent."
         },
         {
           "schemaVersion": 4,
@@ -3516,7 +3502,7 @@
           "staticAbilities": [],
           "delayedAbilities": [],
           "implemented": true,
-          "displayText": "When this Unit enters the battlefield, create one Goblin Token."
+          "displayText": "When deployed, create one Goblin Token."
         },
         {
           "schemaVersion": 4,
@@ -3646,7 +3632,7 @@
           "staticAbilities": [],
           "delayedAbilities": [],
           "implemented": true,
-          "displayText": "When this Unit enters the battlefield, create three Goblin Tokens."
+          "displayText": "When deployed, create three Goblin Tokens."
         },
         {
           "schemaVersion": 4,
@@ -4822,7 +4808,7 @@
             {
               "type": "deal_damage",
               "target": {
-                "kind": "entity",
+                "kind": "entity_or_player",
                 "selector": {
                   "zone": "battlefield",
                   "controller": "opponent",
@@ -4838,7 +4824,8 @@
                   "chooser": "self",
                   "optional": false,
                   "excludeSource": false
-                }
+                },
+                "players": "each_opponent"
               },
               "amount": {
                 "kind": "previous_targets",
@@ -4854,18 +4841,19 @@
           "staticAbilities": [],
           "delayedAbilities": [],
           "implemented": true,
-          "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or Commander. The damage may be divided among targets.",
+          "displayText": "Sacrifice up to five Units. For each Unit sacrificed, deal 1 damage to an enemy Unit or opponent. The damage may be divided among targets.",
           "text": {
             "summary": "Turns a wide board into exactly as much damage as you fed it.",
             "effectExplanations": [
               "Choose up to five of your own Units and sacrifice them.",
-              "Divide that many damage among enemy Units and Commanders."
+              "Divide that many damage among enemy Units, enemy Commanders and the opponents themselves."
             ],
             "notes": [
               "\"Up to five\" really is up to: you may sacrifice none, in which case there is no damage to divide and the Spell does nothing else. Tokens count as Units and are the usual fodder.",
               "The total is the number of Units you sacrificed with this Spell — not everything that died this turn.",
-              "You then split that total however you like. A target takes its whole share as a single hit, so Barrier stops one allocation once rather than once per point.",
-              "Every point has to be allocated to a legal target. If nothing enemy is on the battlefield the damage is lost, and the Units are still sacrificed."
+              "You then split that total however you like, between enemy Units and the opponents themselves. A target takes its whole share as a single hit, so Barrier stops one allocation once rather than once per point.",
+              "A share aimed at an opponent comes off their Health. It is not damage to anything they control, so a deployed enemy Commander only takes damage you aim at it as a Unit.",
+              "Every point has to be allocated to a legal target. An opponent is always one while they are alive, so a cleared board no longer wastes the Spell."
             ]
           }
         },
@@ -4988,7 +4976,7 @@
           "staticAbilities": [],
           "delayedAbilities": [],
           "implemented": true,
-          "displayText": "The first time another friendly Unit is defeated each turn, restore 1 Health to your Commander."
+          "displayText": "The first time another friendly Unit is defeated each turn, restore 1 Health to you."
         },
         {
           "schemaVersion": 4,

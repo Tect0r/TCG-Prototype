@@ -1,4 +1,5 @@
 import {
+  entitySelectorOf,
   isDistributedSelection,
   KEYWORD_REGISTRY,
   type CardFilter,
@@ -336,10 +337,30 @@ export function describeTarget(
       return 'it';
     case 'entity':
       return describeSelector(target.selector);
+    case 'entity_or_player':
+      // "…and opponents", not "…and an opponent you choose": every member of the
+      // pool is a destination the allocation may reach, and nobody picks one
+      // beforehand. `describePlayerSelector` words a *selection*, which is the
+      // one thing this half is not.
+      return `${describeSelector(target.selector)} and ${playerPoolPhrase(target.players)}`;
     case 'player':
       return target.relation === 'self' ? 'you' : 'an opponent you choose';
     case 'players':
       return target.relation === 'each_opponent' ? 'each opponent' : 'every player';
+  }
+}
+
+/** The player half of a mixed pool, as the set of destinations it really is. */
+function playerPoolPhrase(
+  players: Extract<TargetDefinition, { kind: 'entity_or_player' }>['players'],
+): string {
+  switch (players) {
+    case 'self':
+      return 'you';
+    case 'each_opponent':
+      return 'opponents';
+    case 'all_players':
+      return 'players';
   }
 }
 
@@ -358,6 +379,10 @@ export function targetIsPlural(target: TargetDefinition): boolean {
       return false;
     case 'entity':
       return target.selector.count === 'all' || target.selector.count > 1;
+    case 'entity_or_player':
+      // "Enemy units and opponents" is always a set, whatever the entity half's
+      // count happens to be — the pool holds at least the players as well.
+      return true;
     case 'player':
       return false;
     case 'players':
@@ -370,8 +395,8 @@ export function targetNotes(target: TargetDefinition): readonly string[] {
   if (target.kind === 'blocked_by_source') {
     return ['nothing happens outside a combat this card is blocking in'];
   }
-  if (target.kind !== 'entity') return [];
-  const selector = target.selector;
+  const selector = entitySelectorOf(target);
+  if (selector === null) return [];
   const notes: string[] = [];
 
   const selection = describeSelection(selector);

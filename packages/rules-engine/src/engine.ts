@@ -1,4 +1,10 @@
-import type { AbilityCost, CardDatabase, CardDefinition, ZoneId } from '@tcg/card-data';
+import {
+  entitySelectorOf,
+  type AbilityCost,
+  type CardDatabase,
+  type CardDefinition,
+  type ZoneId,
+} from '@tcg/card-data';
 import { err, ok, type Result } from '@tcg/shared';
 import { defendersOf } from './combat.js';
 import { DEFAULT_RULES_CONFIG, type RulesConfig } from './config.js';
@@ -22,7 +28,7 @@ import { defeatUnit, nextChoiceId } from './effects.js';
 import { advance, resolveMulligans, resumeReadyStepReplacement, setPhase } from './flow.js';
 import { handlePassReaction, handlePlayReaction, openReactionWindow } from './reactions.js';
 import { settle } from './queue.js';
-import { legalTargets, playerCandidates } from './targeting.js';
+import { legalTargets, playerCandidates, resolvePlayerSelector } from './targeting.js';
 import { enqueue } from './triggers.js';
 import { markLoss, runStateBasedChecks } from './state-based.js';
 import { discardCard, moveToZone } from './zones.js';
@@ -383,7 +389,14 @@ export function spellHasLegalTargets(
       if (playerCandidates(ctx, target, instance.controller).length === 0) return false;
       continue;
     }
-    if (target.kind === 'entity' && target.selector.optional) continue;
+    if (entitySelectorOf(target)?.optional === true) continue;
+    // A mixed pool is satisfied by either half, so an empty enemy board does not
+    // make "divide it among enemy Units and opponents" unplayable while an
+    // opponent is still alive to receive it.
+    if (target.kind === 'entity_or_player') {
+      const players = resolvePlayerSelector(ctx, target.players, instance.controller) ?? [];
+      if (players.length > 0) continue;
+    }
 
     // Neither of these is an independent target, so neither can make a card
     // unplayable on its own (M02.4). "It" is whatever the step before this one

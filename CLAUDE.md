@@ -20,6 +20,8 @@ scope is in exactly one file under `docs/milestones/`.
 ## Product rules that must not drift
 
 - `precon_wave_1`: 40-card singleton deck plus one Commander outside the deck.
+  40 is the owner-confirmed first-playtest scope (2026-08-14); 50 is the later
+  target and needs 8–9 more colour-legal cards per Commander first.
 - The battlefield has no Unit limit. Large boards are measured, not treated as
   proof that a cap is needed.
 - Each player has one active Relic. Replacing it is neither defeat nor sacrifice.

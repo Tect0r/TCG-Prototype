@@ -14,7 +14,7 @@
     "identity": "Swarm Unit — Consistency",
     "power": "medium"
   },
-  "displayText": "When this Unit enters the battlefield, look at the top three cards of your deck. You may put a Goblin card into your hand. Put the others on the bottom.",
+  "displayText": "When deployed, look at the top three cards of your deck. You may put a Goblin card into your hand. Put the others on the bottom.",
   "effects": [
     {
       "type": "search_zone",

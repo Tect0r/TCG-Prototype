@@ -1,4 +1,4 @@
-import type { CardId } from '@tcg/card-data';
+﻿import type { CardId } from '@tcg/card-data';
 import { check, checkEqual, type CardContract } from './harness.js';
 
 /**
@@ -7,7 +7,7 @@ import { check, checkEqual, type CardContract } from './harness.js';
  *
  * Most of these need a board of Goblins before the card does anything, so the
  * contracts build one out of vanilla Goblins and Tokens rather than out of the
- * card under test — a payoff that only counted its own copies would pass a
+ * card under test â€” a payoff that only counted its own copies would pass a
  * contract that proved nothing.
  */
 export const GOBLIN_CONTRACTS: Record<CardId, CardContract> = {
@@ -47,7 +47,7 @@ export const GOBLIN_CONTRACTS: Record<CardId, CardContract> = {
   },
 
   goblin_bomb_thrower: {
-    claim: 'deals 2 damage to an enemy Unit when it enters the battlefield',
+    claim: 'deals 2 damage to an enemy Unit when it is deployed',
     run: (table) => {
       const target = table.board('veil_adept', table.foe);
       table.cast('goblin_bomb_thrower');
@@ -130,7 +130,7 @@ export const GOBLIN_CONTRACTS: Record<CardId, CardContract> = {
   },
 
   goblin_lookout: {
-    claim: 'looks three deep for a Goblin card when it enters the battlefield',
+    claim: 'looks three deep for a Goblin card when it is deployed',
     run: (table) => {
       table.stack(['goblin_spearman']);
       table.cast('goblin_lookout');
@@ -139,7 +139,7 @@ export const GOBLIN_CONTRACTS: Record<CardId, CardContract> = {
   },
 
   goblin_mob_caller: {
-    claim: 'creates two Goblin Tokens when it enters the battlefield',
+    claim: 'creates two Goblin Tokens when it is deployed',
     run: (table) => {
       table.cast('goblin_mob_caller');
       checkEqual(table.unitsOf('goblin_token').length, 2, 'Goblin Tokens created');
@@ -158,14 +158,21 @@ export const GOBLIN_CONTRACTS: Record<CardId, CardContract> = {
   },
 
   goblin_powder_runner: {
-    claim: 'deals 1 damage to an enemy Unit when it is defeated',
+    claim: 'deals 1 damage to an opponent when it is defeated, not to a permanent',
     run: (table) => {
       const runner = table.board('goblin_powder_runner');
+      // A Unit and a deployed Commander both sit on the enemy board, so this
+      // fails loudly if the blast ever reaches a battlefield permanent again.
       const enemy = table.board('veil_adept', table.foe);
-      table.prefer(runner, enemy);
+      const commander = table.boardCommander(table.foe);
+      const before = table.player(table.foe).health;
+      // Steers `throwing_knife` onto the Runner rather than the scenery.
+      table.prefer(runner);
       table.cast('throwing_knife');
       checkEqual(table.zoneOf(runner), 'discard', 'the defeated Runner');
-      checkEqual(table.instance(enemy).markedDamage, 1, 'damage on the enemy Unit');
+      checkEqual(table.player(table.foe).health, before - 1, "the opponent's Health");
+      checkEqual(table.instance(enemy).markedDamage, 0, 'damage on the enemy Unit');
+      checkEqual(table.instance(commander).markedDamage, 0, 'damage on the enemy Commander');
     },
   },
 
@@ -197,7 +204,7 @@ export const GOBLIN_CONTRACTS: Record<CardId, CardContract> = {
   },
 
   goblin_recruiter: {
-    claim: 'creates a Goblin Token when it enters the battlefield',
+    claim: 'creates a Goblin Token when it is deployed',
     run: (table) => {
       table.cast('goblin_recruiter');
       checkEqual(table.unitsOf('goblin_token').length, 1, 'Goblin Tokens created');
@@ -223,7 +230,7 @@ export const GOBLIN_CONTRACTS: Record<CardId, CardContract> = {
   },
 
   goblin_siege_leader: {
-    claim: 'creates three Goblin Tokens when it enters the battlefield',
+    claim: 'creates three Goblin Tokens when it is deployed',
     run: (table) => {
       table.cast('goblin_siege_leader');
       checkEqual(table.unitsOf('goblin_token').length, 3, 'Goblin Tokens created');

@@ -13,7 +13,7 @@
     "identity": "Sacrifice Unit — Sustain",
     "power": "medium"
   },
-  "displayText": "The first time another friendly Unit is defeated each turn, restore 1 Health to your Commander.",
+  "displayText": "The first time another friendly Unit is defeated each turn, restore 1 Health to you.",
   "abilities": [
     {
       "id": "mourn",

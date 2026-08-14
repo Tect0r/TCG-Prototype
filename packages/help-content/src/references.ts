@@ -87,7 +87,7 @@ export const PHASE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   turn_end:
     'Turn-end abilities trigger, end-of-turn effects expire, and the active player discards down to the maximum hand size.',
   reaction_window:
-    'A bounded window in which players may play Reactions. Priority goes round the table starting with the active player; each player may play at most one Reaction, and the window closes once everybody has passed in a row. The cards played then resolve in reverse order — the last one played resolves first — and the turn carries on from where it paused.',
+    'A bounded window in which players may play Reactions. Priority goes round the table once, starting with the active player; each player may play at most one Reaction, playing does not start the round again, and the window closes once there is nobody left to offer it to. The cards played then resolve in reverse order — the last one played resolves first — and the turn carries on from where it paused.',
 };
 
 function displayOf(value: ReferenceValue): string {

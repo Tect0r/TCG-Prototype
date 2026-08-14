@@ -1,6 +1,7 @@
 import { warning, type Issue } from '@tcg/shared';
 import type { CardDefinition } from './schema/card.js';
 import type { EffectDefinition, EffectType } from './schema/effect.js';
+import { entitySelectorOf } from './schema/target.js';
 import { KEYWORD_LIST } from './keywords.js';
 
 /**
@@ -83,6 +84,141 @@ const STATIC_MECHANIC_MARKERS: Record<string, RegExp> = {
   reaction_discount: /\bcosts?\b/i,
   replace_ready: /\bready\b/i,
 };
+
+/* ------------------------------------------------------- semantic drift (M07.8) */
+
+/**
+ * The checks above compare *mechanics*. These compare **who the mechanic reaches**,
+ * which is the drift M07.8 found and the mechanic checks were blind to by
+ * construction: `goblin_powder_runner` really did deal damage and
+ * `mourning_keeper` really did heal, so both passed every marker while pointing
+ * at the wrong thing.
+ *
+ * The settled rule they enforce is one sentence: **player damage and healing
+ * target a player, and a deployed Commander is reached only as a battlefield
+ * Unit or Commander target.** "Your Commander" was the old shorthand for "your
+ * Health", and it is exactly the phrase that has to stop being writable.
+ *
+ * Each rule is a *semantic* assertion rather than a card-ID exception, so it
+ * catches the next card as well as the three that prompted it. Every one is
+ * scoped tightly enough that a legitimate sentence about a Commander permanent
+ * still passes — `total_recall`'s "every non-Commander Unit" and
+ * `prototype_commander_red`'s "whenever this Commander attacks" are not claims
+ * about who takes the damage, and neither is reported.
+ */
+
+/** "…restore N Health **to your Commander**" — the verb, then the recipient. */
+const HEAL_TO_COMMANDER = /\b(?:restores?|heals?)\b[^.;]*\bto\b[^.;]*\bCommander\b/i;
+
+/** "…deal N damage **to** … **Commander**", recipient side only. */
+const DAMAGE_TO_COMMANDER = /\bdamage\b[^.;]*\bto\b[^.;]*\bCommander\b/i;
+
+/** Prose that names a **player** as the recipient of damage. */
+const DAMAGE_TO_PLAYER = /\bdamage\b[^.;]*\bto\b[^.;]*\b(?:opponents?|players?)\b/i;
+
+/** Prose that names a **player** as the recipient of healing. */
+const HEAL_TO_PLAYER =
+  /\b(?:restores?|heals?)\b[^.;]*\bto\s+(?:you\b|each player|every player|all players|each opponent|an? opponent)/i;
+
+/** "When **this Unit** enters the battlefield" — the card's own arrival. */
+const SELF_ENTERS_BATTLEFIELD = /\bthis\s+\w+\s+enters\s+the\s+battlefield\b/i;
+
+/** True when any of the card's instructions points at a player. */
+function reachesPlayer(
+  effects: readonly EffectDefinition[],
+  type: 'heal' | 'deal_damage',
+): boolean {
+  return effects.some(
+    (effect) =>
+      effect.type === type &&
+      (effect.target.kind === 'player' ||
+        effect.target.kind === 'players' ||
+        effect.target.kind === 'entity_or_player'),
+  );
+}
+
+/**
+ * True when any instruction can select a Commander **permanent**.
+ *
+ * This is the exemption that keeps the wording allowlist a semantic one rather
+ * than a list of card IDs: a card that really does target a Commander on the
+ * battlefield is free to print the word, because it is describing the permanent
+ * and not somebody's Health.
+ */
+function reachesCommanderPermanent(effects: readonly EffectDefinition[]): boolean {
+  return effects.some((effect) => {
+    if (!('target' in effect)) return false;
+    const selector = entitySelectorOf(effect.target);
+    return selector?.filter?.cardTypes?.includes('commander') === true;
+  });
+}
+
+function semanticIssues(card: CardDefinition, effects: readonly EffectDefinition[]): Issue[] {
+  const issues: Issue[] = [];
+  const text = card.displayText;
+  if (text === undefined) return issues;
+
+  const report = (code: string, message: string): void => {
+    issues.push(
+      warning(code, `"${card.name}" ${message}`, {
+        path: 'displayText',
+        context: { cardId: card.id },
+      }),
+    );
+  };
+
+  const commanderPermanent = reachesCommanderPermanent(effects);
+
+  // 1. The obsolete shorthand, in both verbs: the card moves a player's Health
+  //    and its text says a Commander received it.
+  if (!commanderPermanent) {
+    if (HEAL_TO_COMMANDER.test(text) && reachesPlayer(effects, 'heal')) {
+      report(
+        'display_text/player_as_commander',
+        'restores Health to a player but says the Commander receives it. Player healing targets player Health; say "to you".',
+      );
+    }
+    if (DAMAGE_TO_COMMANDER.test(text) && reachesPlayer(effects, 'deal_damage')) {
+      report(
+        'display_text/player_as_commander',
+        'damages a player but says a Commander receives it. Player damage targets player Health; say "to an opponent".',
+      );
+    }
+  }
+
+  // 2. The other direction: the text promises a player takes the damage or the
+  //    healing, and every instruction on the card only ever selects battlefield
+  //    entities. This is the shape `goblin_powder_runner` would fail if its
+  //    corrected wording were ever put back on its old structured target.
+  if (DAMAGE_TO_PLAYER.test(text) && !reachesPlayer(effects, 'deal_damage')) {
+    report(
+      'display_text/unstated_player_target',
+      'reads as damaging a player, but no instruction on it targets one — it only selects battlefield entities.',
+    );
+  }
+  if (HEAL_TO_PLAYER.test(text) && !reachesPlayer(effects, 'heal')) {
+    report(
+      'display_text/unstated_player_target',
+      'reads as restoring Health to a player, but no instruction on it heals one.',
+    );
+  }
+
+  // 3. Q48's companion. `deployed` and `entersBattlefield` are different events,
+  //    and a card printed as the wider one must implement the wider one. The five
+  //    Goblins that printed it and behaved as deploy effects are why this exists;
+  //    the check went in with the answer rather than ahead of it.
+  if (
+    SELF_ENTERS_BATTLEFIELD.test(text) &&
+    !card.abilities.some((ability) => ability.trigger === 'on_entered_battlefield')
+  ) {
+    report(
+      'display_text/entry_timing',
+      'says it acts when it enters the battlefield, but has no `on_entered_battlefield` ability — its arrival behaviour is the deploy form, which a revival does not fire. Print "When deployed" or use the wider trigger.',
+    );
+  }
+
+  return issues;
+}
 
 function collectEffects(card: CardDefinition): EffectDefinition[] {
   return [
@@ -329,6 +465,12 @@ export function lintDisplayText(card: CardDefinition): Issue[] {
       ),
     );
   }
+
+  // Who the mechanic reaches, as opposed to which mechanic it is. Run after the
+  // two mechanic sweeps because it presumes them: a card whose prose and
+  // structure name different *mechanics* has a bigger problem than a mistargeted
+  // one, and should be told about that first.
+  issues.push(...semanticIssues(card, effects));
 
   // Keywords live in structured data; repeating their reminder text in prose
   // without granting the keyword is the other common drift.

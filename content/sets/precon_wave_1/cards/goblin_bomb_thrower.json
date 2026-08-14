@@ -31,5 +31,5 @@
       "amount": 2
     }
   ],
-  "displayText": "When this Unit enters the battlefield, deal 2 damage to an enemy Unit."
+  "displayText": "When deployed, deal 2 damage to an enemy Unit."
 }

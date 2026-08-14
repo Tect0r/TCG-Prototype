@@ -448,11 +448,15 @@ const EFFECT_PRICERS: { readonly [K in EffectType]: EffectPricer<K> } = {
     if (effect.target.kind === 'players') {
       return weights.faceDamage * estimateValue(effect.amount);
     }
-    if (effect.target.kind !== 'entity') {
+    if (effect.target.kind !== 'entity' && effect.target.kind !== 'entity_or_player') {
       // `source` and `trigger_subject` both aim at a card on our own side.
       return -weights.unitDamage * estimateValue(effect.amount);
     }
     const selector = effect.target.selector;
+    // A pool that includes players is priced off the entity half's controller
+    // like any other. Falling through to the "aims at our own card" branch above
+    // would have priced "divide it among enemy Units and opponents" as a
+    // drawback, which is the wrong sign rather than the wrong magnitude.
     const sign = selector.controller === 'self' ? -1 : 1;
     // A divided amount is a *total* split across the set, not an amount each
     // member takes, so it must not be multiplied by the size of the set — that

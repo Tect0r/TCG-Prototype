@@ -495,9 +495,10 @@
           "type": "bulletList",
           "items": [
             "Priority is offered to the active player first, then clockwise. It is only ever offered to a player who has something they could legally play.",
-            "You may play at most {matchConfig.reactionsPerPlayerPerWindow} Reaction in one window. Once you have played, you are finished for that window even if priority comes back around.",
-            "Playing a Reaction restarts the round, so a player who had already declined is asked again — that is what lets one Reaction answer another.",
-            "The window closes as soon as everybody has declined in a row.",
+            "You may play at most {matchConfig.reactionsPerPlayerPerWindow} Reaction in one window. Once you have played, you are finished for that window.",
+            "Priority goes round the table once. Playing a Reaction does not start the round again, so a player who has already declined is not asked a second time — decline and you have declined for that window.",
+            "Two different players can still each spend their one Reaction in the same window, and the second one resolves first. What you cannot do is wait to see what somebody else plays after you have already passed.",
+            "The window closes as soon as there is nobody left to offer it to.",
             "Reactions are paid for out of the energy you carried over from your own turn.",
             "You cannot respond to a Reaction that is already resolving. Nothing is interruptible once it has started."
           ]
@@ -988,7 +989,7 @@
           "type": "callout",
           "tone": "unresolved",
           "title": "Rules still being decided",
-          "text": "Every number in this book is a playtest setting rather than a final decision. One keyword, Resilient, is printed on cards but does nothing yet, and its entry in the keyword list says so. The Reaction window policy — one Reaction each, active player first, last in first out — is deliberately the smallest workable rule and may be replaced. Nothing in this book describes a rule the game does not actually implement."
+          "text": "Every number in this book is a playtest setting rather than a final decision. One keyword, Resilient, is printed on cards but does nothing yet, and its entry in the keyword list says so. The Reaction window policy — one Reaction each, active player first, one round of priority, last in first out — is deliberately the smallest workable rule and may be replaced. Nothing in this book describes a rule the game does not actually implement."
         }
       ]
     }

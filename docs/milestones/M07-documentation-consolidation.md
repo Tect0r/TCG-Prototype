@@ -563,13 +563,153 @@ not speculative future features.
       `npm run audit:check` reports the derived half current — nothing this
       tranche changed feeds it, so only the run record moved.
 
+## M07.8 — Final consistency and playtest-readiness pass — **done (2026-08-14)**
+
+A correction pass rather than a milestone of its own: an external audit of
+`86cd671` found three cards whose printed text and structured targets disagreed
+about **who an effect reaches**, a Reaction rule the engine and the product rules
+told two ways, two owner questions that were answerable without a design call,
+one operational gap in the README, and three checks M07.7's list named that were
+not yet automated. Nothing here is a new mechanic; everything is either a
+correction or the check that stops it recurring.
+
+### Checklist
+
+- [x] **`goblin_powder_runner` damages an opponent, not a permanent.** Its
+      structured target was an opposing battlefield Unit/Token/Commander while
+      the settled rule is player damage, so both the target and the prose moved.
+      Its behaviour contract now boards an enemy Unit **and** a deployed enemy
+      Commander and asserts neither takes damage while the seat's Health falls.
+- [x] **`mass_offering` can divide its total between enemy Units and the
+      opponent.** This needed the one schema addition in the pass: a new
+      `TargetDefinition` member, `entity_or_player`, holding a selector and a
+      player pool. Its own union member rather than a flag on `TargetSelector`,
+      for the reason the union exists — a player is not a zone query, and the
+      `targetsSource` boolean this union replaced is what happens when one is
+      forced through the selector anyway. `players` names a **pool**, so
+      `opponent` ("one opponent, chosen") is deliberately not one of its values.
+- [x] **The new member is confined to divided damage by the card schema.** A
+      divided total is the one instruction shape that already decides which
+      members of a pool it touches, so mixing the two namespaces costs nothing
+      there; a single-target choice spanning both is an interaction nothing
+      prints and nothing tests, and it is rejected rather than shipped untested.
+- [x] Seven focused cases cover the card: zero sacrifices, Token sacrifices, the
+      whole total on a Unit, the whole total on the opponent, a split across
+      both, Barrier stopping one allocated **share** rather than each point in
+      it, and an empty enemy battlefield where the seat is the only legal
+      destination — the case that used to waste the Spell entirely. An eighth
+      refuses a share aimed at the caster, who is a player but not one the pool
+      offers.
+- [x] `hasRecipient` and the playability check both read the mixed pool as
+      satisfied by **either** half. Without that, an empty enemy board still made
+      the card unplayable and the fix would have been invisible.
+- [x] **`mourning_keeper` says "restore 1 Health to you".** Its engine behaviour
+      already healed the controller; only the obsolete shorthand moved. The
+      once-per-turn limit and `excludeSource` are untouched.
+- [x] **The guardrail is semantic, not a card-ID allowlist.** `lintDisplayText`
+      gained three rules: prose that credits a Commander with Health a _player_
+      received, prose that promises player damage or healing on a card that only
+      selects battlefield entities, and prose that claims the wider
+      `enters the battlefield` event on a card whose arrival is the implicit
+      deploy form. The exemption is semantic too — a card that really selects a
+      Commander permanent may print the word, which is why `total_recall` and
+      `prototype_commander_red` are not reported. All three pre-correction cards
+      are reproduced verbatim in `display-text.test.ts` and asserted to be
+      rejected, each paired with its corrected version asserted clean.
+- [x] Because `precon_wave_1` is a strict `playtest` set, every one of those
+      warnings is already a **content-build error**. The guardrail did not need a
+      new gate; it needed a rule the existing gate could see.
+- [x] **Q47 answered: a Reaction does not answer another Reaction.** The engine
+      cleared `passedPlayerIds` on a play, restarting the round; `CLAUDE.md` said
+      it must not. The engine was changed to match the product rules. Priority
+      now goes round the table **once** — a play moves it on exactly as a pass
+      does — so termination is bounded by the seats rather than by seats × plays.
+      What that removes is the unbounded exchange, not the interaction: two
+      different seats may still each spend their one Reaction in a window, and
+      LIFO resolution is preserved, so an explicit counter played after another
+      Reaction still answers it.
+- [x] The Q47 ruling is one rule in every layer: `reactions.ts`, three tests in
+      `reactions.test.ts`, the rulebook's Reactions section, the
+      `reaction_window` glossary entry, `PHASE_DESCRIPTIONS`,
+      [`confirmed-rules.md`](../rules/confirmed-rules.md#playing-cards-and-reactions),
+      [`open-decisions.md`](../rules/open-decisions.md#reaction-chaining-policy)
+      and [ADR 0016](../architecture/0016-precon-wave-1-ruleset.md), which is
+      amended in place rather than rewritten.
+- [x] **Q48 answered: the prose was corrected, the structure was not.** The five
+      Goblins print "When deployed", which is what they have always done.
+      Rewiring them to `on_entered_battlefield` would hand the Goblin deck a
+      revival payoff it does not have, and that is a gameplay change. Returning
+      one with `grave_reassembly` still fires no deploy effect, and
+      `display_text/entry_timing` now fails the old wording — the check M02.6
+      deliberately deferred until the answer existed.
+- [x] **The 40/50 deck size is an owner decision, recorded.** 40 is the
+      first-playtest scope and 50 remains the target. Measured rather than
+      asserted: the colour-legal singleton pool is 42/41/41/42 per Commander, the
+      six colourless cards are already inside every one of them, and 50 therefore
+      needs 8–9 further legal cards per Commander. No card was invented, no
+      singleton entry duplicated and no colour identity weakened to make 50 look
+      reachable.
+- [x] **The README says how to play with other people, and what the repository
+      does not do.** Local versus LAN versus internet, `HOST`/`PORT`/`TCG_FORMAT`,
+      `VITE_MATCH_SERVER_URL`, the loopback defaults, `wss://` for an
+      HTTPS-hosted client, in-memory lobbies, the disconnect grace window, and a
+      two-browser smoke test. It states plainly that forwarding a port straight
+      to this process is not the recommended answer, rather than pretending the
+      repository secures a public server.
+- [x] **Three checks from M07.7's list are now automated**, each of which the
+      pass found missing: an **inert mechanic** in a playable set (the
+      `implemented: false` check beside it only reads a flag an author typed), the
+      **target-semantic** class above, and the **question ledger** —
+      `audit:status` had been rendering the plan-versus-record contradiction into
+      a document without ever failing on it. Only one direction of the ledger is a
+      contradiction, deliberately: the plan's list is curated, so a question open
+      in the record and absent from the plan is ordinary.
+- [x] No schema version moved, and the omission is deliberate rather than an
+      oversight — see the note under **Versions** below.
+- [x] Verified on Node 24.15.0 with `npm ci`: `npm run content:check`,
+      `npm run validate:content`, `npm run audit:check`,
+      `npm run check:consistency` and `npm run verify` all pass, with **2105
+      tests in 102 files**, up from 2085 by exactly this pass's twenty: six for
+      the mixed damage pool, six planted-failure cases for the semantic
+      guardrail, seven for the three new consistency checks, and one for the
+      Reaction priority round. No new test file, so the file count is unchanged.
+      The production build's large-chunk warning is a known performance
+      follow-up and was deliberately left alone.
+
+### Versions — deliberately unchanged
+
+`CARD_SCHEMA_VERSION` stays at **4**, and `MATCH_SCHEMA_VERSION` and the protocol
+versions stay where they are. The rule the repository uses is that
+`schemaVersion` states _which reading of the same JSON_ the data was written for,
+which is why every migration so far reshaped or reinterpreted existing files.
+
+`entity_or_player` reshapes nothing. It is a new, optional-by-construction member
+of a discriminated union: no v4 card that does not use it means anything
+different, so there is nothing for a migration step to do, and adding an empty one
+would claim a change that did not happen. The serialized shape of a card that
+does not use it is byte-identical.
+
+Nothing crossing the wire changed either. `divide_damage` already carried a flat
+list of IDs and `select_players` already put player IDs in `validEntityIds`, so a
+mixed pool is a wider **value** in an unchanged field rather than a new payload
+shape — which is precisely why the choice type was specified as a multiset of IDs
+in the first place.
+
+The one forward-compatibility cost is stated rather than hidden: an older build
+reading the new `mass_offering.json` would reject it, because the target schema is
+a `strictObject`. That is true of any additive field in this repository, the
+content bundle is generated and versioned alongside the code that reads it, and no
+persisted match or replay contains a target definition.
+
 ## Acceptance — **met (2026-08-14)**
 
 - One short root work queue, one short permanent agent file, one accurate README.
   — M07.5. The root holds exactly those three documents, and a fourth fails the
   suite via `PERMITTED_ROOT_DOCS`.
-- No active document teaches an obsolete rule. — M07.2 rewrote the rules record
-  and M07.7 made it a failing test rather than a discipline.
+- No active document teaches an obsolete rule. — M07.2 rewrote the rules record,
+  M07.7 made it a failing test rather than a discipline, and M07.8 extended the
+  same treatment to card prose: a shipped card whose text and structured targets
+  disagree about who an effect reaches now fails the build.
 - ADR history remains available with explicit supersession. — M07.3. Thirteen
   ADRs amended in place, five added, supersession linked from both ends.
 - All links and generated facts validate. — M07.1's derived audit and M07.7's

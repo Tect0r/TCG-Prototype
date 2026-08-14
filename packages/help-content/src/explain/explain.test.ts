@@ -848,11 +848,14 @@ describe('card explanations', () => {
     const steps = explanation.sections.find((entry) => entry.kind === 'resolve')?.steps;
 
     expect(steps?.[1]?.text).toBe(
-      'Divide that many damage among all enemy units, tokens or Commanders as you choose.',
+      'Divide that many damage among all enemy units, tokens or Commanders and opponents as you choose.',
     );
     // "That many" is a reference, so the step spells out what it refers to.
     expect(steps?.[1]?.notes.join(' ')).toMatch(/the step before this one acted on/);
     expect(steps?.[1]?.notes.join(' ')).toMatch(/whole share as one hit/);
+    // The pool spans two namespaces, and a player reading it has to be told
+    // which one a share aimed at a seat lands in (M07.8).
+    expect(steps?.[1]?.notes.join(' ')).toMatch(/comes off their Health/);
   });
 
   it('exposes keyword definitions from the shared registry', () => {

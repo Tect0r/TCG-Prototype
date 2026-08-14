@@ -198,6 +198,36 @@ export const targetDefinitionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('entity'),
     selector: targetSelectorSchema,
   }),
+  /**
+   * One pool holding **both** battlefield entities and players — "an enemy Unit
+   * **or opponent**" (M07.8).
+   *
+   * Its own member rather than a flag on `TargetSelector`, for exactly the
+   * reason the union exists at all: a player is not a zone query, and the
+   * `targetsSource` boolean this union replaced is what happens when one is
+   * forced through the selector anyway. `selector` is the entity half and means
+   * precisely what it means everywhere else; `players` is the player half.
+   *
+   * `players` names a **pool**, not a selection, which is why `opponent` — "one
+   * opponent, chosen" — is deliberately not among its values. Every member of
+   * the pool is individually allocatable, and which of them are actually hit is
+   * decided by the allocation rather than by a separate choice. `each_opponent`
+   * is therefore the counterpart of `controller: "opponent"` on the selector
+   * beside it: at three or four seats both widen to every living opponent.
+   *
+   * Restricted by `cardDefinitionSchema` to a **divided** `deal_damage`, and not
+   * as a hedge. A divided total is the one instruction shape that already
+   * decides which members of a pool it touches, so mixing the two namespaces
+   * costs nothing there. Everywhere else "a Unit or a player" would need a
+   * single-target choice spanning both, which nothing prints and nothing tests —
+   * and shipping an untested composition of two primitives is the thing this
+   * schema refuses to do.
+   */
+  z.strictObject({
+    kind: z.literal('entity_or_player'),
+    selector: targetSelectorSchema,
+    players: z.enum(['self', 'each_opponent', 'all_players']),
+  }),
   /** The instance whose text this is. Always exactly one entity, never chosen. */
   z.strictObject({
     kind: z.literal('source'),
@@ -274,9 +304,25 @@ export function entityTarget(
   return { kind: 'entity', selector };
 }
 
-/** True when the definition points at players rather than cards. */
+/**
+ * True when the definition points at players rather than cards.
+ *
+ * `entity_or_player` is deliberately **not** included: it points at both, so
+ * every caller of this predicate has to decide what that means for itself rather
+ * than be handed one of the two answers.
+ */
 export function targetsPlayers(
   target: TargetDefinition,
 ): target is Extract<TargetDefinition, { kind: 'player' | 'players' }> {
   return target.kind === 'player' || target.kind === 'players';
+}
+
+/**
+ * The zone query a definition carries, for the two kinds that carry one.
+ *
+ * The single predicate every layer reads, so "does this instruction have a
+ * selector?" cannot be answered two different ways once a second kind grew one.
+ */
+export function entitySelectorOf(target: TargetDefinition): TargetSelector | null {
+  return target.kind === 'entity' || target.kind === 'entity_or_player' ? target.selector : null;
 }

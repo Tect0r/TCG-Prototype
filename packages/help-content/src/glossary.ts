@@ -247,7 +247,7 @@ const RAW_GLOSSARY = {
       id: 'reaction_window',
       term: 'Reaction window',
       definition:
-        'A bounded interruption in which players may play Reactions, opened around declaring attackers, assigning blockers, combat damage, or a spell being played. It opens only if somebody could legally use it. Priority goes to the active player first and then clockwise; each player may play at most {matchConfig.reactionsPerPlayerPerWindow} Reaction, and the cards resolve last in, first out.',
+        'A bounded interruption in which players may play Reactions, opened around declaring attackers, assigning blockers, combat damage, or a spell being played. It opens only if somebody could legally use it. Priority goes round the table once, to the active player first and then clockwise; each player may play at most {matchConfig.reactionsPerPlayerPerWindow} Reaction, playing does not start the round again, and the cards resolve last in, first out.',
       seeAlso: ['resolution_queue', 'energy'],
       relatedRuleSections: ['reactions', 'turn_structure'],
     },

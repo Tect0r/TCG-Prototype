@@ -95,6 +95,12 @@ const damageTo = (state: MatchState, instanceId: InstanceId): number[] =>
     .filter((event) => event.targetInstanceId === instanceId)
     .map((event) => event.amount);
 
+/** The player-facing twin of `damageTo`: one entry per damage *event*. */
+const damageToPlayer = (state: MatchState, playerId: PlayerId): number[] =>
+  eventsOfType(state, 'damage_dealt')
+    .filter((event) => event.targetPlayerId === playerId)
+    .map((event) => event.amount);
+
 /* --------------------------------------------- 1. each player chooses */
 
 describe('a selection several seats make at once (M02.5)', () => {
@@ -293,14 +299,19 @@ describe('a damage total one seat splits (M02.5)', () => {
     expect(choice.playerId).toBe(caster);
   });
 
-  it('offers only enemy units and Commanders', () => {
+  it('offers enemy units, enemy Commanders and the opponent, and nothing of ours', () => {
     const { state, caster, other } = board(2);
     const next = cast(state, caster, 2);
 
     const choice = pendingChoice(next);
     const ours = unitsOf(next, caster);
     expect(choice.validEntityIds.some((id) => ours.includes(id as InstanceId))).toBe(false);
-    expect([...choice.validEntityIds].sort()).toEqual(unitsOf(next, other).sort());
+    expect(choice.validEntityIds).not.toContain(caster);
+    // The opponent joined the pool in M07.8; the entity half is unchanged, and
+    // the seats come after the entities so the allocation order stays fixed.
+    expect([...choice.validEntityIds].sort()).toEqual(
+      [...unitsOf(next, other), other].sort() as string[],
+    );
   });
 
   it('accepts the same target twice and deals it both points at once', () => {
@@ -420,5 +431,138 @@ describe('a damage total one seat splits (M02.5)', () => {
 
     expect(damageTo(next, alive)).toEqual([1]);
     expect(damageTo(next, gone)).toEqual([]);
+  });
+
+  /* ------------------------------------ the opponent as an allocation target */
+
+  /**
+   * M07.8. The card printed "an enemy Unit or Commander" and could only reach
+   * battlefield permanents, so a cleared board wasted the whole Spell and the
+   * printed text over-promised in the other direction from the usual drift.
+   *
+   * The pool now spans both namespaces. Every claim below is about the pool
+   * rather than about Mass Offering specifically: a point still names exactly
+   * one member, a member still takes its whole share as one event, and the total
+   * still has to add up.
+   */
+  it('lets the whole total go on the opponent', () => {
+    const { state, caster, other, enemies } = board(3);
+    const before = playerOf(state, other).health;
+    const next = answer(cast(state, caster, 3), [other, other, other] as InstanceId[]);
+
+    expect(playerOf(next, other).health).toBe(before - 3);
+    // One event carrying the whole share, exactly as a unit gets.
+    expect(damageToPlayer(next, other)).toEqual([3]);
+    // Player damage is not damage to anything the player controls.
+    expect(damageTo(next, enemies[0] as InstanceId)).toEqual([]);
+    expect(damageTo(next, enemies[1] as InstanceId)).toEqual([]);
+  });
+
+  it('splits a total between an enemy unit and the opponent', () => {
+    const { state, caster, other, enemies } = board(3);
+    const unit = enemies[0] as InstanceId;
+    const before = playerOf(state, other).health;
+    const next = answer(cast(state, caster, 3), [unit, unit, other] as InstanceId[]);
+
+    expect(damageTo(next, unit)).toEqual([2]);
+    expect(playerOf(next, other).health).toBe(before - 1);
+    expect(damageToPlayer(next, other)).toEqual([1]);
+  });
+
+  it('still reaches the opponent when the enemy battlefield is empty', () => {
+    // No `stock` for the opponent at all: the entity half of the pool is empty
+    // and the seat is the only legal destination. Before M07.8 the Spell was
+    // unplayable here and the damage was simply lost.
+    let state = keepBothHands(startMatch({ database }), context);
+    const caster = state.activePlayerId;
+    const other = opponentOf(state, caster);
+    state = setEnergy(setEnergy(state, caster, 10), other, 10);
+    [state] = stock(state, caster, 2);
+    const before = playerOf(state, other).health;
+
+    const next = answer(cast(state, caster, 2), [other, other] as InstanceId[]);
+
+    expect(unitsOf(next, other)).toHaveLength(0);
+    expect(playerOf(next, other).health).toBe(before - 2);
+  });
+
+  it('counts sacrificed Tokens as Units, and feeds the total from them', () => {
+    let state = keepBothHands(startMatch({ database }), context);
+    const caster = state.activePlayerId;
+    const other = opponentOf(state, caster);
+    state = setEnergy(setEnergy(state, caster, 10), other, 10);
+    // Two Tokens and nothing else, so the total can only have come from them.
+    const tokens: InstanceId[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const placed = deployUnit(state, caster, 'goblin_token');
+      state = placed.state;
+      state.instances[placed.instanceId]!.isToken = true;
+      tokens.push(placed.instanceId);
+    }
+    const before = playerOf(state, other).health;
+
+    let next = play(state, caster, 'mass_offering');
+    const sacrifice = pendingChoice(next);
+    expect([...sacrifice.validEntityIds].sort()).toEqual([...tokens].sort());
+    next = answer(next, tokens);
+
+    const allocation = pendingChoice(next);
+    expect(allocation.type).toBe('divide_damage');
+    expect(allocation.minimum).toBe(2);
+
+    next = answer(next, [other, other] as InstanceId[]);
+    expect(playerOf(next, other).health).toBe(before - 2);
+    // Sacrificed, not merely counted.
+    for (const token of tokens) expect(next.instances[token]).toBeUndefined();
+  });
+
+  it('lets Barrier stop one allocated share, not each point in it', () => {
+    let state = keepBothHands(startMatch({ database }), context);
+    const caster = state.activePlayerId;
+    const other = opponentOf(state, caster);
+    state = setEnergy(setEnergy(state, caster, 10), other, 10);
+    [state] = stock(state, caster, 3);
+    const placed = deployUnit(state, other, 'ward_scribe');
+    state = placed.state;
+    const warded = placed.instanceId;
+
+    // Two points on the Barrier unit, one on the opponent. Barrier prevents the
+    // first non-zero damage *event*; the two points arrive as one event, so the
+    // whole share is prevented and the unit is untouched. Splitting the share
+    // into two events would have let the shield absorb one point and the unit
+    // take the other.
+    const next = answer(cast(state, caster, 3), [warded, warded, other] as InstanceId[]);
+
+    expect(damageTo(next, warded)).toEqual([]);
+    expect(
+      eventsOfType(next, 'damage_prevented')
+        .filter((event) => event.targetInstanceId === warded)
+        .map((event) => event.amount),
+    ).toEqual([2]);
+    expect(next.instances[warded]?.markedDamage).toBe(0);
+    // The rest of the allocation is unaffected by the prevention.
+    expect(damageToPlayer(next, other)).toEqual([1]);
+  });
+
+  it('refuses a point aimed at a seat the pool does not offer', () => {
+    const { state, caster, enemies } = board(2);
+    const next = cast(state, caster, 2);
+    const choice = pendingChoice(next);
+
+    // The caster is a player, but not one this pool contains: `each_opponent`
+    // never includes the controller, so aiming a share at yourself is as illegal
+    // as aiming one at your own unit.
+    const error = expectRejected(
+      next,
+      {
+        type: 'submit_choice',
+        playerId: caster,
+        choiceId: choice.id,
+        selectedIds: [enemies[0] as InstanceId, caster as InstanceId],
+      },
+      context,
+    );
+    expect(error.code).toBe('engine/invalid_selection');
+    expect(next.pendingChoice?.id).toBe(choice.id);
   });
 });

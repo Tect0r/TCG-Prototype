@@ -9,11 +9,11 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `86cd671f13abdc04d28ba8a10d5c6e980c6bb75f`  |
+| Commit           | `bddc646a99fdba41699f614850ac28fca947cd78`  |
 | Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-08-13                                  |
+| Taken on         | 2026-08-14                                  |
 | Node             | v24.15.0                                    |
-| `npm run verify` | passed at this commit                       |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 59      | 1384     |
-| scripts        | 4       | 62       |
+| packages       | 59      | 1397     |
+| scripts        | 4       | 69       |
 | server         | 4       | 63       |
 | simulator      | 23      | 434      |
 | web-client     | 12      | 142      |
-| **total**      | **102** | **2085** |
+| **total**      | **102** | **2105** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -245,8 +245,8 @@ No match record observes (31):
 | Q44      | Do you want multiple blockers per attacker, and if so, when?           | open          | yes                     |
 | Q45      | Is Barrier consumed before or after other prevention and reduction?    | open          | yes                     |
 | Q46      | May a Reaction carry an additional cost?                               | open          | yes                     |
-| Q47      | May a Reaction answer another Reaction?                                | open          | yes                     |
-| Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | open          | yes                     |
+| Q47      | May a Reaction answer another Reaction? — answered 2026-08-14          | answered      | no                      |
+| Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | answered      | no                      |
 
 15 question(s) are open in the question file and not on the plan's
 short list, which is the curated set a tranche might have to stop on rather than an index.

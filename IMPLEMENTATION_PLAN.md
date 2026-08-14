@@ -18,22 +18,34 @@ checklist in the milestone file, then stop.
 
 ## Status
 
-| Milestone                                                                                 | Status                | Next tranche |
-| ----------------------------------------------------------------------------------------- | --------------------- | ------------ |
-| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md) | Complete (2026-08-11) | —            |
-| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)           | Complete (2026-08-12) | —            |
-| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                       | Complete (2026-08-12) | —            |
-| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)               | Complete (2026-08-12) | —            |
-| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                               | Complete (2026-08-13) | —            |
-| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                       | Complete (2026-08-13) | —            |
-| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)     | Complete (2026-08-14) | —            |
+| Milestone                                                                                                                                               | Status                | Next tranche |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------ |
+| [M01 Truthfulness and verification](docs/milestones/M01-truthfulness-and-verification.md)                                                               | Complete (2026-08-11) | —            |
+| [M02 Remaining card mechanics](docs/milestones/M02-remaining-card-mechanics.md)                                                                         | Complete (2026-08-12) | —            |
+| [M03 Precon integration](docs/milestones/M03-precon-integration.md)                                                                                     | Complete (2026-08-12) | —            |
+| [M04 Shared board telemetry](docs/milestones/M04-shared-board-telemetry.md)                                                                             | Complete (2026-08-12) | —            |
+| [M05 AI reliability](docs/milestones/M05-ai-reliability.md)                                                                                             | Complete (2026-08-13) | —            |
+| [M06 Token presentation](docs/milestones/M06-token-presentation.md)                                                                                     | Complete (2026-08-13) | —            |
+| [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
+| [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 
 **The queue is empty.** Every milestone this plan carries is finished, and no
-M08 exists yet. The next action is an owner decision, not a tranche: the
-questions under [Owner decisions still open](#owner-decisions-still-open) are
-what the implementation is now waiting on, and `docs/open-questions.md` holds
-every other question the project has recorded. Adding a milestone file under
+M08 exists yet. M07.8 was a correction pass over M07's output rather than a new
+milestone: three cards whose text and structured targets disagreed about who an
+effect reaches, the Reaction rule the engine and the product rules told two ways
+(Q47), five Goblin cards printing an arrival they do not implement (Q48), the
+remote-play instructions, and the three consistency checks M07.7 named but had not
+automated.
+
+The next action is an owner decision, not a tranche: the questions under
+[Owner decisions still open](#owner-decisions-still-open) are what the
+implementation is now waiting on, and `docs/open-questions.md` holds every other
+question the project has recorded. Adding a milestone file under
 `docs/milestones/` and a row above is what starts the next one.
+
+The largest piece of work the record now names is **content**: reaching the
+50-card target needs 8–9 further colour-legal cards per Commander, which is
+authoring and balance work rather than a consistency tranche.
 
 ## Where the record lives
 
@@ -55,7 +67,11 @@ that answers it.
 
 Do not reopen these while implementing:
 
-- 40-card singleton Wave 1 decks; Commander outside the deck.
+- 40-card singleton Wave 1 decks; Commander outside the deck. Confirmed by the
+  owner on 2026-08-14 as the **first-playtest scope**, with a 50-card target kept
+  for later and blocked on content — each Commander's colour-legal pool is 41–42
+  cards, so 50 needs 8–9 more per Commander. Do not move the format's `deck.size`
+  without that content.
 - Unlimited Units; one active Relic.
 - Commander defeat returns it immediately to the Command Zone and raises its
   total deployment cost by 1, capped at 10.
@@ -79,19 +95,6 @@ question the project has recorded.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.
 - Q46: whether Reactions may carry interactive additional costs.
-- Q48: whether five Goblin cards that print "enters the battlefield" should be
-  reworded to "when deployed" or rewired to `on_entered_battlefield`. They are
-  authored as implicit deploy effects, so a `goblin_recruiter` revived by
-  `grave_reassembly` creates no Token. Rewording changes nothing about the game;
-  rewiring hands the Goblin deck a revival payoff, which is a gameplay change.
-  Raised by M02.6's entry-trigger review, deliberately not decided by it.
-- Q47: whether a Reaction may answer another Reaction. The engine allows it —
-  a play clears `passedPlayerIds`, so a player who has not yet acted in the
-  window may counter the counter, and `reactions.test.ts` asserts exactly that.
-  `CLAUDE.md`'s product rules say it may not. One of the two is wrong; the
-  rulebook currently describes the engine. Raised by M01.4, not decided by it,
-  and written up in full in `docs/open-questions.md` by M07.2 — both directions
-  of the fix and what each one costs.
 
 ## Completion evidence for every tranche
 
@@ -105,7 +108,10 @@ question the project has recorded.
   remembered: `npm run check:consistency` reports retired rule vocabulary,
   broken links and anchors, path references to files that do not exist, and any
   documented value that no longer matches the constant or registry it copies.
-  It runs inside the suite, so `npm run verify` already covers it.
+  M07.8 added three more — an inert mechanic in a playable set, card prose that
+  disagrees with its structured targets about who an effect reaches, and a
+  question this plan calls open that `docs/open-questions.md` has answered or has
+  no record of. It runs inside the suite, so `npm run verify` already covers it.
 - `docs/status-audit.md` regenerated with `npm run audit:status` when the tranche
   changed anything it counts. Since M07.1 the suite fails until it is, so this is
   a reminder of the command rather than a duty to remember the numbers.

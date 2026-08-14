@@ -1053,7 +1053,10 @@ export function MatchBoard() {
                 // On an allocation the same option may be picked several times,
                 // and how many times is the answer.
                 const allocated = choiceSelection.filter((id) => id === entityId).length;
-                // A `select_players` choice lists player IDs, not instances.
+                // A `select_players` choice lists player IDs, not instances —
+                // and since M07.8 a `divide_damage` pool may hold both at once,
+                // so an option with no instance behind it is looked up as a seat
+                // before it is given up on and shown as a raw ID.
                 const optionLabel =
                   choice.type === 'confirm'
                     ? // The engine's option IDs are literally `yes`/`no`; they
@@ -1062,7 +1065,9 @@ export function MatchBoard() {
                       (CONFIRM_LABELS[entityId] ?? entityId)
                     : choice.type === 'select_players'
                       ? nameOf(entityId)
-                      : (database.get(instance?.definitionId ?? '')?.name ?? entityId);
+                      : instance
+                        ? (database.get(instance.definitionId)?.name ?? entityId)
+                        : nameOf(entityId);
                 const marker = choiceSelectionOf(entityId);
                 return (
                   <button

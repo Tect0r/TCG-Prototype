@@ -1,4 +1,9 @@
-import type { PlayerSelector, TargetDefinition, TargetSelector } from '@tcg/card-data';
+import {
+  entitySelectorOf,
+  type PlayerSelector,
+  type TargetDefinition,
+  type TargetSelector,
+} from '@tcg/card-data';
 import type { MatchContext, ReadContext } from './context.js';
 import {
   clockwiseFrom,
@@ -171,9 +176,13 @@ export function legalTargets(
   // `previous_target` is not a query over the board: it is a record of what the
   // step before resolved with, which only the executing instruction knows. It is
   // answered in `resolveTargets` and never reaches this function.
-  if (target.kind !== 'entity') return [];
+  //
+  // `entity_or_player` falls through: this function answers the *entity* half of
+  // it, exactly as if it were an `entity`, and the player half is added by the
+  // one caller that knows how to allocate across both (`divideDamage`).
+  const selector = entitySelectorOf(target);
+  if (selector === null) return [];
 
-  const selector = target.selector;
   const candidates: InstanceId[] = [];
   for (const playerId of playersFor(ctx, scope, selector.controller)) {
     for (const instanceId of instancesInZone(ctx, playerId, selector.zone)) {
