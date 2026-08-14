@@ -24,6 +24,8 @@ import { CARD_SCHEMA_VERSION } from './schema/primitives.js';
  *
  * v3 → v4 (rule adjustments) stamps an explicit `activeZone` on every triggered
  * and activated ability, and gives an untimed Reaction every window.
+ *
+ * v4 → v5 (M07.9) stamps the version and nothing else. See `migrateSetV4toV5`.
  */
 
 type Json = Record<string, unknown>;
@@ -222,10 +224,37 @@ function migrateSetV3toV4(set: Json): Json {
   return { ...set, schemaVersion: 4, cards };
 }
 
+/**
+ * v4 → v5 rewrites no data, and exists because the chain below is what upgrades
+ * a set rather than a version comparison.
+ *
+ * v5 widened the target language with `entity_or_player`; it changed nothing
+ * about how a v4 card reads. So this step deliberately reshapes nothing — but it
+ * cannot be omitted. `migrateCardSet` walks one step per version and stops at the
+ * first gap, and every card carries its own `schemaVersion`, which the bundle
+ * asserts is current. Without a step here a v2 set would arrive stamped 4 with
+ * its cards stamped 4, and "which reading was this validated as" would silently
+ * become "whichever version the last real migration happened to be".
+ *
+ * Writing the stamp is the honest form of that. An empty *reshaping* migration
+ * would be the dishonest one, and there is none: nothing is copied, defaulted or
+ * renamed here.
+ */
+function migrateSetV4toV5(set: Json): Json {
+  return {
+    ...set,
+    schemaVersion: 5,
+    cards: Array.isArray(set['cards'])
+      ? set['cards'].map((card) => (isObject(card) ? { ...card, schemaVersion: 5 } : card))
+      : set['cards'],
+  };
+}
+
 const STEPS: Record<number, (set: Json) => Json> = {
   1: migrateSetV1toV2,
   2: migrateSetV2toV3,
   3: migrateSetV3toV4,
+  4: migrateSetV4toV5,
 };
 
 /**
@@ -242,11 +271,19 @@ export function migrateCardSet(raw: Json, fromVersion: number): Json {
   return current;
 }
 
-/** Exposed for tests: whether a migration path exists at all. */
+/**
+ * Whether this build can bring a set at `fromVersion` up to the current schema.
+ *
+ * A version *above* `CARD_SCHEMA_VERSION` is false rather than vacuously true:
+ * the loop below has nothing to walk in that direction, and answering "yes" to
+ * "can you read data from a newer build" is the confusion `loadCardSets` refuses
+ * on. Nothing forwards is a migration; it is a refusal.
+ */
 export function canMigrateCardSet(fromVersion: number): boolean {
-  if (fromVersion === CARD_SCHEMA_VERSION) return true;
+  if (!Number.isInteger(fromVersion) || fromVersion < 1) return false;
+  if (fromVersion > CARD_SCHEMA_VERSION) return false;
   for (let version = fromVersion; version < CARD_SCHEMA_VERSION; version += 1) {
     if (!STEPS[version]) return false;
   }
-  return fromVersion >= 1;
+  return true;
 }

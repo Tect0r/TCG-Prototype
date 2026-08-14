@@ -122,7 +122,12 @@ processes, and a v5 document should fail validation loudly.
 
 The card schema gains `additionalCosts`, `optional`, and `excludeSource` /
 `selection` on the sacrifice cost. All are additive with defaults, so
-`CARD_SCHEMA_VERSION` stays at 4 and every existing card parses unchanged.
+`CARD_SCHEMA_VERSION` stayed at 4 for this ADR and every existing card parses
+unchanged. (It has since moved to 5 for an addition that is _not_ defaultable —
+a new member of the `TargetDefinition` union, which an older build cannot parse
+at all. See `CARD_SCHEMA_VERSION` in `packages/card-data/src/schema/primitives.ts`
+and M07.9. The distinction is the rule: an additive field with a default is
+readable by an older build; a wider discriminated union is not.)
 `optional` is `.optional()` rather than `.default(false)`, matching `condition`
 beside it: a rare opt-in on a shape fixtures write by hand, where a default makes
 "absent" a type error in every one of them.

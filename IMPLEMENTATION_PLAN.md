@@ -28,24 +28,52 @@ checklist in the milestone file, then stop.
 | [M06 Token presentation](docs/milestones/M06-token-presentation.md)                                                                                     | Complete (2026-08-13) | —            |
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
+| [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 
-**The queue is empty.** Every milestone this plan carries is finished, and no
-M08 exists yet. M07.8 was a correction pass over M07's output rather than a new
-milestone: three cards whose text and structured targets disagreed about who an
-effect reaches, the Reaction rule the engine and the product rules told two ways
-(Q47), five Goblin cards printing an arrival they do not implement (Q48), the
-remote-play instructions, and the three consistency checks M07.7 named but had not
-automated.
+**M07 consistency work is complete.** Every milestone this plan carries is
+finished, and no M08 exists yet. M07.8 was a correction pass over M07's output;
+M07.9 corrected M07.8 in turn, moving `CARD_SCHEMA_VERSION` to 5 because a new
+member of a discriminated union is not something an older build can read.
 
-The next action is an owner decision, not a tranche: the questions under
-[Owner decisions still open](#owner-decisions-still-open) are what the
-implementation is now waiting on, and `docs/open-questions.md` holds every other
-question the project has recorded. Adding a milestone file under
-`docs/milestones/` and a row above is what starts the next one.
+## The next bounded task
 
-The largest piece of work the record now names is **content**: reaching the
-50-card target needs 8–9 further colour-legal cards per Commander, which is
-authoring and balance work rather than a consistency tranche.
+**Run structured manual playtests using the four current 40-card precons.** This
+is the next activity, and it is not code: nothing in the record now says what the
+game is like to play, and every remaining implementation and content choice
+depends on that.
+
+It is deliberately not a framework. Play the decks, write down what happened, and
+keep the notes somewhere durable — a large playtest harness is itself a milestone
+someone would have to justify, and justifying it needs the evidence below.
+
+What the playtests should capture, per session:
+
+1. **Functional defects** — anything the engine does that the rules say it should
+   not, with the cards and the board state that produced it.
+2. **Confusing interactions** — a resolution that was legal and surprising. The
+   card text, what the player expected, and what happened.
+3. **Rules friction** — a rule that had to be looked up, argued about, or
+   remembered rather than read off the table.
+4. **Match duration** — wall-clock time and turn count per match, and where the
+   long turns were.
+5. **Obvious archetype problems** — a precon that cannot function, a matchup that
+   is not a game, a deck whose plan never assembles.
+
+**Then evaluate the results before selecting the next milestone.** The evidence
+decides whether the next milestone is implementation (a defect class worth fixing
+properly), rules (a friction point that needs an owner decision), or content.
+
+The **50-card expansion remains the next intended content milestone**: 8–9 further
+colour-legal cards per Commander, or an equivalent shared package, measured
+against colour-legal pools of 42/41/41/42. It is **not started**, and it should
+not start before the playtests, because authoring 32–36 cards against an untested
+40-card baseline would be guessing at what the decks need.
+
+The questions under [Owner decisions still open](#owner-decisions-still-open) are
+the other thing the implementation is waiting on, and playing the decks is the
+cheapest way to find out which of them actually matter. `docs/open-questions.md`
+holds every other question the project has recorded. Adding a milestone file under
+`docs/milestones/` and a row in the table above is what starts the next milestone.
 
 ## Where the record lives
 

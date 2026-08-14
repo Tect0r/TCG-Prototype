@@ -20,8 +20,27 @@ import { z } from 'zod';
  * is explicit because the update forbids inferring it from the word "passive"
  * or from rules text — a Commander ability is battlefield-only unless its data
  * says otherwise. `migrateCardSet` fills both in.
+ *
+ * v5 (M07.9) added `entity_or_player` to the `TargetDefinition` union: one pool
+ * holding both battlefield entities and players, restricted by the card schema
+ * to a divided `deal_damage`.
+ *
+ * It is the first bump that reshapes nothing. M07.8 added the member and left
+ * the version at 4 on the reasoning that an addition no old card uses cannot
+ * change how an old card reads — which is true, and is not the question the
+ * constant answers. `targetDefinitionSchema` is a discriminated union of strict
+ * objects, so a build that understands at most v4 cannot read the new member at
+ * all: it refuses `mass_offering` with "Invalid discriminator value", pointed at
+ * a field, rather than with the one message this constant exists to produce.
+ * Leaving both readings claiming v4 made a set's declared version stop
+ * predicting whether a build could load it, which is the entire compatibility
+ * boundary. Widening the target language is therefore a bump even though no
+ * byte of an existing card moved.
+ *
+ * `migrateCardSet`'s v4 → v5 step is a version stamp and says so; there is no
+ * data to reshape.
  */
-export const CARD_SCHEMA_VERSION = 4;
+export const CARD_SCHEMA_VERSION = 5;
 
 /**
  * Permanent card identity: lowercase ASCII letters, digits and underscores.

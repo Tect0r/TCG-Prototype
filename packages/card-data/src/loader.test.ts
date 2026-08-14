@@ -153,8 +153,13 @@ describe('loadCardSets validation', () => {
     expect(result.error.map((e) => e.code)).toContain('card_data/duplicate_card_id');
   });
 
+  // Taken off the constant rather than a round number, so the *next* version is
+  // refused as soon as the constant moves. `migrate.test.ts` asserts the message
+  // and context this refusal carries.
   it('rejects a future schema version with an upgrade hint', () => {
-    const result = loadCardSets([{ ...minimalSet([unitCard()]), schemaVersion: 99 }]);
+    const result = loadCardSets([
+      { ...minimalSet([unitCard()]), schemaVersion: CARD_SCHEMA_VERSION + 1 },
+    ]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error[0]?.code).toBe('card_data/unsupported_schema_version');

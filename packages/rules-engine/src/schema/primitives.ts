@@ -36,6 +36,15 @@ import { z } from 'zod';
  * selected does to the thing selected. No migration, for the reason given for
  * v3 — and a v6 document could not be migrated anyway, because the intent of a
  * question that has already been asked is not recoverable from the answer.
+ *
+ * Deliberately **not** moved by `CARD_SCHEMA_VERSION` 4 → 5 (M07.9). This version
+ * pins serialized match *state*, and state holds card *instances*, which carry an
+ * ID and the runtime values that have been done to them — never a definition, and
+ * never a target definition. `entity_or_player` is read while an instruction
+ * resolves and nothing about it is written down here, so no field of this shape
+ * changed, gained a value it could not hold before, or means anything new. The
+ * environment a match ran under is pinned separately, by the card snapshot and
+ * hashes a replay bundle carries.
  */
 export const MATCH_SCHEMA_VERSION = 7;
 

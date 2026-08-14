@@ -19,7 +19,7 @@
     "label": "Scorch buffed from 3 damage to 4. Nothing else differs.",
     "cardOverrides": [
       {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "id": "scorch",
         "name": "Scorch",
         "type": "spell",

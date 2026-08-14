@@ -678,6 +678,13 @@ correction or the check that stops it recurring.
 
 ### Versions — deliberately unchanged
 
+> **Superseded in part by [M07.9](#m079--the-card-schema-version-correction--done-2026-08-14).**
+> The reasoning about `entity_or_player` below is wrong and the card schema is now
+> **5**. It answered "does an old card read differently?" (no) when the question
+> the constant asks is "can an old build read the new file?" (also no). The
+> paragraphs on `MATCH_SCHEMA_VERSION` and the protocol versions still hold, and
+> M07.9 confirms them.
+
 `CARD_SCHEMA_VERSION` stays at **4**, and `MATCH_SCHEMA_VERSION` and the protocol
 versions stay where they are. The rule the repository uses is that
 `schemaVersion` states _which reading of the same JSON_ the data was written for,
@@ -700,6 +707,105 @@ reading the new `mass_offering.json` would reject it, because the target schema 
 a `strictObject`. That is true of any additive field in this repository, the
 content bundle is generated and versioned alongside the code that reads it, and no
 persisted match or replay contains a target definition.
+
+## M07.9 — The card schema version correction — **done (2026-08-14)**
+
+M07.8 added `entity_or_player` to the `TargetDefinition` union and argued the
+card schema version need not move. That argument was wrong, and this corrects it.
+Nothing about the mechanic changes; only the number a set declares, and the two
+places that number is checked.
+
+### Checklist
+
+- [x] **`CARD_SCHEMA_VERSION` 4 → 5.** M07.8's test was "does an existing card
+      mean anything different?" — no, and that is not the question the constant
+      answers. `targetDefinitionSchema` is a discriminated union of **strict**
+      objects, so a build that understands at most v4 has no such member and
+      cannot parse `mass_offering` at all. It failed with an invalid-discriminator
+      complaint pointed at a field, rather than with the one message the version
+      exists to produce. Two mutually unreadable definitions both claiming v4 is
+      the compatibility boundary not working.
+- [x] **The distinction is now written down where it will be read.** An additive
+      field with a default is readable by an older build; a wider discriminated
+      union is not. That sentence is in `CARD_SCHEMA_VERSION`'s own comment and in
+      [ADR 0017](../architecture/0017-optional-instructions-and-interactive-costs.md),
+      whose "stays at 4" consequence was the precedent M07.8 followed.
+- [x] **`precon_wave_1`'s manifest declares 5**, up from 3. It is the set that
+      holds `mass_offering`, so it is the set whose declared version was not
+      predicting whether a build could load it. Safe to move, and measured rather
+      than assumed: rebuilding the bundle from a manifest declaring 5 instead of 3
+      produces **byte-identical output**. Its 42 abilities that omit `activeZone`
+      take `battlefield` from the schema default, which is the same value the
+      v3 → v4 step wrote; it prints no `swift`; and its four Commanders all carry
+      a cost, so none needs the `commander_zone` fallback.
+- [x] **`prototype_core` stays at 2**, and that is a measurement too. Declaring 5
+      fails the content build with four errors: `goblin_scout`, `prototype_scout`,
+      `prototype_commander_red` and `prototype_spark_token` still print `swift`
+      and need the v2 → v3 rename, and its eight `cost: null` Commanders need the
+      v3 → v4 `commander_zone` fallback. Its compatibility contract really is v2,
+      it keeps the migration chain exercised by real data, and raising it to look
+      tidy would have been a lie the build catches.
+- [x] **The v4 → v5 migration step is a version stamp and says so.** No data is
+      copied, defaulted or renamed. It exists because `migrateCardSet` walks one
+      step per version and stops at the first gap: without it a v2 set would
+      arrive stamped 4 with its cards stamped 4, and the bundled-data test that
+      every card declares the current version would fail — correctly, because
+      "which reading was this validated as" would have become "whichever version
+      the last reshaping migration happened to be".
+- [x] **A real defect in `canMigrateCardSet`, found by the new test.** It reported
+      `true` for any version **above** the current one, because its loop has
+      nothing to walk in that direction and it fell through to `fromVersion >= 1`.
+      It is the function that answers "can this build read that version", so
+      answering yes to data from a newer build was the same confusion this whole
+      correction is about. Now false, along with non-integers and anything below 1.
+- [x] **The authoring edge refuses with the same sentence as the loading edge.**
+      A set manifest declaring a version this build does not understand used to
+      fail with Zod's `Too big`; it now says which version is understood and to
+      update the application, matching `loadCardSets`.
+- [x] **Ten focused cases in a new `migrate.test.ts`** — the file the migration
+      chain never had. Every version 1..current has a step and the next one does
+      not; a set from any origin version arrives stamped current, set and cards;
+      the reshaping steps still run on the way past; v4 → v5 deep-equals its input
+      apart from the stamp, so a real migration cannot be hidden inside a step
+      documented as a stamp; the refusal carries `found`, `supported` and "Update
+      the application."; both edges refuse; and the shipped content is asserted
+      against the boundary — `mass_offering` is the one card using the new member,
+      and any source manifest holding one must declare at least 5.
+- [x] The `loadCardSets` refusal test now derives its "too new" version from the
+      constant instead of the round number 99, so the next bump is covered the day
+      it lands.
+- [x] **`PROTOCOL_VERSION` and `MATCH_SCHEMA_VERSION` stay where they are**, and
+      each now records why in its own comment. No message carries a card
+      definition — `divide_damage` already sent a flat list of IDs, so a mixed pool
+      is a wider value in an unchanged field — and `cardSchema` is already a
+      separate entry in `versionsSchema` that the handshake refuses on
+      independently. Match state holds card _instances_, never definitions, so no
+      serialized field changed or gained a value it could not hold.
+- [x] The generated bundle's only change is 213 version stamps — two sets and 211
+      cards, 4 → 5. Confirmed by diff: no other line moved.
+- [x] **One consumer beyond the constant needed the same edit, and the suite found
+      it**: `experiments/candidate-vs-baseline.json` hand-authors a whole
+      `scorch` definition as a card override, stamped 4. `schemaVersion` is a
+      **mechanical** field by `CARD_FIELD_KINDS`, so the comparison started
+      reporting an undeclared changed field and the fixture's own
+      `onUndeclared: reject` failed it — the check working exactly as intended.
+      Bumped to 5, and the diff is again `effects` and `displayText` alone. The
+      other seven experiment files carry only the `CONFIG_SCHEMA_VERSION: 1`
+      envelope and were correctly untouched.
+- [x] **Noted, not fixed here**: `cardOverrides` are parsed straight through
+      `cardDefinitionSchema` and are **not** migrated, so an override authored
+      against an older version keeps its stamp and reads as a mechanical
+      difference from the card it replaces. That is a real edge in the experiment
+      layer rather than a consequence of this bump — it would bite any version
+      move — and changing it would change what an environment hashes. Left as a
+      finding for whoever next touches `resolveEnvironment`.
+- [x] Everything else that reads the constant was checked and correctly needed no
+      edit: `CURRENT_VERSIONS.cardSchema` and `ResolvedEnvironment.cardSchemaVersion`
+      read it rather than repeating it, and no committed artefact stores an
+      environment hash — `results/` is not tracked.
+- [x] Verified on Node 24.15.0 with `npm ci`: `npm run content:check`,
+      `npm run validate:content`, `npm run audit:check`,
+      `npm run check:consistency` and `npm run verify` all pass.
 
 ## Acceptance — **met (2026-08-14)**
 

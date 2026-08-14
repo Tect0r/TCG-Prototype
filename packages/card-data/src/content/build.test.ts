@@ -5,6 +5,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildContent, serializeBundle } from './build.js';
 import { GENERATED_BUNDLE_PATH } from './source.js';
+import { CARD_SCHEMA_VERSION } from '../schema/primitives.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -98,6 +99,14 @@ describe('content source validation', () => {
     write('content/sets/test_set/set.json', manifest());
     write('content/sets/test_set/cards/alpha.json', unitCard('alpha', { schemaVersion: 2 }));
     expect(errorCodes()).toContain('content/card_schema_version');
+  });
+
+  it('rejects a set manifest written for a newer build, naming the fix', () => {
+    write('content/sets/test_set/set.json', manifest({ schemaVersion: CARD_SCHEMA_VERSION + 1 }));
+    write('content/sets/test_set/cards/alpha.json', unitCard('alpha'));
+    const issues = buildContent(root).issues.filter((i) => i.severity === 'error');
+    expect(issues.map((i) => i.path)).toContain('content/sets/test_set/set.json.schemaVersion');
+    expect(issues.map((i) => i.message).join('\n')).toContain('Update the application.');
   });
 
   it('rejects a set whose directory and setId disagree', () => {

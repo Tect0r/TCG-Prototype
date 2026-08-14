@@ -11,7 +11,13 @@ import { CARD_SCHEMA_VERSION, setStatusSchema } from '../schema/primitives.js';
  * does not claim.
  */
 export const setManifestSchema = z.strictObject({
-  schemaVersion: z.number().int().min(1).max(CARD_SCHEMA_VERSION),
+  schemaVersion: z.number().int().min(1).max(
+    CARD_SCHEMA_VERSION,
+    // The authoring-side twin of `loadCardSets`' refusal, and it says the same
+    // thing for the same reason: a set from a newer build is refused with the
+    // action that fixes it, not with "too big".
+    `A set may not declare a schemaVersion newer than the ${CARD_SCHEMA_VERSION} this build understands. Update the application.`,
+  ),
   setId: setIdSchema,
   name: z.string().min(1).max(80),
   status: setStatusSchema,

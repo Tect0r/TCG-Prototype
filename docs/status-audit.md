@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `438771b63c4572523fdbfdf5380cc6e57915adfa` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-14                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `9e62d138c420ec1651ab0056edcf6f6a80054c56`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-14                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 59      | 1397     |
+| packages       | 60      | 1408     |
 | scripts        | 4       | 69       |
 | server         | 4       | 63       |
 | simulator      | 23      | 434      |
 | web-client     | 12      | 142      |
-| **total**      | **102** | **2105** |
+| **total**      | **103** | **2116** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -56,7 +56,7 @@ What a client, a server and a saved deck must agree on to play at all.
 | `RULES_VERSION`                 | 0.4.0 | The rules configuration.                                                                     |
 | `PROTOCOL_VERSION`              | 6     | Every message shape, refused at the handshake.                                               |
 | `MATCH_SCHEMA_VERSION`          | 7     | Serialized match state.                                                                      |
-| `CARD_SCHEMA_VERSION`           | 4     | A card definition, owned per set by its manifest.                                            |
+| `CARD_SCHEMA_VERSION`           | 5     | A card definition, owned per set by its manifest.                                            |
 | `DECK_SCHEMA_VERSION`           | 1     | A saved deck.                                                                                |
 | `FORMAT_SCHEMA_VERSION`         | 1     | A play format and its construction rules.                                                    |
 | `PRECON_SCHEMA_VERSION`         | 1     | A bundled precon definition.                                                                 |
@@ -110,8 +110,8 @@ Classifications a citation is made against. A move here re-judges evidence rathe
 
 | Set              | Status      | Card schema | Playable cards | Tokens | Unimplemented | No pilot values | No record observes |
 | ---------------- | ----------- | ----------- | -------------- | ------ | ------------- | --------------- | ------------------ |
-| `precon_wave_1`  | playtest    | v4          | 152            | 3      | 0             | 0               | 39                 |
-| `prototype_core` | development | v4          | 52             | 4      | 0             | 1               | 15                 |
+| `precon_wave_1`  | playtest    | v5          | 152            | 3      | 0             | 0               | 39                 |
+| `prototype_core` | development | v5          | 52             | 4      | 0             | 1               | 15                 |
 
 ### Formats
 

@@ -3,14 +3,14 @@
   "generated": "GENERATED FILE — do not edit. Source: content/. Rebuild with `npm run content:build`.",
   "sets": [
     {
-      "schemaVersion": 4,
+      "schemaVersion": 5,
       "setId": "precon_wave_1",
       "name": "Precon Wave 1 Card Catalog",
       "status": "playtest",
       "description": "The first authored card catalog: four factions, four Commanders and three Tokens, built for the 40-card singleton precon format.",
       "cards": [
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "arcane_snare",
           "name": "Arcane Snare",
           "type": "spell",
@@ -60,7 +60,7 @@
           "displayText": "Exhaust a Unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "archive_acolyte",
           "name": "Archive Acolyte",
           "type": "unit",
@@ -90,7 +90,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "ashen_vermin",
           "name": "Ashen Vermin",
           "type": "unit",
@@ -120,7 +120,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "back_to_the_warrens",
           "name": "Back to the Warrens",
           "type": "spell",
@@ -168,7 +168,7 @@
           "displayText": "Return a Goblin Unit card from your discard pile to your hand."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "banner_keeper",
           "name": "Banner Keeper",
           "type": "unit",
@@ -229,7 +229,7 @@
           "displayText": "The first time a friendly Guardian blocks each turn, draw a card, then discard a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bastion_armorer",
           "name": "Bastion Armorer",
           "type": "unit",
@@ -286,7 +286,7 @@
           "displayText": "When deployed, a friendly Guardian gains Barrier."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bastion_armory",
           "name": "Bastion Armory",
           "type": "relic",
@@ -342,7 +342,7 @@
           "displayText": "The first Guardian you deploy each turn gains Barrier."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bastion_chaplain",
           "name": "Bastion Chaplain",
           "type": "unit",
@@ -395,7 +395,7 @@
           "displayText": "When deployed, restore 2 Health to each of up to two friendly Units."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bastion_commander",
           "name": "Bastion Commander",
           "type": "commander",
@@ -464,7 +464,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bastion_infantry",
           "name": "Bastion Infantry",
           "type": "unit",
@@ -497,7 +497,7 @@
           "displayText": "Guardian."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bastion_judgment",
           "name": "Bastion Judgment",
           "type": "spell",
@@ -551,7 +551,7 @@
           "displayText": "Defeat an Exhausted enemy Unit with 4 Health or less."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "blood_scribe",
           "name": "Blood Scribe",
           "type": "unit",
@@ -607,7 +607,7 @@
           "displayText": "The first time you sacrifice a Unit each turn, look at the top two cards of your deck. You may put one on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bone_altar",
           "name": "Bone Altar",
           "type": "relic",
@@ -656,7 +656,7 @@
           "displayText": "The first time you sacrifice a Unit each turn, create one Thrall Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bone_carrier",
           "name": "Bone Carrier",
           "type": "unit",
@@ -694,7 +694,7 @@
           "displayText": "When deployed, create one Thrall Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bone_harvest",
           "name": "Bone Harvest",
           "type": "spell",
@@ -744,7 +744,7 @@
           "displayText": "Draw a card. If at least two friendly Units were defeated this turn, draw another card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bonepile_guardian",
           "name": "Bonepile Guardian",
           "type": "unit",
@@ -777,7 +777,7 @@
           "displayText": "Guardian."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "book_of_the_dead",
           "name": "Book of the Dead",
           "type": "relic",
@@ -840,7 +840,7 @@
           "displayText": "At the end of your turn, if a friendly Unit was defeated that turn, look at the top two cards of your deck. You may reveal a Unit and put it into your hand. Put the remaining cards on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "border_recruit",
           "name": "Border Recruit",
           "type": "unit",
@@ -870,7 +870,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bound_anomaly",
           "name": "Bound Anomaly",
           "type": "unit",
@@ -904,7 +904,7 @@
           "displayText": "Barrier. Overwhelm."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "calculated_response",
           "name": "Calculated Response",
           "type": "reaction",
@@ -943,7 +943,7 @@
           "displayText": "Play when an opponent plays a Spell. Counter it unless its controller pays 2 additional Energy."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "call_a_goblin",
           "name": "Call a Goblin",
           "type": "spell",
@@ -979,7 +979,7 @@
           "displayText": "Create one Goblin Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "call_the_watch",
           "name": "Call the Watch",
           "type": "spell",
@@ -1015,7 +1015,7 @@
           "displayText": "Create one Guard Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "carrion_feeder",
           "name": "Carrion Feeder",
           "type": "unit",
@@ -1083,7 +1083,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "chief_containment_scholar",
           "name": "Chief Containment Scholar",
           "type": "commander",
@@ -1137,7 +1137,7 @@
           "displayText": "While this Commander is on the battlefield, the first Reaction Spell you play after the beginning of each of your turns costs 1 less, to a minimum of 1."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "containment_array",
           "name": "Containment Array",
           "type": "relic",
@@ -1197,7 +1197,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "containment_guard",
           "name": "Containment Guard",
           "type": "unit",
@@ -1227,7 +1227,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "containment_pulse",
           "name": "Containment Pulse",
           "type": "spell",
@@ -1278,7 +1278,7 @@
           "displayText": "Exhaust every Token with the same Token definition controlled by target player."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "containment_warden",
           "name": "Containment Warden",
           "type": "unit",
@@ -1330,7 +1330,7 @@
           "displayText": "When deployed, Exhaust up to two enemy Units."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "controlled_collapse",
           "name": "Controlled Collapse",
           "type": "spell",
@@ -1381,7 +1381,7 @@
           "displayText": "Deal 2 damage to every Unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "corpse_stitcher",
           "name": "Corpse Stitcher",
           "type": "unit",
@@ -1465,7 +1465,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "corpse_wagon",
           "name": "Corpse Wagon",
           "type": "unit",
@@ -1517,7 +1517,7 @@
           "displayText": "When deployed, create two Thrall Tokens. When this Unit is defeated, create another Thrall Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "counteroffensive_captain",
           "name": "Counteroffensive Captain",
           "type": "unit",
@@ -1580,7 +1580,7 @@
           "displayText": "At the beginning of your turn, friendly Units that survived combat as blockers since your previous turn gain +1 ATK that turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "crude_bomb",
           "name": "Crude Bomb",
           "type": "spell",
@@ -1629,7 +1629,7 @@
           "displayText": "Deal 3 damage to a Unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "cruel_preacher",
           "name": "Cruel Preacher",
           "type": "unit",
@@ -1686,7 +1686,7 @@
           "displayText": "Whenever another friendly Unit is defeated during your turn, deal 1 damage to an opponent."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "death_witness",
           "name": "Death Witness",
           "type": "unit",
@@ -1742,7 +1742,7 @@
           "displayText": "The first time you sacrifice a Unit each turn, draw a card, then discard a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "dismantle_the_device",
           "name": "Dismantle the Device",
           "type": "spell",
@@ -1798,7 +1798,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "divide_the_offering",
           "name": "Divide the Offering",
           "type": "spell",
@@ -1854,7 +1854,7 @@
           "displayText": "Sacrifice a Unit. Create two Thrall Tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "doomed_acolyte",
           "name": "Doomed Acolyte",
           "type": "unit",
@@ -1899,7 +1899,7 @@
           "displayText": "When this Unit is defeated, create one Thrall Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "emergency_interposition",
           "name": "Emergency Interposition",
           "type": "reaction",
@@ -1979,7 +1979,7 @@
           "displayText": "Play before blockers are declared. Ready a friendly Guardian. It gains +0/+1 for that combat."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "empty_the_tunnels",
           "name": "Empty the Tunnels",
           "type": "spell",
@@ -2015,7 +2015,7 @@
           "displayText": "Create four Goblin Tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "equal_price",
           "name": "Equal Price",
           "type": "spell",
@@ -2074,7 +2074,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "fading_wisp",
           "name": "Fading Wisp",
           "type": "unit",
@@ -2136,7 +2136,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "feed_the_pit",
           "name": "Feed the Pit",
           "type": "spell",
@@ -2201,7 +2201,7 @@
           "displayText": "As an additional cost, sacrifice a Unit. Defeat an enemy Unit costing 3 or less."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "feral_gravehound",
           "name": "Feral Gravehound",
           "type": "unit",
@@ -2231,7 +2231,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "field_analyst",
           "name": "Field Analyst",
           "type": "unit",
@@ -2280,7 +2280,7 @@
           "displayText": "When deployed, look at the top three cards of your deck. You may reveal a Spell or Relic and put it into your hand. Put the others on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "field_medic",
           "name": "Field Medic",
           "type": "unit",
@@ -2332,7 +2332,7 @@
           "displayText": "The first time another friendly Unit survives combat each turn, restore 1 Health to it."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "forbidden_offering",
           "name": "Forbidden Offering",
           "type": "spell",
@@ -2379,7 +2379,7 @@
           "displayText": "As an additional cost, sacrifice a Unit. Draw two cards."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "forced_recall",
           "name": "Forced Recall",
           "type": "spell",
@@ -2430,7 +2430,7 @@
           "displayText": "Return up to two Exhausted Units to their owners' hands."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "formation_tactician",
           "name": "Formation Tactician",
           "type": "unit",
@@ -2492,7 +2492,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "fortress_gate",
           "name": "Fortress Gate",
           "type": "relic",
@@ -2550,7 +2550,7 @@
           "displayText": "At the beginning of your turn, if you control fewer than two Guard Tokens, create one Guard Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "funeral_march",
           "name": "Funeral March",
           "type": "spell",
@@ -2586,7 +2586,7 @@
           "displayText": "Create three Thrall Tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "gate_sentinel",
           "name": "Gate Sentinel",
           "type": "unit",
@@ -2619,7 +2619,7 @@
           "displayText": "Guardian."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_banner_thief",
           "name": "Goblin Banner Thief",
           "type": "unit",
@@ -2684,7 +2684,7 @@
           "displayText": "Whenever this Unit attacks alongside another Goblin, it gains +1 ATK this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_bomb_thrower",
           "name": "Goblin Bomb Thrower",
           "type": "unit",
@@ -2739,7 +2739,7 @@
           "displayText": "When deployed, deal 2 damage to an enemy Unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_breeder",
           "name": "Goblin Breeder",
           "type": "unit",
@@ -2791,7 +2791,7 @@
           "displayText": "At the beginning of your turn, if this Unit is Ready, create one Goblin Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_bruiser",
           "name": "Goblin Bruiser",
           "type": "unit",
@@ -2823,7 +2823,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_caller",
           "name": "Goblin Caller",
           "type": "unit",
@@ -2870,7 +2870,7 @@
           "displayText": "When this Unit is defeated, create one Goblin Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_chieftain",
           "name": "Goblin Chieftain",
           "type": "unit",
@@ -2923,7 +2923,7 @@
           "displayText": "Other Goblins you control have +1 ATK."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_drummer",
           "name": "Goblin Drummer",
           "type": "unit",
@@ -3014,7 +3014,7 @@
           "displayText": "Whenever at least three Goblins attack, one attacking Goblin gains +2 ATK this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_horde_breaker",
           "name": "Goblin Horde Breaker",
           "type": "unit",
@@ -3082,7 +3082,7 @@
           "displayText": "Overwhelm. Whenever this Unit attacks, it gains +1 ATK this turn for every three other Goblins you control."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_instigator",
           "name": "Goblin Instigator",
           "type": "unit",
@@ -3140,7 +3140,7 @@
           "displayText": "Pay 1 Energy and Exhaust — Create one Goblin Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_lookout",
           "name": "Goblin Lookout",
           "type": "unit",
@@ -3190,7 +3190,7 @@
           "displayText": "When deployed, look at the top three cards of your deck. You may put a Goblin card into your hand. Put the others on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_mob_caller",
           "name": "Goblin Mob Caller",
           "type": "unit",
@@ -3230,7 +3230,7 @@
           "displayText": "When deployed, create two Goblin Tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_piledriver",
           "name": "Goblin Piledriver",
           "type": "unit",
@@ -3296,7 +3296,7 @@
           "displayText": "Whenever this Unit attacks, it gains +1 ATK this turn for each other attacking Goblin."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_powder_runner",
           "name": "Goblin Powder Runner",
           "type": "unit",
@@ -3346,7 +3346,7 @@
           "displayText": "When this Unit is defeated, deal 1 damage to an opponent."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_quartermaster",
           "name": "Goblin Quartermaster",
           "type": "unit",
@@ -3378,7 +3378,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_raid_standard",
           "name": "Goblin Raid Standard",
           "type": "relic",
@@ -3465,7 +3465,7 @@
           "displayText": "Whenever at least five Goblins attack, those Goblins gain +1 ATK this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_recruiter",
           "name": "Goblin Recruiter",
           "type": "unit",
@@ -3505,7 +3505,7 @@
           "displayText": "When deployed, create one Goblin Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_scrapmaster",
           "name": "Goblin Scrapmaster",
           "type": "unit",
@@ -3563,7 +3563,7 @@
           "displayText": "The first time each turn you create one or more Goblin Tokens, create one additional Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_shieldbearer",
           "name": "Goblin Shieldbearer",
           "type": "unit",
@@ -3595,7 +3595,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_siege_leader",
           "name": "Goblin Siege Leader",
           "type": "unit",
@@ -3635,7 +3635,7 @@
           "displayText": "When deployed, create three Goblin Tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_sneak",
           "name": "Goblin Sneak",
           "type": "unit",
@@ -3667,7 +3667,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_spearman",
           "name": "Goblin Spearman",
           "type": "unit",
@@ -3699,7 +3699,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_tallykeeper",
           "name": "Goblin Tallykeeper",
           "type": "unit",
@@ -3756,7 +3756,7 @@
           "displayText": "Whenever you create one or more Goblin Tokens, create one additional Token. This does not trigger from Tokens created by this effect."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_token",
           "name": "Goblin Token",
           "type": "token",
@@ -3788,7 +3788,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_torchrunner",
           "name": "Goblin Torchrunner",
           "type": "unit",
@@ -3823,7 +3823,7 @@
           "displayText": "Rush."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_war_drum",
           "name": "Goblin War Drum",
           "type": "relic",
@@ -3877,7 +3877,7 @@
           "displayText": "The first time each turn you create one or more Goblin Tokens, create one additional Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_warboss",
           "name": "Goblin Warboss",
           "type": "commander",
@@ -3947,7 +3947,7 @@
           "displayText": "Exhaust — Create Goblin Tokens equal to the number of other Goblins you control. Activate only once each turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_warhorn_captain",
           "name": "Goblin Warhorn Captain",
           "type": "unit",
@@ -4014,7 +4014,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "grave_attendant",
           "name": "Grave Attendant",
           "type": "unit",
@@ -4044,7 +4044,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "grave_matriarch",
           "name": "Grave Matriarch",
           "type": "commander",
@@ -4112,7 +4112,7 @@
           "displayText": "Pay 1 Energy and Exhaust — Sacrifice another Unit. Draw a card. Activate only once each turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "grave_prophet",
           "name": "Grave Prophet",
           "type": "unit",
@@ -4166,7 +4166,7 @@
           "displayText": "At the end of your turn, if at least two friendly Units were defeated that turn, draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "grave_reassembly",
           "name": "Grave Reassembly",
           "type": "spell",
@@ -4231,7 +4231,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "grave_robber",
           "name": "Grave Robber",
           "type": "unit",
@@ -4282,7 +4282,7 @@
           "displayText": "When deployed, return a Unit costing 1 from your discard pile to your hand."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "guard_token",
           "name": "Guard Token",
           "type": "token",
@@ -4317,7 +4317,7 @@
           "displayText": "Guardian."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "hired_mercenary",
           "name": "Hired Mercenary",
           "type": "unit",
@@ -4345,7 +4345,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "hold_the_line",
           "name": "Hold the Line",
           "type": "reaction",
@@ -4401,7 +4401,7 @@
           "displayText": "Play after blockers are declared. A blocking Unit gains +0/+3 for that combat."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "inventory_audit",
           "name": "Inventory Audit",
           "type": "spell",
@@ -4442,7 +4442,7 @@
           "displayText": "Draw two cards, then discard a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "ironbound_knight",
           "name": "Ironbound Knight",
           "type": "unit",
@@ -4476,7 +4476,7 @@
           "displayText": "Guardian. Barrier."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "laboratory_familiar",
           "name": "Laboratory Familiar",
           "type": "unit",
@@ -4526,7 +4526,7 @@
           "displayText": "When this Unit is defeated, look at the top two cards of your deck. Put one on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "living_bulwark",
           "name": "Living Bulwark",
           "type": "unit",
@@ -4577,7 +4577,7 @@
           "displayText": "Guardian. Overwhelm. Whenever this Unit survives combat as a blocker, it gains +2 ATK permanently."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "makeshift_weapon",
           "name": "Makeshift Weapon",
           "type": "spell",
@@ -4628,7 +4628,7 @@
           "displayText": "Target Unit gains +2 ATK this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "marked_for_death",
           "name": "Marked for Death",
           "type": "spell",
@@ -4709,7 +4709,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "mass_displacement",
           "name": "Mass Displacement",
           "type": "reaction",
@@ -4764,7 +4764,7 @@
           "displayText": "Play after attackers are declared. Return every Newly Deployed attacking Unit to its owner's hand."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "mass_offering",
           "name": "Mass Offering",
           "type": "spell",
@@ -4858,7 +4858,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "mob_justice",
           "name": "Mob Justice",
           "type": "spell",
@@ -4925,7 +4925,7 @@
           "displayText": "Deal damage to target Unit equal to the number of Goblins you control."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "mourning_keeper",
           "name": "Mourning Keeper",
           "type": "unit",
@@ -4979,7 +4979,7 @@
           "displayText": "The first time another friendly Unit is defeated each turn, restore 1 Health to you."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "narrow_denial",
           "name": "Narrow Denial",
           "type": "reaction",
@@ -5023,7 +5023,7 @@
           "displayText": "Play when an opponent plays a Spell costing 2 or less. Counter that Spell."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "nullmage_apprentice",
           "name": "Nullmage Apprentice",
           "type": "unit",
@@ -5076,7 +5076,7 @@
           "displayText": "While this Unit is Ready, your Reaction Spells cost 1 less, to a minimum of 1."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "oathsworn_protector",
           "name": "Oathsworn Protector",
           "type": "unit",
@@ -5109,7 +5109,7 @@
           "displayText": "Guardian."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "observation_lens",
           "name": "Observation Lens",
           "type": "relic",
@@ -5167,7 +5167,7 @@
           "displayText": "At the end of your turn, if you deployed no Units that turn, look at the top two cards of your deck. You may put one on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "open_the_tunnels",
           "name": "Open the Tunnels",
           "type": "spell",
@@ -5203,7 +5203,7 @@
           "displayText": "Create two Goblin Tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "orderly_withdrawal",
           "name": "Orderly Withdrawal",
           "type": "reaction",
@@ -5262,7 +5262,7 @@
           "displayText": "Play after combat damage. Return a surviving friendly blocker to your hand. Draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "ossuary_captain",
           "name": "Ossuary Captain",
           "type": "unit",
@@ -5313,7 +5313,7 @@
           "displayText": "Thrall Tokens you control have +1 ATK."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "patrol_scout",
           "name": "Patrol Scout",
           "type": "unit",
@@ -5361,7 +5361,7 @@
           "displayText": "When deployed, look at the top three cards of your deck. You may reveal a Guardian card and put it into your hand. Put the others on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "phase_withdrawal",
           "name": "Phase Withdrawal",
           "type": "reaction",
@@ -5427,7 +5427,7 @@
           "displayText": "Return a Unit you control to your hand. Draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "pit_executioner",
           "name": "Pit Executioner",
           "type": "unit",
@@ -5511,7 +5511,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "probe_the_future",
           "name": "Probe the Future",
           "type": "spell",
@@ -5557,7 +5557,7 @@
           "displayText": "Look at the top five cards of your deck. You may reveal a Reaction Spell and put it into your hand. Put the others on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "punish_the_assault",
           "name": "Punish the Assault",
           "type": "reaction",
@@ -5612,7 +5612,7 @@
           "displayText": "Play after combat. Deal 2 damage to an enemy Unit that attacked that combat."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "quick_study",
           "name": "Quick Study",
           "type": "spell",
@@ -5663,7 +5663,7 @@
           "displayText": "Draw a card, then put a card from your hand on the bottom of your deck."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "raise_a_thrall",
           "name": "Raise a Thrall",
           "type": "spell",
@@ -5699,7 +5699,7 @@
           "displayText": "Create one Thrall Token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "rebuild_the_mob",
           "name": "Rebuild the Mob",
           "type": "spell",
@@ -5771,7 +5771,7 @@
           "displayText": "Create five Goblin Tokens. If you controlled no Goblins when you played this card, create seven instead."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "reconstruct_the_theory",
           "name": "Reconstruct the Theory",
           "type": "spell",
@@ -5806,7 +5806,7 @@
           "displayText": "Draw three cards."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "refuge_warden",
           "name": "Refuge Warden",
           "type": "unit",
@@ -5844,7 +5844,7 @@
           "displayText": "When deployed, create two Guard Tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "reinforce_the_gate",
           "name": "Reinforce the Gate",
           "type": "spell",
@@ -5880,7 +5880,7 @@
           "displayText": "Create two Guard Tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "retaliating_guard",
           "name": "Retaliating Guard",
           "type": "unit",
@@ -5928,7 +5928,7 @@
           "displayText": "After this Unit survives combat as a blocker, deal 1 damage to an opponent."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "return_to_the_veil",
           "name": "Return to the Veil",
           "type": "spell",
@@ -5981,7 +5981,7 @@
           "displayText": "Return an enemy Unit costing 3 or less to its owner's hand."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "rift_displacer",
           "name": "Rift Displacer",
           "type": "unit",
@@ -6036,7 +6036,7 @@
           "displayText": "When deployed, return an enemy Unit costing 2 or less to its owner's hand."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "rift_scholar",
           "name": "Rift Scholar",
           "type": "unit",
@@ -6079,7 +6079,7 @@
           "displayText": "When deployed, draw a card, then discard a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "ritual_butcher",
           "name": "Ritual Butcher",
           "type": "unit",
@@ -6161,7 +6161,7 @@
           "displayText": "Pay 1 Energy and Exhaust — Sacrifice another Unit and deal 2 damage to an enemy Unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "scatter",
           "name": "Scatter",
           "type": "reaction",
@@ -6223,7 +6223,7 @@
           "displayText": "Target Goblin you control becomes Untargetable by opponents until the end of the turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "seal_the_rift",
           "name": "Seal the Rift",
           "type": "spell",
@@ -6276,7 +6276,7 @@
           "displayText": "Defeat an enemy Unit with 4 ATK or more."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "search_the_scrapheap",
           "name": "Search the Scrapheap",
           "type": "spell",
@@ -6331,7 +6331,7 @@
           "displayText": "Look at the top four cards of your deck. Put one Goblin or Relic card into your hand. Put the others on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "senior_researcher",
           "name": "Senior Researcher",
           "type": "unit",
@@ -6374,7 +6374,7 @@
           "displayText": "When deployed, draw two cards, then discard a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "shackled_servant",
           "name": "Shackled Servant",
           "type": "unit",
@@ -6404,7 +6404,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "shield_formation",
           "name": "Shield Formation",
           "type": "spell",
@@ -6460,7 +6460,7 @@
           "displayText": "Friendly Guardians gain +0/+2 until the beginning of your next turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "shield_page",
           "name": "Shield Page",
           "type": "unit",
@@ -6514,7 +6514,7 @@
           "displayText": "When deployed, another friendly Unit gains Barrier."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "shieldwall_sergeant",
           "name": "Shieldwall Sergeant",
           "type": "unit",
@@ -6565,7 +6565,7 @@
           "displayText": "Other friendly Guardians have +0/+1."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "soul_collector",
           "name": "Soul Collector",
           "type": "unit",
@@ -6618,7 +6618,7 @@
           "displayText": "Whenever another Unit is defeated, this Unit gains +1 ATK this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "soul_furnace",
           "name": "Soul Furnace",
           "type": "relic",
@@ -6670,7 +6670,7 @@
           "displayText": "The first time a friendly Unit is defeated each turn, deal 1 damage to an opponent."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "sound_the_warhorn",
           "name": "Sound the Warhorn",
           "type": "spell",
@@ -6723,7 +6723,7 @@
           "displayText": "Newly Deployed Goblins you control gain Rush this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "spear_guard",
           "name": "Spear Guard",
           "type": "unit",
@@ -6771,7 +6771,7 @@
           "displayText": "When this Unit blocks, it gains +1 ATK for that combat."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "stand_united",
           "name": "Stand United",
           "type": "spell",
@@ -6839,7 +6839,7 @@
           "displayText": "Friendly Units gain +1 ATK this turn for each friendly Unit that survived combat as a blocker since your previous turn, to a maximum of +3 ATK."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "standfast_cadet",
           "name": "Standfast Cadet",
           "type": "unit",
@@ -6869,7 +6869,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "stasis_keeper",
           "name": "Stasis Keeper",
           "type": "unit",
@@ -6921,7 +6921,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "stasis_seal",
           "name": "Stasis Seal",
           "type": "spell",
@@ -6979,7 +6979,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "static_adept",
           "name": "Static Adept",
           "type": "unit",
@@ -7034,7 +7034,7 @@
           "displayText": "When deployed, Exhaust an enemy Unit with 2 ATK or less."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "stitched_abomination",
           "name": "Stitched Abomination",
           "type": "unit",
@@ -7099,7 +7099,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "strength_in_numbers",
           "name": "Strength in Numbers",
           "type": "spell",
@@ -7155,7 +7155,7 @@
           "displayText": "Goblins you control gain +1 ATK this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "tactical_assessment",
           "name": "Tactical Assessment",
           "type": "spell",
@@ -7213,7 +7213,7 @@
           "displayText": "Look at the top four cards of your deck. You may reveal a Unit with Guardian or a Reaction Spell and put it into your hand. Put the others on the bottom."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "temporal_anchor",
           "name": "Temporal Anchor",
           "type": "relic",
@@ -7264,7 +7264,7 @@
           }
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "thrall_token",
           "name": "Thrall Token",
           "type": "token",
@@ -7296,7 +7296,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "throwing_knife",
           "name": "Throwing Knife",
           "type": "spell",
@@ -7345,7 +7345,7 @@
           "displayText": "Deal 2 damage to a Unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "total_recall",
           "name": "Total Recall",
           "type": "spell",
@@ -7396,7 +7396,7 @@
           "displayText": "Return every non-Commander Unit to its owner's hand. Tokens cease existing."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "unbreakable_formation",
           "name": "Unbreakable Formation",
           "type": "reaction",
@@ -7454,7 +7454,7 @@
           "displayText": "Play after attackers are declared. Friendly Guardians gain Barrier until the end of combat."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "unearth_the_remains",
           "name": "Unearth the Remains",
           "type": "spell",
@@ -7502,7 +7502,7 @@
           "displayText": "Return a Unit costing 2 or less from your discard pile to your hand."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "veil_adept",
           "name": "Veil Adept",
           "type": "unit",
@@ -7532,7 +7532,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "veil_initiate",
           "name": "Veil Initiate",
           "type": "unit",
@@ -7562,7 +7562,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "veil_skirmisher",
           "name": "Veil Skirmisher",
           "type": "unit",
@@ -7592,7 +7592,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "veteran_guard",
           "name": "Veteran Guard",
           "type": "unit",
@@ -7620,7 +7620,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "vigilant_squire",
           "name": "Vigilant Squire",
           "type": "unit",
@@ -7668,7 +7668,7 @@
           "displayText": "When this Unit blocks, it gains +0/+1 for that combat."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "wall_initiate",
           "name": "Wall Initiate",
           "type": "unit",
@@ -7701,7 +7701,7 @@
           "displayText": "Guardian."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "ward_scribe",
           "name": "Ward Scribe",
           "type": "unit",
@@ -7734,7 +7734,7 @@
           "displayText": "Barrier."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "watch_captain",
           "name": "Watch Captain",
           "type": "unit",
@@ -7785,7 +7785,7 @@
           "displayText": "Other friendly Guardians have +1 ATK."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "watchtower",
           "name": "Watchtower",
           "type": "relic",
@@ -7845,14 +7845,14 @@
       ]
     },
     {
-      "schemaVersion": 4,
+      "schemaVersion": 5,
       "setId": "prototype_core",
       "name": "Prototype Core Set",
       "status": "development",
       "description": "Development fixture set. Intentionally rough balance, placeholder colour identity and inert keywords; not part of any playtest format.",
       "cards": [
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "apex_grovekeeper",
           "name": "Apex Grovekeeper",
           "type": "unit",
@@ -7905,7 +7905,7 @@
           "displayText": "At the end of your turn, heal each friendly unit 1."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "arcane_recall",
           "name": "Arcane Recall",
           "type": "spell",
@@ -7947,7 +7947,7 @@
           "displayText": "Search your deck for a spell, reveal it, and put it into your hand."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "blood_pact",
           "name": "Blood Pact",
           "type": "spell",
@@ -8000,7 +8000,7 @@
           "displayText": "Sacrifice a friendly unit, then draw 2 cards."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bone_harvester",
           "name": "Bone Harvester",
           "type": "unit",
@@ -8045,7 +8045,7 @@
           "displayText": "Whenever this unit survives combat, it gets +1/+0 permanently."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "bramble_titan",
           "name": "Bramble Titan",
           "type": "unit",
@@ -8074,7 +8074,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "crimson_covenant",
           "name": "Crimson Covenant",
           "type": "spell",
@@ -8125,7 +8125,7 @@
           "displayText": "Deal 2 damage to each unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "cryptic_archivist",
           "name": "Cryptic Archivist",
           "type": "unit",
@@ -8166,7 +8166,7 @@
           "displayText": "At the start of your turn, draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "dawn_conscript",
           "name": "Dawn Conscript",
           "type": "unit",
@@ -8193,7 +8193,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "desperate_insight",
           "name": "Desperate Insight",
           "type": "spell",
@@ -8231,7 +8231,7 @@
           "displayText": "Discard a card, then draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "dread_sovereign",
           "name": "Dread Sovereign",
           "type": "unit",
@@ -8285,7 +8285,7 @@
           "displayText": "Venom. Resilient. When this unit is deployed, destroy an enemy unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "dusk_tithe_priest",
           "name": "Dusk Tithe Priest",
           "type": "unit",
@@ -8327,7 +8327,7 @@
           "displayText": "When this unit is defeated, draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "energy_font",
           "name": "Energy Font",
           "type": "relic",
@@ -8370,7 +8370,7 @@
           "displayText": "At the start of your turn, your units cost 1 less this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "field_survey",
           "name": "Field Survey",
           "type": "spell",
@@ -8401,7 +8401,7 @@
           "displayText": "Look at the top 3 cards of your deck and put them back in any order."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "goblin_scout",
           "name": "Goblin Scout",
           "type": "unit",
@@ -8431,7 +8431,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "grave_rat",
           "name": "Grave Rat",
           "type": "unit",
@@ -8459,7 +8459,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "mistveil_stalker",
           "name": "Mistveil Stalker",
           "type": "unit",
@@ -8488,7 +8488,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "oathbound_paladin",
           "name": "Oathbound Paladin",
           "type": "unit",
@@ -8519,7 +8519,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "overload_conduit",
           "name": "Overload Conduit",
           "type": "spell",
@@ -8558,7 +8558,7 @@
           "displayText": "Your cards cost 2 less this turn. Draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "pack_summons",
           "name": "Pack Summons",
           "type": "spell",
@@ -8592,7 +8592,7 @@
           "displayText": "Create a 3/3 Beast token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "plague_censer",
           "name": "Plague Censer",
           "type": "relic",
@@ -8642,7 +8642,7 @@
           "displayText": "At the end of your turn, deal 1 damage to each enemy unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "powder_keg_runner",
           "name": "Powder Keg Runner",
           "type": "unit",
@@ -8700,7 +8700,7 @@
           "displayText": "When this unit is defeated, deal 2 damage to an enemy unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_beast_token",
           "name": "Beast",
           "type": "token",
@@ -8727,7 +8727,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_commander_black",
           "name": "Grave Quartermaster",
           "type": "commander",
@@ -8784,7 +8784,7 @@
           "displayText": "Siphon. Whenever this Commander attacks, a friendly unit gets +1/+0 until end of turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_commander_blue",
           "name": "Tidecaller Archivist",
           "type": "commander",
@@ -8853,7 +8853,7 @@
           "displayText": "At the end of your turn, draw a card. 2 energy, once per turn: draw a card, then discard a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_commander_blue_red",
           "name": "Arc Tactician",
           "type": "commander",
@@ -8902,7 +8902,7 @@
           "displayText": "At the start of your turn, draw a card, then discard a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_commander_green",
           "name": "Thornwarden Elder",
           "type": "commander",
@@ -8955,7 +8955,7 @@
           "displayText": "At the end of your turn, heal each friendly unit 1."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_commander_green_blue",
           "name": "Silt Cartographer",
           "type": "commander",
@@ -8999,7 +8999,7 @@
           "displayText": "At the start of your turn, look at the top 3 cards of your deck and put them back in any order."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_commander_red",
           "name": "Emberline Captain",
           "type": "commander",
@@ -9060,7 +9060,7 @@
           "displayText": "Rush. Whenever this Commander attacks, deal 1 damage to an enemy unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_commander_white",
           "name": "Bulwark Marshal",
           "type": "commander",
@@ -9105,7 +9105,7 @@
           "displayText": "Guardian. At the start of your turn, create a 1/1 Soldier token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_commander_white_black",
           "name": "Tithe Warden",
           "type": "commander",
@@ -9150,7 +9150,7 @@
           "displayText": "Whenever this Commander survives combat, heal it 2."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_drone",
           "name": "Salvage Drone",
           "type": "unit",
@@ -9175,7 +9175,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_field_medic",
           "name": "Field Medic",
           "type": "unit",
@@ -9221,7 +9221,7 @@
           "displayText": "When this unit is deployed, heal another friendly unit 2."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_guard",
           "name": "Prototype Guard",
           "type": "unit",
@@ -9248,7 +9248,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_scout",
           "name": "Prototype Scout",
           "type": "unit",
@@ -9275,7 +9275,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_scrap_token",
           "name": "Scrap",
           "type": "token",
@@ -9300,7 +9300,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_soldier_token",
           "name": "Soldier",
           "type": "token",
@@ -9327,7 +9327,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "prototype_spark_token",
           "name": "Spark",
           "type": "token",
@@ -9356,7 +9356,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "pyre_champion",
           "name": "Pyre Champion",
           "type": "unit",
@@ -9385,7 +9385,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "radiant_bulwark",
           "name": "Radiant Bulwark",
           "type": "relic",
@@ -9430,7 +9430,7 @@
           "displayText": "While this relic is in play, your units have Armored."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "root_snare",
           "name": "Root Snare",
           "type": "spell",
@@ -9478,7 +9478,7 @@
           "displayText": "Exhaust an enemy unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "scorch",
           "name": "Scorch",
           "type": "spell",
@@ -9527,7 +9527,7 @@
           "displayText": "Deal 3 damage to a unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "shieldline_sergeant",
           "name": "Shieldline Sergeant",
           "type": "unit",
@@ -9564,7 +9564,7 @@
           "displayText": "Guardian. When this unit is deployed, create a 1/1 Soldier token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "stormforge_adept",
           "name": "Stormforge Adept",
           "type": "unit",
@@ -9621,7 +9621,7 @@
           "displayText": "When this unit is deployed, draw a card and deal 1 damage to an enemy unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "sunrise_decree",
           "name": "Sunrise Decree",
           "type": "spell",
@@ -9666,7 +9666,7 @@
           "displayText": "Your units get +2/+2."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "surveyors_lens",
           "name": "Surveyor's Lens",
           "type": "relic",
@@ -9696,7 +9696,7 @@
           "displayText": "When this relic is deployed, draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "thornback_calf",
           "name": "Thornback Calf",
           "type": "unit",
@@ -9723,7 +9723,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "tidal_grove_warden",
           "name": "Tidal Grove Warden",
           "type": "unit",
@@ -9754,7 +9754,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "tide_binder",
           "name": "Tide Binder",
           "type": "unit",
@@ -9803,7 +9803,7 @@
           "displayText": "When this unit is deployed, return an enemy unit to its owner's hand."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "tidepool_apprentice",
           "name": "Tidepool Apprentice",
           "type": "unit",
@@ -9837,7 +9837,7 @@
           "displayText": "When this unit is deployed, draw a card."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "trench_guard",
           "name": "Trench Guard",
           "type": "unit",
@@ -9865,7 +9865,7 @@
           "implemented": true
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "unstable_construct",
           "name": "Unstable Construct",
           "type": "unit",
@@ -9905,7 +9905,7 @@
           "displayText": "When this unit is defeated, create two 1/1 Scrap tokens."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "verdant_ward",
           "name": "Verdant Ward",
           "type": "spell",
@@ -9949,7 +9949,7 @@
           "displayText": "Prevent the next 3 damage that would be dealt to a friendly unit this turn."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "warband_horn",
           "name": "Warband Horn",
           "type": "relic",
@@ -9989,7 +9989,7 @@
           "displayText": "At the start of your turn, create a 1/1 Spark token."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "wildgrowth_shaman",
           "name": "Wildgrowth Shaman",
           "type": "unit",
@@ -10036,7 +10036,7 @@
           "displayText": "When this unit is deployed, your other units get +1/+1."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "wither_touch",
           "name": "Wither Touch",
           "type": "spell",
@@ -10085,7 +10085,7 @@
           "displayText": "Deal 2 damage to a unit."
         },
         {
-          "schemaVersion": 4,
+          "schemaVersion": 5,
           "id": "worldbreaker_engine",
           "name": "Worldbreaker Engine",
           "type": "relic",

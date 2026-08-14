@@ -72,7 +72,10 @@ because it is the only one that sees the whole batch at once.
 
 What it enforces, and where the severity comes from:
 
-- **Schema** — `CARD_SCHEMA_VERSION` v4, per set, via its manifest.
+- **Schema** — `CARD_SCHEMA_VERSION` v5, per set, via its manifest. A manifest may
+  declare an older version and be migrated up; it may not declare a newer one,
+  which is refused with the version this build understands and the instruction to
+  update.
 - **Cross-references** — a Token a card creates, a card a precon lists, a
   Commander a precon names, a card a deck plan claims: all resolved, none
   dangling.

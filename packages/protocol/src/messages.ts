@@ -32,6 +32,17 @@ import {
  * first, and says why. `MATCH_SCHEMA_VERSION` deliberately does **not** move:
  * `barrierSpent` has been on `CardInstance` since the keyword shipped, and it is
  * the projection that changed rather than the state.
+ *
+ * Deliberately **not** moved by `CARD_SCHEMA_VERSION` 4 → 5 (M07.9). Card schema
+ * and protocol are separate contracts, and this is the case that shows why:
+ * `entity_or_player` widened the *card definition* language, and no message
+ * carries a card definition. `divide_damage` already sent a flat list of IDs and
+ * `select_players` already put player IDs in `validEntityIds`, so a mixed pool is
+ * a wider value in an unchanged field. A v6 client and a v6 server disagreeing
+ * about card schema is not a message-shape problem, and it already has its own
+ * answer: `cardSchema` is a separate entry in `versionsSchema` and the handshake
+ * below refuses on it independently. Bumping this too would refuse the same pair
+ * twice and, worse, would teach that the two versions move together.
  */
 export const PROTOCOL_VERSION = 6;
 
