@@ -219,7 +219,11 @@ export function LobbyScreen() {
                   ) : (
                     <span className="tag">{seat.deckName ?? 'no deck'}</span>
                   )}
-                  {(bot ? bot.deckName !== null : seat.deckName !== null) && (
+                  {/* A bot seat always has a verdict: the server resolved and
+                      validated its deck before seating it, whether or not the
+                      mode publishes a name. A human seat may simply not have
+                      submitted anything yet. */}
+                  {(bot !== null || seat.deckName !== null) && (
                     <span className={seat.deckLegal ? 'tag tag--ok' : 'tag tag--error'}>
                       {seat.deckLegal ? 'legal' : 'illegal'}
                     </span>

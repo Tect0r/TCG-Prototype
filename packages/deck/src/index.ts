@@ -14,6 +14,15 @@ export {
 } from './schema.js';
 export { DECK_MIGRATIONS, migrateSavedDeck, type DeckMigration } from './migrate.js';
 export {
+  DECK_FINGERPRINT_LENGTH,
+  DECK_FINGERPRINT_VERSION,
+  canonicalDeckString,
+  collectDeckCards,
+  deckFingerprint,
+  expandDeckCards,
+  type FingerprintableDeck,
+} from './fingerprint.js';
+export {
   commanderColorIdentity,
   deckStats,
   validateDeck,

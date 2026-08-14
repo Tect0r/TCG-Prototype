@@ -77,7 +77,12 @@ import {
   PACING_CONFIG_VERSION,
 } from '@tcg/bot-config';
 import { BOARD_TELEMETRY_VERSION, STALL_DEFINITION_VERSION } from '@tcg/board-telemetry';
-import { DECK_SCHEMA_VERSION, deckFormatOf, reviewPrecon } from '@tcg/deck';
+import {
+  DECK_FINGERPRINT_VERSION,
+  DECK_SCHEMA_VERSION,
+  deckFormatOf,
+  reviewPrecon,
+} from '@tcg/deck';
 import { GLOSSARY_ENTRIES, GLOSSARY_SCHEMA_VERSION } from '@tcg/help-content';
 import { RULEBOOK_SCHEMA_VERSION, RULEBOOK_SECTION_IDS } from '@tcg/help-content';
 import { PROTOCOL_VERSION } from '@tcg/protocol';
@@ -500,6 +505,11 @@ function versionGroups(): readonly VersionGroup[] {
           constant: 'PACING_CONFIG_VERSION',
           value: String(PACING_CONFIG_VERSION),
           pins: 'The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.',
+        },
+        {
+          constant: 'DECK_FINGERPRINT_VERSION',
+          value: String(DECK_FINGERPRINT_VERSION),
+          pins: 'How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address.',
         },
       ],
     },

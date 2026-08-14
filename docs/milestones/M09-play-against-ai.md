@@ -874,7 +874,7 @@ That is the direction ADR 0024 §7 chose. `@tcg/bot-config` depends only on
 no pilot, engine or server code in with it, and the ESLint rule that keeps it
 that way is unchanged.
 
-## M09.6 — Exact saved-deck mode
+## M09.6 — Exact saved-deck mode — **done (2026-08-14)**
 
 Let the host choose one of their own saved legal decks for a bot: the selected
 immutable contents are submitted privately as bot configuration and validated
@@ -889,10 +889,142 @@ decks, post-submit edit, privacy, hash and start-gating tests.
 
 ### Checklist
 
-- [ ] Saved-deck contents submitted privately and server-validated.
-- [ ] Snapshot frozen; later edits cannot reach the live bot.
-- [ ] Name, Commander, legality and hash shown; card list not broadcast.
-- [ ] Stale and illegal saved decks handled by name.
+- [x] **Contents travel privately and are validated by the same authority a
+      person's deck is.** `add_bot` and `update_bot` already carried
+      `botDeckSnapshotSchema` — M09.1 defined it and M09.2 put it on the wire —
+      so nothing about the protocol changed; what changed is that
+      `resolveBotSeat` now has a resolver for the mode.
+      `resolveSnapshotDeck` in `apps/multiplayer-server/src/bot-seats.ts`
+      rebuilds a `SavedDeck` from the flat list and runs the identical
+      `validateDeck` call `submit_deck` makes, against the same database and the
+      same format. A test drives one illegal deck down both routes and requires
+      the bot refusal to contain the person's wording, so "judged exactly as a
+      human's is" is a comparison rather than a claim. `DECK_MODE_SUPPORT`
+      records the mode as supported with no owing tranche — the table M09.3
+      refuses from, flipped by the tranche that wrote the resolver.
+- [x] **The snapshot is contents, and the freeze is structural.** The client
+      sends an immutable copy (`botDeckSnapshotOf` in
+      `apps/web-client/src/lib/bot-deck-snapshot.ts`) and the server materialises
+      its own `SavedDeck` from it, so there is no reference for a later edit to
+      follow. The server test proves it the blunt way: after the bot is seated,
+      the host's deck loses half its cards and is renamed, the snapshot object
+      that was sent is mutated too, and the seat still holds the original forty.
+      The UI test proves the other half — the host goes to the Deck Builder,
+      removes a card, comes back, and **nothing was sent**.
+- [x] **Name, Commander, legality and fingerprint shown; the list, the name and
+      the fingerprint never broadcast.** This tranche owed the decision M09.3
+      deliberately left open, and the answer is that a saved deck's name stays
+      private. A precon's name reveals nothing because every client already has
+      that list; a saved deck's name is the only handle onto a list no opponent
+      may see, and its fingerprint is a function of that list — publishing either
+      would let an opponent recognise a deck they have met before. What every
+      seat sees is what `botDeckSourcePublicSchema` has carried since M09.1: the
+      Commander, plus the ordinary `deckLegal` verdict a seat publishes anyway.
+      The host sees the name, the card count and the fingerprint, from their own
+      configuration. The M09.3 test that asserted `deckName` is null for this
+      mode is unchanged and still passes.
+- [x] **Deleted, incomplete, edited, stale and illegal decks are all answered by
+      name.** `reviewSavedDeckForBot` gives the host one actionable sentence
+      before a button is pressed — gone, no Commander, or the validator's own
+      wording for the rule it breaks — and the server answers the same four
+      conditions on its own authority, with `protocol/bot_deck_illegal` for a
+      list it will not accept. A snapshot whose hash does not describe its own
+      list is `protocol/bot_config_invalid` naming both hashes and telling the
+      host to pick the deck again: that is what an edit racing the send looks
+      like on the wire, and seating whichever half won would be worse than
+      refusing. A stale but still-legal frozen deck is not an error at all — the
+      bot goes on playing what it was given, and the panel says so and offers to
+      re-freeze.
+- [x] **One fingerprint, computable on both sides.** `deckFingerprint` in
+      `@tcg/deck` is pure, dependency-free TypeScript, because the browser has to
+      compute the value the server checks. It is deliberately **not**
+      `apps/simulator/src/hash.ts`: that one reaches `node:crypto` and is the
+      content address of an experiment directory, changing it would rename every
+      recorded result, and making its chain portable is M09.8's subject. The
+      canonical string is exported so a change to it is visible in a test, and
+      entries sort by code unit rather than `localeCompare`, which is not
+      identical across ICU builds.
+- [x] Verified: the 10 focused tests in `packages/deck/src/fingerprint.test.ts`,
+      the 18 in `apps/multiplayer-server/src/bot-saved-deck.test.ts`, the 10 in
+      `apps/web-client/src/lib/bot-deck-snapshot.test.ts` and the 11 in
+      `apps/web-client/src/bot-saved-deck-flow.test.tsx`, alongside the existing
+      server and web-client suites, `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` — 2359 tests in 116 files — all
+      pass.
+
+### What the host actually sees
+
+The deck picker gained a source control built from `DECK_MODE_SUPPORT` and a
+label map that is total over the four modes, so the two generated modes are
+absent because they have no label rather than because a list here forgot them —
+and M09.9 and M09.10 turn their own on by filling one in. Choosing "one of your
+saved decks" replaces the precon picker with the player's own decks, scoped and
+previewed with the same `validateDeck` the builder uses.
+
+Once the bot is seated the host reads the name, the card count and the
+fingerprint of what was frozen. That memory lives on `MatchClient`, not in the
+panel, and the reason is specific: the private half of the configuration is not
+on the wire to read back, and the screen that would hold it is unmounted the
+moment the host opens the Deck Builder — which is exactly where the edit that
+makes it stale gets made.
+
+### Findings recorded rather than fixed
+
+- **The repository now has two deck hashes, on purpose.** `HASH_VERSION` names
+  the simulator's SHA-256 content address; `DECK_FINGERPRINT_VERSION` names the
+  portable one M09.6 needed. Both are in `docs/status-audit.md` with what each
+  pins. Whether they converge is M09.8's call, when the generator extraction
+  answers the `node:crypto` question — and it is a genuine decision rather than
+  an oversight, because converging them today would either rename every recorded
+  experiment or put `node:crypto` in a browser bundle.
+- **A snapshot's `cardIds` has no upper bound.** `botDeckSnapshotSchema` bounds
+  each ID and requires at least one, and `validateDeck` refuses anything that is
+  not exactly the format's deck size — so an oversized list is rejected, but only
+  after it has been parsed. Narrowing the schema is a compatibility question
+  rather than a bug fix, and M09.18's compatibility pass is where it belongs.
+- **A host who reconnects cannot be told which of their decks a bot is playing.**
+  The name and fingerprint are client memory, and the lobby view carries neither
+  by design. The seat still shows its Commander and its legality, and the host
+  can re-apply a deck to be certain. A host-private lobby projection would fix
+  it and would be a protocol change; M09.16, which owns the complete per-bot
+  setup surface, is where to decide whether that is worth one.
+- **M09.5's finding about inferring "sent, waiting" from the lobby view still
+  stands, and now has a second consumer.** `MatchClient.reconcileBotDecks` binds
+  an in-flight request to a seat when the next lobby view arrives, matching on
+  deck mode and — for `add_bot`, which names no seat — on the first bot seat this
+  client has no record of. That is exact for one bot and one host. M09.7's
+  concurrent seats should decide whether it stays exact, because two mutations in
+  flight are still indistinguishable to it.
+
+### Versions
+
+One new constant, and nothing existing moved.
+
+| Constant                   | Value | Pins                                                                    |
+| -------------------------- | ----- | ----------------------------------------------------------------------- |
+| `DECK_FINGERPRINT_VERSION` | 1     | The canonical deck string and the digest taken over it, in `@tcg/deck`. |
+
+`PROTOCOL_VERSION` stays 7, and this is the case that shows why M09.1 defined the
+whole configuration before any of it was live: `botDeckSnapshotSchema` and the
+`exact_saved_deck` member of both deck-source unions have been on the wire since
+M09.2, so turning the mode on changed no message shape and refuses no build that
+could already talk to this one. `BOT_CONFIG_SCHEMA_VERSION`,
+`DIFFICULTY_REGISTRY_VERSION` and `PACING_CONFIG_VERSION` stay 1 — M09.6 acts on
+M09.1's shapes without widening one. `DECK_SCHEMA_VERSION` stays 1: a saved deck
+is unchanged, and a snapshot is a different record that quotes one.
+`MATCH_SCHEMA_VERSION`, `RULES_VERSION` and `CARD_SCHEMA_VERSION` stay where they
+are for the reason [ADR 0024](../architecture/0024-live-bot-seats.md) §7 gives —
+a bot seat is a controller above the engine, and where its cards came from is not
+a rule.
+
+`HASH_VERSION` stays 1 and is untouched. `DECK_FINGERPRINT_VERSION` is a **new**
+constant on no existing path: no recorded artifact, replay or experiment
+directory is named by it, and nothing that was hashed before is hashed
+differently now.
+
+**Compatibility.** Nothing is migrated, because nothing durable was written. A
+snapshot lives in an in-memory lobby for the length of a match, and a fingerprint
+is recomputed from contents every time it is checked rather than stored.
 
 ## M09.7 — Mixed human/bot tables
 

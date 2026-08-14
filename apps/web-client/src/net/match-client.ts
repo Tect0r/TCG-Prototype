@@ -9,6 +9,7 @@ import {
   type SeatId,
   type ServerMessage,
 } from '@tcg/protocol';
+import type { BotDeckSource } from '@tcg/bot-config';
 import type { SavedDeck } from '@tcg/deck';
 import type { Action, EngineError, PlayerView } from '@tcg/rules-engine';
 import { isOk } from '@tcg/shared';
@@ -57,6 +58,24 @@ export interface MatchClientState {
    * them dropping does not stop the match (CLAUDE.md §12).
    */
   readonly seatConnections: Readonly<Partial<Record<SeatId, SeatConnection>>>;
+  /**
+   * The **private** half of each bot seat's configuration, as this client last
+   * sent it and the server accepted it (M09.6).
+   *
+   * It is remembered here rather than read back off the wire because it is not
+   * on the wire: a saved deck's name, list and fingerprint are deliberately
+   * absent from the seat view every player receives, which carries the Commander
+   * and nothing else (ADR 0024 §3). Without this the host could not be told
+   * which of their decks a bot was frozen from, nor that the deck has changed
+   * since — and it lives on the client rather than in a screen because the
+   * screen is unmounted the moment the host goes to the Deck Builder, which is
+   * exactly where that change gets made.
+   *
+   * It is memory of a request, not authority: the server owns what the bot
+   * actually plays, and an entry is kept only while the seat still holds a bot
+   * of the mode it describes.
+   */
+  readonly botDeckSources: Readonly<Partial<Record<SeatId, BotDeckSource>>>;
 }
 
 const INITIAL: MatchClientState = {
@@ -68,6 +87,7 @@ const INITIAL: MatchClientState = {
   lastError: null,
   deckError: null,
   seatConnections: {},
+  botDeckSources: {},
 };
 
 /** Where the reconnect token is kept so a refresh can reclaim the seat. */
@@ -91,6 +111,11 @@ export class MatchClient {
   readonly #generateActionId: () => string;
   /** Queued until the socket opens, so callers never have to await `connect`. */
   #pendingSends: ClientMessageInput[] = [];
+  /**
+   * The bot deck source of the request currently in flight, if any, and the seat
+   * it named. `seatId` is `null` for `add_bot`, which carries none on purpose.
+   */
+  #sentBotDeck: { readonly seatId: SeatId | null; readonly deck: BotDeckSource } | null = null;
 
   constructor(options: MatchClientOptions) {
     this.#createTransport = options.createTransport;
@@ -173,16 +198,21 @@ export class MatchClient {
    * refused is a control the UI would then have to explain away.
    */
   addBot(setup: BotSetup): void {
+    // Held, not recorded: the seat it lands in is the server's choice, so the
+    // configuration is bound to a seat only once a lobby view shows one.
+    this.#sentBotDeck = { seatId: null, deck: setup.deck };
     this.dispatch({ type: 'add_bot', setup });
   }
 
   /** Host-only: replace one bot seat's configuration wholesale, keeping its seat. */
   updateBot(seatId: SeatId, setup: BotSetup): void {
+    this.#sentBotDeck = { seatId, deck: setup.deck };
     this.dispatch({ type: 'update_bot', seatId, setup });
   }
 
   /** Host-only: free the seat. A human joining never does this implicitly. */
   removeBot(seatId: SeatId): void {
+    this.#sentBotDeck = null;
     this.dispatch({ type: 'remove_bot', seatId });
   }
 
@@ -266,11 +296,15 @@ export class MatchClient {
           seatId: message.seatId,
           lobby: message.lobby,
           lastError: null,
+          botDeckSources: this.reconcileBotDecks(message.lobby),
         });
         return;
 
       case 'lobby_updated':
-        this.patch({ lobby: message.lobby });
+        this.patch({
+          lobby: message.lobby,
+          botDeckSources: this.reconcileBotDecks(message.lobby),
+        });
         return;
 
       case 'deck_rejected':
@@ -306,6 +340,8 @@ export class MatchClient {
           this.patch({ lastError: null });
           return;
         }
+        // A refusal applied nothing, so nothing new is remembered about a bot.
+        this.#sentBotDeck = null;
         this.patch({ lastError: message.error, pendingActionId: null });
         return;
 
@@ -315,6 +351,37 @@ export class MatchClient {
       default:
         return;
     }
+  }
+
+  /**
+   * Binds what this client sent to the seats the server actually shows.
+   *
+   * Kept deliberately conservative. An entry survives only while its seat still
+   * holds a bot **of the same deck mode**, so a seat the host reconfigured from
+   * elsewhere, freed, or replaced with a person drops its record rather than
+   * describing a bot that is no longer there. The in-flight request is attached
+   * to the seat it named, or — for `add_bot`, which names none — to the first
+   * bot seat this client has no record of, which is the seat the server just
+   * allocated.
+   */
+  private reconcileBotDecks(lobby: LobbyView): Partial<Record<SeatId, BotDeckSource>> {
+    const botSeats = lobby.seats.filter((seat) => seat.controller === 'bot');
+    const next: Partial<Record<SeatId, BotDeckSource>> = {};
+    for (const seat of botSeats) {
+      const remembered = this.#state.botDeckSources[seat.seatId];
+      if (remembered && remembered.mode === seat.bot.deck.mode) next[seat.seatId] = remembered;
+    }
+
+    const sent = this.#sentBotDeck;
+    if (sent) {
+      const target =
+        sent.seatId === null
+          ? botSeats.find((seat) => next[seat.seatId] === undefined)
+          : botSeats.find((seat) => seat.seatId === sent.seatId);
+      if (target && target.bot.deck.mode === sent.deck.mode) next[target.seatId] = sent.deck;
+      this.#sentBotDeck = null;
+    }
+    return next;
   }
 
   private patch(changes: Partial<MatchClientState>): void {

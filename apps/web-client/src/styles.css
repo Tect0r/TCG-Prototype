@@ -766,6 +766,12 @@ code {
   margin: 0;
 }
 
+/* A frozen bot deck whose source has since been edited: worth noticing, but
+   nothing is broken and nothing is refused. */
+.lobby__hint--warn {
+  color: var(--warning);
+}
+
 .lobby__error {
   color: var(--danger);
   margin: 0;

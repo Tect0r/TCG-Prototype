@@ -238,9 +238,13 @@ describe('the public projection', () => {
 });
 
 describe('mode support', () => {
-  it('supports the exact precon path and names the tranche owning each other', () => {
-    expect(BOT_DECK_MODES.filter(deckModeIsSupported)).toEqual(['exact_precon']);
-    expect(DECK_MODE_SUPPORT.exact_saved_deck.plannedIn).toBe('M09.6');
+  it('supports both exact paths and names the tranche owning each other', () => {
+    // `exact_saved_deck` joined the supported list in M09.6, when the server
+    // grew a resolver for it. The two generated modes still name their tranche.
+    expect(BOT_DECK_MODES.filter(deckModeIsSupported)).toEqual([
+      'exact_precon',
+      'exact_saved_deck',
+    ]);
     expect(DECK_MODE_SUPPORT.commander_generated.plannedIn).toBe('M09.9');
     expect(DECK_MODE_SUPPORT.autonomous_generated.plannedIn).toBe('M09.10');
   });

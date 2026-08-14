@@ -5,12 +5,22 @@ import {
   difficultyIsAvailable,
   readBotSeatConfig,
   type BotDeckMode,
+  type BotDeckSnapshot,
   type BotSeatConfig,
 } from '@tcg/bot-config';
 import { bundledPrecon, preconsForFormat, type CardDatabase } from '@tcg/card-data';
-import { preconToDeck, reviewPrecon, type DeckFormatConfig, type SavedDeck } from '@tcg/deck';
+import {
+  DECK_SCHEMA_VERSION,
+  collectDeckCards,
+  deckFingerprint,
+  preconToDeck,
+  reviewPrecon,
+  validateDeck,
+  type DeckFormatConfig,
+  type SavedDeck,
+} from '@tcg/deck';
 import { botLobbyError, type BotSetup, type ProtocolError, type SeatId } from '@tcg/protocol';
-import { err, errorsOf, ok, type Result } from '@tcg/shared';
+import { err, errorsOf, isErr, ok, type Result } from '@tcg/shared';
 
 /**
  * Turning a host's bot setup into something the authoritative lobby can seat
@@ -28,7 +38,9 @@ import { err, errorsOf, ok, type Result } from '@tcg/shared';
  * by name from `DECK_MODE_SUPPORT`, and a difficulty from the difficulty
  * registry's own `status` — from data that names the tranche that owns it, not
  * from a hard-coded list of what happens to be finished. Flipping one entry is
- * how M09.6, M09.9, M09.10 and M09.13 turn their own option on.
+ * how M09.9, M09.10 and M09.13 turn their own option on, and it is how M09.6
+ * turned `exact_saved_deck` on: it wrote the resolver below, then said so in the
+ * table.
  *
  * **Validation is not partial.** A setup either resolves to a complete
  * configuration and the deck it implies, or it is refused and the lobby is not
@@ -133,21 +145,41 @@ export function resolveBotSeat(
   }
   const config = parsed.value;
 
-  if (config.deck.mode !== 'exact_precon') {
-    // Unreachable while `exact_precon` is the only supported mode. Kept as a
-    // refusal rather than a `never` so that flipping a support flag without
-    // writing the resolver behind it refuses a configuration instead of
-    // crashing a lobby.
-    return refusal('mode_unsupported', [
-      `This build has no resolver for deck mode "${config.deck.mode}".`,
-    ]);
+  switch (config.deck.mode) {
+    case 'exact_precon': {
+      const deck = resolvePreconDeck(config.deck.preconId, context);
+      return isErr(deck) ? deck : ok({ config, deck: deck.value });
+    }
+    case 'exact_saved_deck': {
+      const deck = resolveSnapshotDeck(config.deck.deck, context);
+      return isErr(deck) ? deck : ok({ config, deck: deck.value });
+    }
+    case 'commander_generated':
+    case 'autonomous_generated':
+      // Unreachable: `DECK_MODE_SUPPORT` refuses both above. Kept as a refusal
+      // rather than a `never` so that flipping a support flag without writing
+      // the resolver behind it refuses a configuration instead of crashing a
+      // lobby — which is exactly the state M09.6 walked through for its own mode.
+      return refusal('mode_unsupported', [
+        `This build has no resolver for deck mode "${config.deck.mode}".`,
+      ]);
+    default: {
+      const never: never = config.deck;
+      return refusal('mode_unsupported', [`Unknown deck mode ${JSON.stringify(never)}.`]);
+    }
   }
+}
 
-  const precon = bundledPrecon(config.deck.preconId);
+/** A shipped precon, resolved from the server's own bundle and reviewed. */
+function resolvePreconDeck(
+  preconId: string,
+  context: BotSeatContext,
+): Result<SavedDeck, ProtocolError> {
+  const precon = bundledPrecon(preconId);
   if (!precon) {
     const published = preconsForFormat(context.deckFormat.formatId).map((entry) => entry.id);
     return refusal('deck_illegal', [
-      `No built-in precon has the ID "${config.deck.preconId}".`,
+      `No built-in precon has the ID "${preconId}".`,
       `Published for ${context.deckFormat.formatId}: ${published.join(', ') || 'none'}.`,
     ]);
   }
@@ -164,11 +196,67 @@ export function resolveBotSeat(
     ]);
   }
 
-  return ok({
-    config,
-    deck: preconToDeck(precon, {
-      id: precon.id,
-      now: new Date(context.now()).toISOString(),
-    }),
-  });
+  return ok(preconToDeck(precon, { id: precon.id, now: new Date(context.now()).toISOString() }));
+}
+
+/**
+ * One of the host's own saved decks, frozen at the moment they chose it (M09.6).
+ *
+ * Two checks, in this order, and the order is the point.
+ *
+ * **Does the snapshot describe itself?** The hash is recomputed from the list
+ * that arrived rather than believed, and a disagreement is refused as a
+ * configuration this server cannot read — because it is one. A host who edited
+ * the deck between choosing it and pressing the button, or a client that built
+ * the record out of two different reads, is told to pick the deck again instead
+ * of quietly seating whichever half won. Nothing here trusts the value on its
+ * own: the list is validated below whatever the hash says, so the check catches
+ * an accident rather than defending against an attack.
+ *
+ * **Is the list legal here?** Through `validateDeck`, against this server's own
+ * database and format — the identical call `submit_deck` makes for a person's
+ * deck. A bot gets no allowance a player would not get: size, singleton, colour
+ * identity, unimplemented cards and a missing or wrong-typed Commander are all
+ * refused with the validator's own wording, so the host reads the same sentence
+ * the deck builder would have shown them.
+ *
+ * The deck is materialised here rather than carried: a snapshot is contents, and
+ * `SavedDeck` is what a match seat holds. `sourceDeckId` becomes the deck's ID
+ * because that is where the contents came from, and the timestamps are the
+ * server's own — the snapshot deliberately carries no clock for a client to
+ * disagree with.
+ */
+function resolveSnapshotDeck(
+  snapshot: BotDeckSnapshot,
+  context: BotSeatContext,
+): Result<SavedDeck, ProtocolError> {
+  const cards = collectDeckCards(snapshot.cardIds);
+  const fingerprint = deckFingerprint({ commanderId: snapshot.commanderId, cards });
+  if (fingerprint !== snapshot.deckHash) {
+    return refusal('config_invalid', [
+      `"${snapshot.name}" arrived with hash ${snapshot.deckHash}, but its ${snapshot.cardIds.length}-card list hashes to ${fingerprint}.`,
+      'The deck was probably edited after it was chosen. Select it again to send the current list.',
+    ]);
+  }
+
+  const now = new Date(context.now()).toISOString();
+  const deck: SavedDeck = {
+    schemaVersion: DECK_SCHEMA_VERSION,
+    id: snapshot.sourceDeckId,
+    name: snapshot.name,
+    commanderId: snapshot.commanderId,
+    cards,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const report = validateDeck(deck, context.database, context.deckFormat);
+  if (!report.legal) {
+    return refusal('deck_illegal', [
+      `"${snapshot.name}" is not legal in this format.`,
+      ...errorsOf(report.issues).map((issue) => issue.message),
+    ]);
+  }
+
+  return ok(deck);
 }

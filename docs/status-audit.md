@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `3104c10c877f96e209b50757f14c23ade0ad9865` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-14                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | not run for this audit                     |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `4867cb97f90e7efa310e3470e59ef732588497e9`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-14                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 66      | 1514     |
+| packages       | 67      | 1524     |
 | scripts        | 4       | 69       |
-| server         | 6       | 137      |
+| server         | 7       | 154      |
 | simulator      | 23      | 434      |
-| web-client     | 13      | 157      |
-| **total**      | **112** | **2311** |
+| web-client     | 15      | 178      |
+| **total**      | **116** | **2359** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -90,11 +90,12 @@ Documents a finished run leaves behind. Every move so far has been a refusal rat
 
 What a bot seat is configured by. Independent of the play contract on purpose (ADR 0024 §7): a difficulty can improve, and a pacing dial can move, without a card, a rule or a message shape changing.
 
-| Constant                      | Value | Pins                                                                                      |
-| ----------------------------- | ----- | ----------------------------------------------------------------------------------------- |
-| `BOT_CONFIG_SCHEMA_VERSION`   | 1     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.     |
-| `DIFFICULTY_REGISTRY_VERSION` | 1     | Which difficulty IDs exist and what each claims. Available today: normal.                 |
-| `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version. |
+| Constant                      | Value | Pins                                                                                                                                                                        |
+| ----------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOT_CONFIG_SCHEMA_VERSION`   | 1     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.                                                                                       |
+| `DIFFICULTY_REGISTRY_VERSION` | 1     | Which difficulty IDs exist and what each claims. Available today: normal.                                                                                                   |
+| `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.                                                                                   |
+| `DECK_FINGERPRINT_VERSION`    | 1     | How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address. |
 
 ### Registries and instruments
 

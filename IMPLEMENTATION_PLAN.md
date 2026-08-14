@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.6        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.7        |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -78,17 +78,35 @@ ordinary opponent. What is usable is exactly the checkpoint table's promise —
 one human, one bot, `exact_precon`, Normal, instant — and nothing after it was
 started.
 
+**M09.6 added the second deck mode.** A host can now put one of their **own
+saved decks** on a bot: the contents are frozen at the moment they choose it,
+sent privately as bot configuration, and validated by the same `validateDeck`
+call a person's `submit_deck` gets, against the same pool — a test drives one
+illegal deck down both routes and requires the same wording out of each. The
+freeze is structural rather than promised: the server materialises its own deck
+from the list it receives, so editing the source afterwards changes the builder's
+deck and nothing else, and the panel says so and offers to re-freeze rather than
+doing it quietly. The tranche also settled the privacy question M09.3 left open —
+a saved deck's **name and fingerprint stay private**, because a precon's name
+reveals nothing while a saved deck's is the only handle onto a list nobody else
+may see. Every seat gets the Commander and the legality verdict; the host gets
+the name, the card count and the fingerprint from their own configuration. No
+message shape changed: `botDeckSnapshotSchema` has been on the wire since M09.2,
+so `PROTOCOL_VERSION` stays 7 and turning the mode on refused no build.
+
 ## The next bounded task
 
-**M09.6 — Exact saved-deck mode.** Let the host choose one of their own saved
-legal decks for a bot: the selected immutable contents are submitted privately as
-bot configuration and validated against the server's active format and card pool
-exactly as a human's submitted deck is. The list is snapshotted at configuration
-or start, so a later local edit cannot alter the live bot deck. Name, Commander,
-legality and deck hash or provenance are shown without broadcasting the card list
-to opponents. Deleted, edited, stale and illegal saved decks produce actionable
-errors. The scope, the exclusions and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m096--exact-saved-deck-mode).
+**M09.7 — Mixed human/bot tables.** Support every two-to-four-seat mixture with
+at least one human: up to three bot seats, humans in any remaining seats.
+Multiple eligible bots and independent pending choices are scheduled without
+duplicates and without any forbidden hidden-state access. Free-for-all
+elimination, Reaction priority, human disconnect and reconnect, and
+last-living-player behaviour are all preserved. Host departure and closed-lobby
+behaviour follow the current human rules; a bot never becomes host. Timer
+callback and action arrival order provably do not change engine outcomes where
+order independence is promised. The scope, the exclusions and the checklist are
+in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m097--mixed-humanbot-tables).
 
 ## The parallel non-code activity
 

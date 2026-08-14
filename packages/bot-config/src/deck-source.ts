@@ -50,6 +50,15 @@ export const deckHashSchema = z.string().min(8).max(128);
  * A snapshot rather than a reference, so a later edit in the deck builder cannot
  * reach into a live match. `sourceDeckId` records where it came from; it is not
  * a live pointer, and it never leaves the private configuration.
+ *
+ * `cardIds` is every copy listed separately rather than card-and-quantity pairs,
+ * and `deckHash` is the fingerprint of the contents beside it: since M09.6 the
+ * server recomputes that fingerprint from `cardIds` and refuses a snapshot whose
+ * hash does not describe its own list. `deckFingerprint`, `expandDeckCards` and
+ * `collectDeckCards` in `@tcg/deck` own both directions of that flattening —
+ * this package cannot import them (it depends on `@tcg/card-data`, `@tcg/shared`
+ * and `zod` and nothing else), which is why the shape is stated here and the
+ * arithmetic lives there.
  */
 export const botDeckSnapshotSchema = z.strictObject({
   sourceDeckId: z.string().min(1).max(64),
@@ -215,7 +224,10 @@ export const DECK_MODE_SUPPORT: Readonly<
   Record<BotDeckMode, { readonly supported: boolean; readonly plannedIn: string | null }>
 > = Object.freeze({
   exact_precon: { supported: true, plannedIn: null },
-  exact_saved_deck: { supported: false, plannedIn: 'M09.6' },
+  // Turned on by M09.6, which is exactly the move this table was built for: the
+  // server grew a resolver for the mode, so the entry that says whether a build
+  // can honour it now says yes. Nothing else about the entry changed.
+  exact_saved_deck: { supported: true, plannedIn: null },
   commander_generated: { supported: false, plannedIn: 'M09.9' },
   autonomous_generated: { supported: false, plannedIn: 'M09.10' },
 });
