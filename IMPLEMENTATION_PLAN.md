@@ -29,18 +29,32 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | In progress           | M08.1        |
 
-**M07 consistency work is complete.** Every milestone this plan carries is
-finished, and no M08 exists yet. M07.8 was a correction pass over M07's output;
-M07.9 corrected M07.8 in turn, moving `CARD_SCHEMA_VERSION` to 5 because a new
-member of a discriminated union is not something an older build can read.
+**M07 is complete and M08 is open.** M07.8 was a correction pass over M07's
+output; M07.9 corrected M07.8 in turn, moving `CARD_SCHEMA_VERSION` to 5 because
+a new member of a discriminated union is not something an older build can read.
+M08.0 then opened the next milestone: the record, the scope and
+[ADR 0023](docs/architecture/0023-admin-lab-boundary.md), with no runtime
+behaviour changed.
 
 ## The next bounded task
 
-**Run structured manual playtests using the four current 40-card precons.** This
-is the next activity, and it is not code: nothing in the record now says what the
-game is like to play, and every remaining implementation and content choice
-depends on that.
+**M08.1 — Shared admin contracts and experiment catalog model.** Define the
+versioned language the admin service and client both speak — identity, lifecycle
+state, progress, result reference, experiment purpose, source class, pagination,
+filters and structured errors — plus a catalog entry that references a canonical
+experiment directory rather than copying it. Schemas and tests only: no
+filesystem store, no server, no UI, no job execution. The scope, the exclusions
+and the checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m081--shared-admin-contracts-and-experiment-catalog-model).
+
+## The parallel non-code activity
+
+**Run structured manual playtests using the four current 40-card precons.** M08
+does not replace this and is not blocked on it: nothing in the record still says
+what the game is like to play, and every remaining _content_ choice depends on
+that.
 
 It is deliberately not a framework. Play the decks, write down what happened, and
 keep the notes somewhere durable — a large playtest harness is itself a milestone
@@ -59,8 +73,8 @@ What the playtests should capture, per session:
 5. **Obvious archetype problems** — a precon that cannot function, a matchup that
    is not a game, a deck whose plan never assembles.
 
-**Then evaluate the results before selecting the next milestone.** The evidence
-decides whether the next milestone is implementation (a defect class worth fixing
+**Then evaluate the results before selecting the milestone after M08.** The
+evidence decides whether that one is implementation (a defect class worth fixing
 properly), rules (a friction point that needs an owner decision), or content.
 
 The **50-card expansion remains the next intended content milestone**: 8–9 further
@@ -72,8 +86,9 @@ not start before the playtests, because authoring 32–36 cards against an untes
 The questions under [Owner decisions still open](#owner-decisions-still-open) are
 the other thing the implementation is waiting on, and playing the decks is the
 cheapest way to find out which of them actually matter. `docs/open-questions.md`
-holds every other question the project has recorded. Adding a milestone file under
-`docs/milestones/` and a row in the table above is what starts the next milestone.
+holds every other question the project has recorded. A milestone file under
+`docs/milestones/` and a row in the table above is what starts a milestone; M08.0
+added both for M08.
 
 ## Where the record lives
 
@@ -108,6 +123,12 @@ Do not reopen these while implementing:
 - Current-Health Overwhelm split before Barrier prevention.
 - Bounded Reaction windows with one Reaction per eligible player.
 - `deployed` and `entersBattlefield` remain separate and are reviewed per card.
+- M08's own locked interpretation — AI results stay calibration evidence, human
+  telemetry is an observation source, surrender is not a cause, the panel
+  configures the simulator rather than forking it, and experiment directories
+  stay canonical — is in
+  [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#locked-interpretation),
+  with the boundaries in [ADR 0023](docs/architecture/0023-admin-lab-boundary.md).
 
 ## Owner decisions still open
 
