@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@tcg/bot-config": "*",
+    "@tcg/bot-interface": "*",
     "@tcg/card-data": "*",
     "@tcg/deck": "*",
     "@tcg/protocol": "*",

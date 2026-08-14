@@ -632,7 +632,7 @@ describe('readiness and start gating', () => {
     expect(seatViews(harness.host).status).toBe('in_match');
   });
 
-  it('starts a match that seats the bot as an ordinary player', () => {
+  it('starts a match that seats the bot as an ordinary player', async () => {
     const harness = createHarness();
     harness.send(harness.host, { type: 'add_bot', setup: setupFor() });
     harness.send(harness.host, { type: 'submit_precon', preconId: OTHER_PRECON_ID });
@@ -642,8 +642,14 @@ describe('readiness and start gating', () => {
     expect(view?.viewerId).toBe('player_1');
     expect(view?.seatOrder).toEqual(['player_1', 'player_2']);
     expect(view?.players.map((player) => player.name)).toContain('Bot 2');
-    // The bot takes no action here: the runner that gives it one is M09.4.
-    expect(harness.lobby().seats.get('seat_2')?.appliedActions.size).toBe(0);
+
+    // Since M09.4 the bot then plays: it acts through the seat's own idempotent
+    // action-identity map, which is the same one a human's `submit_action`
+    // writes to. What the bot *does* with the opportunity is
+    // `bot-runner.test.ts`; what matters here is that starting the match seated
+    // an ordinary player and nothing about the lobby had to know more than that.
+    await harness.server.whenBotsIdle();
+    expect(harness.lobby().seats.get('seat_2')?.appliedActions.size).toBeGreaterThan(0);
   });
 
   it('says a lobby cannot start when a bot seat holds no legal deck', () => {

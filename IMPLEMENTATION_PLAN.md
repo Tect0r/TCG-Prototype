@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.4        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.5        |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -53,26 +53,33 @@ now a union whose bot half has no connection identity **by type**, the four
 messages are handled host-only and before start only, seats are allocated
 deterministically without ever evicting a human, and a deck mode or difficulty
 this build cannot honour is refused by name from `DECK_MODE_SUPPORT` and the
-difficulty registry. A configured precon bot is ready and startable — and does
-not yet act, which is M09.4's subject.
+difficulty registry. A configured precon bot is ready and startable.
+
+M09.4 made it play. `BotRunner` builds one pilot and one seat-derived RNG stream
+per bot seat at match start, and an idempotent `wake()` after every accepted
+action offers each bot the chance to act. Each turn of the loop rebuilds that
+seat's redacted observation and the engine's legal actions **at decision time**,
+asks `decideSafely`, discards the answer if the board moved while the pilot was
+thinking, and submits through the same `applyAction` path and the same
+`appliedActions` identity map a human uses. A bot is only asked when the engine
+is actually offering it something — `canConcede` is not a decision — which is
+what contains the M09.0 finding without ever letting a live bot concede. A
+complete human-versus-bot match now runs on the server, at 0% pacing, with no UI
+for it yet: that is M09.5's.
 
 ## The next bounded task
 
-**M09.4 — Immediate authoritative bot runner.** Make an exact-precon bot play a
-complete live server match at 0% delay: one pilot instance and one independent
-deterministic RNG stream per bot seat, instantiated at match start; every newly
-eligible bot decision scheduled exactly once after each accepted action or state
-transition; the observation and legal actions rebuilt **at decision time**,
-`decideSafely` asked then, and the answer revalidated before it is submitted
-through the normal engine path with an idempotent action identity. Pilot failure
-and fallback are recorded rather than disguised as an intentional play —
-including the case M09.0 found, where the random-legal fallback itself has no
-legal action to offer, which must **not** be answered by letting a live bot
-concede. Immediate decisions yield through the scheduler or a microtask boundary
-instead of recursing for a whole match, and all work stops and cancels at
-completion. No player-facing bot controls, and no multi-bot concurrency claim.
-The scope, the exclusions and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m094--immediate-authoritative-bot-runner).
+**M09.5 — First playable human-versus-precon-bot flow.** The earliest useful
+slice, and the milestone's **first playable checkpoint**: one human can add,
+configure and remove a single bot from the lobby UI, choose its shipped precon,
+choose Normal and one existing style, start the match, and play it to a finish.
+The bot seat is labelled with its controller, Commander, precon and readiness.
+Unsupported generated-deck, timing and difficulty controls are **absent rather
+than decorative**. Match and result render through the existing player MatchBoard,
+unchanged. Loading, error, empty and locked states exist, and every control is
+keyboard-accessible. Report the checkpoint explicitly and do not continue into
+M09.6. The scope, the exclusions and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m095--first-playable-human-versus-precon-bot-flow).
 
 ## The parallel non-code activity
 

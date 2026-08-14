@@ -601,7 +601,7 @@ the pacing calculation was not touched. `MATCH_SCHEMA_VERSION` and
 controller above the engine, `createMatch` is handed an ordinary seat list, and
 `MatchState` still does not know what a bot is.
 
-## M09.4 — Immediate authoritative bot runner
+## M09.4 — Immediate authoritative bot runner — **done (2026-08-14)**
 
 Make an exact-precon bot play a complete live server match at 0% delay:
 instantiate the configured versioned pilot at match start; derive and retain
@@ -623,12 +623,124 @@ duplicate action, and long-match stack-safety tests.
 
 ### Checklist
 
-- [ ] One pilot instance and one independent RNG stream per bot seat.
-- [ ] Every eligible decision scheduled exactly once; no duplicate actions.
-- [ ] Observation rebuilt at decision time; answer revalidated before submission.
-- [ ] Failure and fallback recorded, never disguised as an intentional play.
-- [ ] No ordinary concession and no bot-originated `server_timeout`.
-- [ ] Stack-safe over a long match; cancelled cleanly at completion.
+- [x] **One pilot instance and one independent RNG stream per bot seat**, built
+      once at match start in `BotRunner`'s constructor
+      (`apps/multiplayer-server/src/bot-runner.ts`). The pilot comes from
+      `createBotPilot`, whose `switch` is total over `BotDifficulty` — `normal` is
+      the published heuristic for the seat's style and adds nothing, and `easy`
+      and `hard` throw by naming their own tranche, so M09.13 and M09.15 cannot
+      ship a difficulty without deciding what flies it. The stream is
+      `createRngState(botSeedFor(matchSeed, seatId))`: derived from the match
+      seed, so the same seed and seating reproduce the same play, and per seat, so
+      two bots at one table never share one. A pilot that cannot be built halts
+      its own seat with a `pilot_unavailable` incident instead of throwing out of
+      `start_match` and taking a human's match with it.
+- [x] **Every eligible decision taken exactly once; no duplicate actions.**
+      `wake()` is called after every accepted action and every state transition
+      and is idempotent — a pump already in flight is not started again — so
+      "scheduled exactly once" holds without a queue of opportunities to
+      de-duplicate. The action identity is `${botId}#${decisionIndex}`, server-
+      generated and monotonic, written into the same `seat.appliedActions` map
+      `submit_action` writes for a person; a repeat is refused as
+      `duplicate_action` rather than applied. A full match asserts one identity
+      per decision, all distinct, in order.
+- [x] **Observation rebuilt at decision time; the answer revalidated before
+      submission.** The state is read at the top of each iteration, `legalActions`
+      and `playerView` are computed from it there, and `decideSafely` is asked
+      then. After the await the sequence is compared: if the board moved — a human
+      message landing inside the microtask — the answer is discarded as
+      `stale_decision`, the seat is asked again against the newer board, and the
+      pilot's stream is **not** advanced, so what a bot draws depends on the
+      decisions it committed rather than on when an opponent's message arrived.
+- [x] **Failure and fallback recorded, never disguised as an intentional play.**
+      Eight named incidents in `BOT_RUN_INCIDENTS`, each carrying the seat, the
+      bot, the decision index and — for a fallback — the underlying `BotFailure`
+      kind. A pilot that throws or answers illegally still finishes the match, and
+      every one of its decisions says in the record that it was a substitution.
+      The M09.0 finding is **contained rather than patched**: `hasBotDecision`
+      ignores `canConcede`, which the engine offers every living seat at all
+      times, so the runner never asks a pilot in the one state where the
+      substituted random-legal pilot throws. A test stands the two halves next to
+      each other. `fallback_unavailable` guards the path anyway, and a board on
+      which no seat can act is recorded as `stalled` — never answered by a
+      concession.
+- [x] **No ordinary concession and no bot-originated `server_timeout`.**
+      `ACTIONS_A_LIVE_BOT_NEVER_SUBMITS` is checked after the pilot answers and
+      before anything is applied. `checkActionOffered` already refuses
+      `server_timeout`, but it _allows_ a concession — it is a legal action for a
+      living seat — so this guard is the thing that stops one, and the test proves
+      a conceding pilot loses its seat's turn rather than the match.
+- [x] **Stack-safe over a long match; cancelled cleanly at completion.** The pump
+      is a `while` loop with an injectable yield in it, so a twenty-five-turn game
+      costs one stack frame; a per-seat `DEFAULT_BOT_DECISION_LIMIT` of 4000 stops
+      a pathological loop pinning the process. `stop()` is called when the match
+      completes and when a lobby closes, and it is checked both at the top of the
+      loop and immediately after the pilot's await, so a match that finished while
+      a bot was thinking receives no last action. A closed lobby drops its runner
+      rather than keeping a whole `MatchState` alive behind a stopped pump, and
+      the pump can never reject: an unhandled rejection ends a Node process by
+      default, and a misbehaving bot must cost the match its bot, never the server
+      its humans.
+- [x] Verified: the 30 focused tests in
+      `apps/multiplayer-server/src/bot-runner.test.ts`, the 107 existing server
+      tests, `npm run check:consistency`, `npm run audit:check` and
+      `npm run verify` all pass.
+
+### What the acceptance tests actually play
+
+Not a fixture: a real 1v1 through `receive`, against a scripted opponent that
+computes its own seat's legality and submits through `submit_action`. Two seeds
+are named rather than arbitrary — one puts the bot on the first turn and one puts
+the human there — and in both the bot answers a mulligan, a Main Phase, an attack,
+a block, a pending choice and an **open Reaction window**, which is how those two
+acceptance lines are covered by a game rather than by a hand-built board. The bot
+plays `precon_containment_control` because that is the deck that holds Reaction
+cards; a window only opens when somebody could use it, so a bot with none would
+never have been offered one.
+
+`whenBotsIdle()` is the one concession to asynchrony: a bot decision is
+asynchronous while `receive` is not, so a test that read the board immediately
+would be reading it mid-turn.
+
+### Findings recorded rather than fixed
+
+- **`fallback_unavailable` guards a state this build cannot reach.** It exists
+  because `decideSafely`'s substituted pilot can throw, and the eligibility gate
+  is what keeps the runner out of the only state in which it does. The guard is
+  kept rather than removed: a later difficulty or a widened candidate set could
+  reintroduce the state, and the cost of the guard is a `catch`.
+- **`stalled` has no natural cause today.** No engine state in the current
+  ruleset leaves every seat without a legal action while the match is running, so
+  the test builds one by hand. It is recorded because the honest answer to a stuck
+  board is to write it down, and the dishonest one — letting a bot concede to
+  unstick it — is exactly what M09.0 said this tranche must not do.
+- **M09.3's finding is closed by this tranche.** "A bot seat can start a match it
+  cannot then play" was recorded there deliberately; the match no longer stalls on
+  the bot's first decision, and the M09.3 test that asserted an empty
+  `appliedActions` now asserts the opposite for the same reason.
+- **The bot wins nearly every probe match against a scripted `aggressive`
+  opponent.** Ten seeds, ten wins for `precon_containment_control`. That is not a
+  balance finding — the opponent is `random_legal`-adjacent heuristic play with no
+  human judgement in it, and `PILOT_AGENT_CLASSES` refuses to rank the styles —
+  but it is the first thing the structured manual playtests should look at.
+
+### Versions — deliberately unchanged
+
+Nothing moved. `PROTOCOL_VERSION` stays 7: M09.4 adds no message and changes no
+shape — a bot's actions travel to clients as the ordinary `match_state` a human's
+do. `MATCH_SCHEMA_VERSION` and `RULES_VERSION` stay where they are for the reason
+[ADR 0024](../architecture/0024-live-bot-seats.md) §7 gives: the runner is a
+controller above the engine, `applyAction` is unchanged, and `MatchState` still
+does not know what a bot is. `BOT_CONFIG_SCHEMA_VERSION`,
+`DIFFICULTY_REGISTRY_VERSION` and `PACING_CONFIG_VERSION` stay 1 — M09.4 acts on
+M09.1's shapes without widening one, adds no difficulty, and reads `pacing` only
+to record that 0% is the only value this build honours.
+
+`SEED_DERIVATION_VERSION` stays 2, and the milestone's version table anticipated
+exactly this: it moves "only if bot seed derivation changes an existing path".
+`botSeedFor` is a **new** derivation in the server, on no existing path — the
+simulator's hierarchy, the spectator's `derivePilotSeed` and every recorded result
+derive their seeds exactly as they did.
 
 ## M09.5 — First playable human-versus-precon-bot flow
 

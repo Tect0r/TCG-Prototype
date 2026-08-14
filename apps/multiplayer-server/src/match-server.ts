@@ -1,3 +1,4 @@
+import type { BotPolicy } from '@tcg/bot-interface';
 import { bundledPrecon, preconsForFormat, type CardDatabase } from '@tcg/card-data';
 import {
   DEFAULT_DECK_FORMAT,
@@ -39,6 +40,13 @@ import {
   type BotSeatContext,
 } from './bot-seats.js';
 import {
+  BotRunner,
+  type BotRunnerSeat,
+  type BotRunReport,
+  type BotSubmitResult,
+} from './bot-runner.js';
+import {
+  botSeatsOf,
   canStart,
   createBotSeat,
   createHumanSeat,
@@ -88,6 +96,20 @@ export interface MatchServerOptions {
   /** Injectable so a match seed is reproducible in tests. */
   readonly seedFor?: (inviteCode: string) => string;
   readonly now?: () => number;
+  /**
+   * The stack-safety boundary a live bot yields at between decisions (M09.4).
+   * Injectable so a test can count the yields; it is not a pacing dial, and
+   * waiting is M09.12's.
+   */
+  readonly yieldToScheduler?: () => Promise<void>;
+  /** Hard per-seat ceiling on bot decisions in one match. */
+  readonly botDecisionLimit?: number;
+  /**
+   * Builds a bot seat's pilot. Injectable so the runner's failure and fallback
+   * paths can be driven through a real match; production derives the pilot from
+   * the seat's own style and difficulty.
+   */
+  readonly botPilotFor?: (seat: BotRunnerSeat) => BotPolicy;
 }
 
 /**
@@ -118,10 +140,17 @@ export class MatchServer {
   readonly #schedule: ScheduleTimer;
   readonly #seedFor: (inviteCode: string) => string;
   readonly #now: () => number;
+  readonly #yieldToScheduler: (() => Promise<void>) | undefined;
+  readonly #botDecisionLimit: number | undefined;
+  readonly #botPilotFor: ((seat: BotRunnerSeat) => BotPolicy) | undefined;
 
   readonly #lobbies = new Map<string, Lobby>();
   readonly #connections = new Map<string, ServerConnection>();
   readonly #attachments = new Map<string, Attachment>();
+  /** One live bot runner per lobby that started a match holding bot seats. */
+  readonly #botRunners = new Map<string, BotRunner>();
+  /** Cancelled pumps whose lobby has gone, tracked only until they settle. */
+  readonly #detachedBotWork = new Set<Promise<void>>();
 
   constructor(options: MatchServerOptions) {
     this.#database = options.database;
@@ -130,6 +159,9 @@ export class MatchServer {
     this.#random = options.random ?? Math.random;
     this.#schedule = options.schedule ?? defaultSchedule;
     this.#now = options.now ?? Date.now;
+    this.#yieldToScheduler = options.yieldToScheduler;
+    this.#botDecisionLimit = options.botDecisionLimit;
+    this.#botPilotFor = options.botPilotFor;
     this.#seedFor =
       options.seedFor ?? ((inviteCode) => `${inviteCode}-${this.#now()}-${this.#random()}`);
   }
@@ -747,9 +779,13 @@ export class MatchServer {
       cards: deck.cards.map((entry) => ({ cardId: entry.cardId, quantity: entry.quantity })),
     });
 
+    // Held rather than passed inline: every bot seat's generator stream is
+    // derived from it, so the same seed and the same seating reproduce the same
+    // bot play (ADR 0010, ADR 0024 §4).
+    const seed = this.#seedFor(lobby.inviteCode);
     const created = createMatch({
       matchId: `match_${lobby.inviteCode}`,
-      seed: this.#seedFor(lobby.inviteCode),
+      seed,
       database: this.#database,
       config: this.#config,
       seats: seats.map((entry) => ({
@@ -770,8 +806,147 @@ export class MatchServer {
 
     lobby.state = created.value.state;
     lobby.status = 'in_match';
+    this.startBots(lobby, seed);
     this.broadcastLobby(lobby);
     this.broadcastMatchState(lobby);
+    // The first opportunity of the match, offered after the state has been sent:
+    // a bot may be the very first seat to act, at the mulligan.
+    this.wakeBots(lobby);
+  }
+
+  /* ------------------------------------------------------------ bot runner */
+
+  /**
+   * Instantiates one pilot and one generator stream per bot seat, once, at match
+   * start (M09.4).
+   *
+   * The runner is given a `submit` that goes through exactly the same three steps
+   * `submit_action` takes for a person — the seat's own idempotent action-identity
+   * map, `applyAction`, then a broadcast — because "a bot acts through the same
+   * path a human does" is only true if there is one path
+   * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §2).
+   */
+  private startBots(lobby: Lobby, seed: string): void {
+    const bots = botSeatsOf(lobby);
+    if (bots.length === 0) return;
+
+    const runner = new BotRunner({
+      matchSeed: seed,
+      database: this.#database,
+      config: this.#config,
+      seats: bots.map((seat) => ({
+        seatId: seat.seatId,
+        playerId: PLAYER_ID_BY_SEAT[seat.seatId],
+        config: seat.config,
+      })),
+      state: () => lobby.state,
+      submit: (seatId, actionId, action) => this.applyBotAction(lobby, seatId, actionId, action),
+      ...(this.#botDecisionLimit === undefined ? {} : { decisionLimit: this.#botDecisionLimit }),
+      ...(this.#yieldToScheduler === undefined ? {} : { yieldToScheduler: this.#yieldToScheduler }),
+      ...(this.#botPilotFor === undefined ? {} : { pilotFor: this.#botPilotFor }),
+    });
+    this.#botRunners.set(lobby.inviteCode, runner);
+  }
+
+  /** The bot half of `submitAction`, deliberately the same three steps. */
+  private applyBotAction(
+    lobby: Lobby,
+    seatId: SeatId,
+    actionId: string,
+    action: Action,
+  ): BotSubmitResult {
+    const seat = lobby.seats.get(seatId);
+    if (!seat || !isBotSeat(seat)) {
+      return { ok: false, reason: 'rejected', message: `${seatId} no longer holds a bot.` };
+    }
+    if (!lobby.state || lobby.state.status === 'complete') {
+      return { ok: false, reason: 'rejected', message: 'the match is not running.' };
+    }
+    // The same replay guard a human action gets, over the same map: an action
+    // identity is applied once or not at all.
+    if (seat.appliedActions.has(actionId)) {
+      return { ok: false, reason: 'duplicate', message: `${actionId} was already applied.` };
+    }
+
+    const result = applyAction(lobby.state, action, {
+      database: this.#database,
+      config: this.#config,
+    });
+    if (isErr(result)) {
+      return {
+        ok: false,
+        reason: 'rejected',
+        message: `${result.error.code} — ${result.error.message}`,
+      };
+    }
+
+    lobby.state = result.value.state;
+    seat.appliedActions.set(actionId, lobby.state.sequence);
+    this.broadcastMatchState(lobby);
+    return { ok: true };
+  }
+
+  /** Offers every bot in this lobby the chance to act. Safe to call at any time. */
+  private wakeBots(lobby: Lobby): void {
+    this.#botRunners.get(lobby.inviteCode)?.wake();
+  }
+
+  private stopBots(lobby: Lobby): void {
+    this.#botRunners.get(lobby.inviteCode)?.stop();
+  }
+
+  /**
+   * Cancels a lobby's bot work and lets the runner go.
+   *
+   * The runner holds the lobby and its whole `MatchState`, so a closed lobby has
+   * to drop it or a long-running process accumulates finished matches. Any pump
+   * still in flight is tracked until it settles, so `whenBotsIdle` stays exact
+   * across the closure rather than returning while a detached decision is
+   * mid-await.
+   */
+  private discardBots(lobby: Lobby): void {
+    const runner = this.#botRunners.get(lobby.inviteCode);
+    if (!runner) return;
+    runner.stop();
+    this.#botRunners.delete(lobby.inviteCode);
+
+    const pending = runner.pending;
+    if (!pending) return;
+    this.#detachedBotWork.add(pending);
+    void pending.finally(() => this.#detachedBotWork.delete(pending));
+  }
+
+  /**
+   * What the bots in a finished or running match actually did.
+   *
+   * Test and diagnostic access, in the shape `lobbyByCode` already established.
+   * M09.17 is what turns this into a summary a playtest note can quote; M09.4
+   * only has to make sure the failures are written down rather than disguised as
+   * intentional play.
+   */
+  botReport(inviteCode: string): BotRunReport | undefined {
+    return this.#botRunners.get(inviteCode)?.report();
+  }
+
+  /**
+   * Resolves once no bot has work in flight.
+   *
+   * A bot decision is asynchronous — `decideSafely` is — while `receive` is not,
+   * so a test that sends a message and looks at the board immediately would be
+   * reading it mid-turn. This is the join point, and it exists for tests and for
+   * an orderly shutdown; nothing in the protocol path waits on it.
+   */
+  async whenBotsIdle(): Promise<void> {
+    for (let guard = 0; guard < 10_000; guard += 1) {
+      const pending = [
+        ...[...this.#botRunners.values()]
+          .map((runner) => runner.pending)
+          .filter((promise): promise is Promise<void> => promise !== null),
+        ...this.#detachedBotWork,
+      ];
+      if (pending.length === 0) return;
+      await Promise.all(pending);
+    }
   }
 
   /* --------------------------------------------------------------- actions */
@@ -841,6 +1016,10 @@ export class MatchServer {
     lobby.state = result.value.state;
     seat.appliedActions.set(actionId, lobby.state.sequence);
     this.broadcastMatchState(lobby);
+    // A human move is the commonest way a bot becomes newly eligible. The wake
+    // is idempotent, so calling it after every accepted action is what makes
+    // "scheduled exactly once" hold without a queue to de-duplicate.
+    this.wakeBots(lobby);
   }
 
   private leave(connection: ServerConnection): void {
@@ -858,6 +1037,7 @@ export class MatchServer {
       if (!isErr(result)) {
         lobby.state = result.value.state;
         this.broadcastMatchState(lobby);
+        this.wakeBots(lobby);
       }
     }
     this.disconnect(connection);
@@ -873,6 +1053,10 @@ export class MatchServer {
     if (isErr(result)) return;
     lobby.state = result.value.state;
     this.broadcastMatchState(lobby);
+    // `server_timeout` stays server-originated (ADR 0024 §2) — this is the
+    // server submitting one for a *human* seat, and the bots simply carry on
+    // from whatever board it produced.
+    this.wakeBots(lobby);
   }
 
   /* ---------------------------------------------------------------- output */
@@ -929,7 +1113,12 @@ export class MatchServer {
     // A finished match is also a lobby-state change: clients watching the lobby
     // header need to see it, not just the board.
     const finished = lobby.state?.status === 'complete' && lobby.status !== 'finished';
-    if (finished) lobby.status = 'finished';
+    if (finished) {
+      lobby.status = 'finished';
+      // Cancelled here rather than left to notice on its own, so no bot work
+      // outlives the match that justified it (ADR 0024 §4).
+      this.stopBots(lobby);
+    }
 
     for (const seat of lobby.seats.values()) this.sendMatchState(lobby, seat);
     if (finished) this.broadcastLobby(lobby);
@@ -961,6 +1150,7 @@ export class MatchServer {
     if (anyConnected) return;
     if (lobby.status === 'in_match') return;
     lobby.status = 'closed';
+    this.discardBots(lobby);
     this.#lobbies.delete(lobby.inviteCode);
   }
 }
