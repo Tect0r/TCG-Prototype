@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `73bfb7110d5a806363142f17b8842743eaeba5d0` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-14                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `1bcf615dac72dbbbdbdb8d72fb55df322a8e3fbc`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-14                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -260,8 +260,8 @@ No question the plan calls open is missing or answered in the question file.
 | Workspaces                               | `packages/board-telemetry`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
 | Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                      |
 | Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                        |
-| Architecture decision records            | 23                                                                                                                                                                                                                                                                          |
-| Milestone documents                      | 8                                                                                                                                                                                                                                                                           |
+| Architecture decision records            | 24                                                                                                                                                                                                                                                                          |
+| Milestone documents                      | 9                                                                                                                                                                                                                                                                           |
 
 ### Architecture decision records
 
@@ -290,5 +290,6 @@ No question the plan calls open is missing or answered in the question file.
 | `0021-choice-contract.md`                                | ADR 0021 — The choice contract: who is asked, what the answer is, and why            |
 | `0022-evidence-claims.md`                                | ADR 0022 — What a run may be cited for: support, pilots, decks, calibration          |
 | `0023-admin-lab-boundary.md`                             | ADR 0023 — The AI Lab admin boundary: app, service, catalog and access               |
+| `0024-live-bot-seats.md`                                 | ADR 0024 — Live bot seats: authority, privacy, pacing and the shared generator       |
 
 <!-- audit:derived:end -->

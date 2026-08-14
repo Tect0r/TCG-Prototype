@@ -29,32 +29,42 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | In progress           | M08.1        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.1        |
 
-**M07 is complete and M08 is open.** M07.8 was a correction pass over M07's
-output; M07.9 corrected M07.8 in turn, moving `CARD_SCHEMA_VERSION` to 5 because
-a new member of a discriminated union is not something an older build can read.
-M08.0 then opened the next milestone: the record, the scope and
-[ADR 0023](docs/architecture/0023-admin-lab-boundary.md), with no runtime
-behaviour changed.
+**M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
+record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
+and stopped there. The owner then chose **M09 Play Against AI** to run first,
+because it turns the software into something a person can play against, which is
+what the structured manual playtests below have been waiting for. M08 is planned,
+not cancelled: its record and its ADR stay exactly as M08.0 left them, and no
+part of it is scaffolded while M09 is open.
+
+M09.0 opened M09 the same way: the milestone record, the scope and
+[ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
+changed.
 
 ## The next bounded task
 
-**M08.1 — Shared admin contracts and experiment catalog model.** Define the
-versioned language the admin service and client both speak — identity, lifecycle
-state, progress, result reference, experiment purpose, source class, pagination,
-filters and structured errors — plus a catalog entry that references a canonical
-experiment directory rather than copying it. Schemas and tests only: no
-filesystem store, no server, no UI, no job execution. The scope, the exclusions
-and the checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m081--shared-admin-contracts-and-experiment-catalog-model).
+**M09.1 — Bot configuration contracts.** Define the complete strict, versioned
+configuration for a bot seat before any of it crosses the wire: controller
+metadata, difficulty, style, deck choice as a four-member discriminated union,
+pacing percentage and Reaction override, pacing budgets, and generated-deck
+provenance — with the public lobby projection defined separately from the private
+host and server configuration, and a total difficulty registry that carries
+versions without implementing Easy or Hard yet. Schemas and tests only: no
+protocol messages, no pilot implementation, no deck generation, no UI. The scope,
+the exclusions and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m091--bot-configuration-contracts).
 
 ## The parallel non-code activity
 
-**Run structured manual playtests using the four current 40-card precons.** M08
+**Run structured manual playtests using the four current 40-card precons.** M09
 does not replace this and is not blocked on it: nothing in the record still says
 what the game is like to play, and every remaining _content_ choice depends on
-that.
+that. What M09 changes is who the other seat can be — from its first playable
+checkpoint at M09.5 a solo tester has an opponent, and the playtest notes below
+are exactly what that opponent exists to produce.
 
 It is deliberately not a framework. Play the decks, write down what happened, and
 keep the notes somewhere durable — a large playtest harness is itself a milestone
@@ -73,9 +83,10 @@ What the playtests should capture, per session:
 5. **Obvious archetype problems** — a precon that cannot function, a matchup that
    is not a game, a deck whose plan never assembles.
 
-**Then evaluate the results before selecting the milestone after M08.** The
+**Then evaluate the results before selecting the milestone after M09.** The
 evidence decides whether that one is implementation (a defect class worth fixing
-properly), rules (a friction point that needs an owner decision), or content.
+properly), rules (a friction point that needs an owner decision), content, or the
+deferred M08.
 
 The **50-card expansion remains the next intended content milestone**: 8–9 further
 colour-legal cards per Commander, or an equivalent shared package, measured
@@ -88,7 +99,7 @@ the other thing the implementation is waiting on, and playing the decks is the
 cheapest way to find out which of them actually matter. `docs/open-questions.md`
 holds every other question the project has recorded. A milestone file under
 `docs/milestones/` and a row in the table above is what starts a milestone; M08.0
-added both for M08.
+added both for M08, and M09.0 added both for M09.
 
 ## Where the record lives
 
@@ -129,6 +140,15 @@ Do not reopen these while implementing:
   stay canonical — is in
   [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#locked-interpretation),
   with the boundaries in [ADR 0023](docs/architecture/0023-admin-lab-boundary.md).
+  It stays locked while M08 is deferred.
+- M09's own locked interpretation — a bot is a server-owned seat controller with
+  no connection identity, it sees exactly what a human in that seat sees and acts
+  through the same `applyAction` path, a deck source is public at the Commander
+  and private at the list, difficulty and style and deck source and timing are
+  four independent axes, and bot pacing is server configuration that deliberately
+  does not answer Q8 — is in
+  [the M09 milestone file](docs/milestones/M09-play-against-ai.md#locked-interpretation),
+  with the boundaries in [ADR 0024](docs/architecture/0024-live-bot-seats.md).
 
 ## Owner decisions still open
 
