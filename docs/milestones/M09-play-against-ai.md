@@ -1026,7 +1026,7 @@ differently now.
 snapshot lives in an in-memory lobby for the length of a match, and a fingerprint
 is recomputed from contents every time it is checked rather than stored.
 
-## M09.7 — Mixed human/bot tables
+## M09.7 — Mixed human/bot tables — **done (2026-08-19)**
 
 Support every two-to-four-seat mixture with at least one human: up to three bot
 seats, humans in any remaining seats. Multiple eligible bots and independent
@@ -1043,11 +1043,160 @@ order tests.
 
 ### Checklist
 
-- [ ] Up to three bots; at least one human enforced.
-- [ ] Concurrent independent decisions without duplication.
-- [ ] Elimination, priority, reconnect and last-player behaviour unchanged.
-- [ ] A bot never becomes host.
-- [ ] Callback order independence proven, not assumed.
+- [x] **Up to three bots, and at least one human, enforced in three places that
+      agree.** `MAX_BOT_SEATS` is `MAX_SEATS - 1` in
+      `packages/protocol/src/messages.ts` — beside the other seat counts, because
+      the host's screen and the authoritative lobby both need the number and two
+      copies of it would eventually disagree. `freeBotSeats` returns nothing once
+      the ceiling is reached, so a fourth `add_bot` is refused with
+      `protocol/lobby_full` rather than seated. The guarantee was already
+      structural before the constant existed — `freeBotSeats` never offers the
+      host's seat and the host seat is created with a person in it — so the
+      ceiling is checked as a second lock rather than as the only one, and a test
+      asserts both halves: three bots then a refusal, and `seat_1` still human.
+      The back half is `closeIfAbandoned`, which counts only _people_: a lobby
+      whose last human leaves is closed and its bots discarded, so a table cannot
+      outlive the person it exists for.
+- [x] **Concurrent independent decisions, taken once each.** The runner
+      interleaves seats rather than running them in parallel — one pump asks the
+      first seat the engine is offering a move, submits, and comes back round —
+      which is what makes duplication structurally impossible: there is never a
+      second decision in flight to duplicate. The tests assert what that is worth
+      rather than restating it. Three bots answer three simultaneous independent
+      mulligans, one `mulligan` each, while the human has answered nothing; every
+      committed decision across every seat carries a distinct `${botId}#${index}`
+      identity, monotonic from zero per seat and prefixed by the seat's own bot,
+      so two bots cannot collide even at the same decision index; and a `submit`
+      that re-enters `wake()` twice on every call still produces one decision per
+      opportunity in seat order. Nothing new reads hidden state: each seat's
+      observation is still the redacted `playerView` for its own player, rebuilt
+      at decision time.
+- [x] **Elimination, Reaction priority, disconnect, reconnect and the last
+      living player are what they were.** A human conceding out of a four-seat
+      free-for-all leaves three bots to resolve it between them, down to exactly
+      one survivor, with no incident recorded — "this seat is out" is ordinary
+      rather than a failure. An open Reaction window is offered to exactly one
+      seat at a time throughout a played 1H+3B match, so the runner's seat-order
+      scan cannot reorder priority however many bots are eligible elsewhere. A
+      dropped human opens exactly one disconnect window, because a bot has no
+      connection to lose; the returning player reclaims their seat, cancels the
+      timer and is sent the current board. When that window instead expires, the
+      server's own `server_timeout` is submitted for the _human_ seat and the
+      bots play on from the board it produced.
+- [x] **A bot never becomes host.** There is no host migration in the current
+      human rules and M09.7 adds none; what it adds is that the seat cannot drift
+      to a bot either. `hostSeatId` stays with the person who created the lobby
+      when the host disconnects and other people remain, `freeBotSeats` still
+      excludes that seat, and the seat view says the same thing to every client —
+      the only `isHost` seat is a `human` one.
+- [x] **Callback order independence proven, not assumed.** The claim is scoped
+      before it is tested: it is about the scheduler callbacks the _runner_
+      controls — how often it yields and how often it is woken — and emphatically
+      not about the interleaving of genuine game actions, because a human acting
+      before or after a bot is a different game. A 1H+3B match played with seven
+      extra microtask turns per yield produces the identical sequence, turn,
+      result, per-human decision count, per-seat seed, per-seat action tally and
+      empty incident list as the same match played with none. A second test
+      replays a 2H+2B table exactly from one seed and gets a different match from
+      another, so the comparison is not passing by comparing nothing.
+- [x] Verified: the 21 focused server tests in
+      `apps/multiplayer-server/src/bot-mixed-table.test.ts`, the 13 focused UI
+      tests in `apps/web-client/src/bot-mixed-table-flow.test.tsx`, the existing
+      server and web-client suites, `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` — 2393 tests in 118 files — all
+      pass. One configuration change was needed and is recorded rather than
+      hidden: the `server` project in `vitest.config.ts` now carries the same
+      60-second per-test timeout the `packages` and `simulator` projects already
+      had, because a mixed-table test that plays three complete 2H+2B matches
+      exceeded the 5-second default under full-suite parallel load. It passed in
+      isolation, so the default was measuring machine load rather than a hang —
+      and a genuine loop is still caught by the runner's per-seat decision limit
+      and each test loop's own round ceiling, which is the reason the config's
+      existing comment already gives for the other two projects.
+
+### What the host actually sees
+
+One form per seated bot, each named by the seat it belongs to — `Seat 3 style`
+rather than a third control called `Bot style` — plus one form for the next bot,
+which keeps the unscoped names because it belongs to no seat yet and the server
+is what decides where it lands. Nothing on this screen chooses a seat, so nothing
+on it can race a joining human for one.
+
+**One mutation at a time, deliberately.** Every control in the panel is disabled
+while a request is in flight, whichever seat it was about. That is the answer to
+the question M09.5 and M09.6 both left open: there is no per-request
+acknowledgement on this wire, so `MatchClient.reconcileBotDecks` binds what was
+sent to a seat by reading the next lobby view, which is exact for one outstanding
+request and ambiguous for two. Serialising them keeps it exact for three bots as
+cheaply as it did for one; the alternative — a second idea of "the current
+configuration" on the client — is the thing ADR 0024 §3 exists to avoid.
+
+The two reasons another bot cannot be seated are said separately, because the
+host fixes them differently: a full table can be made bigger, and the bot ceiling
+cannot. Both leave the control present and disabled with its reason beside it,
+which is the same answer M09.5 gave a full table.
+
+### The mixed-exact-decks checkpoint
+
+**Reported explicitly, as the milestone requires.** What is genuinely usable is
+exactly what the checkpoint table promises: up to four mixed seats — one to three
+bots and at least one human — each bot playing a shipped precon or one of the
+host's saved decks, at Normal and instant. The three other deck modes, Easy,
+Hard, pacing, reroll and the pacing summary are still absent rather than present
+and refused, and nothing after this tranche was started.
+
+### Findings recorded rather than fixed
+
+- **A concession during the mulligan phase deadlocks the board, and it predates
+  every bot.** `handleMulligan` advances only when every player in `playerOrder`
+  has submitted one, and `legalActions` returns nothing at all for an eliminated
+  seat — so a player who concedes or times out _during_ the mulligan phase leaves
+  a mulligan nobody can ever answer. It is reachable on a human-only path (two
+  people, one closing the tab) and changing it is a rules decision about what an
+  eliminated seat owes a phase, not a runner change. What M09.7 owed was that the
+  runner meets it honestly, and a test pins that down: the board is recorded as
+  `stalled`, every bot has answered its own mulligan, and **no bot concedes to
+  unstick it**. The two tests that need to get past the mulligan phase say so and
+  play into turn 3 first, rather than quietly working around it.
+- **"Concurrent" is interleaved, not parallel, and the tests say so.** Several
+  bots eligible at once are asked one after another within a single pump. That
+  satisfies the tranche's requirement — every eligible decision taken exactly
+  once, no duplicates — and it is why the tests assert one committed decision per
+  opportunity in seat order rather than asserting overlap. Genuinely concurrent
+  waiting is M09.12's, because until a bot waits there is nothing to overlap.
+- **The client still infers "sent, waiting" from the lobby view.** M09.5 recorded
+  it and M09.6 added a second consumer; M09.7 does not remove the inference, it
+  bounds it, by making one outstanding request the only state the panel can be
+  in. A per-request acknowledgement would be a protocol change, and M09.16 — which
+  owns the complete per-bot setup surface — is where to decide whether the
+  concurrent-mutation experience is worth one.
+- **A four-bot table is unreachable by two independent rules, and both are kept.**
+  The host seat is never offered to a bot, so a fourth bot had nowhere to go even
+  before `MAX_BOT_SEATS` existed. The constant is not redundant defence for its
+  own sake: it is the number the host's screen needs in order to say _why_ it is
+  not offering another bot, and checking it in `freeBotSeats` means a later change
+  to seat allocation cannot produce an all-bot table by accident and have it read
+  as a bug in something else.
+
+### Versions — deliberately unchanged
+
+Nothing moved. `MAX_BOT_SEATS` is a **new** constant and is not on a wire: no
+message carries a bot count, no seat view publishes one, and both sides derive it
+from `MAX_SEATS`, which has not changed — so a v7 client and a v7 server agree
+about it without ever exchanging it, and `PROTOCOL_VERSION` stays 7. No message
+shape changed, no schema widened and no difficulty appeared, so
+`BOT_CONFIG_SCHEMA_VERSION`, `DIFFICULTY_REGISTRY_VERSION` and
+`PACING_CONFIG_VERSION` stay 1. `MATCH_SCHEMA_VERSION` and `RULES_VERSION` stay
+where they are for the reason [ADR 0024](../architecture/0024-live-bot-seats.md)
+§7 gives: the runner is a controller above the engine, `createMatch` is handed an
+ordinary seat list of two to four players exactly as it always was, and
+`MatchState` still does not know what a bot is. `SEED_DERIVATION_VERSION` stays 2
+— `botSeedFor` is unchanged, and a third and fourth bot seat simply derive their
+own streams from it, which is what per-seat derivation was for.
+
+**Compatibility.** Nothing is migrated, because nothing durable was written. A
+mixed lobby is in memory for the length of a match, and the ceiling is recomputed
+from the seat map every time a bot is added.
 
 ## M09.8 — Shared quick deck generator extraction
 

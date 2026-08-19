@@ -1,6 +1,7 @@
 import { publicBotSeatOf, type BotSeatConfig } from '@tcg/bot-config';
 import type { SavedDeck } from '@tcg/deck';
 import {
+  MAX_BOT_SEATS,
   MAX_SEATS,
   MIN_SEATS,
   SEAT_IDS,
@@ -26,7 +27,19 @@ export const SEAT_BY_PLAYER_ID: Record<PlayerId, SeatId> = Object.fromEntries(
   SEAT_IDS.map((seatId) => [PLAYER_ID_BY_SEAT[seatId], seatId]),
 ) as Record<PlayerId, SeatId>;
 
-export { SEAT_IDS, MIN_SEATS, MAX_SEATS };
+/**
+ * `MAX_BOT_SEATS` is one fewer than the table can hold, because **every table
+ * keeps at least one human** (M09.7). It is defined in `@tcg/protocol` beside
+ * the other seat counts so the host's screen and the authoritative lobby read
+ * one number rather than two copies of it.
+ *
+ * Here the guarantee is already structural — `freeBotSeats` never offers the
+ * host's seat, and the host seat is created with a person in it and is never
+ * deleted — so the ceiling is not what stops the fourth bot today. It is checked
+ * anyway, so that a later change to seat allocation cannot produce an all-bot
+ * table by accident and call it a bug in something else.
+ */
+export { SEAT_IDS, MIN_SEATS, MAX_SEATS, MAX_BOT_SEATS };
 
 /**
  * What every seat has, whoever or whatever is in it: a name, a deck and a
@@ -209,9 +222,12 @@ export function freeSeats(lobby: Lobby): SeatId[] {
  * seat is never in the list — so adding a bot cannot evict anybody, and a human
  * joining later takes the next free seat rather than the bot's. The host seat is
  * excluded even when it is vacant, because a bot must never end up holding the
- * seat the lobby takes its host from.
+ * seat the lobby takes its host from — which is also what keeps at least one
+ * human at every table (M09.7), with `MAX_BOT_SEATS` stating the same limit as a
+ * number rather than leaving it to be inferred from the two rules above.
  */
 export function freeBotSeats(lobby: Lobby): SeatId[] {
+  if (botSeatsOf(lobby).length >= MAX_BOT_SEATS) return [];
   return freeSeats(lobby).filter((seatId) => seatId !== lobby.hostSeatId);
 }
 

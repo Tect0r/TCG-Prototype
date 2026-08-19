@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.7        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.8        |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -94,19 +94,43 @@ the name, the card count and the fingerprint from their own configuration. No
 message shape changed: `botDeckSnapshotSchema` has been on the wire since M09.2,
 so `PROTOCOL_VERSION` stays 7 and turning the mode on refused no build.
 
+**M09.7 opened the table, and reached the milestone's second checkpoint.** Every
+two-to-four-seat mixture with at least one human now plays: one to three bots,
+people in the rest. The ceiling is `MAX_BOT_SEATS`, one fewer than the table
+holds, and it is a second lock rather than the only one — a bot is never offered
+the seat the lobby takes its host from, and a lobby whose last _person_ leaves is
+closed and its bots discarded. Several bots eligible at once are asked one after
+another inside a single pump, which is what makes a duplicated decision
+structurally impossible rather than merely absent; every committed action carries
+a per-seat identity that cannot collide across seats. Elimination, Reaction
+priority, disconnect, reconnect and the last living player are what they were,
+and each is asserted by playing a real mixed match rather than against a fixture.
+A bot never becomes host: there is no host migration in the human rules, and
+M09.7 adds none. Order independence is proven at the boundary it is promised for
+— the runner's own callbacks — by playing one match with seven extra microtask
+turns per yield and getting an identical result. The host's screen gained one
+seat-named form per bot and serialises its mutations, which bounds the
+"sent, waiting" inference M09.5 and M09.6 both recorded. No shape changed:
+`MAX_BOT_SEATS` is derived from `MAX_SEATS` on both sides and is on no wire, so
+`PROTOCOL_VERSION` stays 7.
+
 ## The next bounded task
 
-**M09.7 — Mixed human/bot tables.** Support every two-to-four-seat mixture with
-at least one human: up to three bot seats, humans in any remaining seats.
-Multiple eligible bots and independent pending choices are scheduled without
-duplicates and without any forbidden hidden-state access. Free-for-all
-elimination, Reaction priority, human disconnect and reconnect, and
-last-living-player behaviour are all preserved. Host departure and closed-lobby
-behaviour follow the current human rules; a bot never becomes host. Timer
-callback and action arrival order provably do not change engine outcomes where
-order independence is promised. The scope, the exclusions and the checklist are
-in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m097--mixed-humanbot-tables).
+**M09.8 — Shared quick deck generator extraction.** Reuse one deterministic legal
+generator in both the simulator and live lobbies: move or extract the reusable
+part of `apps/simulator/src/deck-search/` into the smallest suitable shared
+package without changing existing search output for identical inputs, leaving
+evolution and search orchestration in the simulator app. The extracted generator
+takes a format-scoped database, a Commander constraint, an optional plan or
+package policy, role and curve settings and a deterministic seed, and returns
+either a legal immutable deck with provenance or structured named generation
+problems — never a repair that reaches outside the format. It reports legal-pool
+size and the forced-inclusion floor, and it **states its supported environments
+rather than assuming them**: the current chain reaches `node:crypto` through
+`apps/simulator/src/hash.ts`, so either the extraction removes that dependency
+deliberately or the package declares itself server-only. No lobby generated-deck
+mode yet. The scope, the exclusions and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m098--shared-quick-deck-generator-extraction).
 
 ## The parallel non-code activity
 

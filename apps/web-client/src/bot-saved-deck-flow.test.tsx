@@ -216,7 +216,7 @@ async function enterLobby(harness: Harness, view: LobbyView = lobby([humanSeat()
   await screen.findByText(view.inviteCode);
 }
 
-const panel = (): HTMLElement => screen.getByLabelText('Bot opponent');
+const panel = (): HTMLElement => screen.getByLabelText('Bot opponents');
 
 /** Puts the deck picker on "one of your saved decks" and chooses one. */
 async function chooseSavedDeck(harness: Harness, deckId: string): Promise<void> {
@@ -417,7 +417,7 @@ describe('a seated saved-deck bot', () => {
     // A shorter deck is now illegal, so the panel refuses it before the wire
     // does — which is the same answer the server would give, said sooner.
     expect(within(panel()).getByText(/39 of 40/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Apply bot changes' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Apply seat 2 changes' })).toBeDisabled();
     expect(harness.transport().all('update_bot')).toHaveLength(0);
   });
 });

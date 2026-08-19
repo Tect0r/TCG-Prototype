@@ -1140,8 +1140,9 @@ export class MatchServer {
    * Drops a lobby once nobody is connected and nothing is in progress.
    *
    * "Nobody" means no *person*: a bot seat is not company, and a lobby holding
-   * only bots is an abandoned one. This is also what keeps a table from
-   * outliving its last human without M09.7's explicit rule having landed yet.
+   * only bots is an abandoned one. It is the back half of M09.7's "at least one
+   * human at every table" — `MAX_BOT_SEATS` and the host seat keep a table from
+   * ever being seated without a person, and this keeps one from outliving them.
    */
   private closeIfAbandoned(lobby: Lobby): void {
     const anyConnected = [...lobby.seats.values()].some(

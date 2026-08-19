@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { preconsForFormat } from '@tcg/card-data';
+import { preconsForFormat, type CardDatabase, type PreconDefinition } from '@tcg/card-data';
 import {
   AVAILABLE_DIFFICULTIES,
   BOT_CONFIG_SCHEMA_VERSION,
@@ -12,18 +12,28 @@ import {
   botStyleDefinition,
   difficultyDefinition,
   type BotDeckMode,
+  type BotDeckSnapshot,
   type BotDeckSource,
   type BotDifficulty,
+  type BotSeatPublic,
   type BotStyle,
 } from '@tcg/bot-config';
-import type { BotLobbySeatView, BotSetup, LobbyView, ProtocolError } from '@tcg/protocol';
+import {
+  MAX_BOT_SEATS,
+  type BotLobbySeatView,
+  type BotSetup,
+  type LobbyView,
+  type ProtocolError,
+  type SeatId,
+} from '@tcg/protocol';
+import type { DeckFormatConfig, SavedDeck } from '@tcg/deck';
 import { useAppState, useCardDatabase, useDeckFormat } from '../../state/AppContext.js';
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
 import { botSeatLabels } from '../../lib/bot-seat-labels.js';
 import { reviewSavedDeckForBot, snapshotIsStale } from '../../lib/bot-deck-snapshot.js';
 
 /**
- * The host's bot controls (M09.5, extended by M09.6).
+ * The host's bot controls (M09.5, extended by M09.6 and M09.7).
  *
  * **Only what this build can honour is on screen.** The deck-source control is
  * built from `DECK_MODE_SUPPORT` and the labels below, so a mode with no
@@ -38,8 +48,20 @@ import { reviewSavedDeckForBot, snapshotIsStale } from '../../lib/bot-deck-snaps
  * M09.9, M09.11 and M09.13 turn their own control on by flipping the entry they
  * already own — which is exactly how M09.6 turned its own on.
  *
- * **One bot.** M09.5 is one human against one bot; the Add control is absent
- * once a seat holds a bot, and M09.7 is what opens the table to more.
+ * **Up to three bots, and never a table without a person** (M09.7). One form per
+ * seated bot, each with its own labels, plus one form for the next one.
+ * `MAX_BOT_SEATS` is the protocol's number rather than this screen's, and the
+ * server allocates the seat: nothing here chooses where a bot lands, so nothing
+ * here can race a joining human for a seat.
+ *
+ * **One mutation at a time.** Every control in this panel is disabled while a
+ * request is in flight, whichever seat it was about. That is a deliberate answer
+ * to the question M09.5 and M09.6 both left open: there is no per-request
+ * acknowledgement on this wire, so `MatchClient` binds what was sent to a seat
+ * by looking at the next lobby view — which is exact for one outstanding request
+ * and ambiguous for two. Serialising them keeps it exact for three bots as
+ * cheaply as it did for one, and the alternative (a second idea of "the current
+ * configuration" on the client) is the thing ADR 0024 §3 exists to avoid.
  *
  * **A saved deck is frozen, not referenced** (M09.6). What travels is an
  * immutable copy of the list as it was when the host chose it, so a later edit
@@ -130,165 +152,296 @@ function sameDraft(a: BotDraft, b: BotDraft): boolean {
   return a.difficulty === b.difficulty && a.style === b.style && sameDeckDraft(a.deck, b.deck);
 }
 
-export interface BotSeatPanelProps {
-  readonly lobby: LobbyView;
-  /** The bot refusal to print, or null. Chosen by `isBotSeatError`. */
-  readonly error: ProtocolError | null;
+/** "seat_3" reads as "seat 3" everywhere a person sees it. */
+function seatNumber(seatId: SeatId): string {
+  return seatId.replace('seat_', '');
 }
 
-export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
+/**
+ * The accessible name of every control in one form.
+ *
+ * Seat-scoped for a seated bot, because a table can hold three of them and
+ * "Bot style" three times over is ambiguous to anyone reading the page rather
+ * than looking at it. The form for the *next* bot keeps the unscoped names: it
+ * belongs to no seat yet, and the server is what decides which one it lands in.
+ */
+interface FieldLabels {
+  readonly source: string;
+  readonly precon: string;
+  readonly saved: string;
+  readonly difficulty: string;
+  readonly style: string;
+}
+
+const NEW_BOT_LABELS: FieldLabels = {
+  source: 'Bot deck source',
+  precon: 'Bot deck',
+  saved: 'Your deck',
+  difficulty: 'Bot difficulty',
+  style: 'Bot style',
+};
+
+function seatFieldLabels(seatId: SeatId): FieldLabels {
+  const seat = `Seat ${seatNumber(seatId)}`;
+  return {
+    source: `${seat} deck source`,
+    precon: `${seat} deck`,
+    saved: `${seat} saved deck`,
+    difficulty: `${seat} difficulty`,
+    style: `${seat} style`,
+  };
+}
+
+/** Which request is outstanding. At most one, panel-wide. */
+type PendingRequest =
+  { readonly kind: 'add' } | { readonly kind: 'update' | 'remove'; readonly seatId: SeatId };
+
+interface DraftReview {
+  /** What would be sent, or `null` when the draft cannot be turned into one. */
+  readonly deckSource: BotDeckSource | null;
+  /** One actionable sentence about the chosen saved deck, or `null`. */
+  readonly problem: string | null;
+  /** Set when the draft names a saved deck this browser can still freeze. */
+  readonly snapshot: BotDeckSnapshot | null;
+}
+
+function reviewDraft(
+  draft: BotDraft,
+  decks: readonly SavedDeck[],
+  database: CardDatabase,
+  deckFormat: DeckFormatConfig,
+): DraftReview {
+  if (draft.deck.mode === 'exact_precon') {
+    return {
+      deckSource: draft.deck.preconId
+        ? { mode: 'exact_precon', preconId: draft.deck.preconId }
+        : null,
+      problem: null,
+      snapshot: null,
+    };
+  }
+  const review = reviewSavedDeckForBot(draft.deck.savedDeckId, decks, database, deckFormat);
+  return {
+    deckSource: review.snapshot ? { mode: 'exact_saved_deck', deck: review.snapshot } : null,
+    problem: review.problem,
+    snapshot: review.snapshot,
+  };
+}
+
+/** The draft a seated bot's public configuration and this client's memory imply. */
+function draftFromSeat(bot: BotSeatPublic, snapshot: BotDeckSnapshot | null): BotDraft | null {
+  if (bot.deck.mode === 'exact_precon') {
+    return {
+      deck: { mode: 'exact_precon', preconId: bot.deck.preconId },
+      difficulty: bot.difficulty,
+      style: bot.style,
+    };
+  }
+  if (bot.deck.mode === 'exact_saved_deck' && snapshot) {
+    return {
+      deck: { mode: 'exact_saved_deck', savedDeckId: snapshot.sourceDeckId },
+      difficulty: bot.difficulty,
+      style: bot.style,
+    };
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ fields */
+
+interface BotConfigFieldsProps {
+  readonly labels: FieldLabels;
+  readonly draft: BotDraft;
+  readonly onChange: (change: Partial<BotDraft>) => void;
+  readonly disabled: boolean;
+  readonly precons: readonly PreconDefinition[];
+  readonly decks: readonly SavedDeck[];
+}
+
+/** The four controls a bot configuration is made of, wherever it is being edited. */
+function BotConfigFields({
+  labels,
+  draft,
+  onChange,
+  disabled,
+  precons,
+  decks,
+}: BotConfigFieldsProps) {
+  const chooseMode = (mode: BotDeckMode): void => {
+    if (mode === draft.deck.mode) return;
+    if (mode === 'exact_precon') {
+      onChange({ deck: { mode, preconId: precons[0]?.id ?? '' } });
+    } else if (mode === 'exact_saved_deck') {
+      onChange({ deck: { mode, savedDeckId: decks[0]?.id ?? '' } });
+    }
+  };
+
+  return (
+    <>
+      {/* Absent rather than decorative: one supported mode means no choice to
+          make, and the picker would be a control with a single option. */}
+      {OFFERED_DECK_MODES.length > 1 && (
+        <label className="field">
+          <span>{labels.source}</span>
+          <select
+            value={draft.deck.mode}
+            disabled={disabled}
+            onChange={(event) => {
+              const mode = OFFERED_DECK_MODES.find((id) => id === event.target.value);
+              if (mode) chooseMode(mode);
+            }}
+          >
+            {OFFERED_DECK_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {DECK_MODE_LABELS[mode]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {draft.deck.mode === 'exact_precon' ? (
+        <label className="field">
+          <span>{labels.precon}</span>
+          <select
+            value={draft.deck.preconId}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({ deck: { mode: 'exact_precon', preconId: event.target.value } })
+            }
+          >
+            {precons.map((precon) => (
+              <option key={precon.id} value={precon.id}>
+                {precon.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <label className="field">
+          <span>{labels.saved}</span>
+          <select
+            value={draft.deck.savedDeckId}
+            disabled={disabled || decks.length === 0}
+            onChange={(event) =>
+              onChange({ deck: { mode: 'exact_saved_deck', savedDeckId: event.target.value } })
+            }
+          >
+            {decks.length === 0 && <option value="">No saved decks</option>}
+            {decks.map((deck) => (
+              <option key={deck.id} value={deck.id}>
+                {deck.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <label className="field">
+        <span>{labels.difficulty}</span>
+        <select
+          value={draft.difficulty}
+          disabled={disabled}
+          onChange={(event) => {
+            // Looked up rather than cast: the value that comes back is a string,
+            // and the only difficulties this control may produce are the ones it
+            // offered.
+            const difficulty = AVAILABLE_DIFFICULTIES.find((id) => id === event.target.value);
+            if (difficulty) onChange({ difficulty });
+          }}
+        >
+          {/* Available ones only. A difficulty with no decision procedure behind
+              it is refused by the server, so offering it would be a control
+              whose only outcome is an error message. */}
+          {AVAILABLE_DIFFICULTIES.map((difficulty) => (
+            <option key={difficulty} value={difficulty}>
+              {difficultyDefinition(difficulty).label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="field">
+        <span>{labels.style}</span>
+        <select
+          value={draft.style}
+          disabled={disabled}
+          onChange={(event) => {
+            const style = BOT_STYLES.find((id) => id === event.target.value);
+            if (style) onChange({ style });
+          }}
+        >
+          {BOT_STYLES.map((style) => (
+            <option key={style} value={style}>
+              {botStyleDefinition(style).label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <p className="lobby__hint">{botStyleDefinition(draft.style).summary}</p>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------- seated bots */
+
+interface SeatedBotFormProps {
+  readonly seat: BotLobbySeatView;
+  /** The private half of this seat's configuration, as this client sent it. */
+  readonly applied: BotDeckSource | null;
+  readonly pending: PendingRequest | null;
+  readonly setPending: (request: PendingRequest | null) => void;
+  readonly precons: readonly PreconDefinition[];
+  readonly fallback: BotDraft;
+}
+
+function SeatedBotForm({
+  seat,
+  applied,
+  pending,
+  setPending,
+  precons,
+  fallback,
+}: SeatedBotFormProps) {
   const client = useMatchClient();
-  const { botDeckSources } = useMatchState();
   const database = useCardDatabase();
   const deckFormat = useDeckFormat();
   const { decks } = useAppState();
 
-  // The same format-scoped list the human deck picker and the server offer, so
-  // the three cannot disagree about which decks exist (M03.2).
-  const precons = useMemo(() => preconsForFormat(deckFormat.formatId), [deckFormat.formatId]);
-
-  const botSeat = lobby.seats.find((seat): seat is BotLobbySeatView => seat.controller === 'bot');
-  const seated = botSeat?.bot ?? null;
-
   const [edited, setEdited] = useState<BotDraft | null>(null);
-  /** Which request is in flight, so a double press cannot seat two bots. */
-  const [pending, setPending] = useState<'add' | 'update' | 'remove' | null>(null);
 
-  // The server's answer — a new lobby view, or a refusal — is what ends the
-  // wait. There is no per-request acknowledgement on this wire, and inventing
-  // one would put a second idea of "the current configuration" on the client.
-  const answered = JSON.stringify(lobby.seats);
-  useEffect(() => {
-    setPending(null);
-  }, [answered, error]);
-
-  /**
-   * The private half of the seated bot's configuration, from the client rather
-   * than from this component: the wire does not publish it, and the host edits
-   * the deck it names on a different screen, which unmounts this one.
-   */
-  const applied = botSeat ? (botDeckSources[botSeat.seatId] ?? null) : null;
+  const bot = seat.bot;
   const appliedSnapshot = applied?.mode === 'exact_saved_deck' ? applied.deck : null;
-
-  const seatedDraft: BotDraft | null = seated
-    ? seated.deck.mode === 'exact_precon'
-      ? {
-          deck: { mode: 'exact_precon', preconId: seated.deck.preconId },
-          difficulty: seated.difficulty,
-          style: seated.style,
-        }
-      : seated.deck.mode === 'exact_saved_deck' && appliedSnapshot
-        ? {
-            deck: { mode: 'exact_saved_deck', savedDeckId: appliedSnapshot.sourceDeckId },
-            difficulty: seated.difficulty,
-            style: seated.style,
-          }
-        : null
-    : null;
-
-  // Whichever offered mode this build actually has something to put in it. A
-  // format publishing no precons is not a reason to default to an empty picker.
-  const fallback: BotDraft = {
-    deck:
-      precons.length > 0
-        ? { mode: 'exact_precon', preconId: precons[0]?.id ?? '' }
-        : { mode: 'exact_saved_deck', savedDeckId: decks[0]?.id ?? '' },
-    difficulty: DEFAULT_BOT_DIFFICULTY,
-    style: BOT_STYLES[0],
-  };
+  const seatedDraft = draftFromSeat(bot, appliedSnapshot);
   const draft = edited ?? seatedDraft ?? fallback;
-
-  const savedReview =
-    draft.deck.mode === 'exact_saved_deck'
-      ? reviewSavedDeckForBot(draft.deck.savedDeckId, decks, database, deckFormat)
-      : null;
-  const deckSource: BotDeckSource | null =
-    draft.deck.mode === 'exact_precon'
-      ? draft.deck.preconId
-        ? { mode: 'exact_precon', preconId: draft.deck.preconId }
-        : null
-      : savedReview?.snapshot
-        ? { mode: 'exact_saved_deck', deck: savedReview.snapshot }
-        : null;
+  const review = reviewDraft(draft, decks, database, deckFormat);
 
   /** The frozen list no longer matches the deck it was taken from. */
   const frozenIsStale = appliedSnapshot !== null && snapshotIsStale(appliedSnapshot, decks);
-
-  const locked = lobby.status === 'in_match' || lobby.status === 'finished';
-  const tableFull = lobby.seats.length >= lobby.maxSeats;
-  const canEdit = !locked && pending === null;
   // A saved deck that has since been edited is "changed" even when the host
   // picked the same deck: applying re-freezes it, which is the only way to move
   // a configured bot onto the new list.
   const changed =
     seatedDraft === null ||
     !sameDraft(draft, seatedDraft) ||
-    (frozenIsStale && deckSource !== null);
+    (frozenIsStale && review.deckSource !== null);
 
-  if (precons.length === 0 && decks.length === 0) {
-    return (
-      <section className="lobby__bots" aria-label="Bot opponent">
-        <h3>Bot opponent</h3>
-        <p className="lobby__hint">
-          No built-in decks are published for this format and you have saved none, so there is
-          nothing for a bot to play.
-        </p>
-      </section>
-    );
-  }
-
-  if (locked) {
-    return (
-      <section className="lobby__bots" aria-label="Bot opponent">
-        <h3>Bot opponent</h3>
-        <p className="lobby__hint">
-          {seated
-            ? 'The match has started; this bot’s settings are locked for the rest of it.'
-            : 'The match has started. Bots can only be added before it does.'}
-        </p>
-      </section>
-    );
-  }
-
-  const update = (change: Partial<BotDraft>): void => setEdited({ ...draft, ...change });
-
-  const chooseMode = (mode: BotDeckMode): void => {
-    if (mode === draft.deck.mode) return;
-    if (mode === 'exact_precon') {
-      update({ deck: { mode, preconId: precons[0]?.id ?? '' } });
-    } else if (mode === 'exact_saved_deck') {
-      update({ deck: { mode, savedDeckId: decks[0]?.id ?? '' } });
-    }
-  };
-
-  const send = (kind: 'add' | 'update'): void => {
-    if (!deckSource) return;
-    setPending(kind);
-    if (kind === 'add') client.addBot(setupFrom(draft, deckSource));
-    else if (botSeat) client.updateBot(botSeat.seatId, setupFrom(draft, deckSource));
-  };
+  const canEdit = pending === null;
+  const mine = pending && pending.kind !== 'add' && pending.seatId === seat.seatId;
+  const labels = seatFieldLabels(seat.seatId);
 
   return (
-    <section className="lobby__bots" aria-label="Bot opponent">
-      <h3>Bot opponent</h3>
-
-      {seated ? (
-        <p className="lobby__hint">
-          <strong>{seated.displayName}</strong> is in {botSeat?.seatId.replace('seat_', 'seat ')},
-          playing {botSeatLabels(seated, database).deckName ?? 'a deck of its own'}. This build
-          seats one bot.
-        </p>
-      ) : (
-        <p className="lobby__hint">
-          Play against the software: pick a deck and how it should play. Bots answer immediately —
-          how long they take is not configurable yet.
-        </p>
-      )}
+    <section className="lobby__bot" aria-label={`Bot in seat ${seatNumber(seat.seatId)}`}>
+      <p className="lobby__hint">
+        <strong>{bot.displayName}</strong> is in seat {seatNumber(seat.seatId)}, playing{' '}
+        {botSeatLabels(bot, database).deckName ?? 'a deck of its own'}.
+      </p>
 
       {/* What the host froze, said only to the host: a saved deck's name and
           fingerprint are not on the wire, because they are a handle onto a list
           opponents may not see (ADR 0024 §3). */}
-      {seated && seated.deck.mode === 'exact_saved_deck' && (
+      {bot.deck.mode === 'exact_saved_deck' && (
         <p className="lobby__hint">
           {appliedSnapshot ? (
             <>
@@ -312,160 +465,226 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
         </p>
       )}
 
-      {/* Absent rather than decorative: one supported mode means no choice to
-          make, and the picker would be a control with a single option. */}
-      {OFFERED_DECK_MODES.length > 1 && (
-        <label className="field">
-          <span>Bot deck source</span>
-          <select
-            value={draft.deck.mode}
-            disabled={!canEdit}
-            onChange={(event) => {
-              const mode = OFFERED_DECK_MODES.find((id) => id === event.target.value);
-              if (mode) chooseMode(mode);
-            }}
-          >
-            {OFFERED_DECK_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {DECK_MODE_LABELS[mode]}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      <BotConfigFields
+        labels={labels}
+        draft={draft}
+        onChange={(change) => setEdited({ ...draft, ...change })}
+        disabled={!canEdit}
+        precons={precons}
+        decks={decks}
+      />
 
-      {draft.deck.mode === 'exact_precon' ? (
-        <label className="field">
-          <span>Bot deck</span>
-          <select
-            value={draft.deck.preconId}
-            disabled={!canEdit}
-            onChange={(event) =>
-              update({ deck: { mode: 'exact_precon', preconId: event.target.value } })
-            }
-          >
-            {precons.map((precon) => (
-              <option key={precon.id} value={precon.id}>
-                {precon.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <label className="field">
-          <span>Your deck</span>
-          <select
-            value={draft.deck.savedDeckId}
-            disabled={!canEdit || decks.length === 0}
-            onChange={(event) =>
-              update({ deck: { mode: 'exact_saved_deck', savedDeckId: event.target.value } })
-            }
-          >
-            {decks.length === 0 && <option value="">No saved decks</option>}
-            {decks.map((deck) => (
-              <option key={deck.id} value={deck.id}>
-                {deck.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      {savedReview?.problem && <p className="lobby__error">{savedReview.problem}</p>}
-      {savedReview?.snapshot && (
+      {review.problem && <p className="lobby__error">{review.problem}</p>}
+      {review.snapshot && (
         <p className="lobby__hint">
           A copy of this deck is sent as it is now. Editing it afterwards does not change the bot.
         </p>
       )}
 
-      <label className="field">
-        <span>Bot difficulty</span>
-        <select
-          value={draft.difficulty}
-          disabled={!canEdit}
-          onChange={(event) => {
-            // Looked up rather than cast: the value that comes back is a string,
-            // and the only difficulties this control may produce are the ones it
-            // offered.
-            const difficulty = AVAILABLE_DIFFICULTIES.find((id) => id === event.target.value);
-            if (difficulty) update({ difficulty });
+      <div className="lobby__actions">
+        <button
+          type="button"
+          onClick={() => {
+            if (!review.deckSource) return;
+            setPending({ kind: 'update', seatId: seat.seatId });
+            client.updateBot(seat.seatId, setupFrom(draft, review.deckSource));
           }}
+          disabled={!canEdit || !changed || review.deckSource === null}
         >
-          {/* Available ones only. A difficulty with no decision procedure behind
-              it is refused by the server, so offering it would be a control
-              whose only outcome is an error message. */}
-          {AVAILABLE_DIFFICULTIES.map((difficulty) => (
-            <option key={difficulty} value={difficulty}>
-              {difficultyDefinition(difficulty).label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="field">
-        <span>Bot style</span>
-        <select
-          value={draft.style}
-          disabled={!canEdit}
-          onChange={(event) => {
-            const style = BOT_STYLES.find((id) => id === event.target.value);
-            if (style) update({ style });
+          {mine && pending.kind === 'update'
+            ? 'Applying…'
+            : `Apply seat ${seatNumber(seat.seatId)} changes`}
+        </button>
+        <button
+          type="button"
+          className="button--quiet"
+          onClick={() => {
+            setPending({ kind: 'remove', seatId: seat.seatId });
+            setEdited(null);
+            client.removeBot(seat.seatId);
           }}
+          disabled={!canEdit}
         >
-          {BOT_STYLES.map((style) => (
-            <option key={style} value={style}>
-              {botStyleDefinition(style).label}
-            </option>
-          ))}
-        </select>
-      </label>
+          {mine && pending.kind === 'remove'
+            ? 'Removing…'
+            : `Remove seat ${seatNumber(seat.seatId)}`}
+        </button>
+      </div>
+    </section>
+  );
+}
 
-      <p className="lobby__hint">{botStyleDefinition(draft.style).summary}</p>
+/* --------------------------------------------------------------- adding one */
+
+interface AddBotFormProps {
+  readonly pending: PendingRequest | null;
+  readonly setPending: (request: PendingRequest | null) => void;
+  readonly precons: readonly PreconDefinition[];
+  readonly fallback: BotDraft;
+  /** Why another bot cannot be seated right now, or `null`. */
+  readonly blocked: string | null;
+}
+
+function AddBotForm({ pending, setPending, precons, fallback, blocked }: AddBotFormProps) {
+  const client = useMatchClient();
+  const database = useCardDatabase();
+  const deckFormat = useDeckFormat();
+  const { decks } = useAppState();
+
+  const [edited, setEdited] = useState<BotDraft | null>(null);
+  const draft = edited ?? fallback;
+  const review = reviewDraft(draft, decks, database, deckFormat);
+  const canEdit = pending === null;
+
+  return (
+    <section className="lobby__bot" aria-label="Add a bot">
+      <BotConfigFields
+        labels={NEW_BOT_LABELS}
+        draft={draft}
+        onChange={(change) => setEdited({ ...draft, ...change })}
+        disabled={!canEdit}
+        precons={precons}
+        decks={decks}
+      />
+
+      {review.problem && <p className="lobby__error">{review.problem}</p>}
+      {review.snapshot && (
+        <p className="lobby__hint">
+          A copy of this deck is sent as it is now. Editing it afterwards does not change the bot.
+        </p>
+      )}
+
+      <div className="lobby__actions">
+        <button
+          type="button"
+          onClick={() => {
+            if (!review.deckSource) return;
+            setPending({ kind: 'add' });
+            client.addBot(setupFrom(draft, review.deckSource));
+          }}
+          disabled={!canEdit || blocked !== null || review.deckSource === null}
+        >
+          {pending?.kind === 'add' ? 'Adding…' : 'Add a bot'}
+        </button>
+      </div>
+
+      {blocked && <p className="lobby__hint">{blocked}</p>}
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- the panel */
+
+export interface BotSeatPanelProps {
+  readonly lobby: LobbyView;
+  /** The bot refusal to print, or null. Chosen by `isBotSeatError`. */
+  readonly error: ProtocolError | null;
+}
+
+export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
+  const { botDeckSources } = useMatchState();
+  const deckFormat = useDeckFormat();
+  const { decks } = useAppState();
+
+  // The same format-scoped list the human deck picker and the server offer, so
+  // the three cannot disagree about which decks exist (M03.2).
+  const precons = useMemo(() => preconsForFormat(deckFormat.formatId), [deckFormat.formatId]);
+
+  const botSeats = lobby.seats.filter(
+    (seat): seat is BotLobbySeatView => seat.controller === 'bot',
+  );
+
+  const [pending, setPending] = useState<PendingRequest | null>(null);
+
+  // The server's answer — a new lobby view, or a refusal — is what ends the
+  // wait. There is no per-request acknowledgement on this wire, and inventing
+  // one would put a second idea of "the current configuration" on the client.
+  const answered = JSON.stringify(lobby.seats);
+  useEffect(() => {
+    setPending(null);
+  }, [answered, error]);
+
+  const locked = lobby.status === 'in_match' || lobby.status === 'finished';
+
+  if (precons.length === 0 && decks.length === 0) {
+    return (
+      <section className="lobby__bots" aria-label="Bot opponents">
+        <h3>Bot opponents</h3>
+        <p className="lobby__hint">
+          No built-in decks are published for this format and you have saved none, so there is
+          nothing for a bot to play.
+        </p>
+      </section>
+    );
+  }
+
+  if (locked) {
+    return (
+      <section className="lobby__bots" aria-label="Bot opponents">
+        <h3>Bot opponents</h3>
+        <p className="lobby__hint">
+          {botSeats.length > 0
+            ? `The match has started; the settings of ${botSeats.length === 1 ? 'this bot are' : 'these bots are'} locked for the rest of it.`
+            : 'The match has started. Bots can only be added before it does.'}
+        </p>
+      </section>
+    );
+  }
+
+  // Whichever offered mode this build actually has something to put in it. A
+  // format publishing no precons is not a reason to default to an empty picker.
+  const fallback: BotDraft = {
+    deck:
+      precons.length > 0
+        ? { mode: 'exact_precon', preconId: precons[0]?.id ?? '' }
+        : { mode: 'exact_saved_deck', savedDeckId: decks[0]?.id ?? '' },
+    difficulty: DEFAULT_BOT_DIFFICULTY,
+    style: BOT_STYLES[0],
+  };
+
+  // Two separate reasons, said separately, because the host fixes them
+  // differently: a full table can be made bigger, and the bot ceiling cannot.
+  const blocked =
+    botSeats.length >= MAX_BOT_SEATS
+      ? `A table seats at most ${MAX_BOT_SEATS} bots, so that at least one seat always belongs to a person.`
+      : lobby.seats.length >= lobby.maxSeats
+        ? 'Every seat at this table is taken. Make the table bigger, or wait for a seat to open.'
+        : null;
+
+  return (
+    <section className="lobby__bots" aria-label="Bot opponents">
+      <h3>Bot opponents</h3>
+
+      <p className="lobby__hint">
+        {botSeats.length === 0
+          ? 'Play against the software: pick a deck and how it should play. Bots answer immediately — how long they take is not configurable yet.'
+          : `${botSeats.length} of this table’s ${lobby.maxSeats} seats ${botSeats.length === 1 ? 'holds a bot' : 'hold bots'}. You can seat up to ${MAX_BOT_SEATS}; the rest of the table is people.`}
+      </p>
+
+      {botSeats.map((seat) => (
+        <SeatedBotForm
+          key={seat.seatId}
+          seat={seat}
+          applied={botDeckSources[seat.seatId] ?? null}
+          pending={pending}
+          setPending={setPending}
+          precons={precons}
+          fallback={fallback}
+        />
+      ))}
+
+      <AddBotForm
+        pending={pending}
+        setPending={setPending}
+        precons={precons}
+        fallback={fallback}
+        blocked={blocked}
+      />
 
       {error && (
         <p className="lobby__error" role="alert">
           {error.message}
           {error.details ? ` ${error.details.join(' ')}` : ''}
-        </p>
-      )}
-
-      <div className="lobby__actions">
-        {seated && botSeat ? (
-          <>
-            <button
-              type="button"
-              onClick={() => send('update')}
-              disabled={!canEdit || !changed || deckSource === null}
-            >
-              {pending === 'update' ? 'Applying…' : 'Apply bot changes'}
-            </button>
-            <button
-              type="button"
-              className="button--quiet"
-              onClick={() => {
-                setPending('remove');
-                setEdited(null);
-                client.removeBot(botSeat.seatId);
-              }}
-              disabled={!canEdit}
-            >
-              {pending === 'remove' ? 'Removing…' : 'Remove bot'}
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() => send('add')}
-            disabled={!canEdit || tableFull || deckSource === null}
-          >
-            {pending === 'add' ? 'Adding…' : 'Add a bot'}
-          </button>
-        )}
-      </div>
-
-      {!seated && tableFull && (
-        <p className="lobby__hint">
-          Every seat at this table is taken. Make the table bigger, or wait for a seat to open.
         </p>
       )}
     </section>

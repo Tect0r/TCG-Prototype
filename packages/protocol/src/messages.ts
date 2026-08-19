@@ -100,6 +100,19 @@ export const MIN_SEATS = 2;
 export const MAX_SEATS = 4;
 export const seatCountSchema = z.number().int().min(MIN_SEATS).max(MAX_SEATS);
 
+/**
+ * How many seats at one table may hold a bot (M09.7).
+ *
+ * One fewer than the table can hold, because every table keeps at least one
+ * human: M09 exists so a person can play against the software, and a lobby of
+ * nothing but bots is a match nobody asked for. It lives beside `MAX_SEATS`
+ * rather than in the server because the host's screen has to know how many bots
+ * it may still offer to seat, and two copies of that number would eventually
+ * disagree. It is not on a wire — no message carries a bot count — so moving it
+ * would not move `PROTOCOL_VERSION`.
+ */
+export const MAX_BOT_SEATS = MAX_SEATS - 1;
+
 export const LOBBY_STATUSES = ['waiting', 'ready', 'in_match', 'finished', 'closed'] as const;
 export const lobbyStatusSchema = z.enum(LOBBY_STATUSES);
 export type LobbyStatus = z.infer<typeof lobbyStatusSchema>;

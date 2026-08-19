@@ -832,7 +832,11 @@ code {
   color: var(--text-dim);
 }
 
-/* The host's bot controls (M09.5). Same card as the deck panel beside it. */
+/* The host's bot controls (M09.5, extended by M09.7). Same card as the deck
+   panel beside it, now holding one bordered block per bot: a table can carry
+   three of them plus the form for the next one, and four sets of controls
+   running together is the one way three correctly named forms can still be
+   unreadable. */
 .lobby__bots {
   display: flex;
   flex-direction: column;
@@ -846,6 +850,15 @@ code {
 .lobby__bots h3 {
   margin: 0;
   font-size: 1rem;
+}
+
+.lobby__bot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
 }
 
 .tag--bot {

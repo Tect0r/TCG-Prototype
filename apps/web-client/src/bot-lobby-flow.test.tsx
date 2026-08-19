@@ -196,7 +196,7 @@ async function enterLobby(
   await screen.findByText(view.inviteCode);
 }
 
-const panel = (): HTMLElement => screen.getByLabelText('Bot opponent');
+const panel = (): HTMLElement => screen.getByLabelText('Bot opponents');
 
 /* ------------------------------------------------------- adding and configuring */
 
@@ -332,13 +332,18 @@ describe('a seated bot', () => {
 
     // The form shows what the seat is actually set to, so "apply" has nothing
     // to do until the host changes one of them.
-    expect(screen.getByLabelText('Bot style')).toHaveValue('aggressive');
-    expect(screen.getByRole('button', { name: 'Apply bot changes' })).toBeDisabled();
-    // Adding is gone: this build seats one bot.
-    expect(screen.queryByRole('button', { name: 'Add a bot' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Seat 2 style')).toHaveValue('aggressive');
+    expect(screen.getByRole('button', { name: 'Apply seat 2 changes' })).toBeDisabled();
+    // The seated bot's controls are seat-scoped, and the form for the *next* one
+    // keeps the unscoped names — so three bots at a table are three
+    // unambiguously named forms rather than three copies of "Bot style" (M09.7).
+    expect(screen.getByLabelText('Bot style')).toBeInTheDocument();
+    // This table has two seats and both are taken, so there is nowhere to put
+    // another bot: the control says so rather than disappearing.
+    expect(screen.getByRole('button', { name: 'Add a bot' })).toBeDisabled();
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot style'), 'value');
-    await harness.user.click(screen.getByRole('button', { name: 'Apply bot changes' }));
+    await harness.user.selectOptions(screen.getByLabelText('Seat 2 style'), 'value');
+    await harness.user.click(screen.getByRole('button', { name: 'Apply seat 2 changes' }));
 
     const sent = harness.transport().last('update_bot');
     expect(sent?.seatId).toBe('seat_2');
@@ -351,7 +356,7 @@ describe('a seated bot', () => {
     const harness = renderApp();
     await enterLobby(harness, lobby([humanSeat(), botSeat()]));
 
-    await harness.user.click(screen.getByRole('button', { name: 'Remove bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Remove seat 2' }));
     expect(harness.transport().last('remove_bot')).toEqual({
       type: 'remove_bot',
       seatId: 'seat_2',
@@ -438,7 +443,9 @@ describe('bot panel states', () => {
 
     expect(within(panel()).getByText(/locked for the rest of it/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Bot deck')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Remove bot' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Seat 2 deck')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove seat 2' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add a bot' })).not.toBeInTheDocument();
   });
 
   it('says so when every seat is taken instead of offering to add a bot', async () => {

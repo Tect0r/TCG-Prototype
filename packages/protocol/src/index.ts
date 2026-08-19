@@ -9,6 +9,7 @@ export {
   SEAT_IDS,
   MIN_SEATS,
   MAX_SEATS,
+  MAX_BOT_SEATS,
   seatCountSchema,
   botLobbyConditionSchema,
   botLobbyError,

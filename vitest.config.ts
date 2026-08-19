@@ -10,6 +10,13 @@ import { defineConfig } from 'vitest/config';
  * play whole matches: a defensive mirror runs to deck-out over ~50 turns, and a
  * batch test plays dozens of them. That is real work, not a hang — the runner's
  * own turn/action limits are what catch a genuine loop (CLAUDE.md §13.5).
+ *
+ * The `server` project joined them in M09.7, for the same reason rather than a
+ * new one: its mixed human/bot suites play complete two-to-four-seat matches
+ * through `receive`, several per test, and one of them replays the same table
+ * three times over. A hang there is still caught by something real — the
+ * runner's per-seat decision limit and each test loop's own round ceiling — so
+ * the 5-second default was only ever catching machine load.
  */
 export default defineConfig({
   test: {
@@ -29,6 +36,7 @@ export default defineConfig({
           root: import.meta.dirname,
           include: ['apps/multiplayer-server/src/**/*.test.ts'],
           environment: 'node',
+          testTimeout: 60_000,
         },
       },
       {
