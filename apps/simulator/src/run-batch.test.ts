@@ -9,7 +9,7 @@ import {
   type RunBatchOptions,
 } from './run-batch.js';
 import { buildSchedule } from './schedule.js';
-import { generatePopulation } from './deck-search/generate.js';
+import { generatePopulation } from '@tcg/deck-generator';
 import { JsonlWriter, readJsonl, toCsv } from './reporting/sinks.js';
 import { MatchStore } from './reporting/match-store.js';
 import { matchRecordSchema } from './telemetry/schema.js';

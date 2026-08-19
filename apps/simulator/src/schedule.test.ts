@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeDeck, type SimDeck } from './deck-search/deck.js';
+import { makeDeck, type SimDeck } from '@tcg/deck-generator';
 import {
   buildSchedule,
   deckMultisets,

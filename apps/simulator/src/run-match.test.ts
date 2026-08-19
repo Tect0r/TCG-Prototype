@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveSeedBundle } from './seed.js';
-import { toMatchDeck, type SimDeck } from './deck-search/deck.js';
-import { generateDeck } from './deck-search/generate.js';
+import { generateDeck, toMatchDeck, type SimDeck } from '@tcg/deck-generator';
 import { matchRecordSchema, isAbnormal, TERMINATION_KINDS } from './telemetry/schema.js';
 import { runMatch, seatToAct, DEFAULT_LIMITS, type RunMatchOptions } from './run-match.js';
 import type { MatchState } from '@tcg/rules-engine';

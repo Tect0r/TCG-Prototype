@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { loadFormatCardData, type CardDefinitionInput } from '@tcg/card-data';
 import { analyzeMechanicSupport, supportLimitsOf } from './analysis/support.js';
 import { applySupportLimits, computeFlags, supportFlags, type Flag } from './analysis/flags.js';
-import { makeDeck } from './deck-search/deck.js';
+import { makeDeck } from '@tcg/deck-generator';
 import { aggregate } from './analysis/aggregate.js';
 import { clusterDecks } from './analysis/clusters.js';
 import { DEFAULT_ANALYSIS_SETTINGS } from './config.js';

@@ -2,7 +2,7 @@ import type { PilotSpec } from '@tcg/bot-interface';
 import type { Environment } from './environment.js';
 import type { MatchLimits } from './run-match.js';
 import { runMatch } from './run-match.js';
-import { toMatchDeck, type SimDeck } from './deck-search/deck.js';
+import { toMatchDeck, type SimDeck } from '@tcg/deck-generator';
 import type { WorkerJob } from './workers/protocol.js';
 import { freezeEnvironment, type ResolvedEnvironment } from './resolved-environment.js';
 import {

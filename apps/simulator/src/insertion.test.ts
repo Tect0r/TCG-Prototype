@@ -20,7 +20,7 @@ import { DEFAULT_ANALYSIS_SETTINGS } from './config.js';
 import { runBatch } from './run-batch.js';
 import { buildSchedule } from './schedule.js';
 import { SEED_DERIVATION_VERSION } from './seed.js';
-import type { SimDeck } from './deck-search/deck.js';
+import type { SimDeck } from '@tcg/deck-generator';
 import type { Environment } from './environment.js';
 import { TELEMETRY_SCHEMA_VERSION, type MatchRecord } from './telemetry/schema.js';
 import { renderReport, type ReportInputs } from './reporting/report.js';

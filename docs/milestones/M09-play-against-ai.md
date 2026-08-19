@@ -1198,7 +1198,7 @@ own streams from it, which is what per-seat derivation was for.
 mixed lobby is in memory for the length of a match, and the ceiling is recomputed
 from the seat map every time a bot is added.
 
-## M09.8 — Shared quick deck generator extraction
+## M09.8 — Shared quick deck generator extraction — **done (2026-08-19)**
 
 Reuse one deterministic legal generator in both the simulator and live lobbies:
 move or extract the reusable part of `apps/simulator/src/deck-search/` into the
@@ -1224,11 +1224,166 @@ tests.
 
 ### Checklist
 
-- [ ] Generator in a shared package; search orchestration left behind.
-- [ ] Byte-equivalent output for identical inputs, proven against the simulator.
-- [ ] Legal deck plus provenance, or named problems; never a silent repair.
-- [ ] Legal-pool size and forced-inclusion floor reported.
-- [ ] Supported environments declared, with the `node:crypto` question answered.
+- [x] **Generator in a shared package; search orchestration left behind.**
+      `@tcg/deck-generator` holds five modules and nothing else: `generate.ts`
+      (the draw), `deck.ts` (the deck value and `checkDeck`), `plan.ts` (plan
+      resolution and conformance), `hash.ts` (the content address a deck is named
+      by) and `environment.ts` (the input the draw actually reads). `evolve.ts`
+      and `mutate.ts` stayed in `apps/simulator/src/deck-search/`, which is now
+      exactly the search — fitness, hall of fame, populations across generations,
+      checkpoints, mutation and crossover — and imports the generator the way
+      anything else does.
+- [x] **Byte-equivalent output for identical inputs, proven against the
+      simulator.** Ten results were recorded from the pre-move code at `808e7e4`
+      and are replayed through the extracted package: seven single decks across
+      the real `precon_wave_1` pool (two default seeds, a fixed Commander, a
+      curve-and-role weighting, a plan at `all` and at `core`, and a required
+      card), one four-deck stratified population, and two more from the
+      simulator's own twelve-card fixture environment. Each golden is `digestOf`
+      over the **whole** `{ deck, diagnostics }` result, so a label, an origin
+      field, a construction verdict or a diagnostic that moved fails alongside a
+      card that moved.
+- [x] **Legal deck plus provenance, or named problems; never a silent repair.**
+      `validateDeck` is still the final authority, reached through `checkDeck`,
+      and a deck that fails it comes back `null` with the failing issues rather
+      than adjusted; `GENERATION_PROBLEM_CODES` names all fifteen codes the
+      package can emit, across the draw, plan resolution and the final legality
+      check, and `runtime.test.ts` reads the sources and fails when a `sim/` code
+      exists that the list does not name, so a caller can branch on a refusal
+      instead of matching prose. Provenance is recorded rather than inferred,
+      exactly as M05.5 left it — a deck the draw produced says `unconstrained`
+      even when it happens to hold a whole package — and "never reaches outside
+      the format" is asserted directly: every card of every generated deck is in
+      the environment's pool, and a required card the Commander cannot run is
+      skipped and named rather than added. The returned deck is now **frozen**,
+      entries included, because a deck is named by a hash of its own contents and
+      a caller that edited one in place would be holding an ID that describes a
+      different list.
+- [x] **Legal-pool size and forced-inclusion floor reported.**
+      `GenerationPoolReport` rides on every result that got as far as choosing a
+      Commander, and `poolReportFor` computes it alone for a caller that has not
+      generated yet. The floor is arithmetic rather than a guess:
+      `slack = poolCapacity - deckSize` is the copies a deck may leave out, and
+      `forcedInclusionFloor = deckSize - slack` is what any two legal decks under
+      that Commander must share, clamped into `[0, poolCapacity]` so a pool too
+      small to fill a deck reports every card as forced rather than more than it
+      has. The four Wave 1 Commanders measure 42/41/41/42 legal cards against a
+      40-card deck, which is a floor of 38/39/39/38 — the "generated decks are
+      minimally different from each other" claim, as a number a screen can print.
+      The field names are `legalPoolSize` and `forcedInclusionFloor` because
+      `generatedDeckProvenanceSchema` in `@tcg/bot-config` has been asking for
+      exactly those two since M09.1.
+- [x] **Supported environments declared, with the `node:crypto` question
+      answered.** Server-side Node only, and deliberately so.
+      `SUPPORTED_RUNTIMES` and `NODE_BUILTIN_DEPENDENCIES` say it in
+      `version.ts`, `package.json` carries the matching `engines` field, and
+      `runtime.test.ts` scans the package's own sources and fails when a Node
+      built-in appears that the declaration does not name, so the statement
+      cannot quietly become false. Removing the dependency was rejected on its
+      merits rather than skipped: `crypto.subtle` has no synchronous digest, so
+      portability would mean either an asynchronous generator or a second hash
+      implementation, and a second implementation is how one seed comes to name
+      two different decks on two machines. Nothing in M09 needs the browser —
+      generation happens on the authoritative server, and a client is told a
+      Commander and a hash. [ADR 0024](../architecture/0024-live-bot-seats.md) §6
+      records the choice beside the constraint that prompted it.
+
+### What moved, and what deliberately did not
+
+The input shrank. `generateDeck` took the simulator's `Environment` — content
+hashes, a rules configuration, a resolved config, a set list — and read five
+fields of it. It now takes `GenerationEnvironment`, which _is_ those five fields,
+and the simulator's `Environment` satisfies it structurally, so no call site had
+to be adapted. `generationEnvironmentForFormat` builds one from a bundled format,
+which is how a caller with no simulator obtains a **format-scoped** pool rather
+than the bundled universe; an unknown format throws instead of falling back.
+
+Two things moved that are not in `deck-search/`. `hash.ts` came because deck
+identity is part of what a generated deck _is_ — `makeDeck` names a deck by a
+hash of its own contents — and a second implementation of that hash is precisely
+the drift that would let one seed name two decks. `apps/simulator/src/hash.ts` is
+now a re-export, because the simulator content-addresses far more than decks and
+every one of those addresses has to be taken by the same function as every other.
+`seed.ts` did **not** move: the generator only ever used `rngFor`, which is
+`createRngState` under another name, so it now calls the engine directly and the
+seed hierarchy stayed with the experiments it derives.
+
+### How the equivalence claim is proven
+
+Twice, because it is two claims.
+`packages/deck-generator/src/equivalence.test.ts` replays the recorded inputs
+through the package's own format-scoped environment;
+`apps/simulator/src/deck-search/equivalence.test.ts` replays them through a full
+simulator `Environment` and through `tinyEnvironment()`, and then asserts
+deck-for-deck that the two environments agree. That last assertion is what makes
+`generationEnvironmentForFormat` a checked claim rather than a plausible one: it
+resolves the same 148-card pool and the same four Commanders the simulator
+resolves, or the decks would differ.
+
+The goldens live in `test-goldens.ts` with the commit they were taken at.
+Re-recording one to make a test pass is the single thing that file exists to
+prevent; if one ever has to move, it moves with `DECK_GENERATOR_VERSION` and with
+a recorded reason.
+
+### Names and codes deliberately unchanged
+
+`SimDeck`, `simDeckSchema` and the `sim/` diagnostic prefix moved into a shared
+package still carrying a simulator's vocabulary, and that is a decision rather
+than an oversight. The codes appear in recorded run diagnostics, and renaming one
+rewrites the meaning of records nobody can re-run; the type names appear in a
+versioned search checkpoint and in about two hundred places this tranche has no
+other reason to touch. M09.8's whole constraint is that identical inputs produce
+identical output and that the search keeps working, and a two-hundred-site rename
+that changes no behaviour is the least safe way to spend that budget. A later
+tranche may rename them; it will be a change with its own reason rather than a
+side effect of a move.
+
+### Findings recorded rather than fixed
+
+- **`sim/pool_exhausted` is unreachable today.** The draw checks pool capacity
+  against deck size before it starts, and no path afterwards reduces capacity, so
+  the mid-draw exhaustion branch cannot fire. It is kept — a guard that costs
+  nothing and would catch a future required-card or package rule that consumes
+  slots the capacity check did not anticipate — and it is named in
+  `GENERATION_PROBLEM_CODES` so it stays honest. No test asserts it, because a
+  test would have to fake a state the code cannot reach.
+- **`generatePopulation` reports no pool.** It generates across several
+  Commanders, so there is no single pool report to attach, and inventing one for
+  the first Commander would be worse than none. A caller that wants the numbers
+  per deck has `poolReportFor`. M09.9 generates one deck at a time, so nothing
+  needs this yet.
+- **The `engines` field is a declaration, not an enforcement.** npm warns rather
+  than refuses, and nothing at runtime checks it; `runtimeIsSupported()` exists
+  for a caller that wants to. The check that actually bites is the source scan in
+  `runtime.test.ts`.
+
+### Versions
+
+`DECK_GENERATOR_VERSION` is **new**, and is `'1'` — a string because
+`generatedDeckProvenanceSchema.generatorVersion` is one, and a version a recorded
+deck cannot cite is not a version. It pins the _draw_: the weighting, the
+ordering, the stopping rule. It did not start at 2 despite the code moving,
+because the code moving is precisely what the equivalence goldens prove changed
+nothing, and a new report field and a new diagnostic registry do not change which
+cards come out for a seed. It is in `docs/status-audit.md` under registries and
+instruments, beside the pilot versions it most resembles.
+
+Nothing else moved. `HASH_VERSION` stays 1 and stays a single implementation: it
+changed address, not algorithm, and `deckHash` embeds it in the string it hashes,
+so a bump would have shown up in every golden. `PROTOCOL_VERSION` stays 7 — no
+message shape changed and no lobby deck mode was added, which is this tranche's
+stated exclusion. `SEARCH_CHECKPOINT_VERSION` stays 2: a checkpoint holds
+`simDeckSchema` records and the schema is byte-identical, so a checkpoint written
+before this tranche resumes after it. `MATCH_SCHEMA_VERSION`, `RULES_VERSION`,
+`SEED_DERIVATION_VERSION` and the three `@tcg/bot-config` versions stay where
+they are; none of them describes where a function lives.
+
+**Compatibility.** Nothing is migrated because nothing durable changed shape.
+Recorded search checkpoints, match records, reports and experiment configurations
+all keep the fields they had; the one moved constant is `HASH_VERSION`, whose
+value and algorithm are unchanged, so every existing content address still
+resolves to the same string. The extraction is source-level only: no artifact
+written before it is read differently after it.
 
 ## M09.9 — Host-selected Commander generation
 

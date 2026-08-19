@@ -8,7 +8,7 @@ import {
   type MatchState,
 } from '@tcg/rules-engine';
 import { isErr } from '@tcg/shared';
-import { simDeckSchema, toMatchDeck, type SimDeck } from './deck-search/deck.js';
+import { simDeckSchema, toMatchDeck, type SimDeck } from '@tcg/deck-generator';
 import { restoreEnvironment } from './resolved-environment.js';
 import { canonicalJson } from './hash.js';
 import { replayBundleSchema, type ReplayBundle } from './telemetry/schema.js';

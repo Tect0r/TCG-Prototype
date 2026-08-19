@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { COLOR_IDS, type CardDatabase, type Role } from '@tcg/card-data';
-import type { SimDeck } from '../deck-search/deck.js';
-import { deckSize } from '../deck-search/deck.js';
+import { deckSize, type SimDeck } from '@tcg/deck-generator';
 import { proportion, round } from './stats.js';
 import type { MatchRecord } from '../telemetry/schema.js';
 

@@ -202,6 +202,17 @@ sufficient for M09, where generation happens on the authoritative server, and it
 is a real limit on any future browser-side preview — so the extracting tranche
 states which environments the shared package supports instead of implying both.
 
+**What M09.8 did with that** (2026-08-19): the package is `@tcg/deck-generator`,
+and it declares itself server-only rather than removing the dependency. The
+choice was between an asynchronous digest — `crypto.subtle` has no synchronous
+form — and a second hash implementation, and a second implementation is exactly
+the drift that would let one seed name two different decks on two machines. The
+declaration is `SUPPORTED_RUNTIMES` and `NODE_BUILTIN_DEPENDENCIES` in the
+package's `version.ts`, and `runtime.test.ts` reads the package's own sources so
+the claim fails when it stops being true. Deck identity moved with the
+generator; the generator no longer reaches the simulator's `seed.ts` at all, and
+takes `createRngState` directly.
+
 ### 7. Versions move where the shape moves, and nowhere else
 
 - **`PROTOCOL_VERSION` moves once**, in the tranche that puts bot messages and

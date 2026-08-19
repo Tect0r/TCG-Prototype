@@ -16,7 +16,7 @@ import {
   matchRecordSchema,
   type MatchRecord,
 } from './telemetry/schema.js';
-import { makeDeck, type SimDeck } from './deck-search/deck.js';
+import { makeDeck, type SimDeck } from '@tcg/deck-generator';
 
 /**
  * Hardening regression tests for the analysis layer (PHASE4_HARDENING §14).

@@ -91,31 +91,34 @@ export {
   type ResolvedEnvironment,
 } from './resolved-environment.js';
 
+// Re-exported rather than owned since M09.8: the deck value, its legality check
+// and the deterministic draw live in `@tcg/deck-generator`, and the simulator's
+// existing consumers keep importing them from here.
 export {
+  GENERATION_PROBLEM_CODES,
   checkDeck,
   deckSize,
   fromSavedDeck,
-  makeDeck,
-  normalizeEntries,
-  simDeckSchema,
-  toMatchDeck,
-  toSavedDeck,
-  type DeckLegality,
-  type SimDeck,
-  type SimDeckInput,
-} from './deck-search/deck.js';
-
-export {
   generateDeck,
   generatePopulation,
   generatorConfigSchema,
   isFullSize,
+  makeDeck,
+  normalizeEntries,
   poolFor,
+  poolReportFor,
+  simDeckSchema,
+  toMatchDeck,
+  toSavedDeck,
+  type DeckLegality,
   type GenerationDiagnostic,
+  type GenerationPoolReport,
   type GenerationResult,
   type GeneratorConfig,
   type GeneratorConfigInput,
-} from './deck-search/generate.js';
+  type SimDeck,
+  type SimDeckInput,
+} from '@tcg/deck-generator';
 
 export {
   crossoverDecks,

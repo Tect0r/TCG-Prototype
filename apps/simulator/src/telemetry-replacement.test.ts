@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMatch, type GameEvent, type MatchState } from '@tcg/rules-engine';
 import { isErr } from '@tcg/shared';
 import { TelemetryCollector, type SeatSetup } from './telemetry/collector.js';
-import { toMatchDeck } from './deck-search/deck.js';
+import { toMatchDeck } from '@tcg/deck-generator';
 import { fixtureDeck, tinyEnvironment } from './test-fixtures.js';
 
 /**

@@ -6,7 +6,7 @@ import {
   type ColorId,
 } from '@tcg/card-data';
 import type { Environment } from '../environment.js';
-import { checkDeck, makeDeck, type SimDeck } from '../deck-search/deck.js';
+import { checkDeck, makeDeck, type SimDeck } from '@tcg/deck-generator';
 import type { MatchRecord } from '../telemetry/schema.js';
 import { pairedBinary } from './paired.js';
 import { cohensH, effectSizeLabel, proportion, round } from './stats.js';

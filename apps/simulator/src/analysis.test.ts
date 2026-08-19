@@ -20,8 +20,7 @@ import {
 } from './analysis/stats.js';
 import { runBatch } from './run-batch.js';
 import { buildSchedule } from './schedule.js';
-import { generatePopulation } from './deck-search/generate.js';
-import type { SimDeck } from './deck-search/deck.js';
+import { generatePopulation, type SimDeck } from '@tcg/deck-generator';
 import type { MatchRecord } from './telemetry/schema.js';
 import type { Environment } from './environment.js';
 import {

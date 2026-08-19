@@ -8,8 +8,7 @@ import {
   type SearchOptions,
   type SearchResult,
 } from './deck-search/evolve.js';
-import { checkDeck, type SimDeck } from './deck-search/deck.js';
-import { generatePopulation } from './deck-search/generate.js';
+import { checkDeck, generatePopulation, type SimDeck } from '@tcg/deck-generator';
 import type { Environment } from './environment.js';
 import {
   FAST_LIMITS,

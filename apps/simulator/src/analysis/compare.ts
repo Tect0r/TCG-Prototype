@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { EnvironmentDiff } from '../environment.js';
 import { isAbnormal, type MatchRecord } from '../telemetry/schema.js';
-import type { SimDeck } from '../deck-search/deck.js';
+import type { SimDeck } from '@tcg/deck-generator';
 import { aggregate, type Aggregate } from './aggregate.js';
 import { pairedBinary, pairedMean, type PairedMean } from './paired.js';
 import { cohensH, effectSizeLabel, proportion, round } from './stats.js';

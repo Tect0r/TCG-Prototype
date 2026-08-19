@@ -6,7 +6,7 @@ import { BUNDLED_PRECONS, formatCardPool, preconsForFormat } from '@tcg/card-dat
 import { experimentConfigSchema } from './config.js';
 import { resolveEnvironment, type EnvironmentConfigInput } from './environment.js';
 import { resolveDeckSource } from './deck-source.js';
-import { checkDeck } from './deck-search/deck.js';
+import { checkDeck } from '@tcg/deck-generator';
 import { runExperiment } from './experiment.js';
 import { experimentPaths } from './reporting/sinks.js';
 

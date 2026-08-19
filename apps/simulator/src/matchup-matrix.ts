@@ -3,7 +3,7 @@ import { cardIdSchema } from '@tcg/card-data';
 import { seedBundleSchema } from './seed.js';
 import { isAbnormal, type MatchRecord } from './telemetry/schema.js';
 import type { ResolvedPrecon } from './deck-source.js';
-import type { SimDeck } from './deck-search/deck.js';
+import type { SimDeck } from '@tcg/deck-generator';
 
 /**
  * The ordered matchup matrix (M03.4).

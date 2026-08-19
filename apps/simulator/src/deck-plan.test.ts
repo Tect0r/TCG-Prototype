@@ -2,17 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { bundledDeckPlan, MAX_PLAN_SHARE, planCardIds } from '@tcg/card-data';
 import { resolveEnvironment, type EnvironmentConfigInput } from './environment.js';
 import { resolveDeckSource } from './deck-source.js';
-import { checkDeck, deckSize, type SimDeck } from './deck-search/deck.js';
-import { generateDeck, generatePopulation } from './deck-search/generate.js';
-import { crossoverDecks, mutateDeck } from './deck-search/mutate.js';
 import {
+  PlanResolutionError,
+  checkDeck,
   conformanceOf,
   corePackages,
+  deckSize,
+  generateDeck,
+  generatePopulation,
   isPackageIntact,
-  PlanResolutionError,
   resolvePlan,
   resolvePlanForPrecon,
-} from './deck-search/plan.js';
+  type SimDeck,
+} from '@tcg/deck-generator';
+import { crossoverDecks, mutateDeck } from './deck-search/mutate.js';
 import { analyzeDeckConstruction } from './analysis/construction.js';
 
 /**

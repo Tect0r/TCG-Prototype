@@ -1,10 +1,18 @@
 import { isColorIdentityLegal, type CardDefinition, type CardId } from '@tcg/card-data';
 import { nextInt, type RngState } from '@tcg/rules-engine';
+import {
+  checkDeck,
+  conformanceOf,
+  corePackages,
+  isPackageIntact,
+  makeDeck,
+  poolFor,
+  withConstruction,
+  type ResolvedPlan,
+  type SimDeck,
+} from '@tcg/deck-generator';
 import type { Environment } from '../environment.js';
 import { rngFor } from '../seed.js';
-import { checkDeck, makeDeck, withConstruction, type SimDeck } from './deck.js';
-import { poolFor } from './generate.js';
-import { conformanceOf, corePackages, isPackageIntact, type ResolvedPlan } from './plan.js';
 
 /**
  * Legal mutation and crossover (CLAUDE.md §13.9).

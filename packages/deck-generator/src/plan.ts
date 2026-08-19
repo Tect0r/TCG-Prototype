@@ -9,15 +9,15 @@ import {
   type DeckPlan,
   type DeckPlanPackage,
 } from '@tcg/card-data';
-import type { Environment } from '../environment.js';
 import type { DeckConstruction, SimDeck } from './deck.js';
+import type { GenerationEnvironment } from './environment.js';
 
 /**
- * Deck plans in the simulator (M05.5).
+ * Deck plans as a generation input (M05.5).
  *
  * A plan is authored content — `@tcg/card-data` owns the schema, the archetype
  * registry and the build-time checks. What this module adds is the two things a
- * *search* needs from one:
+ * *generator*, and the search built on it, need from one:
  *
  * - **Resolution.** A plan names cards; an environment decides which cards
  *   exist. `resolvePlan` is where those two meet, and it refuses rather than
@@ -74,7 +74,7 @@ export class PlanResolutionError extends Error {
  * dropping the two cards the environment banned would leave the report claiming
  * an archetype the population never had.
  */
-export function resolvePlan(planId: string, environment: Environment): ResolvedPlan {
+export function resolvePlan(planId: string, environment: GenerationEnvironment): ResolvedPlan {
   const plan = bundledDeckPlan(planId);
   if (!plan) {
     const published = deckPlansForFormat(environment.deckFormat.formatId).map((entry) => entry.id);
@@ -127,7 +127,7 @@ export function resolvePlan(planId: string, environment: Environment): ResolvedP
 /** The plan describing a shipped precon, resolved against this environment. */
 export function resolvePlanForPrecon(
   preconId: string,
-  environment: Environment,
+  environment: GenerationEnvironment,
 ): ResolvedPlan | null {
   const plan = deckPlanForPrecon(preconId);
   if (!plan) return null;

@@ -5,7 +5,7 @@ import { buildSchedule, type ScheduledMatch, type ScheduleOptions } from './sche
 import { runOne } from './run-one.js';
 import { seededIndex } from './seed.js';
 import type { MatchLimits } from './run-match.js';
-import type { SimDeck } from './deck-search/deck.js';
+import type { SimDeck } from '@tcg/deck-generator';
 import { ensureDir, writeJson } from './reporting/sinks.js';
 import { compareRecords, type MatchSink } from './reporting/match-store.js';
 import { isAbnormal, recordIdentity, type MatchRecord } from './telemetry/schema.js';

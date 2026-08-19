@@ -8,7 +8,7 @@ import {
   DECK_CONSTRUCTION_KINDS,
   type DeckConstructionKind,
   type SimDeck,
-} from '../deck-search/deck.js';
+} from '@tcg/deck-generator';
 
 /**
  * How the decks in this run were built (M05.5).

@@ -14,7 +14,7 @@ import {
   type SupportDimension,
 } from '@tcg/card-data';
 import { LEGAL_ONLY_PILOT_IDS } from '@tcg/bot-interface';
-import type { SimDeck } from '../deck-search/deck.js';
+import type { SimDeck } from '@tcg/deck-generator';
 
 /**
  * How well supported the mechanics a run actually played are (M05.1).

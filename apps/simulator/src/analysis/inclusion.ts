@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AnalysisSettings } from '../config.js';
-import type { SimDeck } from '../deck-search/deck.js';
+import type { SimDeck } from '@tcg/deck-generator';
 import type { MatchRecord } from '../telemetry/schema.js';
 import type { ClusteringResult } from './clusters.js';
 import { round } from './stats.js';

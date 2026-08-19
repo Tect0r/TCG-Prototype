@@ -8,8 +8,7 @@ import {
 import { PILOT_IDS, type PilotId } from '@tcg/bot-interface';
 import { collectTelemetry } from '@tcg/spectator';
 import { deriveSeedBundle } from './seed.js';
-import { toMatchDeck, type SimDeck } from './deck-search/deck.js';
-import { generateDeck } from './deck-search/generate.js';
+import { generateDeck, toMatchDeck, type SimDeck } from '@tcg/deck-generator';
 import { runMatch, type RunMatchOptions, type RunMatchResult } from './run-match.js';
 import { FAST_LIMITS, VALUE_PILOT, AGGRESSIVE_PILOT, tinyEnvironment } from './test-fixtures.js';
 import type { Environment } from './environment.js';

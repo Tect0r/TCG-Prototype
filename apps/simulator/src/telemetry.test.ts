@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CardDefinitionInput } from '@tcg/card-data';
 import { deriveSeedBundle } from './seed.js';
-import { makeDeck, toMatchDeck, type SimDeck } from './deck-search/deck.js';
-import { generateDeck } from './deck-search/generate.js';
+import { generateDeck, makeDeck, toMatchDeck, type SimDeck } from '@tcg/deck-generator';
 import { runMatch, type RunMatchOptions, type RunMatchResult } from './run-match.js';
 import {
   DEAD_HAND_CATEGORIES,

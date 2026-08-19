@@ -6,19 +6,18 @@ import { migrateSavedDeck, preconToDeck, reviewPrecon } from '@tcg/deck';
 import type { DeckSource } from './config.js';
 import type { Environment } from './environment.js';
 import {
-  checkDeck,
-  fromSavedDeck,
-  makeDeck,
-  withConstruction,
-  type SimDeck,
-} from './deck-search/deck.js';
-import { generatePopulation, type GenerationDiagnostic } from './deck-search/generate.js';
-import {
-  conformanceOf,
   PlanResolutionError,
+  checkDeck,
+  conformanceOf,
+  fromSavedDeck,
+  generatePopulation,
+  makeDeck,
   resolvePlanForPrecon,
+  withConstruction,
+  type GenerationDiagnostic,
   type ResolvedPlan,
-} from './deck-search/plan.js';
+  type SimDeck,
+} from '@tcg/deck-generator';
 
 /**
  * Turns a configured deck source into validated decks (CLAUDE.md §13.8).

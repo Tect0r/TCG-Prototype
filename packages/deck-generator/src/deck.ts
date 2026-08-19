@@ -9,17 +9,22 @@ import {
 } from '@tcg/deck';
 import type { MatchDeck } from '@tcg/rules-engine';
 import { error, hasErrors, type Issue } from '@tcg/shared';
-import type { Environment } from '../environment.js';
-import { deckHash } from '../hash.js';
+import type { GenerationEnvironment } from './environment.js';
+import { deckHash } from './hash.js';
 
 /**
- * The simulator's deck representation.
+ * A constructed deck, as the generator and the search hand it around.
  *
  * Identical in content to a `SavedDeck` minus the parts that are about a human
  * saving a file — timestamps and a display name are not experimental inputs, and
  * including them would make two identical decks hash differently. Conversion in
  * both directions is exact, so `validateDeck` stays the single authority on
  * legality (CLAUDE.md §13.8).
+ *
+ * The name `SimDeck` is older than the package and is kept on purpose (M09.8):
+ * it is what recorded search checkpoints, reports and every existing test cite,
+ * and renaming it would be a two-hundred-site change that alters no output.
+ * What moved in M09.8 is where the type lives, not what it means.
  */
 
 /**
@@ -198,7 +203,7 @@ export interface DeckLegality {
  * Legality through `validateDeck` — the same check the deck builder and the
  * multiplayer server run — plus the environment's ban and allow lists.
  */
-export function checkDeck(deck: SimDeck, environment: Environment): DeckLegality {
+export function checkDeck(deck: SimDeck, environment: GenerationEnvironment): DeckLegality {
   const report = validateDeck(toSavedDeck(deck), environment.database, environment.deckFormat);
   const issues: Issue[] = [...report.issues];
 

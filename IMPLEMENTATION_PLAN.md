@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.8        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.9        |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -116,21 +116,43 @@ seat-named form per bot and serialises its mutations, which bounds the
 
 ## The next bounded task
 
-**M09.8 — Shared quick deck generator extraction.** Reuse one deterministic legal
-generator in both the simulator and live lobbies: move or extract the reusable
-part of `apps/simulator/src/deck-search/` into the smallest suitable shared
-package without changing existing search output for identical inputs, leaving
-evolution and search orchestration in the simulator app. The extracted generator
-takes a format-scoped database, a Commander constraint, an optional plan or
-package policy, role and curve settings and a deterministic seed, and returns
-either a legal immutable deck with provenance or structured named generation
-problems — never a repair that reaches outside the format. It reports legal-pool
-size and the forced-inclusion floor, and it **states its supported environments
-rather than assuming them**: the current chain reaches `node:crypto` through
-`apps/simulator/src/hash.ts`, so either the extraction removes that dependency
-deliberately or the package declares itself server-only. No lobby generated-deck
-mode yet. The scope, the exclusions and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m098--shared-quick-deck-generator-extraction).
+**M09.9 — Host-selected Commander generation.** Let the owner choose a Commander
+while the bot builds the deck. Legal implemented Commanders are offered from the
+**active format only**; a legal deck is generated under the selected Commander
+and frozen, with its seed, generator version, construction mode, hash and
+forced-inclusion warning recorded. Explicit reroll is supported before match
+start, each with a deterministic recorded seed transition. The list stays private
+through lobby and match and is revealed or exported after completion. Unknown,
+off-format, incomplete and impossible Commander generation is refused by name.
+Everything it needs from the generator exists after M09.8 —
+`@tcg/deck-generator`, its provenance fields and its pool report — so this
+tranche is the lobby mode rather than the construction. The scope, the exclusions
+and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m099--host-selected-commander-generation).
+
+**M09.8 extracted the generator, and proved the extraction changed nothing.**
+`@tcg/deck-generator` now owns the deterministic legal draw, the deck value and
+its legality check, deck plan resolution, and the content address a deck is named
+by; `apps/simulator/src/deck-search/` is now exactly the search — mutation,
+crossover, fitness, populations, checkpoints — and imports the generator like any
+other caller. The input shrank from the simulator's whole `Environment` to the
+five fields the draw reads, which the simulator's `Environment` satisfies
+structurally, so no call site had to be adapted; a caller with no simulator gets a
+**format-scoped** pool from `generationEnvironmentForFormat`, which throws on an
+unknown format rather than falling back to the bundled universe. Equivalence is a
+check rather than a claim: ten results recorded from the pre-move code — seven
+decks across the real Wave 1 pool, a stratified population, and two from the
+simulator's own fixture environment — are replayed through both the package's
+environment and a full simulator `Environment`, digested over the whole result so
+a moved label or diagnostic fails alongside a moved card. The generator now also
+reports what the format left it — 42/41/41/42 legal cards against a 40-card deck
+is a forced-inclusion floor of 38/39/39/38 — and names its fifteen problem codes
+as a closed set that a source scan keeps complete. The `node:crypto` question was
+answered rather than deferred: the package declares itself **server-only**, in
+constants a test checks against its own sources, because the portable alternative
+would need a second hash implementation and that is how one seed comes to name two
+decks. `DECK_GENERATOR_VERSION` is new and is `'1'`; nothing else moved, and no
+lobby deck mode was added.
 
 ## The parallel non-code activity
 

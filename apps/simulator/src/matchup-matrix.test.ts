@@ -10,7 +10,7 @@ import { resolveDeckSource } from './deck-source.js';
 import { runExperiment } from './experiment.js';
 import { buildMatchupMatrix, matchupMatrixRows, matchupMatrixSchema } from './matchup-matrix.js';
 import { experimentPaths } from './reporting/sinks.js';
-import { makeDeck, type SimDeck } from './deck-search/deck.js';
+import { makeDeck, type SimDeck } from '@tcg/deck-generator';
 import {
   TELEMETRY_SCHEMA_VERSION,
   matchRecordSchema,

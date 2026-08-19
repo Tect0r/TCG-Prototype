@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import { performance } from 'node:perf_hooks';
 import { resolveEnvironment } from './environment.js';
-import { generatePopulation } from './deck-search/generate.js';
+import { generatePopulation } from '@tcg/deck-generator';
 import { buildSchedule } from './schedule.js';
 import { runBatch } from './run-batch.js';
 import { DEFAULT_LIMITS } from './run-match.js';

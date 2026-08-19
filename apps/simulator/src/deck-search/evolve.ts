@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { PilotSpec } from '@tcg/bot-interface';
+import { simDeckSchema, type ResolvedPlan, type SimDeck } from '@tcg/deck-generator';
 import type { Environment } from '../environment.js';
 import type { MatchLimits } from '../run-match.js';
 import { runBatch, type BatchRetention } from '../run-batch.js';
@@ -8,9 +9,7 @@ import { buildSchedule } from '../schedule.js';
 import { normalizedEntropy, proportion, round } from '../analysis/stats.js';
 import { isAbnormal, type MatchRecord } from '../telemetry/schema.js';
 import { seededIndex } from '../seed.js';
-import { simDeckSchema, type SimDeck } from './deck.js';
 import { crossoverDecks, deckDistance, mutateDeck, type PackagePolicy } from './mutate.js';
-import type { ResolvedPlan } from './plan.js';
 
 /**
  * Evolutionary abuse search (CLAUDE.md §13.9).

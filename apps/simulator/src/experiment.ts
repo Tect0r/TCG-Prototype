@@ -23,8 +23,7 @@ import { buildMatchupMatrix, matchupMatrixRows, type MatchupMatrix } from './mat
 import { buildSchedule } from './schedule.js';
 import { runBatch, type BatchProgress } from './run-batch.js';
 import { runSearch, type GenerationReport, type SearchCheckpoint } from './deck-search/evolve.js';
-import { generatePopulation } from './deck-search/generate.js';
-import { resolvePlan } from './deck-search/plan.js';
+import { generatePopulation, resolvePlan, type SimDeck } from '@tcg/deck-generator';
 import { aggregate, type Aggregate } from './analysis/aggregate.js';
 import { aggregateBoard, type BoardAggregate } from './analysis/board.js';
 import { clusterDecks, type ClusteringResult } from './analysis/clusters.js';
@@ -63,7 +62,6 @@ import {
   freezeReferencePopulation,
   type ReferencePopulation,
 } from './reference-population.js';
-import type { SimDeck } from './deck-search/deck.js';
 import { HASH_VERSION, digestOf } from './hash.js';
 import { ANALYSIS_STATS_VERSION } from './analysis/paired.js';
 

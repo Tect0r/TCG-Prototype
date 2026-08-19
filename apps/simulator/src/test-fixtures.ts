@@ -5,7 +5,7 @@ import {
   type Environment,
   type EnvironmentConfigInput,
 } from './environment.js';
-import { makeDeck, type SimDeck } from './deck-search/deck.js';
+import { makeDeck, type SimDeck } from '@tcg/deck-generator';
 
 /**
  * Fixtures for the Phase 4 acceptance tests.

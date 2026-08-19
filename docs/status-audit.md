@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `9eafd3a68212cd98296189dc6dc44c65e56c8f95` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-19                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | not run for this audit                     |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `808e7e4117b1df5728236dc5e47511cb3bbd3480`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-19                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 67      | 1524     |
+| packages       | 71      | 1575     |
 | scripts        | 4       | 69       |
 | server         | 8       | 175      |
-| simulator      | 23      | 434      |
+| simulator      | 23      | 433      |
 | web-client     | 16      | 191      |
-| **total**      | **118** | **2393** |
+| **total**      | **122** | **2443** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -101,19 +101,20 @@ What a bot seat is configured by. Independent of the play contract on purpose (A
 
 Classifications a citation is made against. A move here re-judges evidence rather than refusing it.
 
-| Constant                          | Value | Pins                                                          |
-| --------------------------------- | ----- | ------------------------------------------------------------- |
-| `SUPPORT_REGISTRY_VERSION`        | 2     | How well each mechanic is supported, in four dimensions.      |
-| `ARCHETYPE_REGISTRY_VERSION`      | 1     | The archetype vocabulary and the roles each one requires.     |
-| `KEYWORD_REGISTRY_SCHEMA_VERSION` | 1     | The keyword registry entry shape.                             |
-| `AGENT_CLASS_REGISTRY_VERSION`    | 1     | Which agent class may make which evidence claim.              |
-| `CALIBRATION_SUITE_VERSION`       | 1     | The tactical fixtures a calibration standing was measured on. |
-| `STALL_DEFINITION_VERSION`        | 1     | The rule a quiet round is judged a stall by.                  |
-| `PERTURBATION_PROFILE_VERSION`    | 1.0.0 | How a pilot is perturbed for a robustness arm.                |
-| `pilot random_legal`              | 1.0.0 | Decision procedure; agent class `random_legal`.               |
-| `pilot aggressive`                | 1.1.0 | Decision procedure; agent class `generic_heuristic`.          |
-| `pilot defensive`                 | 1.1.0 | Decision procedure; agent class `generic_heuristic`.          |
-| `pilot value`                     | 1.1.0 | Decision procedure; agent class `generic_heuristic`.          |
+| Constant                          | Value | Pins                                                                  |
+| --------------------------------- | ----- | --------------------------------------------------------------------- |
+| `SUPPORT_REGISTRY_VERSION`        | 2     | How well each mechanic is supported, in four dimensions.              |
+| `ARCHETYPE_REGISTRY_VERSION`      | 1     | The archetype vocabulary and the roles each one requires.             |
+| `KEYWORD_REGISTRY_SCHEMA_VERSION` | 1     | The keyword registry entry shape.                                     |
+| `AGENT_CLASS_REGISTRY_VERSION`    | 1     | Which agent class may make which evidence claim.                      |
+| `CALIBRATION_SUITE_VERSION`       | 1     | The tactical fixtures a calibration standing was measured on.         |
+| `STALL_DEFINITION_VERSION`        | 1     | The rule a quiet round is judged a stall by.                          |
+| `PERTURBATION_PROFILE_VERSION`    | 1.0.0 | How a pilot is perturbed for a robustness arm.                        |
+| `DECK_GENERATOR_VERSION`          | 1     | The construction procedure a generated deck cites. Runs on node only. |
+| `pilot random_legal`              | 1.0.0 | Decision procedure; agent class `random_legal`.                       |
+| `pilot aggressive`                | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                  |
+| `pilot defensive`                 | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                  |
+| `pilot value`                     | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                  |
 
 ## Content
 
@@ -266,13 +267,13 @@ No question the plan calls open is missing or answered in the question file.
 
 ## Repository inventory
 
-| Reading                                  | Value                                                                                                                                                                                                                                                                                              |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspaces                               | `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
-| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                             |
-| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                               |
-| Architecture decision records            | 24                                                                                                                                                                                                                                                                                                 |
-| Milestone documents                      | 9                                                                                                                                                                                                                                                                                                  |
+| Reading                                  | Value                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspaces                               | `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/deck-generator`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
+| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                                                        |
+| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                                                          |
+| Architecture decision records            | 24                                                                                                                                                                                                                                                                                                                            |
+| Milestone documents                      | 9                                                                                                                                                                                                                                                                                                                             |
 
 ### Architecture decision records
 

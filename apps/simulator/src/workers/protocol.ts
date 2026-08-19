@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { pilotSpecSchema } from '@tcg/bot-interface';
 import { environmentConfigSchema } from '../environment.js';
 import { matchLimitsSchema, retentionSchema } from '../config.js';
-import { simDeckSchema } from '../deck-search/deck.js';
+import { simDeckSchema } from '@tcg/deck-generator';
 import { seedBundleSchema } from '../seed.js';
 import { matchRecordSchema } from '../telemetry/schema.js';
 

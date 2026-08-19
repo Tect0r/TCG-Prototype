@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { checkDeck, deckSize, fromSavedDeck, makeDeck, toSavedDeck } from './deck-search/deck.js';
-import { generateDeck, generatePopulation, isFullSize, poolFor } from './deck-search/generate.js';
+import {
+  checkDeck,
+  deckSize,
+  fromSavedDeck,
+  generateDeck,
+  generatePopulation,
+  isFullSize,
+  makeDeck,
+  poolFor,
+  toSavedDeck,
+} from '@tcg/deck-generator';
 import { crossoverDecks, deckDistance, mutateDeck } from './deck-search/mutate.js';
 import { resolveEnvironment } from './environment.js';
 import { tinyEnvironment } from './test-fixtures.js';

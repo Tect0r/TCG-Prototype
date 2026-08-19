@@ -77,6 +77,7 @@ import {
   PACING_CONFIG_VERSION,
 } from '@tcg/bot-config';
 import { BOARD_TELEMETRY_VERSION, STALL_DEFINITION_VERSION } from '@tcg/board-telemetry';
+import { DECK_GENERATOR_VERSION, SUPPORTED_RUNTIMES } from '@tcg/deck-generator';
 import {
   DECK_FINGERPRINT_VERSION,
   DECK_SCHEMA_VERSION,
@@ -551,6 +552,11 @@ function versionGroups(): readonly VersionGroup[] {
           constant: 'PERTURBATION_PROFILE_VERSION',
           value: String(PERTURBATION_PROFILE_VERSION),
           pins: 'How a pilot is perturbed for a robustness arm.',
+        },
+        {
+          constant: 'DECK_GENERATOR_VERSION',
+          value: DECK_GENERATOR_VERSION,
+          pins: `The construction procedure a generated deck cites. Runs on ${SUPPORTED_RUNTIMES.join(', ')} only.`,
         },
         ...PILOT_IDS.map((pilotId) => ({
           constant: `pilot ${pilotId}`,

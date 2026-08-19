@@ -8,7 +8,7 @@ import {
   seededIndex,
   type SeedBundle,
 } from './seed.js';
-import type { SimDeck } from './deck-search/deck.js';
+import type { SimDeck } from '@tcg/deck-generator';
 
 /**
  * Which matches an experiment consists of, decided up front (CLAUDE.md §13.7).

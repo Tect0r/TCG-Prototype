@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DeckSource } from './config.js';
 import type { Environment } from './environment.js';
 import { resolveDeckSource, resolvedPreconSchema } from './deck-source.js';
-import { checkDeck, simDeckSchema, type SimDeck } from './deck-search/deck.js';
+import { checkDeck, simDeckSchema, type SimDeck } from '@tcg/deck-generator';
 import { digestOf } from './hash.js';
 
 /**

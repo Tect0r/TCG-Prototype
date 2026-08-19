@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { cardIdSchema, preconIdSchema } from '@tcg/card-data';
 import { perturbationProfileIdSchema, pilotSpecSchema } from '@tcg/bot-interface';
 import { declaredChangesSchema, environmentConfigSchema } from './environment.js';
-import { generatorConfigSchema } from './deck-search/generate.js';
+import { generatorConfigSchema } from '@tcg/deck-generator';
 import { PACKAGE_POLICIES } from './deck-search/mutate.js';
 
 /**
