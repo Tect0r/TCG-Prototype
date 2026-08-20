@@ -20,9 +20,10 @@ export const GRAVE_SACRIFICE_FIXTURES: readonly TacticalFixture[] = [
     claim: 'feeding Carrion Feeder gives up the 2/1, not the 7/7',
     play: (table, pilot, rng) => {
       const feeder = table.board('carrion_feeder');
-      // Both are printed Units. A Thrall Token would not do: `carrion_feeder`
-      // filters its cost on `cardTypes: ["unit"]`, which a Token is not, and a
-      // cost with one legal payment is paid without asking anybody.
+      // Both are printed Units, and deliberately: a Token would also satisfy
+      // `carrion_feeder`'s `cardTypes: ["unit"]` cost since Q49, and a cost with
+      // one legal payment is paid without asking anybody — so a third body on
+      // the board would change what question this fixture asks.
       const fodder = table.board('ashen_vermin');
       const giant = table.board('stitched_abomination');
 
@@ -78,19 +79,16 @@ export const GRAVE_SACRIFICE_FIXTURES: readonly TacticalFixture[] = [
       // draw spell eats the only Unit on the board and strands the other card.
       return table.zoneOf(convert) === 'discard' && table.zoneOf(draw) === 'discard';
     },
-    knownGaps: {
-      aggressive:
-        'prices the additional sacrifice against the draw and never plays the second card',
-      defensive: 'prices the additional sacrifice against the draw and never plays the second card',
-      value: 'prices the additional sacrifice against the draw and never plays the second card',
-    },
-    // Unchanged by M09.14 on purpose: what an additional sacrifice buys is a
-    // question about the play after this one, which M09.15 owns.
-    tacticalGaps: {
-      aggressive: 'still prices the sacrifice against the draw; payoff is M09.15’s half of Hard',
-      defensive: 'still prices the sacrifice against the draw; payoff is M09.15’s half of Hard',
-      value: 'still prices the sacrifice against the draw; payoff is M09.15’s half of Hard',
-    },
+    // No gap at either profile since M09.15, and the reason is worth writing
+    // down because it is not a pilot improvement. Every style already sequenced
+    // this correctly — the converter outscores the draw spell and was always
+    // played first. What stopped the second card was the *engine*: a Thrall
+    // could not pay "sacrifice a Unit", so once the last printed body had been
+    // converted there was no legal payment left and the draw stranded in hand.
+    // The owner's Token ruling (Q49) makes a battlefield Token a Unit, and the
+    // line became legal for a pilot for the same reason it became legal for a
+    // person. Recorded here rather than in `tacticalGaps` so nobody reads this
+    // board as evidence about Hard.
   },
   {
     id: 'grave_sacrifice/block_with_the_body_that_survives',

@@ -3,6 +3,7 @@ import {
   AVAILABLE_DIFFICULTIES,
   BOT_CONFIG_SCHEMA_VERSION,
   DEFAULT_BOT_DIFFICULTY,
+  difficultyDefinition,
   DIFFICULTY_REGISTRY_VERSION,
   EASY_SELECTION,
   IMMEDIATE_BOT_PACING,
@@ -479,11 +480,14 @@ describe('one independent deterministic stream per bot seat', () => {
   });
 
   it('refuses a difficulty that has no decision procedure behind it', () => {
-    // Hard is the only one left: M09.13 gave Easy a procedure and turned it on.
-    // The refusal now comes from `difficultySelection` in `@tcg/bot-config`, so
-    // there is one wording rather than one per caller that builds a pilot.
+    // Hard is the only one left: M09.13 gave Easy a procedure and turned it on,
+    // and M09.15 built Hard's behaviour without publishing it — the registry is
+    // still the only thing that decides, and it still says no. The refusal comes
+    // from `difficultySelection` in `@tcg/bot-config`, so there is one wording
+    // rather than one per caller that builds a pilot, and the tranche it names
+    // is read from the registry rather than spelled here.
     expect(() => createBotPilot({ ...botConfigFor('value'), difficulty: 'hard' })).toThrow(
-      /M09\.15/,
+      new RegExp(difficultyDefinition('hard').plannedIn ?? 'never'),
     );
     for (const difficulty of AVAILABLE_DIFFICULTIES) {
       expect(() => createBotPilot({ ...botConfigFor('value'), difficulty })).not.toThrow();

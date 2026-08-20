@@ -304,6 +304,52 @@ export function commanderDeployCost(
   return Math.min(base + surcharge, config.commanderCostCap);
 }
 
+/**
+ * Whether an entity *is a Token* as the engine understands one.
+ *
+ * The same two-sided test `moveToZone` uses: the flag `create_token` sets, or a
+ * definition whose printed type is `token` however the instance reached play.
+ * Kept in one place so "is this a Token" cannot come to mean two things.
+ */
+export function isTokenEntity(definition: CardDefinition, instance: CardInstance | null): boolean {
+  return definition.type === 'token' || instance?.isToken === true;
+}
+
+/**
+ * Which card types an entity satisfies **right now**.
+ *
+ * A Token on the battlefield *is* a Unit (owner ruling, 2026-08-20): every rule,
+ * target and additional cost that says "Unit" includes Unit Tokens unless it
+ * says "nontoken Unit" or "Unit card". So `cardTypes: ['unit']` matches a Token
+ * that is in play, which is what makes "As an additional cost, sacrifice a Unit"
+ * payable with a Thrall and what makes a lord's "Units you control" reach the
+ * bodies its own deck manufactures.
+ *
+ * Three boundaries the widening deliberately does **not** cross:
+ *
+ * - **It is one-way.** `cardTypes: ['token']` stays token-only, because a
+ *   token-only filter is an authored restriction rather than a shorthand — it is
+ *   how "every Token with the same definition" and "Goblin Tokens you create"
+ *   are written.
+ * - **It is battlefield-only.** A Token is a Unit *while it is in play*; it is
+ *   never a Unit **card**. "Return a Unit card from your discard pile" and "the
+ *   top Unit card of your deck" are asked of zones a Token cannot be in, and a
+ *   filter evaluated against a definition with no instance — a cost modifier
+ *   read off a card in hand, a turn-event entry for a card that has already gone
+ *   — is not evaluated against something in play, so it does not widen either.
+ * - **It adds nothing else.** `commander` and every other type still mean
+ *   exactly themselves.
+ */
+export function satisfiesCardTypes(
+  definition: CardDefinition,
+  instance: CardInstance | null,
+  cardTypes: readonly CardDefinition['type'][],
+): boolean {
+  if (cardTypes.includes(definition.type)) return true;
+  if (!cardTypes.includes('unit')) return false;
+  return instance?.zone === 'battlefield' && isTokenEntity(definition, instance);
+}
+
 function inRange(value: number, range: NumericRange | undefined): boolean {
   if (!range) return true;
   if (range.min !== undefined && value < range.min) return false;
@@ -328,7 +374,7 @@ export function matchesCardFilter(
    */
   combat?: { readonly attacking: boolean; readonly blocking: boolean },
 ): boolean {
-  if (filter.cardTypes && !filter.cardTypes.includes(definition.type)) return false;
+  if (filter.cardTypes && !satisfiesCardTypes(definition, instance, filter.cardTypes)) return false;
   if (filter.cardIds && !filter.cardIds.includes(definition.id)) return false;
   if (filter.colors && !definition.colorIdentity.some((c) => filter.colors?.includes(c)))
     return false;

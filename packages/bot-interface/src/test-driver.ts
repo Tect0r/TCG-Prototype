@@ -170,8 +170,16 @@ export async function driveMatch(options: DriveOptions): Promise<DriveOutcome> {
  * Whose turn it is to make a decision.
  *
  * Mirrors the engine's own ordering: a pending choice belongs to exactly one
- * seat, an unfinished blocker submission belongs to a specific defender, and
+ * seat, an open Reaction window belongs to whoever currently holds priority in
+ * it, an unfinished blocker submission belongs to a specific defender, and
  * otherwise the active player acts.
+ *
+ * The Reaction case was missing until M09.15, which is why this driver could not
+ * play a deck that contains one: it went on asking the active player while the
+ * engine was waiting on the seat holding priority, and that seat's only legal
+ * moves were inside a window the driver never mentioned. Every deck the contract
+ * tests fly is built from `prototype_core`, which prints no Reaction, so nothing
+ * had ever asked.
  */
 function seatToAct(state: MatchState, seats: number): number | null {
   const indexOf = (playerId: string): number | null => {
@@ -180,6 +188,11 @@ function seatToAct(state: MatchState, seats: number): number | null {
   };
 
   if (state.pendingChoice) return indexOf(state.pendingChoice.playerId);
+  const window = state.reactionWindow;
+  if (window && !window.closed) {
+    const holder = window.priorityOrder[window.priorityIndex];
+    return holder === undefined ? null : indexOf(holder);
+  }
   if (state.status === 'mulligan') {
     const pending = state.seatOrder.find(
       (playerId) => state.players[playerId]?.mulligan.status === 'pending',

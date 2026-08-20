@@ -209,6 +209,24 @@ the phase to return to; `complete` ends the match.
 
 ## Tokens
 
+- **A Token on the battlefield is a Unit.** Owner ruling, 2026-08-20: any rule,
+  target or additional cost that says "Unit" includes Unit Tokens unless it
+  explicitly says "nontoken Unit" or "Unit card". So a Thrall pays
+  `forbidden_offering`'s "sacrifice a Unit", and a lord's "Units you control"
+  reaches the bodies its own deck manufactures.
+  - The widening is **one-way**: `cardTypes: ['token']` stays token-only, because
+    a token-only filter is an authored restriction — it is how
+    `containment_pulse` and `goblin_warhorn_captain` are written — and not a
+    shorthand for "Unit".
+  - The widening is **battlefield-only**: a Token is a Unit while it is in play
+    and is never a Unit _card_. "A Unit card in your discard pile" and "the top
+    Unit card of your deck" are asked of zones a Token cannot be in, and a filter
+    evaluated with no instance behind it — a cost modifier read off a card in
+    hand, a turn-event entry for a card that has already gone — is not a question
+    about anything in play and does not widen either.
+  - It is one sentence in the central filter, not a rule about any card. The
+    fourteen `['unit', 'token']` filters in the catalog are now redundant and are
+    deliberately left alone; they mean exactly what they meant.
 - A Token that leaves the battlefield ceases to exist rather than moving zone.
 - Tokens retain **individual engine identity** even when grouped visually. A
   visual stack is a presentation tile, not a targeting unit, and it has no
@@ -218,8 +236,10 @@ the phase to return to; `complete` ends the match.
   player, whatever state each is in — so one such effect deliberately reaches
   across several visual tiles.
 
-**Enforced in:** `rules-engine/src/zones.ts`, `targeting.ts#expandTokenGroup`;
-presented by `apps/web-client/src/lib/token-grouping.ts`.
+**Enforced in:** `rules-engine/src/derive.ts#satisfiesCardTypes` (the Unit
+ruling, tested in `token-is-a-unit.test.ts`), `rules-engine/src/zones.ts`,
+`targeting.ts#expandTokenGroup`; presented by
+`apps/web-client/src/lib/token-grouping.ts` and by the `token` glossary entry.
 
 ## Multiplayer
 

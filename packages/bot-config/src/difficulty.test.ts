@@ -61,12 +61,13 @@ describe('difficulty registry', () => {
     for (const difficulty of BOT_DIFFICULTIES) {
       expect(DIFFICULTY_REGISTRY[difficulty].status).toBe(EXPECTED_STATUS[difficulty]);
     }
-    // Easiest first, and the order is the lobby's order: M09.13 turned Easy on
-    // and deliberately left Hard where M09.15 will find it.
+    // Easiest first, and the order is the lobby's order: M09.13 turned Easy on,
+    // M09.15 built Hard's behaviour without publishing it, and `plannedIn` moved
+    // to the tranche that owns the decision rather than the implementation.
     expect(AVAILABLE_DIFFICULTIES).toEqual(['easy', 'normal']);
     expect(PLANNED_DIFFICULTIES).toEqual(['hard']);
     expect(DIFFICULTY_REGISTRY.easy.plannedIn).toBeNull();
-    expect(DIFFICULTY_REGISTRY.hard.plannedIn).toBe('M09.15');
+    expect(DIFFICULTY_REGISTRY.hard.plannedIn).toBe('M09.16');
   });
 
   it('gives a behaviour version to what it implements, and to nothing else', () => {
@@ -100,7 +101,7 @@ describe('difficulty registry', () => {
     // Refused by name rather than silently falling back to `best`, which is how
     // a planned difficulty would otherwise end up playing as Normal while the
     // lobby, the seat label and the match record all said it did not.
-    expect(() => difficultySelection('hard')).toThrow(/Hard.*M09\.15/);
+    expect(() => difficultySelection('hard')).toThrow(/Hard.*M09\.16/);
   });
 
   it('refuses a bound that would not bound anything', () => {

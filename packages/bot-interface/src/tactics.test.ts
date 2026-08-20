@@ -7,9 +7,15 @@ import type { CardInstanceView } from '@tcg/rules-engine';
 import {
   CALIBRATED_PILOT_IDS,
   CALIBRATION_FIXTURES,
+  CalibrationTable,
+  calibrationDatabase,
   compareCalibrationSuite,
+  preconMatchDeck,
   runFixture,
 } from './calibration/index.js';
+import { AGGRESSIVE_WEIGHTS } from './aggressive.js';
+import { candidateActions } from './candidates.js';
+import { scoreCandidate } from './heuristic.js';
 import {
   createPilot,
   createStyledPilot,
@@ -17,12 +23,20 @@ import {
   STYLED_PILOT_IDS,
 } from './registry.js';
 import {
+  arrivalBoostValue,
   BASELINE_COMBAT_MODEL,
+  cardValue,
   damageRemovalFraction,
+  DEFAULT_WEIGHTS,
+  enablerLeadBonus,
   greedyBlocks,
+  reactionEnergyReserve,
   resolveHypotheticalCombat,
+  strandedReactionValue,
+  windowIsReachable,
   wouldDefeat,
   type CombatModel,
+  type PlayableEntry,
 } from './scoring.js';
 import {
   assertTacticalProfilesComplete,
@@ -296,6 +310,157 @@ describe('removal lethality', () => {
   });
 });
 
+/* ------------------------------------------- the short-horizon refinements */
+
+describe('enabler sequencing', () => {
+  const database = calibrationDatabase();
+  const weights = DEFAULT_WEIGHTS;
+  const armory = database.getOrThrow('bastion_armory');
+  const guardian = database.getOrThrow('bastion_infantry');
+  const plain = database.getOrThrow('border_recruit');
+
+  const entry = (definitionId: string, energyCost: number, baseScore: number): PlayableEntry => ({
+    instanceId: definitionId,
+    definitionId,
+    energyCost,
+    baseScore,
+  });
+
+  it('reads what a Relic adds to the Unit its trigger covers, and nothing else', () => {
+    // One Barrier, priced by the same keyword weight everything else uses. The
+    // Relic's own board presence is not in here: that is `cardValue`'s job, and
+    // counting it twice would make every card with a trigger an enabler.
+    expect(arrivalBoostValue(armory, guardian, weights, database)).toBeCloseTo(
+      weights.keywordBonus,
+    );
+    // The trigger's scope is `keywords: ['guardian']`, so a Unit without it is
+    // not improved — a filter, not a card list.
+    expect(arrivalBoostValue(armory, plain, weights, database)).toBe(0);
+    // And nothing runs backwards.
+    expect(arrivalBoostValue(guardian, armory, weights, database)).toBe(0);
+  });
+
+  it('leads with the enabler only while the beneficiary is still affordable', () => {
+    const lead = entry('bastion_armory', 3, 2);
+    const follow = entry('bastion_infantry', 2, 5);
+    const horizon = [lead, follow];
+
+    // Five Energy pays for both, so the order is the only thing at stake and the
+    // enabler is raised to the follower's score plus the Barrier it hands it.
+    expect(enablerLeadBonus(lead, horizon, 5, weights, database)).toBeCloseTo(
+      3 + weights.keywordBonus,
+    );
+    // Four pays for the Relic and leaves nothing for the Guardian: an enabler
+    // with nothing left to enable is a wasted turn, not a sequence.
+    expect(enablerLeadBonus(lead, horizon, 4, weights, database)).toBe(0);
+    // The follower is never lifted, whatever the Energy.
+    expect(enablerLeadBonus(follow, horizon, 5, weights, database)).toBe(0);
+  });
+
+  it('is bounded above by the follower it is sequencing in front of', () => {
+    // The ceiling is the whole reason this cannot run away: however far behind
+    // the enabler starts, it never climbs past what the beneficiary was already
+    // worth plus what leading adds to it.
+    const lead = entry('bastion_armory', 3, -20);
+    const follow = entry('bastion_infantry', 2, 5);
+    const lifted = -20 + enablerLeadBonus(lead, [lead, follow], 5, weights, database);
+    expect(lifted).toBeCloseTo(5 + weights.keywordBonus);
+  });
+});
+
+describe('Reaction energy reservation', () => {
+  const database = calibrationDatabase();
+  const weights = DEFAULT_WEIGHTS;
+  const counter = database.getOrThrow('calculated_response');
+  const held = [{ definition: counter, energyCost: 3 }];
+
+  /** A two-seat view where the opponent could still play a Spell. */
+  function tableView(energy: number) {
+    const table = CalibrationTable.open({ preconId: 'precon_containment_control', energy });
+    return table.observationFor(table.self).view;
+  }
+
+  it('reserves what the Reaction costs, and only when it is already affordable', () => {
+    expect(reactionEnergyReserve(held, tableView(3), 3)).toBe(3);
+    // Two Energy cannot buy the counter at all, so holding it back would only be
+    // a reason to pass with nothing to show for it.
+    expect(reactionEnergyReserve(held, tableView(2), 2)).toBe(0);
+    // Nothing held, nothing reserved — the deck is full of Reactions either way.
+    expect(reactionEnergyReserve([], tableView(9), 9)).toBe(0);
+  });
+
+  it('reserves nothing once the window it names can no longer open', () => {
+    const view = tableView(3);
+    const empty = {
+      ...view,
+      players: view.players.map((seat) =>
+        seat.playerId === 'player_1' ? seat : { ...seat, handCount: 0, deckCount: 0 },
+      ),
+    };
+    expect(windowIsReachable('when_opponent_plays_spell', view)).toBe(true);
+    expect(windowIsReachable('when_opponent_plays_spell', empty)).toBe(false);
+    expect(reactionEnergyReserve(held, empty, 3)).toBe(0);
+  });
+
+  it('charges a play exactly the Reaction it strands, and nothing when it does not', () => {
+    const view = tableView(3);
+    const value = cardValue(counter, weights, database);
+    // Three Energy down to one: the counter can no longer be played.
+    expect(strandedReactionValue(held, view, 3, 1, weights, database)).toBeCloseTo(value);
+    // Four down to three: it still can, so the play costs nothing extra.
+    expect(strandedReactionValue(held, view, 4, 3, weights, database)).toBe(0);
+  });
+
+  it('holds the Energy when what it would buy is worth less than the answer', () => {
+    // The behavioural half, on a real board: a 0/3 wall for one Energy against a
+    // counter the seat can afford right now. Normal buys the wall; Hard does not.
+    const table = CalibrationTable.open({ preconId: 'precon_containment_control', energy: 3 });
+    table.give('calculated_response');
+    table.give('archive_acolyte');
+    const observation = table.observationFor(table.self);
+
+    const best = (tactics: typeof BASELINE_TACTICS): string => {
+      const candidates = candidateActions(observation, {
+        weights: AGGRESSIVE_WEIGHTS,
+        mayConcede: false,
+        tactics,
+      });
+      return candidates
+        .map((candidate) => ({
+          key: candidate.key,
+          score: scoreCandidate(observation, candidate, AGGRESSIVE_WEIGHTS, tactics),
+        }))
+        .reduce((a, b) => (b.score > a.score ? b : a)).key;
+    };
+
+    expect(best(BASELINE_TACTICS)).toBe('play:archive_acolyte:inst_t0083');
+    expect(best(HARD_TACTICAL_TACTICS)).toBe('pass');
+  });
+
+  it('still spends the Energy when the body is worth more than the answer', () => {
+    // The other direction, and the one that matters for a bot that must not
+    // simply stop playing cards: a 3/2 for two outscores the counter it strands,
+    // so Hard buys it — which is also why `hold_energy_for_the_counter` is still
+    // a recorded gap rather than a closed one.
+    const table = CalibrationTable.open({ preconId: 'precon_containment_control', energy: 3 });
+    table.give('calculated_response');
+    table.give('veil_skirmisher');
+    const observation = table.observationFor(table.self);
+    const candidates = candidateActions(observation, {
+      weights: AGGRESSIVE_WEIGHTS,
+      mayConcede: false,
+      tactics: HARD_TACTICAL_TACTICS,
+    });
+    const picked = candidates
+      .map((candidate) => ({
+        key: candidate.key,
+        score: scoreCandidate(observation, candidate, AGGRESSIVE_WEIGHTS, HARD_TACTICAL_TACTICS),
+      }))
+      .reduce((a, b) => (b.score > a.score ? b : a));
+    expect(picked.key).toBe('play:veil_skirmisher:inst_t0083');
+  });
+});
+
 /* -------------------------------------------------------- the boundary */
 
 describe('a tactical profile changes nothing about the boundary', () => {
@@ -349,6 +514,43 @@ describe('a tactical profile changes nothing about the boundary', () => {
       expect(seen.has('concede')).toBe(false);
     },
   );
+
+  it('plays the four Wave 1 precons against each other, legally and to a result', async () => {
+    // The committed corner of M09.15's smoke tournament. The full run is 768
+    // matches — every ordered pairing of the four precons, at three styles, over
+    // four seeds — and takes minutes, so it is a recorded measurement in the
+    // milestone rather than a test. This keeps the part that would rot: a
+    // Reaction-carrying, Token-making, Relic-carrying deck played end to end by
+    // the profile, which is the only place in this file that exercises the
+    // shipped card pool rather than the `prototype_core` fixtures.
+    const decks = [
+      'precon_bastion_guardians',
+      'precon_containment_control',
+      'precon_goblin_swarm',
+      'precon_grave_sacrifice',
+    ];
+    for (let index = 0; index < decks.length; index += 1) {
+      const left = decks[index] as string;
+      const right = decks[(index + 1) % decks.length] as string;
+      const outcome = await driveMatch({
+        seed: `hard-precon-${left}-${right}`,
+        database: calibrationDatabase(),
+        decks: [preconMatchDeck(left), preconMatchDeck(right)],
+        pilots: [
+          createTacticalPilot({ pilotId: 'value', tactics: HARD_TACTICAL_TACTICS }),
+          createTacticalPilot({ pilotId: 'aggressive', tactics: HARD_TACTICAL_TACTICS }),
+        ],
+        maxActions: 6000,
+      });
+      expect(outcome.stoppedEarly).toBe(false);
+      expect(outcome.state.status).toBe('complete');
+      expect(outcome.state.result?.reason).not.toBe('engine_error');
+      expect(outcome.failures).toEqual([]);
+      // A pilot that had turned into a passer would still "finish" by decking
+      // out, so the shape of the finish is asserted rather than only the fact.
+      expect(outcome.actions.some((action) => action.type === 'declare_attackers')).toBe(true);
+    }
+  }, 60_000);
 
   it('plays three- and four-seat tables under the hard tactical profile', async () => {
     for (const seats of [3, 4]) {
@@ -435,6 +637,9 @@ describe('the named M05.6 tactical gaps', () => {
     'goblin_swarm/absorb_with_the_wall_not_the_bruiser',
     'grave_sacrifice/block_with_the_body_that_survives',
     'containment_control/wall_eats_the_attack',
+    // M09.15's sequencing half. Baseline still deploys the Guardian into an
+    // empty board and follows with the Relic; Hard leads with the Relic.
+    'bastion_guardians/armory_before_the_guardian',
   ];
 
   it.each(closed)('%s is answered by every pilot under the hard tactical profile', (fixtureId) => {
@@ -449,20 +654,41 @@ describe('the named M05.6 tactical gaps', () => {
     }
   });
 
-  it('is honest about the strategic gaps it did not close', () => {
-    // M09.15's half. A fixture that closed one of these without the tranche that
-    // owns it would fail the suite, which is the point of recording both.
-    const open = [
-      'bastion_guardians/armory_before_the_guardian',
-      'grave_sacrifice/make_fodder_before_spending_it',
-      'containment_control/hold_energy_for_the_counter',
-    ];
+  it('is honest about the strategic gap it did not close', () => {
+    // One of M09.15's three is still open, and it is recorded in both places so
+    // that closing it quietly is impossible: the fixture carries a note for
+    // every pilot, and this names it as the tranche's remaining gap.
+    const open = ['containment_control/hold_energy_for_the_counter'];
     for (const fixtureId of open) {
       const fixture = CALIBRATION_FIXTURES.find((entry) => entry.id === fixtureId);
       if (!fixture) throw new Error(`no fixture "${fixtureId}"`);
       expect(Object.keys(fixture.tacticalGaps ?? {}).sort()).toEqual(
         [...CALIBRATED_PILOT_IDS].sort(),
       );
+      // The reserve is genuinely held — the refinement is not inert here, it is
+      // outweighed — so a profile that stopped reserving would fail elsewhere
+      // rather than silently agreeing with this record.
+      for (const pilotId of CALIBRATED_PILOT_IDS) {
+        expect(runFixture(fixture, pilotId, 'hard_tactical').characteristic).toBe(false);
+      }
+    }
+  });
+
+  it('records the sacrifice board as a rules correction rather than as a pilot one', () => {
+    // `grave_sacrifice/make_fodder_before_spending_it` was one of M09.15's three
+    // and closed for a reason that has nothing to do with a difficulty: the
+    // owner's Token ruling (Q49) made a Thrall able to pay "sacrifice a Unit",
+    // so the second card became playable at *every* profile. It must therefore
+    // carry no gap at either, or a reader would cite it as evidence about Hard.
+    const fixture = CALIBRATION_FIXTURES.find(
+      (entry) => entry.id === 'grave_sacrifice/make_fodder_before_spending_it',
+    );
+    if (!fixture) throw new Error('no sacrifice sequencing fixture');
+    expect(fixture.knownGaps).toBeUndefined();
+    expect(fixture.tacticalGaps).toBeUndefined();
+    for (const pilotId of CALIBRATED_PILOT_IDS) {
+      expect(runFixture(fixture, pilotId, 'baseline').characteristic).toBe(true);
+      expect(runFixture(fixture, pilotId, 'hard_tactical').characteristic).toBe(true);
     }
   });
 

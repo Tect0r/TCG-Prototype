@@ -148,6 +148,14 @@ const RAW_GLOSSARY = {
       relatedRuleSections: ['card_anatomy'],
     },
     {
+      id: 'token',
+      term: 'Token',
+      definition:
+        'A unit an effect creates rather than one played from a hand. A Token on the battlefield is a Unit in every sense: anything that says “a Unit” — a target, an ability, an attack, an additional cost — may use one, unless it says a nontoken Unit or a Unit card. A card that asks only for Tokens still means only Tokens. A Token is never a Unit card, so “a Unit card in your discard pile” never means one, and a Token that leaves the battlefield stops existing rather than going anywhere.',
+      seeAlso: ['token_stack', 'instance', 'additional_cost'],
+      relatedRuleSections: ['card_types'],
+    },
+    {
       id: 'token_stack',
       term: 'Token stack',
       definition:

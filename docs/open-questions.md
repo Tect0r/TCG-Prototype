@@ -24,8 +24,9 @@ re-opened months later.
 
 ## Owner decisions a tranche may stop on
 
-These four are the plan's short list. Each is genuinely a design call rather than
-an engineering one. Q47 and Q48 were on it until 2026-08-14 and are now under
+These five are the plan's short list. Each is genuinely a design call rather than
+an engineering one. Q47 and Q48 were on it until 2026-08-14, and Q49 was on it for
+the length of one tranche on 2026-08-20; all three are now under
 [Answered](#answered).
 
 ### Q4. What should `resilient` do, or should it be deleted?
@@ -317,6 +318,39 @@ configuration rather than redesign — but nothing has validated that three- and
 four-player results say anything useful, and they cost 2–4× as much per data
 point. Related to Q35.
 
+### Q50. Is Hard good enough to publish, and what would make it so?
+
+**Open. Blocks publishing Hard, and nothing else.** Raised by M09.15.
+
+Hard's behaviour exists and is measured. `hard_tactical` is at `1.1.0` and closes
+**six** of the twenty-four calibration boards Normal misses, regressing none; a
+768-match seeded smoke tournament across all four Wave 1 precons produced no
+illegal action, no unfinished match and no excessive passing, and Hard beat
+Normal **52.6%** head to head with the advantage holding on both sides of the
+table. The record is in
+[the M09.15 tranche](milestones/M09-play-against-ai.md#m0915--hard-sequencing-and-resource-improvements--done-2026-08-20).
+
+What is missing is a **threshold**, not an implementation. The milestone says to
+publish Hard "when it outperforms Normal on the declared fixture set without
+regressing legality or termination" and never says by how much, and one of the
+three strategic gaps M09.15 owned — `containment_control/hold_energy_for_the_counter`
+— is deliberately still open and recorded. Deciding that two of three named gaps
+and a 52.6% edge is enough is a product call about what a person selecting "Hard"
+should be promised. Choosing a number here would be inventing the standard the
+result is then measured against, which is the one thing a measurement may not do.
+
+**What publishing costs, once you say yes.** `DifficultyDefinition` has no field
+for a tactical profile, so Hard cannot be published by flipping a status: the
+registry needs one, `DIFFICULTY_REGISTRY_VERSION` moves 2 → 3, `BotRunner` builds
+the pilot through it, and the lobby, the help text and the seat provenance all
+gain an option. That is a bounded tranche, and it is deliberately not done: a
+registry that could carry a profile is a registry a later tranche could publish
+Hard through by accident.
+
+**Answered by:** you, with the numbers above in front of you. Either "ship it",
+"ship it once `hold_energy_for_the_counter` closes too", or a rate Hard has to
+beat Normal by.
+
 ---
 
 ## Answered
@@ -579,6 +613,32 @@ prose says it acts when it enters the battlefield while carrying no
 `on_entered_battlefield` ability is a warning, and a warning on a `playtest` or
 `active` card is a content-build error. The five behaviour contracts in
 `contracts-goblin.ts` claim "when it is deployed" and are unchanged otherwise.
+
+### Q49. Does a Token count as a Unit? — answered 2026-08-20
+
+**Yes, while it is on the battlefield.** Raised by M09.15 and settled the same
+day, in the owner's words: _"Tokens count as Units while they are on the
+battlefield. Any rule, target, or additional cost that says 'Unit' includes Unit
+Tokens unless it explicitly says 'nontoken Unit' or 'Unit card.' A token-only
+filter remains token-only."_
+
+The question was blocking because it was not a question about one card. Every
+`cardTypes: ['unit']` filter in the catalog — forty-one of them — was reading
+`definition.type === 'unit'` and nothing else, so a Thrall could not pay
+`forbidden_offering`, a Guard could not be fed to `carrion_feeder`, and
+`radiant_bulwark` did not buff the Tokens standing next to it. The
+`grave_sacrifice/make_fodder_before_spending_it` calibration fixture asked a
+pilot to convert its last body into two Thralls and then spend one, which was a
+line no player could take either.
+
+**Implemented** in M09.15 as one correction to `matchesCardFilter`:
+`satisfiesCardTypes` widens a `unit` request to cover a battlefield Token, one
+way, battlefield-only, and adds nothing else. No card ID appears in the engine,
+no card was edited, and the fourteen `['unit', 'token']` filters already in the
+catalog go on meaning what they meant. The rule is written up in
+[rules/confirmed-rules.md](rules/confirmed-rules.md#tokens), stated to players in
+the rulebook's card-types section and in the new `token` glossary entry, and
+enforced by `packages/rules-engine/src/token-is-a-unit.test.ts`.
 
 ### Q43. What counts as a board stall? — answered 2026-08-12
 

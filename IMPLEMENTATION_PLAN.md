@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.15       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.16       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,16 +160,54 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.15 — Hard sequencing and resource improvements.** Complete Hard with better
-short-horizon sequencing and resource reservation: address the named M05.6 gaps
-for Relic-before-Unit sequencing, additional-sacrifice payoff, and holding Energy
-for a Reaction window, using bounded inspectable short-horizon evaluation rather
-than a reconstruction of hidden state or an unbounded search. Test all four Wave 1
-archetype plans on representative decisions and record the remaining known gaps
-rather than claiming solved play. Publish Hard only when it outperforms Normal on
-the declared fixture set without regressing legality or termination, and keep its
-evidence class honest. The scope and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0915--hard-sequencing-and-resource-improvements).
+**M09.16 — Style automation and complete per-bot setup.** Present every approved
+option coherently for each bot — deck mode, difficulty, style, timing, Reaction
+override and reroll — through progressive disclosure; make automatic style a
+deterministic mapping from structured deck data with a named fallback; let one
+bot's configuration be copied without copying RNG state; and state what is
+locked, generated, private, unavailable or limited by the current pool. It also
+owns the answer to **Q50** — whether Hard is published — and publishes or
+re-plans it accordingly, and may do neither without that answer. The scope and
+the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0916--style-automation-and-complete-per-bot-setup).
+
+**M09.15 finished Hard's behaviour, and found a rules bug wearing a pilot's
+clothes.** It opened blocked. `grave_sacrifice/make_fodder_before_spending_it`
+asks a pilot to turn its last body into two Thralls and then spend one on a draw,
+and no pilot could — `matchesCardFilter` compared `definition.type` and nothing
+else, so a Token was not a Unit anywhere in the engine and the line was illegal
+for a **person** too. The owner ruled on 2026-08-20 (**Q49**): a Token on the
+battlefield **is** a Unit, unless a card says "nontoken Unit" or "Unit card", and
+a token-only filter stays token-only. It is implemented as one sentence in the
+central filter — one-way, battlefield-only, adding nothing but `unit` — and no
+card was edited. The forty-one `['unit']` filters in the catalog were audited
+instead: thirty-four name the battlefield or a sacrifice cost and are the
+correction, seven name a deck or a discard pile and are untouched, and the
+fourteen `['unit', 'token']` filters are now redundant and deliberately left
+alone. That moves **`RULES_VERSION` `0.4.0` → `1.0.0`** — a structural rule, not a
+provisional value — which is what makes `checkReplayCompatibility` refuse every
+replay recorded before it, tested by name.
+
+The tactical half of the tranche is two more off-by-default switches on
+`hard_tactical`, now `1.1.0`. **`sequencesEnablers`** is a depth-two pass over the
+plays the engine has already declared legal: where one of them would improve the
+_arrival_ of another and that other is still affordable afterwards, the enabler
+leads — raised to the follower's own score plus what leading adds, and never
+higher, so it can only ever decide the order of two plays that were both going to
+happen. **`reservesReactionEnergy`** stops charging the unspent-Energy penalty on
+the points a held, already-affordable Reaction needs, and charges a play the
+Reaction it strands. Neither knows a card ID.
+
+Two of the three named strategic gaps close and the third is measured and
+recorded: `hold_energy_for_the_counter` narrows by about four points for every
+style and the body still wins, because the scorer prices a card played at its
+whole value and a card kept in hand at nothing — a valuation defect in every
+decision the pilot makes, not a resource rule. **Hard is still `planned`.** It is
+better — six of twenty-four calibration boards Normal misses, and 52.6% head to
+head over 768 seeded matches with no illegal action, no unfinished match and
+_fewer_ passes per match than Normal — but no threshold for "good enough to ship"
+was ever written down, and choosing one is a product call. That is **Q50**, and
+`DIFFICULTY_REGISTRY.hard.plannedIn` now says `M09.16`.
 
 **M09.14 built Hard's tactical half, and left Hard unpublished on purpose.** A
 difficulty now has two halves rather than one: M09.13's **selection** — which of
@@ -436,6 +474,10 @@ question the project has recorded.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.
 - Q46: whether Reactions may carry interactive additional costs.
+- Q50: whether Hard is good enough to publish. M09.15 built and measured it —
+  six calibration boards closed, 768 matches with no illegal action and a 52.6%
+  head-to-head edge — and stopped there, because no threshold was ever recorded
+  and choosing one is a product call rather than an engineering one.
 
 ## Completion evidence for every tranche
 

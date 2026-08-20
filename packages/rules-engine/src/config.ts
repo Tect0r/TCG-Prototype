@@ -7,8 +7,21 @@ import { z } from 'zod';
  * Bump the minor version when a provisional value changes; bump the major
  * version when a structural rule changes (and write a rules decision record
  * first — CLAUDE.md §17).
+ *
+ * It is a **compatibility token and not a maturity claim**: it is what
+ * `checkReplayCompatibility` compares, so a recorded match is refused by a build
+ * whose engine would answer differently. Reading `1.0.0` as "the ruleset is
+ * finished" would be reading it as something it has never been.
+ *
+ * - `0.2.0` — the first version.
+ * - `0.4.0` — the ruleset update and the rule adjustments.
+ * - `1.0.0` — M09.15, the owner's Token ruling (Q49): a Token on the battlefield
+ *   satisfies a `unit` filter, which changes what is a legal target and what may
+ *   pay an additional cost. A **structural** rule rather than a provisional
+ *   value, so the major moves, and every replay recorded before it is refused
+ *   rather than replayed against an engine that now answers differently.
  */
-export const RULES_VERSION = '0.4.0';
+export const RULES_VERSION = '1.0.0';
 
 /**
  * Every provisional numeric rule lives here, in one place (CLAUDE.md §4).

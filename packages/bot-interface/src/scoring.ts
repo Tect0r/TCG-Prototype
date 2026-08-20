@@ -13,9 +13,11 @@ import type {
   KeywordId,
   SignedValueExpression,
   StaticAbilityDefinition,
+  ReactionWindow,
   ValueExpression,
   ZoneId,
 } from '@tcg/card-data';
+import { matchesCardFilter } from '@tcg/rules-engine';
 import type { CardInstanceView, PlayerView, PlayerViewSummary } from '@tcg/rules-engine';
 
 /**
@@ -1238,4 +1240,251 @@ export function resolveHypotheticalCombat(
   }
 
   return { faceDamage, attackersLost, blockersLost };
+}
+
+/* ------------------------------------------- short-horizon sequencing (M09.15) */
+
+/** Card types that arrive on a battlefield, and so can be improved on arrival. */
+const ARRIVING_TYPES = new Set<CardDefinition['type']>(['unit', 'relic', 'commander', 'token']);
+
+/**
+ * How many playable cards the pair search looks at.
+ *
+ * The search is depth two over the plays the engine has already declared legal,
+ * so it is quadratic in the size of that list — and the list is a hand, which is
+ * small. The cap exists so "bounded" is a number in the source rather than a
+ * property of the current card pool: a future hand of thirty cards examines the
+ * first twelve in the engine's own order and no more.
+ */
+export const SEQUENCING_HORIZON = 12;
+
+/**
+ * What one card, once in play, adds to *another card's arrival*.
+ *
+ * The whole of "play the enabler first". A card that improves the next arrival
+ * does it in exactly two authored shapes, and both are read structurally rather
+ * than from any card's identity:
+ *
+ * - a **triggered ability** on `on_deployed` / `on_entered_battlefield` whose
+ *   scope covers the beneficiary and whose instructions act on the
+ *   `trigger_subject` — the card that just arrived;
+ * - a **`replace_arrival` static ability** whose `affects` filter covers the
+ *   beneficiary and which grants it a keyword as it lands.
+ *
+ * Both are priced with the same instruction pricer everything else uses, so the
+ * number carries the style's own weights and the inert-keyword rule for free.
+ * Anything the enabler does that is *not* aimed at the arriving card is
+ * deliberately not counted: it is already in `cardValue`, and counting it twice
+ * would make every card with a trigger look like an enabler.
+ *
+ * Never negative. This answers "how much better is the beneficiary if this goes
+ * first", and a card that makes the next arrival *worse* is not a reason to lead
+ * with it.
+ */
+export function arrivalBoostValue(
+  enabler: CardDefinition,
+  beneficiary: CardDefinition,
+  weights: BotWeights,
+  database: CardDatabase,
+): number {
+  // Only a permanent *arrives*. A Spell or a Reaction never fires an arrival
+  // trigger, so nothing can be sequenced in front of one.
+  if (!ARRIVING_TYPES.has(beneficiary.type)) return 0;
+
+  let boost = 0;
+
+  for (const ability of enabler.abilities) {
+    if (ability.trigger !== 'on_deployed' && ability.trigger !== 'on_entered_battlefield') continue;
+    const scope = ability.scope;
+    // A trigger with no scope at all is the classic self-scoped reading — it is
+    // about the enabler's own arrival and says nothing about the next play.
+    if (scope === undefined) continue;
+    // "…a Unit **you** control". An ability watching only opponents' arrivals
+    // cannot be led with; `any` covers ours as well as theirs.
+    if (scope.controller === 'opponent') continue;
+    if (scope.filter && !matchesCardFilter(beneficiary, null, scope.filter)) continue;
+
+    for (const effect of ability.effects) {
+      if (!('target' in effect)) continue;
+      if (effect.target?.kind !== 'trigger_subject') continue;
+      boost += effectValue(effect, weights, database, enabler.delayedAbilities);
+    }
+  }
+
+  for (const ability of enabler.staticAbilities) {
+    const effect = ability.effect;
+    if (effect.type !== 'replace_arrival') continue;
+    if (ability.affects.controller === 'opponent') continue;
+    if (ability.affects.filter && !matchesCardFilter(beneficiary, null, ability.affects.filter)) {
+      continue;
+    }
+    if (effect.grantKeyword === undefined) continue;
+    boost += keywordValue(effect.grantKeyword, weights) * durationScale(effect.grantDuration);
+  }
+
+  return Math.max(0, boost);
+}
+
+/** One legal play, as the pair search needs to see it. */
+export interface PlayableEntry {
+  readonly instanceId: string;
+  readonly definitionId: string;
+  readonly energyCost: number;
+  /** What the scorer already thinks this play is worth on its own. */
+  readonly baseScore: number;
+}
+
+/**
+ * How much better it is to lead with this play than to follow with it.
+ *
+ * Depth two, over the plays the engine has already declared legal. For each
+ * other playable card the search asks two questions and requires both:
+ *
+ * 1. **Does leading improve it?** `arrivalBoostValue` in this direction has to
+ *    beat the same value in the other, so a pair that improves each other
+ *    equally has no preferred order and gets nothing.
+ * 2. **Is it still affordable?** After paying for this card, the beneficiary's
+ *    cost has to still fit in the Energy that is left. An enabler played into a
+ *    turn that can no longer afford what it enables is a wasted turn, not a
+ *    sequence.
+ *
+ * The result is bounded above by design: the lead is raised to the beneficiary's
+ * own score plus what leading adds to it, and never higher. So a candidate that
+ * already beat the beneficiary still beats the pair, and the correction only
+ * ever decides the *order* of two plays that were both going to happen.
+ */
+export function enablerLeadBonus(
+  candidate: PlayableEntry,
+  playable: readonly PlayableEntry[],
+  energy: number,
+  weights: BotWeights,
+  database: CardDatabase,
+): number {
+  const enabler = database.get(candidate.definitionId);
+  if (!enabler) return 0;
+  const remaining = energy - candidate.energyCost;
+  if (remaining < 0) return 0;
+
+  let best = 0;
+  for (const other of playable.slice(0, SEQUENCING_HORIZON)) {
+    if (other.instanceId === candidate.instanceId) continue;
+    if (other.energyCost > remaining) continue;
+    const beneficiary = database.get(other.definitionId);
+    if (!beneficiary) continue;
+
+    const forward = arrivalBoostValue(enabler, beneficiary, weights, database);
+    if (forward <= 0) continue;
+    const backward = arrivalBoostValue(beneficiary, enabler, weights, database);
+    if (forward <= backward) continue;
+
+    // Raise the lead to the follower's own score plus what leading is worth, and
+    // no further. Where the lead already scores higher this is just the boost.
+    const lift = Math.max(0, other.baseScore - candidate.baseScore) + (forward - backward);
+    best = Math.max(best, lift);
+  }
+  return best;
+}
+
+/* ----------------------------------- Reaction energy reservation (M09.15) */
+
+/**
+ * A Reaction the pilot is holding, as the reserve needs to see it.
+ *
+ * Its own shape rather than a `PlayableCard`, because the engine does not list a
+ * Reaction as playable outside a window — that is the whole reason the baseline
+ * never prices one. Everything here is read from the seat's own hand and from
+ * card definitions, both of which it is entitled to see.
+ */
+export interface HeldReaction {
+  readonly definition: CardDefinition;
+  readonly energyCost: number;
+}
+
+/**
+ * Whether a living opponent could still open the window a Reaction names.
+ *
+ * Total over the window vocabulary rather than a `default`, for the same reason
+ * `EFFECT_PRICERS` is total: a window nobody has thought about must not silently
+ * read as "cannot happen" and quietly disable the reserve.
+ *
+ * Every test is a public board fact, and each is about the *next* turn cycle
+ * rather than about this instant — which is the cycle the Energy is being held
+ * for. A spell window needs an opponent who can still come by a card to play; a
+ * combat window needs an opponent who controls a body, Exhausted or not, because
+ * it readies on their own turn. Both can be false: an opponent with an empty hand
+ * and an empty deck will never play a Spell again, and an opponent with no board
+ * will never declare an attack.
+ *
+ * The reserve's real guard is not this — it is that the Reaction has to be **in
+ * hand** and **already affordable**. This only stops the reserve on a board where
+ * the window it names has stopped existing.
+ */
+export function windowIsReachable(window: ReactionWindow, view: PlayerView): boolean {
+  const opponents = opponentSummaries(view).filter((seat) => !seat.eliminated && !seat.lost);
+  switch (window) {
+    case 'when_opponent_plays_spell':
+      return opponents.some((seat) => seat.handCount > 0 || seat.deckCount > 0);
+    case 'after_attackers_declared':
+    case 'before_blockers_declared':
+    case 'after_blockers_declared':
+    case 'after_combat_damage':
+    case 'after_combat':
+      return opponents.some((seat) => unitViewsOf(view, seat.playerId).length > 0);
+  }
+}
+
+/**
+ * The Energy a pilot should not spend, because a Reaction it holds needs it.
+ *
+ * The largest cost among the Reactions that are **actually held**, **already
+ * affordable**, and whose window a living opponent could still open. Never a
+ * fixed number, never a reading of the deck, and never more than the seat has: a
+ * pilot holding none reserves nothing, and a pilot holding one it cannot afford
+ * anyway reserves nothing either, because a reserve that cannot buy the card is
+ * only a reason to pass.
+ *
+ * The largest rather than the sum, because a window offers one Reaction per
+ * eligible player: holding two counters does not mean holding six Energy.
+ */
+export function reactionEnergyReserve(
+  held: readonly HeldReaction[],
+  view: PlayerView,
+  energy: number,
+): number {
+  let reserve = 0;
+  for (const reaction of held) {
+    if (reaction.energyCost > energy) continue;
+    const windows = reaction.definition.reaction?.windows ?? [];
+    if (!windows.some((window) => windowIsReachable(window, view))) continue;
+    reserve = Math.max(reserve, reaction.energyCost);
+  }
+  return Math.min(reserve, energy);
+}
+
+/**
+ * What a play costs the pilot by stranding a Reaction it was holding.
+ *
+ * Charged only when the Energy left after the play can no longer buy a Reaction
+ * that the Energy before it could. The charge is the Reaction's own card value —
+ * the same number `cardValue` gives every other card, and for a counter it is
+ * already built out of `counterValue` — so the reserve is priced by the card it
+ * protects rather than by a constant.
+ */
+export function strandedReactionValue(
+  held: readonly HeldReaction[],
+  view: PlayerView,
+  energyBefore: number,
+  energyAfter: number,
+  weights: BotWeights,
+  database: CardDatabase,
+): number {
+  let worst = 0;
+  for (const reaction of held) {
+    if (reaction.energyCost > energyBefore) continue;
+    if (reaction.energyCost <= energyAfter) continue;
+    const windows = reaction.definition.reaction?.windows ?? [];
+    if (!windows.some((window) => windowIsReachable(window, view))) continue;
+    worst = Math.max(worst, cardValue(reaction.definition, weights, database));
+  }
+  return worst;
 }

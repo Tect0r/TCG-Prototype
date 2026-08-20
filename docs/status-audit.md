@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `39d7bdb44219bf8b24a82bbb5847a4556c3e3deb` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-20                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | not run for this audit                     |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `dcaae9c44f2ccb6e144d6c7e3ffa5ff085183280`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-20                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 75      | 1770     |
+| packages       | 76      | 1792     |
 | scripts        | 4       | 69       |
 | server         | 13      | 280      |
 | simulator      | 23      | 433      |
 | web-client     | 19      | 236      |
-| **total**      | **134** | **2788** |
+| **total**      | **135** | **2810** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -53,7 +53,7 @@ What a client, a server and a saved deck must agree on to play at all.
 
 | Constant                        | Value | Pins                                                                                         |
 | ------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
-| `RULES_VERSION`                 | 0.4.0 | The rules configuration.                                                                     |
+| `RULES_VERSION`                 | 1.0.0 | The rules configuration.                                                                     |
 | `PROTOCOL_VERSION`              | 9     | Every message shape, refused at the handshake.                                               |
 | `MATCH_SCHEMA_VERSION`          | 7     | Serialized match state.                                                                      |
 | `CARD_SCHEMA_VERSION`           | 5     | A card definition, owned per set by its manifest.                                            |
@@ -161,15 +161,15 @@ plan-generated deck keeps free slots no generator setting can take away.
 | Instrument                    | Reading                                  |
 | ----------------------------- | ---------------------------------------- |
 | Card behaviour contracts      | 155 of 155 cards in `precon_wave_1`      |
-| Tactical calibration fixtures | 24, of which 12 record a known pilot gap |
-| Glossary entries              | 34                                       |
+| Tactical calibration fixtures | 24, of which 11 record a known pilot gap |
+| Glossary entries              | 35                                       |
 | Rulebook sections             | 18                                       |
 
 | Pilot        | Fixtures it misses |
 | ------------ | ------------------ |
-| `aggressive` | 10                 |
-| `defensive`  | 11                 |
-| `value`      | 11                 |
+| `aggressive` | 9                  |
+| `defensive`  | 10                 |
+| `value`      | 10                 |
 
 ## Mechanic support
 
@@ -204,7 +204,7 @@ No match record observes (31):
 - `precon_goblin_swarm` has 41 colour-legal cards for a 40-card deck (1 spare). A package-scale mutation has nowhere to put what it frees.
 - `precon_grave_sacrifice` has 42 colour-legal cards for a 40-card deck (2 spare). A package-scale mutation has nowhere to put what it frees.
 - No pilot in this build implements agent class(es): archetype_aware, human_playtest. Every claim resting on one is declined by every run this build can produce.
-- 12 of 24 calibration fixtures record a pilot that misses the characteristic decision. The record is asserted in both directions, so a closed gap fails as loudly as a regression.
+- 11 of 24 calibration fixtures record a pilot that misses the characteristic decision. The record is asserted in both directions, so a closed gap fails as loudly as a regression.
 
 ## Question ledger
 
@@ -260,6 +260,8 @@ No match record observes (31):
 | Q46      | May a Reaction carry an additional cost?                               | open          | yes                     |
 | Q47      | May a Reaction answer another Reaction? — answered 2026-08-14          | answered      | no                      |
 | Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | answered      | no                      |
+| Q49      | Does a Token count as a Unit? — answered 2026-08-20                    | answered      | no                      |
+| Q50      | Is Hard good enough to publish, and what would make it so?             | open          | yes                     |
 
 15 question(s) are open in the question file and not on the plan's
 short list, which is the curated set a tranche might have to stop on rather than an index.
@@ -271,8 +273,8 @@ No question the plan calls open is missing or answered in the question file.
 | Reading                                  | Value                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Workspaces                               | `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/deck-generator`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
-| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                                                        |
-| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                                                          |
+| Root files                               | `CLAUDE.md`, `CLAUDE_AI_LAB_AND_PLAYER_META.md`, `CLAUDE_M09_PLAY_AGAINST_AI.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                   |
+| Root Markdown beyond the three permitted | `CLAUDE_AI_LAB_AND_PLAYER_META.md`, `CLAUDE_M09_PLAY_AGAINST_AI.md`                                                                                                                                                                                                                                                           |
 | Architecture decision records            | 24                                                                                                                                                                                                                                                                                                                            |
 | Milestone documents                      | 9                                                                                                                                                                                                                                                                                                                             |
 

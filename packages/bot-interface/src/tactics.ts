@@ -34,10 +34,13 @@ import { z } from 'zod';
  * the calibration table asserts the behavioural one by running every fixture
  * through the same redacted view.
  *
- * **Hard is not published by this file.** `hard_tactical` is the tactical half
- * of Hard and M09.15 owns the strategic half; `DIFFICULTY_REGISTRY.hard` stays
- * `planned` until both exist, which is why nothing in `@tcg/bot-config` moved in
- * M09.14 and why no lobby can select this yet.
+ * **Hard is not published by this file.** `hard_tactical` carried only the
+ * tactical half in M09.14; M09.15 added the two short-horizon refinements —
+ * `sequencesEnablers` and `reservesReactionEnergy` — that the strategic half was
+ * missing. Publication is still a decision made in `@tcg/bot-config`, and
+ * `DIFFICULTY_REGISTRY.hard` is still `planned`, so no lobby can select this
+ * yet: what a profile does and whether a difficulty ships are two questions, and
+ * this file only answers the first.
  */
 
 export const TACTICAL_PROFILE_IDS = ['baseline', 'hard_tactical'] as const;
@@ -138,6 +141,53 @@ export interface TacticalProfile {
    * wrong about a shipped keyword.
    */
   readonly modelsOverwhelm: boolean;
+  /**
+   * Leads with the play that improves the play it is about to make anyway.
+   *
+   * Closes the M05.6 finding "sequencing is ignored": `scorePlayCard` prices
+   * each card on its own, so a Relic whose whole job is to improve the next Unit
+   * deployed is worth its own small board presence and nothing else — and a
+   * pilot with exactly enough Energy for both deploys the Unit first and the
+   * Relic into an empty turn.
+   *
+   * A **depth-two** examination of the plays the engine has already declared
+   * legal, and nothing deeper: for each pair of playable cards it asks whether
+   * one of them, once in play, would improve the arrival of the other, and
+   * whether the other is still affordable once the first is paid for. Both
+   * halves are required. An enabler that leaves nothing to enable it for is not
+   * a lead, it is a wasted turn.
+   *
+   * The correction is deliberately **bounded above**: the enabler is raised to
+   * the beneficiary's own score plus what it adds to it, and never higher. So a
+   * pair cannot climb over a candidate that already beat the beneficiary — where
+   * that candidate wins, it still wins — and where the beneficiary would have
+   * been played, the enabler goes first and the beneficiary follows. What is
+   * being corrected is the *order* of two plays that both happen, which is what
+   * makes the ceiling the right shape rather than a tuned number.
+   */
+  readonly sequencesEnablers: boolean;
+  /**
+   * Does not spend the Energy a Reaction it is holding would need.
+   *
+   * Closes the M05.6 finding "Energy is never held for a window": the only thing
+   * pulling Energy out of a pilot is `unspentEnergyPenalty` on `pass_phase`, and
+   * it is charged on every point of it — including the points that are the whole
+   * reason the seat is holding a counter. Energy carries until a seat's own next
+   * turn, and the rulebook says so in as many words: whatever is unspent "is what
+   * pays for a Reaction on another player's turn".
+   *
+   * Two arithmetic changes, both narrow. The reserved points stop being charged
+   * the unspent-Energy penalty, because they are not idle; and a play that would
+   * take the seat below the reserve is charged the Reaction it strands.
+   *
+   * A reserve is only ever raised for a Reaction the pilot **actually holds**,
+   * that it can **already afford**, and whose named window a living opponent
+   * could still open — a spell window needs an opponent with cards in hand, a
+   * combat window needs one with a body that could attack. A deck full of
+   * Reactions with none in hand reserves nothing, a Reaction that is unaffordable
+   * anyway reserves nothing, and no fixed number of points is ever held back.
+   */
+  readonly reservesReactionEnergy: boolean;
 }
 
 /**
@@ -159,6 +209,8 @@ export const BASELINE_TACTICS: TacticalProfile = Object.freeze({
   ownLossAversion: false,
   modelsBarrier: false,
   modelsOverwhelm: false,
+  sequencesEnablers: false,
+  reservesReactionEnergy: false,
 });
 
 /**
@@ -175,16 +227,19 @@ export const BASELINE_TACTICS: TacticalProfile = Object.freeze({
  */
 export const HARD_TACTICAL_TACTICS: TacticalProfile = Object.freeze({
   id: 'hard_tactical',
-  version: '1.0.0',
+  version: '1.1.0',
   summary:
     'Tactical corrections for immediate combat and target choice: removal is aimed at what it ' +
     'defeats, a block that loses nothing is on the menu, an even trade is worth nothing, and ' +
-    'Barrier and Overwhelm are modelled. No sequencing or resource improvement (M09.15).',
+    'Barrier and Overwhelm are modelled. Plus two short-horizon corrections (M09.15): the play ' +
+    'that improves the next play leads, and the Energy a held Reaction needs is not spent.',
   readsRemovalLethality: true,
   offersPreservingBlocks: true,
   ownLossAversion: true,
   modelsBarrier: true,
   modelsOverwhelm: true,
+  sequencesEnablers: true,
+  reservesReactionEnergy: true,
 });
 
 export const TACTICAL_PROFILES: Readonly<Record<TacticalProfileId, TacticalProfile>> =
@@ -204,6 +259,8 @@ export const TACTICAL_REFINEMENTS = [
   'ownLossAversion',
   'modelsBarrier',
   'modelsOverwhelm',
+  'sequencesEnablers',
+  'reservesReactionEnergy',
 ] as const;
 export type TacticalRefinement = (typeof TACTICAL_REFINEMENTS)[number];
 

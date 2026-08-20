@@ -2357,7 +2357,7 @@ shipped, so every existing call site compiles and behaves identically.
 `FixtureResult` and `CalibrationReport` gained a `tactics` field: a report that did
 not carry it could not be read at all once two profiles exist.
 
-## M09.15 — Hard sequencing and resource improvements
+## M09.15 — Hard sequencing and resource improvements — **done (2026-08-20)**
 
 Complete Hard with better short-horizon sequencing and resource reservation:
 address the named M05.6 gaps for Relic-before-Unit sequencing, additional-sacrifice
@@ -2374,10 +2374,259 @@ fixture tests.
 
 ### Checklist
 
-- [ ] Named M05.6 strategic gaps addressed within a bounded horizon.
-- [ ] All four Wave 1 archetypes covered by representative decisions.
-- [ ] Hard beats Normal on the declared fixtures, and the fixtures are declared.
-- [ ] Remaining gaps recorded; no claim of solved play.
+- [x] **Named M05.6 strategic gaps addressed within a bounded horizon.** Two of
+      the three close and the third is measured and recorded, and the three
+      closed for three different reasons — which is the whole finding of this
+      tranche. `bastion_guardians/armory_before_the_guardian` closes at
+      `hard_tactical` from `sequencesEnablers`, a depth-two pass over the plays
+      the engine has already declared legal.
+      `grave_sacrifice/make_fodder_before_spending_it` closes at **every**
+      profile, because it was never a pilot defect: the engine would not let a
+      Thrall pay "sacrifice a Unit", so the line was illegal for a person too
+      (Q49, below). `containment_control/hold_energy_for_the_counter` does **not**
+      close: `reservesReactionEnergy` moves the two candidates about four points
+      closer for every style and the body still wins, for a reason that is
+      recorded rather than tuned around.
+- [x] **All four Wave 1 archetypes covered by representative decisions.** The
+      twenty-four-board calibration suite already covers all four and is
+      unchanged in size; the tournament below plays all sixteen ordered precon
+      pairings, at all three styles, at both profiles.
+- [x] **Hard beats Normal on the declared fixtures, and the fixtures are
+      declared.** The declared set is `CALIBRATION_FIXTURES`, suite version 2.
+      Hard is characteristic on **six** boards Normal misses — the five M09.14
+      closed plus the Armory sequencing — and regresses none;
+      `compareCalibrationSuite` asserts both directions and reports nothing
+      stale.
+- [x] **Remaining gaps recorded; no claim of solved play.** One M05.6 strategic
+      gap is open with a note for every pilot, the calibration rate is asserted
+      to stay below 1, and Hard is **not published** — the reason is a decision
+      rather than a defect, and it is written down as Q50.
+
+### The ruling underneath it, and why it was not a pilot change
+
+The tranche opened blocked. `grave_sacrifice/make_fodder_before_spending_it` asks
+a pilot to convert its last body into two Thralls and then spend one of them on a
+draw, and no pilot could: `forbidden_offering` filters its additional cost on
+`cardTypes: ['unit']`, and `matchesCardFilter` tested `definition.type` and
+nothing else, so a Token was not a Unit anywhere in the engine. The fixture was
+not asking for a decision no bot made. It was asking for a line no **player**
+could take.
+
+The owner settled it on 2026-08-20, in these words: _"Tokens count as Units while
+they are on the battlefield. Any rule, target, or additional cost that says 'Unit'
+includes Unit Tokens unless it explicitly says 'nontoken Unit' or 'Unit card.' A
+token-only filter remains token-only."_ It is recorded as **Q49** and written up
+in [confirmed-rules.md](../rules/confirmed-rules.md#tokens).
+
+It is implemented as one sentence in the central filter and nothing else.
+`satisfiesCardTypes` widens a `unit` request to cover a Token, and the three
+boundaries are in the function rather than in a promise:
+
+- **One-way.** `cardTypes: ['token']` stays token-only. A token-only filter is an
+  authored restriction — it is how `containment_pulse` names "every Token with
+  the same definition" and how `goblin_warhorn_captain` names "Goblin Tokens you
+  create" — and reading it as shorthand for "Unit" would break both cards.
+- **Battlefield-only.** A Token is a Unit while it is in play and is never a Unit
+  _card_. The seven `['unit']` filters that name the discard pile or the deck —
+  `back_to_the_warrens`, `book_of_the_dead`, `corpse_stitcher`,
+  `grave_reassembly`, `grave_robber`, `tactical_assessment`,
+  `unearth_the_remains` — are asked of zones a Token cannot be in, and a filter
+  evaluated with no instance behind it does not widen either.
+- **Nothing else.** `commander` still means `commander`, and every other
+  predicate on the filter is applied on top exactly as before.
+
+The catalog was audited rather than edited. Forty-one filters are exactly
+`['unit']`: thirty-four name the battlefield or a sacrifice cost and are the
+correction, seven name a deck or a discard pile and are untouched. Fourteen are
+`['unit', 'token']` and every one of them is a battlefield filter, so they are now
+redundant and go on meaning precisely what they meant — they are **deliberately
+not normalised**, because rewriting fourteen cards to remove a harmless word would
+be content churn standing in for a rules change. Two are `['token']` and stay
+token-only; two are `['unit', 'token', 'commander']` and still reach Commanders,
+which the widening does not.
+
+### What the two new refinements actually do
+
+`hard_tactical` moves **1.0.0 → 1.1.0** and gains two switches. Both are off in
+`baseline`, so Normal and Easy are unchanged by construction and are measured
+unchanged at the three grains M09.14 established.
+
+**`sequencesEnablers` — the play that improves the next play leads.** For each
+pair of currently legal plays it asks whether one of them, once in play, would
+improve the _arrival_ of the other, and whether the other is still affordable
+once the first is paid for. Both halves are required: an enabler played into a
+turn that can no longer afford what it enables is a wasted turn, not a sequence.
+"Improves the arrival" is read structurally in the two authored shapes that
+express it — a triggered ability on `on_deployed`/`on_entered_battlefield` whose
+scope covers the beneficiary and whose instructions act on the `trigger_subject`,
+and a `replace_arrival` static ability that grants the arriving card a keyword —
+and priced with the same instruction pricer everything else uses, so it carries
+the style's own weights and the inert-keyword rule for free. No card ID, no deck
+name, no Commander appears in it.
+
+The correction is **bounded above**, and that ceiling is the reason it is safe:
+the lead is raised to the follower's own score plus what leading adds to it, and
+never higher. A candidate that already beat the follower still beats the pair, so
+the refinement can only ever decide the _order_ of two plays that were both going
+to happen — which is exactly the defect, because the Armory and the Guardian are
+both played either way and only one order gives the Guardian its Barrier. The
+search is depth two over `legal.playableCards` with an explicit
+`SEQUENCING_HORIZON` of twelve, so "bounded" is a number in the source rather than
+a property of the current card pool.
+
+**`reservesReactionEnergy` — the Energy a held Reaction needs is not spent.** Two
+arithmetic changes, both narrow. The reserved points stop being charged
+`unspentEnergyPenalty` on `pass_phase`, because they are not idle — the rulebook
+says in as many words that whatever is unspent "is what pays for a Reaction on
+another player's turn" — and a play that would take the seat below the reserve is
+charged the Reaction it strands, at that card's own `cardValue`.
+
+A reserve is raised only for a Reaction the pilot **actually holds**, that it can
+**already afford**, and whose named window a living opponent could still open — a
+spell window needs an opponent who can still come by a card, a combat window needs
+an opponent who controls a body. It is never a fixed number of points, it never
+reads the deck, and it is the largest single Reaction's cost rather than the sum,
+because a window offers one Reaction per eligible player. A pilot holding two
+counters does not hold six Energy.
+
+It changes decisions in both directions, which is what stops it from being a
+licence to pass: at three Energy holding `calculated_response`, `aggressive`
+declines to buy `archive_acolyte` — a 0/3 wall worth less than the answer it would
+strand — and buys `veil_skirmisher` anyway, because a 3/2 is worth more.
+
+### The tournament
+
+A deterministic seeded smoke tournament, because passing three fixtures is
+necessary and not sufficient. All sixteen ordered pairings of the four Wave 1
+precons, at all three styles, over four seeds: **192 matches per configuration,
+768 in total.**
+
+| Configuration      | Seat 1 wins | Seat 2 wins | Illegal actions | Unfinished | Actions/match | Passes/match | Turns/match |
+| ------------------ | ----------- | ----------- | --------------- | ---------- | ------------- | ------------ | ----------- |
+| Normal vs Normal   | 96 (50.0%)  | 96 (50.0%)  | 0               | 0          | 113.7         | 39.9         | 20.5        |
+| Hard vs Hard       | 103 (53.6%) | 89 (46.4%)  | 0               | 0          | 103.9         | 36.8         | 18.9        |
+| Hard (1) vs Normal | 100 (52.1%) | 92 (47.9%)  | 0               | 0          | 107.3         | 38.0         | 19.5        |
+| Normal vs Hard (2) | 90 (46.9%)  | 102 (53.1%) | 0               | 0          | 109.3         | 38.4         | 19.7        |
+
+Four readings, and the last two are the ones that were actually at risk:
+
+- **Hard is better, on both sides of the table.** 202 wins out of 384 head to
+  head — **52.6%** — and the edge is 52.1% seated first and 53.1% seated second,
+  so it is not a seat-order artefact. Normal against Normal is exactly 96–96,
+  which is what makes that reading available at all.
+- **Nothing broke.** No illegal action, no pilot failure, no unfinished match, no
+  draw, in 768 matches. Every match ended in a result, and deck-outs fell from 11
+  to 4 under Hard.
+- **The reserve did not make the bots passive.** Passes per match fell 39.9 →
+  36.8 and turns per match fell 20.5 → 18.9. A resource rule that had turned into
+  "hold everything" would have moved both the other way, and the containment deck
+  — the only Reaction-heavy one — is a quarter of every configuration.
+- **Matches did not get longer.** The whole tournament is shorter under Hard,
+  which is the shape a better attacker produces rather than a more cautious one.
+
+The tournament is a **recorded measurement, not a test**: 768 matches take about
+eleven minutes, which does not belong in `npm run verify`. It is reproducible from
+the repository — `driveMatch` over `preconMatchDeck` for each ordered pairing,
+`createTacticalPilot` per style, seeds `m0915-a`…`m0915-d` composed with the
+pairing, style and configuration name — and the corner of it that would rot is
+committed: `tactics.test.ts` plays four precon-versus-precon matches under the
+profile end to end, which is the only place in that file exercising the shipped
+card pool rather than the `prototype_core` fixtures.
+
+The tournament is run through `driveMatch`, which needed one correction to run at
+all: its `seatToAct` never looked at `state.reactionWindow`, so it asked the
+active player while the engine was waiting on the seat holding priority. Every
+deck the contract tests fly is built from `prototype_core`, which prints no
+Reaction, so nothing had ever asked. Fixed, and the fix changes nothing for a deck
+without Reactions.
+
+### Findings recorded rather than fixed
+
+- **`hold_energy_for_the_counter` is narrowed, not closed, and the remaining half
+  is a different defect.** The window is priced now. What is left is that the
+  scorer values a card **played** at its whole card value and a card **kept** at
+  nothing — so a 3/2 body reads as a permanent gain rather than as one turn of
+  tempo over playing the same card next turn, and no honest reservation charge can
+  outweigh a body worth twice the counter. Correcting that is a change to how
+  every card in every hand is valued, in every decision the pilot makes. It is not
+  a resource rule and it was not M09.15's to make.
+- **A fixture can close for a reason that is not about pilots.** The sacrifice
+  sequencing board closed at both profiles, and it is recorded in the fixture and
+  asserted in `tactics.test.ts` as a rules correction specifically so that nobody
+  cites it as evidence about Hard. Every style already sequenced it correctly; the
+  engine was what stopped the second card.
+- **`arrivalBoostValue` reads printed abilities only.** An enabler whose
+  improvement arrives through a granted ability, a delayed effect or a continuous
+  layer that is not `replace_arrival` is not recognised, and reads as no enabler
+  at all rather than as a guess. Nothing in Wave 1 wears that shape.
+- **The reserve does not model a `reaction_discount`.** A Relic granting one can
+  only make the real cost lower, so the reserve is never smaller than the Energy
+  actually needed — it is conservative in the safe direction, and deliberately not
+  reconstructed.
+- **`RULES_VERSION` moving invalidates every recorded replay, and that is the
+  mechanism working.** `results/` is a local, gitignored run artefact and is not
+  migrated: a replay is a claim about what the engine did, and nothing can
+  re-derive a decision the recording build was never offered.
+
+### Versions
+
+**`RULES_VERSION` moves `0.4.0` → `1.0.0`.** The policy in `config.ts` is that a
+provisional _value_ moves the minor and a structural _rule_ moves the major, and
+the Token ruling is the second: it changes what is a legal target and what may pay
+an additional cost. The evidence that it has to move at all is
+`checkReplayCompatibility`, which compares `rulesVersion` and refuses a replay
+whose recording engine would now answer differently — and a match recorded under
+0.4.0 contains seats that were never offered a legal move this build offers.
+Refusal is tested by name in `spectator.test.ts`. The number is a **compatibility
+token and not a maturity claim**; `1.0.0` says the ruleset changed structurally,
+not that it is finished, and `config.ts` now says so where somebody would read it.
+
+**`hard_tactical` moves `1.0.0` → `1.1.0`** — two refinements added, which is
+exactly what a profile's own version is documented to move for.
+`TACTICS_REGISTRY_VERSION` stays **1**: which profiles exist did not change, and
+that is the only thing it pins. The three style pilots keep `1.1.0` for the reason
+M09.14 gave — a profile improving must move the profile's version and not the
+pilot's, or a Normal result and a Hard result become indistinguishable in a
+record.
+
+**`CALIBRATION_SUITE_VERSION` stays 2.** No fixture was added or removed and no
+facet appeared. Three fixtures' recorded gaps changed, which is a **measurement**
+moving rather than the instrument moving — and a suite version that moved whenever
+a gap closed would be useless for the one thing it is for, which is saying whether
+two results were measured by the same instrument.
+
+**`DIFFICULTY_REGISTRY_VERSION` stays 2, and `DIFFICULTY_REGISTRY.hard` stays
+`planned`.** Its `plannedIn` moves `M09.15` → `M09.16`, which is neither an ID
+appearing, nor one disappearing, nor a status changing — the three things that
+constant is documented to move for. `behaviorVersion` and `selection` are still
+null, so `difficultySelection('hard')` still throws by name and
+`AVAILABLE_DIFFICULTIES` still does not contain Hard. Why it was not published is
+under **Q50**, not here: no threshold was ever recorded, one of the three gaps the
+tranche owned is open, and choosing the standard a result is then measured against
+is not a measurement's job.
+
+`PROTOCOL_VERSION` stays 9, `BOT_CONFIG_SCHEMA_VERSION` 1, `PACING_CONFIG_VERSION`
+1, `MATCH_SCHEMA_VERSION` 7, `CARD_SCHEMA_VERSION` 5, `SPECTATOR_REPLAY_VERSION`
+6, `BOARD_TELEMETRY_VERSION` 3, `SEED_DERIVATION_VERSION` 2,
+`AGENT_CLASS_REGISTRY_VERSION` 1, `DECK_GENERATOR_VERSION` `'1'`. No wire message,
+`SavedDeck`, match record, replay or experiment manifest gained a field, and
+`PilotSpec` still names a pilot and nothing else, so an experiment still cannot
+acquire a tactical profile and be cited for play quality under it.
+
+**Compatibility.** Nothing durable changed shape, so nothing is migrated; what
+changed is behaviour behind a version that exists to refuse stale recordings.
+`matchesCardFilter`'s signature is unchanged and two new pure helpers —
+`isTokenEntity` and `satisfiesCardTypes` — are exported beside it. `scoreCandidate`
+and `scorePlayCard` take the tactical profile they already had in scope, and every
+existing call site compiles and behaves identically because `baseline` turns both
+new switches off.
+
+The M09.0 baseline table above predicted `RULES_VERSION` would not move in M09,
+on the grounds that "pacing and difficulty are not rules". That prediction was
+correct about its own reason and wrong about the milestone: what moved the
+constant is an owner rules ruling that a calibration fixture happened to surface,
+not anything about a bot. Recorded here rather than by editing the prediction, for
+the same reason M09.10 recorded its `PROTOCOL_VERSION` correction.
 
 ## M09.16 — Style automation and complete per-bot setup
 
@@ -2390,6 +2639,16 @@ accident. What is locked, generated, private, unavailable, or limited by the
 small current card pool is stated. Keyboard accessibility, narrow and wide
 layouts, and actionable errors are preserved.
 
+It also owns **whether Hard becomes one of those approved options.** M09.15 built
+Hard's behaviour and measured it, and stopped short of publishing because no
+threshold was ever recorded — the question is Q50 and the answer is the owner's.
+If the answer is yes, publication is a bounded piece of work rather than a status
+flip: `DifficultyDefinition` has no field for a tactical profile, so the registry
+gains one, `DIFFICULTY_REGISTRY_VERSION` moves 2 → 3, `BotRunner` builds the pilot
+through it, and the lobby, the help text and the seat provenance each gain an
+option. If the answer is no, or not yet, `plannedIn` moves again and nothing else
+does. Nothing here may publish Hard without that answer.
+
 **Acceptance:** every setting combination, copy-with-new-seed, automatic
 fallback, privacy, reroll, lock, accessibility and responsive component tests.
 
@@ -2399,6 +2658,7 @@ fallback, privacy, reroll, lock, accessibility and responsive component tests.
 - [ ] Automatic style deterministic, from structured data, with a named fallback.
 - [ ] Copy configuration without copying seeds.
 - [ ] Locked, private, unavailable and pool-limited states all stated.
+- [ ] Q50 answered, and Hard published or re-planned according to the answer.
 
 ## M09.17 — Pacing and bot provenance summary
 

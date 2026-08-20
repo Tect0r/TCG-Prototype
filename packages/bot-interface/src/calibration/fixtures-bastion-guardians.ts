@@ -36,14 +36,10 @@ export const BASTION_GUARDIANS_FIXTURES: readonly TacticalFixture[] = [
       defensive: 'scores each play on its own, so the Relic’s deploy trigger is invisible',
       value: 'scores each play on its own, so the Relic’s deploy trigger is invisible',
     },
-    // Unchanged by M09.14 on purpose: Hard's tactical half is about the decision
-    // in front of the pilot now, and nothing in it prices a play for what it
-    // makes the *next* play worth. M09.15 owns short-horizon sequencing.
-    tacticalGaps: {
-      aggressive: 'still scores each play on its own; sequencing is M09.15’s half of Hard',
-      defensive: 'still scores each play on its own; sequencing is M09.15’s half of Hard',
-      value: 'still scores each play on its own; sequencing is M09.15’s half of Hard',
-    },
+    // Closed at `hard_tactical` by M09.15's `sequencesEnablers`: the Relic's
+    // `on_deployed` trigger covers the Guardian, the Guardian is still
+    // affordable once the Relic is paid for, so the Relic leads. No entry here
+    // is what that looks like.
   },
   {
     id: 'bastion_guardians/judgment_on_the_bigger_body',

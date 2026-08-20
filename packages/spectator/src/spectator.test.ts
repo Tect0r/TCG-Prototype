@@ -318,6 +318,22 @@ describe('a recorded four-bot match', () => {
     expect(stale.map((problem) => problem.field).sort()).toEqual(['cardDataHash', 'rulesVersion']);
   });
 
+  it('refuses a replay recorded before the Token ruling, by name', () => {
+    // M09.15 answered Q49 — a Token on the battlefield satisfies a `unit`
+    // filter — which changes what is a legal target and what may pay an
+    // additional cost, so `RULES_VERSION` moved 0.4.0 → 1.0.0. A match recorded
+    // under 0.4.0 is a claim about an engine that would now answer differently,
+    // and is refused rather than migrated: nothing can re-derive a decision the
+    // recording build was never offered.
+    expect(config.version).toBe('1.0.0');
+    const old = { ...replay, rulesVersion: '0.4.0' };
+    const problems = checkReplayCompatibility(old, {
+      rulesVersion: config.version,
+      cardDataHash: poolHash,
+    });
+    expect(problems).toEqual([{ field: 'rulesVersion', expected: '1.0.0', found: '0.4.0' }]);
+  });
+
   /**
    * M04.1's version policy: a replay recorded before the shared board telemetry
    * existed is refused outright, and is refused *as an old replay* rather than

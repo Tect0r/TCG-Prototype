@@ -223,7 +223,7 @@
             "Reaction — played from your hand only inside an open Reaction window, which can happen on anybody's turn. It resolves and then goes to your discard pile, like a spell.",
             "Relic — goes into a separate row and stays until something removes it or another relic replaces it. Relics are not units and cannot attack or block.",
             "Commander — starts in the Command Zone rather than in your deck, and can be deployed to the battlefield for its printed cost.",
-            "Token — a unit created by an effect. Tokens are never in a deck, and a token that leaves play stops existing entirely."
+            "Token — a unit created by an effect. A Token on the battlefield is a Unit: anything that says \"a Unit\" — a target, an ability, an additional cost — may use one, unless it says a nontoken Unit or a Unit card. A card that asks only for Tokens still means only Tokens. Tokens are never in a deck and are never Unit cards, and a token that leaves play stops existing entirely."
           ]
         },
         {

@@ -160,7 +160,19 @@ export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefin
         'A versioned improvement on named calibration gaps, choosing better among the same legal ' +
         'candidates. It reads no hidden state, and a Hard result is not a balance finding.',
       status: 'planned',
-      plannedIn: 'M09.15',
+      // Its behaviour exists — `hard_tactical` in `@tcg/bot-interface` is at
+      // `1.1.0` and closes six of the twenty-four calibration boards Normal
+      // misses — but a difficulty is not a profile, and nothing here may quietly
+      // become one. Publishing it needs a field this registry does not have,
+      // which is exactly why it cannot happen by accident: `selection` and
+      // `behaviorVersion` are still null, so `difficultySelection('hard')`
+      // throws by name and a lobby's list still does not contain it.
+      //
+      // What is left is a decision rather than an implementation. M09.15 closed
+      // two of the three strategic gaps it owned and recorded the third; no
+      // threshold for "good enough to ship" was ever written down, and inventing
+      // one is not an engineering call. Recorded as owner question Q50.
+      plannedIn: 'M09.16',
       behaviorVersion: null,
       selection: null,
     },

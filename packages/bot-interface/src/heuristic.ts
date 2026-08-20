@@ -9,9 +9,12 @@ import {
 } from './candidates.js';
 import { BASELINE_TACTICS, type TacticalProfile } from './tactics.js';
 import {
+  enablerLeadBonus,
   greedyBlocks,
+  reactionEnergyReserve,
   resolveHypotheticalCombat,
   selfSummary,
+  strandedReactionValue,
   summaryOf,
   unitBoardValue,
   unitViewsOf,
@@ -20,6 +23,8 @@ import {
   effectValue,
   effectsValue,
   type BotWeights,
+  type HeldReaction,
+  type PlayableEntry,
 } from './scoring.js';
 import type { ActionCandidate, BotDecision, BotObservation, BotPolicy } from './types.js';
 
@@ -225,11 +230,9 @@ export function scoreCandidate(
 ): number {
   switch (candidate.action.type) {
     case 'pass_phase':
-      return (
-        weights.passBaseline - weights.unspentEnergyPenalty * selfSummary(observation.view).energy
-      );
+      return scorePass(observation, weights, tactics);
     case 'play_card':
-      return scorePlayCard(observation, candidate.action, weights);
+      return scorePlayCard(observation, candidate.action, weights, tactics);
     case 'activate_ability':
       return scoreActivate(observation, candidate.action, weights);
     case 'declare_attackers':
@@ -259,19 +262,110 @@ function scorePlayCard(
   observation: BotObservation,
   action: Extract<Action, { type: 'play_card' }>,
   weights: BotWeights,
+  tactics: TacticalProfile,
 ): number {
   const playable = observation.legal.playableCards.find(
     (card) => card.instanceId === action.instanceId,
   );
-  const definition = playable ? observation.database.get(playable.definitionId) : undefined;
-  if (!definition || !playable) return 0;
+  if (!playable) return 0;
 
+  const base = basePlayScore(observation, playable, weights);
+  const energy = selfSummary(observation.view).energy;
+
+  let score = base;
+  if (tactics.sequencesEnablers) {
+    score += enablerLeadBonus(
+      { ...playable, baseScore: base },
+      playHorizon(observation, weights),
+      energy,
+      weights,
+      observation.database,
+    );
+  }
+  if (tactics.reservesReactionEnergy) {
+    // Only ever a subtraction, and only for the Energy this play actually
+    // spends: a play that leaves the reserve intact is charged nothing.
+    score -= strandedReactionValue(
+      heldReactions(observation),
+      observation.view,
+      energy,
+      energy - playable.energyCost,
+      weights,
+      observation.database,
+    );
+  }
+  return score;
+}
+
+/** What a play is worth on its own, before any short-horizon correction. */
+function basePlayScore(
+  observation: BotObservation,
+  playable: BotObservation['legal']['playableCards'][number],
+  weights: BotWeights,
+): number {
+  const definition = observation.database.get(playable.definitionId);
+  if (!definition) return 0;
   return (
     cardValue(definition, weights, observation.database) +
     weights.energyEfficiency * playable.energyCost -
     replacedRelicCost(observation, definition, weights) -
     emptySourceZonePenalty(observation, definition, weights)
   );
+}
+
+/**
+ * Every currently legal play, priced on its own, for the pair search.
+ *
+ * `basePlayScore` and nothing else, which is what keeps the depth at two: the
+ * follower is valued by the scorer that shipped, so the search cannot recurse
+ * into itself and a sequence is never scored against another sequence.
+ */
+function playHorizon(observation: BotObservation, weights: BotWeights): PlayableEntry[] {
+  return observation.legal.playableCards.map((playable) => ({
+    ...playable,
+    baseScore: basePlayScore(observation, playable, weights),
+  }));
+}
+
+/**
+ * The Reactions this seat is holding, read from its own hand.
+ *
+ * The engine does not list a Reaction among `playableCards` outside a window, so
+ * the cost is the printed one. A discount a Relic is granting is deliberately
+ * not modelled: it can only make the real cost *lower*, so the reserve this
+ * produces is never smaller than the Energy actually needed.
+ */
+function heldReactions(observation: BotObservation): HeldReaction[] {
+  const held: HeldReaction[] = [];
+  for (const instanceId of observation.view.hand) {
+    const instance = observation.view.instances[instanceId];
+    if (!instance) continue;
+    const definition = observation.database.get(instance.definitionId);
+    if (!definition || definition.type !== 'reaction' || definition.cost === null) continue;
+    held.push({ definition, energyCost: definition.cost });
+  }
+  return held;
+}
+
+/**
+ * What passing the Main Phase is worth.
+ *
+ * `passBaseline` less the unspent-Energy penalty, which is the only thing in the
+ * scorer pulling Energy out of a pilot at all. With the reserve on, the penalty
+ * stops being charged on the points a held Reaction needs — those points are not
+ * idle, they are the price of an answer — and is charged on every other point
+ * exactly as before.
+ */
+function scorePass(
+  observation: BotObservation,
+  weights: BotWeights,
+  tactics: TacticalProfile,
+): number {
+  const energy = selfSummary(observation.view).energy;
+  const reserve = tactics.reservesReactionEnergy
+    ? reactionEnergyReserve(heldReactions(observation), observation.view, energy)
+    : 0;
+  return weights.passBaseline - weights.unspentEnergyPenalty * Math.max(0, energy - reserve);
 }
 
 /**

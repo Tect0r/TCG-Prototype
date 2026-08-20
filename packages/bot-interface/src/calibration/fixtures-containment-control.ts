@@ -34,12 +34,21 @@ export const CONTAINMENT_CONTROL_FIXTURES: readonly TacticalFixture[] = [
       defensive: 'penalises unspent Energy and prices no window that has not opened yet',
       value: 'penalises unspent Energy and prices no window that has not opened yet',
     },
-    // Unchanged by M09.14 on purpose: reserving a resource for a window that has
-    // not opened is the clearest of the strategic gaps, and M09.15 owns it.
+    // Narrowed but not closed by M09.15's `reservesReactionEnergy`, and the
+    // remaining half is a different defect. The window *is* priced now: the
+    // three Energy the counter needs stop being charged the unspent-Energy
+    // penalty, and the body is charged the counter it strands, which moves the
+    // two candidates about four points closer for every style. What is left is
+    // that the scorer values a card played at its whole card value and a card
+    // kept at nothing — so a 3/2 body reads as a permanent gain rather than as
+    // one turn of tempo over playing the same card next turn. Correcting that is
+    // a change to how every card in every hand is valued, not a resource rule,
+    // and it is not M09.15's to make.
     tacticalGaps: {
-      aggressive: 'still prices no unopened window; resource reservation is M09.15’s half of Hard',
-      defensive: 'still prices no unopened window; resource reservation is M09.15’s half of Hard',
-      value: 'still prices no unopened window; resource reservation is M09.15’s half of Hard',
+      aggressive:
+        'holds the reserve but still buys the body: a card kept in hand is priced at zero',
+      defensive: 'holds the reserve but still buys the body: a card kept in hand is priced at zero',
+      value: 'holds the reserve but still buys the body: a card kept in hand is priced at zero',
     },
   },
   {
