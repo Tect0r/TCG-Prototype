@@ -10,3 +10,5 @@ coverage/
 # Simulator experiment output. Runs are reproducible from the config plus the
 # seed, so the artefacts belong to whoever ran them, not to the repository.
 results/
+CLAUDE_AI_LAB_AND_PLAYER_META.md
+CLAUDE_M09_PLAY_AGAINST_AI.md
