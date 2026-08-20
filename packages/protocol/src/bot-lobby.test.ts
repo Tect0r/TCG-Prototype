@@ -59,6 +59,7 @@ const PRIVATE_SAVED_DECK: BotSeatConfig = {
   difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
   controller: { botId: 'bot_seat_2', displayName: 'Opponent 2' },
   difficulty: 'normal',
+  styleSetting: 'value',
   style: 'value',
   deck: {
     mode: 'exact_saved_deck',
@@ -135,14 +136,16 @@ describe('the protocol version', () => {
     // generated-deck messages, which is the correction ADR 0024 §7 now records
     // in place of its "moves once" prediction; 9 is M09.11's lobby pacing
     // budgets — a required member on a strict lobby view, and a fifth host-only
-    // message travelling the other way.
-    expect(PROTOCOL_VERSION).toBe(9);
-    expect(CURRENT_VERSIONS.protocol).toBe(9);
+    // message travelling the other way; 10 is M09.16's `styleSetting`, a
+    // required member on the strict public seat and a widened `style` on the
+    // setup travelling back.
+    expect(PROTOCOL_VERSION).toBe(10);
+    expect(CURRENT_VERSIONS.protocol).toBe(10);
   });
 
   it('refuses the build that came before it, by name', () => {
-    const older: Versions = { ...CURRENT_VERSIONS, protocol: 8 };
-    expect(versionMismatch(older, CURRENT_VERSIONS)).toEqual(['protocol 8 vs server 9']);
+    const older: Versions = { ...CURRENT_VERSIONS, protocol: 9 };
+    expect(versionMismatch(older, CURRENT_VERSIONS)).toEqual(['protocol 9 vs server 10']);
   });
 
   it('does not drag the bot configuration versions along with it', () => {
@@ -152,9 +155,15 @@ describe('the protocol version', () => {
     // available, the registry version moved 1 → 2, and `PROTOCOL_VERSION` did
     // not — because `botDifficultySchema` already carried the ID and no shape
     // on any wire changed.
-    expect(BOT_CONFIG_SCHEMA_VERSION).toBe(1);
+    //
+    // M09.16 is the demonstration of the *other* direction, and of why the two
+    // still are not one constant: the configuration's shape widened, so
+    // `BOT_CONFIG_SCHEMA_VERSION` moved 1 → 2 and `PROTOCOL_VERSION` moved 9 →
+    // 10 together — while `DIFFICULTY_REGISTRY_VERSION` sat still, because no
+    // difficulty was added, removed, or changed status.
+    expect(BOT_CONFIG_SCHEMA_VERSION).toBe(2);
     expect(DIFFICULTY_REGISTRY_VERSION).toBe(2);
-    expect(PROTOCOL_VERSION).toBe(9);
+    expect(PROTOCOL_VERSION).toBe(10);
     // And the handshake still compares three things, not five: a bot's
     // configuration is not something two builds must agree on to play at all.
     expect(Object.keys(CURRENT_VERSIONS).sort()).toEqual(['cardSchema', 'protocol', 'rules']);
@@ -294,11 +303,20 @@ describe('the bot setup shape', () => {
     // Everything else the configuration has, the wire carries — derived by
     // omission rather than restated, so widening one cannot leave the other
     // behind.
+    //
+    // `styleSetting` is the one exception, and it is an omission in the same
+    // spirit rather than a hole in the rule: the pair `styleSetting`/`style` is
+    // one question at the sending end, so the wire carries one settable `style`
+    // and the server derives the other member from the Commander it resolves
+    // (M09.16). A client that could send both could state a resolved style.
     for (const field of configured) {
-      if (field === 'controller') continue;
+      if (field === 'controller' || field === 'styleSetting') continue;
       expect(sent.has(field), `\`${field}\` is configured but never sent`).toBe(true);
     }
     expect([...sent].filter((field) => !configured.has(field))).toEqual(['displayName']);
+    // And the settable one really is wider than the configured one.
+    expect(botSetupSchema.safeParse({ ...SETUP, style: 'automatic' }).success).toBe(true);
+    expect(botSeatConfigSchema.shape.style.safeParse('automatic').success).toBe(false);
   });
 
   it('lets the host decline to name the seat', () => {

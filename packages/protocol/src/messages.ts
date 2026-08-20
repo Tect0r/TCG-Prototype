@@ -5,6 +5,7 @@ import {
   botPacingBudgetsSchema,
   botSeatConfigSchema,
   botSeatPublicSchema,
+  botStyleSettingSchema,
   generatedDeckProvenanceSchema,
 } from '@tcg/bot-config';
 import { CARD_SCHEMA_VERSION } from '@tcg/card-data';
@@ -105,8 +106,25 @@ import {
  * they were in M09.1, and this is the wire learning to carry them.
  * `RULES_VERSION` does not move either — a budget is lobby configuration, not a
  * rule, and open-questions.md Q8 is still open (ADR 0024 §4).
+ *
+ * 10 (M09.16): a bot seat now says where its style came from. `botSeatPublicSchema`
+ * is a strict object and gains a required `styleSetting`, so a v9 client would
+ * fail to parse the first lobby view a v10 server sent it that held a bot — the
+ * same failure mode M09.2 and M09.11 both had. `botSetupSchema` travels the other
+ * way with a widened `style`, and a v9 server would reject `style: "automatic"`
+ * as an invalid enum member: it has no mapping to resolve it with, so refusing is
+ * the correct answer rather than a compatibility gap to paper over.
+ *
+ * `BOT_CONFIG_SCHEMA_VERSION` moves 1 → 2 alongside it, and that is deliberately
+ * *not* redundant: the two answer different questions. This constant refuses a
+ * peer whose messages this build cannot decode; that one refuses a bot
+ * configuration record written by a newer build. `DIFFICULTY_REGISTRY_VERSION`
+ * stays 2 — no difficulty was added, removed, or changed status — and
+ * `PACING_CONFIG_VERSION`, `MATCH_SCHEMA_VERSION` and `RULES_VERSION` stay where
+ * they are, because deriving a style from an authored deck plan is a lobby
+ * decision above the engine and no rule changed.
  */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({
@@ -257,10 +275,22 @@ export type LobbyView = z.infer<typeof lobbyViewSchema>;
  * `.omit` and `.extend` both preserve the strict object, so an unknown member is
  * still a parse failure rather than a field that survives to be read later by
  * something that trusts it.
+ *
+ * **`style` here is the host's *setting*, not the bot's style** (M09.16). The
+ * configured `styleSetting`/`style` pair is one question at this end of the wire
+ * and two at the other: a host sets one control, and the server resolves what it
+ * means once it knows the Commander the bot will actually lead — which for an
+ * `autonomous_generated` seat it does not know until it has generated the deck.
+ * Both configured members are therefore omitted and one settable `style` put
+ * back, so a client cannot state a resolved style and a server cannot receive
+ * one it did not derive.
  */
 export const botSetupSchema = botSeatConfigSchema
-  .omit({ controller: true })
-  .extend({ displayName: botDisplayNameSchema.nullable() });
+  .omit({ controller: true, style: true, styleSetting: true })
+  .extend({
+    displayName: botDisplayNameSchema.nullable(),
+    style: botStyleSettingSchema,
+  });
 export type BotSetup = z.infer<typeof botSetupSchema>;
 
 /* ----------------------------------------------------------- client → server */

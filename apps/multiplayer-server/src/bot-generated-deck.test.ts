@@ -600,6 +600,7 @@ describe('the two rules the seat keeps to itself', () => {
       difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
       controller: { botId: 'bot_1', displayName: 'Bot 2' },
       difficulty: DEFAULT_BOT_DIFFICULTY,
+      styleSetting: 'value' as const,
       style: 'value' as const,
       pacing: IMMEDIATE_BOT_PACING,
       deck: {

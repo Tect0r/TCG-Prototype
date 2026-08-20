@@ -373,6 +373,7 @@ function botConfigFor(botId: string, style: BotStyle = 'value'): BotSeatConfig {
     difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
     controller: { botId, displayName: botId },
     difficulty: DEFAULT_BOT_DIFFICULTY,
+    styleSetting: style,
     style,
     deck: { mode: 'exact_precon', preconId: PRECONS[0] },
     pacing: IMMEDIATE_BOT_PACING,

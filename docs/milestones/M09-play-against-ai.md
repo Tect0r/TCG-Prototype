@@ -226,8 +226,14 @@ If work stops, it stops at one of these boundaries and says which.
 | Mixed exact decks | M09.7        | Up to four mixed seats using precons and saved decks       |
 | All deck modes    | M09.10       | Exact, host-chosen Commander, or full bot choice           |
 | Timing usable     | M09.12       | Per-bot percentage pacing with a Reaction override         |
-| All difficulties  | M09.15       | Easy, Normal, and evidence-backed Hard                     |
+| All difficulties  | M09.20       | Easy, Normal, and evidence-backed Hard                     |
 | Complete          | M09.19       | Pacing summary, help, privacy, compatibility and hardening |
+
+The rows are in **execution** order, which is why M09.20 sits above M09.19. Q50
+was answered "not yet" in M09.16, so the tranche that closes Hard's last gap and
+publishes it was added after M09.17–M09.19 were already named in source comments
+and in the external brief; renumbering those would have broken the references, so
+it took the next free number and runs where it belongs.
 
 M09 is never marked complete at an intermediate checkpoint.
 
@@ -2628,7 +2634,7 @@ constant is an owner rules ruling that a calibration fixture happened to surface
 not anything about a bot. Recorded here rather than by editing the prediction, for
 the same reason M09.10 recorded its `PROTOCOL_VERSION` correction.
 
-## M09.16 — Style automation and complete per-bot setup
+## M09.16 — Style automation and complete per-bot setup — **done (2026-08-20)**
 
 Present every approved option coherently for each bot: deck mode, difficulty,
 style, timing, Reaction override and reroll, through progressive disclosure.
@@ -2639,26 +2645,320 @@ accident. What is locked, generated, private, unavailable, or limited by the
 small current card pool is stated. Keyboard accessibility, narrow and wide
 layouts, and actionable errors are preserved.
 
-It also owns **whether Hard becomes one of those approved options.** M09.15 built
-Hard's behaviour and measured it, and stopped short of publishing because no
-threshold was ever recorded — the question is Q50 and the answer is the owner's.
-If the answer is yes, publication is a bounded piece of work rather than a status
-flip: `DifficultyDefinition` has no field for a tactical profile, so the registry
-gains one, `DIFFICULTY_REGISTRY_VERSION` moves 2 → 3, `BotRunner` builds the pilot
-through it, and the lobby, the help text and the seat provenance each gain an
-option. If the answer is no, or not yet, `plannedIn` moves again and nothing else
-does. Nothing here may publish Hard without that answer.
+It also owned **whether Hard becomes one of those approved options**, which is
+**Q50**. The answer, from the owner on 2026-08-20 with M09.15's measurements in
+front of them, was **not yet**: close the third strategic gap first. What that
+costs this tranche is recorded under [Q50, answered](#q50-answered-not-yet)
+below; what it deliberately did not cost is a registry field.
 
 **Acceptance:** every setting combination, copy-with-new-seed, automatic
 fallback, privacy, reroll, lock, accessibility and responsive component tests.
 
 ### Checklist
 
-- [ ] Full per-bot configuration with progressive disclosure.
-- [ ] Automatic style deterministic, from structured data, with a named fallback.
-- [ ] Copy configuration without copying seeds.
-- [ ] Locked, private, unavailable and pool-limited states all stated.
-- [ ] Q50 answered, and Hard published or re-planned according to the answer.
+- [x] Full per-bot configuration with progressive disclosure.
+- [x] Automatic style deterministic, from structured data, with a named fallback.
+- [x] Copy configuration without copying seeds.
+- [x] Locked, private, unavailable and pool-limited states all stated.
+- [x] Q50 answered, and Hard published or re-planned according to the answer.
+
+### Automatic is a setting, not a fourth style
+
+The distinction the whole tranche rests on, and it is a type rather than a
+convention. `BOT_STYLES` is unchanged — three styles, three published weight
+vectors — and `BOT_STYLE_SETTINGS` is the new vocabulary a _control_ offers:
+`automatic` plus those three. A `BotSeatConfig` carries **both** members,
+`styleSetting` and `style`, because they answer different questions: `style` is
+what the pilot flies and can never be `automatic`, and `styleSetting` is what a
+host would see if they opened the form again. Collapsing them would mean either a
+lobby that cannot show "Automatic" after a reload, or a runner re-resolving a
+style every time it builds a pilot.
+
+`botStyleSchema` still refuses `'automatic'` and `botStyleSettingSchema` accepts
+it, so nothing downstream of the resolution can be handed a setting by accident —
+`createBotPilot` reads `config.style` and needed no change at all.
+
+### Where the mapping comes from, and where it stops
+
+**Commander → the format's authored `DeckPlan` → `archetypeId` →
+`ARCHETYPE_STYLE_MAP` → style.** Nothing reads a card's rules text, a card name,
+or a precon's `strategy` line, all three of which are display text and all three
+of which CLAUDE.md's engineering invariants forbid parsing into behaviour.
+
+The Commander is the key rather than the precon ID because it is the one handle
+all four deck modes share: a generated deck has no precon and a saved deck has no
+plan, so one rule covers every mode instead of four. `ARCHETYPE_STYLE_MAP` is a
+total `Record` over `ArchetypeId`, so a fifth archetype arriving in
+`@tcg/card-data` is a compile error here rather than a silent slide into the
+fallback, and `botStyleRegistryGaps()` says the same at runtime for the callers
+that arrive with a string.
+
+The four Wave 1 entries are each the archetype's own stated payoff matched
+against the style summary that prices it: `token_swarm` converts board width into
+damage and is `aggressive`; `defensive_attrition` keeps the blockers that survive
+and is `defensive`; `sacrifice_value` and `reactive_control` both win on
+accumulated advantage and are `value`. The last is the only judgement call worth
+recording — `reactive_control` is not `defensive`, because surviving is how it
+gets there rather than what it is for.
+
+**Format-scoped**, for the reason every pool lookup in this repository is:
+`deckPlansForFormat` rather than `BUNDLED_DECK_PLANS`, so a plan from another
+format is not evidence about this table. A test proves it by asking for
+`goblin_warboss` under `development`, which publishes no plans, and getting the
+fallback rather than `aggressive`.
+
+**The fallback is named and is `value`.** Not the first entry of `BOT_STYLES`,
+because a fallback is a statement about _not knowing_: `value` prices card
+advantage and board value, which is the least specific claim of the three, where
+`aggressive` would be a wager about a deck nothing has classified. Two ways to
+reach it, and both are named rather than silent — `no_plan` when the format
+publishes none for that Commander, and `ambiguous` when two plans name the same
+Commander, where picking the first would make the answer depend on file order.
+`chosen` is the fourth member of the same closed set, for a style the host named,
+so one field answers "where did this style come from?" for every seat.
+
+### The server resolves it, because only the server can
+
+`resolveBotSeat` is where a setup becomes a configuration, and since this tranche
+it is also the single place a style stops being a setting: every branch returns
+through `withResolvedStyle`, for **every** deck mode including the two that name
+a style outright. That is the property being bought — "automatic resolves once,
+from the Commander, after the deck exists" is a fact about the control flow
+rather than about four remembered call sites.
+
+It has to be the server rather than the host's browser because of one mode. An
+`autonomous_generated` bot picks its own Commander _during_ generation, so at the
+moment the host presses the button there is no Commander for anybody to map. The
+Commander is therefore read off the resolved `SavedDeck` rather than off the
+configuration — the same value for three modes, and the only source of it for the
+fourth.
+
+`setupOf` sends the **setting** back, not the resolved style. A reroll builds a
+new deck and can land on a different Commander, so an automatic seat re-resolves
+rather than carrying the style its previous deck implied; sending the resolved
+value would quietly convert an automatic seat into a hand-picked one at the first
+reroll, and a test asserts the transition by name.
+
+### What the host sees
+
+The style control offers **Automatic** first and three named styles behind it,
+and automatic is now the **default**. The old default was whichever style
+happened to be first in the vocabulary, which made every bot a host had not
+thought about aggressive; automatic is the option that needs no opinion, and the
+note under the control says which style it landed on and why — so it is a default
+that explains itself rather than a hidden one.
+
+That note is total over the three cases a host can be in. A named style prints
+its own summary, exactly as before. Automatic with a Commander in hand names the
+Commander, the archetype its plan claims and the style that implies, computed by
+the same `resolveAutomaticStyle` the server will run against the same format —
+so it is a prediction the server is bound to rather than a second opinion.
+Automatic with no Commander yet says the style is decided when the deck is built
+and names the fallback, because a preview there would be an invention.
+
+**Progressive disclosure.** Deck source, deck, difficulty and style are on the
+surface; timing, the Reaction override and the deck seed are inside a native
+`<details>` that starts closed. Native rather than scripted for the accessibility
+requirement: it is in the tab order, it opens from the keyboard, and it announces
+itself as a disclosure without a line of script. The keyboard test walks deck →
+difficulty → style → the disclosure → timing → override → the button, and
+asserts activating the disclosure opens the group. It asserts that by _clicking_,
+because jsdom does not implement `<summary>`'s Enter/Space activation — the
+limitation is recorded in the test rather than papered over with an assertion
+that would pass for the wrong reason.
+
+Every control is seat-scoped for a seated bot, including the new disclosure:
+"Seat 2 timing and deck seed", so a table with three bots stays readable to
+somebody listening to the page rather than looking at it.
+
+### Copying a setup, and the one thing that does not copy
+
+A copy and a paste rather than a "copy to seat 3" menu, because the host is
+choosing two things — which setup, and which seat gets it — and a single control
+would have to guess one of them. It is also the shape that scales to the form for
+the _next_ bot without a special case: that form is a paste target like any
+other.
+
+**Nothing is sent by pasting.** It fills a form, and the host still presses Apply
+or Add, which keeps the panel's one-mutation-at-a-time rule exactly where M09.7
+left it and means a paste can be looked at before it is committed.
+
+**A generated seat is pasted onto a new stream.** `withFreshGenerationStream`
+mints a seed at paste time, so copying a bot never copies its RNG state: two
+seats built from one form get two different decks, and the note beside the button
+says so before the host presses anything. The reroll count is deliberately _not_
+handled here, because it is not in a draft at all — it is the server's record of
+how far one seat has walked its own stream, and `carriedRerollCount` already
+restarts it at 0 whenever the seed changes. A pasted generated seat begins at its
+new stream's first deck by the rule that was already there rather than by a
+second one written here.
+
+The decision RNG is untouched by any of this and always was: `BotRunner` derives
+a seat's stream from the seat at match start, not from its configuration, so
+there is no route by which copying a form could duplicate a pilot's rolls.
+
+**A seat this browser did not configure cannot be copied**, and says why. The
+private half of a saved-deck or generated configuration never comes back down the
+wire, so that form is showing defaults rather than the seat's setup, and copying
+it would copy something that was never true. The button is absent and the reason
+is on screen, which is the same absent-not-disabled rule the deck modes and the
+difficulties follow.
+
+### Locked, private, unavailable, pool-limited
+
+Four states, each said rather than left to be inferred from a control that is
+missing.
+
+- **Locked** was already stated at M09.11 and is unchanged: once the match
+  starts, the panel says the settings are locked and prints the frozen budgets
+  and each seat's timing as provenance.
+- **Private** is stated in three places now — the frozen saved deck the host
+  cannot see the name of, the generated deck this browser was never told about,
+  and the new one above: a seat whose setup cannot be copied because this client
+  never sent it.
+- **Unavailable** is the state that had been silent. Hard was absent from the
+  difficulty list and nothing said so, which reads as a broken build rather than
+  as a plan. The panel now names every entry of `PLANNED_DIFFICULTIES` and the
+  tranche that owns it, read from the registry so the sentence empties itself
+  when the last planned difficulty is published. Absent-not-disabled is still the
+  rule; what changed is that the absence is explained. Each available difficulty
+  also prints its own summary now, which the style control has done since M09.5.
+- **Pool-limited** keeps its arithmetic home in `GeneratedDeckSummary` — 41 legal
+  cards for a 40-card deck is a floor of 39, so a reroll changes at most two —
+  and gains a second, smaller instance: an automatic style that falls back
+  because this format publishes no plan for a Commander says exactly that, which
+  is a content limit rather than a failure.
+
+### Q50, answered: not yet
+
+The owner's ruling on 2026-08-20 was that the numbers are not what is missing.
+`containment_control/hold_energy_for_the_counter` is still open, and it is open
+because the scorer prices a card played at its whole value and a card kept in
+hand at nothing — a valuation defect in every decision the pilot makes rather
+than a resource rule. Hard is published once that closes. No rate was named,
+deliberately: the standard is the named gap, which can be finished, rather than a
+threshold that would have to be argued about.
+
+So this tranche made the smaller of the two moves the question could have caused.
+`DIFFICULTY_REGISTRY.hard.plannedIn` moves `M09.16` → `M09.20`, and **nothing
+else does**. `DifficultyDefinition` still has no field for a tactical profile,
+`behaviorVersion` and `selection` are still null, `difficultySelection('hard')`
+still throws by name, and `AVAILABLE_DIFFICULTIES` still does not contain Hard —
+which is what keeps publishing Hard a decision rather than a status flip a later
+tranche could make by accident. A test asserts the missing field by name.
+
+M09.20 is the tranche that closes the gap and publishes Hard. It is numbered 20
+rather than inserted at 17 because M09.17, M09.18 and M09.19 are already named in
+source comments and in the external brief, and renumbering them would break those
+references; it runs **before** M09.19, and this document places it where it runs
+rather than where its number would sort.
+
+### Findings recorded rather than fixed
+
+- **`botStyleRegistryGaps()` is checked by a test rather than by a startup
+  assertion.** `assertDifficultyRegistryComplete()` exists for the difficulty
+  registry and has no style equivalent, so the style registry's runtime twin is
+  only ever called from `style.test.ts`. That is enough for a build that ships
+  both registries from source, and it would not be enough if a style ever
+  arrived as content. Not fixed here because adding an assertion nothing calls is
+  not a check; the tranche that makes styles content is the one that needs it.
+- **`seatStyleLabel` is the only place the "(automatic)" suffix is composed**,
+  and it is composed rather than translated. Every user-facing string in the
+  client is written in English at its use site, so this is consistent with the
+  rest of the app and inconsistent with nothing — but it is the second place a
+  parenthetical qualifier has been concatenated onto a label, and a third would
+  be the point to introduce a formatter. Recorded, not built.
+- **The `ambiguous` fallback is unreachable with shipped content.** Wave 1
+  publishes four plans naming four different Commanders, so nothing in the
+  bundle can produce it. It is implemented and tested at the function level
+  anyway, because the alternative — picking the first match — would make a
+  bot's style depend on file order the moment a second plan for one Commander is
+  authored, which is a thing M08's deck work could plausibly do.
+- **`BOT_STYLE_SETTINGS` is a superset of `BOT_STYLES` by construction**
+  (`['automatic', ...BOT_STYLES]`), so a style can never be settable-but-missing.
+  There is no equivalent guarantee in the other direction for deck modes:
+  `DECK_MODE_LABELS` is a hand-written total map and a mode could be supported
+  with a `null` label. That was M09.5's deliberate choice and is unchanged.
+
+### Versions
+
+**`PROTOCOL_VERSION` moves 9 → 10.** `botSeatPublicSchema` is a strict object and
+gains a required `styleSetting`, so a v9 client would fail to parse the first
+lobby view a v10 server sent it that held a bot — the same failure mode M09.2 and
+M09.11 both had. `botSetupSchema` travels the other way with a widened `style`,
+and a v9 server would reject `style: "automatic"` as an invalid enum member: it
+has no mapping to resolve it with, so refusing is the correct answer rather than
+a compatibility gap to paper over. The handshake compares first and names the
+older side.
+
+**`BOT_CONFIG_SCHEMA_VERSION` moves 1 → 2**, and that is deliberately not
+redundant with the above. The two answer different questions: the protocol
+constant refuses a peer whose messages this build cannot decode, and this one
+refuses a bot configuration record written by a newer build. M09.13 is the case
+where only the second kind of thing moved. Nothing persists a bot configuration —
+it lives in a lobby's memory and on the wire — so there is no stored v1 record to
+migrate, and `refuseFutureVersion` is the whole of the compatibility story.
+
+**`DIFFICULTY_REGISTRY_VERSION` stays 2.** `plannedIn` moving is neither an ID
+appearing, nor one disappearing, nor a status changing — the three things that
+constant is documented to move for. This is the second tranche in a row to move
+it for that reason and the reasoning is the same both times.
+
+`PACING_CONFIG_VERSION` stays 1, `RULES_VERSION` `1.0.0`, `MATCH_SCHEMA_VERSION`
+7, `CARD_SCHEMA_VERSION` 5, `SPECTATOR_REPLAY_VERSION` 6,
+`BOARD_TELEMETRY_VERSION` 3, `SEED_DERIVATION_VERSION` 2,
+`AGENT_CLASS_REGISTRY_VERSION` 1, `DECK_GENERATOR_VERSION` `'1'`,
+`TACTICS_REGISTRY_VERSION` 1, `CALIBRATION_SUITE_VERSION` 2,
+`ARCHETYPE_REGISTRY_VERSION` 1. Deriving a style from an authored deck plan is a
+lobby decision above the engine: `MatchState` never learns what a style is, no
+card was read or edited, and no archetype's classification changed — the mapping
+is a new consumer of the taxonomy, not a change to it.
+
+**Compatibility.** `BotSetup.style` is the field that widened rather than a new
+field beside it, so every existing caller that sends a named style compiles and
+behaves identically; only a caller that wants automatic sends anything new.
+`publicBotSeatOf` is still the only route from configuration to projection, and it
+gained a member rather than changing one. `createBotPilot` reads `config.style`
+and is untouched, which is the check that the resolution really does happen
+before a pilot exists.
+
+## M09.20 — Card-in-hand valuation, and Hard's publication
+
+**Runs before M09.19, and is numbered 20 because M09.17–M09.19 are already named
+in source comments and in the external brief.** This document places it where it
+runs rather than where its number would sort.
+
+Close the third strategic gap M09.15 measured and left open —
+`containment_control/hold_energy_for_the_counter` — and publish Hard. The gap is
+a valuation defect rather than a resource rule: the scorer prices a card played
+at its whole value and a card kept in hand at nothing, so holding Energy for a
+window that has not opened can never win against playing a body. It is in every
+decision the pilot makes, not only in Reaction decks, so closing it is a change
+to `hard_tactical` measured at the same three grains M09.14 established —
+Normal's decisions unchanged by construction, the same decision key on every
+calibration fixture for every style, and whole matches action for action at
+Normal and at Easy.
+
+Publishing Hard is then the bounded piece of work Q50 named.
+`DifficultyDefinition` has no field for a tactical profile, so the registry gains
+one and `DIFFICULTY_REGISTRY_VERSION` moves 2 → 3; `BotRunner` builds the pilot
+through it; and the lobby, the help text and the seat provenance each gain an
+option. The lobby's planned-difficulty sentence empties itself when that happens,
+because it is read from the registry.
+
+**Acceptance:** the third fixture's recorded gap closes with no regression on the
+other twenty-three, Normal and Easy are proven unchanged, Hard is selectable and
+refused by nothing, and a seat that flew Hard records which Hard.
+
+**Stop:** do not rebalance a card, author one, or widen the calibration suite to
+make the gap close.
+
+### Checklist
+
+- [ ] `hold_energy_for_the_counter` closes, with Normal and Easy unchanged.
+- [ ] `DifficultyDefinition` carries a tactical profile; registry version 2 → 3.
+- [ ] Hard is selectable, and the planned-difficulty statement empties itself.
+- [ ] A recorded seat says which Hard it flew.
 
 ## M09.17 — Pacing and bot provenance summary
 

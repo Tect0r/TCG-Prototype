@@ -168,6 +168,7 @@ function autonomousBotSeat(
       botId: 'bot_1',
       displayName: 'Bot 2',
       difficulty: 'normal',
+      styleSetting: 'value',
       style: 'value',
       deck: { mode: 'autonomous_generated', commanderId },
       pacing: { percent: 0, reactionPercent: null },

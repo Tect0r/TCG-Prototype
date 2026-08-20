@@ -1,10 +1,13 @@
 import {
+  AUTOMATIC_STYLE_FALLBACK,
   DECK_MODE_SUPPORT,
   deckModeGenerates,
   deckModeIsSupported,
   difficultyDefinition,
   difficultyIsAvailable,
   readBotSeatConfig,
+  resolveStyleSetting,
+  styleSettingIsAutomatic,
   type BotDeckMode,
   type BotDeckSnapshot,
   type BotDeckSource,
@@ -156,9 +159,18 @@ export function carriedRerollCount(previous: BotSeatConfig | null, next: BotDeck
  * a setup that claims one.
  */
 export function setupOf(config: BotSeatConfig): BotSetup {
-  const { controller, ...rest } = config;
+  // `style` is discarded rather than sent: it is a *result* the server derived,
+  // and the wire carries the instruction. `_style` because it exists only to be
+  // omitted from `rest`.
+  const { controller, style: _style, styleSetting, ...rest } = config;
   return {
     ...rest,
+    // The *setting*, not the resolved style (M09.16). A reroll builds a new deck
+    // and can land on a different Commander, so an automatic seat must re-resolve
+    // rather than carry the style its previous deck implied; sending the resolved
+    // value would quietly convert an automatic seat into a hand-picked one at the
+    // first reroll.
+    style: styleSetting,
     displayName: controller.displayName,
     deck:
       config.deck.mode === 'commander_generated' || config.deck.mode === 'autonomous_generated'
@@ -206,9 +218,17 @@ export function resolveBotSeat(
     ]);
   }
 
-  const { displayName, ...configured } = setup;
+  const { displayName, style: styleSetting, ...configured } = setup;
   const parsed = readBotSeatConfig({
     ...configured,
+    styleSetting,
+    // Provisional, and replaced below from the Commander the seat actually ends
+    // up leading (M09.16). It has to be *a* style for the strict parse to pass,
+    // and the fallback is the honest placeholder: at this point the deck has not
+    // been resolved, and for an `autonomous_generated` seat not even chosen. No
+    // caller ever sees this value — `withResolvedStyle` overwrites it on every
+    // path out, for every mode, so the two cannot drift apart for one of them.
+    style: styleSettingIsAutomatic(styleSetting) ? AUTOMATIC_STYLE_FALLBACK : styleSetting,
     controller: {
       botId: identity.botId,
       displayName: displayName ?? defaultBotDisplayName(identity.seatId),
@@ -238,11 +258,11 @@ export function resolveBotSeat(
   switch (config.deck.mode) {
     case 'exact_precon': {
       const deck = resolvePreconDeck(config.deck.preconId, context);
-      return isErr(deck) ? deck : ok({ config, deck: deck.value });
+      return isErr(deck) ? deck : ok(withResolvedStyle(config, deck.value, context));
     }
     case 'exact_saved_deck': {
       const deck = resolveSnapshotDeck(config.deck.deck, context);
-      return isErr(deck) ? deck : ok({ config, deck: deck.value });
+      return isErr(deck) ? deck : ok(withResolvedStyle(config, deck.value, context));
     }
     case 'commander_generated': {
       const built = generateBotDeck({
@@ -258,10 +278,13 @@ export function resolveBotSeat(
       // a generated seat's `generated` field is the record of what it actually
       // plays, and a configuration still saying `null` after a deck was built
       // would be a seat nobody could describe.
-      return ok({
-        config: { ...config, deck: { ...config.deck, generated: built.value.provenance } },
-        deck: built.value.deck,
-      });
+      return ok(
+        withResolvedStyle(
+          { ...config, deck: { ...config.deck, generated: built.value.provenance } },
+          built.value.deck,
+          context,
+        ),
+      );
     }
     case 'autonomous_generated': {
       // The bot picks its own Commander first, from its own stream and from the
@@ -275,16 +298,49 @@ export function resolveBotSeat(
         now: context.now,
       });
       if (isErr(built)) return built;
-      return ok({
-        config: { ...config, deck: { ...config.deck, generated: built.value.provenance } },
-        deck: built.value.deck,
-      });
+      return ok(
+        withResolvedStyle(
+          { ...config, deck: { ...config.deck, generated: built.value.provenance } },
+          built.value.deck,
+          context,
+        ),
+      );
     }
     default: {
       const never: never = config.deck;
       return refusal('mode_unsupported', [`Unknown deck mode ${JSON.stringify(never)}.`]);
     }
   }
+}
+
+/**
+ * The seat, with its style resolved from the deck it will actually play (M09.16).
+ *
+ * **The single place a style stops being a setting.** Every branch of
+ * `resolveBotSeat` returns through here, for every deck mode including the two
+ * that name a style outright, so "automatic resolves once, from the Commander,
+ * after the deck exists" is a property of the control flow rather than of four
+ * remembered call sites.
+ *
+ * The Commander is taken from the resolved `SavedDeck` rather than from the
+ * configuration, because those are the same value for three modes and only the
+ * deck knows it for the fourth: an `autonomous_generated` bot picks its own
+ * Commander during generation, so the configuration never held one to read.
+ *
+ * Resolution is format-scoped through `context.deckFormat`, which is the pool the
+ * deck was just validated against — so the plan the style comes from and the
+ * cards the deck is made of are judged under the same format.
+ */
+function withResolvedStyle(
+  config: BotSeatConfig,
+  deck: SavedDeck,
+  context: BotSeatContext,
+): ResolvedBotSeat {
+  const resolved = resolveStyleSetting(config.styleSetting, {
+    commanderId: deck.commanderId,
+    formatId: context.deckFormat.formatId,
+  });
+  return { config: { ...config, style: resolved.style }, deck };
 }
 
 /** A shipped precon, resolved from the server's own bundle and reviewed. */

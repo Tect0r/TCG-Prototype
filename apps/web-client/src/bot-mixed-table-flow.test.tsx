@@ -160,6 +160,7 @@ function botSeat(
       botId: `bot_${number}`,
       displayName: `Bot ${number}`,
       difficulty: 'normal',
+      styleSetting: 'aggressive',
       style: 'aggressive',
       deck: { mode: 'exact_precon', preconId },
       pacing: { percent: 0, reactionPercent: null },

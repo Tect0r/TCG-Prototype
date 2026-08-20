@@ -1,5 +1,6 @@
 import { bundledPrecon, type CardDatabase } from '@tcg/card-data';
-import { botStyleDefinition, difficultyDefinition, type BotSeatPublic } from '@tcg/bot-config';
+import { difficultyDefinition, type BotSeatPublic } from '@tcg/bot-config';
+import { seatStyleLabel } from './bot-style-labels.js';
 
 /**
  * What a lobby prints beside a bot seat (M09.5).
@@ -28,6 +29,12 @@ export interface BotSeatLabels {
   /** The Commander this seat brings, resolved for display. Public in every mode. */
   readonly commanderName: string | null;
   readonly difficulty: string;
+  /**
+   * The style it flies, and whether anybody picked it (M09.16). An automatic
+   * seat is named as such: "Value (automatic)" is a different fact about the
+   * table from "Value", and the projection carries both members so the lobby
+   * does not have to flatten them.
+   */
   readonly style: string;
 }
 
@@ -39,7 +46,7 @@ function commanderNameOf(database: CardDatabase, commanderId: string | null): st
 export function botSeatLabels(bot: BotSeatPublic, database: CardDatabase): BotSeatLabels {
   const shared = {
     difficulty: difficultyDefinition(bot.difficulty).label,
-    style: botStyleDefinition(bot.style).label,
+    style: seatStyleLabel(bot),
   };
 
   switch (bot.deck.mode) {

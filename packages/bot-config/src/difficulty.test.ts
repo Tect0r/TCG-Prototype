@@ -64,10 +64,17 @@ describe('difficulty registry', () => {
     // Easiest first, and the order is the lobby's order: M09.13 turned Easy on,
     // M09.15 built Hard's behaviour without publishing it, and `plannedIn` moved
     // to the tranche that owns the decision rather than the implementation.
+    //
+    // M09.16 asked that decision as Q50 and the owner answered **not yet**: the
+    // third strategic gap closes first, so `plannedIn` moves once more, to the
+    // tranche that closes it. Publishing Hard is still not something this
+    // registry *can* do — there is no field for a tactical profile — which is
+    // what keeps the answer a decision rather than a status flip.
     expect(AVAILABLE_DIFFICULTIES).toEqual(['easy', 'normal']);
     expect(PLANNED_DIFFICULTIES).toEqual(['hard']);
     expect(DIFFICULTY_REGISTRY.easy.plannedIn).toBeNull();
-    expect(DIFFICULTY_REGISTRY.hard.plannedIn).toBe('M09.16');
+    expect(DIFFICULTY_REGISTRY.hard.plannedIn).toBe('M09.20');
+    expect(Object.keys(DIFFICULTY_REGISTRY.hard)).not.toContain('tacticalProfile');
   });
 
   it('gives a behaviour version to what it implements, and to nothing else', () => {
@@ -101,7 +108,7 @@ describe('difficulty registry', () => {
     // Refused by name rather than silently falling back to `best`, which is how
     // a planned difficulty would otherwise end up playing as Normal while the
     // lobby, the seat label and the match record all said it did not.
-    expect(() => difficultySelection('hard')).toThrow(/Hard.*M09\.16/);
+    expect(() => difficultySelection('hard')).toThrow(/Hard.*M09\.20/);
   });
 
   it('refuses a bound that would not bound anything', () => {

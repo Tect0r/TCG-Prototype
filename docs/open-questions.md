@@ -24,9 +24,9 @@ re-opened months later.
 
 ## Owner decisions a tranche may stop on
 
-These five are the plan's short list. Each is genuinely a design call rather than
-an engineering one. Q47 and Q48 were on it until 2026-08-14, and Q49 was on it for
-the length of one tranche on 2026-08-20; all three are now under
+These four are the plan's short list. Each is genuinely a design call rather than
+an engineering one. Q47 and Q48 were on it until 2026-08-14, and Q49 and Q50 were
+each on it for the length of one tranche on 2026-08-20; all four are now under
 [Answered](#answered).
 
 ### Q4. What should `resilient` do, or should it be deleted?
@@ -318,39 +318,6 @@ configuration rather than redesign — but nothing has validated that three- and
 four-player results say anything useful, and they cost 2–4× as much per data
 point. Related to Q35.
 
-### Q50. Is Hard good enough to publish, and what would make it so?
-
-**Open. Blocks publishing Hard, and nothing else.** Raised by M09.15.
-
-Hard's behaviour exists and is measured. `hard_tactical` is at `1.1.0` and closes
-**six** of the twenty-four calibration boards Normal misses, regressing none; a
-768-match seeded smoke tournament across all four Wave 1 precons produced no
-illegal action, no unfinished match and no excessive passing, and Hard beat
-Normal **52.6%** head to head with the advantage holding on both sides of the
-table. The record is in
-[the M09.15 tranche](milestones/M09-play-against-ai.md#m0915--hard-sequencing-and-resource-improvements--done-2026-08-20).
-
-What is missing is a **threshold**, not an implementation. The milestone says to
-publish Hard "when it outperforms Normal on the declared fixture set without
-regressing legality or termination" and never says by how much, and one of the
-three strategic gaps M09.15 owned — `containment_control/hold_energy_for_the_counter`
-— is deliberately still open and recorded. Deciding that two of three named gaps
-and a 52.6% edge is enough is a product call about what a person selecting "Hard"
-should be promised. Choosing a number here would be inventing the standard the
-result is then measured against, which is the one thing a measurement may not do.
-
-**What publishing costs, once you say yes.** `DifficultyDefinition` has no field
-for a tactical profile, so Hard cannot be published by flipping a status: the
-registry needs one, `DIFFICULTY_REGISTRY_VERSION` moves 2 → 3, `BotRunner` builds
-the pilot through it, and the lobby, the help text and the seat provenance all
-gain an option. That is a bounded tranche, and it is deliberately not done: a
-registry that could carry a profile is a registry a later tranche could publish
-Hard through by accident.
-
-**Answered by:** you, with the numbers above in front of you. Either "ship it",
-"ship it once `hold_energy_for_the_counter` closes too", or a rate Hard has to
-beat Normal by.
-
 ---
 
 ## Answered
@@ -613,6 +580,32 @@ prose says it acts when it enters the battlefield while carrying no
 `on_entered_battlefield` ability is a warning, and a warning on a `playtest` or
 `active` card is a content-build error. The five behaviour contracts in
 `contracts-goblin.ts` claim "when it is deployed" and are unchanged otherwise.
+
+### Q50. Is Hard good enough to publish? — answered 2026-08-20
+
+**Not yet: close the third strategic gap first.** Raised by M09.15 and put to the
+owner by M09.16 with the measurements in front of them — `hard_tactical` at
+`1.1.0` closing six of the twenty-four calibration boards Normal misses while
+regressing none, 768 seeded matches with no illegal action and no unfinished
+match, and Hard beating Normal **52.6%** head to head with the advantage holding
+on both sides of the table.
+
+The ruling is that the numbers are not the thing that is missing.
+`containment_control/hold_energy_for_the_counter` is still open, and it is open
+because the scorer prices a card played at its whole value and a card kept in
+hand at nothing — a valuation defect in every decision the pilot makes rather
+than a resource rule. Hard is published once that closes, not before, and no
+rate was named: the standard is the named gap, which is a thing that can be
+finished rather than a threshold that would have to be argued about.
+
+**Implemented** in M09.16 as the smaller of the two moves the question could
+have caused. `DIFFICULTY_REGISTRY.hard.plannedIn` moves `M09.16` → `M09.20`,
+`difficultySelection('hard')` still throws by name, and `DifficultyDefinition`
+still has **no field for a tactical profile** — which is what keeps publishing
+Hard a decision rather than a status flip a later tranche could make by accident.
+`DIFFICULTY_REGISTRY_VERSION` stays 2, because nothing was added, removed, or
+changed status. The tranche that owns the work is
+[M09.20](milestones/M09-play-against-ai.md#m0920--card-in-hand-valuation-and-hards-publication).
 
 ### Q49. Does a Token count as a Unit? — answered 2026-08-20
 

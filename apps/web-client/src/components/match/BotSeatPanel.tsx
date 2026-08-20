@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  bundledPrecon,
   preconsForFormat,
   type CardDatabase,
   type CardDefinition,
@@ -8,8 +9,9 @@ import {
 import {
   AVAILABLE_DIFFICULTIES,
   BOT_CONFIG_SCHEMA_VERSION,
+  AUTOMATIC_STYLE,
   BOT_DECK_MODES,
-  BOT_STYLES,
+  BOT_STYLE_SETTINGS,
   DECK_MODE_SUPPORT,
   DEFAULT_BOT_DIFFICULTY,
   DIFFICULTY_REGISTRY_VERSION,
@@ -19,7 +21,7 @@ import {
   MIN_BUDGET_SECONDS,
   MIN_PACING_PERCENT,
   PACING_CONFIG_VERSION,
-  botStyleDefinition,
+  PLANNED_DIFFICULTIES,
   deckModeGenerates,
   difficultyDefinition,
   type BotDeckMode,
@@ -29,7 +31,7 @@ import {
   type BotPacing,
   type BotPacingBudgets,
   type BotSeatPublic,
-  type BotStyle,
+  type BotStyleSetting,
   type GeneratedDeckProvenance,
 } from '@tcg/bot-config';
 import {
@@ -52,6 +54,7 @@ import {
   ordinaryPacingLabel,
   reactionPacingLabel,
 } from '../../lib/bot-pacing-labels.js';
+import { styleSettingLabel, styleSettingNote } from '../../lib/bot-style-labels.js';
 
 /**
  * The host's bot controls (M09.5, extended by M09.6, M09.7, M09.9, M09.10 and
@@ -149,6 +152,71 @@ type BotDeckDraft =
    */
   | { readonly mode: 'autonomous_generated'; readonly seed: string };
 
+/**
+ * The Commander a draft implies, for the automatic-style preview (M09.16).
+ *
+ * `null` means "this browser cannot know yet", and there is exactly one such
+ * case: an `autonomous_generated` bot has not picked its Commander, and the
+ * server picks it during generation. The other three modes all name one from
+ * data this client already holds — the bundled precon, the host's own saved
+ * deck, or the host's own choice — so the preview is the same answer the server
+ * will reach rather than a second opinion about it.
+ */
+function draftCommanderId(draft: BotDraft, decks: readonly SavedDeck[]): string | null {
+  const source = draft.deck;
+  switch (source.mode) {
+    case 'exact_precon':
+      return bundledPrecon(source.preconId)?.commanderId ?? null;
+    case 'exact_saved_deck':
+      return decks.find((deck) => deck.id === source.savedDeckId)?.commanderId ?? null;
+    case 'commander_generated':
+      return source.commanderId || null;
+    case 'autonomous_generated':
+      return null;
+    default: {
+      const never: never = source;
+      throw new Error(`Unknown bot deck mode "${JSON.stringify(never)}".`);
+    }
+  }
+}
+
+/** A Commander's printed name, and the ID when this build cannot resolve it. */
+function commanderNameOf(database: CardDatabase, commanderId: string | null): string | null {
+  if (commanderId === null) return null;
+  return database.get(commanderId)?.name ?? commanderId;
+}
+
+/**
+ * The same configuration, on a **new** generation stream (M09.16).
+ *
+ * The whole of "copy a bot's setup without copying its RNG state". A generated
+ * deck's seed is the one part of a configuration that is an identity rather than
+ * a preference: two seats sharing one would be two bots playing the same forty
+ * cards, which is not what a host copying a form is asking for. Difficulty,
+ * style, timing and the deck *mode* are preferences and copy unchanged.
+ *
+ * The reroll count is not here because it is not in a draft at all — it is the
+ * server's record of how far one seat has walked its own stream, and
+ * `carriedRerollCount` already restarts it at 0 whenever the seed changes. So a
+ * pasted generated seat begins at its new stream's first deck by the rule that
+ * was already there, rather than by a second one written here.
+ */
+function withFreshGenerationStream(draft: BotDraft): BotDraft {
+  if (draft.deck.mode === 'commander_generated') {
+    return { ...draft, deck: { ...draft.deck, seed: newGenerationSeed() } };
+  }
+  if (draft.deck.mode === 'autonomous_generated') {
+    return { ...draft, deck: { mode: 'autonomous_generated', seed: newGenerationSeed() } };
+  }
+  return draft;
+}
+
+/** One bot's setup, held for pasting onto another seat. Never sent anywhere. */
+interface CopiedSetup {
+  readonly seatId: SeatId;
+  readonly draft: BotDraft;
+}
+
 /** A fresh generation stream. Opaque, and never parsed back apart. */
 function newGenerationSeed(): string {
   return generateId('gen');
@@ -157,7 +225,12 @@ function newGenerationSeed(): string {
 interface BotDraft {
   readonly deck: BotDeckDraft;
   readonly difficulty: BotDifficulty;
-  readonly style: BotStyle;
+  /**
+   * What the host set the control to, which may be `automatic` (M09.16). Never
+   * the resolved style: the server derives that from the Commander the seat
+   * ends up leading, and a draft that carried one would be stating a result.
+   */
+  readonly style: BotStyleSetting;
   /**
    * How long this bot waits, as a percentage of the table's budgets (M09.11).
    *
@@ -252,6 +325,8 @@ interface FieldLabels {
   readonly timing: string;
   readonly reactionOverride: string;
   readonly reaction: string;
+  /** The disclosure's own name, seat-scoped for the same reason the rest are. */
+  readonly advanced: string;
 }
 
 const NEW_BOT_LABELS: FieldLabels = {
@@ -265,6 +340,7 @@ const NEW_BOT_LABELS: FieldLabels = {
   timing: 'Bot timing',
   reactionOverride: 'Bot Reaction override',
   reaction: 'Bot Reaction timing',
+  advanced: 'Timing and deck seed',
 };
 
 function seatFieldLabels(seatId: SeatId): FieldLabels {
@@ -280,6 +356,7 @@ function seatFieldLabels(seatId: SeatId): FieldLabels {
     timing: `${seat} timing`,
     reactionOverride: `${seat} Reaction override`,
     reaction: `${seat} Reaction timing`,
+    advanced: `${seat} timing and deck seed`,
   };
 }
 
@@ -357,7 +434,7 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
     return {
       deck: { mode: 'exact_precon', preconId: bot.deck.preconId },
       difficulty: bot.difficulty,
-      style: bot.style,
+      style: bot.styleSetting,
       pacing: bot.pacing,
     };
   }
@@ -365,7 +442,7 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
     return {
       deck: { mode: 'exact_saved_deck', savedDeckId: applied.deck.sourceDeckId },
       difficulty: bot.difficulty,
-      style: bot.style,
+      style: bot.styleSetting,
       pacing: bot.pacing,
     };
   }
@@ -380,7 +457,7 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
         seed: applied.seed,
       },
       difficulty: bot.difficulty,
-      style: bot.style,
+      style: bot.styleSetting,
       pacing: bot.pacing,
     };
   }
@@ -391,7 +468,7 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
     return {
       deck: { mode: 'autonomous_generated', seed: applied.seed },
       difficulty: bot.difficulty,
-      style: bot.style,
+      style: bot.styleSetting,
       pacing: bot.pacing,
     };
   }
@@ -469,6 +546,14 @@ function BotConfigFields({
   commanders,
   budgets,
 }: BotConfigFieldsProps) {
+  // Read here rather than threaded through as props: both are context this
+  // screen already lives inside, and the automatic-style preview needs the
+  // *format* as well as the Commander — a plan is only meaningful under the
+  // construction rules its cards were checked against.
+  const database = useCardDatabase();
+  const deckFormat = useDeckFormat();
+  const commanderId = draftCommanderId(draft, decks);
+
   const chooseMode = (mode: BotDeckMode): void => {
     if (mode === draft.deck.mode) return;
     if (mode === 'exact_precon') {
@@ -580,32 +665,12 @@ function BotConfigFields({
         </label>
       )}
 
-      {/* One control for both generated modes. Editable because the seed is an
-          instruction, not a result: the same seed names the same deck on this
-          build — and, when the bot is the one choosing, the same Commander too —
-          so a host who writes one down can ask for that deck back. What the
-          server owns is the step along the stream, which is why a reroll carries
-          no seed. */}
-      {(draft.deck.mode === 'commander_generated' ||
-        draft.deck.mode === 'autonomous_generated') && (
-        <label className="field">
-          <span>{labels.seed}</span>
-          <input
-            type="text"
-            value={draft.deck.seed}
-            disabled={disabled}
-            onChange={(event) => {
-              const seed = event.target.value;
-              onChange({
-                deck:
-                  draft.deck.mode === 'commander_generated'
-                    ? { mode: 'commander_generated', commanderId: draft.deck.commanderId, seed }
-                    : { mode: 'autonomous_generated', seed },
-              });
-            }}
-          />
-        </label>
-      )}
+      {/* The seed is an *instruction* rather than a result — the same seed names
+          the same deck on this build, and the same Commander too when the bot is
+          the one choosing — so a host who writes one down can ask for that deck
+          back. It lives under the disclosure below because a host who has not
+          asked for a particular deck never needs it. What the server owns is the
+          step along the stream, which is why a reroll carries no seed. */}
 
       {draft.deck.mode === 'autonomous_generated' && (
         <p className="lobby__hint">
@@ -639,33 +704,95 @@ function BotConfigFields({
         </select>
       </label>
 
+      <p className="lobby__hint">{difficultyDefinition(draft.difficulty).summary}</p>
+
+      {/* What is *missing* from the list above, said rather than left to be
+          noticed (M09.16). Absent-not-disabled is still the rule — a planned
+          difficulty is refused by the server, so offering it would be a control
+          whose only outcome is an error — but a host who has heard of Hard
+          deserves to be told it is coming rather than left wondering whether
+          their build is broken. Read from the registry, so it empties itself
+          when the last planned difficulty is published. */}
+      {PLANNED_DIFFICULTIES.length > 0 && (
+        <p className="lobby__hint">
+          {PLANNED_DIFFICULTIES.map((difficulty) => {
+            const definition = difficultyDefinition(difficulty);
+            return `${definition.label} is planned for ${definition.plannedIn ?? 'a later tranche'} and cannot be chosen yet.`;
+          }).join(' ')}
+        </p>
+      )}
+
       <label className="field">
         <span>{labels.style}</span>
         <select
           value={draft.style}
           disabled={disabled}
           onChange={(event) => {
-            const style = BOT_STYLES.find((id) => id === event.target.value);
+            const style = BOT_STYLE_SETTINGS.find((id) => id === event.target.value);
             if (style) onChange({ style });
           }}
         >
-          {BOT_STYLES.map((style) => (
+          {/* Automatic is one of the settings rather than a checkbox beside
+              them, because it answers the same question the other three do. It
+              is first because it is the option that needs no opinion. */}
+          {BOT_STYLE_SETTINGS.map((style) => (
             <option key={style} value={style}>
-              {botStyleDefinition(style).label}
+              {styleSettingLabel(style)}
             </option>
           ))}
         </select>
       </label>
 
-      <p className="lobby__hint">{botStyleDefinition(draft.style).summary}</p>
+      {/* Either the chosen style's summary, or — for automatic — the style this
+          draft's Commander resolves to and the plan that decided it, from the
+          same `resolveAutomaticStyle` the server runs against the same format
+          (M09.16). A seat whose Commander the bot has not picked yet says so
+          rather than previewing a style nothing has determined. */}
+      <p className="lobby__hint">
+        {styleSettingNote(
+          draft.style,
+          { commanderId, formatId: deckFormat.formatId },
+          commanderNameOf(database, commanderId),
+        )}
+      </p>
 
-      <BotTimingFields
-        labels={labels}
-        pacing={draft.pacing}
-        budgets={budgets}
-        disabled={disabled}
-        onChange={(pacing) => onChange({ pacing })}
-      />
+      {/* Everything past here is a refinement of a working configuration, and a
+          host who wants none of it never has to read it (M09.16). A native
+          `<details>` rather than a scripted panel: it opens on Enter or Space,
+          it is announced as a disclosure, and its contents stay in the document
+          and in the tab order once open. */}
+      <details className="lobby__advanced">
+        <summary>{labels.advanced}</summary>
+
+        {(draft.deck.mode === 'commander_generated' ||
+          draft.deck.mode === 'autonomous_generated') && (
+          <label className="field">
+            <span>{labels.seed}</span>
+            <input
+              type="text"
+              value={draft.deck.seed}
+              disabled={disabled}
+              onChange={(event) => {
+                const seed = event.target.value;
+                onChange({
+                  deck:
+                    draft.deck.mode === 'commander_generated'
+                      ? { mode: 'commander_generated', commanderId: draft.deck.commanderId, seed }
+                      : { mode: 'autonomous_generated', seed },
+                });
+              }}
+            />
+          </label>
+        )}
+
+        <BotTimingFields
+          labels={labels}
+          pacing={draft.pacing}
+          budgets={budgets}
+          disabled={disabled}
+          onChange={(pacing) => onChange({ pacing })}
+        />
+      </details>
     </>
   );
 }
@@ -775,6 +902,9 @@ interface SeatedBotFormProps {
   readonly fallback: BotDraft;
   /** The table's budgets, so this seat's percentages can print their seconds. */
   readonly budgets: BotPacingBudgets;
+  /** The setup the host has copied, from any seat including this one. */
+  readonly copied: CopiedSetup | null;
+  readonly onCopy: (copy: CopiedSetup) => void;
 }
 
 function SeatedBotForm({
@@ -787,6 +917,8 @@ function SeatedBotForm({
   provenance,
   fallback,
   budgets,
+  copied,
+  onCopy,
 }: SeatedBotFormProps) {
   const client = useMatchClient();
   const database = useCardDatabase();
@@ -938,7 +1070,111 @@ function SeatedBotForm({
             : `Remove seat ${seatNumber(seat.seatId)}`}
         </button>
       </div>
+
+      <BotCopyControls
+        seatId={seat.seatId}
+        draft={draft}
+        copyable={seatedDraft !== null}
+        copied={copied}
+        onCopy={onCopy}
+        onPaste={(pasted) => setEdited(pasted)}
+        disabled={!canEdit}
+      />
     </section>
+  );
+}
+
+/* ------------------------------------------------------------------ copying */
+
+interface BotCopyControlsProps {
+  /** The seat this form belongs to, or `null` for the form for the next bot. */
+  readonly seatId: SeatId | null;
+  readonly draft: BotDraft;
+  /** Whether this form actually describes its seat, rather than a fallback. */
+  readonly copyable: boolean;
+  readonly copied: CopiedSetup | null;
+  readonly onCopy: (copy: CopiedSetup) => void;
+  readonly onPaste: (draft: BotDraft) => void;
+  readonly disabled: boolean;
+}
+
+/**
+ * Copy one bot's setup, and paste it onto another (M09.16).
+ *
+ * A copy and a paste rather than a "copy to seat 3" menu, because the host is
+ * choosing two things — which setup, and which seat gets it — and a single
+ * control would have to guess one of them. It is also the shape that scales to
+ * the form for the *next* bot without a special case: that form is a paste
+ * target like any other.
+ *
+ * **Nothing is sent by pasting.** It fills this form, and the host still presses
+ * Apply or Add. That keeps the panel's one-mutation-at-a-time rule exactly where
+ * M09.7 left it, and means a paste can be looked at before it is committed.
+ *
+ * **A generated seat is pasted onto a new stream.** `withFreshGenerationStream`
+ * mints a seed at paste time, so copying a bot never copies its RNG state; two
+ * seats built from one form get two different decks, and the note below says so
+ * before the host presses anything.
+ *
+ * **A seat this browser did not configure cannot be copied**, and says why: the
+ * private half of a saved-deck or generated configuration never comes back down
+ * the wire, so the form is showing a fallback rather than that seat's setup, and
+ * copying it would copy something that was never true (ADR 0024 §3).
+ */
+function BotCopyControls({
+  seatId,
+  draft,
+  copyable,
+  copied,
+  onCopy,
+  onPaste,
+  disabled,
+}: BotCopyControlsProps) {
+  const here = seatId === null ? 'the next bot' : `seat ${seatNumber(seatId)}`;
+  const pasteable = copied !== null && copied.seatId !== seatId;
+  const generated =
+    copied !== null &&
+    (copied.draft.deck.mode === 'commander_generated' ||
+      copied.draft.deck.mode === 'autonomous_generated');
+
+  return (
+    <div className="lobby__actions lobby__actions--copy">
+      {seatId !== null &&
+        (copyable ? (
+          <button
+            type="button"
+            className="button--quiet"
+            onClick={() => onCopy({ seatId, draft })}
+            disabled={disabled}
+          >
+            {`Copy seat ${seatNumber(seatId)} setup`}
+          </button>
+        ) : (
+          <p className="lobby__hint">
+            This browser did not send this seat’s configuration, so it is showing defaults rather
+            than that bot’s setup and there is nothing here to copy. Apply a change to this seat
+            first.
+          </p>
+        ))}
+
+      {pasteable && (
+        <button
+          type="button"
+          className="button--quiet"
+          onClick={() => onPaste(withFreshGenerationStream(copied.draft))}
+          disabled={disabled}
+        >
+          {`Paste seat ${seatNumber(copied.seatId)} setup into ${here}`}
+        </button>
+      )}
+
+      {pasteable && generated && (
+        <p className="lobby__hint">
+          Pasting a generated deck starts a new seed, so this bot gets its own deck rather than a
+          copy of seat {seatNumber(copied.seatId)}’s.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -954,6 +1190,7 @@ interface AddBotFormProps {
   readonly blocked: string | null;
   /** The table's budgets, so this form's percentages can print their seconds. */
   readonly budgets: BotPacingBudgets;
+  readonly copied: CopiedSetup | null;
 }
 
 function AddBotForm({
@@ -964,6 +1201,7 @@ function AddBotForm({
   fallback,
   blocked,
   budgets,
+  copied,
 }: AddBotFormProps) {
   const client = useMatchClient();
   const database = useCardDatabase();
@@ -1008,6 +1246,18 @@ function AddBotForm({
           {pending?.kind === 'add' ? 'Adding…' : 'Add a bot'}
         </button>
       </div>
+
+      {/* A paste target like any other, and never a copy *source*: there is no
+          seat here yet to name one after. */}
+      <BotCopyControls
+        seatId={null}
+        draft={draft}
+        copyable={false}
+        copied={copied}
+        onCopy={() => {}}
+        onPaste={(pasted) => setEdited(pasted)}
+        disabled={!canEdit}
+      />
 
       {blocked && <p className="lobby__hint">{blocked}</p>}
     </section>
@@ -1129,6 +1379,9 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
   );
 
   const [pending, setPending] = useState<PendingRequest | null>(null);
+  // Panel-scoped rather than per-form, because a copy is only useful somewhere
+  // else: the source form holds it, and every other form can take it (M09.16).
+  const [copied, setCopied] = useState<CopiedSetup | null>(null);
 
   // The server's answer — a new lobby view, or a refusal — is what ends the
   // wait. There is no per-request acknowledgement on this wire, and inventing
@@ -1201,7 +1454,12 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
               seed: newGenerationSeed(),
             },
     difficulty: DEFAULT_BOT_DIFFICULTY,
-    style: BOT_STYLES[0],
+    // Automatic by default (M09.16). The old default was whichever style
+    // happened to be first in the vocabulary, which made every bot a host had
+    // not thought about aggressive; automatic is the option that needs no
+    // opinion, and the note under the control says which style it landed on and
+    // why, so it is a default that explains itself rather than a hidden one.
+    style: AUTOMATIC_STYLE,
     // Instant until the host says otherwise. A default that waited would make
     // the first match somebody plays slower than they asked for.
     pacing: IMMEDIATE_BOT_PACING,
@@ -1248,6 +1506,8 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
           commanders={commanders}
           fallback={fallback}
           budgets={lobby.botPacing}
+          copied={copied}
+          onCopy={setCopied}
         />
       ))}
 
@@ -1259,6 +1519,7 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
         fallback={fallback}
         blocked={blocked}
         budgets={lobby.botPacing}
+        copied={copied}
       />
 
       {error && (

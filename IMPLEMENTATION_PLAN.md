@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.16       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.17       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,16 +160,62 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.16 — Style automation and complete per-bot setup.** Present every approved
-option coherently for each bot — deck mode, difficulty, style, timing, Reaction
-override and reroll — through progressive disclosure; make automatic style a
-deterministic mapping from structured deck data with a named fallback; let one
-bot's configuration be copied without copying RNG state; and state what is
-locked, generated, private, unavailable or limited by the current pool. It also
-owns the answer to **Q50** — whether Hard is published — and publishes or
-re-plans it accordingly, and may do neither without that answer. The scope and
-the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0916--style-automation-and-complete-per-bot-setup).
+**M09.17 — Pacing and bot provenance summary.** Let testers judge waiting time
+before M08's durable Player Meta exists: produce a structured match-local summary
+carrying wall-clock match duration, configured budgets and percentages, bot
+decisions by category, intended and actual wait totals and distributions, total
+time attributable to bot pacing, pilot failures, deck source, difficulty, style
+and version, Commander and deck hash. Show an end-of-match Pacing Summary with
+exact values and plain-language limits, and allow JSON export. Engine turns and
+actions stay separate from wall-clock and pacing metrics, and the tranche defines
+a clean ingestion seam for later M08 telemetry without pretending this is a
+durable analytics store. The scope and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0917--pacing-and-bot-provenance-summary).
+
+**M09.16 finished the bot form, and answered Q50 by narrowing it.** Every
+approved option is now present for every bot — deck mode, difficulty, style,
+timing, Reaction override and reroll — with the four a host has to decide on the
+surface and the three refinements behind a native `<details>` that is in the tab
+order and opens from the keyboard. **Automatic style** is the new default and is a
+_setting_ rather than a fourth style: `BOT_STYLES` is unchanged, `BotSeatConfig`
+now carries `styleSetting` beside `style`, and a bot always flies one of the
+three. The mapping is Commander → the **format's** authored `DeckPlan` →
+`archetypeId` → a total `Record` over the archetype taxonomy, so it reads
+structured data and never a card's text, a card's name or a precon's `strategy`
+line; the fallback is named, is `value` because that is the least specific claim
+of the three, and is reached by two named routes rather than silently. The
+**server** resolves it, in one place every deck mode returns through, because an
+`autonomous_generated` bot picks its own Commander during generation and there is
+nothing for a browser to map until the deck exists — and `setupOf` sends the
+setting back rather than the resolved style, so a reroll onto a different
+Commander re-resolves instead of freezing.
+
+One bot's setup **copies** onto any other seat, or onto the form for the next
+bot, and a generated deck is pasted onto a fresh seed — so two seats built from
+one form get two different decks, which the screen says before anything is sent.
+Pasting fills a form rather than sending anything, which leaves M09.7's
+one-mutation-at-a-time rule where it was. A seat this browser never configured
+cannot be copied and says why, which is one of four states the panel now states
+rather than leaves to be inferred: locked, private, **unavailable** — Hard is
+still absent, but the panel now names it and the tranche that owns it, read from
+the registry so the sentence empties itself — and pool-limited.
+
+`PROTOCOL_VERSION` moves 9 → 10 and `BOT_CONFIG_SCHEMA_VERSION` 1 → 2, for two
+different reasons that are recorded separately;
+`DIFFICULTY_REGISTRY_VERSION` stays 2, because `plannedIn` moving is not an ID
+appearing, disappearing or changing status.
+
+**Q50 is answered: not yet.** The owner ruled on 2026-08-20 that the missing
+thing is not a rate but the third strategic gap M09.15 left open —
+`containment_control/hold_energy_for_the_counter`, where the scorer prices a card
+played at its whole value and a card kept in hand at nothing, which is a
+valuation defect in every decision the pilot makes. Hard is published once that
+closes. `DIFFICULTY_REGISTRY.hard.plannedIn` moves `M09.16` → **M09.20**, a new
+tranche that closes the gap and publishes Hard, and **nothing else moves**:
+`DifficultyDefinition` still has no field for a tactical profile, which is what
+keeps publishing Hard a decision rather than a status flip a later tranche could
+make by accident. M09.20 runs before M09.19 and took the next free number because
+M09.17–M09.19 are already named in source comments and in the external brief.
 
 **M09.15 finished Hard's behaviour, and found a rules bug wearing a pilot's
 clothes.** It opened blocked. `grave_sacrifice/make_fodder_before_spending_it`
@@ -206,8 +252,9 @@ decision the pilot makes, not a resource rule. **Hard is still `planned`.** It i
 better — six of twenty-four calibration boards Normal misses, and 52.6% head to
 head over 768 seeded matches with no illegal action, no unfinished match and
 _fewer_ passes per match than Normal — but no threshold for "good enough to ship"
-was ever written down, and choosing one is a product call. That is **Q50**, and
-`DIFFICULTY_REGISTRY.hard.plannedIn` now says `M09.16`.
+was ever written down, and choosing one is a product call. That is **Q50**, which
+M09.16 put to the owner and answered; `DIFFICULTY_REGISTRY.hard.plannedIn` said
+`M09.16` when this tranche landed and says `M09.20` now.
 
 **M09.14 built Hard's tactical half, and left Hard unpublished on purpose.** A
 difficulty now has two halves rather than one: M09.13's **selection** — which of
@@ -474,10 +521,6 @@ question the project has recorded.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.
 - Q46: whether Reactions may carry interactive additional costs.
-- Q50: whether Hard is good enough to publish. M09.15 built and measured it —
-  six calibration boards closed, 768 matches with no illegal action and a 52.6%
-  head-to-head edge — and stopped there, because no threshold was ever recorded
-  and choosing one is a product call rather than an engineering one.
 
 ## Completion evidence for every tranche
 

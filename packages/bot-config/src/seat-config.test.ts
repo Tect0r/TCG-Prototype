@@ -39,6 +39,7 @@ const CONFIG: BotSeatConfig = {
   difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
   controller: { botId: 'bot_seat_2', displayName: 'Opponent 2' },
   difficulty: 'normal',
+  styleSetting: 'value',
   style: 'value',
   deck: SAVED_DECK,
   pacing: { percent: 50, reactionPercent: null },

@@ -160,6 +160,7 @@ function botSeat(overrides: Partial<BotLobbySeatView> = {}): BotLobbySeatView {
       botId: 'bot_1',
       displayName: 'Bot 2',
       difficulty: 'normal',
+      styleSetting: 'aggressive',
       style: 'aggressive',
       deck: { mode: 'exact_precon', preconId: 'precon_goblin_swarm' },
       pacing: { percent: 0, reactionPercent: null },
@@ -225,6 +226,9 @@ describe('bot seat controls', () => {
         difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
         displayName: null,
         difficulty: 'normal',
+        // One settable `style`, and no `styleSetting`: the pair is one question
+        // at this end of the wire and the server derives the other half from the
+        // Commander it resolves (M09.16).
         style: 'defensive',
         deck: { mode: 'exact_precon', preconId: 'precon_goblin_swarm' },
         pacing: { percent: 0, reactionPercent: null },
@@ -245,7 +249,7 @@ describe('bot seat controls', () => {
     expect(harness.transport().last('add_bot')?.setup.difficulty).toBe('easy');
     // And nothing else moved: difficulty is one of four independent axes, so
     // choosing one must not choose another.
-    expect(harness.transport().last('add_bot')?.setup.style).toBe('aggressive');
+    expect(harness.transport().last('add_bot')?.setup.style).toBe('automatic');
     expect(harness.transport().last('add_bot')?.setup.pacing).toEqual({
       percent: 0,
       reactionPercent: null,
@@ -318,7 +322,24 @@ describe('bot seat controls', () => {
     expect(screen.getByLabelText('Bot difficulty')).toHaveFocus();
     await harness.user.tab();
     expect(screen.getByLabelText('Bot style')).toHaveFocus();
-    // Timing and its override sit between the style and the button (M09.11).
+
+    // The refinements sit behind a disclosure since M09.16, and the disclosure
+    // is a native `<summary>` precisely so this works: it is in the tab order
+    // between the style and the timing, and it opens from the keyboard.
+    await harness.user.tab();
+    const disclosure = screen.getByText('Timing and deck seed');
+    expect(disclosure).toHaveFocus();
+    expect(disclosure.closest('details')).not.toHaveAttribute('open');
+    // Activated rather than opened by key: jsdom does not implement `<summary>`'s
+    // Enter/Space activation, so the honest check is that the focused element is
+    // the disclosure and that activating it opens the group. A real browser gets
+    // the key handling from the element, which is the reason it is a `<summary>`
+    // and not a scripted button.
+    await harness.user.click(disclosure);
+    expect(disclosure.closest('details')).toHaveAttribute('open');
+
+    // Timing and its override are inside it, still between the style and the
+    // button (M09.11), and still reachable by tabbing on.
     await harness.user.tab();
     expect(screen.getByLabelText('Bot timing')).toHaveFocus();
     await harness.user.tab();

@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `a8ddd62c81a414a3869d0c0ad48754bcbb5bb2db` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-20                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | not run for this audit                     |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `f7c9f924bc446b1c9d62bc6f717c6cc975344679`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-20                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 76      | 1792     |
+| packages       | 77      | 1804     |
 | scripts        | 4       | 69       |
-| server         | 13      | 280      |
+| server         | 14      | 287      |
 | simulator      | 23      | 433      |
-| web-client     | 19      | 236      |
-| **total**      | **135** | **2810** |
+| web-client     | 20      | 251      |
+| **total**      | **138** | **2844** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -54,7 +54,7 @@ What a client, a server and a saved deck must agree on to play at all.
 | Constant                        | Value | Pins                                                                                         |
 | ------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
 | `RULES_VERSION`                 | 1.0.0 | The rules configuration.                                                                     |
-| `PROTOCOL_VERSION`              | 9     | Every message shape, refused at the handshake.                                               |
+| `PROTOCOL_VERSION`              | 10    | Every message shape, refused at the handshake.                                               |
 | `MATCH_SCHEMA_VERSION`          | 7     | Serialized match state.                                                                      |
 | `CARD_SCHEMA_VERSION`           | 5     | A card definition, owned per set by its manifest.                                            |
 | `DECK_SCHEMA_VERSION`           | 1     | A saved deck.                                                                                |
@@ -92,7 +92,7 @@ What a bot seat is configured by. Independent of the play contract on purpose (A
 
 | Constant                      | Value | Pins                                                                                                                                                                        |
 | ----------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BOT_CONFIG_SCHEMA_VERSION`   | 1     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.                                                                                       |
+| `BOT_CONFIG_SCHEMA_VERSION`   | 2     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.                                                                                       |
 | `DIFFICULTY_REGISTRY_VERSION` | 2     | Which difficulty IDs exist and what each claims. Available today: easy, normal.                                                                                             |
 | `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.                                                                                   |
 | `DECK_FINGERPRINT_VERSION`    | 1     | How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address. |
@@ -261,7 +261,7 @@ No match record observes (31):
 | Q47      | May a Reaction answer another Reaction? — answered 2026-08-14          | answered      | no                      |
 | Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | answered      | no                      |
 | Q49      | Does a Token count as a Unit? — answered 2026-08-20                    | answered      | no                      |
-| Q50      | Is Hard good enough to publish, and what would make it so?             | open          | yes                     |
+| Q50      | Is Hard good enough to publish? — answered 2026-08-20                  | answered      | no                      |
 
 15 question(s) are open in the question file and not on the plan's
 short list, which is the curated set a tranche might have to stop on rather than an index.

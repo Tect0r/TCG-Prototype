@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { err, error, ok, type Issue, type Result } from '@tcg/shared';
 import { botDifficultySchema, type BotDifficulty } from './difficulty.js';
-import { botStyleSchema } from './style.js';
+import { botStyleSchema, botStyleSettingSchema } from './style.js';
 import {
   botDeckSourceSchema,
   botDeckSourcePublicSchema,
@@ -58,7 +58,9 @@ export const botDisplayNameSchema = z.string().trim().min(1).max(24);
  * Difficulty, style, deck and pacing are configuration and live beside this
  * rather than inside it, so that "who is in the seat" and "how it is set up"
  * stay separable: M09.16 copies one bot's configuration to another seat without
- * copying its identity, and that is only expressible if the two are apart.
+ * copying its identity, and that is only expressible if the two are apart —
+ * which is what makes M09.16's copy a copy of a *form* rather than a duplicated
+ * bot.
  */
 export const botControllerSchema = z.strictObject({
   botId: botIdSchema,
@@ -95,6 +97,18 @@ export const botSeatConfigSchema = z.strictObject({
   difficultyRegistryVersion: z.number().int().min(1).max(DIFFICULTY_REGISTRY_VERSION),
   controller: botControllerSchema,
   difficulty: botDifficultySchema,
+  /**
+   * What the host *set* the style control to, which may be `automatic` (M09.16).
+   *
+   * Stored beside the resolved style rather than instead of it, because the two
+   * answer different questions and a seat needs both: `style` is what the pilot
+   * flies and can never be `automatic`, and `styleSetting` is what a host would
+   * see if they opened the form again. Collapsing them would mean either a
+   * lobby that cannot show "Automatic" after a reload, or a runner that has to
+   * re-resolve a style every time it builds a pilot.
+   */
+  styleSetting: botStyleSettingSchema,
+  /** The style this bot actually flies. Resolved before the seat is written. */
   style: botStyleSchema,
   deck: botDeckSourceSchema,
   pacing: botPacingSchema,
@@ -116,6 +130,14 @@ export const botSeatPublicSchema = z.strictObject({
   botId: botIdSchema,
   displayName: botDisplayNameSchema,
   difficulty: botDifficultySchema,
+  /**
+   * Public for the same reason `style` is, and it leaks nothing further: an
+   * automatic style is derived from the Commander's authored deck plan, and the
+   * Commander is already the public half of every deck source (M09.16). What
+   * this adds is honesty — a seat flying `defensive` because nobody chose it
+   * should not look like a seat whose host chose `defensive`.
+   */
+  styleSetting: botStyleSettingSchema,
   style: botStyleSchema,
   deck: botDeckSourcePublicSchema,
   pacing: botPacingSchema,
@@ -136,6 +158,7 @@ export function publicBotSeatOf(config: BotSeatConfig): BotSeatPublic {
     botId: config.controller.botId,
     displayName: config.controller.displayName,
     difficulty: config.difficulty,
+    styleSetting: config.styleSetting,
     style: config.style,
     deck: publicDeckSourceOf(config.deck),
     pacing: config.pacing,

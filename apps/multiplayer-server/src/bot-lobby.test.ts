@@ -270,6 +270,8 @@ describe('the host seats a bot', () => {
       botId: 'bot_1',
       displayName: 'Bot 2',
       difficulty: 'normal',
+      // The host named the style, so the setting is the style (M09.16).
+      styleSetting: 'defensive',
       style: 'defensive',
       deck: { mode: 'exact_precon', preconId: PRECON_ID },
       pacing: IMMEDIATE_BOT_PACING,
@@ -710,6 +712,7 @@ function savedDeckBotConfig(): BotSeatConfig {
     difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
     controller: { botId: 'bot_1', displayName: 'Bot 2' },
     difficulty: DEFAULT_BOT_DIFFICULTY,
+    styleSetting: 'value',
     style: 'value',
     deck: {
       mode: 'exact_saved_deck',

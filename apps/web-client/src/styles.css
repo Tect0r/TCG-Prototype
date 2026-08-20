@@ -862,6 +862,40 @@ code {
   padding: 0.75rem;
 }
 
+/* Progressive disclosure in a bot form (M09.16): everything past the deck, the
+   difficulty and the style is a refinement, and a host who wants none of it
+   should not have to read past it. A native `<details>` rather than a scripted
+   panel — it opens from the keyboard and announces itself as a disclosure
+   without a line of script. */
+.lobby__advanced {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+}
+
+.lobby__advanced > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  /* A focus ring has to have something to sit on, and the default marker box is
+     the wrong shape for one. */
+  padding: 0.15rem 0;
+}
+
+/* Only when open, so a closed disclosure is exactly its own summary line. */
+.lobby__advanced[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* The copy and paste row sits below the seat's own buttons and is quieter than
+   them: it changes this form rather than the table. */
+.lobby__actions--copy {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 /* A checkbox reads left-to-right; every other field in the panel is a stacked
    label over its control. */
 .field--check {

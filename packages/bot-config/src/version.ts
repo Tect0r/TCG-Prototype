@@ -23,8 +23,15 @@ import type { z } from 'zod';
  * style, deck source and pacing.
  *
  * - 1 — M09.1, the first contract. Nothing has been on a wire yet.
+ * - 2 — M09.16, the configuration records `styleSetting` beside `style`. A host
+ *   may now set the style control to `automatic`, and a seat has to be able to
+ *   say both what it flies and what was asked for; a v1 record carries only the
+ *   first, and a v1 build reading a v2 one meets an unknown member on a strict
+ *   object. Nothing persists a bot configuration — it lives in a lobby's memory
+ *   and on the wire — so there is no stored v1 record to migrate, and the
+ *   refusal below is the whole of the compatibility story.
  */
-export const BOT_CONFIG_SCHEMA_VERSION = 1;
+export const BOT_CONFIG_SCHEMA_VERSION = 2;
 
 /**
  * Which difficulty IDs exist and what each one claims about itself.

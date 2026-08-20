@@ -253,6 +253,20 @@ takes `createRngState` directly.
   moves nothing at all — that is the whole point of the numbers being
   configuration.
 
+  It moved a fourth time in M09.16, and this one moves a bot-configuration
+  constant with it rather than instead of it. A bot seat now says **where its
+  style came from**: `styleSetting` beside `style`, so a seat flying Defensive
+  because nobody chose it does not look like a seat whose host chose Defensive.
+  `botSeatPublicSchema` is strict and gains a required member, and `botSetupSchema`
+  travels back with a widened `style` that a host may set to `automatic` — both
+  shapes, so the constant is 10, and `BOT_CONFIG_SCHEMA_VERSION` moves 1 → 2
+  because the configuration shape itself widened. The two are still separate for
+  the reason the bullet below gives: one refuses a peer whose messages this build
+  cannot decode, the other refuses a configuration record written by a newer
+  build, and M09.13 is the case where only the second kind moved.
+  `DIFFICULTY_REGISTRY_VERSION` stays at 2 — no difficulty was added, removed, or
+  changed status.
+
 - **`MATCH_SCHEMA_VERSION` does not move.** A bot seat is a controller above the
   engine. `MatchState` does not learn what a bot is, and a replay of a
   human-versus-bot match is a replay of an ordinary match.

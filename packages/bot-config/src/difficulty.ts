@@ -168,11 +168,16 @@ export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefin
       // `behaviorVersion` are still null, so `difficultySelection('hard')`
       // throws by name and a lobby's list still does not contain it.
       //
-      // What is left is a decision rather than an implementation. M09.15 closed
-      // two of the three strategic gaps it owned and recorded the third; no
-      // threshold for "good enough to ship" was ever written down, and inventing
-      // one is not an engineering call. Recorded as owner question Q50.
-      plannedIn: 'M09.16',
+      // What is left is a decision rather than an implementation, and M09.16 put
+      // it to the owner as Q50. The answer, on 2026-08-20, was **not yet**: the
+      // third strategic gap M09.15 measured and left open —
+      // `containment_control/hold_energy_for_the_counter`, where the scorer
+      // prices a card played at its whole value and a card kept in hand at
+      // nothing — closes first, and Hard is published with it. That is M09.20,
+      // and it is why this registry still has no field for a tactical profile:
+      // a registry that could carry one is a registry a later tranche could
+      // publish Hard through by accident.
+      plannedIn: 'M09.20',
       behaviorVersion: null,
       selection: null,
     },

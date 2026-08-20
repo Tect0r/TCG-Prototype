@@ -49,13 +49,25 @@ export {
 } from './difficulty.js';
 
 export {
+  ARCHETYPE_STYLE_MAP,
+  AUTOMATIC_STYLE,
+  AUTOMATIC_STYLE_FALLBACK,
+  AUTOMATIC_STYLE_REASONS,
   BOT_STYLES,
   BOT_STYLE_REGISTRY,
+  BOT_STYLE_SETTINGS,
   botStyleDefinition,
   botStyleRegistryGaps,
   botStyleSchema,
+  botStyleSettingSchema,
+  resolveAutomaticStyle,
+  resolveStyleSetting,
+  styleSettingIsAutomatic,
+  type AutomaticStyleReason,
+  type AutomaticStyleResolution,
   type BotStyle,
   type BotStyleDefinition,
+  type BotStyleSetting,
 } from './style.js';
 
 export {

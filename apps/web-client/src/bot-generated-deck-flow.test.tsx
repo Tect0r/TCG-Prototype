@@ -172,6 +172,7 @@ function generatedBotSeat(
       botId: 'bot_1',
       displayName: 'Bot 2',
       difficulty: 'normal',
+      styleSetting: 'value',
       style: 'value',
       deck: { mode: 'commander_generated', commanderId },
       pacing: { percent: 0, reactionPercent: null },
@@ -346,7 +347,11 @@ describe('the provenance of a deck the server built', () => {
   it('says nothing until the server sends it', async () => {
     await seatedHost();
 
-    expect(within(panel()).queryByText(/seed/i)).not.toBeInTheDocument();
+    // The seed itself, rather than the word: since M09.16 the panel names its
+    // advanced disclosure "timing and deck seed", so a bare `/seed/i` would
+    // match a control label rather than the provenance this is about.
+    expect(within(panel()).queryByText(PROVENANCE.seed)).not.toBeInTheDocument();
+    expect(within(panel()).queryByText(PROVENANCE.deckHash)).not.toBeInTheDocument();
     expect(
       within(panel()).getByText(/this browser has not been told which one/i),
     ).toBeInTheDocument();

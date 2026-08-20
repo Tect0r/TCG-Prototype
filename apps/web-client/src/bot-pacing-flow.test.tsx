@@ -164,6 +164,7 @@ function botSeat(pacing: BotPacing, overrides: Partial<BotLobbySeatView> = {}): 
       botId: 'bot_1',
       displayName: 'Bot 2',
       difficulty: 'normal',
+      styleSetting: 'aggressive',
       style: 'aggressive',
       deck: { mode: 'exact_precon', preconId: 'precon_goblin_swarm' },
       pacing,
