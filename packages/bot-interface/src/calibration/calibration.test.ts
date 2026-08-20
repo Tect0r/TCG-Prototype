@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPilot, PILOT_AGENT_CLASSES, PILOT_IDS, STYLED_PILOT_IDS } from '../registry.js';
+import { TACTICAL_PROFILE_IDS, type TacticalProfileId } from '../tactics.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 import {
@@ -24,6 +25,7 @@ import {
   coverageOf,
   fixtureSeed,
   fixturesForPrecon,
+  gapsFor,
   preconCards,
   runFixture,
 } from './index.js';
@@ -93,6 +95,16 @@ describe('the calibration suite', () => {
     expect(CALIBRATION_SUITE_VERSION).toBeGreaterThan(0);
   });
 
+  it('asks every deck an attacking question as well as a blocking one', () => {
+    // The M09.14 facet. Blocking was calibrated from the start and the other
+    // half of the same combat was not, which is exactly the half Hard's tactical
+    // profile changes — so the coverage rule now obliges every deck to answer it.
+    for (const preconId of calibratedPreconIds()) {
+      expect(coverageOf(preconId).covered).toContain('attacking');
+      expect(coverageOf(preconId).covered).toContain('blocking');
+    }
+  });
+
   it('asks only the pilots whose class can carry a claim about play', () => {
     // A view of the agent class registry, never a second list beside it.
     expect(CALIBRATED_PILOT_IDS).toEqual(
@@ -124,13 +136,14 @@ describe('the calibration suite', () => {
   });
 });
 
-describe('every fixture', () => {
+describe.each(TACTICAL_PROFILE_IDS)('every fixture at %s', (tactics: TacticalProfileId) => {
   for (const fixture of CALIBRATION_FIXTURES) {
     for (const pilotId of CALIBRATED_PILOT_IDS) {
-      const note = fixture.knownGaps?.[pilotId];
+      const note = gapsFor(fixture, tactics)[pilotId];
       const verb = note === undefined ? 'still' : 'still does not';
       it(`${pilotId} ${verb}: ${fixture.claim} (${fixture.id})`, () => {
-        const result = runFixture(fixture, pilotId);
+        const result = runFixture(fixture, pilotId, tactics);
+        expect(result.tactics).toBe(tactics);
         expect(result.characteristic).toBe(note === undefined);
         expect(result.gapNote).toBe(note ?? null);
         // A fixture that never drew a decision out of the pilot proves nothing,

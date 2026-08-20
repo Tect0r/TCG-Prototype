@@ -1,7 +1,13 @@
 import type { DifficultySelection } from '@tcg/bot-config';
 import type { CardDefinition, ChoiceIntent } from '@tcg/card-data';
 import { nextInt, type Action, type CardInstanceView, type RngState } from '@tcg/rules-engine';
-import { candidateActions, rankChoiceOptions, type RankedOption } from './candidates.js';
+import {
+  candidateActions,
+  combatModelOf,
+  rankChoiceOptions,
+  type RankedOption,
+} from './candidates.js';
+import { BASELINE_TACTICS, type TacticalProfile } from './tactics.js';
 import {
   greedyBlocks,
   resolveHypotheticalCombat,
@@ -43,12 +49,23 @@ export interface HeuristicPilotOptions {
    * identical whichever value it takes.
    */
   readonly selection?: DifficultySelection;
+  /**
+   * How this pilot enumerates and scores its candidates (M09.14).
+   *
+   * Defaults to `BASELINE_TACTICS`, whose every refinement is off, so a caller
+   * that passes none gets byte-for-byte the scorer that shipped. Difficulty has
+   * two halves from M09.14 on and this is the other one: `selection` decides
+   * which of the scored candidates is taken, and this decides what the
+   * candidates are and what they score.
+   */
+  readonly tactics?: TacticalProfile;
 }
 
 export function createHeuristicPilot(options: HeuristicPilotOptions): BotPolicy {
   const { id, version, weights } = options;
   const mayConcede = options.mayConcede ?? false;
   const selection: DifficultySelection = options.selection ?? { kind: 'best' };
+  const tactics: TacticalProfile = options.tactics ?? BASELINE_TACTICS;
 
   return {
     id,
@@ -56,16 +73,21 @@ export function createHeuristicPilot(options: HeuristicPilotOptions): BotPolicy 
     // `selection` is in the exported configuration rather than only in the
     // caller's head, so a result that prints a pilot's config says which
     // difficulty produced it without having to be told separately.
-    config: Object.freeze({ weights: { ...weights }, mayConcede, selection: { ...selection } }),
+    config: Object.freeze({
+      weights: { ...weights },
+      mayConcede,
+      selection: { ...selection },
+      tactics: { ...tactics },
+    }),
     decide(observation: BotObservation, rng: RngState): BotDecision {
-      const candidates = candidateActions(observation, { weights, mayConcede });
+      const candidates = candidateActions(observation, { weights, mayConcede, tactics });
       if (candidates.length === 0) {
         throw new Error(`Pilot "${id}" was asked to decide with no legal candidate action.`);
       }
 
       const scores = candidates.map((candidate) => ({
         key: candidate.key,
-        score: scoreCandidate(observation, candidate, weights),
+        score: scoreCandidate(observation, candidate, weights, tactics),
       }));
 
       const picked = selectCandidate(candidates, scores, weights, selection, rng);
@@ -199,6 +221,7 @@ export function scoreCandidate(
   observation: BotObservation,
   candidate: ActionCandidate,
   weights: BotWeights,
+  tactics: TacticalProfile = BASELINE_TACTICS,
 ): number {
   switch (candidate.action.type) {
     case 'pass_phase':
@@ -210,13 +233,13 @@ export function scoreCandidate(
     case 'activate_ability':
       return scoreActivate(observation, candidate.action, weights);
     case 'declare_attackers':
-      return scoreAttack(observation, candidate.action, weights);
+      return scoreAttack(observation, candidate.action, weights, tactics);
     case 'assign_blockers':
-      return scoreBlock(observation, candidate.action, weights);
+      return scoreBlock(observation, candidate.action, weights, tactics);
     case 'mulligan':
       return scoreMulligan(observation, candidate.action, weights);
     case 'submit_choice':
-      return scoreChoice(observation, candidate.action, weights);
+      return scoreChoice(observation, candidate.action, weights, tactics);
     case 'play_reaction':
       return scoreReaction(observation, candidate.action, weights);
     case 'pass_reaction':
@@ -386,13 +409,37 @@ function scoreActivate(
   );
 }
 
+/**
+ * What a body of our own lost in combat is charged at (M09.14).
+ *
+ * The baseline prices an exchange with two independent weights — `…TradeGain`
+ * for the enemy body, `…TradeLoss` for ours — and that is a style's eagerness to
+ * trade rather than an arithmetic identity. On an *even* trade it produces
+ * points out of nothing: a vector that values taking an enemy 3/2 at 1.3 and
+ * losing its own at 0.9 reads two identical units annihilating each other as a
+ * gain, which is exactly the M05.6 finding that blocking "prefers a trade to a
+ * block that loses nothing".
+ *
+ * Under a profile with `ownLossAversion`, the loss coefficient is raised to the
+ * style's own gain coefficient whenever it is lower. That makes an even trade
+ * worth precisely zero for every weight vector, leaves a style that was already
+ * loss-averse completely untouched, and can never *lower* a coefficient — so it
+ * cannot make any pilot more willing to throw a body away than it already was.
+ */
+function lossWeight(gain: number, loss: number, tactics: TacticalProfile): number {
+  return tactics.ownLossAversion ? Math.max(gain, loss) : loss;
+}
+
 function scoreAttack(
   observation: BotObservation,
   action: Extract<Action, { type: 'declare_attackers' }>,
   weights: BotWeights,
+  tactics: TacticalProfile,
 ): number {
   const { view, database, rulesConfig } = observation;
   if (action.attacks.length === 0) return 0;
+  const model = combatModelOf(tactics);
+  const attackerLoss = lossWeight(weights.attackTradeGain, weights.attackTradeLoss, tactics);
 
   const byDefender = new Map<string, CardInstanceView[]>();
   for (const attack of action.attacks) {
@@ -420,9 +467,14 @@ function scoreAttack(
     const predicted = greedyBlocks(attackers, blockers, {
       chumpBlock: facingLethal,
       valueOnly: !facingLethal,
+      // Deliberately not `preserve`: this models what the *defender* will do,
+      // and assuming an opponent plays the improved block would be a claim about
+      // somebody else's difficulty. The combat model is shared because it is
+      // arithmetic about the engine rather than a policy.
+      model,
     });
     const lookup = new Map(blockers.map((unit) => [unit.instanceId, unit] as const));
-    const outcome = resolveHypotheticalCombat(attackers, predicted, lookup);
+    const outcome = resolveHypotheticalCombat(attackers, predicted, lookup, model);
 
     score += weights.attackFaceDamage * outcome.faceDamage;
     if (outcome.faceDamage >= defender.health) score += weights.lethalBonus;
@@ -433,7 +485,7 @@ function scoreAttack(
     }
     for (const instanceId of outcome.attackersLost) {
       const unit = view.instances[instanceId];
-      if (unit) score -= weights.attackTradeLoss * unitBoardValue(unit, weights, database);
+      if (unit) score -= attackerLoss * unitBoardValue(unit, weights, database);
     }
   }
 
@@ -451,9 +503,12 @@ function scoreBlock(
   observation: BotObservation,
   action: Extract<Action, { type: 'assign_blockers' }>,
   weights: BotWeights,
+  tactics: TacticalProfile,
 ): number {
   const { view, database } = observation;
   const me = selfSummary(view);
+  const model = combatModelOf(tactics);
+  const blockerLoss = lossWeight(weights.blockTradeGain, weights.blockTradeLoss, tactics);
 
   const incoming = view.combat.attacks
     .filter((attack) => attack.defenderPlayerId === me.playerId)
@@ -464,7 +519,7 @@ function scoreBlock(
   const blockerLookup = new Map(
     unitViewsOf(view, me.playerId).map((unit) => [unit.instanceId, unit] as const),
   );
-  const outcome = resolveHypotheticalCombat(incoming, action.blocks, blockerLookup);
+  const outcome = resolveHypotheticalCombat(incoming, action.blocks, blockerLookup, model);
   const prevented = baselineFace - outcome.faceDamage;
 
   let score = weights.blockDamagePrevented * prevented;
@@ -475,7 +530,7 @@ function scoreBlock(
   }
   for (const instanceId of outcome.blockersLost) {
     const unit = view.instances[instanceId];
-    if (unit) score -= weights.blockTradeLoss * unitBoardValue(unit, weights, database);
+    if (unit) score -= blockerLoss * unitBoardValue(unit, weights, database);
   }
 
   // Blocking exhausts the blocker (ruleset update §8), so a unit that survives
@@ -550,11 +605,15 @@ function scoreChoice(
   observation: BotObservation,
   action: Extract<Action, { type: 'submit_choice' }>,
   weights: BotWeights,
+  tactics: TacticalProfile,
 ): number {
   const choice = observation.legal.pendingChoice;
   if (!choice || choice.id !== action.choiceId) return 0;
 
-  const ranked = rankChoiceOptions(observation, choice, weights);
+  // The same ranking `choiceCandidates` enumerated from, and the same profile:
+  // a scorer that valued the options differently from the enumerator would
+  // silently score a selection it never built.
+  const ranked = rankChoiceOptions(observation, choice, weights, tactics);
   const byId = new Map(ranked.map((entry) => [entry.id, entry] as const));
   const intent = choice.provenance.intent;
 

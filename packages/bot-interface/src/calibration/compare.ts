@@ -7,6 +7,7 @@ import {
   type TacticalFixture,
 } from './fixture.js';
 import { CALIBRATION_FIXTURES, CALIBRATION_SUITE_VERSION } from './registry.js';
+import type { TacticalProfileId } from '../tactics.js';
 
 /**
  * Comparing pilots on identical positions (M05.6).
@@ -28,6 +29,8 @@ import { CALIBRATION_FIXTURES, CALIBRATION_SUITE_VERSION } from './registry.js';
 
 export interface FixtureComparison {
   readonly fixtureId: string;
+  /** Which tactical profile the row was measured under (M09.14). */
+  readonly tactics: TacticalProfileId;
   readonly preconId: string;
   readonly facet: CalibrationFacet;
   readonly claim: string;
@@ -53,6 +56,14 @@ export interface PilotCalibration {
 
 export interface CalibrationReport {
   readonly suiteVersion: number;
+  /**
+   * The tactical profile every row was measured under (M09.14).
+   *
+   * `baseline` by default, which is what Normal and Easy fly and therefore what
+   * every existing caller was already measuring. A report that did not carry
+   * this could not be read at all once two profiles exist.
+   */
+  readonly tactics: TacticalProfileId;
   readonly fixtures: number;
   readonly pilots: readonly PilotId[];
   readonly comparisons: readonly FixtureComparison[];
@@ -65,9 +76,12 @@ export interface CalibrationReport {
   readonly stale: readonly string[];
 }
 
-export function compareFixture(fixture: TacticalFixture): FixtureComparison {
+export function compareFixture(
+  fixture: TacticalFixture,
+  tactics: TacticalProfileId = 'baseline',
+): FixtureComparison {
   const results: FixtureResult[] = CALIBRATED_PILOT_IDS.map((pilotId) =>
-    runFixture(fixture, pilotId),
+    runFixture(fixture, pilotId, tactics),
   );
   const byPilot: Record<string, boolean> = {};
   for (const result of results) byPilot[result.pilotId] = result.characteristic;
@@ -75,6 +89,7 @@ export function compareFixture(fixture: TacticalFixture): FixtureComparison {
   const answers = results.map((result) => result.characteristic);
   return {
     fixtureId: fixture.id,
+    tactics,
     preconId: fixture.preconId,
     facet: fixture.facet,
     claim: fixture.claim,
@@ -94,8 +109,9 @@ export function compareFixture(fixture: TacticalFixture): FixtureComparison {
 
 export function compareCalibrationSuite(
   fixtures: readonly TacticalFixture[] = CALIBRATION_FIXTURES,
+  tactics: TacticalProfileId = 'baseline',
 ): CalibrationReport {
-  const comparisons = fixtures.map(compareFixture);
+  const comparisons = fixtures.map((fixture) => compareFixture(fixture, tactics));
 
   const byPilot = CALIBRATED_PILOT_IDS.map((pilotId): PilotCalibration => {
     const characteristic = comparisons.filter(
@@ -124,6 +140,7 @@ export function compareCalibrationSuite(
 
   return {
     suiteVersion: CALIBRATION_SUITE_VERSION,
+    tactics,
     fixtures: comparisons.length,
     pilots: CALIBRATED_PILOT_IDS,
     comparisons,

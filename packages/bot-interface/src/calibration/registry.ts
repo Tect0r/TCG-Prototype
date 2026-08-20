@@ -26,8 +26,14 @@ import { GRAVE_SACRIFICE_FIXTURES } from './fixtures-grave-sacrifice.js';
  * is for, and the suite is the same instrument either way.
  *
  * - 1 — M05.6, the first suite: sixteen fixtures over the four Wave 1 precons.
+ * - 2 — M09.14: the `attacking` facet and eight further fixtures, for the boards
+ *   Hard's tactical half is about — attacks, Barrier, Overwhelm, the Guardian
+ *   obligation and a multiplayer target choice. Twenty-four over the same four
+ *   decks. A `knownGaps` entry moving still does not bump this; the arrival of a
+ *   second *tactical profile* does not either, because the instrument is the same
+ *   set of boards whichever profile is flown through it.
  */
-export const CALIBRATION_SUITE_VERSION = 1;
+export const CALIBRATION_SUITE_VERSION = 2;
 
 /** The construction format the shipped fixtures calibrate. */
 export const CALIBRATION_FORMAT_ID = 'precon_wave_1';

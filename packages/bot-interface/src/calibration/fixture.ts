@@ -1,6 +1,13 @@
 import { createRngState } from '@tcg/rules-engine';
 import { agentClassSupports } from '../agent-class.js';
-import { createPilot, PILOT_AGENT_CLASSES, PILOT_IDS, type PilotId } from '../registry.js';
+import {
+  createPilot,
+  createTacticalPilot,
+  PILOT_AGENT_CLASSES,
+  PILOT_IDS,
+  type PilotId,
+} from '../registry.js';
+import { TACTICAL_PROFILES, type TacticalProfileId } from '../tactics.js';
 import type { BotPolicy } from '../types.js';
 import type { CalibrationFacet } from './facets.js';
 import { CalibrationTable, type AskedDecision, type BotRng } from './table.js';
@@ -33,8 +40,16 @@ export interface TacticalFixture {
    * engine. It is the test name, so a failure reads as a sentence about play.
    */
   readonly claim: string;
-  /** Starting Energy for both seats, when the fixture is about affordability. */
+  /** Starting Energy for every seat, when the fixture is about affordability. */
   readonly energy?: number;
+  /**
+   * Seats at the table. Two unless the decision only exists with more (M09.14).
+   *
+   * "Which opponent do I aim this at" is the only such decision in the shipped
+   * suite: with one opponent there is nothing to get wrong, so the question
+   * cannot be posed on a two-seat table at all.
+   */
+  readonly seats?: number;
   /**
    * Arranges the board, asks the pilot, and answers whether it decided
    * characteristically. Everything it needs — instance IDs, the table, the
@@ -43,12 +58,35 @@ export interface TacticalFixture {
    */
   readonly play: (table: CalibrationTable, pilot: BotPolicy, rng: BotRng) => boolean;
   /**
-   * Pilots that do not make this decision today, and why not.
+   * Pilots that do not make this decision **at the baseline**, and why not.
    *
    * A note here is a finding, not an excuse: it names the part of the valuation
    * that cannot see the difference. Deleting the entry is what a fix looks like.
+   *
+   * Since M09.14 this is specifically the record for `baseline` — the profile
+   * Normal and Easy fly — and it is deliberately still called `knownGaps`,
+   * because it is the same M05.6 record it always was and renaming it would make
+   * sixteen unrelated lines of churn out of a fact that did not change.
    */
   readonly knownGaps?: Readonly<Partial<Record<PilotId, string>>>;
+  /**
+   * The same record for `hard_tactical`, the profile M09.14 added.
+   *
+   * Absent means "no pilot has a gap here", which for a fixture with baseline
+   * gaps is the shape of a closed one. The suite asserts this in both directions
+   * exactly as it does `knownGaps`, so a Hard gap that quietly closes and a Hard
+   * decision that quietly regresses fail identically — which is what stops this
+   * from becoming a list of hopes.
+   */
+  readonly tacticalGaps?: Readonly<Partial<Record<PilotId, string>>>;
+}
+
+/** The recorded gaps for one profile. Total over the profile vocabulary. */
+export function gapsFor(
+  fixture: TacticalFixture,
+  tactics: TacticalProfileId,
+): Readonly<Partial<Record<PilotId, string>>> {
+  return (tactics === 'baseline' ? fixture.knownGaps : fixture.tacticalGaps) ?? {};
 }
 
 /**
@@ -69,6 +107,8 @@ export interface FixtureResult {
   readonly preconId: string;
   readonly facet: CalibrationFacet;
   readonly pilotId: PilotId;
+  /** Which tactical profile flew it. A result means nothing without this. */
+  readonly tactics: TacticalProfileId;
   /** What the pilot actually did. */
   readonly characteristic: boolean;
   /** What the fixture's written record says it does. */
@@ -94,16 +134,39 @@ export function fixtureSeed(fixture: TacticalFixture): string {
   return `calibration:${fixture.id}`;
 }
 
-export function runFixture(fixture: TacticalFixture, pilotId: PilotId): FixtureResult {
-  const pilot = createPilot({ id: pilotId });
+/**
+ * Plays one fixture with one pilot under one tactical profile.
+ *
+ * The seed is a function of the fixture alone, so the profile changes the
+ * *decision* and nothing about the position it is made in — which is what makes
+ * "Hard closed this gap" a statement about valuation rather than about luck, on
+ * exactly the same footing as "these two styles disagree".
+ *
+ * Neither branch can acquire a **difficulty selection**. `createPilot` has no
+ * such parameter and `createTacticalPilot` deliberately has none either, so a
+ * fixture always faces the argmax of whatever it scored. That matters because a
+ * fixture asks "was that the characteristic decision" and Easy is *defined* as
+ * sometimes not making it: an Easy reading here would be a measurement of the
+ * wrong thing wearing the right label.
+ */
+export function runFixture(
+  fixture: TacticalFixture,
+  pilotId: PilotId,
+  tactics: TacticalProfileId = 'baseline',
+): FixtureResult {
+  const pilot =
+    tactics === 'baseline'
+      ? createPilot({ id: pilotId })
+      : createTacticalPilot({ pilotId, tactics: TACTICAL_PROFILES[tactics] });
   const table = CalibrationTable.open({
     preconId: fixture.preconId,
     ...(fixture.energy === undefined ? {} : { energy: fixture.energy }),
+    ...(fixture.seats === undefined ? {} : { seats: fixture.seats }),
   });
   const rng: BotRng = { state: createRngState(fixtureSeed(fixture)) };
 
   const characteristic = fixture.play(table, pilot, rng);
-  const gapNote = fixture.knownGaps?.[pilotId] ?? null;
+  const gapNote = gapsFor(fixture, tactics)[pilotId] ?? null;
   const expected = gapNote === null;
 
   return {
@@ -111,6 +174,7 @@ export function runFixture(fixture: TacticalFixture, pilotId: PilotId): FixtureR
     preconId: fixture.preconId,
     facet: fixture.facet,
     pilotId,
+    tactics,
     characteristic,
     expected,
     matchesRecord: characteristic === expected,
@@ -120,6 +184,9 @@ export function runFixture(fixture: TacticalFixture, pilotId: PilotId): FixtureR
 }
 
 /** Runs one fixture against every calibrated pilot, on the identical seed. */
-export function runFixtureAcrossPilots(fixture: TacticalFixture): FixtureResult[] {
-  return CALIBRATED_PILOT_IDS.map((pilotId) => runFixture(fixture, pilotId));
+export function runFixtureAcrossPilots(
+  fixture: TacticalFixture,
+  tactics: TacticalProfileId = 'baseline',
+): FixtureResult[] {
+  return CALIBRATED_PILOT_IDS.map((pilotId) => runFixture(fixture, pilotId, tactics));
 }

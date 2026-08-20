@@ -1,4 +1,4 @@
-import { blockersIn } from './table.js';
+import { attackersIn, blockersIn } from './table.js';
 import type { TacticalFixture } from './fixture.js';
 
 /**
@@ -84,6 +84,13 @@ export const GRAVE_SACRIFICE_FIXTURES: readonly TacticalFixture[] = [
       defensive: 'prices the additional sacrifice against the draw and never plays the second card',
       value: 'prices the additional sacrifice against the draw and never plays the second card',
     },
+    // Unchanged by M09.14 on purpose: what an additional sacrifice buys is a
+    // question about the play after this one, which M09.15 owns.
+    tacticalGaps: {
+      aggressive: 'still prices the sacrifice against the draw; payoff is M09.15’s half of Hard',
+      defensive: 'still prices the sacrifice against the draw; payoff is M09.15’s half of Hard',
+      value: 'still prices the sacrifice against the draw; payoff is M09.15’s half of Hard',
+    },
   },
   {
     id: 'grave_sacrifice/block_with_the_body_that_survives',
@@ -111,6 +118,51 @@ export const GRAVE_SACRIFICE_FIXTURES: readonly TacticalFixture[] = [
       aggressive: 'chumps with the 2/1 for the kill, though the 2/5 kills it and survives',
       defensive: 'chumps with the 2/1 for the kill, though the 2/5 kills it and survives',
       value: 'chumps with the 2/1 for the kill, though the 2/5 kills it and survives',
+    },
+  },
+  {
+    id: 'grave_sacrifice/an_exhausted_wall_cannot_block',
+    preconId: PRECON,
+    facet: 'attacking',
+    claim: 'both bodies swing past a 2/5 that is Exhausted and therefore cannot answer them',
+    play: (table, pilot, rng) => {
+      const fodder = table.board('ashen_vermin');
+      const bigger = table.board('bonepile_guardian');
+      // The one Unit opposite would answer both of these if it were ready. It is
+      // not, and reading that is the whole decision.
+      table.board('veteran_guard', table.foe, { exhausted: true });
+      table.toPhase('declare_attackers');
+
+      const sent = new Set(attackersIn(table.ask(pilot, rng)));
+      return sent.size === 2 && sent.has(fodder) && sent.has(bigger);
+    },
+  },
+  {
+    id: 'grave_sacrifice/no_chump_against_overwhelm',
+    preconId: PRECON,
+    facet: 'blocking',
+    claim:
+      'a 2/1 is kept rather than thrown under a 7/7 Overwhelm that tramples six through anyway',
+    play: (table, pilot, rng) => {
+      const chump = table.board('ashen_vermin');
+      const attacker = table.board('stitched_abomination', table.foe);
+
+      table.handTurnTo(table.foe);
+      table.toPhase('declare_attackers', table.foe);
+      table.act({
+        type: 'declare_attackers',
+        playerId: table.foe,
+        attacks: [{ attackerInstanceId: attacker, defenderPlayerId: table.self }],
+      });
+      const decision = table.ask(pilot, rng);
+
+      // Overwhelm assigns the blocker its own Health and sends the rest to the
+      // player, so this block buys one damage and costs a body.
+      return blockersIn(decision).length === 0 && !table.offBoard(chump);
+    },
+    knownGaps: {
+      defensive: 'treats a blocked attacker as fully stopped, so the chump looks like seven saved',
+      value: 'treats a blocked attacker as fully stopped, so the chump looks like seven saved',
     },
   },
 ];

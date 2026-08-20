@@ -1,4 +1,5 @@
 import { blockersIn } from './table.js';
+import { attackersIn } from './table.js';
 import type { TacticalFixture } from './fixture.js';
 
 /**
@@ -34,6 +35,14 @@ export const BASTION_GUARDIANS_FIXTURES: readonly TacticalFixture[] = [
       aggressive: 'scores each play on its own, so the Relic’s deploy trigger is invisible',
       defensive: 'scores each play on its own, so the Relic’s deploy trigger is invisible',
       value: 'scores each play on its own, so the Relic’s deploy trigger is invisible',
+    },
+    // Unchanged by M09.14 on purpose: Hard's tactical half is about the decision
+    // in front of the pilot now, and nothing in it prices a play for what it
+    // makes the *next* play worth. M09.15 owns short-horizon sequencing.
+    tacticalGaps: {
+      aggressive: 'still scores each play on its own; sequencing is M09.15’s half of Hard',
+      defensive: 'still scores each play on its own; sequencing is M09.15’s half of Hard',
+      value: 'still scores each play on its own; sequencing is M09.15’s half of Hard',
     },
   },
   {
@@ -104,6 +113,53 @@ export const BASTION_GUARDIANS_FIXTURES: readonly TacticalFixture[] = [
       table.ask(pilot, rng);
 
       return !table.offBoard(wall);
+    },
+  },
+  {
+    id: 'bastion_guardians/the_wall_does_not_walk_into_the_captain',
+    preconId: PRECON,
+    facet: 'attacking',
+    claim: 'a 2/3 Guardian stays home rather than attacking into a ready 4/4',
+    play: (table, pilot, rng) => {
+      table.board('bastion_infantry');
+      // Ready, so it will block, and big enough that the trade is one-sided in
+      // both directions: it defeats the 2/3 and the 2/3 does not defeat it.
+      table.board('watch_captain', table.foe);
+      table.toPhase('declare_attackers');
+
+      return attackersIn(table.ask(pilot, rng)).length === 0;
+    },
+  },
+  {
+    id: 'bastion_guardians/the_guardian_blocks_what_it_survives',
+    preconId: PRECON,
+    facet: 'blocking',
+    claim: 'the one Guardian answers the 2/2 it eats rather than the 4/4 that eats it',
+    play: (table, pilot, rng) => {
+      // One ready Guardian, so `mustBlockCount` is 1 and declining is not legal:
+      // the whole decision is *which* attacker the obligation is spent on.
+      const guardian = table.board('bastion_infantry');
+      const big = table.board('watch_captain', table.foe);
+      const small = table.board('spear_guard', table.foe);
+
+      table.handTurnTo(table.foe);
+      table.toPhase('declare_attackers', table.foe);
+      table.act({
+        type: 'declare_attackers',
+        playerId: table.foe,
+        attacks: [
+          { attackerInstanceId: big, defenderPlayerId: table.self },
+          { attackerInstanceId: small, defenderPlayerId: table.self },
+        ],
+      });
+      const decision = table.ask(pilot, rng);
+
+      const blocks = decision.action.type === 'assign_blockers' ? decision.action.blocks : [];
+      return (
+        blocks.length === 1 &&
+        blocks[0]?.blockerInstanceId === guardian &&
+        blocks[0]?.attackerInstanceId === small
+      );
     },
   },
 ];

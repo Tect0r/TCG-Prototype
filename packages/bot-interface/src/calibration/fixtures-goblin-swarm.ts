@@ -1,4 +1,4 @@
-import { blockersIn, playIndexOf } from './table.js';
+import { attackersIn, blockersIn, playIndexOf } from './table.js';
 import type { TacticalFixture } from './fixture.js';
 
 /**
@@ -107,6 +107,47 @@ export const GOBLIN_SWARM_FIXTURES: readonly TacticalFixture[] = [
       table.ask(pilot, rng);
 
       return !table.offBoard(threatened);
+    },
+  },
+  {
+    id: 'goblin_swarm/swing_at_the_open_board',
+    preconId: PRECON,
+    facet: 'attacking',
+    claim: 'with nothing opposite that can block, both Goblins go to the face',
+    play: (table, pilot, rng) => {
+      const spearman = table.board('goblin_spearman');
+      const bruiser = table.board('goblin_bruiser');
+      // No opposing Unit at all, so nothing about the attack is a guess: every
+      // point of Attack on the board reaches a player.
+      table.toPhase('declare_attackers');
+
+      const sent = new Set(attackersIn(table.ask(pilot, rng)));
+      return sent.size === 2 && sent.has(spearman) && sent.has(bruiser);
+    },
+  },
+  {
+    id: 'goblin_swarm/knife_the_seat_holding_the_killable_body',
+    preconId: PRECON,
+    facet: 'targeting',
+    claim: 'across three seats, Throwing Knife defeats the 2/1 rather than scratching a 2/5',
+    seats: 3,
+    play: (table, pilot, rng) => {
+      // The one board in the suite that needs a third seat: with a single
+      // opponent there is no cross-seat choice to get wrong, so this question
+      // cannot be posed at all on a two-seat table.
+      table.boardCommander();
+      const killable = table.board('goblin_spearman', table.foe);
+      const untouchable = table.board('veteran_guard', table.otherFoe ?? table.foe);
+      table.give('throwing_knife');
+
+      if (table.askUntilFamily(pilot, rng, 'submit_choice') === null) return false;
+
+      return table.offBoard(killable) && !table.offBoard(untouchable);
+    },
+    knownGaps: {
+      aggressive: 'ranks targets by board value alone, so the other seat’s 2/5 outranks the 2/1',
+      defensive: 'ranks targets by board value alone, so the other seat’s 2/5 outranks the 2/1',
+      value: 'ranks targets by board value alone, so the other seat’s 2/5 outranks the 2/1',
     },
   },
 ];

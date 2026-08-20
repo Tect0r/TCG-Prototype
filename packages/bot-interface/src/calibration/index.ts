@@ -11,6 +11,7 @@ export {
 export {
   CALIBRATED_PILOT_IDS,
   fixtureSeed,
+  gapsFor,
   runFixture,
   runFixtureAcrossPilots,
   type FixtureResult,
@@ -19,7 +20,10 @@ export {
 
 export {
   CalibrationTable,
+  attackersIn,
+  blockersIn,
   calibrationDatabase,
+  playIndexOf,
   preconMatchDeck,
   type AskedDecision,
   type BotRng,

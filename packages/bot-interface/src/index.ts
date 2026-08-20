@@ -27,6 +27,7 @@ export {
   costValue,
   costsValue,
   keywordIsValued,
+  damageRemovalFraction,
   greedyBlocks,
   opponentPriority,
   opponentSummaries,
@@ -37,17 +38,37 @@ export {
   unitBoardValue,
   unitViewsOf,
   wouldDefeat,
+  BASELINE_COMBAT_MODEL,
   type BotWeights,
   type BotWeightsInput,
+  type CombatModel,
   type CombatOutcome,
+  type GreedyBlockOptions,
 } from './scoring.js';
 
 export {
   candidateActions,
+  combatModelOf,
   rankChoiceOptions,
   type CandidateOptions,
   type RankedOption,
 } from './candidates.js';
+
+export {
+  assertTacticalProfilesComplete,
+  tacticalProfile,
+  tacticalProfileGaps,
+  tacticalProfileIdSchema,
+  BASELINE_TACTICS,
+  HARD_TACTICAL_TACTICS,
+  TACTICAL_PROFILES,
+  TACTICAL_PROFILE_IDS,
+  TACTICAL_REFINEMENTS,
+  TACTICS_REGISTRY_VERSION,
+  type TacticalProfile,
+  type TacticalProfileId,
+  type TacticalRefinement,
+} from './tactics.js';
 
 export {
   CATEGORY_BY_DECISION_FAMILY,
@@ -73,6 +94,7 @@ export { createValuePilot, VALUE_WEIGHTS, VALUE_VERSION } from './value.js';
 export {
   createPilot,
   createStyledPilot,
+  createTacticalPilot,
   pilotIdSchema,
   pilotSpecSchema,
   agentClassOf,

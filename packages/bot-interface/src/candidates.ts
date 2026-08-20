@@ -7,9 +7,11 @@ import type {
   PlayerView,
 } from '@tcg/rules-engine';
 import type { ActionCandidate, BotObservation } from './types.js';
+import { BASELINE_TACTICS, type TacticalProfile } from './tactics.js';
 import {
   boardValueOf,
   cardValue,
+  damageRemovalFraction,
   greedyBlocks,
   opponentPriority,
   opponentSummaries,
@@ -19,6 +21,7 @@ import {
   unitBoardValue,
   unitViewsOf,
   type BotWeights,
+  type CombatModel,
 } from './scoring.js';
 
 /**
@@ -39,6 +42,20 @@ export interface CandidateOptions {
   readonly weights: BotWeights;
   /** Enabled only by experiment policy; a pilot never concedes on its own. */
   readonly mayConcede: boolean;
+  /**
+   * The tactical half of the difficulty flying this pilot (M09.14).
+   *
+   * Defaults to `BASELINE_TACTICS`, so a caller that passes none enumerates
+   * exactly the list that shipped. A profile can only ever *widen* this list
+   * with a plan the engine has already declared legal; it cannot remove one, and
+   * it cannot invent an action.
+   */
+  readonly tactics?: TacticalProfile;
+}
+
+/** What a profile asks the combat model to reproduce. */
+export function combatModelOf(tactics: TacticalProfile): CombatModel {
+  return { barrier: tactics.modelsBarrier, overwhelm: tactics.modelsOverwhelm };
 }
 
 const byKey = (a: ActionCandidate, b: ActionCandidate): number => a.key.localeCompare(b.key);
@@ -55,7 +72,7 @@ export function candidateActions(
   // engine: while one is open the only legal moves are answering it or handing
   // priority back (rule adjustment §5).
   if (legal.reaction) return reactionCandidates(observation);
-  if (legal.blocking) return blockCandidates(observation);
+  if (legal.blocking) return blockCandidates(observation, options);
   if (legal.attacking) return attackCandidates(observation, options);
 
   const candidates: ActionCandidate[] = [];
@@ -307,12 +324,20 @@ export function satisfyGuardianObligation(
   return result;
 }
 
-/** Named blocking strategies: nothing, value-only, everything, and chump-to-survive. */
-function blockCandidates(observation: BotObservation): ActionCandidate[] {
+/**
+ * Named blocking strategies: nothing, value-only, everything, and — under a
+ * tactical profile that asks for it — the block that keeps the blocker.
+ */
+function blockCandidates(
+  observation: BotObservation,
+  options: CandidateOptions,
+): ActionCandidate[] {
   const blocking = observation.legal.blocking;
   if (!blocking) return [];
   const playerId = observation.legal.playerId;
   const { view } = observation;
+  const tactics = options.tactics ?? BASELINE_TACTICS;
+  const model = combatModelOf(tactics);
 
   // "Block nothing" is only on the table when no ready Guardian obliges a
   // block; otherwise the minimum legal plan is the Guardian obligation itself.
@@ -336,15 +361,23 @@ function blockCandidates(observation: BotObservation): ActionCandidate[] {
     .filter((unit): unit is CardInstanceView => unit !== undefined);
   if (attackers.length === 0 || blockers.length === 0) return candidates;
 
-  const plans: { key: string; chumpBlock: boolean; valueOnly: boolean }[] = [
+  const plans: { key: string; chumpBlock: boolean; valueOnly: boolean; preserve?: boolean }[] = [
     { key: 'block:value', chumpBlock: false, valueOnly: true },
     { key: 'block:all', chumpBlock: true, valueOnly: false },
   ];
+  // One extra named plan rather than a change to the three that were already
+  // here: `block:value` still means what it meant, and a build with the
+  // refinement off enumerates an identical list (M09.14).
+  if (tactics.offersPreservingBlocks) {
+    plans.push({ key: 'block:preserve', chumpBlock: false, valueOnly: true, preserve: true });
+  }
 
   for (const plan of plans) {
     const blocks = greedyBlocks(attackers, blockers, {
       chumpBlock: plan.chumpBlock,
       valueOnly: plan.valueOnly,
+      ...(plan.preserve === undefined ? {} : { preserve: plan.preserve }),
+      model,
     });
     if (blocks.length === 0) continue;
     candidates.push({
@@ -378,7 +411,7 @@ function choiceCandidates(
   options: CandidateOptions,
 ): ActionCandidate[] {
   const playerId = observation.legal.playerId;
-  const ranked = rankChoiceOptions(observation, choice, options.weights);
+  const ranked = rankChoiceOptions(observation, choice, options.weights, options.tactics);
 
   if (choice.type === 'divide_damage') {
     return divideDamageCandidates(observation, choice, ranked);
@@ -505,19 +538,92 @@ export interface RankedOption {
 }
 
 /**
+ * The card an instance ID names, when the seat has actually been shown it.
+ *
+ * Two sources, and neither of them is a disclosure. A permanent on a battlefield,
+ * a relic, a Commander or a card in the viewer's own hand is already in
+ * `view.instances`. A **Spell in the middle of resolving** is in neither the
+ * battlefield nor anybody's hand array, so it is not in `view.instances` at all —
+ * but playing a card is public, and `card_played` is an unredacted event in the
+ * seat's own log carrying the definition. Reading it back tells the pilot exactly
+ * what every seat at the table watched happen.
+ *
+ * `null` when neither source has it, which is the honest answer for a card this
+ * seat has never been shown. `PendingChoice.provenance` deliberately carries no
+ * card identity (M05.3) and nothing here reintroduces one: this resolves an
+ * instance the viewer can already see, and returns nothing for one it cannot.
+ */
+function shownDefinitionOf(
+  observation: BotObservation,
+  instanceId: string,
+): CardDefinition | undefined {
+  const instance = observation.view.instances[instanceId];
+  if (instance) return observation.database.get(instance.definitionId);
+
+  for (let index = observation.history.length - 1; index >= 0; index -= 1) {
+    const event = observation.history[index];
+    if (event?.type === 'card_played' && event.instanceId === instanceId) {
+      return observation.database.get(event.definitionId);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * How much damage the instruction that asked this question is about to deal, or
+ * `null` when the pilot cannot read it off a card it has been shown (M09.14).
+ *
+ * The provenance names the asking instruction and its index, `sourceInstanceId`
+ * names the instance, and the definition behind that instance is the same
+ * authored card data every valuation in this package already reads. Nothing here
+ * reaches for a `MatchState`.
+ *
+ * Deliberately narrow, and the narrowness is the honesty:
+ *
+ * - only an `instruction` origin, because nothing else has an effect index;
+ * - only when `effects[effectIndex]` is itself a `deal_damage`, because the
+ *   index is into "the list it was printed in" and a card's abilities are other
+ *   lists — a mismatch reads as "cannot tell" instead of as another number;
+ * - only a **printed** amount, because a derived one ("damage equal to its ATK")
+ *   is a board question this function is not entitled to answer;
+ * - never a `divided` total, which is an allocation `divideDamageCandidates`
+ *   already enumerates and not a per-target amount.
+ */
+function choiceDamageAmount(observation: BotObservation, choice: PendingChoice): number | null {
+  const { provenance, sourceInstanceId } = choice;
+  if (provenance.origin !== 'instruction') return null;
+  if (provenance.effectType !== 'deal_damage') return null;
+  if (provenance.effectIndex === null || sourceInstanceId === null) return null;
+
+  const definition = shownDefinitionOf(observation, sourceInstanceId);
+  const effect = definition?.effects[provenance.effectIndex];
+  if (!effect || effect.type !== 'deal_damage' || effect.divided === true) return null;
+  return typeof effect.amount === 'number' ? effect.amount : null;
+}
+
+/**
  * Values every option of a pending choice, best first.
  *
  * Options can be card instances, unit instances or players. Anything
  * unrecognised is valued at zero and ordered by ID, which keeps an unfamiliar
  * choice type deterministic instead of throwing.
+ *
+ * Under a profile that reads removal lethality, a battlefield unit being asked
+ * about by a damage instruction is worth the fraction of it that damage actually
+ * removes — which is the whole of it when the damage defeats it, and none of it
+ * when an unspent Barrier eats the event. Every other option type, and every
+ * other question, is valued exactly as before.
  */
 export function rankChoiceOptions(
   observation: BotObservation,
   choice: PendingChoice,
   weights: BotWeights,
+  tactics: TacticalProfile = BASELINE_TACTICS,
 ): RankedOption[] {
   const { view, database } = observation;
   const viewerId = view.viewerId;
+  const damage = tactics.readsRemovalLethality ? choiceDamageAmount(observation, choice) : null;
+  const model = combatModelOf(tactics);
 
   /** A seat option, valued the way `select_players` values one. */
   const rankSeat = (id: string): RankedOption | null => {
@@ -552,7 +658,8 @@ export function rankChoiceOptions(
     const enemy = instance.controller !== viewerId;
     const value =
       instance.zone === 'battlefield'
-        ? unitBoardValue(instance, weights, database)
+        ? unitBoardValue(instance, weights, database) *
+          (damage === null ? 1 : damageRemovalFraction(instance, damage, model))
         : (() => {
             const definition = database.get(instance.definitionId);
             return definition ? cardValue(definition, weights, database) : 0;

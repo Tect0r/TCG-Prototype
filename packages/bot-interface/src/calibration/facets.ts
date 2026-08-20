@@ -10,15 +10,23 @@ import { z } from 'zod';
  * either way. These are the decision families where "legal" and "characteristic"
  * come apart, so they are the families a hand-authored fixture has to pin.
  *
- * The three the milestone names — sequencing, targeting, sacrifice — plus the two
- * that are the whole identity of two of the four shipped precons: a Guardian deck
- * is a blocking deck, and a Containment deck is a Reaction deck. Leaving those
- * out would have calibrated every precon except at the thing it is for.
+ * The three M05.6 names — sequencing, targeting, sacrifice — plus the two that are
+ * the whole identity of two of the four shipped precons: a Guardian deck is a
+ * blocking deck, and a Containment deck is a Reaction deck. Leaving those out
+ * would have calibrated every precon except at the thing it is for.
+ *
+ * `attacking` joined them in M09.14, which is the tranche about immediate combat:
+ * blocking was calibrated from the start and the other half of the same combat
+ * was not, so "which bodies go in" had no fixture anywhere while "which bodies
+ * come back" had three. Adding it obliges every deck in the format to answer an
+ * attack question, because the coverage rule in `registry.ts` is what makes a
+ * facet mean anything.
  */
 export const CALIBRATION_FACETS = [
   'sequencing',
   'targeting',
   'sacrifice',
+  'attacking',
   'blocking',
   'reaction',
 ] as const;
@@ -92,6 +100,14 @@ export const CALIBRATION_FACET_REGISTRY: Readonly<
     label: 'sacrifice',
     question: 'Asked to give something up, does the pilot give up the thing it can most afford?',
     appliesTo: sacrifices,
+  },
+  attacking: {
+    id: 'attacking',
+    label: 'attacking',
+    question: 'Holding a board, does the pilot send the bodies that should go and keep the rest?',
+    // Same rule blocking uses, and for the same reason: a format whose decks are
+    // not built from Units answers honestly without anybody remembering to look.
+    appliesTo: (cards) => cards.some((card) => card.type === 'unit'),
   },
   blocking: {
     id: 'blocking',

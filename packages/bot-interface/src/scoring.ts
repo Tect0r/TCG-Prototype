@@ -974,10 +974,128 @@ export interface CombatOutcome {
   readonly blockersLost: readonly string[];
 }
 
-/** Whether `attacker` dealing its damage would defeat `defender` this combat. */
-export function wouldDefeat(attacker: CardInstanceView, defender: CardInstanceView): boolean {
+/**
+ * How much of the real damage step the hypothetical combat reproduces (M09.14).
+ *
+ * Every field is off in `BASELINE_COMBAT_MODEL`, which is the model that shipped
+ * before M09.14 and the one Normal and Easy still use. A profile turns one on
+ * because leaving it off is *wrong* rather than merely coarse — both members
+ * below are shipped keywords the model silently ignored — and the switch exists
+ * so that improving Hard cannot move Normal.
+ */
+export interface CombatModel {
+  /** An unspent Barrier prevents the whole of the first damage event. */
+  readonly barrier: boolean;
+  /** A blocked Overwhelm attacker's excess still reaches the defending player. */
+  readonly overwhelm: boolean;
+}
+
+export const BASELINE_COMBAT_MODEL: CombatModel = Object.freeze({
+  barrier: false,
+  overwhelm: false,
+});
+
+/**
+ * Whether a unit's Barrier is still there to spend.
+ *
+ * Two questions, and the view answers both separately: `keywords` says the unit
+ * *has* Barrier, `barrierSpent` says whether this combat is the one that eats it
+ * (M06.1). Both are public board facts for every seat, so reading them is not a
+ * disclosure.
+ */
+function barrierIsUp(unit: CardInstanceView): boolean {
+  return unit.keywords.includes('barrier') && !unit.barrierSpent;
+}
+
+/**
+ * Whether `attacker` dealing its damage would defeat `defender` this combat.
+ *
+ * `model` defaults to the baseline, so every existing caller keeps the exact
+ * comparison it had. With `barrier` on, a defender whose Barrier is unspent
+ * survives — the engine prevents the whole of the first non-zero damage event,
+ * including a `venom` one, because prevention happens before the lethal flag is
+ * read (`damage.ts`).
+ */
+export function wouldDefeat(
+  attacker: CardInstanceView,
+  defender: CardInstanceView,
+  model: CombatModel = BASELINE_COMBAT_MODEL,
+): boolean {
+  if (model.barrier && attacker.attack > 0 && barrierIsUp(defender)) return false;
   if (attacker.keywords.includes('venom') && attacker.attack > 0) return true;
   return attacker.attack >= remainingHealthOf(defender);
+}
+
+export interface GreedyBlockOptions {
+  readonly chumpBlock: boolean;
+  readonly valueOnly: boolean;
+  /**
+   * Rank the eligible blockers by what the defender keeps, rather than taking
+   * the first one that does any job at all (M09.14).
+   *
+   * Off by default, which is the pairing that shipped: the blockers are already
+   * sorted smallest-first, so `findIndex` takes the smallest body that kills
+   * *or* survives — and "kills" comes up first for a small attacker, which is
+   * how a 2/1 ends up in front of a 3/2 that a 2/5 would have eaten and
+   * survived. That is the M05.6 blocking finding, and it is a defect in this
+   * pairing rather than in the score attached to it.
+   *
+   * On, the preference is: a blocker that survives *and* kills, then one that
+   * survives, then one that only kills — with the existing smallest-first order
+   * breaking ties inside each band, so the defender still does not spend a
+   * bigger body than the job needs. It changes which plan is *offered*; the
+   * scorer still decides between this plan and the trade.
+   */
+  readonly preserve?: boolean;
+  /** How much of the damage step to reproduce. Baseline for every old caller. */
+  readonly model?: CombatModel;
+}
+
+/**
+ * How well a blocker answers this attacker, lowest is best.
+ *
+ * `3` means it neither kills nor survives, which `valueOnly` excludes outright.
+ */
+function blockRank(
+  attacker: CardInstanceView,
+  blocker: CardInstanceView,
+  model: CombatModel,
+): number {
+  const kills = wouldDefeat(blocker, attacker, model);
+  const survives = !wouldDefeat(attacker, blocker, model);
+  if (survives && kills) return 0;
+  if (survives) return 1;
+  if (kills) return 2;
+  return 3;
+}
+
+/**
+ * How much of `unit` a single damage event of `amount` actually removes (M09.14).
+ *
+ * `1` when the damage defeats it, `0` when the damage is entirely prevented, and
+ * the fraction of its remaining Health otherwise. This is what turns "aim
+ * removal at the biggest body" into "aim removal at the body it removes": two
+ * damage into a 2/5 removes two fifths of a 2/5, and two damage into a 2/1
+ * removes the whole thing.
+ *
+ * Deliberately a fraction rather than a bonus. A bonus has no units and would
+ * have to be re-tuned against every weight vector; a fraction of the body is the
+ * same statement for all of them and cannot be out-scaled by a big statline.
+ *
+ * The Barrier case is only read when the model says to. It is `0` rather than a
+ * small number because the engine prevents the *whole* of the first non-zero
+ * damage event, so a Spell aimed at an unspent Barrier removes nothing at all.
+ */
+export function damageRemovalFraction(
+  unit: CardInstanceView,
+  amount: number,
+  model: CombatModel = BASELINE_COMBAT_MODEL,
+): number {
+  if (amount <= 0) return 0;
+  if (model.barrier && barrierIsUp(unit)) return 0;
+  const remaining = remainingHealthOf(unit);
+  if (remaining <= 0 || amount >= remaining) return 1;
+  return amount / remaining;
 }
 
 /**
@@ -991,8 +1109,9 @@ export function wouldDefeat(attacker: CardInstanceView, defender: CardInstanceVi
 export function greedyBlocks(
   attackers: readonly CardInstanceView[],
   blockers: readonly CardInstanceView[],
-  options: { readonly chumpBlock: boolean; readonly valueOnly: boolean },
+  options: GreedyBlockOptions,
 ): { attackerInstanceId: string; blockerInstanceId: string }[] {
+  const model = options.model ?? BASELINE_COMBAT_MODEL;
   const remaining = [...blockers].sort((a, b) => {
     // Prefer the smallest blocker that still does the job, then a stable ID order.
     const health = remainingHealthOf(a) - remainingHealthOf(b);
@@ -1009,12 +1128,12 @@ export function greedyBlocks(
   const pairs: { attackerInstanceId: string; blockerInstanceId: string }[] = [];
   for (const attacker of ordered) {
     if (attacker.keywords.includes('evasive')) continue;
-    const index = remaining.findIndex((blocker) => {
-      const kills = wouldDefeat(blocker, attacker);
-      const survives = !wouldDefeat(attacker, blocker);
-      if (options.valueOnly) return kills || survives;
-      return true;
-    });
+    const index = options.preserve
+      ? bestBlockerIndex(attacker, remaining, options, model)
+      : remaining.findIndex((blocker) => {
+          if (options.valueOnly) return blockRank(attacker, blocker, model) < 3;
+          return true;
+        });
     if (index < 0) {
       if (!options.chumpBlock) continue;
       const fallback = remaining.shift();
@@ -1033,16 +1152,51 @@ export function greedyBlocks(
 }
 
 /**
+ * The best-ranked blocker in `remaining`, or `-1` when none is eligible.
+ *
+ * `remaining` is already smallest-first, and the scan keeps the *first* blocker
+ * of the best rank it finds, so the tie-break inside a band is the same
+ * smallest-first order the unpreserved path uses.
+ */
+function bestBlockerIndex(
+  attacker: CardInstanceView,
+  remaining: readonly CardInstanceView[],
+  options: GreedyBlockOptions,
+  model: CombatModel,
+): number {
+  let bestIndex = -1;
+  let bestRank = Infinity;
+  for (const [index, blocker] of remaining.entries()) {
+    const rank = blockRank(attacker, blocker, model);
+    if (options.valueOnly && rank === 3) continue;
+    if (rank < bestRank) {
+      bestRank = rank;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
+}
+
+/**
  * Resolves a hypothetical combat under the simple simultaneous-damage rules.
  *
  * `quick_strike` is modelled: a quick-striking combatant that defeats its
- * opponent takes no damage back. Nothing else about the real damage step is
- * approximated away.
+ * opponent takes no damage back. `model` decides how much of the rest of the
+ * damage step is reproduced; at the baseline nothing else is, which is where
+ * this function stood before M09.14 and where Normal and Easy still stand.
+ *
+ * With `overwhelm` on, a blocked Overwhelm attacker's excess is added to the
+ * face damage. The split follows the engine exactly (`combat.ts`): each blocker
+ * absorbs its **current Health** rather than its remaining lethal requirement,
+ * so damage already marked on a blocker does not widen the overflow, and Barrier
+ * on the blocker never touches the overflow because that is a separate damage
+ * event aimed at the player (ADR 0016 Q-D).
  */
 export function resolveHypotheticalCombat(
   attackers: readonly CardInstanceView[],
   blocks: readonly { attackerInstanceId: string; blockerInstanceId: string }[],
   blockerLookup: ReadonlyMap<string, CardInstanceView>,
+  model: CombatModel = BASELINE_COMBAT_MODEL,
 ): CombatOutcome {
   const blockedBy = new Map<string, CardInstanceView>();
   for (const block of blocks) {
@@ -1060,13 +1214,16 @@ export function resolveHypotheticalCombat(
       faceDamage += attacker.attack;
       continue;
     }
+    if (model.overwhelm && attacker.keywords.includes('overwhelm')) {
+      faceDamage += Math.max(0, attacker.attack - blocker.health);
+    }
     const attackerFirst =
       attacker.keywords.includes('quick_strike') && !blocker.keywords.includes('quick_strike');
     const blockerFirst =
       blocker.keywords.includes('quick_strike') && !attacker.keywords.includes('quick_strike');
 
-    const attackerKills = wouldDefeat(attacker, blocker);
-    const blockerKills = wouldDefeat(blocker, attacker);
+    const attackerKills = wouldDefeat(attacker, blocker, model);
+    const blockerKills = wouldDefeat(blocker, attacker, model);
 
     if (attackerFirst && attackerKills) {
       blockersLost.push(blocker.instanceId);

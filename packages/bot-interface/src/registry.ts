@@ -16,6 +16,7 @@ import {
   RANDOM_LEGAL_VERSION,
 } from './random-legal.js';
 import { botWeightsSchema, DEFAULT_WEIGHTS, type BotWeights } from './scoring.js';
+import { BASELINE_TACTICS, type TacticalProfile } from './tactics.js';
 import type { BotPolicy } from './types.js';
 
 /**
@@ -160,6 +161,15 @@ export interface StyledPilotOptions {
   readonly pilotId: PilotId;
   /** The difficulty's selection, from `@tcg/bot-config`'s registry. */
   readonly selection: DifficultySelection;
+  /**
+   * The difficulty's tactical profile (M09.14).
+   *
+   * Optional and defaulted to `BASELINE_TACTICS`, because the two available
+   * difficulties both fly the baseline and a caller that does not know about
+   * tactics must not accidentally get something else. M09.15 is where a
+   * difficulty in the registry starts naming one.
+   */
+  readonly tactics?: TacticalProfile;
   readonly weights?: Partial<BotWeights>;
 }
 
@@ -195,5 +205,42 @@ export function createStyledPilot(options: StyledPilotOptions): BotPolicy {
     version: PILOT_VERSIONS[pilotId],
     weights,
     selection: options.selection,
+    tactics: options.tactics ?? BASELINE_TACTICS,
+  });
+}
+
+/**
+ * The published style scorer under a tactical profile, and **no difficulty
+ * selection** (M09.14).
+ *
+ * A third entry point for the same reason `createStyledPilot` was a second one:
+ * these three answer different questions and merging them would let one caller
+ * get an axis it has no business setting. This one exists for the calibration
+ * suite, which asks "was that the characteristic decision" — a question about
+ * the *scorer*. Easy is defined as sometimes not making the characteristic
+ * decision, so a fixture must never be able to acquire a selection; there is no
+ * parameter here that could give it one, and the pilot this returns always takes
+ * the best candidate it scored.
+ */
+export function createTacticalPilot(options: {
+  readonly pilotId: PilotId;
+  readonly tactics: TacticalProfile;
+  readonly weights?: Partial<BotWeights>;
+}): BotPolicy {
+  const pilotId = pilotIdSchema.parse(options.pilotId);
+  if (!STYLED_PILOT_IDS.includes(pilotId)) {
+    throw new Error(
+      `Pilot "${pilotId}" is not something a tactical profile can be applied to: it makes no attempt to play well.`,
+    );
+  }
+  const weights = botWeightsSchema.parse({
+    ...PILOT_BASE_WEIGHTS[pilotId],
+    ...(options.weights ?? {}),
+  });
+  return createHeuristicPilot({
+    id: pilotId,
+    version: PILOT_VERSIONS[pilotId],
+    weights,
+    tactics: options.tactics,
   });
 }

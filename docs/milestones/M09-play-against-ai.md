@@ -2137,7 +2137,7 @@ manifest is untouched, because `PilotSpec` deliberately was. The one behavioural
 change is that a configuration naming `easy` is now accepted instead of refused,
 which widens what a build will do rather than narrowing it.
 
-## M09.14 — Hard tactical improvements
+## M09.14 — Hard tactical improvements — **done (2026-08-20)**
 
 Make Hard materially better at immediate combat and target decisions: address the
 named M05.6 calibration gaps for removal lethality and for blocking that
@@ -2156,10 +2156,206 @@ Easy/Normal non-regression tests.
 
 ### Checklist
 
-- [ ] Named M05.6 tactical gaps addressed, with fixtures that show it.
-- [ ] Only redacted observation used; no hidden state.
-- [ ] Multiplayer target choice covered.
-- [ ] Easy and Normal unchanged, and proven unchanged.
+- [x] **Named M05.6 tactical gaps addressed, with fixtures that show it.** Both of
+      them, for all three styles, on the boards that recorded them. _Removal
+      lethality_ — `goblin_swarm/bomb_the_body_it_defeats` and
+      `grave_sacrifice/knife_the_unit_it_kills` — closes because a removal target
+      is now priced by **how much of it the instruction removes**: the whole body
+      when the printed damage defeats it, and the fraction of its remaining Health
+      otherwise. _Blocking that preserves_ —
+      `containment_control/wall_eats_the_attack`,
+      `goblin_swarm/absorb_with_the_wall_not_the_bruiser` and
+      `grave_sacrifice/block_with_the_body_that_survives` — closes from two
+      corrections working together, and the split is recorded rather than
+      averaged: `block:preserve` puts the plan on the menu, and `ownLossAversion`
+      is what makes the plan win for a vector that values taking a body above
+      losing one. The five fixtures' `knownGaps` are **unchanged**, because Normal
+      still misses all five; what is new is `tacticalGaps`, which is empty for
+      each of them.
+- [x] **Only redacted observation used; no hidden state.** Three ways, because one
+      of them alone would be a promise. By _signature_: `tactics.ts`,
+      `candidates.ts` and `heuristic.ts` import no `MatchState` and touch no
+      `state.instances` or `state.players`, which a source scan checks. By
+      _construction_: a `TacticalProfile` is a frozen record of five booleans with
+      no way to acquire anything, and every refinement reads `BotObservation`
+      members that were already read — `view.instances`, `view.combat`,
+      `legal.blocking`, `barrierSpent` and `keywords`, all of them public board
+      facts. By _measurement_: every fixture is played through the same redacted
+      `PlayerView` a networked bot receives, and a live match asserts that no
+      observation the profile was handed contains a deck card or another seat's
+      hand.
+- [x] **Multiplayer target choice covered.**
+      `goblin_swarm/knife_the_seat_holding_the_killable_body` is the suite's first
+      **three-seat** board: the killable 2/1 belongs to one opponent and the 2/5 it
+      cannot defeat to another, so the choice is genuinely across seats and cannot
+      be posed on a two-seat table at all. All three styles hit the wrong seat at
+      the baseline and the right one under the profile. Three- and four-seat
+      matches are also played end to end under the profile, legally and without a
+      fallback firing.
+- [x] **Easy and Normal unchanged, and proven unchanged.** `baseline` turns every
+      refinement off, so the arithmetic is the arithmetic that shipped — and it is
+      measured anyway, at three grains. Per _pilot_: the config built through the
+      profile equals the published one plus the profile field. Per _decision_: all
+      twenty-four fixtures × three styles produce an identical list of decision
+      keys through `createPilot` and through the explicit baseline. Per _match_:
+      each style plays a whole match action-for-action identically at Normal **and
+      at Easy**, the second because a refinement that reached the selection would
+      move both.
+
+### What the profile actually corrects
+
+Five named refinements, each pointing at the defect it fixes rather than at the
+mechanism it uses. All five are off in `baseline`.
+
+| Refinement               | The defect it corrects                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `readsRemovalLethality`  | `rankChoiceOptions` orders by board value alone, so damage is aimed at the biggest body rather than the one it kills |
+| `offersPreservingBlocks` | `greedyBlocks` takes the smallest blocker that kills _or_ survives, which for a small attacker is the one that dies  |
+| `ownLossAversion`        | two independent trade weights make an even exchange worth points out of nothing for any vector where gain > loss     |
+| `modelsBarrier`          | `wouldDefeat` compares Attack against Health and stops, so an unspent Barrier reads as killable                      |
+| `modelsOverwhelm`        | a blocked attacker is treated as fully stopped, so chumping a 7/7 Overwhelm reads as seven damage saved              |
+
+Two of them deserve their reasoning written down, because both could have been a
+tuned number and deliberately are not.
+
+**Lethality is a fraction of the body, not a bonus.** A bonus over board value has
+no units: it would have to be re-tuned against every weight vector, and a big
+enough statline would out-scale it anyway. "How much of this body does the
+instruction remove" is the same sentence for all three styles — and it is read only
+where the pilot can see the amount on a card it has been shown. The source of a
+_resolving_ Spell is in neither `view.instances` nor any hand array, so it is
+resolved from the seat's own `card_played` log event, which is unredacted because
+playing a card is public. A dynamic amount, a `divided` total, a non-`instruction`
+origin or an effect index that does not land on a `deal_damage` all read as "cannot
+tell" and leave the valuation exactly where it was.
+
+**Loss aversion raises a coefficient and never lowers one.** The correction is
+`max(gain, loss)` rather than a new weight: a body you give up is never worth less
+to you than the same body would be worth taking from an opponent. That makes an
+even trade exactly zero for every vector, leaves a style that was already
+loss-averse — `aggressive` and `value` both are — completely untouched, and cannot
+make any pilot more willing to throw a body away than it already was. It is the one
+refinement that changes a number rather than a candidate list or a rule of the
+engine, and it is the reason `containment_control/wall_eats_the_attack` closes for
+`defensive`, whose vector was the one manufacturing the points.
+
+### The suite grew, and gained a facet
+
+`CALIBRATION_SUITE_VERSION` moves **1 → 2**: sixteen fixtures become twenty-four,
+and `attacking` joins the facet vocabulary. The facet is not decoration. Blocking
+was calibrated from the beginning and the other half of the same combat was not, so
+"which bodies go in" had no fixture anywhere while "which bodies come back" had
+three — and attacking is half of what this tranche changes. Adding it obliges
+**every** deck in the format to answer an attack question, because
+`calibrationGaps()` is what makes a facet mean anything.
+
+The eight new boards, and what they found:
+
+| Fixture                                                     | Facet     | What it found                                                               |
+| ----------------------------------------------------------- | --------- | --------------------------------------------------------------------------- |
+| `containment_control/bomb_the_body_the_barrier_is_not_on`   | targeting | all three aim into an unspent Barrier at the baseline; none under Hard      |
+| `goblin_swarm/knife_the_seat_holding_the_killable_body`     | targeting | the same lethality gap, across three seats                                  |
+| `grave_sacrifice/no_chump_against_overwhelm`                | blocking  | `defensive` and `value` chump a 7/7 Overwhelm for one damage; Hard does not |
+| `bastion_guardians/the_guardian_blocks_what_it_survives`    | blocking  | the Guardian obligation is already spent characteristically — no gap        |
+| `containment_control/send_only_what_cannot_be_answered`     | attacking | `aggressive` sends the body that trades; loss aversion keeps it home        |
+| `bastion_guardians/the_wall_does_not_walk_into_the_captain` | attacking | no gap: a 2/3 stays home against a ready 4/4 at both profiles               |
+| `goblin_swarm/swing_at_the_open_board`                      | attacking | no gap: an unblockable board is attacked into at both profiles              |
+| `grave_sacrifice/an_exhausted_wall_cannot_block`            | attacking | no gap: `exhausted` is read correctly at both profiles                      |
+
+Four of the eight record no gap at all, and that is deliberate: a suite whose every
+new board happened to show an improvement would be a suite chosen to show one.
+
+`CalibrationTable` gained a `seats` option and now opens through the engine's own
+`startTable`/`keepAllHands` rather than the two-seat `startMatch`/`keepBothHands`.
+A two-seat table is byte-identical — both derive the generator from the same seed
+string, and every pre-existing fixture produces the same decisions — which is what
+made it safe to widen at all.
+
+### Findings recorded rather than fixed
+
+- **The three strategic M05.6 gaps are untouched, and now say so twice.**
+  `bastion_guardians/armory_before_the_guardian`,
+  `grave_sacrifice/make_fodder_before_spending_it` and
+  `containment_control/hold_energy_for_the_counter` each carry a `tacticalGaps`
+  entry for all three styles naming M09.15 as the tranche that owns them. They are
+  the whole of what is left between this and a publishable Hard.
+- **A resolving Spell is not in `view.instances`.** `playerView` reveals a seat's
+  own hand from the `player.hand` array, and the engine removes a card from that
+  array while it resolves — so `PendingChoice.sourceInstanceId` is a **dangling
+  reference** for exactly the case a targeting choice is asked in. Not fixed here:
+  revealing the source instance would hand the seat being asked the printed
+  identity of a card it may never have been shown, which `choiceProvenance` refuses
+  on purpose (M05.3). The log is the correct source and is already public.
+- **`attack:safe` reads `blocker.attack >= remainingHealth` directly rather than
+  through `wouldDefeat`.** It therefore ignores the combat model, so a Barrier body
+  is not recognised as safe to attack with, and it also does not filter exhausted
+  blockers the way `scoreAttack` does. Left alone: routing it through `wouldDefeat`
+  would change the **baseline** filter, because the two disagree about a
+  zero-Attack `venom` blocker, and a shared correction was not required to close a
+  named gap.
+- **`greedyBlocks` still predicts the opponent's blocks without `preserve`.**
+  Modelling an opponent as playing the improved block would be a claim about
+  somebody else's difficulty. The combat _model_ is shared, because Barrier and
+  Overwhelm are arithmetic about the engine rather than a policy; the _pairing
+  preference_ is not.
+- **The Overwhelm and Barrier models are still the shape of the model they live
+  in.** `resolveHypotheticalCombat` reproduces the engine's split exactly for one
+  attacker against one blocker; multi-blocker Overwhelm allocation, damage shields
+  and `armored` are still approximated away, as they were before. No fixture claims
+  otherwise.
+
+### Versions
+
+`CALIBRATION_SUITE_VERSION` moves **1 → 2** — eight fixtures added and a facet
+added, which is precisely what it is documented to move for. A calibration citation
+made against suite 1 was made against an instrument that never asked an attack
+question.
+
+`TACTICS_REGISTRY_VERSION` is new and is **1**: which tactical profiles exist,
+pinned the way `AGENT_CLASS_REGISTRY_VERSION` pins a taxonomy. Each profile carries
+its own `version` beside it — both `'1.0.0'` — because a result citing
+`hard_tactical` needs to say _which_ one it flew, and improving a profile must move
+that and not the vocabulary.
+
+**Nothing in `@tcg/bot-config` moved.** `DIFFICULTY_REGISTRY_VERSION` stays 2 and
+`DIFFICULTY_REGISTRY.hard` stays `planned`, `plannedIn: 'M09.15'`, with a null
+`behaviorVersion` and a null `selection`. That is the tranche's exclusion made
+structural rather than promised: Hard has no difficulty version yet **because it is
+not a difficulty yet**, and `difficultySelection('hard')` still throws by name. A
+lobby's control is still built from `AVAILABLE_DIFFICULTIES`, so Hard remains
+absent rather than disabled, and `tactics.test.ts` asserts all of that from the side
+that would otherwise look like publication.
+
+**The three style pilots keep `1.1.0`.** `pilotId`/`pilotVersion` identify the
+weight vector and the scorer that reads it; which profile flew is recorded beside
+them in `config.tactics`, the same separation M09.13 made for difficulty. A profile
+improving must move the profile's version and not the pilot's, or a Normal result
+and a Hard result would become indistinguishable in a record.
+
+`PROTOCOL_VERSION` stays **9**, `BOT_CONFIG_SCHEMA_VERSION` stays 1,
+`PACING_CONFIG_VERSION` stays 1, `DECK_GENERATOR_VERSION` stays `'1'`,
+`SEED_DERIVATION_VERSION` stays 2, `AGENT_CLASS_REGISTRY_VERSION` stays 1 — Hard is
+a difficulty label and not an agent class, so nothing about what a run may be cited
+for changed — and `BOARD_TELEMETRY_VERSION`, `SPECTATOR_REPLAY_VERSION`,
+`MATCH_SCHEMA_VERSION` and `CARD_SCHEMA_VERSION` stay where they were.
+
+**`RULES_VERSION` stays `0.4.0`.** Every refinement either widens a candidate list
+with a plan the engine had already declared legal, or changes a number attached to a
+candidate that was on the list either way. No legal action, cost or resolution
+moved; `RulesConfig` still does not know what a tactical profile is; and the Barrier
+and Overwhelm work is a _bot_ learning what the engine already did, not the engine
+learning anything.
+
+**Compatibility.** Nothing durable changed shape, so nothing is migrated. No wire
+message, `SavedDeck`, match record, replay or experiment manifest gained a field —
+`PilotSpec` deliberately still names a pilot and nothing else, so an experiment
+cannot acquire a tactical profile and be cited for play quality under it. Several
+public functions gained optional trailing parameters (`wouldDefeat`,
+`resolveHypotheticalCombat`, `greedyBlocks`, `rankChoiceOptions`, `scoreCandidate`,
+`runFixture`, `compareCalibrationSuite`), each defaulted to the behaviour that
+shipped, so every existing call site compiles and behaves identically.
+`FixtureResult` and `CalibrationReport` gained a `tactics` field: a report that did
+not carry it could not be read at all once two profiles exist.
 
 ## M09.15 — Hard sequencing and resource improvements
 

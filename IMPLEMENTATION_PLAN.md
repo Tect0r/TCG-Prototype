@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.14       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.15       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,17 +160,64 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.14 — Hard tactical improvements.** Make Hard materially better at
-immediate combat and target decisions: address the named M05.6 calibration gaps
-for removal lethality and for blocking that preserves a better defender instead
-of blindly trading; prefer lethal and preventive outcomes using only redacted
-observation and legal candidates; add focused boards for attacks, blocks,
-Barrier, Overwhelm, Guardians, removal and multiplayer target choice; record the
-new pilot and difficulty version together with its support and evidence limits;
-preserve Easy and Normal behaviour unless a separately justified shared
-correction is required. Hard is not complete until M09.15 addresses the strategic
-gaps. The scope and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0914--hard-tactical-improvements).
+**M09.15 — Hard sequencing and resource improvements.** Complete Hard with better
+short-horizon sequencing and resource reservation: address the named M05.6 gaps
+for Relic-before-Unit sequencing, additional-sacrifice payoff, and holding Energy
+for a Reaction window, using bounded inspectable short-horizon evaluation rather
+than a reconstruction of hidden state or an unbounded search. Test all four Wave 1
+archetype plans on representative decisions and record the remaining known gaps
+rather than claiming solved play. Publish Hard only when it outperforms Normal on
+the declared fixture set without regressing legality or termination, and keep its
+evidence class honest. The scope and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0915--hard-sequencing-and-resource-improvements).
+
+**M09.14 built Hard's tactical half, and left Hard unpublished on purpose.** A
+difficulty now has two halves rather than one: M09.13's **selection** — which of
+the scored candidates is taken — and a **tactical profile**, which decides what the
+candidates are and what they score. Selection was the whole truth while the only
+difficulties were Normal and Easy, because both of those are differences over an
+identical scored list; Hard is not, because every one of the six decisions M05.6
+recorded is a defect in how a candidate is valued or in whether it was enumerated
+at all. `baseline` turns every refinement off, so "Normal is unchanged" is again
+true by construction — and it is measured at three grains anyway: the same pilot
+config, the same decision key on all twenty-four fixtures for all three styles, and
+the same whole match action for action at Normal **and at Easy**.
+
+Both named tactical gaps close, for all three styles. Removal is priced by **how
+much of the body the instruction removes** — the whole of it when the printed
+damage defeats it, the fraction of its remaining Health otherwise, and none of it
+against an unspent Barrier — which is a sentence that means the same thing for
+every weight vector, rather than a bonus that would need re-tuning against each.
+Blocking gains one named plan, `block:preserve`, that prefers a body which survives
+the block; and `ownLossAversion` raises the loss coefficient to the style's own
+gain coefficient wherever it was lower, which makes an even trade worth exactly
+zero instead of manufacturing points for a vector that values taking a body above
+losing one. Barrier and Overwhelm are modelled at last: the hypothetical combat had
+been treating an unspent Barrier as killable and a blocked 7/7 Overwhelm attacker
+as fully stopped, which is the one place the model was not merely coarse but wrong
+about a shipped keyword. Nothing here can invent a move — every refinement widens a
+list the engine already declared legal or changes a number on a candidate that was
+on it either way — and nothing reads outside the redacted observation, asserted by
+signature, by construction and by measurement.
+
+The calibration suite grew with it. `CALIBRATION_SUITE_VERSION` moves 1 → 2:
+sixteen boards become twenty-four, and **`attacking`** joins the facet vocabulary,
+because blocking had been calibrated from the beginning while the other half of the
+same combat had no fixture anywhere. Four of the eight new boards record no gap at
+all, deliberately — a suite whose every new board showed an improvement would be a
+suite chosen to show one — and one of them is the first **three-seat** board in the
+suite, so "multiplayer target choice" is a question actually posed rather than
+assumed. `TACTICS_REGISTRY_VERSION` is new and is 1.
+
+**Hard is still `planned` in the difficulty registry**, with a null behaviour
+version and a null selection, and `difficultySelection('hard')` still throws by
+name. That is the exclusion made structural rather than promised: M09.15 owns the
+strategic half — sequencing, additional-sacrifice payoff and holding Energy for a
+window — and those three fixtures now carry a second recorded gap naming it. Until
+both halves exist there is no Hard to publish, so `DIFFICULTY_REGISTRY_VERSION`
+stays 2, `PROTOCOL_VERSION` stays 9, `RULES_VERSION` stays `0.4.0`, and the three
+style pilots keep `1.1.0` — a profile improving must move the profile's version and
+not the pilot's.
 
 **M09.13 gave the lobby a second difficulty, and gave difficulty a definition.**
 A difficulty is now exactly one thing — **which of the scored candidates the bot

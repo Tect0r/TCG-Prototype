@@ -66,6 +66,8 @@ import {
   PILOT_AGENT_CLASSES,
   PILOT_IDS,
   RANDOM_LEGAL_VERSION,
+  TACTICAL_PROFILE_IDS,
+  TACTICS_REGISTRY_VERSION,
   VALUE_VERSION,
   type PilotId,
 } from '@tcg/bot-interface';
@@ -542,6 +544,11 @@ function versionGroups(): readonly VersionGroup[] {
           constant: 'CALIBRATION_SUITE_VERSION',
           value: String(CALIBRATION_SUITE_VERSION),
           pins: 'The tactical fixtures a calibration standing was measured on.',
+        },
+        {
+          constant: 'TACTICS_REGISTRY_VERSION',
+          value: String(TACTICS_REGISTRY_VERSION),
+          pins: `Which tactical profiles a pilot can be built with — the scoring half of a difficulty. Today: ${TACTICAL_PROFILE_IDS.join(', ')}. A profile's own behaviour version moves separately.`,
         },
         {
           constant: 'STALL_DEFINITION_VERSION',

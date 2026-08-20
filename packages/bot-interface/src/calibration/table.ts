@@ -28,11 +28,11 @@ import {
   deployUnit,
   giveCard,
   giveDiscard,
-  keepBothHands,
+  keepAllHands,
   setEnergy,
   setHealth,
   stackDeck,
-  startMatch,
+  startTable,
 } from '@tcg/rules-engine/test-fixtures';
 import type { BotDecision, BotObservation, BotPolicy, DecisionFamily } from '../types.js';
 
@@ -73,12 +73,23 @@ export interface AskedDecision {
 }
 
 export interface TableOptions {
-  /** The precon whose Commander and 40 cards both seats run. */
+  /** The precon whose Commander and 40 cards every seat runs. */
   readonly preconId: string;
   readonly database?: CardDatabase;
   readonly config?: RulesConfig;
-  /** Starting Energy for both seats. */
+  /** Starting Energy for every seat. */
   readonly energy?: number;
+  /**
+   * How many seats the table holds. Two unless a fixture is about a decision
+   * that only exists with more (M09.14).
+   *
+   * "Which opponent do I aim this at" is exactly such a decision: with one
+   * opponent there is no choice to get wrong, so a multiplayer targeting fixture
+   * cannot be posed on a two-seat table at all. Everything else stays as it was —
+   * the pilot is `player_1`, the scripted opponent script answers for every other
+   * seat, and `foe` still names the first of them.
+   */
+  readonly seats?: number;
 }
 
 let cachedDatabase: CardDatabase | undefined;
@@ -103,15 +114,23 @@ export class CalibrationTable {
   /** The pilot under test. Always the active player on turn 1. */
   readonly self: PlayerId = 'player_1';
   readonly foe: PlayerId = 'player_2';
+  /** The third seat, on a table that has one. `null` on a two-seat table. */
+  readonly otherFoe: PlayerId | null;
   readonly preconId: string;
 
   state: MatchState;
   private readonly recorded: AskedDecision[] = [];
 
-  private constructor(state: MatchState, context: ApplyContext, preconId: string) {
+  private constructor(
+    state: MatchState,
+    context: ApplyContext,
+    preconId: string,
+    otherFoe: PlayerId | null,
+  ) {
     this.state = state;
     this.context = context;
     this.preconId = preconId;
+    this.otherFoe = otherFoe;
   }
 
   static open(options: TableOptions): CalibrationTable {
@@ -119,23 +138,30 @@ export class CalibrationTable {
     const config = options.config ?? DEFAULT_RULES_CONFIG;
     const context: ApplyContext = { database, config };
 
-    // Both seats run the precon, so a fixture about one deck's characteristic
+    // Every seat runs the precon, so a fixture about one deck's characteristic
     // decision is played against the kind of board that deck actually meets.
     const deck = preconMatchDeck(options.preconId);
-    let state = keepBothHands(startMatch({ database, config, decks: [deck, deck] }), context);
+    const seats = options.seats ?? 2;
+    if (seats < 2 || seats > 4) {
+      throw new Error(`A calibration table holds two to four seats, not ${seats}.`);
+    }
+    const state = keepAllHands(startTable(seats, { database, config, deck }), context);
 
-    const table = new CalibrationTable(state, context, options.preconId);
-    table.state = state;
+    const table = new CalibrationTable(
+      state,
+      context,
+      options.preconId,
+      seats > 2 ? 'player_3' : null,
+    );
     // The opening hands are dealt from a shuffled deck, so they are noise a
     // fixture never wanted: every card the pilot is holding has to be one the
     // fixture put there. They go to the bottom of the deck rather than being
     // deleted, so deck size — and therefore the deck-out clock — stays honest.
-    table.buryHand(table.self);
-    table.buryHand(table.foe);
-
     const energy = options.energy ?? FIXTURE_ENERGY;
-    state = setEnergy(table.state, 'player_1', energy);
-    table.state = setEnergy(state, 'player_2', energy);
+    for (const playerId of table.state.seatOrder) {
+      table.buryHand(playerId);
+      table.state = setEnergy(table.state, playerId, energy);
+    }
     return table;
   }
 
@@ -521,6 +547,18 @@ function familyOf(action: Action): DecisionFamily {
 export function blockersIn(decision: AskedDecision): readonly InstanceId[] {
   if (decision.action.type !== 'assign_blockers') return [];
   return decision.action.blocks.map((block) => block.blockerInstanceId);
+}
+
+/**
+ * The attackers a declaration actually sent, in the pilot's own order.
+ *
+ * The attacking twin of `blockersIn`, and for the same reason: an attack fixture
+ * asserts on the *plan* — "the body it cannot answer went and the other stayed" —
+ * rather than on the wreckage, which several different plans can produce.
+ */
+export function attackersIn(decision: AskedDecision): readonly InstanceId[] {
+  if (decision.action.type !== 'declare_attackers') return [];
+  return decision.action.attacks.map((attack) => attack.attackerInstanceId);
 }
 
 /**
