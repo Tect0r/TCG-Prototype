@@ -9,7 +9,7 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `1ac9d56e49287069a3310abdfa2f492d004845cf` |
+| Commit           | `39d7bdb44219bf8b24a82bbb5847a4556c3e3deb` |
 | Working tree     | clean                                      |
 | Taken on         | 2026-08-20                                 |
 | Node             | v24.15.0                                   |
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 74      | 1635     |
+| packages       | 75      | 1770     |
 | scripts        | 4       | 69       |
 | server         | 13      | 280      |
 | simulator      | 23      | 433      |
 | web-client     | 19      | 236      |
-| **total**      | **133** | **2653** |
+| **total**      | **134** | **2788** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -101,20 +101,21 @@ What a bot seat is configured by. Independent of the play contract on purpose (A
 
 Classifications a citation is made against. A move here re-judges evidence rather than refusing it.
 
-| Constant                          | Value | Pins                                                                  |
-| --------------------------------- | ----- | --------------------------------------------------------------------- |
-| `SUPPORT_REGISTRY_VERSION`        | 2     | How well each mechanic is supported, in four dimensions.              |
-| `ARCHETYPE_REGISTRY_VERSION`      | 1     | The archetype vocabulary and the roles each one requires.             |
-| `KEYWORD_REGISTRY_SCHEMA_VERSION` | 1     | The keyword registry entry shape.                                     |
-| `AGENT_CLASS_REGISTRY_VERSION`    | 1     | Which agent class may make which evidence claim.                      |
-| `CALIBRATION_SUITE_VERSION`       | 1     | The tactical fixtures a calibration standing was measured on.         |
-| `STALL_DEFINITION_VERSION`        | 1     | The rule a quiet round is judged a stall by.                          |
-| `PERTURBATION_PROFILE_VERSION`    | 1.0.0 | How a pilot is perturbed for a robustness arm.                        |
-| `DECK_GENERATOR_VERSION`          | 1     | The construction procedure a generated deck cites. Runs on node only. |
-| `pilot random_legal`              | 1.0.0 | Decision procedure; agent class `random_legal`.                       |
-| `pilot aggressive`                | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                  |
-| `pilot defensive`                 | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                  |
-| `pilot value`                     | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                  |
+| Constant                          | Value | Pins                                                                                                                                                                      |
+| --------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUPPORT_REGISTRY_VERSION`        | 2     | How well each mechanic is supported, in four dimensions.                                                                                                                  |
+| `ARCHETYPE_REGISTRY_VERSION`      | 1     | The archetype vocabulary and the roles each one requires.                                                                                                                 |
+| `KEYWORD_REGISTRY_SCHEMA_VERSION` | 1     | The keyword registry entry shape.                                                                                                                                         |
+| `AGENT_CLASS_REGISTRY_VERSION`    | 1     | Which agent class may make which evidence claim.                                                                                                                          |
+| `CALIBRATION_SUITE_VERSION`       | 2     | The tactical fixtures a calibration standing was measured on.                                                                                                             |
+| `TACTICS_REGISTRY_VERSION`        | 1     | Which tactical profiles a pilot can be built with — the scoring half of a difficulty. Today: baseline, hard_tactical. A profile's own behaviour version moves separately. |
+| `STALL_DEFINITION_VERSION`        | 1     | The rule a quiet round is judged a stall by.                                                                                                                              |
+| `PERTURBATION_PROFILE_VERSION`    | 1.0.0 | How a pilot is perturbed for a robustness arm.                                                                                                                            |
+| `DECK_GENERATOR_VERSION`          | 1     | The construction procedure a generated deck cites. Runs on node only.                                                                                                     |
+| `pilot random_legal`              | 1.0.0 | Decision procedure; agent class `random_legal`.                                                                                                                           |
+| `pilot aggressive`                | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                                                                                                                      |
+| `pilot defensive`                 | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                                                                                                                      |
+| `pilot value`                     | 1.1.0 | Decision procedure; agent class `generic_heuristic`.                                                                                                                      |
 
 ## Content
 
@@ -157,18 +158,18 @@ plan-generated deck keeps free slots no generator setting can take away.
 
 ## Coverage
 
-| Instrument                    | Reading                                 |
-| ----------------------------- | --------------------------------------- |
-| Card behaviour contracts      | 155 of 155 cards in `precon_wave_1`     |
-| Tactical calibration fixtures | 16, of which 8 record a known pilot gap |
-| Glossary entries              | 34                                      |
-| Rulebook sections             | 18                                      |
+| Instrument                    | Reading                                  |
+| ----------------------------- | ---------------------------------------- |
+| Card behaviour contracts      | 155 of 155 cards in `precon_wave_1`      |
+| Tactical calibration fixtures | 24, of which 12 record a known pilot gap |
+| Glossary entries              | 34                                       |
+| Rulebook sections             | 18                                       |
 
 | Pilot        | Fixtures it misses |
 | ------------ | ------------------ |
-| `aggressive` | 7                  |
-| `defensive`  | 8                  |
-| `value`      | 8                  |
+| `aggressive` | 10                 |
+| `defensive`  | 11                 |
+| `value`      | 11                 |
 
 ## Mechanic support
 
@@ -203,7 +204,7 @@ No match record observes (31):
 - `precon_goblin_swarm` has 41 colour-legal cards for a 40-card deck (1 spare). A package-scale mutation has nowhere to put what it frees.
 - `precon_grave_sacrifice` has 42 colour-legal cards for a 40-card deck (2 spare). A package-scale mutation has nowhere to put what it frees.
 - No pilot in this build implements agent class(es): archetype_aware, human_playtest. Every claim resting on one is declined by every run this build can produce.
-- 8 of 16 calibration fixtures record a pilot that misses the characteristic decision. The record is asserted in both directions, so a closed gap fails as loudly as a regression.
+- 12 of 24 calibration fixtures record a pilot that misses the characteristic decision. The record is asserted in both directions, so a closed gap fails as loudly as a regression.
 
 ## Question ledger
 
