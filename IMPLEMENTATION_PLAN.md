@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.12       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.13       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,18 +160,51 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.12 — Server bot-delay scheduler.** Make live bots wait for the fraction
-M09.11 configured, safely: classify each opportunity as ordinary, pending choice
-or Reaction from structured state and view data; schedule from the applicable
-budget and percentage using an injectable monotonic clock; at expiry rebuild the
-current observation and legal actions and decide **then**, never storing a chosen
-action during the wait; cancel obsolete work on sequence or eligibility change,
-reconfiguration, bot removal, a human action where applicable, elimination and
-match end; run independent bot delays concurrently where the engine permits
-independent choices; record intended and actual delay without feeding clock
-values into pilot RNG or engine state. The simulator and Spectator stay
-delay-free. The scope and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0912--server-bot-delay-scheduler).
+**M09.13 — Difficulty registry, Easy, and Normal.** Ship two honest, observably
+different difficulty levels: Normal stays decision-equivalent to the current
+published heuristic for the same style, observation and RNG seed unless a
+versioned correction is genuinely required, and Easy is deterministic bounded
+suboptimality over scored legal candidates — not uniform random, not an illegal
+action, not free concession, not deliberate non-participation — with its
+candidate band, temperature or error budget defined explicitly and versioned.
+Aggressive, defensive and value remain independent styles; Automatic is added
+only when it has a deterministic documented mapping. Hard stays visible only as
+unavailable until M09.15. The scope and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0913--difficulty-registry-easy-and-normal).
+
+**M09.12 made the bots actually wait.** A table's budgets and a seat's percentage
+have been on the wire since M09.11; this tranche spends them. Each opportunity is
+classified from the engine's own `LegalActions` — a pending choice, then a
+mulligan, then a Reaction window, then the ordinary case, in `candidateActions`'
+own precedence and from no display text — and `CATEGORY_BY_DECISION_FAMILY` is
+total over the decision families, so a new family cannot appear without somebody
+deciding whether it is the bot's own turn or somebody else's window. Blocking is
+deliberately **not** a Reaction: the five-second budget is named for the mechanic
+rather than for "anything that happens on another player's turn". The wait itself
+is an **opportunity rather than a stored action**, and that is a shape rather
+than a promise — `PendingDelay` has a category, a length, a start reading and a
+cancel, `FIELDS_A_SCHEDULED_DELAY_NEVER_HAS` names the five members it may never
+grow, and a source scan checks the interface against them. At expiry the loop
+rebuilds the state, the legality and the redacted observation and asks the pilot
+**then**, which a test proves by moving the board five sequences while the timer
+runs. Independent waits overlap rather than queue, so a Reaction window costs two
+bots the slower of them and not the sum. Obsolete work is cancelled on
+eligibility change, elimination, match end, lobby closure and `stop()`; a change
+of budget is a _reschedule_ rather than a cancellation, and a still-valid wait is
+deliberately not restarted by somebody else's action, because a bot that
+recounted from every sequence change would starve at a busy table. Reconfiguring
+or removing a bot mid-match is a trigger that **cannot arise** rather than one
+that fires — every bot message goes through one host-and-before-start preamble —
+and a test asserts the three refusals against a live wait. The one seam that
+could have leaked is closed by measurement rather than by care: the same seed
+plays the identical match paced and unpaced, timers three milliseconds late and
+all, so no clock reading reached a pilot's stream or the engine. Both pieces of
+player-facing text M09.11 shipped as knowingly temporary are now correct — the
+panel says bots wait for the seconds shown and that 0% still answers immediately,
+and the result summary says which of the two this table was. Nothing moved:
+`PROTOCOL_VERSION` stays 9, `PACING_CONFIG_VERSION` stays 1, and `RULES_VERSION`
+stays `0.4.0`, because a bot waiting is still not a rules change and Q8 is still
+open.
 
 **M09.11 configured the timing without spending it.** A table now has two bot
 pacing budgets — 30 seconds for a decision or a choice, 5 for a Reaction window —

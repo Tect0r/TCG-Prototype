@@ -70,14 +70,14 @@ import {
  * is exactly how M09.6, M09.9 and M09.10 each turned on a deck mode. All four
  * deck modes are now offered; difficulty is not.
  *
- * **Timing is configured and does not yet take effect** (M09.11). The budgets
- * belong to the table and the percentage to the bot, so they are two controls
- * and not one, and every percentage prints the seconds it implies from
- * `botDelayMs` — the same arithmetic M09.12's scheduler will use. This build
- * still submits a bot's decision immediately; the panel says so rather than
- * letting a host set 50% and time nothing. They are **bot pacing references,
- * not human timers**: nothing here times a person out of anything, and
- * open-questions.md Q8 stays open (ADR 0024 §4).
+ * **Timing is configured here and spent by the server** (M09.11, M09.12). The
+ * budgets belong to the table and the percentage to the bot, so they are two
+ * controls and not one, and every percentage prints the seconds it implies from
+ * `botDelayMs` — the same arithmetic the scheduler calls, rather than a second
+ * copy of it in a screen. Since M09.12 those seconds are a real wait, so the
+ * panel states the behaviour instead of warning that the control is inert. They
+ * are still **bot pacing references, not human timers**: nothing here times a
+ * person out of anything, and open-questions.md Q8 stays open (ADR 0024 §4).
  *
  * **Up to three bots, and never a table without a person** (M09.7). One form per
  * seated bot, each with its own labels, plus one form for the next one.
@@ -1225,12 +1225,12 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
           : `${botSeats.length} of this table’s ${lobby.maxSeats} seats ${botSeats.length === 1 ? 'holds a bot' : 'hold bots'}. You can seat up to ${MAX_BOT_SEATS}; the rest of the table is people.`}
       </p>
 
-      {/* Honest about what this build does with the numbers below. A host who
-          set 50% and timed nothing would rightly conclude the control was
-          decoration; M09.12 is what makes the server wait. */}
-      <p className="lobby__hint lobby__hint--warn">
-        Timings are recorded with the match and locked when it starts, but bots still answer
-        immediately in this build.
+      {/* Says what the numbers below now do. Until M09.12 this was a warning
+          that they did nothing; it is a statement of behaviour now, and the
+          "0% is instant" half is here because that is still the default. */}
+      <p className="lobby__hint">
+        Bots wait for the seconds shown against each seat before deciding. Timings are locked when
+        the match starts, and a seat left at 0% answers immediately.
       </p>
 
       <PacingBudgetsForm budgets={lobby.botPacing} />

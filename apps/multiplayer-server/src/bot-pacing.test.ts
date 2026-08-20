@@ -31,10 +31,12 @@ import { isBotSeat, type Lobby } from './lobby.js';
 import { MatchServer, type ScheduleTimer, type ServerConnection } from './match-server.js';
 
 /**
- * Bot pacing configuration (M09.11).
+ * Bot pacing configuration (M09.11, with M09.12's inversion).
  *
- * Five claims, and none of them is that anything waits. This tranche configures
- * the numbers and records them; M09.12 owns the scheduler that spends them.
+ * Five claims about the *configuration*: where the budgets live, who may change
+ * them, when they lock, and what survives what. The scheduler that spends them
+ * is M09.12's and is asserted to the millisecond in `bot-delay.test.ts`; claim 5
+ * below is the seam between the two, and it changed when that tranche landed.
  *
  * 1. A table has budgets, they default to the milestone's dials, and only the
  *    host changes them — before the match, by name, through the same three
@@ -45,9 +47,11 @@ import { MatchServer, type ScheduleTimer, type ServerConnection } from './match-
  *    the match locked rather than whatever the live record says afterwards.
  * 4. They survive everything short of the lobby: seats coming and going, a table
  *    resize, a reconfigured bot, and a host reconnecting.
- * 5. **Nothing waits yet.** A bot configured at 100% still acts inside the same
- *    wake, and the server schedules no timer to make it wait — which is the
- *    tranche's own exclusion, asserted rather than promised.
+ * 5. **The configuration is now spent.** A bot at 100% schedules exactly the
+ *    29 750 ms the panel printed and applies nothing until it expires, and a bot
+ *    at 0% still acts inside the same wake and schedules nothing at all. Until
+ *    M09.12 the first of those was the tranche's own exclusion; it is now the
+ *    behaviour, and the 0% half is what keeps every earlier match unchanged.
  *
  * And one non-regression: open-questions.md Q8 is still open, and no budget has
  * appeared in `RulesConfig`. A bot waiting is not a rules change (ADR 0024 §4).
@@ -107,8 +111,8 @@ interface Harness {
   readonly server: MatchServer;
   readonly host: FakeConnection;
   readonly inviteCode: string;
-  /** Every timer the server has scheduled, of any kind. */
-  readonly scheduled: { count: number };
+  /** Every timer the server has scheduled, of any kind, and for how long. */
+  readonly scheduled: { count: number; readonly delaysMs: number[] };
   send(connection: FakeConnection, message: ClientMessageInput): void;
   join(name: string): FakeConnection;
   lobby(): Lobby;
@@ -117,9 +121,10 @@ interface Harness {
 
 function createHarness(maxSeats = 2): Harness {
   let counter = 0;
-  const scheduled = { count: 0 };
-  const schedule: ScheduleTimer = () => {
+  const scheduled = { count: 0, delaysMs: [] as number[] };
+  const schedule: ScheduleTimer = (delayMs) => {
     scheduled.count += 1;
+    scheduled.delaysMs.push(delayMs);
     return () => {};
   };
   const server = new MatchServer({
@@ -442,10 +447,10 @@ describe('the budgets outlive everything short of the lobby', () => {
   });
 });
 
-/* -------------------------------------------------- nothing waits yet (M09.12) */
+/* ---------------------------------------------- the configuration is spent (M09.12) */
 
-describe('configuring a delay does not create one', () => {
-  it('acts inside the same wake at 100%, and schedules no timer to wait', async () => {
+describe('a configured delay is now an actual wait', () => {
+  it('schedules the 29.75 s it printed at 100%, and applies nothing until it expires', async () => {
     const harness = createHarness();
     harness.send(harness.host, {
       type: 'add_bot',
@@ -459,9 +464,33 @@ describe('configuring a delay does not create one', () => {
 
     const seat = harness.lobby().seats.get('seat_2');
     if (!seat || !isBotSeat(seat)) throw new Error('Seat 2 does not hold a bot.');
-    // It decided, and it did so without anything having been scheduled: the
-    // only timer this server owns is the disconnect window, and nobody has
-    // disconnected. M09.12 is what turns the configured 29.75 s into a wait.
+    // Until M09.11 this seat acted inside the same wake and scheduled nothing.
+    // M09.12 spends the budget the panel has been printing since: one timer,
+    // for exactly the number `botDelayMs` gives the same configuration, and no
+    // action applied while it runs. This harness's timers never fire, which is
+    // why "applied nothing" here means "applied nothing yet".
+    expect(harness.scheduled.delaysMs).toEqual([
+      botDelayMs({ percent: 100, reactionPercent: 100 }, DEFAULT_BOT_PACING_BUDGETS, 'ordinary'),
+    ]);
+    expect(harness.scheduled.delaysMs).toEqual([29_750]);
+    expect(seat.appliedActions.size).toBe(0);
+  });
+
+  it('still acts inside the same wake at 0%, and schedules no timer at all', async () => {
+    const harness = createHarness();
+    harness.send(harness.host, {
+      type: 'add_bot',
+      setup: setupFor({ pacing: IMMEDIATE_BOT_PACING }),
+    });
+    harness.send(harness.host, { type: 'submit_precon', preconId: OTHER_PRECON_ID });
+    harness.send(harness.host, { type: 'set_ready', ready: true });
+
+    await harness.server.whenBotsIdle();
+
+    const seat = harness.lobby().seats.get('seat_2');
+    if (!seat || !isBotSeat(seat)) throw new Error('Seat 2 does not hold a bot.');
+    // The M09.4 path is unchanged, which is what keeps every match written
+    // before this tranche running exactly as it did.
     expect(seat.appliedActions.size).toBeGreaterThan(0);
     expect(harness.scheduled.count).toBe(0);
   });

@@ -80,6 +80,12 @@ import {
   type Lobby,
   type Seat,
 } from './lobby.js';
+import {
+  defaultMonotonicClock,
+  defaultSchedule,
+  type MonotonicClock,
+  type ScheduleTimer,
+} from './scheduling.js';
 
 /**
  * The provenance a bot seat carries, or `null` when it plays a list it was given.
@@ -108,7 +114,7 @@ export interface ServerConnection {
   close(): void;
 }
 
-export type ScheduleTimer = (delayMs: number, callback: () => void) => () => void;
+export type { MonotonicClock, ScheduleTimer } from './scheduling.js';
 
 export interface MatchServerOptions {
   readonly database: CardDatabase;
@@ -116,8 +122,18 @@ export interface MatchServerOptions {
   readonly deckFormat?: DeckFormatConfig;
   /** Injectable so invite codes and tokens are deterministic in tests. */
   readonly random?: () => number;
-  /** Injectable so the disconnect window can be driven without waiting. */
+  /**
+   * Injectable so the disconnect window and every bot delay can be driven
+   * without waiting. One seam for both, because there is one server owning both
+   * and a test that had to stub two of them would eventually stub one.
+   */
   readonly schedule?: ScheduleTimer;
+  /**
+   * A monotonic reading, used only to record how long a bot actually waited
+   * (M09.12). Separate from `now` on purpose: `now` is a wall clock, and a wall
+   * clock adjusted mid-match measures an elapsed wait as a negative number.
+   */
+  readonly monotonicNow?: MonotonicClock;
   /** Injectable so a match seed is reproducible in tests. */
   readonly seedFor?: (inviteCode: string) => string;
   readonly now?: () => number;
@@ -152,11 +168,6 @@ interface Attachment {
   readonly seat: HumanSeat;
 }
 
-const defaultSchedule: ScheduleTimer = (delayMs, callback) => {
-  const handle = setTimeout(callback, delayMs);
-  return () => clearTimeout(handle);
-};
-
 export class MatchServer {
   readonly #database: CardDatabase;
   readonly #config: RulesConfig;
@@ -165,6 +176,7 @@ export class MatchServer {
   readonly #schedule: ScheduleTimer;
   readonly #seedFor: (inviteCode: string) => string;
   readonly #now: () => number;
+  readonly #monotonicNow: MonotonicClock;
   readonly #yieldToScheduler: (() => Promise<void>) | undefined;
   readonly #botDecisionLimit: number | undefined;
   readonly #botPilotFor: ((seat: BotRunnerSeat) => BotPolicy) | undefined;
@@ -184,6 +196,7 @@ export class MatchServer {
     this.#random = options.random ?? Math.random;
     this.#schedule = options.schedule ?? defaultSchedule;
     this.#now = options.now ?? Date.now;
+    this.#monotonicNow = options.monotonicNow ?? defaultMonotonicClock;
     this.#yieldToScheduler = options.yieldToScheduler;
     this.#botDecisionLimit = options.botDecisionLimit;
     this.#botPilotFor = options.botPilotFor;
@@ -934,6 +947,11 @@ export class MatchServer {
    * map, `applyAction`, then a broadcast — because "a bot acts through the same
    * path a human does" is only true if there is one path
    * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §2).
+   *
+   * It is also given the budgets this match **locked** a moment ago (M09.12),
+   * rather than the lobby's live record. `startMatch` freezes them immediately
+   * before calling this, and passing the frozen value means a bot cannot be paced
+   * by a number the result will not be able to quote.
    */
   private startBots(lobby: Lobby, seed: string): void {
     const bots = botSeatsOf(lobby);
@@ -943,6 +961,9 @@ export class MatchServer {
       matchSeed: seed,
       database: this.#database,
       config: this.#config,
+      budgets: lobby.lockedPacing ?? lobby.pacing,
+      schedule: this.#schedule,
+      now: this.#monotonicNow,
       seats: bots.map((seat) => ({
         seatId: seat.seatId,
         playerId: PLAYER_ID_BY_SEAT[seat.seatId],

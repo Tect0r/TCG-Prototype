@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { loadBundledCardData } from '@tcg/card-data';
 import {
   DEFAULT_BOT_PACING_BUDGETS,
+  IMMEDIATE_BOT_PACING,
   MAX_BUDGET_SECONDS,
   PACING_CONFIG_VERSION,
   PACING_SAFETY_MARGIN_MS,
@@ -383,11 +384,16 @@ describe('one bot’s timing', () => {
     });
   });
 
-  it('is honest that this build does not wait yet', async () => {
+  it('says the numbers are a real wait, and what 0% means', async () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    expect(within(panel()).getByText(/still answer immediately in this build/)).toBeInTheDocument();
+    // M09.11 shipped this line as a warning that the control did nothing.
+    // M09.12 spends it, so the panel states the behaviour — and still says what
+    // the default does, because 0% is what a new bot is seated at.
+    expect(within(panel()).getByText(/Bots wait for the seconds shown/)).toBeInTheDocument();
+    expect(within(panel()).getByText(/a seat left at 0% answers immediately/)).toBeInTheDocument();
+    expect(within(panel()).queryByText(/still answer immediately in this build/)).toBeNull();
   });
 });
 
@@ -454,20 +460,17 @@ describe('once the match has started', () => {
 /* --------------------------------------------------------- the result summary */
 
 describe('the pacing summary beside the result', () => {
-  async function board(complete: boolean): Promise<Harness> {
+  async function board(
+    complete: boolean,
+    seatPacing: BotPacing = { percent: 50, reactionPercent: null },
+  ): Promise<Harness> {
     const harness = renderApp();
     await enterLobby(
       harness,
-      lobby(
-        [
-          humanSeat({ ready: true, deckLegal: true }),
-          botSeat({ percent: 50, reactionPercent: null }),
-        ],
-        {
-          status: 'in_match',
-          canStart: false,
-        },
-      ),
+      lobby([humanSeat({ ready: true, deckLegal: true }), botSeat(seatPacing)], {
+        status: 'in_match',
+        canStart: false,
+      }),
     );
 
     const deck: MatchDeck = {
@@ -511,7 +514,17 @@ describe('the pacing summary beside the result', () => {
     expect(within(summary).getByText(/Budgets locked at start: 30 s/)).toBeInTheDocument();
     expect(within(summary).getByText(/pace bots only/i)).toBeInTheDocument();
     expect(within(summary).getByText(/Bot 2: 50% of 30 s — 15 s/)).toBeInTheDocument();
-    // And the honest sentence: this build recorded the timing without waiting.
-    expect(within(summary).getByText(/answered immediately/)).toBeInTheDocument();
+    // And the honest sentence. Until M09.12 it said the timings were recorded
+    // and not waited; a 50% seat now really did wait for them.
+    expect(within(summary).getByText(/waited for the times above/)).toBeInTheDocument();
+  });
+
+  it('says a table of instant bots waited for nothing', async () => {
+    await board(true, IMMEDIATE_BOT_PACING);
+
+    const summary = await screen.findByLabelText('Bot pacing');
+    // 0% is still the default a bot is seated at, so this is the sentence most
+    // first matches will carry, and it must not claim a wait that never was.
+    expect(within(summary).getByText(/waited for nothing/)).toBeInTheDocument();
   });
 });

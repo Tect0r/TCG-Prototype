@@ -1808,7 +1808,7 @@ in-memory and does not outlive the process, so there is no stored lobby to read
 back without budgets. The handshake refuses a v8 client, which is the intended
 and only observable break.
 
-## M09.12 — Server bot-delay scheduler
+## M09.12 — Server bot-delay scheduler — **done (2026-08-20)**
 
 Make live bots wait for the configured fraction, safely: classify each
 opportunity as ordinary, pending choice or Reaction from structured state and
@@ -1827,12 +1827,153 @@ deterministic outcome, and simulator and Spectator non-regression tests.
 
 ### Checklist
 
-- [ ] Decision categories classified from structured data.
-- [ ] Injectable clock; every delay tested without waiting.
-- [ ] Decision made at expiry, never stored during the wait.
-- [ ] Obsolete work cancelled on every named trigger.
-- [ ] Clock values never reach pilot RNG or engine state.
-- [ ] Simulator and Spectator remain full speed.
+- [x] **Decision categories classified from structured data.**
+      `classifyDecisionCategory` lives in `@tcg/bot-interface` beside
+      `candidateActions`, because the category is a statement about _what the
+      pilot is being asked_ and that is the question `candidateActions` already
+      answers. It reads the engine's own `LegalActions` and nothing else — no
+      display text, no card name, no rendered view — in `candidateActions`' own
+      precedence: a pending choice first, then a mulligan, then a Reaction
+      window, then the ordinary case. `CATEGORY_BY_DECISION_FAMILY` is total over
+      `DECISION_FAMILIES`, so a new family cannot be added without deciding
+      whether it is somebody else's window or the bot's own turn, and
+      `decisionCategoryDisagreement` cross-checks the answer against the families
+      the candidates actually came out as — run over every board of a complete
+      driven match rather than over a fixture. Only the two Reaction families are
+      `reaction`: `assign_blockers` deliberately is not, because blocking answers
+      a declaration rather than an open Reaction window, and the five-second
+      budget is named for the mechanic rather than for "anything on somebody
+      else's turn".
+- [x] **Injectable clock; every delay tested without waiting.** The server's two
+      time seams are now one file, `scheduling.ts`, holding `ScheduleTimer` and
+      `MonotonicClock`: the disconnect window and every bot delay take both from
+      there, so a test that would have had to stub two of them cannot stub one.
+      They are deliberately two values — the timer says _when to run something_,
+      the clock says _what time it is now_ and is asked nothing but "how long was
+      that", which is why it is monotonic rather than a wall clock an NTP
+      adjustment could run backwards. The whole delay suite runs on a hand-driven
+      timer wheel, so a 29 750 ms decision is asserted to the millisecond and
+      costs the suite nothing.
+- [x] **Decision made at expiry, never stored during the wait.** `PendingDelay`
+      has a category, an intended length, a start reading and a cancel, and
+      nothing else: `FIELDS_A_SCHEDULED_DELAY_NEVER_HAS` names the five members
+      it must never grow and a source scan checks the interface against them —
+      the same treatment `FIELDS_A_BOT_CONTROLLER_NEVER_HAS` has had since M09.3.
+      At expiry the pump comes back around and rebuilds the state, the legality
+      and the redacted observation from scratch before the pilot is asked
+      anything; a test moves the board five sequences while the timer runs and
+      requires the pilot to have been asked nothing until then, and then to have
+      been asked about the later board.
+- [x] **Obsolete work cancelled on every named trigger.** Eligibility change,
+      elimination, match end and lobby closure each drop the outstanding wait,
+      with `lastDelayCancellation` naming which; `stop()` cancels everything,
+      which matters on a long-running process because a live timer holds a whole
+      `MatchState`. A change of _category_ is a reschedule rather than a
+      cancellation — an ordinary decision that became a Reaction window is
+      counted under `delaysRescheduled` and restarted on the other budget — and a
+      still-valid wait is deliberately **not** restarted by somebody else's
+      action, because a bot that recounted from every sequence change would
+      starve at a busy table. Reconfiguration and bot removal are triggers that
+      **cannot arise** rather than triggers that fire: every bot message goes
+      through the one `hostLobbyFor` preamble, and a started lobby refuses all of
+      them `protocol/already_started`, which a test asserts against a live wait
+      rather than leaving to inspection.
+- [x] **Clock values never reach pilot RNG or engine state.** The same seed plays
+      the identical match paced and unpaced — same sequence, same turn, same
+      result, same per-seat decisions and actions, same incidents — with the
+      paced run's timers firing 3 ms late and its clock ending well past zero.
+      Nothing but `BotDelayRecord.actualMs` is derived from a reading, and
+      nothing reads that back.
+- [x] **Simulator and Spectator remain full speed.** A source scan over every
+      file under `apps/simulator/src` and `packages/spectator/src` requires none
+      of them to mention `botDelayMs`, `BotPacing`, `BotRunner` or
+      `scheduling.js`. They do not opt out of pacing; they have no way to reach
+      it.
+
+### What changed for a person at the table
+
+The lobby panel's warning is gone, because it stated the exclusion rather than
+the behaviour: it said timings were recorded but bots still answered
+immediately, and that sentence is now false. In its place the panel says what the
+numbers do — bots wait for the seconds shown against each seat, the timings lock
+when the match starts, and a seat left at 0% answers immediately. The last clause
+is there because 0% is still what a fresh bot is seated at, so it is the case
+most first matches will be.
+
+The summary beside the result changed the same way, and says which of the two
+this table actually was: a table of instant bots "waited for nothing", and any
+other table "waited for the times above before each decision". Both sentences are
+read off the locked budgets and the public per-seat percentages, so the summary
+still quotes the match rather than the last thing the host typed.
+
+Nothing else moved. No control was added, no number changed, and the board
+renders a paced bot exactly as it rendered an instant one — a bot that is
+thinking looks like an opponent who is thinking, which is the point.
+
+### Findings recorded rather than fixed
+
+- **Reconfiguration and bot removal are unreachable mid-match, so the scheduler
+  has no branch for them.** ADR 0024 §4 names both as cancellation triggers, and
+  in this build both are refused before they reach the lobby. That is recorded
+  rather than coded around: the day `hostLobbyFor` grows a caller that is allowed
+  after the start is the day the scheduler needs the path, and the test asserting
+  the three refusals against a live wait is what will fail then.
+- **`driveMatch` cannot produce a Reaction window.** Its `seatToAct` resolves a
+  seat from pending choice, mulligan, blocker and active player, and has no
+  branch for an open Reaction window, so a deck holding a Reaction desynchronises
+  the driver rather than exercising one. The classification's real-board Reaction
+  coverage is therefore in the server suite, which plays shipping precons and
+  sees all three categories in one match. Fixing the driver is a bot-interface
+  change with no M09.12 caller, and belongs to whoever next needs it.
+- **A still-valid wait survives an opponent's action, and that is a decision.**
+  Restarting the countdown whenever the sequence moved would be defensible and is
+  wrong here: at a busy table a slow bot would never reach expiry. The
+  countdown's job is to pace, and the revalidation that makes it safe happens at
+  expiry rather than continuously.
+- **`delaysCancelled` and `delaysRescheduled` count different things
+  deliberately.** The first implementation counted a category change as both,
+  which would have made a paced table look as though it were constantly
+  abandoning work. `#dropDelay` stops a wait without counting it; `#cancelDelay`
+  is the one that records an abandonment and its reason.
+- **`actualMs` is measured to the decision, not to the timer.** It is taken when
+  the pump reaches the seat, so it includes whatever the event loop and the scan
+  cost after expiry. That is the number a stopwatch would have seen, which is
+  what the record is for; it is never a number anything is scheduled from.
+- **A paced table is not a stalled one.** `#noteStallIfStuck` is skipped while any
+  seat has a wait outstanding, because otherwise every configured delay would
+  file a defect report against itself.
+
+### Versions — deliberately unchanged
+
+`PROTOCOL_VERSION` stays **9**. Nothing new travels: the budgets have been on the
+lobby view and the percentage on each bot's setup since M09.11, and this tranche
+only spends them. `BotDelayRecord` and `BotWaitingDelay` are server-internal
+diagnostics on `BotRunReport`, which is not a message and has never been on a
+wire.
+
+`PACING_CONFIG_VERSION` stays **1** for the third time, and for the same reason:
+it pins the budget shape and the percentage-to-delay calculation, and M09.12
+called `botDelayMs` rather than changing it. `BOT_CONFIG_SCHEMA_VERSION`,
+`DIFFICULTY_REGISTRY_VERSION`, `SEED_DERIVATION_VERSION` and
+`DECK_GENERATOR_VERSION` all stay: no configuration shape widened, no difficulty
+appeared, and no seed derivation was touched — a delay is not a draw.
+
+**`RULES_VERSION` stays `0.4.0`.** This is the tranche where a bot actually
+waits, and it is still not a rules change: no pacing budget is in `RulesConfig`,
+no engine code reads a clock, no legal action, cost or resolution moved, and
+nothing here times out, passes for, or defeats a person (ADR 0024 §4). Q8 is
+exactly as open as it was, and the M09.11 test that asserts so against
+`docs/open-questions.md` is untouched. `MATCH_SCHEMA_VERSION`,
+`CARD_SCHEMA_VERSION` and `DECK_SCHEMA_VERSION` stay: `MatchState` still does not
+know what a bot is, and no card or deck was touched.
+
+**Compatibility.** Nothing durable changed shape, so nothing is migrated, and no
+handshake refuses a build it accepted yesterday. The one observable change is
+behavioural, and only for a bot configured above 0%: it now waits. Every match
+recorded, replayed or written before this tranche used `IMMEDIATE_BOT_PACING`,
+which still schedules no timer and still acts inside the wake that offered the
+opportunity — asserted rather than assumed, so the M09.4 path is unchanged rather
+than merely believed to be.
 
 ## M09.13 — Difficulty registry, Easy, and Normal
 

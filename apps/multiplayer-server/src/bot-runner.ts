@@ -1,6 +1,16 @@
-import { botStyleDefinition, difficultyDefinition, type BotSeatConfig } from '@tcg/bot-config';
+import {
+  botDelayMs,
+  botStyleDefinition,
+  DEFAULT_BOT_PACING_BUDGETS,
+  difficultyDefinition,
+  type BotDecisionCategory,
+  type BotPacing,
+  type BotPacingBudgets,
+  type BotSeatConfig,
+} from '@tcg/bot-config';
 import type { CardDatabase } from '@tcg/card-data';
 import {
+  classifyDecisionCategory,
   createPilot,
   decideSafely,
   pilotIdSchema,
@@ -20,6 +30,12 @@ import {
   type RngState,
   type RulesConfig,
 } from '@tcg/rules-engine';
+import {
+  defaultMonotonicClock,
+  defaultSchedule,
+  type MonotonicClock,
+  type ScheduleTimer,
+} from './scheduling.js';
 
 /**
  * The live bot runner (M09.4) — what makes a configured bot seat actually play.
@@ -58,8 +74,17 @@ import {
  * was, so the sequence of draws a bot makes is a function of the decisions it
  * committed and not of when someone else's message arrived.
  *
- * Nothing here waits: M09.4 is 0% pacing only, and the delay scheduler is
- * M09.12's. The yield below is a stack-safety boundary, not a pacing dial.
+ * **A wait is an opportunity too** (M09.12). A bot with a non-zero pacing
+ * percentage is not asked immediately: the opportunity is classified from the
+ * engine's own `LegalActions`, a timer is scheduled from the applicable budget,
+ * and when it expires the loop comes back around and rebuilds *everything* — the
+ * state, the legality, the observation — before the pilot is asked anything at
+ * all. `PendingDelay` has no member an action could be put in, which is the same
+ * sentence as the paragraph above, enforced by a shape rather than by care.
+ *
+ * The yield below is a stack-safety boundary, not a pacing dial: a bot at 0%
+ * still crosses it and still acts inside the wake that offered the opportunity,
+ * which is why every match written before M09.12 runs exactly as it did.
  */
 
 /* ------------------------------------------------------------- vocabulary */
@@ -75,6 +100,23 @@ import {
  * match the software handed them.
  */
 export const ACTIONS_A_LIVE_BOT_NEVER_SUBMITS = ['concede', 'server_timeout'] as const;
+
+/**
+ * The members a scheduled wait must never grow, named so ADR 0024 §4's
+ * "an opportunity, not a stored action" is a test rather than a sentence — the
+ * treatment `FIELDS_A_BOT_CONTROLLER_NEVER_HAS` already gets.
+ *
+ * Every one of them would be a place to put a decision made *before* the wait,
+ * and a decision made before the wait is a decision made against a board that no
+ * longer exists by the time it is submitted.
+ */
+export const FIELDS_A_SCHEDULED_DELAY_NEVER_HAS = [
+  'action',
+  'decision',
+  'chosen',
+  'observation',
+  'legal',
+] as const;
 
 /**
  * Everything the runner records instead of hiding.
@@ -132,8 +174,48 @@ export interface BotSeatActivity {
    * reached.
    */
   readonly actions: Readonly<Record<string, number>>;
+  /**
+   * Every wait this seat actually served (M09.12), in the order it served them.
+   *
+   * Only real waits: a seat at 0% waits for nothing and records nothing, which
+   * is the honest record of a bot that never waited rather than a page of
+   * zeroes. Both numbers are here because they answer different questions —
+   * intended is what the configuration asked for, actual is what the clock saw —
+   * and a summary that printed only one of them could not say whether a slow
+   * table was slow because it was configured to be.
+   */
+  readonly delays: readonly BotDelayRecord[];
+  /** Waits abandoned because the opportunity went away before they expired. */
+  readonly delaysCancelled: number;
+  /** Waits restarted because the opportunity changed which budget it draws on. */
+  readonly delaysRescheduled: number;
+  /** Why the last abandoned wait was abandoned, for diagnosis rather than for play. */
+  readonly lastDelayCancellation: string | null;
   /** Why this seat stopped being asked, or `null` while it is still playing. */
   readonly halted: string | null;
+}
+
+/** One wait, as it was configured and as it actually happened. */
+export interface BotDelayRecord {
+  /** Decisions this seat had already committed when the wait was served. */
+  readonly decisionIndex: number;
+  readonly category: BotDecisionCategory;
+  /** `botDelayMs` of the applicable budget and percentage. */
+  readonly intendedMs: number;
+  /**
+   * What the monotonic clock made of it — timer resolution, event-loop latency
+   * and all. Recorded and never fed back: no pilot's generator stream and no
+   * engine state has ever seen a clock reading
+   * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §4).
+   */
+  readonly actualMs: number;
+}
+
+/** A wait that has been scheduled and has not expired yet. */
+export interface BotWaitingDelay {
+  readonly seatId: SeatId;
+  readonly category: BotDecisionCategory;
+  readonly intendedMs: number;
 }
 
 export interface BotRunReport {
@@ -145,6 +227,15 @@ export interface BotRunReport {
    * must never become is a bot conceding to unstick the board.
    */
   readonly stalled: string | null;
+  /**
+   * Waits outstanding right now, one per seat at most.
+   *
+   * More than one means more than one bot is waiting at the same time, which is
+   * what "independent bot delays run concurrently" means in practice: the
+   * timers overlap rather than queue, so three bots answering one Reaction
+   * window take as long as the slowest of them and not as long as all three.
+   */
+  readonly waiting: readonly BotWaitingDelay[];
   /**
    * Set if the pump itself threw somewhere nothing else caught it.
    *
@@ -261,6 +352,19 @@ export interface BotRunnerOptions {
   readonly decisionLimit?: number;
   /** The stack-safety boundary between decisions. Injectable so a test can count it. */
   readonly yieldToScheduler?: () => Promise<void>;
+  /**
+   * The budgets this match locked at its start (M09.11).
+   *
+   * Passed in rather than read from a lobby because the runner has no lobby: it
+   * is given the frozen record, so a budget cannot change under a match that is
+   * already being paced by it. Defaulted, so every caller written before M09.12
+   * keeps compiling and keeps its 0% bots instant.
+   */
+  readonly budgets?: BotPacingBudgets;
+  /** Where a wait actually happens. Injectable so a delay is asserted, not waited out. */
+  readonly schedule?: ScheduleTimer;
+  /** Only ever asked how long a wait took. Never reaches a pilot or the engine. */
+  readonly now?: MonotonicClock;
 }
 
 /**
@@ -273,15 +377,55 @@ export interface BotRunnerOptions {
  */
 export const DEFAULT_BOT_DECISION_LIMIT = 4000;
 
+/**
+ * A wait in flight.
+ *
+ * Note what is *not* here: no action, no decision, no observation and no
+ * legality — see `FIELDS_A_SCHEDULED_DELAY_NEVER_HAS`. All this record knows is
+ * which budget it drew on, how long it asked for, when it started, and how to
+ * call the whole thing off. Everything needed to decide is rebuilt at expiry.
+ */
+interface PendingDelay {
+  readonly category: BotDecisionCategory;
+  readonly intendedMs: number;
+  /** A monotonic reading, used for `actualMs` and for nothing else. */
+  readonly startedAt: number;
+  readonly cancel: () => void;
+  /** Set by the timer. Null while the wait is still running. */
+  expired: boolean;
+}
+
+/** What the pump gets back when a seat may act this instant. */
+interface ActionableBotSeat {
+  readonly runtime: BotSeatRuntime;
+  readonly pilot: BotPolicy;
+  readonly legal: LegalActions;
+  readonly delay: ServedDelay;
+}
+
+/** A wait that is over — or never was, for a seat configured at 0%. */
+interface ServedDelay {
+  readonly category: BotDecisionCategory;
+  readonly intendedMs: number;
+  readonly actualMs: number;
+}
+
 interface BotSeatRuntime {
   readonly seatId: SeatId;
   readonly botId: string;
   readonly playerId: PlayerId;
   readonly pilot: BotPolicy | null;
+  /** This seat's own timing dial, frozen with the rest of its configuration. */
+  readonly pacing: BotPacing;
   readonly seed: string;
   rng: RngState;
   decisions: number;
   readonly committed: Map<string, number>;
+  delay: PendingDelay | null;
+  readonly delays: BotDelayRecord[];
+  delaysCancelled: number;
+  delaysRescheduled: number;
+  lastDelayCancellation: string | null;
   halted: string | null;
 }
 
@@ -292,6 +436,9 @@ export class BotRunner {
   readonly #submit: BotRunnerOptions['submit'];
   readonly #decisionLimit: number;
   readonly #yield: () => Promise<void>;
+  readonly #budgets: BotPacingBudgets;
+  readonly #schedule: ScheduleTimer;
+  readonly #now: MonotonicClock;
 
   readonly #runtimes: BotSeatRuntime[] = [];
   readonly #incidents: BotRunIncident[] = [];
@@ -301,6 +448,15 @@ export class BotRunner {
   #running = false;
   #pending: Promise<void> | null = null;
   #stopped = false;
+  /**
+   * Set by `wake()` while a pump is already in flight.
+   *
+   * A timer can expire in the gap between the pump deciding it has nothing to do
+   * and the pump actually returning. Without this the wake that expiry sent
+   * would be swallowed as "already running" and the seat would wait forever, so
+   * the loop re-scans instead of returning whenever it was woken mid-scan.
+   */
+  #woken = false;
 
   constructor(options: BotRunnerOptions) {
     this.#database = options.database;
@@ -309,6 +465,9 @@ export class BotRunner {
     this.#submit = options.submit;
     this.#decisionLimit = options.decisionLimit ?? DEFAULT_BOT_DECISION_LIMIT;
     this.#yield = options.yieldToScheduler ?? (() => Promise.resolve());
+    this.#budgets = options.budgets ?? DEFAULT_BOT_PACING_BUDGETS;
+    this.#schedule = options.schedule ?? defaultSchedule;
+    this.#now = options.now ?? defaultMonotonicClock;
 
     const pilotFor = options.pilotFor ?? ((seat: BotRunnerSeat) => createBotPilot(seat.config));
     for (const seat of options.seats) {
@@ -320,8 +479,14 @@ export class BotRunner {
         pilot: null,
         seed: botSeedFor(options.matchSeed, seat.seatId),
         rng: createRngState(botSeedFor(options.matchSeed, seat.seatId)),
+        pacing: seat.config.pacing,
         decisions: 0,
         committed: new Map(),
+        delay: null,
+        delays: [],
+        delaysCancelled: 0,
+        delaysRescheduled: 0,
+        lastDelayCancellation: null,
         halted: null,
       };
       try {
@@ -354,7 +519,11 @@ export class BotRunner {
    * once" true without a queue of opportunities to keep de-duplicated.
    */
   wake(): void {
-    if (this.#stopped || this.#running) return;
+    if (this.#stopped) return;
+    // Recorded before the early return, so an expiry that lands while the pump
+    // is mid-await is re-scanned rather than swallowed.
+    this.#woken = true;
+    if (this.#running) return;
     this.#running = true;
     this.#pending = this.#pump()
       .catch((error: unknown) => {
@@ -370,9 +539,17 @@ export class BotRunner {
       });
   }
 
-  /** Cancels all further work. Called at match completion and lobby closure. */
+  /**
+   * Cancels all further work. Called at match completion and lobby closure.
+   *
+   * Outstanding waits are cancelled here rather than left to expire into a
+   * finished match: a timer that fires after the result has been broadcast is a
+   * bot deciding about a board nobody is playing, and on a long-running process
+   * it is also a live handle holding a whole `MatchState`.
+   */
   stop(): void {
     this.#stopped = true;
+    this.#cancelAllDelays('the runner stopped');
   }
 
   get stopped(): boolean {
@@ -390,10 +567,25 @@ export class BotRunner {
         seed: runtime.seed,
         decisions: runtime.decisions,
         actions: Object.fromEntries([...runtime.committed].sort(([a], [b]) => a.localeCompare(b))),
+        delays: [...runtime.delays],
+        delaysCancelled: runtime.delaysCancelled,
+        delaysRescheduled: runtime.delaysRescheduled,
+        lastDelayCancellation: runtime.lastDelayCancellation,
         halted: runtime.halted,
       })),
       incidents: [...this.#incidents],
       stalled: this.#stalled,
+      waiting: this.#runtimes.flatMap((runtime) =>
+        runtime.delay && !runtime.delay.expired
+          ? [
+              {
+                seatId: runtime.seatId,
+                category: runtime.delay.category,
+                intendedMs: runtime.delay.intendedMs,
+              },
+            ]
+          : [],
+      ),
       crashed: this.#crashed,
     };
   }
@@ -402,15 +594,28 @@ export class BotRunner {
 
   async #pump(): Promise<void> {
     while (!this.#stopped) {
+      this.#woken = false;
       const state = this.#state();
-      if (!state || state.status === 'complete') return;
-
-      const next = this.#nextEligible(state);
-      if (!next) {
-        this.#noteStallIfStuck(state);
+      if (!state || state.status === 'complete') {
+        // Match end and lobby closure are both cancellation triggers: nothing
+        // may still be counting down towards a board that has stopped moving.
+        this.#cancelAllDelays(state ? 'the match is over' : 'the match is gone');
         return;
       }
-      const { runtime, pilot, legal } = next;
+
+      const next = this.#nextActionable(state);
+      if (!next) {
+        // Something expired while this scan was running; look again rather than
+        // returning and leaving the seat that woke us waiting on nothing.
+        if (this.#woken) continue;
+        // A table with a wait outstanding is not stuck, it is paced. Reporting a
+        // stall here would turn every configured delay into a defect report.
+        if (this.#runtimes.every((runtime) => runtime.delay === null)) {
+          this.#noteStallIfStuck(state);
+        }
+        return;
+      }
+      const { runtime, pilot, legal, delay } = next;
 
       if (runtime.decisions >= this.#decisionLimit) {
         runtime.halted = 'decision_limit';
@@ -424,9 +629,13 @@ export class BotRunner {
       }
 
       // Rebuilt here, at decision time, from the state read at the top of this
-      // iteration — never carried over from the iteration that scheduled it.
+      // iteration — never carried over from the iteration that scheduled it, and
+      // in particular never carried across a wait that has just expired.
       const observation: BotObservation = this.#observationFor(state, runtime, legal);
       const sequenceBefore = state.sequence;
+      if (delay.intendedMs > 0 || delay.actualMs > 0) {
+        runtime.delays.push({ decisionIndex: runtime.decisions, ...delay });
+      }
 
       let outcome;
       try {
@@ -531,21 +740,146 @@ export class BotRunner {
     };
   }
 
-  /** The first bot seat, in seat order, the engine is currently offering a move. */
-  #nextEligible(
-    state: MatchState,
-  ): { runtime: BotSeatRuntime; pilot: BotPolicy; legal: LegalActions } | null {
+  /**
+   * The first bot seat, in seat order, that may act *right now* — and, on the way
+   * past, the reconciliation of every other seat's wait.
+   *
+   * One scan does both jobs deliberately. Deciding whether a seat may act and
+   * deciding whether its outstanding wait is still about anything are the same
+   * question asked of the same freshly computed `LegalActions`, and splitting
+   * them into two passes would be two chances to disagree about one board.
+   *
+   * A seat that is waiting is skipped rather than returned, so the scan carries
+   * on to the next one: that is what makes independent waits *concurrent*. Three
+   * bots offered the same Reaction window get three timers running at once, and
+   * the window costs the slowest of them rather than the sum.
+   */
+  #nextActionable(state: MatchState): ActionableBotSeat | null {
+    let actionable: ActionableBotSeat | null = null;
     for (const runtime of this.#runtimes) {
       const pilot = runtime.pilot;
-      if (runtime.halted !== null || pilot === null) continue;
-      if (state.players[runtime.playerId]?.lost !== false) continue;
+      if (runtime.halted !== null || pilot === null) {
+        this.#cancelDelay(runtime, 'the seat stopped being asked');
+        continue;
+      }
+      if (state.players[runtime.playerId]?.lost !== false) {
+        // Elimination, which is one of the named cancellation triggers: a seat
+        // that is out of the match is not owed the rest of its countdown.
+        this.#cancelDelay(runtime, 'the seat is out of the match');
+        continue;
+      }
       const legal = legalActions(state, runtime.playerId, {
         database: this.#database,
         config: this.#config,
       });
-      if (hasBotDecision(legal)) return { runtime, pilot, legal };
+      if (!hasBotDecision(legal)) {
+        // Eligibility change: somebody else's action closed the window this wait
+        // was about, so the wait is obsolete rather than merely early.
+        this.#cancelDelay(runtime, 'the engine stopped offering this seat a decision');
+        continue;
+      }
+
+      const category = classifyDecisionCategory(legal);
+      const waiting = runtime.delay;
+      if (waiting === null) {
+        const intendedMs = this.#delayFor(runtime, category);
+        if (intendedMs <= 0) {
+          // Unchanged from M09.4: a 0% bot acts inside the wake that offered it
+          // the opportunity, and nothing is scheduled at all.
+          actionable ??= { runtime, pilot, legal, delay: { category, intendedMs: 0, actualMs: 0 } };
+          continue;
+        }
+        this.#startDelay(runtime, category, intendedMs);
+        continue;
+      }
+
+      if (waiting.expired) {
+        actionable ??= { runtime, pilot, legal, delay: this.#takeDelay(runtime, waiting) };
+        continue;
+      }
+
+      if (waiting.category !== category) {
+        // The opportunity changed which budget it draws on — an ordinary turn
+        // became a Reaction window, say — so the countdown it was serving is for
+        // the wrong number. Cancelled and restarted rather than left to expire
+        // into a delay nothing on the screen predicted.
+        // Dropped rather than *cancelled*: the opportunity did not go away, it
+        // changed budget, so it is counted under `delaysRescheduled` alone and a
+        // reader can still tell a restart from an abandonment.
+        this.#dropDelay(runtime);
+        runtime.delaysRescheduled += 1;
+        const intendedMs = this.#delayFor(runtime, category);
+        if (intendedMs <= 0) {
+          actionable ??= { runtime, pilot, legal, delay: { category, intendedMs: 0, actualMs: 0 } };
+          continue;
+        }
+        this.#startDelay(runtime, category, intendedMs);
+      }
+      // Otherwise it is still waiting, and a still-valid wait is deliberately
+      // *not* restarted by somebody else's action. The decision is made at
+      // expiry against whatever board exists then, so a changed sequence is a
+      // reason to re-check eligibility — which this scan just did — and not a
+      // reason to make the bot start counting again. Restarting would starve a
+      // slow bot at a busy table of ever acting at all.
     }
-    return null;
+    return actionable;
+  }
+
+  /** What this seat's configuration and the match's locked budgets ask for. */
+  #delayFor(runtime: BotSeatRuntime, category: BotDecisionCategory): number {
+    return botDelayMs(runtime.pacing, this.#budgets, category);
+  }
+
+  #startDelay(runtime: BotSeatRuntime, category: BotDecisionCategory, intendedMs: number): void {
+    const delay: PendingDelay = {
+      category,
+      intendedMs,
+      startedAt: this.#now(),
+      expired: false,
+      cancel: this.#schedule(intendedMs, () => {
+        delay.expired = true;
+        // Nothing is decided in here: the timer's whole job is to put the seat
+        // back in front of the pump, which then rebuilds the board from scratch.
+        this.wake();
+      }),
+    };
+    runtime.delay = delay;
+  }
+
+  /** Consumes an expired wait and measures it. */
+  #takeDelay(runtime: BotSeatRuntime, delay: PendingDelay): ServedDelay {
+    delay.cancel();
+    runtime.delay = null;
+    return {
+      category: delay.category,
+      intendedMs: delay.intendedMs,
+      // Measured to the moment the decision is actually taken rather than to the
+      // moment the timer fired, so the number is what a stopwatch would have
+      // seen and not what the scheduler intended.
+      actualMs: Math.max(0, Math.round(this.#now() - delay.startedAt)),
+    };
+  }
+
+  /** Stops a wait and forgets it, counting nothing. */
+  #dropDelay(runtime: BotSeatRuntime): PendingDelay | null {
+    const delay = runtime.delay;
+    if (delay === null) return null;
+    delay.cancel();
+    runtime.delay = null;
+    return delay;
+  }
+
+  #cancelDelay(runtime: BotSeatRuntime, why: string): void {
+    const delay = this.#dropDelay(runtime);
+    // An expired wait was already served rather than abandoned: the timer fired,
+    // the pump simply reached the seat after something else had ended it.
+    if (delay === null || delay.expired) return;
+    runtime.delaysCancelled += 1;
+    runtime.lastDelayCancellation = `${delay.intendedMs} ms of ${delay.category} pacing: ${why}`;
+  }
+
+  #cancelAllDelays(why: string): void {
+    for (const runtime of this.#runtimes) this.#cancelDelay(runtime, why);
   }
 
   /**

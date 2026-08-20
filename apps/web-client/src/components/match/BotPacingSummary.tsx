@@ -1,9 +1,20 @@
+import { pacingPercentFor, type BotPacing } from '@tcg/bot-config';
 import { useMatchState } from '../../state/MatchContext.js';
 import {
   PACING_IS_NOT_A_HUMAN_TIMER,
   ordinaryPacingLabel,
   reactionPacingLabel,
 } from '../../lib/bot-pacing-labels.js';
+
+/**
+ * A seat that waits for nothing, in its own turn and in a Reaction window.
+ *
+ * `pacingPercentFor` rather than reading the two fields, because `null` means
+ * inherit and a screen that read it as zero would call a 100% bot instant.
+ */
+function seatIsInstant(pacing: BotPacing): boolean {
+  return pacingPercentFor(pacing, 'ordinary') === 0 && pacingPercentFor(pacing, 'reaction') === 0;
+}
 
 /**
  * What the bots at this table were timed at, printed beside the result (M09.11).
@@ -20,10 +31,11 @@ import {
  * visible in the lobby panel, where they are still editable up to the moment
  * they are not.
  *
- * The last sentence is the honest one and is expected to change in M09.12: this
- * build records the timings and submits every bot decision immediately, so a
- * summary that implied the match had been paced would be describing a wait that
- * never happened.
+ * The last sentence is the honest one, and M09.12 is what changed it: the server
+ * now waits for the fraction each seat was set to, so the numbers above describe
+ * the match that was actually played rather than a configuration nothing spent.
+ * A seat at 0% is still instant, and the line says which of the two this table
+ * was rather than asserting one for all of them.
  */
 export function BotPacingSummary() {
   const { lobby, view } = useMatchState();
@@ -50,8 +62,9 @@ export function BotPacingSummary() {
         ))}
       </ul>
       <p className="board__pacing-head">
-        {bots.length === 1 ? 'This bot answered' : 'These bots answered'} immediately: the timings
-        above are what the match recorded, not what it waited.
+        {bots.every((seat) => seatIsInstant(seat.bot.pacing))
+          ? `${bots.length === 1 ? 'This bot was' : 'These bots were'} set to answer immediately, so the match waited for nothing.`
+          : `${bots.length === 1 ? 'This bot waited' : 'These bots waited'} for the times above before each decision.`}
       </p>
     </section>
   );

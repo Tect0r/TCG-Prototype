@@ -49,6 +49,13 @@ export {
   type RankedOption,
 } from './candidates.js';
 
+export {
+  CATEGORY_BY_DECISION_FAMILY,
+  classifyDecisionCategory,
+  decisionCategoryDisagreement,
+  decisionCategoryGaps,
+} from './decision-category.js';
+
 export { createHeuristicPilot, scoreCandidate, type HeuristicPilotOptions } from './heuristic.js';
 
 export {
