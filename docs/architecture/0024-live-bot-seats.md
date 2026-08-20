@@ -127,6 +127,17 @@ never counterpicks: adaptive counter-search is M08's, it is explicit there, and
 importing it here silently would be the single most dishonest thing this
 milestone could do.
 
+M09.10, which is the tranche where a bot chooses its own Commander, makes that a
+property of the code rather than a rule somebody keeps. `selectBotCommander`
+takes the candidate Commanders and a seed, and takes nothing else: there is no
+lobby, no seat, no opponent and no saved deck in scope, so the counterpick this
+section forbids is unreachable rather than merely unwritten. The candidates are
+the format-scoped `playableCommanders` a host is offered, so a bot cannot choose
+something a host could not; the selection stream is derived from the seat's own
+seed, so the same seed names the same Commander whoever is sitting across from
+it; and that is asserted by seating one bot against deliberately different
+opponents and requiring an identical deck hash.
+
 ### 4. Bot pacing is server configuration, and it does not answer Q8
 
 Live bots wait before submitting. The waiting is configured as an integer

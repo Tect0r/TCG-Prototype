@@ -23,7 +23,7 @@ import {
 } from '@tcg/deck';
 import { botLobbyError, type BotSetup, type ProtocolError, type SeatId } from '@tcg/protocol';
 import { err, errorsOf, isErr, ok, type Result } from '@tcg/shared';
-import { generateBotDeck } from './bot-generated-deck.js';
+import { generateAutonomousBotDeck, generateBotDeck } from './bot-generated-deck.js';
 
 /**
  * Turning a host's bot setup into something the authoritative lobby can seat
@@ -41,9 +41,10 @@ import { generateBotDeck } from './bot-generated-deck.js';
  * by name from `DECK_MODE_SUPPORT`, and a difficulty from the difficulty
  * registry's own `status` — from data that names the tranche that owns it, not
  * from a hard-coded list of what happens to be finished. Flipping one entry is
- * how M09.9, M09.10 and M09.13 turn their own option on, and it is how M09.6
- * turned `exact_saved_deck` on: it wrote the resolver below, then said so in the
- * table.
+ * how M09.6, M09.9 and M09.10 each turned their own deck mode on and how M09.13
+ * will turn a difficulty on: write the resolver below, then say so in the table.
+ * As of M09.10 every deck mode has one, so the mode refusal is what a *fifth*
+ * mode would meet rather than something a shipped configuration can reach.
  *
  * **Validation is not partial.** A setup either resolves to a complete
  * configuration and the deck it implies, or it is refused and the lobby is not
@@ -94,10 +95,13 @@ function refusal(
  *
  * Rerolling builds a *new* deck, which only a generated mode does. A seat
  * playing an exact list — a precon, or one of the host's saved decks — has
- * nothing to reroll, so the refusal names the seat's actual mode; and
- * `autonomous_generated`, the one generated mode with no resolver yet, names the
- * tranche that owns it, read from `DECK_MODE_SUPPORT` rather than written out
- * here.
+ * nothing to reroll, so the refusal names the seat's actual mode.
+ *
+ * The first branch is for a generated mode this build cannot honour. Since
+ * M09.10 there is none, and it is kept rather than deleted for the same reason
+ * `DECK_MODE_SUPPORT` is: a fifth mode arriving without a resolver should meet a
+ * refusal that names the tranche owning it, read from the table, instead of a
+ * sentence somebody has to remember to write.
  */
 export function rerollUnsupportedDetails(seatId: SeatId, mode: BotDeckMode): string[] {
   if (deckModeGenerates(mode)) {
@@ -108,7 +112,8 @@ export function rerollUnsupportedDetails(seatId: SeatId, mode: BotDeckMode): str
   }
   return [
     `Rerolling builds a new deck, which only a generated mode does; ${seatId} plays "${mode}".`,
-    'Switch the seat to a Commander you choose, and the bot will build it a deck you can reroll.',
+    'Switch the seat to a generated deck — under a Commander you choose, or one the bot picks — ' +
+      'and it will have a deck you can reroll.',
   ];
 }
 
@@ -117,18 +122,27 @@ export function rerollUnsupportedDetails(seatId: SeatId, mode: BotDeckMode): str
  *
  * `update_bot` replaces a configuration wholesale, and a reroll count is not
  * part of a configuration — it is how far the seat has got along one *generation
- * stream*. The stream is named by the two things the host controls: the
- * Commander and the base seed. Change either and the stream is a different one,
- * so the count restarts at 0 and the host gets that stream's first deck. Change
- * neither — a different style, a different difficulty, a different name — and the
- * seat keeps the deck it is on, because otherwise renaming a bot would silently
- * undo three rerolls.
+ * stream*. The stream is named by what the host controls: the base seed, and —
+ * when the host is the one choosing it — the Commander. Change either and the
+ * stream is a different one, so the count restarts at 0 and the host gets that
+ * stream's first deck. Change neither — a different style, a different
+ * difficulty, a different name — and the seat keeps the deck it is on, because
+ * otherwise renaming a bot would silently undo three rerolls.
+ *
+ * Switching *between* the two generated modes always restarts, even at the same
+ * seed: who chooses the Commander is what the mode says, so the two are
+ * different streams by definition.
  */
 export function carriedRerollCount(previous: BotSeatConfig | null, next: BotDeckSource): number {
   const before = previous?.deck;
-  if (!before || before.mode !== 'commander_generated') return 0;
-  if (next.mode !== 'commander_generated') return 0;
-  if (before.commanderId !== next.commanderId || before.seed !== next.seed) return 0;
+  if (!before || !deckModeGenerates(before.mode) || before.mode !== next.mode) return 0;
+  if (!('seed' in before) || !('seed' in next) || before.seed !== next.seed) return 0;
+  // The Commander only names the stream when the *host* names the Commander.
+  // A bot that picks its own derives that pick from the seed, so the seed is the
+  // whole name of an `autonomous_generated` stream (M09.10).
+  if (before.mode === 'commander_generated' && next.mode === 'commander_generated') {
+    if (before.commanderId !== next.commanderId) return 0;
+  }
   return before.generated?.rerollCount ?? 0;
 }
 
@@ -249,15 +263,23 @@ export function resolveBotSeat(
         deck: built.value.deck,
       });
     }
-    case 'autonomous_generated':
-      // Unreachable: `DECK_MODE_SUPPORT` refuses it above. Kept as a refusal
-      // rather than a `never` so that flipping a support flag without writing
-      // the resolver behind it refuses a configuration instead of crashing a
-      // lobby — which is exactly the state M09.6 and M09.9 each walked through
-      // for their own mode.
-      return refusal('mode_unsupported', [
-        `This build has no resolver for deck mode "${config.deck.mode}".`,
-      ]);
+    case 'autonomous_generated': {
+      // The bot picks its own Commander first, from its own stream and from the
+      // same list a host is offered, and the deck follows exactly as it does for
+      // a Commander a host chose (M09.10).
+      const built = generateAutonomousBotDeck({
+        baseSeed: config.deck.seed,
+        rerollCount: generation.rerollCount,
+        database: context.database,
+        deckFormat: context.deckFormat,
+        now: context.now,
+      });
+      if (isErr(built)) return built;
+      return ok({
+        config: { ...config, deck: { ...config.deck, generated: built.value.provenance } },
+        deck: built.value.deck,
+      });
+    }
     default: {
       const never: never = config.deck;
       return refusal('mode_unsupported', [`Unknown deck mode ${JSON.stringify(never)}.`]);

@@ -239,18 +239,20 @@ describe('the deck source picker', () => {
     ).toEqual([
       'A built-in deck',
       'One of your saved decks',
-      // M09.9 gave `commander_generated` a resolver, so the picker gained its
-      // control by the entry it already owned rather than by a change here.
+      // M09.9 gave `commander_generated` a resolver and M09.10 gave the last one
+      // its own, so the picker gained each control by the entry it already owned
+      // rather than by a change here.
       'A deck built for a Commander you pick',
+      'A Commander and deck the bot picks',
     ]);
 
     // Driven from the support table rather than from a list written here, so a
     // mode turning on without a control is a failure rather than a silence.
+    // There is no unsupported mode left, and the assertion says so rather than
+    // iterating an empty list and passing by vacuum.
     const unsupported = BOT_DECK_MODES.filter((mode) => !DECK_MODE_SUPPORT[mode].supported);
-    expect(unsupported).toEqual(['autonomous_generated']);
-    for (const mode of unsupported) {
-      expect(within(source).queryByRole('option', { name: new RegExp(mode) })).toBeNull();
-    }
+    expect(unsupported).toEqual([]);
+    expect(within(source).getAllByRole('option')).toHaveLength(BOT_DECK_MODES.length);
   });
 
   it('lists the player’s own decks once that mode is chosen', async () => {

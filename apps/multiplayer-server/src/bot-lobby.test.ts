@@ -295,40 +295,50 @@ describe('the host seats a bot', () => {
 describe('a bot this build cannot honour is refused by name', () => {
   const unsupported = BOT_DECK_MODES.filter((mode) => !DECK_MODE_SUPPORT[mode].supported);
 
-  it.each(unsupported)('refuses deck mode %s and names the tranche that owns it', (mode) => {
-    const harness = createHarness();
-    const deck =
-      mode === 'exact_saved_deck'
-        ? {
-            mode,
-            deck: {
-              sourceDeckId: 'deck_1',
-              name: 'Saved',
-              commanderId: requirePrecon(PRECON_ID).commanderId,
-              cardIds: [...requirePrecon(PRECON_ID).cardIds],
-              deckHash: 'abcdef0123456789',
-            },
-          }
-        : mode === 'commander_generated'
+  it('has no deck mode left without a resolver, and would refuse one by name', () => {
+    // M09.10 turned the fourth and last mode on. The loop below is what a fifth
+    // mode would meet; asserting the list is empty is what stops this becoming a
+    // test that iterates nothing and passes by vacuum.
+    expect(unsupported).toEqual([]);
+  });
+
+  it.each(unsupported.length > 0 ? unsupported : ([] as never[]))(
+    'refuses deck mode %s and names the tranche that owns it',
+    (mode) => {
+      const harness = createHarness();
+      const deck =
+        mode === 'exact_saved_deck'
           ? {
               mode,
-              commanderId: requirePrecon(PRECON_ID).commanderId,
-              seed: 'seed_1',
-              generated: null,
+              deck: {
+                sourceDeckId: 'deck_1',
+                name: 'Saved',
+                commanderId: requirePrecon(PRECON_ID).commanderId,
+                cardIds: [...requirePrecon(PRECON_ID).cardIds],
+                deckHash: 'abcdef0123456789',
+              },
             }
-          : { mode, seed: 'seed_1', generated: null };
+          : mode === 'commander_generated'
+            ? {
+                mode,
+                commanderId: requirePrecon(PRECON_ID).commanderId,
+                seed: 'seed_1',
+                generated: null,
+              }
+            : { mode, seed: 'seed_1', generated: null };
 
-    harness.send(harness.host, {
-      type: 'add_bot',
-      setup: setupFor(PRECON_ID, { deck: deck as BotSetup['deck'] }),
-    });
+      harness.send(harness.host, {
+        type: 'add_bot',
+        setup: setupFor(PRECON_ID, { deck: deck as BotSetup['deck'] }),
+      });
 
-    const error = lastError(harness.host);
-    expect(error?.code).toBe('protocol/bot_mode_unsupported');
-    expect(error?.details?.join(' ')).toContain(DECK_MODE_SUPPORT[mode].plannedIn as string);
-    // Refused means refused: no seat was written.
-    expect(harness.lobby().seats.has('seat_2')).toBe(false);
-  });
+      const error = lastError(harness.host);
+      expect(error?.code).toBe('protocol/bot_mode_unsupported');
+      expect(error?.details?.join(' ')).toContain(DECK_MODE_SUPPORT[mode].plannedIn as string);
+      // Refused means refused: no seat was written.
+      expect(harness.lobby().seats.has('seat_2')).toBe(false);
+    },
+  );
 
   it.each(PLANNED_DIFFICULTIES)('refuses difficulty %s until its tranche lands', (difficulty) => {
     const harness = createHarness();

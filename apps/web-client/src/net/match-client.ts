@@ -10,7 +10,11 @@ import {
   type SeatId,
   type ServerMessage,
 } from '@tcg/protocol';
-import type { BotDeckSource, GeneratedDeckProvenance } from '@tcg/bot-config';
+import {
+  deckModeGenerates,
+  type BotDeckSource,
+  type GeneratedDeckProvenance,
+} from '@tcg/bot-config';
 import type { SavedDeck } from '@tcg/deck';
 import type { Action, EngineError, PlayerView } from '@tcg/rules-engine';
 import { isOk } from '@tcg/shared';
@@ -442,8 +446,8 @@ export class MatchClient {
    *
    * The same conservatism `reconcileBotDecks` applies to a remembered request,
    * for the same reason: a seat the host freed, replaced with a person, or moved
-   * onto a precon has no generated deck to describe, and describing one anyway
-   * is how a screen comes to show a hash for a deck nobody is playing.
+   * onto an exact list has no generated deck to describe, and describing one
+   * anyway is how a screen comes to show a hash for a deck nobody is playing.
    */
   private reconcileProvenance(
     lobby: LobbyView,
@@ -454,7 +458,9 @@ export class MatchClient {
       const known = source[seat.seatId];
       if (!known) continue;
       if (seat.controller !== 'bot') continue;
-      if (seat.bot.deck.mode !== 'commander_generated') continue;
+      // Either generated mode: the provenance describes a deck the server built,
+      // and which of the two chose the Commander is recorded inside it (M09.10).
+      if (!deckModeGenerates(seat.bot.deck.mode)) continue;
       next[seat.seatId] = known;
     }
     return next;

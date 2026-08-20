@@ -218,7 +218,9 @@ export function deckModeGenerates(mode: BotDeckMode): boolean {
  *
  * M09.3 refuses an unsupported mode **by name** rather than accepting it and
  * failing later, and it reads this table to do so. Flipping an entry is how a
- * later tranche turns its mode on.
+ * later tranche turns its mode on — which M09.6, M09.9 and M09.10 each did in
+ * turn. As of M09.10 all four are on, and the table stays because a fifth mode
+ * must arrive as a refusal that names its owner rather than as a crash.
  */
 export const DECK_MODE_SUPPORT: Readonly<
   Record<BotDeckMode, { readonly supported: boolean; readonly plannedIn: string | null }>
@@ -233,7 +235,11 @@ export const DECK_MODE_SUPPORT: Readonly<
   // Commander, hash and pool report in `generated` — so the mode now has a
   // resolver behind it exactly as the two exact modes do.
   commander_generated: { supported: true, plannedIn: null },
-  autonomous_generated: { supported: false, plannedIn: 'M09.10' },
+  // Turned on by M09.10, the last of the four. The server picks the Commander
+  // from the format's playable list and this seat's own selection stream, then
+  // builds the deck through the same generator `commander_generated` uses — so
+  // the mode has a resolver behind it exactly as the other three do.
+  autonomous_generated: { supported: true, plannedIn: null },
 });
 
 export function deckModeIsSupported(mode: BotDeckMode): boolean {

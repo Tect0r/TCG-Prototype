@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.10       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.11       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -138,21 +138,6 @@ would need a second hash implementation and that is how one seed comes to name t
 decks. `DECK_GENERATOR_VERSION` is new and is `'1'`; nothing else moved, and no
 lobby deck mode was added.
 
-## The next bounded task
-
-**M09.10 — Full AI Commander-and-deck choice.** Let a bot choose its own legal
-Commander and construct its deck. Selection is made among active-format legal
-implemented Commanders from a deterministic bot deck-selection seed,
-independently of any opponent's private deck or hand, with the information
-boundary recorded; the deck is generated and frozen through the shared generator;
-the chosen Commander is public and the list stays private until match end; reroll
-is supported, and selection and generator provenance are recorded. A bot must
-never prefer a Commander because the server happens to know another seat's exact
-deck. It is the fourth and last deck mode, and the only one
-`DECK_MODE_SUPPORT` still refuses. The scope, the exclusions and the checklist
-are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0910--full-ai-commander-and-deck-choice).
-
 **M09.9 let the host choose the Commander, and the server build the deck.** A
 host picks one of the **active format's** playable Commanders — the list
 `playableCommanders` returns, which is the rule `validateDeck` already had,
@@ -172,6 +157,44 @@ says so instead of implying variety the content cannot supply. Two new server
 messages carry what a `LobbyView` cannot, so `PROTOCOL_VERSION` moves 7 → 8 —
 and ADR 0024 §7, which had predicted the constant would move exactly once in M09,
 now records the correction rather than the guess.
+
+## The next bounded task
+
+**M09.11 — Bot pacing configuration and UI.** Configure concrete percentages
+without changing match behaviour yet: lobby-level ordinary/choice and Reaction
+pacing budgets, initially 30 and 5 seconds, labelled clearly as **bot pacing
+references rather than human timers**; per-bot 0–100% timing with an advanced
+Reaction override; the calculated seconds shown beside every percentage; the
+settings persisted, locked at match start, and shown in lobby and result
+provenance; a pacing configuration version recorded. Bots still act immediately —
+M09.12 owns the scheduler — and Q8 stays open in the rules documents, with the
+tranche writing down why `RULES_VERSION` does or does not move. The scope, the
+exclusion and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0911--bot-pacing-configuration-and-ui).
+
+**M09.10 reached the milestone's third checkpoint: all four deck modes.** A bot
+can now choose its **own** Commander and build its own deck. The choice is drawn
+from a stream of its own — the generation seed with a `:commander` suffix, so the
+Commander and the cards are two streams rather than two reads of one cursor — over
+exactly the `playableCommanders` list a host is offered, so a bot cannot bring
+something a host could not. "No secret counterpicking" is a property of the
+signature rather than a promise about the body: `selectBotCommander(candidates,
+seed)` has no third parameter, so a lobby, a seat, an opponent's hand and an
+opponent's saved deck are unreachable from the function that chooses; and the test
+seats one seed against two deliberately different opponents, after the server has
+already validated and stored both of their decks, and requires an identical
+**deck hash** rather than only an identical Commander. Everything after the choice
+is the path M09.9 built — same generator, same pool, same refusals, same frozen
+`SavedDeck`, same provenance — so a seed and a Commander name one deck whichever
+mode produced it, which a test checks by building the pair both ways. The
+Commander is public, the seed reaches the host alone, and the list is broadcast to
+every seat once the match ends, carrying the mode so a reader can say the bot
+chose rather than infer it. A Commander whose pool cannot fill a deck is refused
+by name rather than swapped for the next candidate, because retrying down the list
+would be a repair policy invisible in the provenance. Nothing moved:
+`PROTOCOL_VERSION` stays 8, `DECK_GENERATOR_VERSION` stays `'1'`, and
+`SEED_DERIVATION_VERSION` stays 2 because the selection stream is a new derivation
+beside the existing two rather than a change to either.
 
 ## The parallel non-code activity
 

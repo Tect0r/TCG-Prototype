@@ -13,14 +13,16 @@ import {
   type GenerationEnvironment,
 } from '@tcg/deck-generator';
 import { botLobbyError, type ProtocolError } from '@tcg/protocol';
+import { createRngState, nextInt } from '@tcg/rules-engine';
 import { err, errorsOf, ok, type Result } from '@tcg/shared';
 
 /**
- * Building a bot a deck under a Commander the host chose (M09.9).
+ * Building a bot a deck: under a Commander the host chose (M09.9), or under one
+ * the bot chose for itself (M09.10).
  *
  * The whole of this file answers one question: *which* deck does this seat play,
- * given a Commander and a seed? Three properties make that answer worth
- * trusting.
+ * given a seed and either a Commander or permission to pick one? Four properties
+ * make that answer worth trusting.
  *
  * **The pool is the server's own.** The environment below is built from the
  * database and format the server already validates every human deck against,
@@ -45,6 +47,14 @@ import { err, errorsOf, ok, type Result } from '@tcg/shared';
  * the legal-pool size with the forced-inclusion floor it implies. Nothing here
  * repairs a deck: an impossible generation is a refusal carrying the generator's
  * own problem codes.
+ *
+ * **A bot that picks its own Commander is told nothing about the table.**
+ * `selectBotCommander` takes a list of candidates and a seed, and there is no
+ * third parameter: a lobby, a seat, an opponent's deck and an opponent's hand
+ * are not merely unread, they are unreachable from the function that chooses
+ * (ADR 0024 §3, "never counterpicks"). The candidates come from the same
+ * format-scoped `playableCommanders` a host is offered, so a bot cannot choose
+ * something a host could not.
  */
 
 /**
@@ -91,6 +101,53 @@ export function generationSeedFor(base: string, rerollCount: number): string {
 }
 
 /**
+ * The stream a bot's own Commander choice is drawn from (M09.10).
+ *
+ * Its own stream, and deliberately not the deck draw's. The alternative — asking
+ * `generateDeck` for a deck with no Commander and letting it pick one out of the
+ * draw's cursor — would choose from `environment.commanders` filtered only by
+ * colour count, which is a *weaker* rule than `playableCommanders`: a Commander
+ * that is not collectible, or whose behaviour is not structured yet, could come
+ * back. Choosing first, from the same list a host is offered, is what keeps "a
+ * bot cannot choose something a host could not" true by construction.
+ *
+ * It is derived from the generation seed rather than from the base seed, so a
+ * reroll moves the Commander as well as the cards — which is what a host who
+ * asked for a different deck meant. The suffix makes it a different string, and
+ * `createRngState` hashes and warms up whatever it is given, so the two streams
+ * do not run in step.
+ */
+export function commanderSelectionSeedFor(base: string, rerollCount: number): string {
+  return `${generationSeedFor(base, rerollCount)}:commander`;
+}
+
+/**
+ * The Commander a bot chooses for itself, or `null` when there is none to choose.
+ *
+ * **Two parameters, and that is the guarantee.** Candidates and a seed. Nothing
+ * about the lobby, the opponents, their decks or their hands is in scope here,
+ * so "a bot never prefers a Commander because the server happens to know another
+ * seat's exact deck" is a fact about the signature rather than a promise about
+ * the body (ADR 0024 §3).
+ *
+ * Candidates are sorted by ID with a plain code-point comparison rather than by
+ * `localeCompare`: the caller's display order is locale-sensitive, and a draw
+ * whose result depended on the server's ICU build would be a different deck on a
+ * different machine from the same recorded seed.
+ */
+export function selectBotCommander(
+  candidates: readonly CardDefinition[],
+  seed: string,
+): CardDefinition | null {
+  if (candidates.length === 0) return null;
+  const ordered = [...candidates].sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  );
+  const { value } = nextInt(createRngState(seed), ordered.length);
+  return ordered[value] ?? null;
+}
+
+/**
  * The Commanders a host may choose for a generated deck, in stable name order.
  *
  * `playableCommanders` owns the rule — collectible, implemented, and within the
@@ -131,8 +188,8 @@ export interface GeneratedBotDeck {
   readonly provenance: GeneratedDeckProvenance;
 }
 
-export interface GenerateBotDeckRequest {
-  readonly commanderId: string;
+/** What every generation needs, whoever picked the Commander. */
+export interface BotDeckGenerationContext {
   /** The host's instruction. The seed actually used is derived from it. */
   readonly baseSeed: string;
   readonly rerollCount: number;
@@ -142,8 +199,12 @@ export interface GenerateBotDeckRequest {
   readonly now: () => number;
 }
 
+export interface GenerateBotDeckRequest extends BotDeckGenerationContext {
+  readonly commanderId: string;
+}
+
 /**
- * Builds one bot a legal deck, or says exactly why it could not.
+ * Builds one bot a legal deck under the Commander a host chose (M09.9).
  *
  * Four refusals, in the order a host can act on them: the Commander is not in
  * this format at all, it is in this format but cannot lead a deck here, the
@@ -154,6 +215,62 @@ export interface GenerateBotDeckRequest {
  */
 export function generateBotDeck(
   request: GenerateBotDeckRequest,
+): Result<GeneratedBotDeck, ProtocolError> {
+  return buildGeneratedDeck(request, 'commander_generated');
+}
+
+/**
+ * Lets the bot choose its own Commander, then builds its deck (M09.10).
+ *
+ * Two steps, in this order and never merged. The choice is made by
+ * `selectBotCommander` from the format's playable Commanders and this seat's own
+ * selection stream, and it is made **before** anything about the deck exists —
+ * so it cannot be influenced by what the draw found, let alone by anything about
+ * another seat.
+ *
+ * What happens next is exactly what happens for a Commander a host chose: the
+ * same builder, the same pool, the same refusals, the same provenance shape. The
+ * only difference recorded is `mode`, which is the honest one — it says who
+ * picked, and everything else about the deck follows from the seed either way.
+ * A seed and a Commander therefore name one deck whoever chose the Commander,
+ * which is the property that makes a recorded seed worth writing down.
+ *
+ * A Commander whose pool cannot fill a deck is refused rather than swapped for
+ * the next candidate. Retrying down the list would be a repair policy — a quiet
+ * one, invisible in the provenance — and this file exists to keep a bot from
+ * playing a deck nobody chose.
+ */
+export function generateAutonomousBotDeck(
+  request: BotDeckGenerationContext,
+): Result<GeneratedBotDeck, ProtocolError> {
+  const { baseSeed, rerollCount, database, deckFormat } = request;
+  const commander = selectBotCommander(
+    generatableCommanders(database, deckFormat),
+    commanderSelectionSeedFor(baseSeed, rerollCount),
+  );
+  if (!commander) {
+    // `deck_illegal` rather than `config_invalid`: the host's configuration is
+    // fine — they asked the bot to choose — and it is the format that has left
+    // nothing choosable.
+    return err(
+      botLobbyError('deck_illegal', [
+        `No Commander in ${deckFormat.formatId} can lead a generated deck, so a bot cannot build itself one.`,
+      ]),
+    );
+  }
+  return buildGeneratedDeck({ ...request, commanderId: commander.id }, 'autonomous_generated');
+}
+
+/**
+ * The one builder both modes go through.
+ *
+ * `mode` reaches only the provenance: the pool, the draw, the refusals and the
+ * legality check are identical, because "who chose the Commander" is a fact
+ * about the lobby and not about the deck.
+ */
+function buildGeneratedDeck(
+  request: GenerateBotDeckRequest,
+  mode: GeneratedDeckProvenance['mode'],
 ): Result<GeneratedBotDeck, ProtocolError> {
   const { commanderId, baseSeed, rerollCount, database, deckFormat } = request;
 
@@ -234,7 +351,7 @@ export function generateBotDeck(
     deck,
     provenance: {
       generatorVersion: DECK_GENERATOR_VERSION,
-      mode: 'commander_generated',
+      mode,
       formatId: deckFormat.formatId,
       seed,
       rerollCount,

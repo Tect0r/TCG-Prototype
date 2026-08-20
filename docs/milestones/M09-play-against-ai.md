@@ -1529,7 +1529,7 @@ first, naming which side is older. Nothing durable changed shape, so nothing is
 migrated — saved decks, match records and replays all keep the fields they had,
 and a lobby that seats no generated bot puts neither message on the wire.
 
-## M09.10 — Full AI Commander-and-deck choice
+## M09.10 — Full AI Commander-and-deck choice — **done (2026-08-20)**
 
 Let a bot choose its own legal Commander and construct its deck: selection is made
 among active-format legal implemented Commanders from a deterministic bot
@@ -1546,11 +1546,116 @@ multiple-bot independent-seed tests.
 
 ### Checklist
 
-- [ ] Deterministic Commander selection from its own seed.
-- [ ] No hidden counterpick, and a test that proves it.
-- [ ] Deck frozen through the shared generator with full provenance.
-- [ ] Commander public, list private until completion.
-- [ ] Multiple bots select independently.
+- [x] **Deterministic Commander selection from its own seed.**
+      `selectBotCommander` draws one candidate with `nextInt` from a stream
+      `commanderSelectionSeedFor` derives — the generation seed with a
+      `:commander` suffix, so the choice and the cards are two streams rather
+      than two reads of one cursor. Candidates are sorted by ID with a plain
+      code-point comparison rather than by `localeCompare`, because the display
+      order a caller hands over is locale-sensitive and a draw whose result
+      depended on the server's ICU build would be a different deck on a different
+      machine from the same recorded seed. Two cold-started lobbies given one
+      seed produce an identical Commander, deck hash and card list.
+- [x] **No hidden counterpick, and a test that proves it.** The proof is the
+      signature: `selectBotCommander(candidates, seed)` has no third parameter,
+      so a lobby, a seat, an opponent's hand and an opponent's saved deck are
+      unreachable rather than merely unread. Behaviourally, one seed is seated
+      against two deliberately different opponents — after the server has already
+      validated and stored each of their decks — and the resulting **deck hash**
+      is required to be identical, not only the Commander, because a counterpick
+      could as easily be a different draw under the same one. The same bot seated
+      before and after its opponent joins builds the same deck.
+- [x] **Deck frozen through the shared generator with full provenance.**
+      `generateAutonomousBotDeck` chooses, then calls the same
+      `buildGeneratedDeck` a host-chosen Commander goes through — same pool, same
+      refusals, same `validateDeck`, same provenance shape. `mode` is the only
+      difference recorded, which is the honest one: it says who picked. A seed
+      and a Commander therefore name one deck whichever mode produced it, and a
+      test builds the pair both ways and compares the hash.
+- [x] **Commander public, list private until completion.** `publicDeckSourceOf`
+      already projected this mode to a nullable Commander and no list; the seat
+      publishes the Commander the bot chose, and the guest's entire traffic is
+      searched for the seed, the deck hash and every card ID and must contain
+      none of them. Provenance goes to the host alone over `bot_seat_provenance`;
+      `bot_decks_revealed` broadcasts the list to every seat once the match
+      completes, carrying `mode: 'autonomous_generated'` so a reader can say the
+      bot chose rather than infer it from a missing deck name.
+- [x] **Multiple bots select independently.** Each seat's Commander is the one
+      its **own** seed names, asserted seat by seat against a standalone
+      computation, so neither the seat ID nor the order the bots were added can
+      move a choice. One seed seated in two different lobbies at two different
+      seats builds the same deck, which is M09.9's "a host can reproduce a deck
+      without reproducing a seating", kept.
+
+### What the host actually sees
+
+The smallest of the four modes: a seed, and nothing else. There is no Commander
+control, because a control that pre-empted the choice would be the previous mode
+wearing this one's label — and one sentence in its place says what the bot picks
+from (this format's playable Commanders, counted from the same list the server
+chooses out of) and what it cannot see while picking. Switching into the mode
+starts a fresh stream, so seating two bots does not quietly seat one deck twice.
+
+Once the server answers, the seat says **the bot chose** rather than "built for",
+read off `provenance.mode` so the sentence cannot disagree with the record it
+describes, followed by the Commander, seed, reroll number, generator version and
+deck hash. The forced-inclusion warning is the same arithmetic with a different
+promise attached: 41 legal cards for a 40-card deck still leaves two of choice,
+but a reroll here picks the Commander again as well, so the screen says it can
+change more rather than implying the same two-card ceiling.
+
+### Findings recorded rather than fixed
+
+- **A Commander whose pool cannot fill a deck is refused, not swapped.** Trying
+  the next candidate down the list would be a repair policy — and an invisible
+  one, because the provenance would record the Commander that worked and say
+  nothing about the one that did not. No shipped content reaches this state; the
+  refusal carries the generator's own problem codes, and a host's remedy is a
+  different seed.
+- **Two bots given the same seed choose the same Commander.** Determinism is the
+  point, and the alternative — mixing the seat ID into the selection stream —
+  would break "a recorded seed reproduces this deck", which is the property the
+  seed exists for. The panel generates a fresh seed per draft, so it takes
+  deliberate typing to reach.
+- **A reroll keeps the Commander about a quarter of the time.** Four candidates,
+  one uniform draw. The test that asserts a reroll can move the Commander
+  searches a small fixed list of seeds for one where it does, rather than
+  asserting luck about a single seed.
+- **The public projection's `null` Commander is still unreachable.** A seat is
+  resolved completely or not seated at all, so a bot's Commander exists by the
+  time the seat does. The nullable case is rendered honestly anyway — no tag
+  rather than a placeholder — because the shape allows it and a screen that
+  guessed would be the thing ADR 0024 §3 is about.
+- **`rerollUnsupportedDetails`' first branch is now unreachable.** Every deck
+  mode has a resolver, so no generated mode is refused for want of one. It is
+  kept, and `DECK_MODE_SUPPORT` with it, so a fifth mode arrives as a refusal
+  naming its owner rather than as a crash.
+
+### Versions — deliberately unchanged
+
+`PROTOCOL_VERSION` stays **8**. Nothing new is on the wire: `autonomous_generated`
+has been a member of `botDeckSourceSchema`, `botDeckSourcePublicSchema` and
+`generatedDeckProvenanceSchema` since M09.1 and on the wire since M09.2, and both
+messages this mode uses — `bot_seat_provenance` and `bot_decks_revealed` — were
+added by M09.9. This tranche turned a support flag on and wrote the resolver
+behind it, so an older build is refused by the handshake for the reason it
+already was, and a lobby that seats no bot puts nothing extra on any wire.
+
+`BOT_CONFIG_SCHEMA_VERSION`, `DIFFICULTY_REGISTRY_VERSION` and
+`PACING_CONFIG_VERSION` stay where they are for the same reason: no shape moved.
+`DECK_GENERATOR_VERSION` stays `'1'` — the draw is the one M09.8 extracted,
+unchanged, and choosing which Commander to hand it is not a change to it.
+`SEED_DERIVATION_VERSION` stays **2**: `commanderSelectionSeedFor` is a new
+derivation beside `generationSeedFor` and `botSeedFor`, not a changed one, and no
+previously recorded seed resolves differently. `MATCH_SCHEMA_VERSION`,
+`RULES_VERSION`, `DECK_SCHEMA_VERSION` and `CARD_SCHEMA_VERSION` stay: a
+generated deck is an ordinary `SavedDeck`, `MatchState` still does not know what
+a bot is, no legal action changed, and no card was authored.
+
+**Compatibility.** Nothing durable changed shape, so nothing is migrated. A
+`SavedDeck`, a match record and a replay all keep the fields they had. The only
+observable difference to an existing client is that the deck-source picker offers
+a fourth option and the server accepts it, which is additive on both sides.
 
 ## M09.11 — Bot pacing configuration and UI
 

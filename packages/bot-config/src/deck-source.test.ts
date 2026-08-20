@@ -238,17 +238,13 @@ describe('the public projection', () => {
 });
 
 describe('mode support', () => {
-  it('supports the three modes with a resolver and names the tranche owning the last', () => {
-    // `exact_saved_deck` joined the supported list in M09.6 and
-    // `commander_generated` in M09.9, each when the server grew a resolver for
-    // it. The one remaining mode still names the tranche that owns it.
-    expect(BOT_DECK_MODES.filter(deckModeIsSupported)).toEqual([
-      'exact_precon',
-      'exact_saved_deck',
-      'commander_generated',
-    ]);
-    expect(DECK_MODE_SUPPORT.commander_generated.plannedIn).toBeNull();
-    expect(DECK_MODE_SUPPORT.autonomous_generated.plannedIn).toBe('M09.10');
+  it('supports every mode, each having gained a resolver in its own tranche', () => {
+    // `exact_saved_deck` joined the supported list in M09.6, `commander_generated`
+    // in M09.9 and `autonomous_generated` in M09.10, each when the server grew a
+    // resolver for it. With the fourth on, no mode names a tranche any more —
+    // which is the state the table was built to reach, not a reason to delete it.
+    expect(BOT_DECK_MODES.filter(deckModeIsSupported)).toEqual([...BOT_DECK_MODES]);
+    for (const mode of BOT_DECK_MODES) expect(DECK_MODE_SUPPORT[mode].plannedIn).toBeNull();
   });
 
   it('gives every mode an entry, so none can be refused without a reason', () => {

@@ -1,3 +1,4 @@
+import { deckModeGenerates, type GeneratedDeckProvenance } from '@tcg/bot-config';
 import type { BotPolicy } from '@tcg/bot-interface';
 import { bundledPrecon, preconsForFormat, type CardDatabase } from '@tcg/card-data';
 import {
@@ -73,6 +74,19 @@ import {
   type Lobby,
   type Seat,
 } from './lobby.js';
+
+/**
+ * The provenance a bot seat carries, or `null` when it plays a list it was given.
+ *
+ * One reader for both generated modes, because "was this deck built here" is a
+ * question about the deck and not about who chose the Commander: a screen that
+ * asked mode by mode would have to be edited again the next time a mode
+ * generates (M09.10).
+ */
+function generatedProvenanceOf(seat: BotSeat): GeneratedDeckProvenance | null {
+  const source = seat.config.deck;
+  return deckModeGenerates(source.mode) && 'generated' in source ? source.generated : null;
+}
 
 /**
  * Transport-agnostic authoritative server.
@@ -549,7 +563,7 @@ export class MatchServer {
     if (!seat) return;
 
     const source = seat.config.deck;
-    if (source.mode !== 'commander_generated') {
+    if (!deckModeGenerates(source.mode)) {
       this.refuseBot(connection, 'mode_unsupported', rerollUnsupportedDetails(seatId, source.mode));
       return;
     }
@@ -558,7 +572,7 @@ export class MatchServer {
       setupOf(seat.config),
       { botId: seat.config.controller.botId, seatId },
       this.botSeatContext(),
-      { rerollCount: (source.generated?.rerollCount ?? 0) + 1 },
+      { rerollCount: (('generated' in source ? source.generated?.rerollCount : 0) ?? 0) + 1 },
     );
     if (isErr(resolved)) {
       connection.send({ type: 'error', error: resolved.error });
@@ -1158,11 +1172,10 @@ export class MatchServer {
     const connection = hostSeat ? this.connectionFor(hostSeat) : undefined;
     if (!connection) return;
 
-    const seats = botSeatsOf(lobby).flatMap((seat) =>
-      seat.config.deck.mode === 'commander_generated' && seat.config.deck.generated
-        ? [{ seatId: seat.seatId, generated: seat.config.deck.generated }]
-        : [],
-    );
+    const seats = botSeatsOf(lobby).flatMap((seat) => {
+      const generated = generatedProvenanceOf(seat);
+      return generated ? [{ seatId: seat.seatId, generated }] : [];
+    });
     // Nothing generated means nothing to say. A host whose lobby has never held
     // a generated bot is not sent an empty list on every seat change; a client
     // drops what it remembers about a seat that stops being one, so a removal
@@ -1198,8 +1211,7 @@ export class MatchServer {
           displayName: seat.displayName,
           commanderId: deck.commanderId,
           cardIds: expandDeckCards(deck.cards),
-          generated:
-            seat.config.deck.mode === 'commander_generated' ? seat.config.deck.generated : null,
+          generated: generatedProvenanceOf(seat),
         },
       ];
     });

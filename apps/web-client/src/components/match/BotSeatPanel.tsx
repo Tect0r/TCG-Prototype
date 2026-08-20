@@ -15,6 +15,7 @@ import {
   DIFFICULTY_REGISTRY_VERSION,
   IMMEDIATE_BOT_PACING,
   botStyleDefinition,
+  deckModeGenerates,
   difficultyDefinition,
   type BotDeckMode,
   type BotDeckSnapshot,
@@ -40,7 +41,7 @@ import { botSeatLabels } from '../../lib/bot-seat-labels.js';
 import { reviewSavedDeckForBot, snapshotIsStale } from '../../lib/bot-deck-snapshot.js';
 
 /**
- * The host's bot controls (M09.5, extended by M09.6 and M09.7).
+ * The host's bot controls (M09.5, extended by M09.6, M09.7, M09.9 and M09.10).
  *
  * **Only what this build can honour is on screen.** The deck-source control is
  * built from `DECK_MODE_SUPPORT` and the labels below, so a mode with no
@@ -52,8 +53,9 @@ import { reviewSavedDeckForBot, snapshotIsStale } from '../../lib/bot-deck-snaps
  * milestone rules it out.
  *
  * Each of those follows from data rather than from a list written here, so
- * M09.9, M09.11 and M09.13 turn their own control on by flipping the entry they
- * already own — which is exactly how M09.6 turned its own on.
+ * M09.11 and M09.13 turn their own control on by flipping the entry they already
+ * own — which is exactly how M09.6, M09.9 and M09.10 each turned on a deck mode.
+ * All four deck modes are now offered; difficulty and pacing are not.
  *
  * **Up to three bots, and never a table without a person** (M09.7). One form per
  * seated bot, each with its own labels, plus one form for the next one.
@@ -95,8 +97,7 @@ const DECK_MODE_LABELS: Readonly<Record<BotDeckMode, string | null>> = {
   exact_precon: 'A built-in deck',
   exact_saved_deck: 'One of your saved decks',
   commander_generated: 'A deck built for a Commander you pick',
-  /** M09.10 lets the bot choose both and owns this one. */
-  autonomous_generated: null,
+  autonomous_generated: 'A Commander and deck the bot picks',
 };
 
 const OFFERED_DECK_MODES = BOT_DECK_MODES.filter(
@@ -116,7 +117,14 @@ type BotDeckDraft =
    * step along that stream — the reroll count — which is why `reroll_bot`
    * carries no seed at all.
    */
-  | { readonly mode: 'commander_generated'; readonly commanderId: string; readonly seed: string };
+  | { readonly mode: 'commander_generated'; readonly commanderId: string; readonly seed: string }
+  /**
+   * The seed alone (M09.10). There is no Commander to draft because the bot
+   * picks one, from the same format-scoped list this screen would have offered
+   * and from the seed below — so the seed names the whole choice, and a host who
+   * writes one down gets that Commander and that deck back.
+   */
+  | { readonly mode: 'autonomous_generated'; readonly seed: string };
 
 /** A fresh generation stream. Opaque, and never parsed back apart. */
 function newGenerationSeed(): string {
@@ -170,7 +178,11 @@ function sameDeckDraft(a: BotDeckDraft, b: BotDeckDraft): boolean {
     return b.mode === 'exact_saved_deck' && a.savedDeckId === b.savedDeckId;
   }
   // The seed is part of the identity of a generated draft: two drafts naming the
-  // same Commander from different seeds are two different decks.
+  // same Commander from different seeds are two different decks. For a draft the
+  // bot chooses under, the seed is the whole identity.
+  if (a.mode === 'autonomous_generated') {
+    return b.mode === 'autonomous_generated' && a.seed === b.seed;
+  }
   return b.mode === 'commander_generated' && a.commanderId === b.commanderId && a.seed === b.seed;
 }
 
@@ -269,6 +281,21 @@ function reviewDraft(
       snapshot: null,
     };
   }
+  if (draft.deck.mode === 'autonomous_generated') {
+    // The same emptiness check, asked of the format rather than of the draft:
+    // there is no Commander in the instruction because the bot picks one, so
+    // what can make this mode impossible is the format having none to pick from.
+    const none = playableCommanders(database, deckFormat).length === 0;
+    return {
+      deckSource: none
+        ? null
+        : { mode: 'autonomous_generated', seed: draft.deck.seed, generated: null },
+      problem: none
+        ? 'No Commander in this format can lead a generated deck yet, so a bot has nothing to pick from.'
+        : null,
+      snapshot: null,
+    };
+  }
   const review = reviewSavedDeckForBot(draft.deck.savedDeckId, decks, database, deckFormat);
   return {
     deckSource: review.snapshot ? { mode: 'exact_saved_deck', deck: review.snapshot } : null,
@@ -307,6 +334,16 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
       style: bot.style,
     };
   }
+  // The bot's own Commander is public, but it is a *result* here rather than
+  // part of the draft: what the host chose was the seed, and only the client
+  // that sent it knows it.
+  if (bot.deck.mode === 'autonomous_generated' && applied?.mode === 'autonomous_generated') {
+    return {
+      deck: { mode: 'autonomous_generated', seed: applied.seed },
+      difficulty: bot.difficulty,
+      style: bot.style,
+    };
+  }
   return null;
 }
 
@@ -329,10 +366,16 @@ function GeneratedDeckSummary({
   readonly commanderName: string | null;
 }) {
   const choice = provenance.legalPoolSize - provenance.forcedInclusionFloor;
+  // Who picked the Commander is read off the provenance rather than passed in:
+  // the record of the deck is what knows, and a screen that was told separately
+  // could disagree with it (M09.10).
+  const chosenByBot = provenance.mode === 'autonomous_generated';
   return (
     <>
       <p className="lobby__hint">
-        Built for <strong>{commanderName ?? provenance.commanderId}</strong> from seed{' '}
+        {chosenByBot ? 'The bot chose ' : 'Built for '}
+        <strong>{commanderName ?? provenance.commanderId}</strong>
+        {chosenByBot ? ' and built its deck from seed ' : ' from seed '}
         <code>{provenance.seed}</code>
         {provenance.rerollCount > 0 ? ` (reroll ${provenance.rerollCount})` : ''} by generator v
         {provenance.generatorVersion} — deck <code>{provenance.deckHash}</code>. Opponents see the
@@ -340,8 +383,10 @@ function GeneratedDeckSummary({
       </p>
       <p className="lobby__hint lobby__hint--warn">
         This format leaves {provenance.legalPoolSize} cards legal under that Commander, so any legal
-        deck must include at least {provenance.forcedInclusionFloor} of them. Rerolling changes at
-        most {choice} {choice === 1 ? 'card' : 'cards'}.
+        deck must include at least {provenance.forcedInclusionFloor} of them.{' '}
+        {chosenByBot
+          ? `Under this Commander only ${choice} ${choice === 1 ? 'card is' : 'cards are'} left to chance; a reroll picks the Commander again as well, so it can change more.`
+          : `Rerolling changes at most ${choice} ${choice === 1 ? 'card' : 'cards'}.`}
       </p>
     </>
   );
@@ -381,6 +426,8 @@ function BotConfigFields({
       // the seed the host last used named a different configuration, and
       // silently reusing it would hand back a deck they had moved away from.
       onChange({ deck: { mode, commanderId: commanders[0]?.id ?? '', seed: newGenerationSeed() } });
+    } else if (mode === 'autonomous_generated') {
+      onChange({ deck: { mode, seed: newGenerationSeed() } });
     }
   };
 
@@ -451,57 +498,67 @@ function BotConfigFields({
           is the same rule the authoritative server refuses by — so an option
           this control offers is never one the server would reject (M09.9). */}
       {draft.deck.mode === 'commander_generated' && (
-        <>
-          <label className="field">
-            <span>{labels.commander}</span>
-            <select
-              value={draft.deck.commanderId}
-              disabled={disabled || commanders.length === 0}
-              onChange={(event) =>
-                onChange({
-                  deck: {
-                    mode: 'commander_generated',
-                    commanderId: event.target.value,
-                    // The Commander names the stream along with the seed, so
-                    // choosing a different one starts that stream at its first
-                    // deck rather than at somebody else's reroll count.
-                    seed: draft.deck.mode === 'commander_generated' ? draft.deck.seed : '',
-                  },
-                })
-              }
-            >
-              {commanders.length === 0 && <option value="">No Commanders available</option>}
-              {commanders.map((commander) => (
-                <option key={commander.id} value={commander.id}>
-                  {commander.name}
-                </option>
-              ))}
-            </select>
-          </label>
+        <label className="field">
+          <span>{labels.commander}</span>
+          <select
+            value={draft.deck.commanderId}
+            disabled={disabled || commanders.length === 0}
+            onChange={(event) =>
+              onChange({
+                deck: {
+                  mode: 'commander_generated',
+                  commanderId: event.target.value,
+                  // The Commander names the stream along with the seed, so
+                  // choosing a different one starts that stream at its first
+                  // deck rather than at somebody else's reroll count.
+                  seed: draft.deck.mode === 'commander_generated' ? draft.deck.seed : '',
+                },
+              })
+            }
+          >
+            {commanders.length === 0 && <option value="">No Commanders available</option>}
+            {commanders.map((commander) => (
+              <option key={commander.id} value={commander.id}>
+                {commander.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
-          {/* Editable because the seed is an instruction, not a result: the same
-              seed and Commander name the same deck on this build, so a host who
-              writes one down can ask for that deck back. What the server owns is
-              the step along the stream, which is why a reroll carries no seed. */}
-          <label className="field">
-            <span>{labels.seed}</span>
-            <input
-              type="text"
-              value={draft.deck.seed}
-              disabled={disabled}
-              onChange={(event) =>
-                onChange({
-                  deck: {
-                    mode: 'commander_generated',
-                    commanderId:
-                      draft.deck.mode === 'commander_generated' ? draft.deck.commanderId : '',
-                    seed: event.target.value,
-                  },
-                })
-              }
-            />
-          </label>
-        </>
+      {/* One control for both generated modes. Editable because the seed is an
+          instruction, not a result: the same seed names the same deck on this
+          build — and, when the bot is the one choosing, the same Commander too —
+          so a host who writes one down can ask for that deck back. What the
+          server owns is the step along the stream, which is why a reroll carries
+          no seed. */}
+      {(draft.deck.mode === 'commander_generated' ||
+        draft.deck.mode === 'autonomous_generated') && (
+        <label className="field">
+          <span>{labels.seed}</span>
+          <input
+            type="text"
+            value={draft.deck.seed}
+            disabled={disabled}
+            onChange={(event) => {
+              const seed = event.target.value;
+              onChange({
+                deck:
+                  draft.deck.mode === 'commander_generated'
+                    ? { mode: 'commander_generated', commanderId: draft.deck.commanderId, seed }
+                    : { mode: 'autonomous_generated', seed },
+              });
+            }}
+          />
+        </label>
+      )}
+
+      {draft.deck.mode === 'autonomous_generated' && (
+        <p className="lobby__hint">
+          The bot picks one of this format’s {commanders.length} playable Commanders from this seed
+          alone, and builds its deck under it. It cannot see anyone’s hand, deck or saved decks when
+          it chooses.
+        </p>
       )}
 
       <label className="field">
@@ -640,11 +697,14 @@ function SeatedBotForm({
       {/* What the server actually built, said only to the host, because the
           seed it carries would let anybody holding it and the public Commander
           rebuild the list card for card (ADR 0024 §3). */}
-      {bot.deck.mode === 'commander_generated' &&
+      {deckModeGenerates(bot.deck.mode) &&
         (provenance ? (
           <GeneratedDeckSummary
             provenance={provenance}
-            commanderName={database.get(bot.deck.commanderId)?.name ?? null}
+            // From the provenance rather than from the seat view: an
+            // `autonomous_generated` seat publishes `null` until the bot has
+            // chosen, and the record of what was built always knows.
+            commanderName={database.get(provenance.commanderId)?.name ?? null}
           />
         ) : (
           <p className="lobby__hint">
@@ -689,7 +749,7 @@ function SeatedBotForm({
             outcome is that refusal is one this panel does not offer. Pressing it
             sends no seed: the server takes the next step along this seat's own
             stream, which is what makes the recorded transition its own. */}
-        {bot.deck.mode === 'commander_generated' && (
+        {deckModeGenerates(bot.deck.mode) && (
           <button
             type="button"
             onClick={() => {
