@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   botDisplayNameSchema,
   botIdSchema,
+  botPacingBudgetsSchema,
   botSeatConfigSchema,
   botSeatPublicSchema,
   generatedDeckProvenanceSchema,
@@ -88,8 +89,24 @@ import {
  * message that carries a list — so the ADR now records the correction rather than
  * the guess. The principle it was expressing is unchanged and is what governs
  * here: the version moves where the *shape* moves, and nowhere else.
+ *
+ * 9 (M09.11): a lobby now has pacing budgets, and the host can change them.
+ * `lobbyViewSchema` is a strict object and gains a required `botPacing` member,
+ * so a v8 client would fail to parse the first lobby view a v9 server sent it —
+ * the same failure mode M09.2's widened seat view had. `set_bot_pacing` travels
+ * the other way and a v8 server would reject it as malformed for the same
+ * reason.
+ *
+ * The budgets are on the *lobby view* rather than on each bot seat because they
+ * belong to the table: every seat needs them to turn a bot's public percentage
+ * into the seconds beside it, and a copy per seat would be three chances for
+ * them to disagree. `PACING_CONFIG_VERSION` deliberately does **not** move with
+ * this: the shape and the calculation `@tcg/bot-config` owns are exactly what
+ * they were in M09.1, and this is the wire learning to carry them.
+ * `RULES_VERSION` does not move either — a budget is lobby configuration, not a
+ * rule, and open-questions.md Q8 is still open (ADR 0024 §4).
  */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({
@@ -209,6 +226,18 @@ export const lobbyViewSchema = z.strictObject({
   hostSeatId: seatIdSchema,
   canStart: z.boolean(),
   seats: z.array(lobbySeatViewSchema),
+  /**
+   * This table's bot pacing budgets (M09.11), and the frozen ones once the match
+   * has started.
+   *
+   * Public rather than host-only, because a bot's percentage already is: a
+   * percentage without the budget it is a percentage *of* is not a number
+   * anybody can read, and the seconds it implies are observable with a stopwatch
+   * from the other side of the table anyway. They are **bot pacing references,
+   * not human timers** — nothing in the protocol times out, passes for, or
+   * defeats a person, and open-questions.md Q8 stays open (ADR 0024 §4).
+   */
+  botPacing: botPacingBudgetsSchema,
 });
 export type LobbyView = z.infer<typeof lobbyViewSchema>;
 
@@ -293,6 +322,24 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('remove_bot'),
     seatId: seatIdSchema,
   }),
+  /**
+   * Host-only: set this table's bot pacing budgets (M09.11).
+   *
+   * A whole budget record rather than one field, for the reason `update_bot`
+   * carries a whole configuration: "what this table is set to" then has one
+   * representation on the wire, and a partial update cannot leave a lobby in a
+   * combination nothing validated.
+   *
+   * It is a lobby message rather than part of a bot's setup because the budgets
+   * are the table's: three bots at 50% are three bots waiting half of *one*
+   * number, and a copy per seat would be three chances for them to disagree.
+   * Per-bot percentages travel in `botSetupSchema.pacing`, where they already
+   * have since M09.2.
+   */
+  z.strictObject({
+    type: z.literal('set_bot_pacing'),
+    budgets: botPacingBudgetsSchema,
+  }),
   z.strictObject({
     type: z.literal('join_lobby'),
     versions: versionsSchema,
@@ -360,6 +407,7 @@ export const HOST_ONLY_CLIENT_MESSAGE_TYPES = [
   'update_bot',
   'reroll_bot',
   'remove_bot',
+  'set_bot_pacing',
 ] as const satisfies readonly ClientMessage['type'][];
 export type HostOnlyClientMessageType = (typeof HOST_ONLY_CLIENT_MESSAGE_TYPES)[number];
 

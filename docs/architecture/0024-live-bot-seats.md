@@ -243,11 +243,26 @@ takes `createRngState` directly.
   a v7 client would fail to decode the first of either; the handshake refuses
   first and names the older side.
 
+  It moved a third time in M09.11, for the same rule. A table's pacing budgets
+  are a required member of a strict `lobbyViewSchema` — every seat needs them to
+  turn a bot's public percentage into the seconds beside it, and a copy per seat
+  would be three chances for them to disagree — and `set_bot_pacing` is a fifth
+  host-only message travelling the other way. Both are shapes, so the constant is 9. **`PACING_CONFIG_VERSION` deliberately did not move with it**: the budget
+  shape and the percentage-to-delay calculation are exactly what M09.1 wrote, and
+  what changed is the wire learning to carry them. Changing a budget's _value_
+  moves nothing at all — that is the whole point of the numbers being
+  configuration.
+
 - **`MATCH_SCHEMA_VERSION` does not move.** A bot seat is a controller above the
   engine. `MatchState` does not learn what a bot is, and a replay of a
   human-versus-bot match is a replay of an ordinary match.
 - **`RULES_VERSION` does not move** for pacing, for difficulty or for bot seats.
-  None of them changes a legal action, a cost, or a resolution.
+  None of them changes a legal action, a cost, or a resolution. M09.11 is the
+  tranche that had to say so out loud, because it is the one that put seconds on
+  a screen: the budgets live on the lobby rather than in `RulesConfig`, nothing
+  in the engine reads them, and open-questions.md Q8 — whether a _human_ should
+  ever be timed out of a phase or a choice — is exactly as open afterwards as it
+  was before.
 - **Bot configuration, difficulty, generator and pacing carry their own version
   constants**, because a difficulty can improve without a card, a rule or a
   message shape changing, and a result that cites "Hard" has to be able to say

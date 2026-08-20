@@ -6,6 +6,7 @@ import { reviewPrecon, validateDeck } from '@tcg/deck';
 import { RulebookPanel } from '../help/RulebookPanel.js';
 import { BotSeatPanel, isBotSeatError } from './BotSeatPanel.js';
 import { botSeatLabels } from '../../lib/bot-seat-labels.js';
+import { compactPacingLabel } from '../../lib/bot-pacing-labels.js';
 
 /**
  * What the deck picker is currently pointing at.
@@ -193,6 +194,14 @@ export function LobbyScreen() {
               // Read from the seat's public projection, which carries no card
               // list, seed or hash to leak (ADR 0024 §3).
               const bot = seat.controller === 'bot' ? botSeatLabels(seat.bot, database) : null;
+              // Public, like the difficulty and the style beside it: how long a
+              // bot takes is observable from the other side of the table, and
+              // the seconds travel with the percentage so it is a number
+              // somebody can read (M09.11).
+              const botTiming =
+                seat.controller === 'bot'
+                  ? compactPacingLabel(seat.bot.pacing, lobby.botPacing)
+                  : null;
               return (
                 <li key={seat.seatId} className="lobby__seat">
                   <span className="lobby__seat-name">
@@ -215,6 +224,7 @@ export function LobbyScreen() {
                       {bot.commanderName && <span className="tag">{bot.commanderName}</span>}
                       <span className="tag">{bot.difficulty}</span>
                       <span className="tag">{bot.style}</span>
+                      {botTiming && <span className="tag">{botTiming}</span>}
                     </>
                   ) : (
                     <span className="tag">{seat.deckName ?? 'no deck'}</span>

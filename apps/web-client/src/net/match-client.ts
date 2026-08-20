@@ -13,6 +13,7 @@ import {
 import {
   deckModeGenerates,
   type BotDeckSource,
+  type BotPacingBudgets,
   type GeneratedDeckProvenance,
 } from '@tcg/bot-config';
 import type { SavedDeck } from '@tcg/deck';
@@ -250,6 +251,18 @@ export class MatchClient {
   removeBot(seatId: SeatId): void {
     this.#sentBotDeck = null;
     this.dispatch({ type: 'remove_bot', seatId });
+  }
+
+  /**
+   * Host-only: set this table's bot pacing budgets (M09.11).
+   *
+   * Nothing is remembered here. Unlike a bot's deck source, the budgets come
+   * back on every lobby view — they belong to the table and every seat needs
+   * them to read a percentage — so the authoritative copy is the one to render
+   * and a client-side memory of the request would only be a second one.
+   */
+  setBotPacing(budgets: BotPacingBudgets): void {
+    this.dispatch({ type: 'set_bot_pacing', budgets });
   }
 
   joinLobby(inviteCode: string, displayName: string): void {

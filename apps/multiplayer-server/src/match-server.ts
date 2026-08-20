@@ -1,4 +1,10 @@
-import { deckModeGenerates, type GeneratedDeckProvenance } from '@tcg/bot-config';
+import {
+  DEFAULT_BOT_PACING_BUDGETS,
+  deckModeGenerates,
+  readBotPacingBudgets,
+  type BotPacingBudgets,
+  type GeneratedDeckProvenance,
+} from '@tcg/bot-config';
 import type { BotPolicy } from '@tcg/bot-interface';
 import { bundledPrecon, preconsForFormat, type CardDatabase } from '@tcg/card-data';
 import {
@@ -236,6 +242,9 @@ export class MatchServer {
       case 'remove_bot':
         this.removeBot(connection, message.seatId);
         return;
+      case 'set_bot_pacing':
+        this.setBotPacing(connection, message.budgets);
+        return;
       case 'reconnect':
         this.reconnect(connection, message.versions, message.reconnectToken);
         return;
@@ -322,6 +331,10 @@ export class MatchServer {
       seats: new Map([['seat_1', seat]]),
       maxSeats: Math.min(MAX_SEATS, Math.max(MIN_SEATS, maxSeats)),
       botsCreated: 0,
+      // The milestone's own dials — 30 seconds and 5 — until the host moves
+      // them. They are bot pacing references, not human timers (M09.11).
+      pacing: DEFAULT_BOT_PACING_BUDGETS,
+      lockedPacing: null,
       status: 'waiting',
       state: null,
     };
@@ -595,6 +608,42 @@ export class MatchServer {
   }
 
   /**
+   * Host-only: set this table's bot pacing budgets (M09.11).
+   *
+   * It goes through `hostLobbyFor` like every other bot message, so the three
+   * refusals it shares with them are the same three refusals by name: a guest
+   * gets `not_host`, and a lobby that has started gets `lobby_locked` — which is
+   * what "locked at match start" means at the wire.
+   *
+   * The record is read with `readBotPacingBudgets` even though the codec has
+   * already parsed it against the same schema, for the reason `add_bot` re-reads
+   * an assembled configuration: the authority on what a budget record means is
+   * `@tcg/bot-config`, and a shape this server stores without asking it is a
+   * second opinion waiting to disagree. Nothing is written until it answers.
+   *
+   * Changing a budget is a **configuration** change and moves no version
+   * constant. `PACING_CONFIG_VERSION` pins the calculation, not the values, and
+   * `RULES_VERSION` does not move because a bot waited (ADR 0024 §4).
+   */
+  private setBotPacing(connection: ServerConnection, budgets: BotPacingBudgets): void {
+    const lobby = this.hostLobbyFor(connection);
+    if (!lobby) return;
+
+    const read = readBotPacingBudgets(budgets);
+    if (isErr(read)) {
+      this.refuseBot(
+        connection,
+        'config_invalid',
+        errorsOf(read.error).map((issue) => issue.message),
+      );
+      return;
+    }
+
+    lobby.pacing = read.value;
+    this.broadcastLobby(lobby);
+  }
+
+  /**
    * Keeps `status` agreeing with `canStart` after a seat appears or changes.
    *
    * The same line `set_ready` runs, for the same reason: a lobby that says
@@ -862,6 +911,10 @@ export class MatchServer {
 
     lobby.state = created.value.state;
     lobby.status = 'in_match';
+    // What this match runs under, frozen at the instant it starts, so the result
+    // can be read off a value rather than inferred from nothing having changed
+    // it (M09.11).
+    lobby.lockedPacing = lobby.pacing;
     this.startBots(lobby, seed);
     this.broadcastLobby(lobby);
     this.broadcastMatchState(lobby);

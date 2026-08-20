@@ -1,4 +1,4 @@
-import { publicBotSeatOf, type BotSeatConfig } from '@tcg/bot-config';
+import { publicBotSeatOf, type BotPacingBudgets, type BotSeatConfig } from '@tcg/bot-config';
 import type { SavedDeck } from '@tcg/deck';
 import {
   MAX_BOT_SEATS,
@@ -124,6 +124,30 @@ export interface Lobby {
    * than the previous one's identity handed to a new configuration.
    */
   botsCreated: number;
+  /**
+   * This table's bot pacing budgets (M09.11).
+   *
+   * Lobby state rather than per-seat state, because the budget is the table's
+   * and the percentage is the bot's: three bots at 50% wait half of one number.
+   * It lives here rather than in `RulesConfig` because it is **configuration,
+   * not a rule** — putting it beside the match rules would quietly pre-answer
+   * open-questions.md Q8 in the direction of "yes, phases have timers"
+   * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §4).
+   *
+   * It survives everything short of the lobby: seats coming and going, bots
+   * being reconfigured, and the host reconnecting all leave it where it was.
+   */
+  pacing: BotPacingBudgets;
+  /**
+   * The budgets as they were when the match started, or `null` before it does.
+   *
+   * The lock is structural rather than a promise about the handlers. Every path
+   * that could change `pacing` is already refused once the lobby has started, so
+   * this is a second lock and not the only one — but it is the one that makes
+   * "the match ran under these budgets" a value the result can be read off,
+   * rather than an inference from the absence of a mutation.
+   */
+  lockedPacing: BotPacingBudgets | null;
   status: LobbyStatus;
   state: MatchState | null;
 }
@@ -322,6 +346,10 @@ export function lobbyView(lobby: Lobby, now: () => number = Date.now): LobbyView
     seats: seatsOf(lobby).map((seat) =>
       seatView(seat, lobby, graceSecondsFor(seat, now), isEliminated(lobby, seat)),
     ),
+    // The frozen budgets once there are any: after the match starts, what every
+    // seat is shown is what the match locked, whatever a later change to the
+    // live record might do (M09.11).
+    botPacing: lobby.lockedPacing ?? lobby.pacing,
   };
 }
 

@@ -1657,7 +1657,7 @@ a bot is, no legal action changed, and no card was authored.
 observable difference to an existing client is that the deck-source picker offers
 a fourth option and the server accepts it, which is additive on both sides.
 
-## M09.11 — Bot pacing configuration and UI
+## M09.11 — Bot pacing configuration and UI — **done (2026-08-20)**
 
 Configure concrete percentages without changing match behaviour yet: lobby-level
 ordinary/choice and Reaction pacing budgets, initially 30 and 5 seconds, labelled
@@ -1675,11 +1675,138 @@ display, lock, protocol refusal, and Q8 non-regression tests.
 
 ### Checklist
 
-- [ ] Lobby budgets, per-bot percentage and Reaction override configurable.
-- [ ] Seconds displayed beside every percentage.
-- [ ] Locked at start and shown in provenance.
-- [ ] Pacing configuration version recorded.
-- [ ] Q8 still open in `docs/open-questions.md`; version reasoning written down.
+- [x] **Lobby budgets, per-bot percentage and Reaction override configurable.**
+      The budgets are the **table's** and the percentage is the **bot's**, so
+      they are two controls and two places on the wire: `botPacing` on the lobby
+      view, and `pacing` on each bot's setup, where it has been since M09.2. The
+      host changes the budgets with `set_bot_pacing` — a whole record rather than
+      one field, for the reason `update_bot` carries a whole configuration — and
+      it goes through the same `hostLobbyFor` preamble every bot message does, so
+      a guest is refused `protocol/not_host` and a started lobby
+      `protocol/already_started` by name rather than by a fourth copy of the same
+      condition. The Reaction override is a checkbox over `null`, because
+      `reactionPercent: null` (inherit) and `reactionPercent: 0` (answer a
+      Reaction instantly) are different configurations that one number could not
+      express; ticking it starts at the ordinary percentage, so turning it on
+      changes nothing until the host moves it.
+- [x] **Seconds displayed beside every percentage.** From `botDelayMs` — the
+      function M09.12's scheduler will call — rather than from arithmetic in a
+      component, so the two cannot disagree and a tester with a stopwatch is not
+      the one who finds out. They are exact rather than rounded to one decimal,
+      because 100% of 30 seconds is 29.75 and a screen printing "29.8 s" would be
+      describing a delay nothing will use. `PACING_SAFETY_MARGIN_MS` is stated
+      beside the budgets rather than left to surprise somebody, and the seconds
+      appear for a guest too: a bot's percentage is public, and a percentage
+      without its budget is not a number anybody can read.
+- [x] **Locked at start and shown in provenance.** `startMatch` freezes the
+      budgets into `lobby.lockedPacing`, and `lobbyView` publishes the frozen
+      record from then on. It is a **second** lock rather than the only one —
+      every path that could change them is already refused once the lobby has
+      started — and it is the one that makes "the match ran under these budgets"
+      a value a result can be read off. A test mutates the live record by hand
+      after the start, which no message can do, and requires the published view
+      not to move. The board prints the locked budgets and every bot's timing
+      beside the result, where a playtest note can quote them; the lobby panel
+      prints the same thing in place of its controls once the match has started.
+- [x] **Pacing configuration version recorded.** `PACING_CONFIG_VERSION` rides on
+      every budget record — it is a member of `botPacingBudgetsSchema` — so a
+      lobby view and a `set_bot_pacing` message both say which calculation they
+      were written against, and `readBotPacingBudgets` refuses a future one by
+      name. The constant deliberately **does not move**: M09.1 wrote the shape
+      and the arithmetic, and M09.11 put them on a wire and on a screen without
+      changing either.
+- [x] **Q8 still open in `docs/open-questions.md`; version reasoning written
+      down.** A test reads the document and requires Q8 to be above the
+      `## Answered` section and still carrying its `**Still open:**` paragraph,
+      and a second one requires no key of `DEFAULT_RULES_CONFIG` to mention a
+      pacing budget. The version reasoning is under Versions below and in
+      [ADR 0024](../architecture/0024-live-bot-seats.md) §7.
+
+### What the host actually sees
+
+One new block above the bot forms, with the table's two budgets in seconds and
+two sentences: that these pace bots only and nothing here times a person out of
+anything, and that a quarter-second of every budget is kept for deciding and
+submitting so 100% stops that much short. Each bot form gains a timing
+percentage, the seconds it implies, and a "time Reactions differently" checkbox
+that reveals a second percentage when it is ticked. Every seat — host or guest —
+carries a `50% · 15 s` tag in the seat list beside its difficulty and style.
+
+The panel says plainly that **timings are recorded and locked but bots still
+answer immediately in this build**. That sentence is the tranche's exclusion
+written where the person setting the dial will read it, rather than left for them
+to discover with a stopwatch; M09.12 is what makes it false.
+
+Once the match starts the controls are replaced by what was locked — the two
+budgets, and one line per bot naming its percentage, its Reaction percentage and
+the seconds each implies — and the same summary appears beside the result on the
+board, next to the revealed decks.
+
+### Findings recorded rather than fixed
+
+- **A budget outside the range is refused as a malformed message, not as a
+  pacing record.** `set_bot_pacing` carries `botPacingBudgetsSchema` itself, so
+  the codec rejects an unreadable record before the server sees it — exactly the
+  finding M09.3 recorded for `botSetupSchema` and `BOT_CONFIG_SCHEMA_VERSION`,
+  and it belongs to the same compatibility pass in M09.18. The server still runs
+  `readBotPacingBudgets` over what arrives, and a record that reaches it another
+  way is refused `protocol/bot_config_invalid` with the reader's own wording; a
+  test drives that path through `handle` directly.
+- **The per-bot default stays 0%.** A default that waited would make the first
+  match anybody plays slower than they asked for, and the dial is the point of
+  the tranche rather than the setting. `IMMEDIATE_BOT_PACING` is still what a
+  fresh draft carries.
+- **The pacing summary's last sentence is expected to become false.** It says
+  the bots answered immediately, which is true of this build and is what makes
+  the record honest; M09.12 has to change it in the same change that makes the
+  server wait. It is written here so that is a known edit rather than a
+  contradiction somebody finds later.
+- **The budgets are public, and that is deliberate.** They could have been
+  host-only, and then a guest could see "50%" with nothing to read it against.
+  Nothing about a bot's timing is hidden information: an opponent can time it
+  with a stopwatch, which is the same reason difficulty and style are already
+  public (ADR 0024 §3).
+- **`PACING_BUDGET_BY_CATEGORY` still puts a pending choice on the ordinary
+  budget.** M09.1 decided it and nothing here re-opened it, so the screen shows
+  two budgets for three categories and says "a decision or a choice" rather than
+  offering a third dial nothing would read.
+
+### Versions
+
+`PROTOCOL_VERSION` moves **8 → 9**. `lobbyViewSchema` is a strict object and now
+has a required `botPacing` member, so a v8 client would fail to parse the first
+lobby view a v9 server sent it — mid-lobby, on the message everything else
+depends on. `set_bot_pacing` travels the other way and a v8 server would reject
+it as malformed. Both are shapes, which is the only reason this constant ever
+moves ([ADR 0024](../architecture/0024-live-bot-seats.md) §7). The budgets went
+on the _lobby view_ rather than on each seat because every seat needs them to
+read a percentage and three copies would be three chances to disagree.
+
+`PACING_CONFIG_VERSION` stays **1**, and saying why is part of the tranche: it
+pins the budget _shape_ and the percentage-to-delay _calculation_, both of which
+are exactly what M09.1 wrote. Changing 30 seconds to 45 is a configuration change
+and moves nothing — that is the whole point of the numbers being configuration
+rather than constants of the game. `BOT_CONFIG_SCHEMA_VERSION` and
+`DIFFICULTY_REGISTRY_VERSION` stay 1 for the ordinary reason: no configuration
+shape widened and no difficulty appeared.
+
+**`RULES_VERSION` stays `0.4.0`**, and this is the tranche that had to say so out
+loud, because it is the one that put seconds on a screen. A pacing budget is not
+in `RulesConfig`, no engine code reads one, no legal action, cost or resolution
+changed, and nothing in this build times out, passes for, or defeats a person. A
+bot waiting is not a rules change (ADR 0024 §4). Q8 — whether a _human_ should
+ever be timed out of a phase or a choice, and what expiry should do — is exactly
+as open as it was, and a test asserts that against `docs/open-questions.md`
+rather than leaving it to review. `MATCH_SCHEMA_VERSION`, `CARD_SCHEMA_VERSION`,
+`DECK_SCHEMA_VERSION`, `SEED_DERIVATION_VERSION` and `DECK_GENERATOR_VERSION` all
+stay: `MatchState` still does not know what a bot is, no card or deck was
+touched, and no seed derivation changed.
+
+**Compatibility.** Nothing durable changed shape, so nothing is migrated. A
+`SavedDeck`, a match record and a replay keep the fields they had; a lobby is
+in-memory and does not outlive the process, so there is no stored lobby to read
+back without budgets. The handshake refuses a v8 client, which is the intended
+and only observable break.
 
 ## M09.12 — Server bot-delay scheduler
 

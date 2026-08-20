@@ -16,6 +16,7 @@ import { groupEntities, type SelectionMarker } from '../../lib/token-grouping.js
 import { TileList } from '../TokenStack.js';
 import { CardInspector, type InspectableCard } from '../help/CardInspector.js';
 import { RevealedBotDecks } from './RevealedBotDecks.js';
+import { BotPacingSummary } from './BotPacingSummary.js';
 
 /**
  * The match board, for two to four players.
@@ -804,6 +805,11 @@ export function MatchBoard() {
           lists once the match completes, and this renders whatever arrives
           rather than deciding for itself when a list stops being secret. */}
       <RevealedBotDecks />
+
+      {/* The other half of what a playtest note quotes: what the bots were
+          timed at, off the budgets the server froze when the match started
+          (M09.11). */}
+      <BotPacingSummary />
 
       {others.map((player) => {
         const seatId = seatIdFor(player.playerId);

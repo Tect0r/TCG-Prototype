@@ -852,13 +852,22 @@ code {
   font-size: 1rem;
 }
 
-.lobby__bot {
+.lobby__bot,
+.lobby__pacing {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.75rem;
+}
+
+/* A checkbox reads left-to-right; every other field in the panel is a stacked
+   label over its control. */
+.field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .tag--bot {
@@ -924,6 +933,34 @@ code {
   padding-left: 1.1rem;
   columns: 2;
   column-gap: 1.5rem;
+}
+
+/* What the bots were timed at, beside the result. Bot pacing references, never
+   human timers (ADR 0024 §4). */
+.board__pacing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.board__pacing h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.board__pacing-head {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.board__pacing-list,
+.lobby__pacing-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-dim);
 }
 
 .player-bar {

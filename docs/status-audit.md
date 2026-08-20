@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `60ee7a50e3cd14bfd1fa5d560faec795a058f752` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-20                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | not run for this audit                     |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `a26a8b7e3c6a454844c335bb18a6b44893abe369`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-20                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 71      | 1588     |
+| packages       | 71      | 1591     |
 | scripts        | 4       | 69       |
-| server         | 10      | 226      |
+| server         | 11      | 246      |
 | simulator      | 23      | 433      |
-| web-client     | 18      | 219      |
-| **total**      | **126** | **2535** |
+| web-client     | 19      | 234      |
+| **total**      | **128** | **2573** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -54,7 +54,7 @@ What a client, a server and a saved deck must agree on to play at all.
 | Constant                        | Value | Pins                                                                                         |
 | ------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
 | `RULES_VERSION`                 | 0.4.0 | The rules configuration.                                                                     |
-| `PROTOCOL_VERSION`              | 8     | Every message shape, refused at the handshake.                                               |
+| `PROTOCOL_VERSION`              | 9     | Every message shape, refused at the handshake.                                               |
 | `MATCH_SCHEMA_VERSION`          | 7     | Serialized match state.                                                                      |
 | `CARD_SCHEMA_VERSION`           | 5     | A card definition, owned per set by its manifest.                                            |
 | `DECK_SCHEMA_VERSION`           | 1     | A saved deck.                                                                                |

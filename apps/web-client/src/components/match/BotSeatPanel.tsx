@@ -14,6 +14,11 @@ import {
   DEFAULT_BOT_DIFFICULTY,
   DIFFICULTY_REGISTRY_VERSION,
   IMMEDIATE_BOT_PACING,
+  MAX_BUDGET_SECONDS,
+  MAX_PACING_PERCENT,
+  MIN_BUDGET_SECONDS,
+  MIN_PACING_PERCENT,
+  PACING_CONFIG_VERSION,
   botStyleDefinition,
   deckModeGenerates,
   difficultyDefinition,
@@ -21,6 +26,8 @@ import {
   type BotDeckSnapshot,
   type BotDeckSource,
   type BotDifficulty,
+  type BotPacing,
+  type BotPacingBudgets,
   type BotSeatPublic,
   type BotStyle,
   type GeneratedDeckProvenance,
@@ -39,23 +46,38 @@ import { useAppState, useCardDatabase, useDeckFormat } from '../../state/AppCont
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
 import { botSeatLabels } from '../../lib/bot-seat-labels.js';
 import { reviewSavedDeckForBot, snapshotIsStale } from '../../lib/bot-deck-snapshot.js';
+import {
+  PACING_IS_NOT_A_HUMAN_TIMER,
+  PACING_SAFETY_MARGIN_NOTE,
+  ordinaryPacingLabel,
+  reactionPacingLabel,
+} from '../../lib/bot-pacing-labels.js';
 
 /**
- * The host's bot controls (M09.5, extended by M09.6, M09.7, M09.9 and M09.10).
+ * The host's bot controls (M09.5, extended by M09.6, M09.7, M09.9, M09.10 and
+ * M09.11).
  *
  * **Only what this build can honour is on screen.** The deck-source control is
  * built from `DECK_MODE_SUPPORT` and the labels below, so a mode with no
- * resolver behind it is absent rather than present-and-refused; the difficulty
- * control is built from `AVAILABLE_DIFFICULTIES`, so Easy and Hard are absent
- * for the same reason; and there is no timing control at all, because pacing is
- * not live yet. The alternative — showing every eventual option disabled — would
- * be decoration that the server would answer with a named refusal, and the
- * milestone rules it out.
+ * resolver behind it is absent rather than present-and-refused, and the
+ * difficulty control is built from `AVAILABLE_DIFFICULTIES`, so Easy and Hard
+ * are absent for the same reason. The alternative — showing every eventual
+ * option disabled — would be decoration that the server would answer with a
+ * named refusal, and the milestone rules it out.
  *
  * Each of those follows from data rather than from a list written here, so
- * M09.11 and M09.13 turn their own control on by flipping the entry they already
- * own — which is exactly how M09.6, M09.9 and M09.10 each turned on a deck mode.
- * All four deck modes are now offered; difficulty and pacing are not.
+ * M09.13 turns its own control on by flipping the entry it already owns — which
+ * is exactly how M09.6, M09.9 and M09.10 each turned on a deck mode. All four
+ * deck modes are now offered; difficulty is not.
+ *
+ * **Timing is configured and does not yet take effect** (M09.11). The budgets
+ * belong to the table and the percentage to the bot, so they are two controls
+ * and not one, and every percentage prints the seconds it implies from
+ * `botDelayMs` — the same arithmetic M09.12's scheduler will use. This build
+ * still submits a bot's decision immediately; the panel says so rather than
+ * letting a host set 50% and time nothing. They are **bot pacing references,
+ * not human timers**: nothing here times a person out of anything, and
+ * open-questions.md Q8 stays open (ADR 0024 §4).
  *
  * **Up to three bots, and never a table without a person** (M09.7). One form per
  * seated bot, each with its own labels, plus one form for the next one.
@@ -135,6 +157,13 @@ interface BotDraft {
   readonly deck: BotDeckDraft;
   readonly difficulty: BotDifficulty;
   readonly style: BotStyle;
+  /**
+   * How long this bot waits, as a percentage of the table's budgets (M09.11).
+   *
+   * Part of the draft rather than of the deck draft: timing is its own axis, and
+   * a bot that changes deck keeps the timing the host set for it.
+   */
+  readonly pacing: BotPacing;
 }
 
 /**
@@ -167,8 +196,7 @@ function setupFrom(draft: BotDraft, deck: BotDeckSource): BotSetup {
     difficulty: draft.difficulty,
     style: draft.style,
     deck,
-    // Instant, and the only pacing this build honours. M09.11 adds the dial.
-    pacing: IMMEDIATE_BOT_PACING,
+    pacing: draft.pacing,
   };
 }
 
@@ -186,8 +214,17 @@ function sameDeckDraft(a: BotDeckDraft, b: BotDeckDraft): boolean {
   return b.mode === 'commander_generated' && a.commanderId === b.commanderId && a.seed === b.seed;
 }
 
+function samePacing(a: BotPacing, b: BotPacing): boolean {
+  return a.percent === b.percent && a.reactionPercent === b.reactionPercent;
+}
+
 function sameDraft(a: BotDraft, b: BotDraft): boolean {
-  return a.difficulty === b.difficulty && a.style === b.style && sameDeckDraft(a.deck, b.deck);
+  return (
+    a.difficulty === b.difficulty &&
+    a.style === b.style &&
+    samePacing(a.pacing, b.pacing) &&
+    sameDeckDraft(a.deck, b.deck)
+  );
 }
 
 /** "seat_3" reads as "seat 3" everywhere a person sees it. */
@@ -211,6 +248,9 @@ interface FieldLabels {
   readonly seed: string;
   readonly difficulty: string;
   readonly style: string;
+  readonly timing: string;
+  readonly reactionOverride: string;
+  readonly reaction: string;
 }
 
 const NEW_BOT_LABELS: FieldLabels = {
@@ -221,6 +261,9 @@ const NEW_BOT_LABELS: FieldLabels = {
   seed: 'Bot deck seed',
   difficulty: 'Bot difficulty',
   style: 'Bot style',
+  timing: 'Bot timing',
+  reactionOverride: 'Bot Reaction override',
+  reaction: 'Bot Reaction timing',
 };
 
 function seatFieldLabels(seatId: SeatId): FieldLabels {
@@ -233,6 +276,9 @@ function seatFieldLabels(seatId: SeatId): FieldLabels {
     seed: `${seat} deck seed`,
     difficulty: `${seat} difficulty`,
     style: `${seat} style`,
+    timing: `${seat} timing`,
+    reactionOverride: `${seat} Reaction override`,
+    reaction: `${seat} Reaction timing`,
   };
 }
 
@@ -311,6 +357,7 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
       deck: { mode: 'exact_precon', preconId: bot.deck.preconId },
       difficulty: bot.difficulty,
       style: bot.style,
+      pacing: bot.pacing,
     };
   }
   if (bot.deck.mode === 'exact_saved_deck' && applied?.mode === 'exact_saved_deck') {
@@ -318,6 +365,7 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
       deck: { mode: 'exact_saved_deck', savedDeckId: applied.deck.sourceDeckId },
       difficulty: bot.difficulty,
       style: bot.style,
+      pacing: bot.pacing,
     };
   }
   // The Commander is public, and the seed is not: it is the instruction this
@@ -332,6 +380,7 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
       },
       difficulty: bot.difficulty,
       style: bot.style,
+      pacing: bot.pacing,
     };
   }
   // The bot's own Commander is public, but it is a *result* here rather than
@@ -342,6 +391,7 @@ function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDr
       deck: { mode: 'autonomous_generated', seed: applied.seed },
       difficulty: bot.difficulty,
       style: bot.style,
+      pacing: bot.pacing,
     };
   }
   return null;
@@ -403,9 +453,11 @@ interface BotConfigFieldsProps {
   readonly decks: readonly SavedDeck[];
   /** The Commanders a generated deck may be built under, in this format. */
   readonly commanders: readonly CardDefinition[];
+  /** The table's budgets, so every percentage can print its seconds (M09.11). */
+  readonly budgets: BotPacingBudgets;
 }
 
-/** The four controls a bot configuration is made of, wherever it is being edited. */
+/** The controls a bot configuration is made of, wherever it is being edited. */
 function BotConfigFields({
   labels,
   draft,
@@ -414,6 +466,7 @@ function BotConfigFields({
   precons,
   decks,
   commanders,
+  budgets,
 }: BotConfigFieldsProps) {
   const chooseMode = (mode: BotDeckMode): void => {
     if (mode === draft.deck.mode) return;
@@ -604,6 +657,104 @@ function BotConfigFields({
       </label>
 
       <p className="lobby__hint">{botStyleDefinition(draft.style).summary}</p>
+
+      <BotTimingFields
+        labels={labels}
+        pacing={draft.pacing}
+        budgets={budgets}
+        disabled={disabled}
+        onChange={(pacing) => onChange({ pacing })}
+      />
+    </>
+  );
+}
+
+/** Every whole ten percent. A dial with a hundred stops is not a finer answer. */
+const PACING_PERCENT_STEPS = Array.from(
+  { length: (MAX_PACING_PERCENT - MIN_PACING_PERCENT) / 10 + 1 },
+  (_, index) => MIN_PACING_PERCENT + index * 10,
+);
+
+interface BotTimingFieldsProps {
+  readonly labels: FieldLabels;
+  readonly pacing: BotPacing;
+  readonly budgets: BotPacingBudgets;
+  readonly disabled: boolean;
+  readonly onChange: (pacing: BotPacing) => void;
+}
+
+/**
+ * One bot's timing: a percentage, and the advanced Reaction override (M09.11).
+ *
+ * The override is a checkbox rather than a "-1 means inherit" number, because
+ * `reactionPercent` is `null` for inherit and `0` for "answer a Reaction
+ * instantly", and those are different configurations that a single control
+ * would have to collapse. Ticking it starts from the ordinary percentage, so
+ * turning the override on changes nothing until the host moves it.
+ *
+ * Every percentage prints the delay it implies beside it, from `botDelayMs`
+ * rather than from arithmetic written here.
+ */
+function BotTimingFields({ labels, pacing, budgets, disabled, onChange }: BotTimingFieldsProps) {
+  const overridden = pacing.reactionPercent !== null;
+
+  return (
+    <>
+      <label className="field">
+        <span>{labels.timing}</span>
+        <select
+          value={pacing.percent}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...pacing, percent: Number(event.target.value) })}
+        >
+          {PACING_PERCENT_STEPS.map((percent) => (
+            <option key={percent} value={percent}>
+              {percent}%
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <p className="lobby__hint">{ordinaryPacingLabel(pacing, budgets)}</p>
+
+      <label className="field field--check">
+        <input
+          type="checkbox"
+          checked={overridden}
+          disabled={disabled}
+          aria-label={labels.reactionOverride}
+          onChange={(event) =>
+            onChange({
+              ...pacing,
+              // Starting from the ordinary percentage: turning the override on
+              // is asking to change the Reaction timing, not to have changed it.
+              reactionPercent: event.target.checked ? pacing.percent : null,
+            })
+          }
+        />
+        <span>Time Reactions differently</span>
+      </label>
+
+      {overridden && (
+        <label className="field">
+          <span>{labels.reaction}</span>
+          <select
+            value={pacing.reactionPercent ?? pacing.percent}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({ ...pacing, reactionPercent: Number(event.target.value) })
+            }
+          >
+            {PACING_PERCENT_STEPS.map((percent) => (
+              <option key={percent} value={percent}>
+                {percent}%
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <p className="lobby__hint">{reactionPacingLabel(pacing, budgets)}</p>
     </>
   );
 }
@@ -621,6 +772,8 @@ interface SeatedBotFormProps {
   /** What the server built for this seat, when it built one. Host-only. */
   readonly provenance: GeneratedDeckProvenance | null;
   readonly fallback: BotDraft;
+  /** The table's budgets, so this seat's percentages can print their seconds. */
+  readonly budgets: BotPacingBudgets;
 }
 
 function SeatedBotForm({
@@ -632,6 +785,7 @@ function SeatedBotForm({
   commanders,
   provenance,
   fallback,
+  budgets,
 }: SeatedBotFormProps) {
   const client = useMatchClient();
   const database = useCardDatabase();
@@ -721,6 +875,7 @@ function SeatedBotForm({
         precons={precons}
         decks={decks}
         commanders={commanders}
+        budgets={budgets}
       />
 
       {review.problem && <p className="lobby__error">{review.problem}</p>}
@@ -796,6 +951,8 @@ interface AddBotFormProps {
   readonly fallback: BotDraft;
   /** Why another bot cannot be seated right now, or `null`. */
   readonly blocked: string | null;
+  /** The table's budgets, so this form's percentages can print their seconds. */
+  readonly budgets: BotPacingBudgets;
 }
 
 function AddBotForm({
@@ -805,6 +962,7 @@ function AddBotForm({
   commanders,
   fallback,
   blocked,
+  budgets,
 }: AddBotFormProps) {
   const client = useMatchClient();
   const database = useCardDatabase();
@@ -826,6 +984,7 @@ function AddBotForm({
         precons={precons}
         decks={decks}
         commanders={commanders}
+        budgets={budgets}
       />
 
       {review.problem && <p className="lobby__error">{review.problem}</p>}
@@ -850,6 +1009,87 @@ function AddBotForm({
       </div>
 
       {blocked && <p className="lobby__hint">{blocked}</p>}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------ table budgets */
+
+interface PacingBudgetsFormProps {
+  readonly budgets: BotPacingBudgets;
+}
+
+/**
+ * The table's two pacing budgets (M09.11).
+ *
+ * One record for the whole lobby rather than a copy per bot: a percentage is a
+ * percentage *of* something, and three seats each carrying their own idea of
+ * what would be three chances for them to disagree. The host sets the seconds;
+ * each bot sets the fraction of them it waits.
+ *
+ * Edited locally and sent as soon as the value is one the server would accept,
+ * because the authoritative copy arrives back on the next lobby view and a
+ * control bound directly to it would fight every keystroke on the way. A partial
+ * or out-of-range entry is simply not sent — the field keeps what was typed, and
+ * the last accepted value is still what the table is set to.
+ */
+function PacingBudgetsForm({ budgets }: PacingBudgetsFormProps) {
+  const client = useMatchClient();
+  const [ordinary, setOrdinary] = useState(String(budgets.ordinarySeconds));
+  const [reaction, setReaction] = useState(String(budgets.reactionSeconds));
+
+  useEffect(() => setOrdinary(String(budgets.ordinarySeconds)), [budgets.ordinarySeconds]);
+  useEffect(() => setReaction(String(budgets.reactionSeconds)), [budgets.reactionSeconds]);
+
+  const inRange = (value: number): boolean =>
+    Number.isInteger(value) && value >= MIN_BUDGET_SECONDS && value <= MAX_BUDGET_SECONDS;
+
+  const send = (next: { ordinarySeconds: number; reactionSeconds: number }): void => {
+    if (!inRange(next.ordinarySeconds) || !inRange(next.reactionSeconds)) return;
+    client.setBotPacing({ pacingVersion: PACING_CONFIG_VERSION, ...next });
+  };
+
+  return (
+    <section className="lobby__pacing" aria-label="Bot pacing budgets">
+      <p className="lobby__hint">{PACING_IS_NOT_A_HUMAN_TIMER}</p>
+
+      <label className="field">
+        <span>Bot decision budget (seconds)</span>
+        <input
+          type="number"
+          min={MIN_BUDGET_SECONDS}
+          max={MAX_BUDGET_SECONDS}
+          step={1}
+          value={ordinary}
+          onChange={(event) => {
+            setOrdinary(event.target.value);
+            send({
+              ordinarySeconds: Number(event.target.value),
+              reactionSeconds: budgets.reactionSeconds,
+            });
+          }}
+        />
+      </label>
+
+      <label className="field">
+        <span>Bot Reaction budget (seconds)</span>
+        <input
+          type="number"
+          min={MIN_BUDGET_SECONDS}
+          max={MAX_BUDGET_SECONDS}
+          step={1}
+          value={reaction}
+          onChange={(event) => {
+            setReaction(event.target.value);
+            send({
+              ordinarySeconds: budgets.ordinarySeconds,
+              reactionSeconds: Number(event.target.value),
+            });
+          }}
+        />
+      </label>
+
+      <p className="lobby__hint">{PACING_SAFETY_MARGIN_NOTE}</p>
     </section>
   );
 }
@@ -922,6 +1162,26 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
             ? `The match has started; the settings of ${botSeats.length === 1 ? 'this bot are' : 'these bots are'} locked for the rest of it.`
             : 'The match has started. Bots can only be added before it does.'}
         </p>
+        {/* What the match locked, read from the view rather than remembered:
+            the server freezes the budgets at start and publishes the frozen
+            ones, so this is provenance and not a copy of the last thing the
+            host typed (M09.11). */}
+        {botSeats.length > 0 && (
+          <>
+            <p className="lobby__hint">
+              Locked bot pacing: {lobby.botPacing.ordinarySeconds} s for a decision or a choice,{' '}
+              {lobby.botPacing.reactionSeconds} s for a Reaction window.
+            </p>
+            <ul className="lobby__pacing-list">
+              {botSeats.map((seat) => (
+                <li key={seat.seatId}>
+                  {seat.bot.displayName}: {ordinaryPacingLabel(seat.bot.pacing, lobby.botPacing)};{' '}
+                  {reactionPacingLabel(seat.bot.pacing, lobby.botPacing)}.
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </section>
     );
   }
@@ -941,6 +1201,9 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
             },
     difficulty: DEFAULT_BOT_DIFFICULTY,
     style: BOT_STYLES[0],
+    // Instant until the host says otherwise. A default that waited would make
+    // the first match somebody plays slower than they asked for.
+    pacing: IMMEDIATE_BOT_PACING,
   };
 
   // Two separate reasons, said separately, because the host fixes them
@@ -958,9 +1221,19 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
 
       <p className="lobby__hint">
         {botSeats.length === 0
-          ? 'Play against the software: pick a deck and how it should play. Bots answer immediately — how long they take is not configurable yet.'
+          ? 'Play against the software: pick a deck, how it should play, and how long it should take.'
           : `${botSeats.length} of this table’s ${lobby.maxSeats} seats ${botSeats.length === 1 ? 'holds a bot' : 'hold bots'}. You can seat up to ${MAX_BOT_SEATS}; the rest of the table is people.`}
       </p>
+
+      {/* Honest about what this build does with the numbers below. A host who
+          set 50% and timed nothing would rightly conclude the control was
+          decoration; M09.12 is what makes the server wait. */}
+      <p className="lobby__hint lobby__hint--warn">
+        Timings are recorded with the match and locked when it starts, but bots still answer
+        immediately in this build.
+      </p>
+
+      <PacingBudgetsForm budgets={lobby.botPacing} />
 
       {botSeats.map((seat) => (
         <SeatedBotForm
@@ -973,6 +1246,7 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
           precons={precons}
           commanders={commanders}
           fallback={fallback}
+          budgets={lobby.botPacing}
         />
       ))}
 
@@ -983,6 +1257,7 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
         commanders={commanders}
         fallback={fallback}
         blocked={blocked}
+        budgets={lobby.botPacing}
       />
 
       {error && (

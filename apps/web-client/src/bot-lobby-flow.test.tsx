@@ -5,7 +5,11 @@ import { loadBundledCardData } from '@tcg/card-data';
 import { DECK_SCHEMA_VERSION, DECK_STORAGE_KEY, MemoryStore, type SavedDeck } from '@tcg/deck';
 import {
   BOT_CONFIG_SCHEMA_VERSION,
+  DEFAULT_BOT_PACING_BUDGETS,
   DIFFICULTY_REGISTRY_VERSION,
+  MAX_PACING_PERCENT,
+  MIN_PACING_PERCENT,
+  pacingPercentSchema,
   PLANNED_DIFFICULTIES,
   difficultyDefinition,
 } from '@tcg/bot-config';
@@ -172,6 +176,9 @@ function lobby(seats: readonly LobbySeatView[], overrides: Partial<LobbyView> = 
     hostSeatId: 'seat_1',
     canStart: false,
     seats: [...seats],
+    // Every table has budgets (M09.11); a fixture without them is not a lobby
+    // view the wire would accept.
+    botPacing: DEFAULT_BOT_PACING_BUDGETS,
     ...overrides,
   };
 }
@@ -252,8 +259,16 @@ describe('bot seat controls', () => {
         .map((node) => node.textContent),
     ).toEqual(['Bastion Guardians', 'Containment Control', 'Goblin Swarm', 'Grave Sacrifice']);
 
-    // Timing has no control at all: pacing is not live in this build.
-    expect(within(panel()).queryByLabelText(/timing|pacing|percent/i)).not.toBeInTheDocument();
+    // Timing does have a control since M09.11, and every percentage it offers
+    // is one the server accepts — the range is `@tcg/bot-config`'s, not this
+    // screen's.
+    const timing = screen.getByLabelText('Bot timing');
+    const offered = within(timing)
+      .getAllByRole('option')
+      .map((node) => Number(node.getAttribute('value')));
+    expect(offered[0]).toBe(MIN_PACING_PERCENT);
+    expect(offered.at(-1)).toBe(MAX_PACING_PERCENT);
+    expect(offered.every((percent) => pacingPercentSchema.safeParse(percent).success)).toBe(true);
     // And no reroll: rerolling builds a new deck, which only a generated mode
     // does, and the server refuses every reroll in this build by name.
     expect(within(panel()).queryByRole('button', { name: /reroll/i })).not.toBeInTheDocument();
@@ -281,6 +296,11 @@ describe('bot seat controls', () => {
     expect(screen.getByLabelText('Bot difficulty')).toHaveFocus();
     await harness.user.tab();
     expect(screen.getByLabelText('Bot style')).toHaveFocus();
+    // Timing and its override sit between the style and the button (M09.11).
+    await harness.user.tab();
+    expect(screen.getByLabelText('Bot timing')).toHaveFocus();
+    await harness.user.tab();
+    expect(screen.getByLabelText('Bot Reaction override')).toHaveFocus();
     await harness.user.tab();
     expect(screen.getByRole('button', { name: 'Add a bot' })).toHaveFocus();
 

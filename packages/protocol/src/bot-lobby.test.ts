@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   BOT_CONFIG_SCHEMA_VERSION,
+  DEFAULT_BOT_PACING_BUDGETS,
   DIFFICULTY_REGISTRY_VERSION,
+  PACING_CONFIG_VERSION,
   botSeatConfigSchema,
   publicBotSeatOf,
   type BotSeatConfig,
@@ -131,14 +133,16 @@ describe('the protocol version', () => {
   it('moved for the shapes each bot tranche put on the wire', () => {
     // 7 was M09.2's seat view and host-only messages; 8 is M09.9's two
     // generated-deck messages, which is the correction ADR 0024 §7 now records
-    // in place of its "moves once" prediction.
-    expect(PROTOCOL_VERSION).toBe(8);
-    expect(CURRENT_VERSIONS.protocol).toBe(8);
+    // in place of its "moves once" prediction; 9 is M09.11's lobby pacing
+    // budgets — a required member on a strict lobby view, and a fifth host-only
+    // message travelling the other way.
+    expect(PROTOCOL_VERSION).toBe(9);
+    expect(CURRENT_VERSIONS.protocol).toBe(9);
   });
 
   it('refuses the build that came before it, by name', () => {
-    const older: Versions = { ...CURRENT_VERSIONS, protocol: 7 };
-    expect(versionMismatch(older, CURRENT_VERSIONS)).toEqual(['protocol 7 vs server 8']);
+    const older: Versions = { ...CURRENT_VERSIONS, protocol: 8 };
+    expect(versionMismatch(older, CURRENT_VERSIONS)).toEqual(['protocol 8 vs server 9']);
   });
 
   it('does not drag the bot configuration versions along with it', () => {
@@ -152,14 +156,61 @@ describe('the protocol version', () => {
   });
 });
 
+/* -------------------------------------------------------- pacing on the wire */
+
+describe('a lobby view carries the table’s pacing budgets', () => {
+  const view = {
+    inviteCode: 'ABC123',
+    status: 'waiting',
+    maxSeats: 2,
+    hostSeatId: 'seat_1',
+    canStart: false,
+    seats: [humanSeat()],
+    botPacing: DEFAULT_BOT_PACING_BUDGETS,
+  };
+
+  it('requires them, because a percentage without a budget is unreadable', () => {
+    expect(lobbyViewSchema.safeParse(view).success).toBe(true);
+    const { botPacing, ...without } = view;
+    expect(botPacing).toBeDefined();
+    // A v8 view is not a v9 view: this is exactly the shape change the protocol
+    // version moved for (M09.11).
+    expect(lobbyViewSchema.safeParse(without).success).toBe(false);
+  });
+
+  it('refuses a budget this build would not honour', () => {
+    for (const bad of [
+      { ...DEFAULT_BOT_PACING_BUDGETS, ordinarySeconds: 0 },
+      { ...DEFAULT_BOT_PACING_BUDGETS, reactionSeconds: 2.5 },
+      { ...DEFAULT_BOT_PACING_BUDGETS, pacingVersion: PACING_CONFIG_VERSION + 1 },
+      { ...DEFAULT_BOT_PACING_BUDGETS, ordinaryMinutes: 1 },
+    ]) {
+      expect(lobbyViewSchema.safeParse({ ...view, botPacing: bad }).success).toBe(false);
+      expect(clientMessageSchema.safeParse({ type: 'set_bot_pacing', budgets: bad }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it('is the table’s, and a seat’s percentage is the bot’s', () => {
+    const seat = botSeat(PRIVATE_SAVED_DECK);
+    // Two independent axes on one wire: the budget is not on the seat, and the
+    // percentage is not on the lobby (ADR 0024 §5).
+    expect(seat.bot?.pacing).toEqual(PRIVATE_SAVED_DECK.pacing);
+    expect(JSON.stringify(seat)).not.toContain('ordinarySeconds');
+    expect(JSON.stringify(view.botPacing)).not.toContain('percent');
+  });
+});
+
 /* ------------------------------------------------------------ the messages */
 
-describe('the four host-only bot messages', () => {
+describe('the five host-only bot messages', () => {
   const messages: readonly ClientMessage[] = [
     { type: 'add_bot', setup: SETUP },
     { type: 'update_bot', seatId: 'seat_2', setup: SETUP },
     { type: 'reroll_bot', seatId: 'seat_2' },
     { type: 'remove_bot', seatId: 'seat_2' },
+    { type: 'set_bot_pacing', budgets: DEFAULT_BOT_PACING_BUDGETS },
   ];
 
   it('round trip through the codec unchanged', () => {
@@ -326,6 +377,7 @@ describe('what a lobby view never carries', () => {
       hostSeatId: 'seat_1',
       canStart: false,
       seats: [humanSeat(), botSeat(PRIVATE_SAVED_DECK), botSeat(PRIVATE_GENERATED)],
+      botPacing: DEFAULT_BOT_PACING_BUDGETS,
     };
     const parsed = lobbyViewSchema.safeParse(view);
     expect(parsed.success).toBe(true);

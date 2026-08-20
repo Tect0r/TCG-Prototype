@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { DEFAULT_BOT_PACING_BUDGETS } from '@tcg/bot-config';
 import { formatDatabase } from '@tcg/card-data';
 import { DECK_SCHEMA_VERSION, DECK_STORAGE_KEY, MemoryStore, type SavedDeck } from '@tcg/deck';
 import { DEFAULT_RULES_CONFIG } from '@tcg/rules-engine';
@@ -286,6 +287,7 @@ describe('lobby rulebook', () => {
         maxSeats: 2,
         hostSeatId: 'seat_1',
         canStart: false,
+        botPacing: DEFAULT_BOT_PACING_BUDGETS,
         seats: [
           {
             seatId: 'seat_1',

@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.11       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.12       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,17 +160,41 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.11 — Bot pacing configuration and UI.** Configure concrete percentages
-without changing match behaviour yet: lobby-level ordinary/choice and Reaction
-pacing budgets, initially 30 and 5 seconds, labelled clearly as **bot pacing
-references rather than human timers**; per-bot 0–100% timing with an advanced
-Reaction override; the calculated seconds shown beside every percentage; the
-settings persisted, locked at match start, and shown in lobby and result
-provenance; a pacing configuration version recorded. Bots still act immediately —
-M09.12 owns the scheduler — and Q8 stays open in the rules documents, with the
-tranche writing down why `RULES_VERSION` does or does not move. The scope, the
-exclusion and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0911--bot-pacing-configuration-and-ui).
+**M09.12 — Server bot-delay scheduler.** Make live bots wait for the fraction
+M09.11 configured, safely: classify each opportunity as ordinary, pending choice
+or Reaction from structured state and view data; schedule from the applicable
+budget and percentage using an injectable monotonic clock; at expiry rebuild the
+current observation and legal actions and decide **then**, never storing a chosen
+action during the wait; cancel obsolete work on sequence or eligibility change,
+reconfiguration, bot removal, a human action where applicable, elimination and
+match end; run independent bot delays concurrently where the engine permits
+independent choices; record intended and actual delay without feeding clock
+values into pilot RNG or engine state. The simulator and Spectator stay
+delay-free. The scope and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0912--server-bot-delay-scheduler).
+
+**M09.11 configured the timing without spending it.** A table now has two bot
+pacing budgets — 30 seconds for a decision or a choice, 5 for a Reaction window —
+and every bot has an integer percentage of them with an advanced Reaction
+override, where `null` means inherit and `0` means answer instantly, because
+those are different configurations and one number could not hold both. The
+budgets are the **table's** and the percentage is the **bot's**: they travel in
+two places on the wire, so moving one cannot silently move the other, and a
+percentage is printed with the seconds it implies from the same `botDelayMs` the
+scheduler will call rather than from arithmetic in a screen. The seconds are
+exact — 100% of 30 seconds is 29.75, because a quarter-second of every budget is
+kept for deciding and submitting — and they are public, because a bot's timing is
+observable with a stopwatch and a percentage without its budget is unreadable.
+The settings lock at match start into a frozen record the lobby view publishes
+from then on, which is what lets the board quote them beside the result; a test
+mutates the live record by hand afterwards and requires the published one not to
+move. **Nothing waits yet**, and both the panel and the summary say so — a bot at
+100% still acts inside the same wake and schedules no timer, which a test asserts
+rather than the exclusion merely promising. Two shapes moved, so
+`PROTOCOL_VERSION` is 8 → 9; `PACING_CONFIG_VERSION` deliberately stays 1,
+because M09.1 wrote the shape and the calculation and this tranche only put them
+on a wire; and `RULES_VERSION` stays `0.4.0` because a bot waiting is not a rules
+change, with Q8 asserted still open against `docs/open-questions.md`.
 
 **M09.10 reached the milestone's third checkpoint: all four deck modes.** A bot
 can now choose its **own** Commander and build its own deck. The choice is drawn

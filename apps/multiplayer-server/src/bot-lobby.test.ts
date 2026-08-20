@@ -4,6 +4,7 @@ import {
   BOT_DECK_MODES,
   DECK_MODE_SUPPORT,
   DEFAULT_BOT_DIFFICULTY,
+  DEFAULT_BOT_PACING_BUDGETS,
   DIFFICULTY_REGISTRY,
   DIFFICULTY_REGISTRY_VERSION,
   FIELDS_A_BOT_CONTROLLER_NEVER_HAS,
@@ -191,6 +192,8 @@ function lobbyOf(inviteCode: string, seats: readonly Seat[]): Lobby {
     seats: new Map(seats.map((seat) => [seat.seatId, seat])),
     maxSeats: 2,
     botsCreated: seats.filter(isBotSeat).length,
+    pacing: DEFAULT_BOT_PACING_BUDGETS,
+    lockedPacing: null,
     status: 'waiting',
     state: null,
   };
@@ -435,7 +438,8 @@ describe('only the host, and only before the match', () => {
     const message: Record<string, unknown> = { type };
     if (type === 'set_max_seats') message.maxSeats = 4;
     if (type === 'add_bot' || type === 'update_bot') message.setup = setupFor();
-    if (type !== 'set_max_seats' && type !== 'start_match' && type !== 'add_bot') {
+    if (type === 'set_bot_pacing') message.budgets = DEFAULT_BOT_PACING_BUDGETS;
+    if (type === 'update_bot' || type === 'reroll_bot' || type === 'remove_bot') {
       message.seatId = 'seat_2';
     }
 

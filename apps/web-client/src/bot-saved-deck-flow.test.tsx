@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { bundledPrecon, loadBundledCardData } from '@tcg/card-data';
-import { DECK_MODE_SUPPORT, BOT_DECK_MODES, type BotDeckSnapshot } from '@tcg/bot-config';
+import {
+  DECK_MODE_SUPPORT,
+  BOT_DECK_MODES,
+  DEFAULT_BOT_PACING_BUDGETS,
+  type BotDeckSnapshot,
+} from '@tcg/bot-config';
 import {
   DECK_STORAGE_KEY,
   MemoryStore,
@@ -197,6 +202,9 @@ function lobby(seats: readonly LobbySeatView[], overrides: Partial<LobbyView> = 
     hostSeatId: 'seat_1',
     canStart: false,
     seats: [...seats],
+    // Every table has budgets (M09.11); a fixture without them is not a lobby
+    // view the wire would accept.
+    botPacing: DEFAULT_BOT_PACING_BUDGETS,
     ...overrides,
   };
 }
