@@ -9,9 +9,9 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `136001ea7d3d23874d23e85e6d56a4f016e6fe4f` |
+| Commit           | `12e113a739b365348189ccb053f80f015ff1e439` |
 | Working tree     | clean                                      |
-| Taken on         | 2026-08-19                                 |
+| Taken on         | 2026-08-20                                 |
 | Node             | v24.15.0                                   |
 | `npm run verify` | not run for this audit                     |
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 71      | 1575     |
+| packages       | 71      | 1588     |
 | scripts        | 4       | 69       |
-| server         | 8       | 175      |
+| server         | 9       | 201      |
 | simulator      | 23      | 433      |
-| web-client     | 16      | 191      |
-| **total**      | **122** | **2443** |
+| web-client     | 17      | 205      |
+| **total**      | **124** | **2496** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -54,7 +54,7 @@ What a client, a server and a saved deck must agree on to play at all.
 | Constant                        | Value | Pins                                                                                         |
 | ------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
 | `RULES_VERSION`                 | 0.4.0 | The rules configuration.                                                                     |
-| `PROTOCOL_VERSION`              | 7     | Every message shape, refused at the handshake.                                               |
+| `PROTOCOL_VERSION`              | 8     | Every message shape, refused at the handshake.                                               |
 | `MATCH_SCHEMA_VERSION`          | 7     | Serialized match state.                                                                      |
 | `CARD_SCHEMA_VERSION`           | 5     | A card definition, owned per set by its manifest.                                            |
 | `DECK_SCHEMA_VERSION`           | 1     | A saved deck.                                                                                |
