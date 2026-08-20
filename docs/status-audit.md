@@ -9,7 +9,7 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `de442545456facf620e9104ac9bc1860cb01132b` |
+| Commit           | `1ac9d56e49287069a3310abdfa2f492d004845cf` |
 | Working tree     | clean                                      |
 | Taken on         | 2026-08-20                                 |
 | Node             | v24.15.0                                   |
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 72      | 1600     |
+| packages       | 74      | 1635     |
 | scripts        | 4       | 69       |
-| server         | 12      | 269      |
+| server         | 13      | 280      |
 | simulator      | 23      | 433      |
-| web-client     | 19      | 235      |
-| **total**      | **130** | **2606** |
+| web-client     | 19      | 236      |
+| **total**      | **133** | **2653** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -93,7 +93,7 @@ What a bot seat is configured by. Independent of the play contract on purpose (A
 | Constant                      | Value | Pins                                                                                                                                                                        |
 | ----------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BOT_CONFIG_SCHEMA_VERSION`   | 1     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.                                                                                       |
-| `DIFFICULTY_REGISTRY_VERSION` | 1     | Which difficulty IDs exist and what each claims. Available today: normal.                                                                                                   |
+| `DIFFICULTY_REGISTRY_VERSION` | 2     | Which difficulty IDs exist and what each claims. Available today: easy, normal.                                                                                             |
 | `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.                                                                                   |
 | `DECK_FINGERPRINT_VERSION`    | 1     | How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address. |
 
