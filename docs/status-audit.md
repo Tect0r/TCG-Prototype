@@ -9,7 +9,7 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `12e113a739b365348189ccb053f80f015ff1e439` |
+| Commit           | `60ee7a50e3cd14bfd1fa5d560faec795a058f752` |
 | Working tree     | clean                                      |
 | Taken on         | 2026-08-20                                 |
 | Node             | v24.15.0                                   |
@@ -33,10 +33,10 @@ reproducing it means running the suite again.
 | -------------- | ------- | -------- |
 | packages       | 71      | 1588     |
 | scripts        | 4       | 69       |
-| server         | 9       | 201      |
+| server         | 10      | 226      |
 | simulator      | 23      | 433      |
-| web-client     | 17      | 205      |
-| **total**      | **124** | **2496** |
+| web-client     | 18      | 219      |
+| **total**      | **126** | **2535** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
