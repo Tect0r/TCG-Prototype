@@ -898,6 +898,34 @@ code {
   font-weight: 600;
 }
 
+/* Every bot's list, published once the match is over: the second half of
+   "public at the Commander, private at the list" (ADR 0024 §3). */
+.board__reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.board__reveal h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.board__reveal-head {
+  margin: 0 0 0.25rem;
+  color: var(--text-dim);
+}
+
+.board__reveal-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  columns: 2;
+  column-gap: 1.5rem;
+}
+
 .player-bar {
   display: flex;
   gap: 0.9rem;

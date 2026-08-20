@@ -366,15 +366,17 @@ describe('a bot this build cannot honour is refused by name', () => {
     expect(error?.details?.join(' ')).toContain('precon_wave_1');
   });
 
-  it('refuses a reroll, because no mode this build supports generates a deck', () => {
+  it('refuses a reroll on an exact list, because there is nothing to rebuild', () => {
+    // M09.9 gave `commander_generated` a resolver, so a reroll is refused for
+    // the reason that survives: a precon and a saved deck are lists the host
+    // handed over, and rebuilding one would not be a reroll.
     const harness = createHarness();
     harness.send(harness.host, { type: 'add_bot', setup: setupFor() });
     harness.send(harness.host, { type: 'reroll_bot', seatId: 'seat_2' });
 
     const error = lastError(harness.host);
     expect(error?.code).toBe('protocol/bot_mode_unsupported');
-    expect(error?.details?.join(' ')).toContain('M09.9');
-    expect(error?.details?.join(' ')).toContain('M09.10');
+    expect(error?.details?.join(' ')).toContain('exact_precon');
   });
 
   it.each(['update_bot', 'reroll_bot', 'remove_bot'] as const)(

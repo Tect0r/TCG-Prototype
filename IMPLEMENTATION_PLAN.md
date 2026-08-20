@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.9        |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.10       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -114,22 +114,6 @@ seat-named form per bot and serialises its mutations, which bounds the
 `MAX_BOT_SEATS` is derived from `MAX_SEATS` on both sides and is on no wire, so
 `PROTOCOL_VERSION` stays 7.
 
-## The next bounded task
-
-**M09.9 — Host-selected Commander generation.** Let the owner choose a Commander
-while the bot builds the deck. Legal implemented Commanders are offered from the
-**active format only**; a legal deck is generated under the selected Commander
-and frozen, with its seed, generator version, construction mode, hash and
-forced-inclusion warning recorded. Explicit reroll is supported before match
-start, each with a deterministic recorded seed transition. The list stays private
-through lobby and match and is revealed or exported after completion. Unknown,
-off-format, incomplete and impossible Commander generation is refused by name.
-Everything it needs from the generator exists after M09.8 —
-`@tcg/deck-generator`, its provenance fields and its pool report — so this
-tranche is the lobby mode rather than the construction. The scope, the exclusions
-and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m099--host-selected-commander-generation).
-
 **M09.8 extracted the generator, and proved the extraction changed nothing.**
 `@tcg/deck-generator` now owns the deterministic legal draw, the deck value and
 its legality check, deck plan resolution, and the content address a deck is named
@@ -153,6 +137,41 @@ constants a test checks against its own sources, because the portable alternativ
 would need a second hash implementation and that is how one seed comes to name two
 decks. `DECK_GENERATOR_VERSION` is new and is `'1'`; nothing else moved, and no
 lobby deck mode was added.
+
+## The next bounded task
+
+**M09.10 — Full AI Commander-and-deck choice.** Let a bot choose its own legal
+Commander and construct its deck. Selection is made among active-format legal
+implemented Commanders from a deterministic bot deck-selection seed,
+independently of any opponent's private deck or hand, with the information
+boundary recorded; the deck is generated and frozen through the shared generator;
+the chosen Commander is public and the list stays private until match end; reroll
+is supported, and selection and generator provenance are recorded. A bot must
+never prefer a Commander because the server happens to know another seat's exact
+deck. It is the fourth and last deck mode, and the only one
+`DECK_MODE_SUPPORT` still refuses. The scope, the exclusions and the checklist
+are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0910--full-ai-commander-and-deck-choice).
+
+**M09.9 let the host choose the Commander, and the server build the deck.** A
+host picks one of the **active format's** playable Commanders — the list
+`playableCommanders` returns, which is the rule `validateDeck` already had,
+extracted so that the option a screen offers and the refusal a server gives
+cannot drift apart — and the server generates a legal deck under it from the
+host's seed, freezes it, and records the generator version, construction mode,
+seed, reroll count, Commander, content hash and pool report. Rerolling before the
+match starts is one deterministic step along that seat's own stream: no seed
+travels, the count is the server's, and the transition n → n+1 is reproducible
+from the two values the provenance already carries. Privacy is split the way
+ADR 0024 §3 requires — the Commander is public, the seed reaches the **host
+alone**, and the whole list is broadcast to **every** seat once the match is over,
+where the board renders it beside the result and offers it as a file. The
+forced-inclusion warning is arithmetic rather than prose: 41 legal cards for a
+40-card deck is a floor of 39, so a reroll changes at most two, and the screen
+says so instead of implying variety the content cannot supply. Two new server
+messages carry what a `LobbyView` cannot, so `PROTOCOL_VERSION` moves 7 → 8 —
+and ADR 0024 §7, which had predicted the constant would move exactly once in M09,
+now records the correction rather than the guess.
 
 ## The parallel non-code activity
 

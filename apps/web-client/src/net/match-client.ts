@@ -6,10 +6,11 @@ import {
   type ClientMessageInput,
   type LobbyView,
   type ProtocolError,
+  type RevealedBotDeck,
   type SeatId,
   type ServerMessage,
 } from '@tcg/protocol';
-import type { BotDeckSource } from '@tcg/bot-config';
+import type { BotDeckSource, GeneratedDeckProvenance } from '@tcg/bot-config';
 import type { SavedDeck } from '@tcg/deck';
 import type { Action, EngineError, PlayerView } from '@tcg/rules-engine';
 import { isOk } from '@tcg/shared';
@@ -76,6 +77,25 @@ export interface MatchClientState {
    * of the mode it describes.
    */
   readonly botDeckSources: Readonly<Partial<Record<SeatId, BotDeckSource>>>;
+  /**
+   * What the server built for each generated bot seat (M09.9).
+   *
+   * Sent to the host and to nobody else, because it carries the generator seed —
+   * the one value that would turn "the Commander is public" back into "the list
+   * is public" (ADR 0024 §3). Unlike `botDeckSources` above this is *not* a
+   * memory of a request: it is the authoritative record of the deck the server
+   * actually generated, which is why the host can be shown a hash and a reroll
+   * count it could not have computed itself.
+   */
+  readonly botProvenance: Readonly<Partial<Record<SeatId, GeneratedDeckProvenance>>>;
+  /**
+   * Every bot's list, once the match is over.
+   *
+   * Empty until then, and the same for every seat: this is the other half of
+   * "public at the Commander, private at the list", and the promise is only kept
+   * if the opponents are the ones who eventually read it.
+   */
+  readonly revealedBotDecks: readonly RevealedBotDeck[];
 }
 
 const INITIAL: MatchClientState = {
@@ -88,6 +108,8 @@ const INITIAL: MatchClientState = {
   deckError: null,
   seatConnections: {},
   botDeckSources: {},
+  botProvenance: {},
+  revealedBotDecks: [],
 };
 
 /** Where the reconnect token is kept so a refresh can reclaim the seat. */
@@ -192,10 +214,7 @@ export class MatchClient {
    * Host-only: seat a bot in the next free seat.
    *
    * No seat ID travels, because the server allocates one deterministically and a
-   * bot never displaces anybody (ADR 0024 §1). There is deliberately no
-   * `rerollBot` here: rerolling builds a new deck, only a generated deck mode
-   * does that, and this build supports none — a method that could only ever be
-   * refused is a control the UI would then have to explain away.
+   * bot never displaces anybody (ADR 0024 §1).
    */
   addBot(setup: BotSetup): void {
     // Held, not recorded: the seat it lands in is the server's choice, so the
@@ -208,6 +227,19 @@ export class MatchClient {
   updateBot(seatId: SeatId, setup: BotSetup): void {
     this.#sentBotDeck = { seatId, deck: setup.deck };
     this.dispatch({ type: 'update_bot', seatId, setup });
+  }
+
+  /**
+   * Host-only: build this bot a new deck (M09.9).
+   *
+   * No seed travels. The server derives the next one from the seat's own base
+   * seed and its reroll count, so the recorded transition is the server's and is
+   * not something a client could invent; what comes back is a new lobby view and
+   * a new provenance record. Nothing is remembered here, because the base seed —
+   * the only half this client owns — is exactly what a reroll does not change.
+   */
+  rerollBot(seatId: SeatId): void {
+    this.dispatch({ type: 'reroll_bot', seatId });
   }
 
   /** Host-only: free the seat. A human joining never does this implicitly. */
@@ -297,6 +329,7 @@ export class MatchClient {
           lobby: message.lobby,
           lastError: null,
           botDeckSources: this.reconcileBotDecks(message.lobby),
+          botProvenance: this.reconcileProvenance(message.lobby, this.#state.botProvenance),
         });
         return;
 
@@ -304,7 +337,27 @@ export class MatchClient {
         this.patch({
           lobby: message.lobby,
           botDeckSources: this.reconcileBotDecks(message.lobby),
+          botProvenance: this.reconcileProvenance(message.lobby, this.#state.botProvenance),
         });
+        return;
+
+      case 'bot_seat_provenance': {
+        // A complete replacement of what the host knows, then reconciled
+        // against the seats the same way a remembered request is: the server
+        // sends this beside a lobby update, and either order has to leave the
+        // two agreeing.
+        const next: Partial<Record<SeatId, GeneratedDeckProvenance>> = {};
+        for (const seat of message.seats) next[seat.seatId] = seat.generated;
+        this.patch({
+          botProvenance: this.#state.lobby
+            ? this.reconcileProvenance(this.#state.lobby, next)
+            : next,
+        });
+        return;
+      }
+
+      case 'bot_decks_revealed':
+        this.patch({ revealedBotDecks: message.decks });
         return;
 
       case 'deck_rejected':
@@ -380,6 +433,29 @@ export class MatchClient {
           : botSeats.find((seat) => seat.seatId === sent.seatId);
       if (target && target.bot.deck.mode === sent.deck.mode) next[target.seatId] = sent.deck;
       this.#sentBotDeck = null;
+    }
+    return next;
+  }
+
+  /**
+   * Drops provenance for a seat that no longer holds a generated bot.
+   *
+   * The same conservatism `reconcileBotDecks` applies to a remembered request,
+   * for the same reason: a seat the host freed, replaced with a person, or moved
+   * onto a precon has no generated deck to describe, and describing one anyway
+   * is how a screen comes to show a hash for a deck nobody is playing.
+   */
+  private reconcileProvenance(
+    lobby: LobbyView,
+    source: Readonly<Partial<Record<SeatId, GeneratedDeckProvenance>>>,
+  ): Partial<Record<SeatId, GeneratedDeckProvenance>> {
+    const next: Partial<Record<SeatId, GeneratedDeckProvenance>> = {};
+    for (const seat of lobby.seats) {
+      const known = source[seat.seatId];
+      if (!known) continue;
+      if (seat.controller !== 'bot') continue;
+      if (seat.bot.deck.mode !== 'commander_generated') continue;
+      next[seat.seatId] = known;
     }
     return next;
   }

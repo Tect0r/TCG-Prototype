@@ -15,6 +15,7 @@ import { buildLog } from '../../lib/event-text.js';
 import { groupEntities, type SelectionMarker } from '../../lib/token-grouping.js';
 import { TileList } from '../TokenStack.js';
 import { CardInspector, type InspectableCard } from '../help/CardInspector.js';
+import { RevealedBotDecks } from './RevealedBotDecks.js';
 
 /**
  * The match board, for two to four players.
@@ -798,6 +799,11 @@ export function MatchBoard() {
               : `${nameOf(view.result.winnerId ?? '')} wins — ${view.result.reason.replace(/_/g, ' ')}`}
         </p>
       )}
+
+      {/* Beside the result rather than anywhere earlier: the server sends the
+          lists once the match completes, and this renders whatever arrives
+          rather than deciding for itself when a list stops being secret. */}
+      <RevealedBotDecks />
 
       {others.map((player) => {
         const seatId = seatIdFor(player.playerId);

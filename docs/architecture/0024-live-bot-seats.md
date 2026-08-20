@@ -215,10 +215,23 @@ takes `createRngState` directly.
 
 ### 7. Versions move where the shape moves, and nowhere else
 
-- **`PROTOCOL_VERSION` moves once**, in the tranche that puts bot messages and
-  the widened seat view on the wire. `lobbySeatViewSchema` is a strict object, so
-  an older client would reject the first lobby view carrying a controller field;
-  the handshake refuses first and says why.
+- **`PROTOCOL_VERSION` moves where a message shape moves.** It first moved in
+  M09.2, the tranche that put bot messages and the widened seat view on the wire:
+  `lobbySeatViewSchema` is a strict object, so an older client would reject the
+  first lobby view carrying a controller field; the handshake refuses first and
+  says why.
+
+  This ADR originally predicted that move would be the **only** one M09 made, and
+  M09.9 showed the prediction was wrong rather than the principle. A generated
+  deck has two audiences a `LobbyView` cannot serve — provenance the host alone
+  may read, because the generator seed would rebuild the list card for card, and
+  the list itself, which every seat may read once the match is over — so M09.9
+  added `bot_seat_provenance` and `bot_decks_revealed` and moved the constant to 8. The correction is recorded here rather than the guess, because the rule this
+  section states is the version moves where the _shape_ moves, and both of those
+  are shapes. `serverMessageSchema` is a discriminated union parsed on receipt, so
+  a v7 client would fail to decode the first of either; the handshake refuses
+  first and names the older side.
+
 - **`MATCH_SCHEMA_VERSION` does not move.** A bot seat is a controller above the
   engine. `MatchState` does not learn what a bot is, and a replay of a
   human-versus-bot match is a replay of an ordinary match.

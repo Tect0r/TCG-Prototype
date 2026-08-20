@@ -77,31 +77,49 @@ export function deckStats(deck: SavedDeck, database: CardDatabase): DeckStats {
   };
 }
 
-function validateCommander(
-  deck: SavedDeck,
+/**
+ * Every reason a card cannot lead a deck in this format, as `validateDeck`'s own
+ * issues (M09.9).
+ *
+ * Split out of `validateCommander` so that "which Commanders may a bot's deck be
+ * generated under" and "is this deck's Commander legal" cannot drift apart: the
+ * lobby offers the Commanders this returns nothing for, the authoritative server
+ * refuses the rest **by the same code**, and the deck the generator produces is
+ * then validated by the very function this was extracted from. One rule, three
+ * readers.
+ *
+ * The codes are unchanged and deliberately so — `deck/commander_unresolved`,
+ * `deck/commander_wrong_type`, `deck/commander_not_collectible`,
+ * `deck/commander_not_implemented` and `deck/commander_too_many_colors` already
+ * name each condition, and a bot refusal that invents a second vocabulary for
+ * "this Commander is not playable yet" would leave a host reading two names for
+ * one fact.
+ */
+export function commanderIssues(
+  commanderId: CardId | null,
   database: CardDatabase,
-  format: DeckFormatConfig,
-  issues: Issue[],
-): CardDefinition | undefined {
-  if (deck.commanderId === null) {
+  format: DeckFormatConfig = DEFAULT_DECK_FORMAT,
+): Issue[] {
+  const issues: Issue[] = [];
+  if (commanderId === null) {
     issues.push(
       error('deck/commander_missing', 'Choose exactly one Commander for this deck.', {
         path: 'commanderId',
       }),
     );
-    return undefined;
+    return issues;
   }
 
-  const commander = database.get(deck.commanderId);
+  const commander = database.get(commanderId);
   if (!commander) {
     issues.push(
       error(
         'deck/commander_unresolved',
-        `Commander "${deck.commanderId}" no longer exists in the card database.`,
-        { path: 'commanderId', context: { cardId: deck.commanderId } },
+        `Commander "${commanderId}" no longer exists in the card database.`,
+        { path: 'commanderId', context: { cardId: commanderId } },
       ),
     );
-    return undefined;
+    return issues;
   }
 
   if (commander.type !== 'commander') {
@@ -112,7 +130,7 @@ function validateCommander(
         { path: 'commanderId', context: { cardId: commander.id, type: commander.type } },
       ),
     );
-    return commander;
+    return issues;
   }
 
   if (!commander.collectible) {
@@ -156,7 +174,41 @@ function validateCommander(
     );
   }
 
-  return commander;
+  return issues;
+}
+
+/**
+ * The Commanders a legal deck can actually be built and played under, here.
+ *
+ * `database.commanders()` is "every collectible Commander card in this pool";
+ * this is the subset a *format* leaves usable, which is a smaller and more
+ * honest list — it drops a Commander whose behaviour is not structured yet and
+ * one with more colours than the format allows. The lobby offers exactly this
+ * list for a bot's generated deck, so an option a host can choose is never one
+ * the server would refuse (M09.9).
+ *
+ * The database must already be format-scoped: this narrows by construction
+ * rules, not by set membership, and handing it the bundled universe would offer
+ * Commanders no format publishes (`CLAUDE.md`, "Any playable pool must be
+ * obtained through a format-scoped database").
+ */
+export function playableCommanders(
+  database: CardDatabase,
+  format: DeckFormatConfig = DEFAULT_DECK_FORMAT,
+): readonly CardDefinition[] {
+  return database
+    .commanders()
+    .filter((commander) => !hasErrors(commanderIssues(commander.id, database, format)));
+}
+
+function validateCommander(
+  deck: SavedDeck,
+  database: CardDatabase,
+  format: DeckFormatConfig,
+  issues: Issue[],
+): CardDefinition | undefined {
+  issues.push(...commanderIssues(deck.commanderId, database, format));
+  return deck.commanderId === null ? undefined : database.get(deck.commanderId);
 }
 
 function validateEntries(

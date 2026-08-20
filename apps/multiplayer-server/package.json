@@ -18,6 +18,7 @@
     "@tcg/bot-interface": "*",
     "@tcg/card-data": "*",
     "@tcg/deck": "*",
+    "@tcg/deck-generator": "*",
     "@tcg/protocol": "*",
     "@tcg/rules-engine": "*",
     "@tcg/shared": "*",

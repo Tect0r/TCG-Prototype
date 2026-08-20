@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { preconsForFormat, type CardDatabase, type PreconDefinition } from '@tcg/card-data';
+import {
+  preconsForFormat,
+  type CardDatabase,
+  type CardDefinition,
+  type PreconDefinition,
+} from '@tcg/card-data';
 import {
   AVAILABLE_DIFFICULTIES,
   BOT_CONFIG_SCHEMA_VERSION,
@@ -17,6 +22,7 @@ import {
   type BotDifficulty,
   type BotSeatPublic,
   type BotStyle,
+  type GeneratedDeckProvenance,
 } from '@tcg/bot-config';
 import {
   MAX_BOT_SEATS,
@@ -26,7 +32,8 @@ import {
   type ProtocolError,
   type SeatId,
 } from '@tcg/protocol';
-import type { DeckFormatConfig, SavedDeck } from '@tcg/deck';
+import { playableCommanders, type DeckFormatConfig, type SavedDeck } from '@tcg/deck';
+import { generateId } from '@tcg/shared';
 import { useAppState, useCardDatabase, useDeckFormat } from '../../state/AppContext.js';
 import { useMatchClient, useMatchState } from '../../state/MatchContext.js';
 import { botSeatLabels } from '../../lib/bot-seat-labels.js';
@@ -87,8 +94,7 @@ import { reviewSavedDeckForBot, snapshotIsStale } from '../../lib/bot-deck-snaps
 const DECK_MODE_LABELS: Readonly<Record<BotDeckMode, string | null>> = {
   exact_precon: 'A built-in deck',
   exact_saved_deck: 'One of your saved decks',
-  /** M09.9 chooses the Commander and owns this control. */
-  commander_generated: null,
+  commander_generated: 'A deck built for a Commander you pick',
   /** M09.10 lets the bot choose both and owns this one. */
   autonomous_generated: null,
 };
@@ -100,7 +106,22 @@ const OFFERED_DECK_MODES = BOT_DECK_MODES.filter(
 /** What a host chooses. Not a `BotSetup`: that is derived, and carries contents. */
 type BotDeckDraft =
   | { readonly mode: 'exact_precon'; readonly preconId: string }
-  | { readonly mode: 'exact_saved_deck'; readonly savedDeckId: string };
+  | { readonly mode: 'exact_saved_deck'; readonly savedDeckId: string }
+  /**
+   * The Commander, and the seed that names the generation stream (M09.9).
+   *
+   * The seed is drafted here rather than left to the server because it is an
+   * *instruction*: the same seed and the same Commander name the same deck, so a
+   * host who writes one down can ask for it back. What the server owns is the
+   * step along that stream — the reroll count — which is why `reroll_bot`
+   * carries no seed at all.
+   */
+  | { readonly mode: 'commander_generated'; readonly commanderId: string; readonly seed: string };
+
+/** A fresh generation stream. Opaque, and never parsed back apart. */
+function newGenerationSeed(): string {
+  return generateId('gen');
+}
 
 interface BotDraft {
   readonly deck: BotDeckDraft;
@@ -145,7 +166,12 @@ function setupFrom(draft: BotDraft, deck: BotDeckSource): BotSetup {
 
 function sameDeckDraft(a: BotDeckDraft, b: BotDeckDraft): boolean {
   if (a.mode === 'exact_precon') return b.mode === 'exact_precon' && a.preconId === b.preconId;
-  return b.mode === 'exact_saved_deck' && a.savedDeckId === b.savedDeckId;
+  if (a.mode === 'exact_saved_deck') {
+    return b.mode === 'exact_saved_deck' && a.savedDeckId === b.savedDeckId;
+  }
+  // The seed is part of the identity of a generated draft: two drafts naming the
+  // same Commander from different seeds are two different decks.
+  return b.mode === 'commander_generated' && a.commanderId === b.commanderId && a.seed === b.seed;
 }
 
 function sameDraft(a: BotDraft, b: BotDraft): boolean {
@@ -169,6 +195,8 @@ interface FieldLabels {
   readonly source: string;
   readonly precon: string;
   readonly saved: string;
+  readonly commander: string;
+  readonly seed: string;
   readonly difficulty: string;
   readonly style: string;
 }
@@ -177,6 +205,8 @@ const NEW_BOT_LABELS: FieldLabels = {
   source: 'Bot deck source',
   precon: 'Bot deck',
   saved: 'Your deck',
+  commander: 'Bot Commander',
+  seed: 'Bot deck seed',
   difficulty: 'Bot difficulty',
   style: 'Bot style',
 };
@@ -187,6 +217,8 @@ function seatFieldLabels(seatId: SeatId): FieldLabels {
     source: `${seat} deck source`,
     precon: `${seat} deck`,
     saved: `${seat} saved deck`,
+    commander: `${seat} Commander`,
+    seed: `${seat} deck seed`,
     difficulty: `${seat} difficulty`,
     style: `${seat} style`,
   };
@@ -194,7 +226,8 @@ function seatFieldLabels(seatId: SeatId): FieldLabels {
 
 /** Which request is outstanding. At most one, panel-wide. */
 type PendingRequest =
-  { readonly kind: 'add' } | { readonly kind: 'update' | 'remove'; readonly seatId: SeatId };
+  | { readonly kind: 'add' }
+  | { readonly kind: 'update' | 'remove' | 'reroll'; readonly seatId: SeatId };
 
 interface DraftReview {
   /** What would be sent, or `null` when the draft cannot be turned into one. */
@@ -220,6 +253,22 @@ function reviewDraft(
       snapshot: null,
     };
   }
+  if (draft.deck.mode === 'commander_generated') {
+    // Nothing is previewed and nothing is built here: generation happens on the
+    // authoritative server, against its own pool, and `@tcg/deck-generator`
+    // declares itself server-only anyway. All this decides is whether a complete
+    // instruction can be sent.
+    const { commanderId, seed } = draft.deck;
+    return {
+      deckSource: commanderId
+        ? { mode: 'commander_generated', commanderId, seed, generated: null }
+        : null,
+      problem: commanderId
+        ? null
+        : 'No Commander in this format can lead a generated deck yet, so there is nothing to build.',
+      snapshot: null,
+    };
+  }
   const review = reviewSavedDeckForBot(draft.deck.savedDeckId, decks, database, deckFormat);
   return {
     deckSource: review.snapshot ? { mode: 'exact_saved_deck', deck: review.snapshot } : null,
@@ -229,7 +278,7 @@ function reviewDraft(
 }
 
 /** The draft a seated bot's public configuration and this client's memory imply. */
-function draftFromSeat(bot: BotSeatPublic, snapshot: BotDeckSnapshot | null): BotDraft | null {
+function draftFromSeat(bot: BotSeatPublic, applied: BotDeckSource | null): BotDraft | null {
   if (bot.deck.mode === 'exact_precon') {
     return {
       deck: { mode: 'exact_precon', preconId: bot.deck.preconId },
@@ -237,14 +286,65 @@ function draftFromSeat(bot: BotSeatPublic, snapshot: BotDeckSnapshot | null): Bo
       style: bot.style,
     };
   }
-  if (bot.deck.mode === 'exact_saved_deck' && snapshot) {
+  if (bot.deck.mode === 'exact_saved_deck' && applied?.mode === 'exact_saved_deck') {
     return {
-      deck: { mode: 'exact_saved_deck', savedDeckId: snapshot.sourceDeckId },
+      deck: { mode: 'exact_saved_deck', savedDeckId: applied.deck.sourceDeckId },
+      difficulty: bot.difficulty,
+      style: bot.style,
+    };
+  }
+  // The Commander is public, and the seed is not: it is the instruction this
+  // browser sent, so a client that never sent it cannot reconstruct the draft
+  // and says so rather than guessing one (ADR 0024 §3).
+  if (bot.deck.mode === 'commander_generated' && applied?.mode === 'commander_generated') {
+    return {
+      deck: {
+        mode: 'commander_generated',
+        commanderId: bot.deck.commanderId,
+        seed: applied.seed,
+      },
       difficulty: bot.difficulty,
       style: bot.style,
     };
   }
   return null;
+}
+
+/**
+ * What the host is told about a deck the server built for them (M09.9).
+ *
+ * Read entirely from the provenance the server sent down the host's own
+ * connection. The last sentence is the milestone's forced-inclusion warning, and
+ * it is arithmetic from `legalPoolSize` and `forcedInclusionFloor` rather than a
+ * sentence written here — Wave 1 leaves 41–42 legal cards for a 40-card deck, so
+ * two generated decks are near-identical by the format rather than by any
+ * failure of the draw, and a screen that did not say so would be implying
+ * variety the content cannot supply.
+ */
+function GeneratedDeckSummary({
+  provenance,
+  commanderName,
+}: {
+  readonly provenance: GeneratedDeckProvenance;
+  readonly commanderName: string | null;
+}) {
+  const choice = provenance.legalPoolSize - provenance.forcedInclusionFloor;
+  return (
+    <>
+      <p className="lobby__hint">
+        Built for <strong>{commanderName ?? provenance.commanderId}</strong> from seed{' '}
+        <code>{provenance.seed}</code>
+        {provenance.rerollCount > 0 ? ` (reroll ${provenance.rerollCount})` : ''} by generator v
+        {provenance.generatorVersion} — deck <code>{provenance.deckHash}</code>. Opponents see the
+        Commander and not the list until the match is over.
+      </p>
+      <p className="lobby__hint lobby__hint--warn">
+        This format leaves {provenance.legalPoolSize} cards legal under that Commander, so any legal
+        deck must include at least {provenance.forcedInclusionFloor} of them. Rerolling changes at
+        most {choice} {choice === 1 ? 'card' : 'cards'}.
+      </p>
+    </>
+  );
 }
 
 /* ------------------------------------------------------------------ fields */
@@ -256,6 +356,8 @@ interface BotConfigFieldsProps {
   readonly disabled: boolean;
   readonly precons: readonly PreconDefinition[];
   readonly decks: readonly SavedDeck[];
+  /** The Commanders a generated deck may be built under, in this format. */
+  readonly commanders: readonly CardDefinition[];
 }
 
 /** The four controls a bot configuration is made of, wherever it is being edited. */
@@ -266,6 +368,7 @@ function BotConfigFields({
   disabled,
   precons,
   decks,
+  commanders,
 }: BotConfigFieldsProps) {
   const chooseMode = (mode: BotDeckMode): void => {
     if (mode === draft.deck.mode) return;
@@ -273,6 +376,11 @@ function BotConfigFields({
       onChange({ deck: { mode, preconId: precons[0]?.id ?? '' } });
     } else if (mode === 'exact_saved_deck') {
       onChange({ deck: { mode, savedDeckId: decks[0]?.id ?? '' } });
+    } else if (mode === 'commander_generated') {
+      // A fresh stream, because switching into this mode is not resuming one:
+      // the seed the host last used named a different configuration, and
+      // silently reusing it would hand back a deck they had moved away from.
+      onChange({ deck: { mode, commanderId: commanders[0]?.id ?? '', seed: newGenerationSeed() } });
     }
   };
 
@@ -300,7 +408,7 @@ function BotConfigFields({
         </label>
       )}
 
-      {draft.deck.mode === 'exact_precon' ? (
+      {draft.deck.mode === 'exact_precon' && (
         <label className="field">
           <span>{labels.precon}</span>
           <select
@@ -317,7 +425,9 @@ function BotConfigFields({
             ))}
           </select>
         </label>
-      ) : (
+      )}
+
+      {draft.deck.mode === 'exact_saved_deck' && (
         <label className="field">
           <span>{labels.saved}</span>
           <select
@@ -335,6 +445,63 @@ function BotConfigFields({
             ))}
           </select>
         </label>
+      )}
+
+      {/* Exactly the Commanders `playableCommanders` leaves usable here, which
+          is the same rule the authoritative server refuses by — so an option
+          this control offers is never one the server would reject (M09.9). */}
+      {draft.deck.mode === 'commander_generated' && (
+        <>
+          <label className="field">
+            <span>{labels.commander}</span>
+            <select
+              value={draft.deck.commanderId}
+              disabled={disabled || commanders.length === 0}
+              onChange={(event) =>
+                onChange({
+                  deck: {
+                    mode: 'commander_generated',
+                    commanderId: event.target.value,
+                    // The Commander names the stream along with the seed, so
+                    // choosing a different one starts that stream at its first
+                    // deck rather than at somebody else's reroll count.
+                    seed: draft.deck.mode === 'commander_generated' ? draft.deck.seed : '',
+                  },
+                })
+              }
+            >
+              {commanders.length === 0 && <option value="">No Commanders available</option>}
+              {commanders.map((commander) => (
+                <option key={commander.id} value={commander.id}>
+                  {commander.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* Editable because the seed is an instruction, not a result: the same
+              seed and Commander name the same deck on this build, so a host who
+              writes one down can ask for that deck back. What the server owns is
+              the step along the stream, which is why a reroll carries no seed. */}
+          <label className="field">
+            <span>{labels.seed}</span>
+            <input
+              type="text"
+              value={draft.deck.seed}
+              disabled={disabled}
+              onChange={(event) =>
+                onChange({
+                  deck: {
+                    mode: 'commander_generated',
+                    commanderId:
+                      draft.deck.mode === 'commander_generated' ? draft.deck.commanderId : '',
+                    seed: event.target.value,
+                  },
+                })
+              }
+            />
+          </label>
+        </>
       )}
 
       <label className="field">
@@ -393,6 +560,9 @@ interface SeatedBotFormProps {
   readonly pending: PendingRequest | null;
   readonly setPending: (request: PendingRequest | null) => void;
   readonly precons: readonly PreconDefinition[];
+  readonly commanders: readonly CardDefinition[];
+  /** What the server built for this seat, when it built one. Host-only. */
+  readonly provenance: GeneratedDeckProvenance | null;
   readonly fallback: BotDraft;
 }
 
@@ -402,6 +572,8 @@ function SeatedBotForm({
   pending,
   setPending,
   precons,
+  commanders,
+  provenance,
   fallback,
 }: SeatedBotFormProps) {
   const client = useMatchClient();
@@ -413,7 +585,7 @@ function SeatedBotForm({
 
   const bot = seat.bot;
   const appliedSnapshot = applied?.mode === 'exact_saved_deck' ? applied.deck : null;
-  const seatedDraft = draftFromSeat(bot, appliedSnapshot);
+  const seatedDraft = draftFromSeat(bot, applied);
   const draft = edited ?? seatedDraft ?? fallback;
   const review = reviewDraft(draft, decks, database, deckFormat);
 
@@ -465,6 +637,22 @@ function SeatedBotForm({
         </p>
       )}
 
+      {/* What the server actually built, said only to the host, because the
+          seed it carries would let anybody holding it and the public Commander
+          rebuild the list card for card (ADR 0024 §3). */}
+      {bot.deck.mode === 'commander_generated' &&
+        (provenance ? (
+          <GeneratedDeckSummary
+            provenance={provenance}
+            commanderName={database.get(bot.deck.commanderId)?.name ?? null}
+          />
+        ) : (
+          <p className="lobby__hint">
+            This bot plays a deck the server built for it. Its list is not published, and this
+            browser has not been told which one — reroll or apply a change to be sure.
+          </p>
+        ))}
+
       <BotConfigFields
         labels={labels}
         draft={draft}
@@ -472,6 +660,7 @@ function SeatedBotForm({
         disabled={!canEdit}
         precons={precons}
         decks={decks}
+        commanders={commanders}
       />
 
       {review.problem && <p className="lobby__error">{review.problem}</p>}
@@ -495,6 +684,29 @@ function SeatedBotForm({
             ? 'Applying…'
             : `Apply seat ${seatNumber(seat.seatId)} changes`}
         </button>
+        {/* Only for a seat that has a generator behind it. Rerolling an exact
+            list is refused by name on the server, and a control whose only
+            outcome is that refusal is one this panel does not offer. Pressing it
+            sends no seed: the server takes the next step along this seat's own
+            stream, which is what makes the recorded transition its own. */}
+        {bot.deck.mode === 'commander_generated' && (
+          <button
+            type="button"
+            onClick={() => {
+              setPending({ kind: 'reroll', seatId: seat.seatId });
+              // Any half-finished edit is dropped: what comes back describes the
+              // seat's configuration, and keeping a draft over it would show a
+              // Commander the new deck was not built under.
+              setEdited(null);
+              client.rerollBot(seat.seatId);
+            }}
+            disabled={!canEdit}
+          >
+            {mine && pending.kind === 'reroll'
+              ? 'Rerolling…'
+              : `Reroll seat ${seatNumber(seat.seatId)} deck`}
+          </button>
+        )}
         <button
           type="button"
           className="button--quiet"
@@ -520,12 +732,20 @@ interface AddBotFormProps {
   readonly pending: PendingRequest | null;
   readonly setPending: (request: PendingRequest | null) => void;
   readonly precons: readonly PreconDefinition[];
+  readonly commanders: readonly CardDefinition[];
   readonly fallback: BotDraft;
   /** Why another bot cannot be seated right now, or `null`. */
   readonly blocked: string | null;
 }
 
-function AddBotForm({ pending, setPending, precons, fallback, blocked }: AddBotFormProps) {
+function AddBotForm({
+  pending,
+  setPending,
+  precons,
+  commanders,
+  fallback,
+  blocked,
+}: AddBotFormProps) {
   const client = useMatchClient();
   const database = useCardDatabase();
   const deckFormat = useDeckFormat();
@@ -545,6 +765,7 @@ function AddBotForm({ pending, setPending, precons, fallback, blocked }: AddBotF
         disabled={!canEdit}
         precons={precons}
         decks={decks}
+        commanders={commanders}
       />
 
       {review.problem && <p className="lobby__error">{review.problem}</p>}
@@ -582,13 +803,25 @@ export interface BotSeatPanelProps {
 }
 
 export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
-  const { botDeckSources } = useMatchState();
+  const { botDeckSources, botProvenance } = useMatchState();
+  const database = useCardDatabase();
   const deckFormat = useDeckFormat();
   const { decks } = useAppState();
 
   // The same format-scoped list the human deck picker and the server offer, so
   // the three cannot disagree about which decks exist (M03.2).
   const precons = useMemo(() => preconsForFormat(deckFormat.formatId), [deckFormat.formatId]);
+
+  // `playableCommanders` is the same function the server's own refusal is
+  // derived from, run here against the same format-scoped database — so a
+  // Commander this panel offers is never one the lobby would reject (M09.9).
+  const commanders = useMemo(
+    () =>
+      [...playableCommanders(database, deckFormat)].sort((left, right) =>
+        left.name.localeCompare(right.name),
+      ),
+    [database, deckFormat],
+  );
 
   const botSeats = lobby.seats.filter(
     (seat): seat is BotLobbySeatView => seat.controller === 'bot',
@@ -606,13 +839,15 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
 
   const locked = lobby.status === 'in_match' || lobby.status === 'finished';
 
-  if (precons.length === 0 && decks.length === 0) {
+  // Nothing to seat a bot on at all: no built-in deck, none of the host's own,
+  // and no Commander the server could build one under.
+  if (precons.length === 0 && decks.length === 0 && commanders.length === 0) {
     return (
       <section className="lobby__bots" aria-label="Bot opponents">
         <h3>Bot opponents</h3>
         <p className="lobby__hint">
-          No built-in decks are published for this format and you have saved none, so there is
-          nothing for a bot to play.
+          No built-in decks are published for this format, you have saved none, and no Commander
+          here can lead a generated one, so there is nothing for a bot to play.
         </p>
       </section>
     );
@@ -637,7 +872,13 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
     deck:
       precons.length > 0
         ? { mode: 'exact_precon', preconId: precons[0]?.id ?? '' }
-        : { mode: 'exact_saved_deck', savedDeckId: decks[0]?.id ?? '' },
+        : decks.length > 0
+          ? { mode: 'exact_saved_deck', savedDeckId: decks[0]?.id ?? '' }
+          : {
+              mode: 'commander_generated',
+              commanderId: commanders[0]?.id ?? '',
+              seed: newGenerationSeed(),
+            },
     difficulty: DEFAULT_BOT_DIFFICULTY,
     style: BOT_STYLES[0],
   };
@@ -666,9 +907,11 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
           key={seat.seatId}
           seat={seat}
           applied={botDeckSources[seat.seatId] ?? null}
+          provenance={botProvenance[seat.seatId] ?? null}
           pending={pending}
           setPending={setPending}
           precons={precons}
+          commanders={commanders}
           fallback={fallback}
         />
       ))}
@@ -677,6 +920,7 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
         pending={pending}
         setPending={setPending}
         precons={precons}
+        commanders={commanders}
         fallback={fallback}
         blocked={blocked}
       />

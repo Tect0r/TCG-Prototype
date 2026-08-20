@@ -1385,7 +1385,7 @@ value and algorithm are unchanged, so every existing content address still
 resolves to the same string. The extraction is source-level only: no artifact
 written before it is read differently after it.
 
-## M09.9 — Host-selected Commander generation
+## M09.9 — Host-selected Commander generation — **done (2026-08-20)**
 
 Let the owner choose a Commander while the bot builds the deck: legal implemented
 Commanders are exposed from the active format; a legal deck is generated and
@@ -1402,11 +1402,132 @@ refusal tests.
 
 ### Checklist
 
-- [ ] Legal implemented Commanders offered from the active format only.
-- [ ] Deck generated, frozen, and identified by seed, version, mode and hash.
-- [ ] Reroll before lock, with a recorded deterministic seed transition.
-- [ ] Private during play; revealed or exported after completion.
-- [ ] Forced-inclusion warning shown; impossible generation refused.
+- [x] **Legal implemented Commanders offered from the active format only.**
+      `playableCommanders` in `@tcg/deck` is the one rule, and it is the rule
+      `validateDeck` already had: `commanderIssues` was extracted out of
+      `validateCommander` unchanged, so "which Commanders may a bot's deck be
+      generated under" and "is this deck's Commander legal" cannot drift apart.
+      Three readers share it — the lobby screen offers the Commanders it returns
+      nothing for, `generateBotDeck` refuses the rest under the same
+      `deck/commander_*` codes, and the deck the generator produces is validated
+      by the function the split came out of. Both readers run it against a
+      **format-scoped** database: the bundled universe publishes eight more
+      Commanders than `precon_wave_1` does, and each side's test asserts that
+      none of the eight is offered.
+- [x] **Deck generated, frozen, and identified by seed, version, mode and hash.**
+      `generateBotDeck` builds the environment from the server's _own_ database
+      and format — not a second lookup — so a deck cannot be legal to the
+      generator and illegal to the lobby that seats it, and it restricts
+      `generateDeck` to the single requested Commander so the generator's own
+      fallback to a random legal one is unreachable rather than merely unwanted.
+      What it returns is a `SavedDeck` the seat plays plus a
+      `GeneratedDeckProvenance` naming it: generator version, construction mode,
+      format, seed, reroll count, Commander, content hash, and the pool report.
+      The freeze is the same one M09.6 established — the seat holds a
+      materialised deck, and the match is played from it.
+- [x] **Reroll before lock, with a recorded deterministic seed transition.**
+      `reroll_bot` carries **no seed**. The server rebuilds the seat's own setup,
+      adds one to the reroll count and derives the next seed from the base and
+      the count (`generationSeedFor`: reroll 0 _is_ the host's seed, every later
+      one a suffix), so the recorded transition n → n+1 is reproducible from the
+      two values the provenance already carries and is not something a client
+      could invent. A reconfiguration keeps its place in the stream unless the
+      host changed what _names_ the stream — the Commander or the base seed —
+      because otherwise renaming a bot would silently undo three rerolls. A
+      refused generation leaves the previous deck in place.
+- [x] **Private during play; revealed or exported after completion.** The public
+      seat projection publishes the Commander and has no seed in it to strip, so
+      the value that would rebuild the list card for card never reaches an
+      opponent. Provenance travels down the **host's own connection** as
+      `bot_seat_provenance`, restated beside every lobby update so it cannot go
+      stale, and dropped by the client for a seat that stops being a generated
+      bot. `bot_decks_revealed` is broadcast to **every** seat once, at the moment
+      the match's status becomes complete — the promise is to the opponents, so
+      they are the ones who eventually read the list — and the board renders it
+      beside the result with an export button that writes exactly what arrived.
+- [x] **Forced-inclusion warning shown; impossible generation refused.** The
+      warning is arithmetic from `legalPoolSize` and `forcedInclusionFloor`
+      rather than a sentence written into the screen, so it stays true when the
+      pool changes: 41 legal cards for a 40-card deck is a floor of 39 and two
+      cards of choice, which is what a host is told a reroll can change. Four
+      refusals, each by name: a Commander ID this format does not publish is
+      distinguished from one that names nothing at all, a card in the format that
+      cannot lead a deck here is refused under `validateDeck`'s own codes, an
+      impossible generation carries the generator's own problem codes, and a
+      setup that _describes_ a deck the server did not build is refused rather
+      than ignored.
+
+### What the host actually sees
+
+One picker per bot, and the Commander control only once the generated mode is
+chosen — a mode with no resolver is still absent rather than disabled, which is
+how `autonomous_generated` remains off. The seed is an editable text field
+because it is an _instruction_: the same seed and Commander name the same deck on
+this build, so a host who writes one down can ask for that deck back, and the
+test proves it from two cold starts rather than from one screen's memory.
+Switching into the mode starts a _fresh_ stream rather than reusing the last
+seed, so seating two bots does not quietly seat one deck twice.
+
+Once the server answers, the seat says what was built — Commander, seed, reroll
+number, generator version, deck hash — followed by the forced-inclusion warning.
+Before it answers, the seat says it does not know, because a client that has not
+been told cannot reconstruct a seed from a public Commander. The reroll button
+exists only for a seat with a generator behind it; rerolling an exact list is
+refused by name on the server, and a control whose only outcome is that refusal
+is not offered.
+
+### Findings recorded rather than fixed
+
+- **The export is a match record, not a deck.** It writes the revealed messages
+  as they arrived, including provenance, rather than a `SavedDeck` the Deck
+  Builder would import. Writing an importable deck would quietly turn "what my
+  opponent played" into "a deck of mine", which is a content decision nobody has
+  made. A host who wants to build it can read the list and build it.
+- **The reveal carries no hash of its own.** The cards are in the message, so a
+  reader who wants a fingerprint can take one; the two the project already has —
+  `DECK_FINGERPRINT_VERSION` in `@tcg/deck` and `HASH_VERSION` in
+  `@tcg/deck-generator` — answer different questions and would not match, so
+  carrying one beside the cards would only create something to disagree with.
+- **A precon bot is revealed too.** Its list was never private, but leaving it
+  out would make the message's meaning depend on each seat's mode rather than on
+  the match being over. The rule ADR 0024 §3 states covers a generated list _and_
+  a saved deck the host selected; a precon riding along costs nothing and keeps
+  the message uniform.
+- **Two generated bots under the same Commander are near-identical by the
+  format, not by the draw.** 41 legal cards for a 40-card deck leaves two cards
+  of choice. The screen says so rather than implying variety the content cannot
+  supply; the fix is the 50-card expansion, which is content and is not started.
+- **`generatePopulation` still reports no pool**, as M09.8 recorded. Nothing here
+  needs it: a lobby generates one deck at a time.
+
+### Versions
+
+`PROTOCOL_VERSION` moves **7 → 8**. Two new server messages carry what a
+`LobbyView` cannot: `bot_seat_provenance`, host-only, because a generator seed
+would turn "the Commander is public" back into "the list is public"; and
+`bot_decks_revealed`, broadcast, because the privacy promise is only kept if the
+opponents are the ones who eventually read the list.
+[ADR 0024](../architecture/0024-live-bot-seats.md) §7 predicted the constant
+would move exactly once in M09 and now records the correction rather than the
+guess — the principle it states is unchanged, and it is what governs here.
+
+Nothing else moved. `BOT_CONFIG_SCHEMA_VERSION`, `DIFFICULTY_REGISTRY_VERSION`
+and `PACING_CONFIG_VERSION` stay where they are: `commander_generated`,
+`botDeckSourceSchema` and `generatedDeckProvenanceSchema` have been in
+`@tcg/bot-config` since M09.1, and this tranche turned a support flag on rather
+than changing a shape. `DECK_GENERATOR_VERSION` stays `'1'` — no draw changed.
+`DECK_SCHEMA_VERSION`, `MATCH_SCHEMA_VERSION`, `RULES_VERSION` and
+`SEED_DERIVATION_VERSION` stay too: a generated deck is an ordinary `SavedDeck`,
+`MatchState` still does not know what a bot is, no legal action changed, and
+`generationSeedFor` is a new derivation rather than a changed one.
+
+**Compatibility.** `serverMessageSchema` is a discriminated union parsed on
+receipt, so a v7 client would fail to decode the first `bot_seat_provenance` it
+received mid-lobby, or the first `bot_decks_revealed` at the moment a match
+ended. It never gets that far: the handshake compares versions and refuses
+first, naming which side is older. Nothing durable changed shape, so nothing is
+migrated — saved decks, match records and replays all keep the fields they had,
+and a lobby that seats no generated bot puts neither message on the wire.
 
 ## M09.10 — Full AI Commander-and-deck choice
 

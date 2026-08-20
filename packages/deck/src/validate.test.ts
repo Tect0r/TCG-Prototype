@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CardDatabase } from '@tcg/card-data';
-import { validateDeck, deckStats, commanderColorIdentity } from './validate.js';
+import {
+  commanderColorIdentity,
+  commanderIssues,
+  deckStats,
+  playableCommanders,
+  validateDeck,
+} from './validate.js';
 import { DEVELOPMENT_DECK_FORMAT } from './format.js';
 import { setCardQuantity, setCommander } from './operations.js';
 import { database, deckWith, fixedClock, legalDeck } from './test-fixtures.js';
@@ -303,5 +309,66 @@ describe('commanderColorIdentity', () => {
   it('follows the chosen Commander', () => {
     const deck = setCommander(deckWith([]), 'prototype_commander_green', fixedClock);
     expect(commanderColorIdentity(deck, database)).toEqual(['green']);
+  });
+});
+
+/**
+ * The Commander rule, read on its own (M09.9).
+ *
+ * `commanderIssues` was extracted from `validateDeck` so a caller that has not
+ * built a deck yet — the lobby offering Commanders for a bot to generate under,
+ * and the server refusing the ones it will not honour — asks the same question
+ * with the same answers. These tests are what keep the two from drifting: the
+ * codes below are the ones `validateDeck` raises above.
+ */
+describe('commanderIssues', () => {
+  it('raises exactly what validateDeck raises about the same Commander', () => {
+    for (const commanderId of [null, 'deleted_commander', 'goblin_scout']) {
+      const standalone = commanderIssues(commanderId, database, DEVELOPMENT_DECK_FORMAT);
+      const inADeck = validateDeck(
+        deckWith([], commanderId),
+        database,
+        DEVELOPMENT_DECK_FORMAT,
+      ).issues.filter((issue) => issue.path === 'commanderId');
+      expect(codes(standalone)).toEqual(codes(inADeck));
+    }
+  });
+
+  it('says nothing about a Commander this format leaves playable', () => {
+    expect(
+      commanderIssues('prototype_commander_blue_red', database, DEVELOPMENT_DECK_FORMAT),
+    ).toEqual([]);
+  });
+
+  it('refuses a Commander with more colours than the format allows', () => {
+    const monoColor = { ...DEVELOPMENT_DECK_FORMAT, maxCommanderColors: 1 };
+    expect(codes(commanderIssues('prototype_commander_blue_red', database, monoColor))).toEqual([
+      'deck/commander_too_many_colors',
+    ]);
+  });
+
+  it('refuses a Commander whose behaviour is not structured yet', () => {
+    const real = database.getOrThrow('prototype_commander_blue_red');
+    const crippled = new CardDatabase([
+      ...database.all().filter((card) => card.id !== real.id),
+      { ...real, implemented: false, unsupportedReason: 'no structured effect yet' },
+    ]);
+    expect(codes(commanderIssues(real.id, crippled, DEVELOPMENT_DECK_FORMAT))).toEqual([
+      'deck/commander_not_implemented',
+    ]);
+  });
+});
+
+describe('playableCommanders', () => {
+  it('is every collectible Commander the format leaves usable', () => {
+    const offered = playableCommanders(database, DEVELOPMENT_DECK_FORMAT).map((card) => card.id);
+    expect(offered).toEqual(database.commanders().map((card) => card.id));
+  });
+
+  it('drops the ones a narrower format cannot seat', () => {
+    const monoColor = { ...DEVELOPMENT_DECK_FORMAT, maxCommanderColors: 1 };
+    const offered = playableCommanders(database, monoColor);
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((card) => card.colorIdentity.length <= 1)).toBe(true);
   });
 });

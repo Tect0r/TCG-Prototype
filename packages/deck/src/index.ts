@@ -24,7 +24,9 @@ export {
 } from './fingerprint.js';
 export {
   commanderColorIdentity,
+  commanderIssues,
   deckStats,
+  playableCommanders,
   validateDeck,
   type DeckStats,
   type DeckValidationReport,

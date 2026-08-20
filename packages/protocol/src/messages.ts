@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { botDisplayNameSchema, botSeatConfigSchema, botSeatPublicSchema } from '@tcg/bot-config';
+import {
+  botDisplayNameSchema,
+  botIdSchema,
+  botSeatConfigSchema,
+  botSeatPublicSchema,
+  generatedDeckProvenanceSchema,
+} from '@tcg/bot-config';
 import { CARD_SCHEMA_VERSION } from '@tcg/card-data';
 import { savedDeckSchema } from '@tcg/deck';
 import {
@@ -55,18 +61,35 @@ import {
  * bot messages travel the other way and a v6 server would reject them as
  * malformed for the same reason.
  *
- * This is the **one** move M09 makes to this constant
- * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §7), and it is
- * made here rather than in M09.1 because M09.1 put nothing on a wire: moving it
- * then would have refused compatible builds over a shape they never sent. The
- * bot configuration's own versions — `BOT_CONFIG_SCHEMA_VERSION`,
+ * It is made here rather than in M09.1 because M09.1 put nothing on a wire:
+ * moving it then would have refused compatible builds over a shape they never
+ * sent. The bot configuration's own versions — `BOT_CONFIG_SCHEMA_VERSION`,
  * `DIFFICULTY_REGISTRY_VERSION` and `PACING_CONFIG_VERSION` — stay separate and
  * deliberately do **not** move with it, because a difficulty can improve without
  * a message shape changing. `MATCH_SCHEMA_VERSION` and `RULES_VERSION` do not
  * move either: a bot seat is a controller above the engine, `MatchState` never
  * learns what a bot is, and a bot waiting is not a rules change.
+ *
+ * 8 (M09.9): a generated bot deck has two audiences the lobby view cannot serve.
+ * The **host** needs the provenance of a deck the server built for them — seed,
+ * generator version, mode, Commander, deck hash and the forced-inclusion floor
+ * the format left — and that is private to the host, so it cannot ride on a
+ * `lobbyView` every seat receives. **Everyone** may see a bot's list once the
+ * match is over, which is the other half of the privacy rule
+ * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §3) and is not
+ * a lobby fact at all. Two new server messages carry them, and
+ * `serverMessageSchema` is a discriminated union parsed on receipt: a v7 client
+ * would fail to decode the first of either, mid-lobby or at the moment the match
+ * ends. The handshake refuses first and says which side is older.
+ *
+ * ADR 0024 §7 predicted this constant would move **once** in M09, in M09.2. That
+ * prediction did not survive contact with M09.9's own acceptance line — "the list
+ * ... is revealed or exported after completion" cannot be delivered without a
+ * message that carries a list — so the ADR now records the correction rather than
+ * the guess. The principle it was expressing is unchanged and is what governs
+ * here: the version moves where the *shape* moves, and nowhere else.
  */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({
@@ -459,6 +482,55 @@ export function botLobbyError(
   return protocolError(BOT_LOBBY_ERROR_CODES[condition], BOT_LOBBY_MESSAGES[condition], details);
 }
 
+/* ------------------------------------------- generated bot decks (M09.9) */
+
+/**
+ * What the **host alone** learns about a bot seat whose deck the server built.
+ *
+ * Every field is already defined by `generatedDeckProvenanceSchema` in
+ * `@tcg/bot-config`, which has been asking for exactly these since M09.1: the
+ * generator version and construction mode that produced the list, the seed after
+ * any rerolls and how many there were, the Commander, the deck's content hash,
+ * and the size of the legal pool with the forced-inclusion floor it implies.
+ *
+ * It is a separate message rather than a field on the seat view because of who
+ * may read it. A `LobbyView` goes to every seat, and a seed is the one value
+ * that turns "the Commander is public" back into "the list is public": anybody
+ * holding the seed, the Commander and the generator can rebuild the deck card
+ * for card. The public projection therefore has no seed to strip
+ * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §3), and this
+ * travels down the host's own connection instead.
+ */
+export const botSeatProvenanceSchema = z.strictObject({
+  seatId: seatIdSchema,
+  generated: generatedDeckProvenanceSchema,
+});
+export type BotSeatProvenance = z.infer<typeof botSeatProvenanceSchema>;
+
+/**
+ * One bot's actual list, published after the match is over.
+ *
+ * `cardIds` lists every copy separately, exactly as `botDeckSnapshotSchema`
+ * does, so a reader never has to know whether a format is singleton to count a
+ * deck. `generated` is `null` for a bot playing an exact list — a precon or one
+ * of the host's saved decks — because there is no generator to cite.
+ *
+ * There is deliberately no hash here. The cards are in the message, so anybody
+ * who wants a fingerprint can take one; carrying a second one beside them would
+ * only create something to disagree with, and the two the project already has —
+ * `DECK_FINGERPRINT_VERSION` in `@tcg/deck` and `HASH_VERSION` in
+ * `@tcg/deck-generator` — answer different questions and would not match.
+ */
+export const revealedBotDeckSchema = z.strictObject({
+  seatId: seatIdSchema,
+  botId: botIdSchema,
+  displayName: botDisplayNameSchema,
+  commanderId: z.string().min(1),
+  cardIds: z.array(z.string().min(1)),
+  generated: generatedDeckProvenanceSchema.nullable(),
+});
+export type RevealedBotDeck = z.infer<typeof revealedBotDeckSchema>;
+
 export const serverMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('lobby_joined'),
@@ -498,6 +570,32 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     connected: z.boolean(),
     /** Seconds left before a disconnect becomes a loss, when disconnected. */
     graceSeconds: z.number().int().min(0).nullable(),
+  }),
+  /**
+   * Host-only: the provenance of every bot seat whose deck this server built.
+   *
+   * A complete replacement rather than a delta, and sent beside every lobby
+   * update the host receives, so the host's picture cannot drift out of step
+   * with the seats it describes. A seat playing an exact list contributes no
+   * entry, because it has no generator to cite (M09.9).
+   */
+  z.strictObject({
+    type: z.literal('bot_seat_provenance'),
+    seats: z.array(botSeatProvenanceSchema),
+  }),
+  /**
+   * Every bot's list, once the match is complete — the second half of "public at
+   * the Commander, private at the list" (ADR 0024 §3).
+   *
+   * Broadcast to every seat rather than to the host, because the host already
+   * knows: the promise the privacy rule makes is to the *opponents*, and it is
+   * only kept if they are the ones who eventually get to read the list. Sent
+   * once, at the moment the match's status becomes complete, which is the
+   * earliest instant at which no hidden information is left to protect.
+   */
+  z.strictObject({
+    type: z.literal('bot_decks_revealed'),
+    decks: z.array(revealedBotDeckSchema),
   }),
   z.strictObject({
     type: z.literal('error'),

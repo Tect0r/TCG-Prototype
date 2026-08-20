@@ -2,6 +2,7 @@ import type { BotPolicy } from '@tcg/bot-interface';
 import { bundledPrecon, preconsForFormat, type CardDatabase } from '@tcg/card-data';
 import {
   DEFAULT_DECK_FORMAT,
+  expandDeckCards,
   preconToDeck,
   reviewPrecon,
   validateDeck,
@@ -18,6 +19,7 @@ import {
   type BotSetup,
   type ClientMessage,
   type ProtocolError,
+  type RevealedBotDeck,
   type SeatId,
   type ServerMessage,
   type Versions,
@@ -35,9 +37,12 @@ import {
 import { errorsOf, isErr } from '@tcg/shared';
 import {
   botIdFor,
+  carriedRerollCount,
   rerollUnsupportedDetails,
   resolveBotSeat,
+  setupOf,
   type BotSeatContext,
+  type ResolvedBotSeat,
 } from './bot-seats.js';
 import {
   BotRunner,
@@ -488,13 +493,30 @@ export class MatchServer {
       setup,
       { botId: seat.config.controller.botId, seatId },
       this.botSeatContext(),
+      // A generated seat keeps its place in its own stream unless the host
+      // changed what names that stream. Rebuilding at reroll 0 here would mean
+      // that renaming a bot silently handed back a deck the host had rerolled
+      // away from.
+      { rerollCount: carriedRerollCount(seat.config, setup.deck) },
     );
     if (isErr(resolved)) {
       connection.send({ type: 'error', error: resolved.error });
       return;
     }
 
-    const { config, deck } = resolved.value;
+    this.seatResolvedBot(lobby, seat, resolved.value);
+  }
+
+  /**
+   * Writes a resolved configuration onto a seat that already exists.
+   *
+   * Shared by `update_bot` and `reroll_bot` because they differ only in where
+   * the setup came from: one is the host's new configuration, the other is the
+   * seat's own configuration one step further along its generation stream. Both
+   * keep the seat, its identity and its readiness rule identical.
+   */
+  private seatResolvedBot(lobby: Lobby, seat: BotSeat, resolved: ResolvedBotSeat): void {
+    const { config, deck } = resolved;
     seat.config = config;
     seat.displayName = config.controller.displayName;
     seat.deck = deck;
@@ -505,13 +527,20 @@ export class MatchServer {
   }
 
   /**
-   * Host-only: build this bot a new deck.
+   * Host-only: build this bot a new deck (M09.9).
    *
-   * Rerolling is only meaningful for a mode that *generates* a list, and this
-   * build supports none of them yet — so every reroll is refused by name, with
-   * the tranches that own the two generated modes in the details. It is refused
-   * rather than treated as a harmless no-op because a host who asked for a new
-   * deck and silently got the old one has been told nothing.
+   * Rerolling is only meaningful for a mode that *generates* a list, so a seat
+   * playing an exact one is refused by name rather than treated as a harmless
+   * no-op — a host who asked for a new deck and silently got the old one has
+   * been told nothing.
+   *
+   * For a generated seat this is one step along the seat's own stream: the
+   * configuration is rebuilt from what the seat already holds, the reroll count
+   * goes up by exactly one, and the new seed follows from the base seed and that
+   * count. No seed travels on this message, so the recorded transition is the
+   * server's and is reproducible from the provenance the host is sent. A refused
+   * generation leaves the previous deck in place: rerolling never empties a
+   * seat.
    */
   private rerollBot(connection: ServerConnection, seatId: SeatId): void {
     const lobby = this.hostLobbyFor(connection);
@@ -519,11 +548,24 @@ export class MatchServer {
     const seat = this.botSeatIn(connection, lobby, seatId);
     if (!seat) return;
 
-    this.refuseBot(
-      connection,
-      'mode_unsupported',
-      rerollUnsupportedDetails(seatId, seat.config.deck.mode),
+    const source = seat.config.deck;
+    if (source.mode !== 'commander_generated') {
+      this.refuseBot(connection, 'mode_unsupported', rerollUnsupportedDetails(seatId, source.mode));
+      return;
+    }
+
+    const resolved = resolveBotSeat(
+      setupOf(seat.config),
+      { botId: seat.config.controller.botId, seatId },
+      this.botSeatContext(),
+      { rerollCount: (source.generated?.rerollCount ?? 0) + 1 },
     );
+    if (isErr(resolved)) {
+      connection.send({ type: 'error', error: resolved.error });
+      return;
+    }
+
+    this.seatResolvedBot(lobby, seat, resolved.value);
   }
 
   /** Host-only: free the seat. A human joining never does this implicitly. */
@@ -1093,6 +1135,76 @@ export class MatchServer {
 
   private broadcastLobby(lobby: Lobby): void {
     this.broadcast(lobby, { type: 'lobby_updated', lobby: this.viewOf(lobby) });
+    this.sendBotProvenance(lobby);
+  }
+
+  /**
+   * Tells the host what the server built for them, and tells nobody else.
+   *
+   * Sent beside every lobby update rather than only after a mutation, so the
+   * host's picture cannot drift out of step with the seats it describes — a
+   * reconnecting host gets it back, and a host who has just removed a bot gets a
+   * list without it. It is a complete replacement, not a delta.
+   *
+   * It travels down the host's own connection because a generator seed is the
+   * one value that turns "the Commander is public" back into "the list is
+   * public": with the seed, the Commander and this build, anyone can rebuild the
+   * deck card for card. The seat view every player receives therefore has no
+   * seed in it to strip
+   * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §3).
+   */
+  private sendBotProvenance(lobby: Lobby): void {
+    const hostSeat = lobby.seats.get(lobby.hostSeatId);
+    const connection = hostSeat ? this.connectionFor(hostSeat) : undefined;
+    if (!connection) return;
+
+    const seats = botSeatsOf(lobby).flatMap((seat) =>
+      seat.config.deck.mode === 'commander_generated' && seat.config.deck.generated
+        ? [{ seatId: seat.seatId, generated: seat.config.deck.generated }]
+        : [],
+    );
+    // Nothing generated means nothing to say. A host whose lobby has never held
+    // a generated bot is not sent an empty list on every seat change; a client
+    // drops what it remembers about a seat that stops being one, so a removal
+    // needs no message of its own.
+    if (seats.length === 0) return;
+    connection.send({ type: 'bot_seat_provenance', seats });
+  }
+
+  /**
+   * Publishes every bot's list, once, at the moment the match completes.
+   *
+   * The second half of "public at the Commander, private at the list": during
+   * the match a bot's list is hidden from its opponents, and the promise is only
+   * kept if those opponents are the ones who eventually read it. It is therefore
+   * broadcast to every seat, not sent to the host — who chose the deck and knew
+   * it all along.
+   *
+   * Every bot seat is revealed, whatever its mode, because the rule ADR 0024 §3
+   * states covers a generated list *and* a saved deck the host selected. A
+   * precon is revealed too: its list was never private, and leaving it out would
+   * make the message's meaning depend on the mode of each seat rather than on
+   * the match being over. No hash rides along — the cards are right here, and a
+   * second fingerprint beside them would only be something to disagree with.
+   */
+  private revealBotDecks(lobby: Lobby): void {
+    const decks: RevealedBotDeck[] = botSeatsOf(lobby).flatMap((seat) => {
+      const deck = seat.deck;
+      if (!deck || deck.commanderId === null) return [];
+      return [
+        {
+          seatId: seat.seatId,
+          botId: seat.config.controller.botId,
+          displayName: seat.displayName,
+          commanderId: deck.commanderId,
+          cardIds: expandDeckCards(deck.cards),
+          generated:
+            seat.config.deck.mode === 'commander_generated' ? seat.config.deck.generated : null,
+        },
+      ];
+    });
+    if (decks.length === 0) return;
+    this.broadcast(lobby, { type: 'bot_decks_revealed', decks });
   }
 
   /** Tells every *other* seat that one seat's connection changed. */
@@ -1121,7 +1233,12 @@ export class MatchServer {
     }
 
     for (const seat of lobby.seats.values()) this.sendMatchState(lobby, seat);
-    if (finished) this.broadcastLobby(lobby);
+    if (finished) {
+      this.broadcastLobby(lobby);
+      // After the board and the lobby, so a client that renders the reveal
+      // beside the result already has both when it arrives.
+      this.revealBotDecks(lobby);
+    }
   }
 
   /** Sends one seat its redacted view plus the events it has not seen yet. */

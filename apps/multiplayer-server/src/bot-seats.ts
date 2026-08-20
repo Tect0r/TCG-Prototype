@@ -1,11 +1,13 @@
 import {
   DECK_MODE_SUPPORT,
+  deckModeGenerates,
   deckModeIsSupported,
   difficultyDefinition,
   difficultyIsAvailable,
   readBotSeatConfig,
   type BotDeckMode,
   type BotDeckSnapshot,
+  type BotDeckSource,
   type BotSeatConfig,
 } from '@tcg/bot-config';
 import { bundledPrecon, preconsForFormat, type CardDatabase } from '@tcg/card-data';
@@ -21,6 +23,7 @@ import {
 } from '@tcg/deck';
 import { botLobbyError, type BotSetup, type ProtocolError, type SeatId } from '@tcg/protocol';
 import { err, errorsOf, isErr, ok, type Result } from '@tcg/shared';
+import { generateBotDeck } from './bot-generated-deck.js';
 
 /**
  * Turning a host's bot setup into something the authoritative lobby can seat
@@ -89,17 +92,70 @@ function refusal(
 /**
  * Why a reroll is refused, in the tranches' own words.
  *
- * Rerolling builds a *new* deck, which only a generated mode does, and this
- * build supports neither — so the refusal names the seat's actual mode and the
- * tranche each generated mode is waiting for, read from `DECK_MODE_SUPPORT`
- * rather than written out here.
+ * Rerolling builds a *new* deck, which only a generated mode does. A seat
+ * playing an exact list — a precon, or one of the host's saved decks — has
+ * nothing to reroll, so the refusal names the seat's actual mode; and
+ * `autonomous_generated`, the one generated mode with no resolver yet, names the
+ * tranche that owns it, read from `DECK_MODE_SUPPORT` rather than written out
+ * here.
  */
 export function rerollUnsupportedDetails(seatId: SeatId, mode: BotDeckMode): string[] {
+  if (deckModeGenerates(mode)) {
+    return [
+      `Deck mode "${mode}" is planned for ${DECK_MODE_SUPPORT[mode].plannedIn ?? 'a later tranche'}, ` +
+        'so this build cannot build it a new deck.',
+    ];
+  }
   return [
     `Rerolling builds a new deck, which only a generated mode does; ${seatId} plays "${mode}".`,
-    `"commander_generated" arrives in ${DECK_MODE_SUPPORT.commander_generated.plannedIn}, ` +
-      `"autonomous_generated" in ${DECK_MODE_SUPPORT.autonomous_generated.plannedIn}.`,
+    'Switch the seat to a Commander you choose, and the bot will build it a deck you can reroll.',
   ];
+}
+
+/**
+ * How many rerolls a reconfigured seat carries over.
+ *
+ * `update_bot` replaces a configuration wholesale, and a reroll count is not
+ * part of a configuration — it is how far the seat has got along one *generation
+ * stream*. The stream is named by the two things the host controls: the
+ * Commander and the base seed. Change either and the stream is a different one,
+ * so the count restarts at 0 and the host gets that stream's first deck. Change
+ * neither — a different style, a different difficulty, a different name — and the
+ * seat keeps the deck it is on, because otherwise renaming a bot would silently
+ * undo three rerolls.
+ */
+export function carriedRerollCount(previous: BotSeatConfig | null, next: BotDeckSource): number {
+  const before = previous?.deck;
+  if (!before || before.mode !== 'commander_generated') return 0;
+  if (next.mode !== 'commander_generated') return 0;
+  if (before.commanderId !== next.commanderId || before.seed !== next.seed) return 0;
+  return before.generated?.rerollCount ?? 0;
+}
+
+/**
+ * The setup a seat's own configuration implies.
+ *
+ * Used by `reroll_bot`, which carries no configuration: rerolling is "the same
+ * seat, one step further along its stream", so the setup is rebuilt from what
+ * the seat already holds rather than from anything a client sent. `generated` is
+ * cleared on the way out because it is a *result*, and `resolveBotSeat` refuses
+ * a setup that claims one.
+ */
+export function setupOf(config: BotSeatConfig): BotSetup {
+  const { controller, ...rest } = config;
+  return {
+    ...rest,
+    displayName: controller.displayName,
+    deck:
+      config.deck.mode === 'commander_generated' || config.deck.mode === 'autonomous_generated'
+        ? { ...config.deck, generated: null }
+        : config.deck,
+  };
+}
+
+/** Which step of a generated seat's stream to build. Server-owned (M09.9). */
+export interface BotGenerationRequest {
+  readonly rerollCount: number;
 }
 
 /**
@@ -108,11 +164,18 @@ export function rerollUnsupportedDetails(seatId: SeatId, mode: BotDeckMode): str
  * `botId` is supplied rather than derived here: identity belongs to the lobby
  * that allocates it, and reconfiguring a seat keeps the identity it already had
  * — which is the separation `botControllerSchema` exists to express.
+ *
+ * `generation` is the server's, never the sender's. A generated mode carries a
+ * base seed on the wire — the host's instruction — but how many rerolls have
+ * happened is a fact about this seat's history, and a client able to state it
+ * could invent a seed transition that never occurred. It defaults to the first
+ * generation, which is what `add_bot` always wants.
  */
 export function resolveBotSeat(
   setup: BotSetup,
   identity: { readonly botId: string; readonly seatId: SeatId },
   context: BotSeatContext,
+  generation: BotGenerationRequest = { rerollCount: 0 },
 ): Result<ResolvedBotSeat, ProtocolError> {
   const mode = setup.deck.mode;
   if (!deckModeIsSupported(mode)) {
@@ -145,6 +208,19 @@ export function resolveBotSeat(
   }
   const config = parsed.value;
 
+  // A *result* a sender claimed, rather than one this server produced. Refused
+  // rather than ignored: a seed and a Commander are instructions and are
+  // honoured, but a generator version, a deck hash and a pool report describe a
+  // deck only the server can have built, and accepting a sender's version of
+  // them would let a lobby publish provenance for a deck nobody generated
+  // ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §3).
+  if (deckModeGenerates(config.deck.mode) && 'generated' in config.deck && config.deck.generated) {
+    return refusal('config_invalid', [
+      'A bot setup may ask for a generated deck, but may not describe one: the server records the ' +
+        'generator version, seed, hash and pool report of the deck it actually built.',
+    ]);
+  }
+
   switch (config.deck.mode) {
     case 'exact_precon': {
       const deck = resolvePreconDeck(config.deck.preconId, context);
@@ -154,12 +230,31 @@ export function resolveBotSeat(
       const deck = resolveSnapshotDeck(config.deck.deck, context);
       return isErr(deck) ? deck : ok({ config, deck: deck.value });
     }
-    case 'commander_generated':
+    case 'commander_generated': {
+      const built = generateBotDeck({
+        commanderId: config.deck.commanderId,
+        baseSeed: config.deck.seed,
+        rerollCount: generation.rerollCount,
+        database: context.database,
+        deckFormat: context.deckFormat,
+        now: context.now,
+      });
+      if (isErr(built)) return built;
+      // The provenance goes into the stored configuration rather than beside it:
+      // a generated seat's `generated` field is the record of what it actually
+      // plays, and a configuration still saying `null` after a deck was built
+      // would be a seat nobody could describe.
+      return ok({
+        config: { ...config, deck: { ...config.deck, generated: built.value.provenance } },
+        deck: built.value.deck,
+      });
+    }
     case 'autonomous_generated':
-      // Unreachable: `DECK_MODE_SUPPORT` refuses both above. Kept as a refusal
+      // Unreachable: `DECK_MODE_SUPPORT` refuses it above. Kept as a refusal
       // rather than a `never` so that flipping a support flag without writing
       // the resolver behind it refuses a configuration instead of crashing a
-      // lobby — which is exactly the state M09.6 walked through for its own mode.
+      // lobby — which is exactly the state M09.6 and M09.9 each walked through
+      // for their own mode.
       return refusal('mode_unsupported', [
         `This build has no resolver for deck mode "${config.deck.mode}".`,
       ]);

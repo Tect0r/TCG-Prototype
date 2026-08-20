@@ -228,7 +228,11 @@ export const DECK_MODE_SUPPORT: Readonly<
   // server grew a resolver for the mode, so the entry that says whether a build
   // can honour it now says yes. Nothing else about the entry changed.
   exact_saved_deck: { supported: true, plannedIn: null },
-  commander_generated: { supported: false, plannedIn: 'M09.9' },
+  // Turned on by M09.9. The server generates a legal deck under the Commander
+  // the host chose, freezes it, and records the seed, generator version, mode,
+  // Commander, hash and pool report in `generated` — so the mode now has a
+  // resolver behind it exactly as the two exact modes do.
+  commander_generated: { supported: true, plannedIn: null },
   autonomous_generated: { supported: false, plannedIn: 'M09.10' },
 });
 

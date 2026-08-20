@@ -16,6 +16,7 @@ import {
   PROTOCOL_VERSION,
   botLobbyError,
   botLobbySeatViewSchema,
+  botSeatProvenanceSchema,
   botSetupSchema,
   clientMessageSchema,
   humanLobbySeatViewSchema,
@@ -23,6 +24,8 @@ import {
   lobbySeatViewSchema,
   lobbyViewSchema,
   protocolErrorSchema,
+  revealedBotDeckSchema,
+  serverMessageSchema,
   versionMismatch,
   type BotSetup,
   type ClientMessage,
@@ -125,14 +128,17 @@ function botSeat(config: BotSeatConfig): LobbySeatView {
 /* ---------------------------------------------------------------- versions */
 
 describe('the protocol version', () => {
-  it('moved once, for the shapes this tranche put on the wire', () => {
-    expect(PROTOCOL_VERSION).toBe(7);
-    expect(CURRENT_VERSIONS.protocol).toBe(7);
+  it('moved for the shapes each bot tranche put on the wire', () => {
+    // 7 was M09.2's seat view and host-only messages; 8 is M09.9's two
+    // generated-deck messages, which is the correction ADR 0024 §7 now records
+    // in place of its "moves once" prediction.
+    expect(PROTOCOL_VERSION).toBe(8);
+    expect(CURRENT_VERSIONS.protocol).toBe(8);
   });
 
   it('refuses the build that came before it, by name', () => {
-    const older: Versions = { ...CURRENT_VERSIONS, protocol: 6 };
-    expect(versionMismatch(older, CURRENT_VERSIONS)).toEqual(['protocol 6 vs server 7']);
+    const older: Versions = { ...CURRENT_VERSIONS, protocol: 7 };
+    expect(versionMismatch(older, CURRENT_VERSIONS)).toEqual(['protocol 7 vs server 8']);
   });
 
   it('does not drag the bot configuration versions along with it', () => {
@@ -422,5 +428,121 @@ describe('the seven bot refusals', () => {
     expect(BOT_LOBBY_ERROR_CODES.deck_illegal).toBe('protocol/bot_deck_illegal');
     expect(BOT_LOBBY_ERROR_CODES.deck_illegal).not.toBe('protocol/deck_illegal');
     expect(PROTOCOL_ERROR_CODES).toContain('protocol/deck_illegal');
+  });
+});
+
+/* ----------------------------------------- the two generated-deck messages */
+
+/**
+ * What a generated bot deck puts on the wire (M09.9), and to whom.
+ *
+ * Two messages with deliberately different audiences, which is the whole reason
+ * neither of them is a field on the lobby view every seat receives: provenance
+ * goes to the host, the list goes to everybody once there is nothing left to
+ * protect (ADR 0024 §3).
+ */
+const PROVENANCE = {
+  generatorVersion: '1',
+  mode: 'commander_generated',
+  formatId: 'precon_wave_1',
+  seed: 'lobby-seed:reroll:2',
+  rerollCount: 2,
+  commanderId: 'goblin_warboss',
+  deckHash: 'abcdef0123456789',
+  legalPoolSize: 41,
+  forcedInclusionFloor: 39,
+} as const;
+
+describe('bot_seat_provenance', () => {
+  it('carries everything a generated deck is identified by, and survives the wire', () => {
+    const message = {
+      type: 'bot_seat_provenance' as const,
+      seats: [{ seatId: 'seat_2' as const, generated: PROVENANCE }],
+    };
+    const decoded = decodeServerMessage(encode(message));
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.value).toEqual(message);
+
+    // Seed, generator version, construction mode, Commander and hash: the five
+    // things M09.9 promises a generated deck can be identified by, plus the pool
+    // report the forced-inclusion warning is read from.
+    expect(Object.keys(PROVENANCE).sort()).toEqual(
+      [
+        'commanderId',
+        'deckHash',
+        'forcedInclusionFloor',
+        'formatId',
+        'generatorVersion',
+        'legalPoolSize',
+        'mode',
+        'rerollCount',
+        'seed',
+      ].sort(),
+    );
+  });
+
+  it('is strict, so a field nothing validated cannot ride along', () => {
+    expect(
+      botSeatProvenanceSchema.safeParse({
+        seatId: 'seat_2',
+        generated: PROVENANCE,
+        cardIds: ['goblin_scout'],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('bot_decks_revealed', () => {
+  it('carries a list, and only after the match is what sends it', () => {
+    const message = {
+      type: 'bot_decks_revealed' as const,
+      decks: [
+        {
+          seatId: 'seat_2' as const,
+          botId: 'bot_1',
+          displayName: 'Bot 2',
+          commanderId: 'goblin_warboss',
+          cardIds: ['throwing_knife', 'ashen_vermin'],
+          generated: PROVENANCE,
+        },
+      ],
+    };
+    const decoded = decodeServerMessage(encode(message));
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.value).toEqual(message);
+  });
+
+  it('says `null` rather than inventing provenance for an exact list', () => {
+    const parsed = revealedBotDeckSchema.safeParse({
+      seatId: 'seat_3',
+      botId: 'bot_2',
+      displayName: 'Bot 3',
+      commanderId: 'bastion_commander',
+      cardIds: ['throwing_knife'],
+      generated: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('carries no hash beside the cards it already contains', () => {
+    expect(Object.keys(revealedBotDeckSchema.shape)).not.toContain('deckHash');
+  });
+});
+
+describe('the server message union', () => {
+  it('names both new messages, so an older client fails to decode rather than ignore', () => {
+    const types = serverMessageSchema.options.map((option) => option.shape.type.value);
+    expect(types).toContain('bot_seat_provenance');
+    expect(types).toContain('bot_decks_revealed');
+    // A discriminated union has no fallthrough: an unknown type is a refusal.
+    expect(decodeServerMessage(encode({ type: 'bot_deck_secret' } as never)).ok).toBe(false);
+  });
+
+  it('keeps both of them server-to-client only', () => {
+    for (const type of ['bot_seat_provenance', 'bot_decks_revealed']) {
+      expect(decodeClientMessage(encode({ type } as never)).ok).toBe(false);
+    }
   });
 });
