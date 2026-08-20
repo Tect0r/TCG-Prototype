@@ -10,8 +10,9 @@ import {
   type MatchState,
   type PlayerId,
 } from '@tcg/rules-engine';
+import { EASY_SELECTION } from '@tcg/bot-config';
 import { unwrap } from '@tcg/shared';
-import { createPilot, PILOT_IDS } from './registry.js';
+import { createPilot, createStyledPilot, PILOT_IDS, STYLED_PILOT_IDS } from './registry.js';
 import { scoreCandidate } from './heuristic.js';
 import { cardValue, DEFAULT_WEIGHTS, effectValue, unitBoardValue } from './scoring.js';
 import { CardDatabase, effectDefinitionSchema, type CardDefinition } from '@tcg/card-data';
@@ -191,6 +192,42 @@ describe('every pilot plays complete matches legally', () => {
           'play_card',
         ]),
       );
+    });
+  }
+
+  for (const pilotId of STYLED_PILOT_IDS) {
+    it(`"${pilotId}" at Easy finishes the same ${seeds.length} seeds legally`, async () => {
+      // The same contract the published heuristic is held to, applied to the
+      // difficulty M09.13 added. A bounded degradation that could produce an
+      // illegal action, stall a match or fall back to the random-legal pilot
+      // would not be a difficulty; it would be a bug with a bound printed on it.
+      const seen = new Set<DecisionFamily>();
+      for (const seed of seeds) {
+        const outcome = await driveMatch({
+          seed: `easy-${pilotId}-${seed}`,
+          pilots: [
+            createStyledPilot({ pilotId, selection: EASY_SELECTION }),
+            createStyledPilot({ pilotId, selection: EASY_SELECTION }),
+          ],
+        });
+        expect(outcome.stoppedEarly).toBe(false);
+        expect(outcome.state.status).toBe('complete');
+        expect(outcome.state.result?.reason).not.toBe('engine_error');
+        expect(outcome.failures).toEqual([]);
+        for (const family of outcome.families) seen.add(family);
+      }
+
+      expect([...seen].sort()).toEqual(
+        expect.arrayContaining([
+          'assign_blockers',
+          'declare_attackers',
+          'mulligan',
+          'pass_phase',
+          'play_card',
+        ]),
+      );
+      // Never the one family a difficulty must not be able to reach.
+      expect(seen.has('concede')).toBe(false);
     });
   }
 

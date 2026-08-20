@@ -1975,7 +1975,7 @@ which still schedules no timer and still acts inside the wake that offered the
 opportunity — asserted rather than assumed, so the M09.4 path is unchanged rather
 than merely believed to be.
 
-## M09.13 — Difficulty registry, Easy, and Normal
+## M09.13 — Difficulty registry, Easy, and Normal — **done (2026-08-20)**
 
 Ship two honest, observably different difficulty levels. Normal stays
 decision-equivalent to the current published heuristic for the same style,
@@ -1996,10 +1996,146 @@ provenance, and UI selection tests.
 
 ### Checklist
 
-- [ ] Normal equivalent to the published heuristic per style, seed for seed.
-- [ ] Easy defined as an explicit, versioned, bounded degradation.
-- [ ] Styles stay independent of difficulty.
-- [ ] Difficulty version and provenance recorded on every match.
+- [x] **Normal equivalent to the published heuristic per style, seed for seed.**
+      Equivalence is by construction rather than by measurement:
+      `createHeuristicPilot` gained one optional `selection` parameter defaulting
+      to `{ kind: 'best' }`, and the `best` branch is the argmax-with-tie-break
+      that has been there since M05 — moved into a function, not rewritten. The
+      measurement is there as well, because "by construction" is a claim about
+      code somebody could get wrong: for each of the three styles a whole match
+      is played by `createPilot({ id })`, the path that shipped, and by the new
+      parameter set to `best`, and the two are compared on every action, the
+      final sequence, the turn, the result and the failure list. `normal`'s
+      registry entry is literally `{ kind: 'best' }`, so the wiring is checked
+      too, and the existing 46-test contract suite passed unmodified.
+- [x] **Easy defined as an explicit, versioned, bounded degradation.**
+      `EASY_SELECTION` is `{ kind: 'bounded_error', errorBudget: 0.5, maxBand: 3 }`,
+      in `@tcg/bot-config` beside the registry entry that names it, with
+      `behaviorVersion: '1.0.0'`. The bound is a sentence a person can check with
+      a stopwatch of their own: **never a candidate from the worse half of the
+      range it was offered, and never one outside the best three**. It is
+      relative to the spread of the board rather than absolute, because a
+      heuristic score has no units and "within 2.0 of the best" would mean
+      something different on every turn. The parameters are parsed by
+      `difficultySelectionSchema` inside `difficultyRegistryGaps()`, so
+      `errorBudget: 1.5` — which type-checks, and would quietly mean "anything at
+      all" — is a registry gap rather than a silently wider Easy.
+- [x] **Styles stay independent of difficulty.** Difficulty selects among the
+      candidates; style scores them; neither function can reach the other's half.
+      An Easy bot's exported configuration carries its style's published weight
+      vector unmodified and differs from the Normal bot of the same style in
+      exactly one member. Every one of the six live combinations is configurable
+      and none collapses: two styles at the same difficulty still play different
+      matches, and the same style at two difficulties still plays different
+      matches. `random_legal` is refused a difficulty by name —
+      `STYLED_PILOT_IDS` is derived from the agent-class taxonomy, because a
+      bounded degradation of a pilot that is not trying is not a weaker player,
+      it is noise with a bound printed on it.
+- [x] **Difficulty version and provenance recorded on every match.**
+      `BotSeatActivity` gained `difficulty` and `difficultyBehaviorVersion`,
+      beside the `pilotId` and `pilotVersion` it already carried. Two pairs,
+      because two independent things decided every move, and each half moves for
+      its own reason: Easy improving bumps `difficultyBehaviorVersion` and
+      nothing else, while the label a person picked stays `easy`. The behaviour
+      version is read from the registry rather than from the pilot, because a
+      pilot's `version` identifies the _scorer_ — smuggling a difficulty into it
+      would produce a string nothing could parse back out.
+
+### What a host actually sees
+
+One more option in a control that already existed. The difficulty select is
+built from `AVAILABLE_DIFFICULTIES`, so **no screen changed to add Easy** — the
+registry entry flipped and the option appeared, which is the same mechanism
+M09.6, M09.9 and M09.10 each used to turn on a deck mode. Hard is still absent
+rather than present-and-disabled, for the reason it always was: the server
+refuses it by name, and a control whose only outcome is an error message is
+decoration.
+
+The default is still Normal. Easy is a thing a host asks for, not something a
+first match quietly starts at, and the seat tag beside the bot says which one it
+got — publicly, like difficulty always has been, because an opponent may know
+what it is playing against.
+
+### Findings recorded rather than fixed
+
+- **A difficulty is not something an experiment can name, deliberately.**
+  `PilotSpec` was left alone and `createStyledPilot` added beside `createPilot`.
+  Widening the manifest schema would have been less code and would have let a
+  deliberately suboptimal run be filed under `generic_heuristic` and cited for
+  play quality — the pooled-skill mistake M05.4 exists to refuse. Experiments and
+  the calibration suite reach the pilots through `createPilot`, which has no
+  difficulty parameter at all; that absence is the guarantee, and a source scan
+  over `calibration/fixture.ts` is the check on it.
+- **The calibration suite stays a Normal instrument.** A fixture asks "was that
+  the characteristic decision for this style", and Easy is _defined_ as sometimes
+  not making it, so an Easy calibration result would be a measurement of the
+  wrong thing wearing the right label. Running the fixtures at Easy to record
+  _how often_ it diverges would be a genuinely interesting measurement and is not
+  this tranche's; it needs its own claim, its own suite version and its own
+  reader.
+- **`CALIBRATED_PILOT_IDS` and `STYLED_PILOT_IDS` are the same list, derived
+  twice.** They answer different questions — "which pilots is it meaningful to
+  calibrate" and "which pilots can carry a difficulty" — that happen to have one
+  answer today. Cross-checked in the calibration suite rather than merged, which
+  is the treatment `LEGAL_ONLY_PILOT_IDS` and the agent-class registry already
+  get.
+- **Easy's two numbers are a first setting, not a finding.** 0.5 and 3 were
+  chosen to be observably different without being erratic, and the tests assert
+  the _bound_ rather than a win rate: nothing here claims Easy loses more often,
+  and a table saying so would need the structured playtests the plan is waiting
+  on. Moving either number is a change to what "Easy" means and moves
+  `behaviorVersion`.
+- **Most Easy decisions are Normal's decision.** On most boards the best
+  candidate is the only one inside the band, which is why the test asserts both
+  halves — that some choice was below the best, and that many were not. A
+  difficulty that was wrong every turn would be a different pilot, not an easier
+  one.
+- **`brokeTie` now means "the RNG chose" rather than "the scores were equal".**
+  It was already the former in substance; Easy is the first caller for which the
+  two readings come apart. The diagnostic gains a note naming which of the band
+  was taken, so a replay can say why without a new field on
+  `botDiagnosticsSchema` — which is written into replay bundles and was
+  deliberately not widened.
+
+### Versions
+
+`DIFFICULTY_REGISTRY_VERSION` moves **1 → 2**. `easy` changed status from
+`planned` to `available`, which is precisely what this constant is documented to
+move for: a record that cites `easy` against registry 1 was written by a build
+that could not fly one. The registry also gained `selection`, so a definition
+read from another build is a wider shape than a v1 build knows. A v2 client's
+configuration is refused by a v1 server with the existing readable message; the
+other direction is accepted, because older is readable.
+
+`easy.behaviorVersion` is new and is **`'1.0.0'`** — the third, narrowest
+constant, and the one that moves when Easy itself improves without the
+vocabulary changing. `normal.behaviorVersion` stays `'1.0.0'`: the equivalence
+above is exactly the claim that its decision procedure did not change.
+
+**`PROTOCOL_VERSION` stays 9**, and this is the tranche ADR 0024 §7 now cites as
+the demonstration rather than the theory. `botDifficultySchema` has enumerated
+`easy` since M09.1 — the wire always knew the word, and only the registry knew
+whether anything was behind it — so no message shape moved and no build is
+refused that was not refused yesterday. `BotSeatActivity` is a server-internal
+record on `BotRunReport`, which has never been a message.
+
+`BOT_CONFIG_SCHEMA_VERSION` stays 1 (no configuration shape widened),
+`PACING_CONFIG_VERSION` stays 1, `DECK_GENERATOR_VERSION` stays `'1'`,
+`SEED_DERIVATION_VERSION` stays 2, and `CALIBRATION_SUITE_VERSION` stays 1
+because no fixture changed. The three style pilots keep `1.1.0`: their weights
+and their scorer are untouched, and a difficulty is not a change to either.
+
+**`RULES_VERSION` stays `0.4.0`.** A difficulty chooses among actions the engine
+had already declared legal. No legal action, cost or resolution moved, nothing in
+`RulesConfig` learned what a difficulty is, and `MATCH_SCHEMA_VERSION` and
+`CARD_SCHEMA_VERSION` stay for the same reason they always have: `MatchState`
+still does not know what a bot is.
+
+**Compatibility.** Nothing durable changed shape, so nothing is migrated. A
+`SavedDeck`, a match record and a replay keep the fields they had; an experiment
+manifest is untouched, because `PilotSpec` deliberately was. The one behavioural
+change is that a configuration naming `easy` is now accepted instead of refused,
+which widens what a build will do rather than narrowing it.
 
 ## M09.14 — Hard tactical improvements
 

@@ -60,15 +60,16 @@ import {
  * **Only what this build can honour is on screen.** The deck-source control is
  * built from `DECK_MODE_SUPPORT` and the labels below, so a mode with no
  * resolver behind it is absent rather than present-and-refused, and the
- * difficulty control is built from `AVAILABLE_DIFFICULTIES`, so Easy and Hard
- * are absent for the same reason. The alternative — showing every eventual
- * option disabled — would be decoration that the server would answer with a
- * named refusal, and the milestone rules it out.
+ * difficulty control is built from `AVAILABLE_DIFFICULTIES`, so Hard is absent
+ * for the same reason. The alternative — showing every eventual option disabled
+ * — would be decoration that the server would answer with a named refusal, and
+ * the milestone rules it out.
  *
- * Each of those follows from data rather than from a list written here, so
- * M09.13 turns its own control on by flipping the entry it already owns — which
- * is exactly how M09.6, M09.9 and M09.10 each turned on a deck mode. All four
- * deck modes are now offered; difficulty is not.
+ * Each of those follows from data rather than from a list written here, which is
+ * how M09.13 turned Easy on without touching this file: it flipped the registry
+ * entry it already owned and the option appeared, exactly as M09.6, M09.9 and
+ * M09.10 each turned on a deck mode. All four deck modes and two of the three
+ * difficulties are now offered; Hard is M09.15's.
  *
  * **Timing is configured here and spent by the server** (M09.11, M09.12). The
  * budgets belong to the table and the percentage to the bot, so they are two

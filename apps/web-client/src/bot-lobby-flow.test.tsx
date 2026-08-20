@@ -232,19 +232,41 @@ describe('bot seat controls', () => {
     });
   });
 
+  it('sends Easy when the host picks it, and Normal when they do not', async () => {
+    const harness = renderApp();
+    await enterLobby(harness);
+
+    // The default is still Normal: Easy is a thing a host asks for, not
+    // something a first match quietly starts at.
+    expect(screen.getByLabelText('Bot difficulty')).toHaveValue('normal');
+
+    await harness.user.selectOptions(screen.getByLabelText('Bot difficulty'), 'easy');
+    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    expect(harness.transport().last('add_bot')?.setup.difficulty).toBe('easy');
+    // And nothing else moved: difficulty is one of four independent axes, so
+    // choosing one must not choose another.
+    expect(harness.transport().last('add_bot')?.setup.style).toBe('aggressive');
+    expect(harness.transport().last('add_bot')?.setup.pacing).toEqual({
+      percent: 0,
+      reactionPercent: null,
+    });
+  });
+
   it('offers no option this build would refuse', async () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    // Difficulty: the registry's available IDs and no others. Easy and Hard are
-    // absent rather than present-and-disabled, because the server refuses them
-    // by name and a control whose only outcome is an error is decoration.
+    // Difficulty: the registry's available IDs and no others. Hard is absent
+    // rather than present-and-disabled, because the server refuses it by name
+    // and a control whose only outcome is an error is decoration. Easy appeared
+    // here the moment M09.13 changed its status — this screen reads
+    // `AVAILABLE_DIFFICULTIES` and holds no list of its own.
     const difficulty = screen.getByLabelText('Bot difficulty');
     expect(
       within(difficulty)
         .getAllByRole('option')
         .map((node) => node.textContent),
-    ).toEqual(['Normal']);
+    ).toEqual(['Easy', 'Normal']);
     for (const planned of PLANNED_DIFFICULTIES) {
       expect(
         within(difficulty).queryByRole('option', { name: difficultyDefinition(planned).label }),

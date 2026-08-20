@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AVAILABLE_DIFFICULTIES,
   BOT_CONFIG_SCHEMA_VERSION,
   DEFAULT_BOT_DIFFICULTY,
   DIFFICULTY_REGISTRY_VERSION,
+  EASY_SELECTION,
   IMMEDIATE_BOT_PACING,
   type BotSeatConfig,
   type BotStyle,
@@ -477,12 +479,27 @@ describe('one independent deterministic stream per bot seat', () => {
   });
 
   it('refuses a difficulty that has no decision procedure behind it', () => {
+    // Hard is the only one left: M09.13 gave Easy a procedure and turned it on.
+    // The refusal now comes from `difficultySelection` in `@tcg/bot-config`, so
+    // there is one wording rather than one per caller that builds a pilot.
     expect(() => createBotPilot({ ...botConfigFor('value'), difficulty: 'hard' })).toThrow(
       /M09\.15/,
     );
-    expect(() => createBotPilot({ ...botConfigFor('value'), difficulty: 'easy' })).toThrow(
-      /M09\.13/,
-    );
+    for (const difficulty of AVAILABLE_DIFFICULTIES) {
+      expect(() => createBotPilot({ ...botConfigFor('value'), difficulty })).not.toThrow();
+    }
+  });
+
+  it('builds an Easy bot from the registry rather than from a name in the runner', () => {
+    // Style picks the weights, difficulty picks the selection, and neither can
+    // reach the other's half. A difficulty added to the registry needs no change
+    // here, which is what stops the two lists drifting.
+    const easy = createBotPilot({ ...botConfigFor('aggressive'), difficulty: 'easy' });
+    const normal = createBotPilot({ ...botConfigFor('aggressive'), difficulty: 'normal' });
+    expect(easy.id).toBe('aggressive');
+    expect(easy.config.weights).toEqual(normal.config.weights);
+    expect(easy.config.selection).toEqual(EASY_SELECTION);
+    expect(normal.config.selection).toEqual({ kind: 'best' });
   });
 
   it('seats a bot whose pilot cannot be built without taking the match with it', async () => {

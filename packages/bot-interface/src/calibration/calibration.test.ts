@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { bundledPrecon } from '@tcg/card-data';
 import { createRngState } from '@tcg/rules-engine';
 import { agentClassSupports } from '../agent-class.js';
-import { createPilot, PILOT_AGENT_CLASSES, PILOT_IDS } from '../registry.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createPilot, PILOT_AGENT_CLASSES, PILOT_IDS, STYLED_PILOT_IDS } from '../registry.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 import {
   CALIBRATED_PILOT_IDS,
   CALIBRATION_FACETS,
@@ -94,6 +99,28 @@ describe('the calibration suite', () => {
       PILOT_IDS.filter((id) => agentClassSupports(PILOT_AGENT_CLASSES[id], 'play_quality')),
     );
     expect(CALIBRATED_PILOT_IDS).not.toContain('random_legal');
+    // The pilots a difficulty can be applied to are the same pilots, derived the
+    // same way in `registry.ts`. Cross-checked rather than merged: they answer
+    // different questions and happen to have one answer, and this is what stops
+    // them drifting apart quietly.
+    expect([...CALIBRATED_PILOT_IDS].sort()).toEqual([...STYLED_PILOT_IDS].sort());
+  });
+
+  it('is calibrated at Normal, structurally, so an Easy run cannot be cited as one', () => {
+    // A fixture asks "was that the characteristic decision for this style".
+    // Easy is *defined* as sometimes not making it, so an Easy result here would
+    // be a measurement of the wrong thing wearing the right label. `runFixture`
+    // builds through `createPilot`, which has no difficulty parameter at all —
+    // that absence is the guarantee, and this is the check on it.
+    const source = readFileSync(join(HERE, 'fixture.ts'), 'utf8');
+    expect(source).toContain('createPilot({ id: pilotId })');
+    expect(source).not.toContain('createStyledPilot');
+    expect(source).not.toContain('EASY_SELECTION');
+
+    for (const pilotId of CALIBRATED_PILOT_IDS) {
+      // And what it does build is the published heuristic: `best`, every time.
+      expect(createPilot({ id: pilotId }).config.selection).toEqual({ kind: 'best' });
+    }
   });
 });
 

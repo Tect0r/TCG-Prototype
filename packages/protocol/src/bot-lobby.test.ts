@@ -147,9 +147,14 @@ describe('the protocol version', () => {
 
   it('does not drag the bot configuration versions along with it', () => {
     // A difficulty can improve without a message shape changing, which is the
-    // whole reason these are separate constants (ADR 0024 §7).
+    // whole reason these are separate constants (ADR 0024 §7). M09.13 is the
+    // demonstration rather than the theory: `easy` went from planned to
+    // available, the registry version moved 1 → 2, and `PROTOCOL_VERSION` did
+    // not — because `botDifficultySchema` already carried the ID and no shape
+    // on any wire changed.
     expect(BOT_CONFIG_SCHEMA_VERSION).toBe(1);
-    expect(DIFFICULTY_REGISTRY_VERSION).toBe(1);
+    expect(DIFFICULTY_REGISTRY_VERSION).toBe(2);
+    expect(PROTOCOL_VERSION).toBe(9);
     // And the handshake still compares three things, not five: a bot's
     // configuration is not something two builds must agree on to play at all.
     expect(Object.keys(CURRENT_VERSIONS).sort()).toEqual(['cardSchema', 'protocol', 'rules']);

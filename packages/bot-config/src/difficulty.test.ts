@@ -9,6 +9,9 @@ import {
   difficultyDefinition,
   difficultyIsAvailable,
   difficultyRegistryGaps,
+  difficultySelection,
+  difficultySelectionSchema,
+  EASY_SELECTION,
   type BotDifficulty,
 } from './difficulty.js';
 import {
@@ -30,7 +33,7 @@ import { DIFFICULTY_REGISTRY_VERSION } from './version.js';
  */
 
 const EXPECTED_STATUS: Record<BotDifficulty, 'available' | 'planned'> = {
-  easy: 'planned',
+  easy: 'available',
   normal: 'available',
   hard: 'planned',
 };
@@ -54,13 +57,15 @@ describe('difficulty registry', () => {
     expect(BOT_DIFFICULTIES).toEqual(['easy', 'normal', 'hard']);
   });
 
-  it('ships Normal only, and names the tranche that owns each of the others', () => {
+  it('ships Easy and Normal, and names the tranche that owns Hard', () => {
     for (const difficulty of BOT_DIFFICULTIES) {
       expect(DIFFICULTY_REGISTRY[difficulty].status).toBe(EXPECTED_STATUS[difficulty]);
     }
-    expect(AVAILABLE_DIFFICULTIES).toEqual(['normal']);
-    expect(PLANNED_DIFFICULTIES).toEqual(['easy', 'hard']);
-    expect(DIFFICULTY_REGISTRY.easy.plannedIn).toBe('M09.13');
+    // Easiest first, and the order is the lobby's order: M09.13 turned Easy on
+    // and deliberately left Hard where M09.15 will find it.
+    expect(AVAILABLE_DIFFICULTIES).toEqual(['easy', 'normal']);
+    expect(PLANNED_DIFFICULTIES).toEqual(['hard']);
+    expect(DIFFICULTY_REGISTRY.easy.plannedIn).toBeNull();
     expect(DIFFICULTY_REGISTRY.hard.plannedIn).toBe('M09.15');
   });
 
@@ -68,13 +73,49 @@ describe('difficulty registry', () => {
     // A result citing `hard` has to be able to say *which* Hard; a difficulty
     // with no decision procedure has no Hard to cite yet, and says null.
     expect(DIFFICULTY_REGISTRY.normal.behaviorVersion).toBe('1.0.0');
-    expect(DIFFICULTY_REGISTRY.easy.behaviorVersion).toBeNull();
+    expect(DIFFICULTY_REGISTRY.easy.behaviorVersion).toBe('1.0.0');
     expect(DIFFICULTY_REGISTRY.hard.behaviorVersion).toBeNull();
     for (const difficulty of BOT_DIFFICULTIES) {
       expect(difficultyIsAvailable(difficulty)).toBe(
         DIFFICULTY_REGISTRY[difficulty].behaviorVersion !== null,
       );
     }
+  });
+
+  it('says how each available difficulty chooses, and refuses to guess for Hard', () => {
+    // The whole of what a difficulty *is*. Written out rather than read back,
+    // because these two numbers are the published bound: changing either is a
+    // change to what "Easy" means and has to be argued for here first.
+    expect(DIFFICULTY_REGISTRY.normal.selection).toEqual({ kind: 'best' });
+    expect(DIFFICULTY_REGISTRY.easy.selection).toEqual({
+      kind: 'bounded_error',
+      errorBudget: 0.5,
+      maxBand: 3,
+    });
+    expect(EASY_SELECTION).toEqual(DIFFICULTY_REGISTRY.easy.selection);
+    expect(DIFFICULTY_REGISTRY.hard.selection).toBeNull();
+
+    expect(difficultySelection('easy')).toEqual(EASY_SELECTION);
+    expect(difficultySelection('normal')).toEqual({ kind: 'best' });
+    // Refused by name rather than silently falling back to `best`, which is how
+    // a planned difficulty would otherwise end up playing as Normal while the
+    // lobby, the seat label and the match record all said it did not.
+    expect(() => difficultySelection('hard')).toThrow(/Hard.*M09\.15/);
+  });
+
+  it('refuses a bound that would not bound anything', () => {
+    for (const bad of [
+      { kind: 'bounded_error', errorBudget: 1.5, maxBand: 3 },
+      { kind: 'bounded_error', errorBudget: -0.1, maxBand: 3 },
+      { kind: 'bounded_error', errorBudget: 0.5, maxBand: 0 },
+      { kind: 'bounded_error', errorBudget: 0.5, maxBand: 2.5 },
+      { kind: 'bounded_error', errorBudget: 0.5 },
+      { kind: 'sometimes_random' },
+    ]) {
+      expect(difficultySelectionSchema.safeParse(bad).success).toBe(false);
+    }
+    expect(difficultySelectionSchema.safeParse(EASY_SELECTION).success).toBe(true);
+    expect(difficultySelectionSchema.safeParse({ kind: 'best' }).success).toBe(true);
   });
 
   it('refuses an unknown ID', () => {
@@ -84,7 +125,10 @@ describe('difficulty registry', () => {
   });
 
   it('pins the registry version, so a record can say which registry it cited', () => {
-    expect(DIFFICULTY_REGISTRY_VERSION).toBe(1);
+    // 2 since M09.13: `easy` changed status, which is exactly what this constant
+    // is for. A record that cites `easy` against registry 1 was written by a
+    // build that could not fly one.
+    expect(DIFFICULTY_REGISTRY_VERSION).toBe(2);
   });
 });
 

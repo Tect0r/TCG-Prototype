@@ -44,6 +44,68 @@ export const DIFFICULTY_STATUSES = ['available', 'planned'] as const;
 export const difficultyStatusSchema = z.enum(DIFFICULTY_STATUSES);
 export type DifficultyStatus = z.infer<typeof difficultyStatusSchema>;
 
+/* ------------------------------------------------------- how it chooses (M09.13) */
+
+/**
+ * How a difficulty picks among the *same* scored legal candidates.
+ *
+ * This is the whole of what a difficulty is. Every difficulty sees the identical
+ * candidate list from the identical scorer under the identical style weights;
+ * the only thing that varies is which entry of that list it takes. Nothing here
+ * can produce an action the engine did not offer, because nothing here produces
+ * an action at all — it selects one.
+ *
+ * The parameters live in this package rather than beside the pilots for the
+ * reason `pilotId` does: a lobby has to print what Easy will do and a server has
+ * to record which Easy it flew, and neither should have to import a decision
+ * procedure to find out. `@tcg/bot-interface` implements these numbers and a
+ * test over there proves it honours them.
+ */
+export const CANDIDATE_SELECTION_KINDS = ['best', 'bounded_error'] as const;
+export const candidateSelectionKindSchema = z.enum(CANDIDATE_SELECTION_KINDS);
+export type CandidateSelectionKind = z.infer<typeof candidateSelectionKindSchema>;
+
+export const difficultySelectionSchema = z.discriminatedUnion('kind', [
+  /** Take the highest-scoring candidate, breaking exact ties on the seat's RNG. */
+  z.strictObject({ kind: z.literal('best') }),
+  z.strictObject({
+    kind: z.literal('bounded_error'),
+    /**
+     * How far below the best a choice may fall, as a fraction of the spread
+     * between the best and worst candidate on offer. `0.5` is the promise "never
+     * from the worse half of the range it was given" — a bound relative to the
+     * board rather than an absolute score, because a score has no units.
+     */
+    errorBudget: z.number().min(0).max(1),
+    /**
+     * The most candidates that are ever eligible, best first. The band is what
+     * keeps this a *bounded* degradation rather than a soft uniform sample: on a
+     * board offering thirty plays it still only ever considers this many.
+     */
+    maxBand: z.number().int().min(1),
+  }),
+]);
+export type DifficultySelection = z.infer<typeof difficultySelectionSchema>;
+
+/**
+ * Easy's published degradation.
+ *
+ * Half the range and three candidates: an Easy bot never takes a play from the
+ * worse half of what it was offered, and never looks past the third-best. That
+ * is deliberately a *statement about the bound* rather than about the outcome —
+ * an Easy choice is often the same choice Normal would make, and the honest
+ * claim is that it is never much worse, not that it is always worse.
+ *
+ * It is not uniform random over legal actions, it cannot return an illegal one,
+ * and it cannot concede: a concession scores `-Infinity` and is excluded from
+ * the band before anything is picked.
+ */
+export const EASY_SELECTION: DifficultySelection = Object.freeze({
+  kind: 'bounded_error',
+  errorBudget: 0.5,
+  maxBand: 3,
+});
+
 export interface DifficultyDefinition {
   readonly id: BotDifficulty;
   readonly label: string;
@@ -57,6 +119,12 @@ export interface DifficultyDefinition {
    * cites `hard` can say *which* Hard. `null` while nothing implements it.
    */
   readonly behaviorVersion: string | null;
+  /**
+   * How it chooses among the scored candidates, and `null` while nothing
+   * implements it — the same rule `behaviorVersion` follows, so the two cannot
+   * disagree about whether a difficulty exists yet.
+   */
+  readonly selection: DifficultySelection | null;
 }
 
 export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefinition>> =
@@ -67,9 +135,10 @@ export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefin
       summary:
         'Bounded, deterministic suboptimality over the same scored legal candidates. Not uniform ' +
         'random, not an illegal action, not free concession, and not deliberate non-participation.',
-      status: 'planned',
-      plannedIn: 'M09.13',
-      behaviorVersion: null,
+      status: 'available',
+      plannedIn: null,
+      behaviorVersion: '1.0.0',
+      selection: EASY_SELECTION,
     },
     normal: {
       id: 'normal',
@@ -80,6 +149,9 @@ export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefin
       status: 'available',
       plannedIn: null,
       behaviorVersion: '1.0.0',
+      // Literally the selection the heuristic has always made, named rather than
+      // reimplemented, which is what makes "Normal is unchanged" checkable.
+      selection: { kind: 'best' },
     },
     hard: {
       id: 'hard',
@@ -90,11 +162,30 @@ export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefin
       status: 'planned',
       plannedIn: 'M09.15',
       behaviorVersion: null,
+      selection: null,
     },
   });
 
 export function difficultyDefinition(difficulty: BotDifficulty): DifficultyDefinition {
   return DIFFICULTY_REGISTRY[difficulty];
+}
+
+/**
+ * How this difficulty chooses, for a caller that is about to build a pilot.
+ *
+ * Throws rather than falling back to `best`, because a silent fallback is how a
+ * planned difficulty ends up quietly playing as Normal while a lobby, a seat
+ * label and a match record all say it did not.
+ */
+export function difficultySelection(difficulty: BotDifficulty): DifficultySelection {
+  const definition = DIFFICULTY_REGISTRY[difficulty];
+  if (definition.selection === null) {
+    throw new Error(
+      `Difficulty "${definition.label}" is planned for ${definition.plannedIn ?? 'a later tranche'} ` +
+        'and has no decision procedure behind it.',
+    );
+  }
+  return definition.selection;
 }
 
 export function difficultyIsAvailable(difficulty: BotDifficulty): boolean {
@@ -137,8 +228,28 @@ export function difficultyRegistryGaps(): string[] {
           `planned difficulty "${difficulty}" carries a behaviour version, but nothing implements it.`,
         );
       }
-    } else if (definition.behaviorVersion === null) {
+      if (definition.selection !== null) {
+        problems.push(
+          `planned difficulty "${difficulty}" declares how it chooses, but nothing implements it.`,
+        );
+      }
+      continue;
+    }
+    if (definition.behaviorVersion === null) {
       problems.push(`available difficulty "${difficulty}" does not declare a behaviour version.`);
+    }
+    if (definition.selection === null) {
+      problems.push(`available difficulty "${difficulty}" does not say how it chooses.`);
+      continue;
+    }
+    // Parsed rather than trusted: the registry is a hand-written literal, and
+    // `errorBudget: 1.5` would type-check and silently mean "anything at all".
+    const selection = difficultySelectionSchema.safeParse(definition.selection);
+    if (!selection.success) {
+      problems.push(
+        `difficulty "${difficulty}" declares an unreadable selection: ` +
+          selection.error.issues.map((issue) => issue.message).join('; '),
+      );
     }
   }
   return problems;

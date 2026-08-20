@@ -266,7 +266,12 @@ takes `createRngState` directly.
 - **Bot configuration, difficulty, generator and pacing carry their own version
   constants**, because a difficulty can improve without a card, a rule or a
   message shape changing, and a result that cites "Hard" has to be able to say
-  _which_ Hard.
+  _which_ Hard. M09.13 is the first demonstration rather than the theory:
+  `easy` moved `planned` → `available`, `DIFFICULTY_REGISTRY_VERSION` moved 1 →
+  2, and `PROTOCOL_VERSION` stayed at 9 — `botDifficultySchema` had carried the
+  ID since M09.1 and no shape on any wire changed. A difficulty's own
+  `behaviorVersion` is the third, narrower constant: Easy improving moves that
+  and neither of the other two.
 
 A future version is refused with a readable message rather than migrated
 speculatively — the treatment M07.9 applied to `CARD_SCHEMA_VERSION`.

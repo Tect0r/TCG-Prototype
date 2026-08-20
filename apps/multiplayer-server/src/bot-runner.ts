@@ -3,7 +3,9 @@ import {
   botStyleDefinition,
   DEFAULT_BOT_PACING_BUDGETS,
   difficultyDefinition,
+  difficultySelection,
   type BotDecisionCategory,
+  type BotDifficulty,
   type BotPacing,
   type BotPacingBudgets,
   type BotSeatConfig,
@@ -11,7 +13,7 @@ import {
 import type { CardDatabase } from '@tcg/card-data';
 import {
   classifyDecisionCategory,
-  createPilot,
+  createStyledPilot,
   decideSafely,
   pilotIdSchema,
   type BotFailureKind,
@@ -163,6 +165,19 @@ export interface BotSeatActivity {
   readonly playerId: PlayerId;
   readonly pilotId: string;
   readonly pilotVersion: string;
+  /**
+   * Which difficulty this seat flew, and which version of it (M09.13).
+   *
+   * Two fields rather than one because they answer different questions and move
+   * at different times: `difficulty` is the label a person picked and a lobby
+   * printed, `difficultyBehaviorVersion` is the version of the decision
+   * procedure behind that label. Easy improving bumps the second and not the
+   * first, and a record that carried only the label could not tell two Easies
+   * apart. Both are here beside `pilotId`/`pilotVersion` because the pair of
+   * pairs is what actually determined every decision below.
+   */
+  readonly difficulty: BotDifficulty;
+  readonly difficultyBehaviorVersion: string | null;
   /** This seat's own generator stream, derived from the match seed. */
   readonly seed: string;
   readonly decisions: number;
@@ -267,29 +282,20 @@ export function botSeedFor(matchSeed: string, seatId: SeatId): string {
 /**
  * The pilot a bot seat flies.
  *
- * Style chooses the weight vector; difficulty chooses how well the bot uses it.
- * `normal` is "the published heuristic for the chosen style, unchanged", which is
- * exactly why it adds nothing here. The switch is total over `BotDifficulty`, so
- * M09.13 and M09.15 cannot ship a difficulty without deciding what flies it.
+ * Style chooses the weight vector; difficulty chooses which of the scored
+ * candidates that vector produces the bot actually takes. Since M09.13 both come
+ * out of their own registry — `botStyleDefinition(...).pilotId` and
+ * `difficultySelection(...)` — rather than out of a switch here, so a difficulty
+ * cannot be added to the registry and forgotten in the runner, and a difficulty
+ * with nothing behind it is refused by `difficultySelection` in one place with
+ * one wording rather than in every caller that builds a pilot.
+ *
+ * The two axes stay independent by construction: nothing below lets a difficulty
+ * reach the weights or a style reach the selection.
  */
 export function createBotPilot(config: BotSeatConfig): BotPolicy {
   const pilotId = pilotIdSchema.parse(botStyleDefinition(config.style).pilotId);
-  switch (config.difficulty) {
-    case 'normal':
-      return createPilot({ id: pilotId });
-    case 'easy':
-    case 'hard': {
-      const definition = difficultyDefinition(config.difficulty);
-      throw new Error(
-        `Difficulty "${definition.label}" is planned for ${definition.plannedIn ?? 'a later tranche'} ` +
-          'and has no decision procedure behind it.',
-      );
-    }
-    default: {
-      const never: never = config.difficulty;
-      throw new Error(`Unknown difficulty "${String(never)}".`);
-    }
-  }
+  return createStyledPilot({ pilotId, selection: difficultySelection(config.difficulty) });
 }
 
 /**
@@ -415,6 +421,8 @@ interface BotSeatRuntime {
   readonly botId: string;
   readonly playerId: PlayerId;
   readonly pilot: BotPolicy | null;
+  /** The difficulty this seat was configured with, frozen at match start. */
+  readonly difficulty: BotDifficulty;
   /** This seat's own timing dial, frozen with the rest of its configuration. */
   readonly pacing: BotPacing;
   readonly seed: string;
@@ -477,6 +485,7 @@ export class BotRunner {
         botId,
         playerId: seat.playerId,
         pilot: null,
+        difficulty: seat.config.difficulty,
         seed: botSeedFor(options.matchSeed, seat.seatId),
         rng: createRngState(botSeedFor(options.matchSeed, seat.seatId)),
         pacing: seat.config.pacing,
@@ -564,6 +573,12 @@ export class BotRunner {
         playerId: runtime.playerId,
         pilotId: runtime.pilot?.id ?? 'none',
         pilotVersion: runtime.pilot?.version ?? '',
+        difficulty: runtime.difficulty,
+        // Read from the registry rather than from the pilot, because the pilot
+        // carries the *style's* version. A difficulty with no procedure behind
+        // it never reaches here — no pilot is built for one — so a `null` in a
+        // record is a seat that halted before it ever played.
+        difficultyBehaviorVersion: difficultyDefinition(runtime.difficulty).behaviorVersion,
         seed: runtime.seed,
         decisions: runtime.decisions,
         actions: Object.fromEntries([...runtime.committed].sort(([a], [b]) => a.localeCompare(b))),

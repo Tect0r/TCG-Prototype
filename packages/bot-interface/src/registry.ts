@@ -1,14 +1,20 @@
 import { z } from 'zod';
+import type { DifficultySelection } from '@tcg/bot-config';
 import {
   AGENT_CLASSES,
   agentClassSupports,
   type AgentClass,
   type EvidenceClaim,
 } from './agent-class.js';
-import { createAggressivePilot, AGGRESSIVE_WEIGHTS } from './aggressive.js';
-import { createDefensivePilot, DEFENSIVE_WEIGHTS } from './defensive.js';
-import { createValuePilot, VALUE_WEIGHTS } from './value.js';
-import { createRandomLegalPilot, randomLegalConfigSchema } from './random-legal.js';
+import { createAggressivePilot, AGGRESSIVE_VERSION, AGGRESSIVE_WEIGHTS } from './aggressive.js';
+import { createDefensivePilot, DEFENSIVE_VERSION, DEFENSIVE_WEIGHTS } from './defensive.js';
+import { createHeuristicPilot } from './heuristic.js';
+import { createValuePilot, VALUE_VERSION, VALUE_WEIGHTS } from './value.js';
+import {
+  createRandomLegalPilot,
+  randomLegalConfigSchema,
+  RANDOM_LEGAL_VERSION,
+} from './random-legal.js';
 import { botWeightsSchema, DEFAULT_WEIGHTS, type BotWeights } from './scoring.js';
 import type { BotPolicy } from './types.js';
 
@@ -118,4 +124,76 @@ export function createPilot(input: PilotSpecInput): BotPolicy {
       throw new Error(`Unknown pilot "${String(never)}".`);
     }
   }
+}
+
+/* --------------------------------------------------- style plus difficulty (M09.13) */
+
+/**
+ * The published version of each pilot's decision function.
+ *
+ * A table rather than four imports at the call site, and total over `PilotId`,
+ * so a pilot cannot gain a version here and keep another one in its own file —
+ * `registry.test.ts` checks each entry against the pilot it names.
+ */
+export const PILOT_VERSIONS: Readonly<Record<PilotId, string>> = Object.freeze({
+  random_legal: RANDOM_LEGAL_VERSION,
+  aggressive: AGGRESSIVE_VERSION,
+  defensive: DEFENSIVE_VERSION,
+  value: VALUE_VERSION,
+});
+
+/**
+ * The pilots a difficulty can be applied to: the ones that are trying.
+ *
+ * Same derivation as `CALIBRATED_PILOT_IDS`, and for the same reason — a
+ * *bounded degradation* of a pilot that is not trying is not a weaker player, it
+ * is noise with a bound printed on it. `random_legal` is therefore not something
+ * an Easy bot can be built from, which also keeps it out of reach of the lobby,
+ * where it would read as "an even easier Easy" (see `style.ts`).
+ */
+export const STYLED_PILOT_IDS: readonly PilotId[] = PILOT_IDS.filter((id) =>
+  agentClassSupports(PILOT_AGENT_CLASSES[id], 'play_quality' satisfies EvidenceClaim),
+);
+
+export interface StyledPilotOptions {
+  /** The style's weight vector, by name. */
+  readonly pilotId: PilotId;
+  /** The difficulty's selection, from `@tcg/bot-config`'s registry. */
+  readonly selection: DifficultySelection;
+  readonly weights?: Partial<BotWeights>;
+}
+
+/**
+ * One pilot from the two axes a live bot seat actually has.
+ *
+ * Deliberately a **second** entry point rather than a widened `PilotSpec`. An
+ * experiment manifest names pilots, and a manifest that could also name a
+ * difficulty would let a deliberately suboptimal run be filed under
+ * `generic_heuristic` and cited for play quality — the pooled-skill mistake
+ * M05.4 exists to refuse. Experiments and the calibration suite go through
+ * `createPilot` and therefore always play the published heuristic; the live
+ * lobby, which is where a person picks a difficulty, comes through here.
+ *
+ * The returned pilot keeps the **style's** `id` and `version`, because that is
+ * what identifies the scorer, and carries the selection in `config`. Which
+ * difficulty was flown, and which version of it, is recorded by the caller that
+ * knows the difficulty's name.
+ */
+export function createStyledPilot(options: StyledPilotOptions): BotPolicy {
+  const pilotId = pilotIdSchema.parse(options.pilotId);
+  if (!STYLED_PILOT_IDS.includes(pilotId)) {
+    throw new Error(
+      `Pilot "${pilotId}" is not something a difficulty can be applied to: it makes no attempt to play well.`,
+    );
+  }
+  const weights = botWeightsSchema.parse({
+    ...PILOT_BASE_WEIGHTS[pilotId],
+    ...(options.weights ?? {}),
+  });
+  return createHeuristicPilot({
+    id: pilotId,
+    version: PILOT_VERSIONS[pilotId],
+    weights,
+    selection: options.selection,
+  });
 }

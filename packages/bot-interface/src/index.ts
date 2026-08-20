@@ -72,6 +72,7 @@ export { createValuePilot, VALUE_WEIGHTS, VALUE_VERSION } from './value.js';
 
 export {
   createPilot,
+  createStyledPilot,
   pilotIdSchema,
   pilotSpecSchema,
   agentClassOf,
@@ -79,11 +80,14 @@ export {
   PILOT_IDS,
   PILOT_BASE_WEIGHTS,
   PILOT_AGENT_CLASSES,
+  PILOT_VERSIONS,
+  STYLED_PILOT_IDS,
   AGENT_CLASSES_WITHOUT_PILOTS,
   LEGAL_ONLY_PILOT_IDS,
   type PilotId,
   type PilotSpec,
   type PilotSpecInput,
+  type StyledPilotOptions,
 } from './registry.js';
 
 export {

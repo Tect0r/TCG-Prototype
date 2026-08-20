@@ -37,8 +37,13 @@ export const BOT_CONFIG_SCHEMA_VERSION = 1;
  *
  * - 1 — M09.1, the first registry. `normal` is available; `easy` and `hard` are
  *   declared and have no behaviour behind them yet.
+ * - 2 — M09.13, `easy` moves `planned` → `available`. A status change is exactly
+ *   what this constant is for: a build reading a record that cites `easy` needs
+ *   to know whether the registry behind it could actually fly one. The registry
+ *   also gained `selection`, so a definition read from elsewhere is a wider
+ *   shape than a v1 build knows.
  */
-export const DIFFICULTY_REGISTRY_VERSION = 1;
+export const DIFFICULTY_REGISTRY_VERSION = 2;
 
 /**
  * The pacing budget shape and the percentage-to-delay calculation.

@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.13       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.14       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,17 +160,46 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.13 — Difficulty registry, Easy, and Normal.** Ship two honest, observably
-different difficulty levels: Normal stays decision-equivalent to the current
-published heuristic for the same style, observation and RNG seed unless a
-versioned correction is genuinely required, and Easy is deterministic bounded
-suboptimality over scored legal candidates — not uniform random, not an illegal
-action, not free concession, not deliberate non-participation — with its
-candidate band, temperature or error budget defined explicitly and versioned.
-Aggressive, defensive and value remain independent styles; Automatic is added
-only when it has a deterministic documented mapping. Hard stays visible only as
-unavailable until M09.15. The scope and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0913--difficulty-registry-easy-and-normal).
+**M09.14 — Hard tactical improvements.** Make Hard materially better at
+immediate combat and target decisions: address the named M05.6 calibration gaps
+for removal lethality and for blocking that preserves a better defender instead
+of blindly trading; prefer lethal and preventive outcomes using only redacted
+observation and legal candidates; add focused boards for attacks, blocks,
+Barrier, Overwhelm, Guardians, removal and multiplayer target choice; record the
+new pilot and difficulty version together with its support and evidence limits;
+preserve Easy and Normal behaviour unless a separately justified shared
+correction is required. Hard is not complete until M09.15 addresses the strategic
+gaps. The scope and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0914--hard-tactical-improvements).
+
+**M09.13 gave the lobby a second difficulty, and gave difficulty a definition.**
+A difficulty is now exactly one thing — **which of the scored candidates the bot
+takes** — and it is one optional parameter on the heuristic that every pilot in
+the package already was. Normal is `{ kind: 'best' }`, the argmax-with-tie-break
+that has always been there, so "Normal is unchanged" is true by construction and
+measured anyway: per style, a whole match played through the old entry point and
+through the new parameter agree on every action, the sequence, the turn and the
+result. Easy is `bounded_error` at half the spread and a band of three, published
+in the registry beside the entry that names it, which makes its promise a sentence
+rather than a feeling: **never a candidate from the worse half of the range it was
+offered, and never one outside the best three**. The bound is relative to the
+board because a heuristic score has no units. It is not uniform random, it cannot
+return an illegal action, and it cannot concede — a concession scores `-Infinity`
+and is dropped before the band is ranked, which is a property of the function
+rather than a promise made elsewhere. The eight-seed contract suite now runs at
+Easy for all three styles as well, and the calibration suite deliberately does
+**not**: a fixture asks whether a decision was characteristic, Easy is defined as
+sometimes not making it, and a source scan keeps `runFixture` on the entry point
+that has no difficulty parameter at all. Provenance is two pairs rather than one —
+`pilotId`/`pilotVersion` for the scorer, `difficulty`/`difficultyBehaviorVersion`
+for the selection — because Easy improving must move one of them and not the
+other. No screen changed to add the option: the difficulty control has read
+`AVAILABLE_DIFFICULTIES` since M09.5, so flipping the registry entry was the whole
+UI change, and Hard is still absent rather than disabled. `DIFFICULTY_REGISTRY_VERSION`
+moves 1 → 2 for the status change; `PROTOCOL_VERSION` stays 9, because
+`botDifficultySchema` has enumerated `easy` since M09.1 and the wire always knew
+the word — which is the separation ADR 0024 §7 predicted and now records as
+demonstrated.
 
 **M09.12 made the bots actually wait.** A table's budgets and a seat's percentage
 have been on the wire since M09.11; this tranche spends them. Each opportunity is

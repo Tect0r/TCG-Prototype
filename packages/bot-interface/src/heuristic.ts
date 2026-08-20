@@ -1,3 +1,4 @@
+import type { DifficultySelection } from '@tcg/bot-config';
 import type { CardDefinition, ChoiceIntent } from '@tcg/card-data';
 import { nextInt, type Action, type CardInstanceView, type RngState } from '@tcg/rules-engine';
 import { candidateActions, rankChoiceOptions, type RankedOption } from './candidates.js';
@@ -32,16 +33,30 @@ export interface HeuristicPilotOptions {
   readonly weights: BotWeights;
   /** Experiment policy: a pilot never resigns unless this is switched on. */
   readonly mayConcede?: boolean;
+  /**
+   * How this pilot picks among the candidates it just scored (M09.13).
+   *
+   * Defaults to `best`, which is the argmax-with-tie-break every pilot in this
+   * package has always used, so a caller that does not pass one gets byte-for-
+   * byte the decision procedure that shipped. Difficulty is exactly this
+   * parameter and nothing else: the candidates, the weights and the scores are
+   * identical whichever value it takes.
+   */
+  readonly selection?: DifficultySelection;
 }
 
 export function createHeuristicPilot(options: HeuristicPilotOptions): BotPolicy {
   const { id, version, weights } = options;
   const mayConcede = options.mayConcede ?? false;
+  const selection: DifficultySelection = options.selection ?? { kind: 'best' };
 
   return {
     id,
     version,
-    config: Object.freeze({ weights: { ...weights }, mayConcede }),
+    // `selection` is in the exported configuration rather than only in the
+    // caller's head, so a result that prints a pilot's config says which
+    // difficulty produced it without having to be told separately.
+    config: Object.freeze({ weights: { ...weights }, mayConcede, selection: { ...selection } }),
     decide(observation: BotObservation, rng: RngState): BotDecision {
       const candidates = candidateActions(observation, { weights, mayConcede });
       if (candidates.length === 0) {
@@ -53,36 +68,129 @@ export function createHeuristicPilot(options: HeuristicPilotOptions): BotPolicy 
         score: scoreCandidate(observation, candidate, weights),
       }));
 
-      let best = -Infinity;
-      for (const entry of scores) best = Math.max(best, entry.score);
-      const tied = candidates.filter(
-        (_, index) => (scores[index]?.score ?? -Infinity) >= best - weights.tieEpsilon,
-      );
-
-      let chosen = tied[0] as ActionCandidate;
-      let nextRng = rng;
-      let brokeTie = false;
-      if (tied.length > 1) {
-        const roll = nextInt(rng, tied.length);
-        nextRng = roll.state;
-        chosen = tied[roll.value] as ActionCandidate;
-        brokeTie = true;
-      }
+      const picked = selectCandidate(candidates, scores, weights, selection, rng);
+      const chosen = picked.chosen;
 
       return {
         action: chosen.action,
-        rng: nextRng,
+        rng: picked.rng,
         diagnostics: {
           family: chosen.family,
           chosenKey: chosen.key,
           candidateCount: candidates.length,
           scores,
-          brokeTie,
-          notes: [...(chosen.notes ?? [])],
+          brokeTie: picked.brokeTie,
+          notes: [...(chosen.notes ?? []), ...picked.notes],
         },
       };
     },
   };
+}
+
+/* ---------------------------------------------------------- the selection */
+
+interface Selected {
+  readonly chosen: ActionCandidate;
+  readonly rng: RngState;
+  readonly brokeTie: boolean;
+  readonly notes: readonly string[];
+}
+
+/**
+ * Which of the scored candidates this difficulty takes.
+ *
+ * Two properties hold for **every** selection here and are what make difficulty
+ * safe to vary at all: the answer is always one of `candidates`, which the
+ * engine has already declared legal, and no reading outside `scores` is
+ * consulted. A difficulty cannot invent a move, cannot see anything a pilot
+ * cannot, and cannot decline to play.
+ */
+function selectCandidate(
+  candidates: readonly ActionCandidate[],
+  scores: readonly { key: string; score: number }[],
+  weights: BotWeights,
+  selection: DifficultySelection,
+  rng: RngState,
+): Selected {
+  if (selection.kind === 'bounded_error') {
+    const band = boundedErrorBand(candidates, scores, selection);
+    // A band of one is not a choice, so it costs no draw — the same rule the
+    // tie-break below follows, which keeps a bot's stream a function of the
+    // decisions it actually faced.
+    if (band.length > 1) {
+      const roll = nextInt(rng, band.length);
+      const chosen = band[roll.value] as ActionCandidate;
+      return {
+        chosen,
+        rng: roll.state,
+        brokeTie: true,
+        notes: [`easy: took ${roll.value + 1} of ${band.length} within the band`],
+      };
+    }
+    if (band.length === 1) {
+      return { chosen: band[0] as ActionCandidate, rng, brokeTie: false, notes: [] };
+    }
+    // Nothing finite to be wrong about — every candidate scored `-Infinity`,
+    // which in practice means conceding was the only thing on offer. Fall
+    // through to the exact `best` path rather than inventing a rule for it.
+  }
+
+  let best = -Infinity;
+  for (const entry of scores) best = Math.max(best, entry.score);
+  const tied = candidates.filter(
+    (_, index) => (scores[index]?.score ?? -Infinity) >= best - weights.tieEpsilon,
+  );
+
+  if (tied.length > 1) {
+    const roll = nextInt(rng, tied.length);
+    return {
+      chosen: tied[roll.value] as ActionCandidate,
+      rng: roll.state,
+      brokeTie: true,
+      notes: [],
+    };
+  }
+  return { chosen: tied[0] as ActionCandidate, rng, brokeTie: false, notes: [] };
+}
+
+/**
+ * The candidates a bounded-error difficulty is allowed to pick from.
+ *
+ * Best first, then by the candidate's own stable key, so the band is a function
+ * of the observation alone and two runs enumerate it identically. Three things
+ * are excluded before anything is ranked:
+ *
+ * - a non-finite score, which is how `concede` is priced. That is what makes
+ *   "Easy never concedes" a property of this function rather than a promise
+ *   made somewhere else;
+ * - anything scoring below `best − errorBudget × (best − worst)`, which is the
+ *   bound the registry publishes;
+ * - anything past `maxBand`, which is what stops a board with thirty plays on it
+ *   from turning the bound into a soft uniform sample.
+ */
+function boundedErrorBand(
+  candidates: readonly ActionCandidate[],
+  scores: readonly { key: string; score: number }[],
+  selection: Extract<DifficultySelection, { kind: 'bounded_error' }>,
+): ActionCandidate[] {
+  const finite = candidates
+    .map((candidate, index) => ({ candidate, score: scores[index]?.score ?? -Infinity }))
+    .filter((entry) => Number.isFinite(entry.score));
+  if (finite.length === 0) return [];
+
+  let best = -Infinity;
+  let worst = Infinity;
+  for (const entry of finite) {
+    best = Math.max(best, entry.score);
+    worst = Math.min(worst, entry.score);
+  }
+  const floor = best - selection.errorBudget * (best - worst);
+
+  return finite
+    .filter((entry) => entry.score >= floor)
+    .sort((a, b) => b.score - a.score || a.candidate.key.localeCompare(b.candidate.key))
+    .slice(0, selection.maxBand)
+    .map((entry) => entry.candidate);
 }
 
 /* ------------------------------------------------------------ the scorer */
