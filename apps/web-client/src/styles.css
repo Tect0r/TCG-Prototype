@@ -997,6 +997,29 @@ code {
   color: var(--text-dim);
 }
 
+/* What the pacing actually cost, measured by the server (M09.17). Indented from
+   the configured half above it so the two are visibly different claims. */
+.board__pacing-measured {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.board__pacing-measured h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.board__pacing-measured .board__pacing-list li + li {
+  margin-top: 0.35rem;
+}
+
+.board__pacing-measured button {
+  align-self: flex-start;
+}
+
 .player-bar {
   display: flex;
   gap: 0.9rem;

@@ -9,6 +9,8 @@ import {
   type BotPacing,
   type BotPacingBudgets,
   type BotSeatConfig,
+  type BotStyle,
+  type BotStyleSetting,
 } from '@tcg/bot-config';
 import type { CardDatabase } from '@tcg/card-data';
 import {
@@ -178,6 +180,17 @@ export interface BotSeatActivity {
    */
   readonly difficulty: BotDifficulty;
   readonly difficultyBehaviorVersion: string | null;
+  /**
+   * What the host set the style control to, and what the server resolved it to
+   * (M09.16).
+   *
+   * Both, for the reason the configuration carries both: a seat flying `value`
+   * because the automatic mapping chose it and a seat flying `value` because
+   * somebody picked it are different facts, and a summary that recorded only the
+   * resolved style could not tell a reader which of the two they were reading.
+   */
+  readonly styleSetting: BotStyleSetting;
+  readonly style: BotStyle;
   /** This seat's own generator stream, derived from the match seed. */
   readonly seed: string;
   readonly decisions: number;
@@ -189,6 +202,21 @@ export interface BotSeatActivity {
    * reached.
    */
   readonly actions: Readonly<Record<string, number>>;
+  /**
+   * Committed decisions by the category that chose the budget (M09.17).
+   *
+   * Beside `actions` rather than instead of it, because the two answer different
+   * questions and neither derives the other. An action type says *what the bot
+   * did*; a category says *which budget the opportunity drew on*, which is the
+   * only axis a pacing summary can be read along — a `pass_phase` inside a
+   * Reaction window and a `pass_phase` in the bot's own turn are one action type
+   * and two different waits.
+   *
+   * Total over the three categories, and counted only when the action was
+   * actually committed, so it always adds up to `decisions` minus the decisions
+   * that were refused, discarded or rejected.
+   */
+  readonly decisionsByCategory: Readonly<Record<BotDecisionCategory, number>>;
   /**
    * Every wait this seat actually served (M09.12), in the order it served them.
    *
@@ -224,6 +252,21 @@ export interface BotDelayRecord {
    * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §4).
    */
   readonly actualMs: number;
+  /**
+   * The monotonic reading at the instant the wait began (M09.17).
+   *
+   * Raw rather than match-relative, because the runner has no idea when the
+   * match started and inventing an origin here would give the summary two of
+   * them. `buildBotMatchSummary` subtracts the match's own start, which is what
+   * turns a process-relative float into the offset a record can carry — and what
+   * makes overlapping waits across seats a computable union rather than a
+   * guess.
+   *
+   * Recorded and never fed back: no pilot's generator stream and no engine state
+   * has ever seen a clock reading
+   * ([ADR 0024](../../../docs/architecture/0024-live-bot-seats.md) §4).
+   */
+  readonly startedAtMs: number;
 }
 
 /** A wait that has been scheduled and has not expired yet. */
@@ -414,6 +457,8 @@ interface ServedDelay {
   readonly category: BotDecisionCategory;
   readonly intendedMs: number;
   readonly actualMs: number;
+  /** The monotonic reading the wait began at; the clock's own `now` when there was none. */
+  readonly startedAtMs: number;
 }
 
 interface BotSeatRuntime {
@@ -423,12 +468,15 @@ interface BotSeatRuntime {
   readonly pilot: BotPolicy | null;
   /** The difficulty this seat was configured with, frozen at match start. */
   readonly difficulty: BotDifficulty;
+  readonly styleSetting: BotStyleSetting;
+  readonly style: BotStyle;
   /** This seat's own timing dial, frozen with the rest of its configuration. */
   readonly pacing: BotPacing;
   readonly seed: string;
   rng: RngState;
   decisions: number;
   readonly committed: Map<string, number>;
+  readonly committedByCategory: Record<BotDecisionCategory, number>;
   delay: PendingDelay | null;
   readonly delays: BotDelayRecord[];
   delaysCancelled: number;
@@ -486,11 +534,14 @@ export class BotRunner {
         playerId: seat.playerId,
         pilot: null,
         difficulty: seat.config.difficulty,
+        styleSetting: seat.config.styleSetting,
+        style: seat.config.style,
         seed: botSeedFor(options.matchSeed, seat.seatId),
         rng: createRngState(botSeedFor(options.matchSeed, seat.seatId)),
         pacing: seat.config.pacing,
         decisions: 0,
         committed: new Map(),
+        committedByCategory: { ordinary: 0, pending_choice: 0, reaction: 0 },
         delay: null,
         delays: [],
         delaysCancelled: 0,
@@ -579,9 +630,12 @@ export class BotRunner {
         // it never reaches here — no pilot is built for one — so a `null` in a
         // record is a seat that halted before it ever played.
         difficultyBehaviorVersion: difficultyDefinition(runtime.difficulty).behaviorVersion,
+        styleSetting: runtime.styleSetting,
+        style: runtime.style,
         seed: runtime.seed,
         decisions: runtime.decisions,
         actions: Object.fromEntries([...runtime.committed].sort(([a], [b]) => a.localeCompare(b))),
+        decisionsByCategory: { ...runtime.committedByCategory },
         delays: [...runtime.delays],
         delaysCancelled: runtime.delaysCancelled,
         delaysRescheduled: runtime.delaysRescheduled,
@@ -734,6 +788,11 @@ export class BotRunner {
       }
 
       runtime.committed.set(action.type, (runtime.committed.get(action.type) ?? 0) + 1);
+      // The category of the opportunity this decision answered, taken from the
+      // same `ServedDelay` the wait was measured against rather than
+      // reclassified here — so the budget a summary says the wait drew on and
+      // the budget the scheduler actually used cannot come apart.
+      runtime.committedByCategory[delay.category] += 1;
 
       // Iteration, not recursion: the loop comes back around to the next
       // opportunity, so a whole match costs one stack frame.
@@ -801,7 +860,7 @@ export class BotRunner {
         if (intendedMs <= 0) {
           // Unchanged from M09.4: a 0% bot acts inside the wake that offered it
           // the opportunity, and nothing is scheduled at all.
-          actionable ??= { runtime, pilot, legal, delay: { category, intendedMs: 0, actualMs: 0 } };
+          actionable ??= { runtime, pilot, legal, delay: this.#immediate(category) };
           continue;
         }
         this.#startDelay(runtime, category, intendedMs);
@@ -825,7 +884,7 @@ export class BotRunner {
         runtime.delaysRescheduled += 1;
         const intendedMs = this.#delayFor(runtime, category);
         if (intendedMs <= 0) {
-          actionable ??= { runtime, pilot, legal, delay: { category, intendedMs: 0, actualMs: 0 } };
+          actionable ??= { runtime, pilot, legal, delay: this.#immediate(category) };
           continue;
         }
         this.#startDelay(runtime, category, intendedMs);
@@ -872,7 +931,19 @@ export class BotRunner {
       // moment the timer fired, so the number is what a stopwatch would have
       // seen and not what the scheduler intended.
       actualMs: Math.max(0, Math.round(this.#now() - delay.startedAt)),
+      startedAtMs: delay.startedAt,
     };
+  }
+
+  /**
+   * The "wait" a seat at 0% serves: none at all, at the instant it is asked.
+   *
+   * It carries a clock reading anyway so that every served delay has the same
+   * shape, and a zero-length span contributes nothing to the summary's union of
+   * waits by construction rather than by a special case in the arithmetic.
+   */
+  #immediate(category: BotDecisionCategory): ServedDelay {
+    return { category, intendedMs: 0, actualMs: 0, startedAtMs: this.#now() };
   }
 
   /** Stops a wait and forgets it, counting nothing. */

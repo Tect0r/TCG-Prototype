@@ -194,6 +194,7 @@ function lobbyOf(inviteCode: string, seats: readonly Seat[]): Lobby {
     botsCreated: seats.filter(isBotSeat).length,
     pacing: DEFAULT_BOT_PACING_BUDGETS,
     lockedPacing: null,
+    matchStartedAtMs: null,
     status: 'waiting',
     state: null,
   };

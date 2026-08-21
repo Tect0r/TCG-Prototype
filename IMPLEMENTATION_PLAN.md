@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.17       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.20       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,17 +160,70 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.17 — Pacing and bot provenance summary.** Let testers judge waiting time
-before M08's durable Player Meta exists: produce a structured match-local summary
-carrying wall-clock match duration, configured budgets and percentages, bot
-decisions by category, intended and actual wait totals and distributions, total
-time attributable to bot pacing, pilot failures, deck source, difficulty, style
-and version, Commander and deck hash. Show an end-of-match Pacing Summary with
-exact values and plain-language limits, and allow JSON export. Engine turns and
-actions stay separate from wall-clock and pacing metrics, and the tranche defines
-a clean ingestion seam for later M08 telemetry without pretending this is a
-durable analytics store. The scope and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0917--pacing-and-bot-provenance-summary).
+**M09.20 — Card-in-hand valuation, and Hard's publication.** Close the third
+strategic gap M09.15 measured and left open —
+`containment_control/hold_energy_for_the_counter` — and publish Hard. The gap is
+a valuation defect rather than a resource rule: the scorer prices a card played
+at its whole value and a card kept in hand at nothing, so holding Energy for a
+window that has not opened can never win against playing a body, in every
+decision the pilot makes rather than only in Reaction decks. Closing it is a
+change to `hard_tactical`, measured at the three grains M09.14 established.
+Publishing Hard is then the piece of work Q50 named: `DifficultyDefinition` gains
+a tactical profile and `DIFFICULTY_REGISTRY_VERSION` moves 2 → 3, `BotRunner`
+builds the pilot through it, and the lobby's planned-difficulty sentence empties
+itself because it is read from the registry. The scope and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0920--card-in-hand-valuation-and-hards-publication).
+
+**A note on order, recorded rather than resolved.** This file named M09.17 as the
+next bounded task while the milestone document placed M09.20's section _above_
+M09.17's and said it "places it where it runs rather than where its number would
+sort". M09.17 ran, because this file is the root work queue. The two readings now
+agree on what follows it — M09.20 is the earliest incomplete section either way —
+but they still disagree about whether M09.18 comes before or after it. That is
+the owner's to settle; nothing was reordered to hide it.
+
+**M09.17 gave a finished match a bill.** A match that held a bot now publishes one
+structured, match-local summary at the instant it completes, broadcast to every
+seat and exportable as JSON: the wall-clock duration, the budgets the lobby froze,
+each bot's decisions in total and **by the category that chose the budget**, its
+waits in total and by category with their spread, the waits it cancelled and
+rescheduled, its pilot failures and incidents by kind, and its provenance in pairs
+— difficulty with its behaviour version, the style setting with the style it
+resolved to, the pilot with its version, the public deck projection with the
+Commander and, for a generated deck, the generator version and content address.
+
+Two numbers answer "how long did the bots cost us", because one cannot.
+`botPacingMs` is the wall-clock time during which **at least one** bot was
+waiting — a union of intervals, not a sum — because M09.12 made independent waits
+concurrent and adding them would report a match that spent more time waiting than
+it lasted. `botWaitSumMs` is the per-seat sum beside it, and when the two differ
+the record carries `concurrent_waits_overlap` so the disagreement is explained
+rather than puzzled over. `BotDelayRecord` gained `startedAtMs` and the lobby
+gained `matchStartedAtMs`, both on the same monotonic clock, which is what makes
+the union computable; no clock reading has ever reached a pilot's stream or the
+engine.
+
+**Engine progress and wall-clock time are two objects that share no key**, and the
+claim is proven by playing rather than by shape: one seed played at 0% and at 50%
+produces an identical `engine` object and identical decisions-by-category, and a
+different clock. The record carries no seed, no saved deck's name, ID or private
+fingerprint, no invite code and no player name — the deck half embeds
+`botDeckSourcePublicSchema` itself, so a fifth mode would arrive as a type error
+rather than a leak. The four limits every summary carries say what it is not,
+starting with `match_local`.
+
+The **ingestion seam** is `BotSummarySink`: one interface, one method, one call
+site, checked by a source scan. M08's Player Meta implements it; M09 ships no
+implementation that keeps anything, and `NO_DURABLE_SUMMARY_STORE` says so in a
+constant rather than a comment.
+
+`PROTOCOL_VERSION` moves 10 → 11 for the sixth server message, and
+`BOT_SUMMARY_SCHEMA_VERSION` is new at `1` — not redundant with it, because an
+exported file has no handshake to be refused at and `readBotMatchSummary` is what
+refuses a newer one. `BOT_CONFIG_SCHEMA_VERSION`, `PACING_CONFIG_VERSION`,
+`DIFFICULTY_REGISTRY_VERSION`, `MATCH_SCHEMA_VERSION` and `RULES_VERSION` all
+stay: a summary is a record about a configuration, and measuring a wait is not
+changing how one is computed.
 
 **M09.16 finished the bot form, and answered Q50 by narrowing it.** Every
 approved option is now present for every bot — deck mode, difficulty, style,

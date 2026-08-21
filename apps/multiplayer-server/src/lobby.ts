@@ -148,6 +148,18 @@ export interface Lobby {
    * rather than an inference from the absence of a mutation.
    */
   lockedPacing: BotPacingBudgets | null;
+  /**
+   * A monotonic reading taken at the instant the match started, or `null` before
+   * it does (M09.17).
+   *
+   * Monotonic rather than wall-clock for the reason `MonotonicClock` exists: the
+   * only question ever asked of it is "how long was that", and a wall clock
+   * adjusted by NTP mid-match answers it with a negative number. It is the same
+   * clock the bot runner times its waits on, which is what makes "the bots were
+   * waiting for 40% of the match" a subtraction rather than a comparison of two
+   * unrelated origins.
+   */
+  matchStartedAtMs: number | null;
   status: LobbyStatus;
   state: MatchState | null;
 }

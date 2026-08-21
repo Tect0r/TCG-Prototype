@@ -6,6 +6,7 @@ import {
   type ClientMessageInput,
   type LobbyView,
   type ProtocolError,
+  type BotMatchSummary,
   type RevealedBotDeck,
   type SeatId,
   type ServerMessage,
@@ -101,6 +102,17 @@ export interface MatchClientState {
    * if the opponents are the ones who eventually read it.
    */
   readonly revealedBotDecks: readonly RevealedBotDeck[];
+  /**
+   * What the bots at this table cost the match in waiting (M09.17).
+   *
+   * `null` until the server broadcasts it, which it does once, at completion,
+   * and only for a table that actually held a bot. The client neither computes
+   * nor amends it: every number in it is a measurement the authoritative server
+   * took on its own clock, and a browser that recomputed a duration from its own
+   * would be publishing a second, disagreeing answer to the one question this
+   * record exists to settle.
+   */
+  readonly botMatchSummary: BotMatchSummary | null;
 }
 
 const INITIAL: MatchClientState = {
@@ -115,6 +127,7 @@ const INITIAL: MatchClientState = {
   botDeckSources: {},
   botProvenance: {},
   revealedBotDecks: [],
+  botMatchSummary: null,
 };
 
 /** Where the reconnect token is kept so a refresh can reclaim the seat. */
@@ -375,6 +388,10 @@ export class MatchClient {
 
       case 'bot_decks_revealed':
         this.patch({ revealedBotDecks: message.decks });
+        return;
+
+      case 'bot_pacing_summary':
+        this.patch({ botMatchSummary: message.summary });
         return;
 
       case 'deck_rejected':

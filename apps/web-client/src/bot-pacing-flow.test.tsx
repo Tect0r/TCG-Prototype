@@ -3,6 +3,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { loadBundledCardData } from '@tcg/card-data';
 import {
+  BOT_SUMMARY_SCHEMA_VERSION,
+  CURRENT_BOT_CONFIG_VERSIONS,
   DEFAULT_BOT_PACING_BUDGETS,
   IMMEDIATE_BOT_PACING,
   MAX_BUDGET_SECONDS,
@@ -13,10 +15,14 @@ import {
 } from '@tcg/bot-config';
 import { DECK_SCHEMA_VERSION, DECK_STORAGE_KEY, MemoryStore, type SavedDeck } from '@tcg/deck';
 import {
+  ALWAYS_TRUE_SUMMARY_LIMITS,
   CURRENT_VERSIONS,
   decodeClientMessage,
   encode,
+  readBotMatchSummary,
+  waitStatsOf,
   type BotLobbySeatView,
+  type BotMatchSummary,
   type ClientMessage,
   type HumanLobbySeatView,
   type LobbySeatView,
@@ -460,49 +466,49 @@ describe('once the match has started', () => {
 
 /* --------------------------------------------------------- the result summary */
 
+async function board(
+  complete: boolean,
+  seatPacing: BotPacing = { percent: 50, reactionPercent: null },
+): Promise<Harness> {
+  const harness = renderApp();
+  await enterLobby(
+    harness,
+    lobby([humanSeat({ ready: true, deckLegal: true }), botSeat(seatPacing)], {
+      status: 'in_match',
+      canStart: false,
+    }),
+  );
+
+  const deck: MatchDeck = {
+    commanderId: 'prototype_commander_red',
+    cards: [{ cardId: 'goblin_scout', quantity: 30 }],
+  };
+  const state = unwrap(
+    createMatch({
+      matchId: 'pacing_test',
+      seed: 'pacing-seed',
+      database,
+      seats: [
+        { playerId: 'player_1', name: 'Player', deck },
+        { playerId: 'player_2', name: 'Bot 2', deck },
+      ],
+    }),
+    'match setup',
+  ).state;
+
+  const view = playerView(state, 'player_1', database);
+  harness.transport().deliver({
+    type: 'match_state',
+    // The completion is the server's to declare; the summary renders what it
+    // is told rather than deciding for itself that the match is over.
+    view: complete ? { ...view, status: 'complete' } : view,
+    events: [],
+  });
+  await screen.findByLabelText('Match board');
+  return harness;
+}
+
 describe('the pacing summary beside the result', () => {
-  async function board(
-    complete: boolean,
-    seatPacing: BotPacing = { percent: 50, reactionPercent: null },
-  ): Promise<Harness> {
-    const harness = renderApp();
-    await enterLobby(
-      harness,
-      lobby([humanSeat({ ready: true, deckLegal: true }), botSeat(seatPacing)], {
-        status: 'in_match',
-        canStart: false,
-      }),
-    );
-
-    const deck: MatchDeck = {
-      commanderId: 'prototype_commander_red',
-      cards: [{ cardId: 'goblin_scout', quantity: 30 }],
-    };
-    const state = unwrap(
-      createMatch({
-        matchId: 'pacing_test',
-        seed: 'pacing-seed',
-        database,
-        seats: [
-          { playerId: 'player_1', name: 'Player', deck },
-          { playerId: 'player_2', name: 'Bot 2', deck },
-        ],
-      }),
-      'match setup',
-    ).state;
-
-    const view = playerView(state, 'player_1', database);
-    harness.transport().deliver({
-      type: 'match_state',
-      // The completion is the server's to declare; the summary renders what it
-      // is told rather than deciding for itself that the match is over.
-      view: complete ? { ...view, status: 'complete' } : view,
-      events: [],
-    });
-    await screen.findByLabelText('Match board');
-    return harness;
-  }
-
   it('says nothing while the match is still being played', async () => {
     await board(false);
     expect(screen.queryByLabelText('Bot pacing')).not.toBeInTheDocument();
@@ -527,5 +533,214 @@ describe('the pacing summary beside the result', () => {
     // 0% is still the default a bot is seated at, so this is the sentence most
     // first matches will carry, and it must not claim a wait that never was.
     expect(within(summary).getByText(/waited for nothing/)).toBeInTheDocument();
+  });
+});
+
+/* -------------------------------------------- the measured summary (M09.17) */
+
+/**
+ * One finished match's measurements, in the shape the server broadcasts.
+ *
+ * Built by hand and sent through the same fake transport as every other frame in
+ * this file, so it is decoded by `serverMessageSchema` on the way in: a fixture
+ * the wire would refuse cannot pass a test here.
+ */
+function pacingSummary(overrides: Partial<BotMatchSummary> = {}): BotMatchSummary {
+  const waits = waitStatsOf([
+    { intendedMs: 15_000, actualMs: 15_004 },
+    { intendedMs: 15_000, actualMs: 15_010 },
+  ]);
+  return {
+    summaryVersion: BOT_SUMMARY_SCHEMA_VERSION,
+    versions: {
+      protocol: CURRENT_VERSIONS.protocol,
+      rules: CURRENT_VERSIONS.rules,
+      cardSchema: CURRENT_VERSIONS.cardSchema,
+      botConfig: CURRENT_BOT_CONFIG_VERSIONS.botConfig,
+      difficultyRegistry: CURRENT_BOT_CONFIG_VERSIONS.difficultyRegistry,
+      pacing: CURRENT_BOT_CONFIG_VERSIONS.pacing,
+    },
+    matchId: 'match_ABC123',
+    budgets: DEFAULT_BOT_PACING_BUDGETS,
+    engine: { turns: 9, actions: 120, events: 400, sequence: 400, complete: true },
+    clock: {
+      matchDurationMs: 75_000,
+      botPacingMs: 30_014,
+      botWaitSumMs: 30_014,
+      botPacingPercent: 40,
+    },
+    seats: [
+      {
+        seatId: 'seat_2',
+        botId: 'bot_1',
+        displayName: 'Bot 2',
+        difficulty: 'normal',
+        difficultyBehaviorVersion: '1.0.0',
+        styleSetting: 'automatic',
+        style: 'aggressive',
+        pilotId: 'aggressive',
+        pilotVersion: '1.1.0',
+        deck: {
+          source: { mode: 'exact_precon', preconId: 'precon_goblin_swarm' },
+          commanderId: 'prototype_commander_red',
+          deckHash: null,
+          generatorVersion: null,
+        },
+        pacing: { percent: 50, reactionPercent: null },
+        decisions: 22,
+        decisionsByCategory: { ordinary: 19, pending_choice: 2, reaction: 1 },
+        waits,
+        waitsByCategory: {
+          ordinary: waits,
+          pending_choice: waitStatsOf([]),
+          reaction: waitStatsOf([]),
+        },
+        waitsCancelled: 2,
+        waitsRescheduled: 0,
+        pilotFailures: { threw: 1 },
+        incidents: { pilot_fallback: 1 },
+        halted: null,
+      },
+    ],
+    totals: {
+      bots: 1,
+      decisions: 22,
+      decisionsByCategory: { ordinary: 19, pending_choice: 2, reaction: 1 },
+      waits,
+      pilotFailures: 1,
+      incidents: 1,
+    },
+    stalled: null,
+    crashed: null,
+    limits: [...ALWAYS_TRUE_SUMMARY_LIMITS],
+    ...overrides,
+  };
+}
+
+describe('the measured pacing summary beside the result', () => {
+  async function completedBoard(summary?: BotMatchSummary): Promise<Harness> {
+    const harness = await board(true, { percent: 50, reactionPercent: null });
+    if (summary) harness.transport().deliver({ type: 'bot_pacing_summary', summary });
+    return harness;
+  }
+
+  it('says nothing measured until the server has published it', async () => {
+    await completedBoard();
+    // The configured half still renders: a table always gets its settings back,
+    // even if the summary broadcast never arrives.
+    expect(await screen.findByLabelText('Bot pacing')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Pacing summary')).not.toBeInTheDocument();
+  });
+
+  it('quotes the exact wall-clock values the server measured', async () => {
+    await completedBoard(pacingSummary());
+
+    const measured = await screen.findByLabelText('Pacing summary');
+    expect(
+      within(measured).getByText(/The match lasted 1 m 15 s on the clock/),
+    ).toBeInTheDocument();
+    // Exact rather than rounded to a whole second: the safety margin is a
+    // quarter of a second, and a screen that rounded would describe a wait the
+    // scheduler does not use.
+    expect(
+      within(measured).getByText(/Bots were waiting for 30\.01 s of it — 40%/),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the engine’s count separate from the clock, and says so', async () => {
+    await completedBoard(pacingSummary());
+
+    const measured = await screen.findByLabelText('Pacing summary');
+    expect(
+      within(measured).getByText(/The engine counted 9 turns, 120 accepted actions/),
+    ).toBeInTheDocument();
+    // The sentence that stops a reader treating a long match as a slow one.
+    expect(within(measured).getByText(/not seconds/)).toBeInTheDocument();
+  });
+
+  it('breaks decisions down by the budget the opportunity drew on', async () => {
+    await completedBoard(pacingSummary());
+
+    const measured = await screen.findByLabelText('Pacing summary');
+    expect(
+      within(measured).getByText(/19 in own turn, 2 in a choice, 1 in a Reaction window/),
+    ).toBeInTheDocument();
+  });
+
+  it('names the bot’s provenance and its measured waits on one line', async () => {
+    await completedBoard(pacingSummary());
+
+    const measured = await screen.findByLabelText('Pacing summary');
+    // Difficulty with its behaviour version, the style with the setting that
+    // produced it, and the pilot with its version: the pairs that let a note be
+    // quoted a month later.
+    expect(within(measured).getByText(/Normal v1\.0\.0/)).toBeInTheDocument();
+    expect(within(measured).getByText(/Aggressive \(automatic\)/)).toBeInTheDocument();
+    expect(within(measured).getByText(/pilot aggressive v1\.1\.0/)).toBeInTheDocument();
+    // Twice: once in the table's total and once on the seat's own line. With one
+    // bot at the table the two are the same sentence, and they had better be.
+    expect(
+      within(measured).getAllByText(/2 waits, 30\.01 s measured against 30 s configured/),
+    ).toHaveLength(2);
+    expect(within(measured).getByText(/2 cancelled/)).toBeInTheDocument();
+    expect(within(measured).getByText(/Pilot fallbacks: threw ×1/)).toBeInTheDocument();
+  });
+
+  it('states the limits rather than leaving them to be inferred', async () => {
+    await completedBoard(pacingSummary());
+
+    const measured = await screen.findByLabelText('Pacing summary');
+    expect(within(measured).getByText(/Nothing is stored/)).toBeInTheDocument();
+    expect(within(measured).getByText(/Durations are wall-clock time/)).toBeInTheDocument();
+    expect(within(measured).getByText(/timer resolution/)).toBeInTheDocument();
+    // Not present unless it was measured, which is what makes it a finding.
+    expect(within(measured).queryByText(/waited at the same time/)).not.toBeInTheDocument();
+  });
+
+  it('names the overlap only when two bots actually waited at once', async () => {
+    await completedBoard(
+      pacingSummary({
+        clock: {
+          matchDurationMs: 75_000,
+          botPacingMs: 30_014,
+          botWaitSumMs: 45_000,
+          botPacingPercent: 40,
+        },
+        limits: [...ALWAYS_TRUE_SUMMARY_LIMITS, 'concurrent_waits_overlap'],
+      }),
+    );
+
+    const measured = await screen.findByLabelText('Pacing summary');
+    expect(within(measured).getByText(/waited at the same time/)).toBeInTheDocument();
+  });
+
+  it('exports the record the server sent, and it reads back unchanged', async () => {
+    await completedBoard(pacingSummary());
+
+    const blobs: Blob[] = [];
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = (blob: Blob) => {
+      blobs.push(blob);
+      return 'blob:pacing-summary';
+    };
+    URL.revokeObjectURL = () => {};
+    try {
+      const measured = await screen.findByLabelText('Pacing summary');
+      await userEvent.click(
+        within(measured).getByRole('button', { name: 'Export the pacing summary' }),
+      );
+    } finally {
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+    }
+
+    expect(blobs).toHaveLength(1);
+    const written = await (blobs[0] as Blob).text();
+    // A round trip rather than a rendering: what a playtest note holds is what
+    // the server measured, and the reader is the one that says so.
+    const round = readBotMatchSummary(JSON.parse(written));
+    expect(round.ok).toBe(true);
+    if (round.ok) expect(round.value).toEqual(pacingSummary());
   });
 });

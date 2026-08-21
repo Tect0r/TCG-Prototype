@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `c1fe5b30b18a528de94ea73ec085c436f34cc30a` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-20                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | not run for this audit                     |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `28f107ce69022d27b955ac9efc89df4f243a4ed9`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-21                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 77      | 1804     |
+| packages       | 78      | 1826     |
 | scripts        | 4       | 69       |
-| server         | 14      | 287      |
+| server         | 15      | 307      |
 | simulator      | 23      | 433      |
-| web-client     | 20      | 251      |
-| **total**      | **138** | **2844** |
+| web-client     | 20      | 259      |
+| **total**      | **140** | **2894** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -54,7 +54,7 @@ What a client, a server and a saved deck must agree on to play at all.
 | Constant                        | Value | Pins                                                                                         |
 | ------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
 | `RULES_VERSION`                 | 1.0.0 | The rules configuration.                                                                     |
-| `PROTOCOL_VERSION`              | 10    | Every message shape, refused at the handshake.                                               |
+| `PROTOCOL_VERSION`              | 11    | Every message shape, refused at the handshake.                                               |
 | `MATCH_SCHEMA_VERSION`          | 7     | Serialized match state.                                                                      |
 | `CARD_SCHEMA_VERSION`           | 5     | A card definition, owned per set by its manifest.                                            |
 | `DECK_SCHEMA_VERSION`           | 1     | A saved deck.                                                                                |
@@ -90,12 +90,13 @@ Documents a finished run leaves behind. Every move so far has been a refusal rat
 
 What a bot seat is configured by. Independent of the play contract on purpose (ADR 0024 §7): a difficulty can improve, and a pacing dial can move, without a card, a rule or a message shape changing.
 
-| Constant                      | Value | Pins                                                                                                                                                                        |
-| ----------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BOT_CONFIG_SCHEMA_VERSION`   | 2     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.                                                                                       |
-| `DIFFICULTY_REGISTRY_VERSION` | 2     | Which difficulty IDs exist and what each claims. Available today: easy, normal.                                                                                             |
-| `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.                                                                                   |
-| `DECK_FINGERPRINT_VERSION`    | 1     | How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address. |
+| Constant                      | Value | Pins                                                                                                                                                                                          |
+| ----------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOT_CONFIG_SCHEMA_VERSION`   | 2     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.                                                                                                         |
+| `DIFFICULTY_REGISTRY_VERSION` | 2     | Which difficulty IDs exist and what each claims. Available today: easy, normal.                                                                                                               |
+| `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.                                                                                                     |
+| `BOT_SUMMARY_SCHEMA_VERSION`  | 1     | One match’s bot pacing and provenance summary, as broadcast at completion and exported to a file. Separate from `PROTOCOL_VERSION`, which an exported file has no handshake to be refused at. |
+| `DECK_FINGERPRINT_VERSION`    | 1     | How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address.                   |
 
 ### Registries and instruments
 

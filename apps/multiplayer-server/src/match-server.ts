@@ -26,6 +26,7 @@ import {
   type BotSetup,
   type ClientMessage,
   type ProtocolError,
+  type BotMatchSummary,
   type RevealedBotDeck,
   type SeatId,
   type ServerMessage,
@@ -57,6 +58,7 @@ import {
   type BotRunReport,
   type BotSubmitResult,
 } from './bot-runner.js';
+import { buildBotMatchSummary, type BotSummarySink } from './bot-match-summary.js';
 import {
   botSeatsOf,
   canStart,
@@ -151,6 +153,16 @@ export interface MatchServerOptions {
    * the seat's own style and difficulty.
    */
   readonly botPilotFor?: (seat: BotRunnerSeat) => BotPolicy;
+  /**
+   * Where a finished match's pacing summary goes after it is broadcast (M09.17).
+   *
+   * The whole of the ingestion seam: one optional collaborator, called once per
+   * match. M08's durable Player Meta is an implementation of it and a line in
+   * whatever constructs this server; nothing about the summary, the broadcast or
+   * the match loop has to change to accept one. Absent by default, because this
+   * build keeps no summaries — see `NO_DURABLE_SUMMARY_STORE`.
+   */
+  readonly summarySink?: BotSummarySink;
 }
 
 /**
@@ -180,6 +192,8 @@ export class MatchServer {
   readonly #yieldToScheduler: (() => Promise<void>) | undefined;
   readonly #botDecisionLimit: number | undefined;
   readonly #botPilotFor: ((seat: BotRunnerSeat) => BotPolicy) | undefined;
+  readonly #summarySink: BotSummarySink | undefined;
+  readonly #summarySinkFailures: string[] = [];
 
   readonly #lobbies = new Map<string, Lobby>();
   readonly #connections = new Map<string, ServerConnection>();
@@ -200,6 +214,7 @@ export class MatchServer {
     this.#yieldToScheduler = options.yieldToScheduler;
     this.#botDecisionLimit = options.botDecisionLimit;
     this.#botPilotFor = options.botPilotFor;
+    this.#summarySink = options.summarySink;
     this.#seedFor =
       options.seedFor ?? ((inviteCode) => `${inviteCode}-${this.#now()}-${this.#random()}`);
   }
@@ -348,6 +363,7 @@ export class MatchServer {
       // them. They are bot pacing references, not human timers (M09.11).
       pacing: DEFAULT_BOT_PACING_BUDGETS,
       lockedPacing: null,
+      matchStartedAtMs: null,
       status: 'waiting',
       state: null,
     };
@@ -928,6 +944,9 @@ export class MatchServer {
     // can be read off a value rather than inferred from nothing having changed
     // it (M09.11).
     lobby.lockedPacing = lobby.pacing;
+    // Taken before the bots are started, so the first wait a bot serves can only
+    // ever sit inside the match rather than before it (M09.17).
+    lobby.matchStartedAtMs = this.#monotonicNow();
     this.startBots(lobby, seed);
     this.broadcastLobby(lobby);
     this.broadcastMatchState(lobby);
@@ -1293,6 +1312,80 @@ export class MatchServer {
     this.broadcast(lobby, { type: 'bot_decks_revealed', decks });
   }
 
+  /**
+   * Publishes what the bots at this table cost the match in waiting (M09.17).
+   *
+   * Broadcast to every seat rather than to the host, because the person who most
+   * needs to know how long they spent waiting is the one who was waiting, and at
+   * a mixed table that is usually not the host. Sent once, at the same moment
+   * the decks are revealed, which is the earliest instant at which nothing in the
+   * record is still secret — and the record is built from the public deck
+   * projection anyway, so it would have been safe earlier and is not sent
+   * earlier only because a summary of a match still being played is not a
+   * summary.
+   *
+   * A table with no bots publishes nothing at all. There is no pacing to report
+   * and no provenance to cite, and an empty summary would be a page of zeroes
+   * asserting that a human match waited for none of the time.
+   */
+  private publishPacingSummary(lobby: Lobby): void {
+    const report = this.#botRunners.get(lobby.inviteCode)?.report();
+    if (!report || report.seats.length === 0) return;
+
+    const summary = buildBotMatchSummary({
+      matchId: lobby.state?.matchId ?? `match_${lobby.inviteCode}`,
+      // The frozen budgets, so the percentages in the record are percentages of
+      // the numbers the match actually ran under rather than of whatever the
+      // lobby holds now.
+      budgets: lobby.lockedPacing ?? lobby.pacing,
+      seats: botSeatsOf(lobby).map((seat) => ({
+        seatId: seat.seatId,
+        config: seat.config,
+        // Resolved from the deck the server built, because `exact_precon` names
+        // a precon rather than a Commander and the precon owns that fact.
+        commanderId: seat.deck?.commanderId ?? null,
+      })),
+      report,
+      state: lobby.state,
+      startedAtMs: lobby.matchStartedAtMs ?? this.#monotonicNow(),
+      endedAtMs: this.#monotonicNow(),
+    });
+
+    this.broadcast(lobby, { type: 'bot_pacing_summary', summary });
+    this.ingestSummary(summary);
+  }
+
+  /**
+   * Hands the summary to whatever is downstream of this match, once.
+   *
+   * Guarded, and that is the whole point of the guard: a match that has just
+   * ended must not fail to publish its result because something downstream was
+   * unavailable. A sink that throws is stepped over and the failure is reported
+   * to the table as an ordinary protocol error rather than swallowed, so a
+   * misbehaving ingestion path is visible without being fatal.
+   */
+  private ingestSummary(summary: BotMatchSummary): void {
+    const sink = this.#summarySink;
+    if (!sink) return;
+    try {
+      sink.receive(summary);
+    } catch (error) {
+      this.#summarySinkFailures.push(
+        `${sink.sinkId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Ingestion failures, for a test and for a diagnostic — never for a player.
+   *
+   * In the shape `botReport` already established: the server keeps the fact that
+   * a sink refused a summary, and nothing about the match changes because of it.
+   */
+  get summarySinkFailures(): readonly string[] {
+    return [...this.#summarySinkFailures];
+  }
+
   /** Tells every *other* seat that one seat's connection changed. */
   private broadcastConnection(lobby: Lobby, changed: HumanSeat): void {
     const graceSeconds = graceSecondsFor(changed, this.#now);
@@ -1324,6 +1417,10 @@ export class MatchServer {
       // After the board and the lobby, so a client that renders the reveal
       // beside the result already has both when it arrives.
       this.revealBotDecks(lobby);
+      // And after the reveal, for the same reason one step further along: the
+      // summary is what a playtest note quotes, and a note is written with the
+      // result and the decks already on the screen (M09.17).
+      this.publishPacingSummary(lobby);
     }
   }
 

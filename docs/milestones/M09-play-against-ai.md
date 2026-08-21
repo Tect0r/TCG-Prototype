@@ -2960,7 +2960,7 @@ make the gap close.
 - [ ] Hard is selectable, and the planned-difficulty statement empties itself.
 - [ ] A recorded seat says which Hard it flew.
 
-## M09.17 — Pacing and bot provenance summary
+## M09.17 — Pacing and bot provenance summary — **done (2026-08-21)**
 
 Let testers judge waiting time before M08's durable Player Meta exists: produce a
 structured match-local summary carrying wall-clock match duration, configured
@@ -2979,10 +2979,230 @@ tests.
 
 ### Checklist
 
-- [ ] Structured match-local summary with every field above.
-- [ ] Engine metrics and wall-clock metrics kept separate.
-- [ ] JSON export round-trips.
-- [ ] Ingestion seam defined; no claim of durable analytics.
+- [x] Structured match-local summary with every field above.
+- [x] Engine metrics and wall-clock metrics kept separate.
+- [x] JSON export round-trips.
+- [x] Ingestion seam defined; no claim of durable analytics.
+
+### What the record holds
+
+`botMatchSummarySchema` lives in `@tcg/protocol` beside the message that carries
+it, and is built once, by the server, at the instant a match completes. It is
+five objects rather than one flat sheet, because the five answer different
+questions and mixing them is the failure mode this tranche exists to avoid.
+
+- **`versions`** — the protocol, rules and card-schema versions the match ran
+  under, plus the bot-configuration, difficulty-registry and pacing versions.
+  Written for a person holding only the exported file.
+- **`budgets`** — the budgets the lobby **froze** at match start, so every
+  percentage in the record is a percentage of the numbers the match actually ran
+  under rather than of whatever the lobby holds when it is read.
+- **`engine`** — turns, accepted actions, emitted events and the final sequence.
+  No duration.
+- **`clock`** — the match's wall-clock duration, the time bots were waiting, the
+  per-seat sum of their waits, and the share. No turn and no action count.
+- **`seats`** — per bot: difficulty with its behaviour version, the style setting
+  with the style it resolved to, the pilot with its version, the public deck
+  projection with the Commander and — for a generated deck — the generator
+  version and content address; then the pacing dial, decisions in total and by
+  category, waits in total and by category with their spread, waits cancelled and
+  rescheduled, pilot failures by kind, incidents by kind, and why the seat
+  stopped being asked.
+
+`totals` adds the seats up so a note need not, and `stalled`, `crashed` and
+`limits` carry what the runner found rather than what it fixed.
+
+### Engine progress and wall-clock time are two objects
+
+The milestone asks for them to be kept separate, and the separation is
+structural: `botSummaryEngineSchema` and `botSummaryClockSchema` are two schemas
+built from two sources, and a test asserts that their key sets are disjoint —
+every clock member ends in `Ms` or `Percent`, and no engine member ends in `Ms`.
+
+The property that actually matters is proven by playing rather than by shape. One
+seed is played twice, at 0% and at 50%, and the two summaries are compared: the
+whole `engine` object and the whole decisions-by-category breakdown are identical,
+and only the clock moved. A pacing percentage changes how a match _feels_ and
+nothing about what happened in it, which is the sentence a tester needs to be able
+to trust before any of these numbers are worth reading.
+
+### A union, not a sum
+
+`clock.botPacingMs` is the wall-clock time during which **at least one** bot was
+waiting — the union of every wait's interval — and not the sum of the waits.
+M09.12 made independent waits concurrent on purpose: three bots offered one
+Reaction window cost the table the slowest of them, not all three. A summary that
+added them up would report a match that spent more time waiting than it lasted,
+which is not a rounding error but a false statement about a person's evening.
+
+The sum is reported beside it as `clock.botWaitSumMs`, because "one slow bot" and
+"three bots overlapping" are different findings and a reader needs to be able to
+tell them apart. When the two differ — and only then — the record carries the
+`concurrent_waits_overlap` limit, so the disagreement between the two numbers is
+explained by the record rather than left to be puzzled over.
+
+Making that computable is the one thing the runner had to learn: `BotDelayRecord`
+now carries `startedAtMs`, the raw monotonic reading a wait began at. The runner
+does not know when the match started and does not try to — the summary subtracts
+the lobby's own `matchStartedAtMs`, taken from the same clock, which is what turns
+two process-relative floats into one interval. Nothing derived from a clock has
+reached a pilot's stream or the engine's state, and none does now.
+
+### What it deliberately does not carry
+
+**No seed.** A generator seed turns "the Commander is public" back into "the list
+is public" (ADR 0024 §3). The record carries the generator's **version** and its
+**content address** — both of which already ride on `bot_decks_revealed` — and
+never the seed.
+
+**No saved deck's name, ID or fingerprint.** M09.6 ruled that those three stay
+private to the host, because a saved deck's name is the only handle onto a list
+nobody else may see. `deckHash` in the summary is the _generator's_ content
+address, so it is `null` for both exact modes: a precon is already named by its
+ID in the public projection, and recomputing a fingerprint for a saved deck from
+the revealed list would produce a third one to disagree with the two the project
+already has.
+
+**No invite code, no player name, no reconnect identity.** The record describes a
+match and the bots in it, and nothing about the people at the table.
+
+The privacy is a shape rather than a stripping step: `botSummaryDeckSchema`
+embeds `botDeckSourcePublicSchema` itself, so a fifth deck mode arrives as a type
+error in `publicDeckSourceOf` rather than as a leak. Three tests serialise a
+summary built from a saved-deck seat and from a generated seat and assert that
+the private strings do not appear anywhere in the JSON.
+
+### The ingestion seam, and what it does not promise
+
+`BotSummarySink` is one interface with one method, called from one place, with an
+argument that is already a validated wire shape. M08's durable Player Meta is an
+implementation of it and a line in whatever constructs the server; it is not a
+reshaping of the summary, a second producer, or a hook inside the match loop. A
+test reads `match-server.ts` and asserts that `sink.receive(` and
+`buildBotMatchSummary(` each appear exactly once, so the seam stays one call site
+rather than becoming a habit.
+
+M09 ships **no implementation that keeps anything**. `NO_DURABLE_SUMMARY_STORE`
+says so in a constant a future tranche has to delete rather than quietly outgrow,
+and the record says so to its reader: `match_local` is the first of the four
+limits every summary carries. The other three are that durations are wall-clock
+and the engine's counts are separate, that measured waits include timer
+resolution and event-loop latency, and that none of this is a human timer.
+
+A sink that throws is recorded in `summarySinkFailures` and stepped over. A match
+that has just ended must not fail to publish its result because something
+downstream of it was unavailable.
+
+### What a player sees
+
+The pacing section beside the result gained a second half. The first half is
+unchanged — the frozen budgets and each seat's configured percentage, read off the
+lobby view, so a table still gets its settings back even if the broadcast never
+arrives. The second renders only when `bot_pacing_summary` has arrived, and reads:
+
+> The match lasted 1 m 15 s on the clock. Bots were waiting for 30.01 s of it —
+> 40%, and the per-bot total was 30.01 s.
+>
+> The engine counted 9 turns, 120 accepted actions and 400 events, to sequence 400. Those are turns and actions, not seconds.
+>
+> 22 bot decisions in total: 19 in own turn, 2 in a choice, 1 in a Reaction
+> window. 2 waits, 30.01 s measured against 30 s configured.
+>
+> **Bot 2** — Normal v1.0.0, Aggressive (automatic), pilot aggressive v1.1.0.
+> Deck: exact precon under Emberline Captain. 22 decisions (19 own turn, 2 a choice,
+> 1 a Reaction window). 2 waits, 30.01 s measured against 30 s configured, 2
+> cancelled.
+
+Seconds are exact to two decimals rather than rounded, for the reason M09.11
+established: the safety margin is a quarter of a second, and a screen that
+rounded would be describing a wait the scheduler does not use.
+
+The limits are printed under a heading that says what they are — "What this does
+not tell you" — from the IDs in the record. The claim and its wording have one
+owner each, so a reworded screen cannot drop a limitation and a new limitation
+cannot ship without a sentence, because `SUMMARY_LIMIT_TEXT` is total over
+`BotSummaryLimit`.
+
+**Export** writes the record exactly as the server sent it, not a rendering of
+what is on the screen. The web test clicks the button, reads the blob back, and
+puts it through `readBotMatchSummary` — so "it round-trips" is a round trip and
+not a hope.
+
+### Findings recorded rather than fixed
+
+- **The plan and the milestone file disagreed about what runs after M09.16.**
+  `IMPLEMENTATION_PLAN.md` named **M09.17** as the next bounded task, in the
+  status table and in "The next bounded task"; this document places M09.20's
+  section _above_ M09.17's and says it "places it where it runs rather than where
+  its number would sort", which reads as M09.20 running first. The plan is the
+  root work queue, so M09.17 ran. Nothing was reordered to resolve it, because
+  the two readings now agree on what is next: M09.20 is the earliest incomplete
+  section either way. Recorded so the owner can settle whether M09.18 or M09.20
+  follows it.
+- **A wait cancelled at match end is still counted as a cancellation.**
+  `broadcastMatchState` stops the runner before the summary is built, and
+  `stop()` cancels outstanding waits, so a bot that was mid-wait when the match
+  ended contributes to `waitsCancelled`. That is honest — the wait really was
+  abandoned — but it means the count mixes "the window closed" with "the match
+  ended", and a reader cannot tell which from the number alone.
+  `lastDelayCancellation` on the runner's report says why the last one went, and
+  is deliberately not in the summary: one seat's most recent reason is a
+  diagnostic, not a statistic. Left as M09.12 built it.
+- **The median of a merged distribution is `null`, not a number.** A median of
+  medians is not a median, so a table total that combined two seats' waits
+  reports the count, both totals and both extremes and refuses the middle. The
+  screen prints the spread only when there is one. An exact merged median would
+  need every reading kept rather than summarised, which is a bigger record for a
+  question no playtest note has asked yet.
+- **`botPacingPercent` is clamped to 100 and is `null` for a zero-length match.**
+  Neither is reachable today — a wait cannot outlive the match that cancels it —
+  and both are there so that a future scheduling change reports an odd number
+  rather than an impossible one. Recorded rather than treated as dead code.
+- **The summary describes the seats the lobby still holds.** A bot seat cannot be
+  removed once the match starts, so the case does not arise; a runtime whose seat
+  has gone is skipped rather than half-reported, because its deck source and
+  Commander are gone with it and inventing either would put a guess in a
+  provenance record.
+
+### Versions
+
+**`PROTOCOL_VERSION` 10 → 11.** `bot_pacing_summary` is a sixth server message,
+and `serverMessageSchema` is a discriminated union parsed on receipt: a v10
+client would fail to decode the first one a v11 server sent it, at the very
+moment the match ended. The handshake refuses first and names the older side —
+the same treatment M09.9's two messages got, for the same reason.
+
+**`BOT_SUMMARY_SCHEMA_VERSION` is new, and is `1`.** It is not redundant with the
+constant above, and the exported file is what makes the difference obvious:
+`PROTOCOL_VERSION` is compared at a handshake and governs a live connection, and
+a JSON note on a tester's disk has no handshake to be refused at.
+`readBotMatchSummary` enforces this one, through the same `refuseFutureVersion`
+every other bot artifact uses, so there is one wording for "this was written by a
+newer build" rather than a second one. The schema accepts any version this build
+can read rather than only the one it writes: refusing a two-week-old note would
+be a version check working against the person it exists for.
+
+**`BOT_CONFIG_SCHEMA_VERSION` stays 2.** `botSeatConfigSchema` is exactly the
+shape M09.16 left it. A summary is a record _about_ a configuration, not a
+configuration, and moving this would refuse configurations that are still
+perfectly readable.
+
+**`PACING_CONFIG_VERSION` stays 1.** The budget shape and the percentage-to-delay
+calculation are untouched. Measuring how long a wait took is not changing how one
+is computed — which is the same distinction M09.11 made when it put budgets on
+the wire without moving this constant.
+
+**`DIFFICULTY_REGISTRY_VERSION` stays 2**, because no difficulty was added,
+removed or changed status. **`MATCH_SCHEMA_VERSION` stays where it is**: the
+engine never learns that a summary exists. **`RULES_VERSION` does not move**,
+because reporting how long a bot waited is not a rule, and open-questions.md Q8 —
+whether a _human_ should ever be timed out — is exactly as open as it was.
+
+`packages/protocol/src/seats.ts` is a new module and moves no version. The seat
+IDs, bounds and `MAX_BOT_SEATS` were split out of `messages.ts` unchanged, so
+that the summary schema can name a seat without importing the message module that
+imports it back: two modules whose top level _evaluates_ Zod schemas cannot import
+each other. `messages.ts` re-exports all of it, so no caller learned anything.
 
 ## M09.18 — Help, provenance, and compatibility pass
 

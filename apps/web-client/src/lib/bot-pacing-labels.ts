@@ -2,9 +2,11 @@ import {
   PACING_SAFETY_MARGIN_MS,
   botDelayMs,
   pacingPercentFor,
+  type BotDecisionCategory,
   type BotPacing,
   type BotPacingBudgets,
 } from '@tcg/bot-config';
+import type { BotSummaryLimit, BotWaitStats } from '@tcg/protocol';
 
 /**
  * The seconds a lobby prints beside every percentage (M09.11).
@@ -82,3 +84,68 @@ export const PACING_SAFETY_MARGIN_NOTE =
 /** Said wherever a budget is offered, so it cannot be mistaken for a rule. */
 export const PACING_IS_NOT_A_HUMAN_TIMER =
   'These budgets pace bots only. Nothing here times you out of a phase, a choice or a match.';
+
+/* ----------------------------------------------- the measured summary (M09.17) */
+
+/**
+ * A duration a person reads, rather than a millisecond count.
+ *
+ * Minutes appear only once there is a whole one, because "0 m 4.2 s" is harder
+ * to read than "4.2 s" and a summary that always printed minutes would make a
+ * fast match look like a slow one. Below a minute this is exactly
+ * `secondsLabel`, so the two halves of the pacing summary — the configured
+ * seconds and the measured ones — are printed by the same arithmetic.
+ */
+export function durationLabel(ms: number): string {
+  if (ms < 60_000) return secondsLabel(ms);
+  const minutes = Math.floor(ms / 60_000);
+  return `${minutes} m ${secondsLabel(ms - minutes * 60_000)}`;
+}
+
+/** What each kind of opportunity is called on a screen. Total over the three. */
+export const DECISION_CATEGORY_LABELS: Readonly<Record<BotDecisionCategory, string>> =
+  Object.freeze({
+    ordinary: 'own turn',
+    pending_choice: 'a choice',
+    reaction: 'a Reaction window',
+  });
+
+/**
+ * One distribution, in a sentence.
+ *
+ * Says both totals because they answer different questions — intended is the
+ * configuration, actual is the stopwatch — and adds the spread only when there
+ * was more than one wait, because the minimum, median and maximum of a single
+ * wait are three copies of that wait.
+ */
+export function waitStatsLabel(stats: BotWaitStats): string {
+  if (stats.count === 0) return 'no waits';
+  const head =
+    `${stats.count} ${stats.count === 1 ? 'wait' : 'waits'}, ` +
+    `${durationLabel(stats.actualTotalMs)} measured against ` +
+    `${durationLabel(stats.intendedTotalMs)} configured`;
+  if (stats.count === 1 || stats.minActualMs === null || stats.maxActualMs === null) return head;
+  const median =
+    stats.medianActualMs === null ? '' : `, median ${durationLabel(stats.medianActualMs)}`;
+  return `${head} (${durationLabel(stats.minActualMs)}–${durationLabel(stats.maxActualMs)}${median})`;
+}
+
+/**
+ * What each recorded limit says in plain language.
+ *
+ * The record carries IDs and this carries the sentences, so the claim and its
+ * wording have one owner each: a reworded screen cannot drop a limitation, and
+ * a new limitation cannot ship without a sentence, because the record is total
+ * over `BotSummaryLimit`.
+ */
+export const SUMMARY_LIMIT_TEXT: Readonly<Record<BotSummaryLimit, string>> = Object.freeze({
+  match_local:
+    'This summary describes this match only. Nothing is stored, and it is gone when you leave the table — save the JSON if you want to keep it.',
+  wall_clock_not_engine:
+    'Durations are wall-clock time. Turns and actions are the engine’s count and are listed separately: a long match and a slow match are not the same thing.',
+  measured_not_scheduled:
+    'Measured waits include timer resolution and ordinary event-loop delay, so they run a little past what was configured.',
+  pacing_is_not_a_human_timer: PACING_IS_NOT_A_HUMAN_TIMER,
+  concurrent_waits_overlap:
+    'Two or more bots waited at the same time, so the per-bot total below is larger than the wall-clock time the table actually spent waiting.',
+});

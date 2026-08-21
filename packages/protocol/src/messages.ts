@@ -17,6 +17,8 @@ import {
   playerViewSchema,
   RULES_VERSION,
 } from '@tcg/rules-engine';
+import { botMatchSummarySchema } from './bot-summary.js';
+import { MIN_SEATS, seatCountSchema, seatIdSchema } from './seats.js';
 
 /**
  * The wire contract between the deck-builder client and the authoritative
@@ -123,8 +125,32 @@ import {
  * `PACING_CONFIG_VERSION`, `MATCH_SCHEMA_VERSION` and `RULES_VERSION` stay where
  * they are, because deriving a style from an authored deck plan is a lobby
  * decision above the engine and no rule changed.
+ *
+ * 11 (M09.17): a finished match now publishes what waiting actually cost.
+ * `bot_pacing_summary` is a sixth server message and `serverMessageSchema` is a
+ * discriminated union parsed on receipt, so a v10 client would fail to decode
+ * the first one a v11 server sent it — at the very moment the match ended, which
+ * is the worst possible time to discover a version gap. The handshake refuses
+ * first and names the older side, exactly as it did for the two messages M09.9
+ * added.
+ *
+ * The summary carries its **own** `BOT_SUMMARY_SCHEMA_VERSION`, and that is not
+ * redundant with this constant for the reason an exported file makes obvious:
+ * this one is compared at a handshake and governs a live connection, and a JSON
+ * note on a tester's disk has no handshake to be refused at. `readBotMatchSummary`
+ * is where that second version is enforced.
+ *
+ * Nothing else moves. `BOT_CONFIG_SCHEMA_VERSION` stays 2 — `botSeatConfigSchema`
+ * is exactly the shape M09.16 left, and a summary is a record *about* a
+ * configuration rather than a configuration. `PACING_CONFIG_VERSION` stays 1:
+ * the budget shape and the percentage-to-delay calculation are untouched, and
+ * measuring a wait is not changing how one is computed.
+ * `DIFFICULTY_REGISTRY_VERSION` stays 2, `MATCH_SCHEMA_VERSION` stays where it
+ * is — the engine never learns that a summary exists — and `RULES_VERSION` does
+ * not move, because reporting how long a bot waited is not a rule and
+ * open-questions.md Q8 is exactly as open as it was.
  */
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 
 /** Everything a client and server must agree on before a match can start. */
 export const versionsSchema = z.strictObject({
@@ -149,27 +175,22 @@ export const displayNameSchema = z.string().trim().min(1).max(24);
 /** Opaque: the client stores it and sends it back, and never interprets it. */
 export const reconnectTokenSchema = z.string().min(16).max(128);
 
-/** Up to four seats. Two is a 1v1; three or four is a free-for-all. */
-export const SEAT_IDS = ['seat_1', 'seat_2', 'seat_3', 'seat_4'] as const;
-export const seatIdSchema = z.enum(SEAT_IDS);
-export type SeatId = z.infer<typeof seatIdSchema>;
-
-export const MIN_SEATS = 2;
-export const MAX_SEATS = 4;
-export const seatCountSchema = z.number().int().min(MIN_SEATS).max(MAX_SEATS);
-
 /**
- * How many seats at one table may hold a bot (M09.7).
- *
- * One fewer than the table can hold, because every table keeps at least one
- * human: M09 exists so a person can play against the software, and a lobby of
- * nothing but bots is a match nobody asked for. It lives beside `MAX_SEATS`
- * rather than in the server because the host's screen has to know how many bots
- * it may still offer to seat, and two copies of that number would eventually
- * disagree. It is not on a wire — no message carries a bot count — so moving it
- * would not move `PROTOCOL_VERSION`.
+ * The seat vocabulary lives in `./seats.js` and is re-exported here, so that
+ * every caller still reads one module and `bot-summary.ts` can name a seat
+ * without importing this file back (M09.17). Splitting it was the alternative
+ * to a cycle between a message and the payload it carries; nothing about the
+ * values moved, so `PROTOCOL_VERSION` does not move for it.
  */
-export const MAX_BOT_SEATS = MAX_SEATS - 1;
+export {
+  MAX_BOT_SEATS,
+  MAX_SEATS,
+  MIN_SEATS,
+  SEAT_IDS,
+  seatCountSchema,
+  seatIdSchema,
+  type SeatId,
+} from './seats.js';
 
 export const LOBBY_STATUSES = ['waiting', 'ready', 'in_match', 'finished', 'closed'] as const;
 export const lobbyStatusSchema = z.enum(LOBBY_STATUSES);
@@ -674,6 +695,25 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('bot_decks_revealed'),
     decks: z.array(revealedBotDeckSchema),
+  }),
+  /**
+   * What the bots at this table cost the match in waiting, and what they were
+   * (M09.17).
+   *
+   * Broadcast beside the revealed decks, for the same two reasons: it is the
+   * moment there is nothing left to protect, and a playtest note gets written
+   * once, at the end. It goes to every seat rather than to the host because the
+   * person who most needs to know how long they spent waiting is the one who was
+   * waiting, and that is not usually the host.
+   *
+   * The payload holds no invite code, no player name and no reconnect identity,
+   * and its deck facts are the public projection every seat has had all match —
+   * so a client that exports it to a file is exporting something it was already
+   * entitled to read.
+   */
+  z.strictObject({
+    type: z.literal('bot_pacing_summary'),
+    summary: botMatchSummarySchema,
   }),
   z.strictObject({
     type: z.literal('error'),

@@ -455,6 +455,11 @@ describe('a bot waits for exactly the fraction it was configured for', () => {
       category: 'ordinary',
       intendedMs: 15_000,
       actualMs: 15_007,
+      // The monotonic reading the wait began at (M09.17). Zero here because the
+      // fake clock starts there and the mulligan is the first thing offered; it
+      // is what lets a summary place this wait inside the match rather than
+      // merely count it.
+      startedAtMs: 0,
     });
   });
 });

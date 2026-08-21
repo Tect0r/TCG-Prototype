@@ -267,6 +267,25 @@ takes `createRngState` directly.
   `DIFFICULTY_REGISTRY_VERSION` stays at 2 — no difficulty was added, removed, or
   changed status.
 
+  It moved a fifth time in M09.16's successor. M09.17 broadcasts a finished
+  match's pacing and bot-provenance summary, which is a sixth server message in a
+  discriminated union parsed on receipt: a v10 client would fail to decode the
+  first one at the very moment the match ended. So the constant is 11, and this
+  time **neither** bot-configuration constant moved with it — a summary is a
+  record _about_ a configuration rather than a configuration, and measuring how
+  long a wait took is not changing how one is computed.
+
+  The summary carries its own `BOT_SUMMARY_SCHEMA_VERSION` instead, and that is
+  the case this section did not previously have a name for: **an artifact that
+  outlives the connection needs a version the handshake cannot enforce.**
+  `PROTOCOL_VERSION` is compared once, between two live peers, and governs what
+  they may send each other; a JSON note exported to a tester's disk has no
+  handshake to be refused at, and is opened by a build nobody predicted.
+  `readBotMatchSummary` is where the second version is enforced, through the same
+  `refuseFutureVersion` every other bot artifact already uses — so the rule stays
+  the version moves where the shape moves, applied twice because there are two
+  shapes with two lifetimes.
+
 - **`MATCH_SCHEMA_VERSION` does not move.** A bot seat is a controller above the
   engine. `MatchState` does not learn what a bot is, and a replay of a
   human-versus-bot match is a replay of an ordinary match.

@@ -52,4 +52,32 @@ export {
   type Versions,
 } from './messages.js';
 
+export {
+  ALWAYS_TRUE_SUMMARY_LIMITS,
+  BOT_SUMMARY_LIMITS,
+  EMPTY_BOT_WAIT_STATS,
+  SUMMARY_CATEGORY_ORDER,
+  botMatchSummarySchema,
+  botSeatSummarySchema,
+  botSummaryClockSchema,
+  botSummaryDeckSchema,
+  botSummaryEngineSchema,
+  botSummaryLimitSchema,
+  botSummaryVersionsSchema,
+  botWaitStatsSchema,
+  emptyCategoryCounts,
+  mergeWaitStats,
+  readBotMatchSummary,
+  unionSpanMs,
+  waitStatsOf,
+  type BotMatchSummary,
+  type BotSeatSummary,
+  type BotSummaryClock,
+  type BotSummaryDeck,
+  type BotSummaryEngine,
+  type BotSummaryLimit,
+  type BotSummaryVersions,
+  type BotWaitStats,
+} from './bot-summary.js';
+
 export { encode, decodeClientMessage, decodeServerMessage } from './codec.js';

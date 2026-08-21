@@ -138,14 +138,15 @@ describe('the protocol version', () => {
     // budgets — a required member on a strict lobby view, and a fifth host-only
     // message travelling the other way; 10 is M09.16's `styleSetting`, a
     // required member on the strict public seat and a widened `style` on the
-    // setup travelling back.
-    expect(PROTOCOL_VERSION).toBe(10);
-    expect(CURRENT_VERSIONS.protocol).toBe(10);
+    // setup travelling back; 11 is M09.17's `bot_pacing_summary`, a sixth server
+    // message in a discriminated union parsed on receipt.
+    expect(PROTOCOL_VERSION).toBe(11);
+    expect(CURRENT_VERSIONS.protocol).toBe(11);
   });
 
   it('refuses the build that came before it, by name', () => {
-    const older: Versions = { ...CURRENT_VERSIONS, protocol: 9 };
-    expect(versionMismatch(older, CURRENT_VERSIONS)).toEqual(['protocol 9 vs server 10']);
+    const older: Versions = { ...CURRENT_VERSIONS, protocol: 10 };
+    expect(versionMismatch(older, CURRENT_VERSIONS)).toEqual(['protocol 10 vs server 11']);
   });
 
   it('does not drag the bot configuration versions along with it', () => {
@@ -161,9 +162,14 @@ describe('the protocol version', () => {
     // `BOT_CONFIG_SCHEMA_VERSION` moved 1 → 2 and `PROTOCOL_VERSION` moved 9 →
     // 10 together — while `DIFFICULTY_REGISTRY_VERSION` sat still, because no
     // difficulty was added, removed, or changed status.
+    //
+    // M09.17 is the third direction: a message shape appeared and *neither* bot
+    // configuration constant moved, because a summary is a record about a
+    // configuration rather than a configuration. The summary's own
+    // `BOT_SUMMARY_SCHEMA_VERSION` is what moves when its shape does.
     expect(BOT_CONFIG_SCHEMA_VERSION).toBe(2);
     expect(DIFFICULTY_REGISTRY_VERSION).toBe(2);
-    expect(PROTOCOL_VERSION).toBe(10);
+    expect(PROTOCOL_VERSION).toBe(11);
     // And the handshake still compares three things, not five: a bot's
     // configuration is not something two builds must agree on to play at all.
     expect(Object.keys(CURRENT_VERSIONS).sort()).toEqual(['cardSchema', 'protocol', 'rules']);

@@ -63,20 +63,43 @@ export const DIFFICULTY_REGISTRY_VERSION = 2;
  */
 export const PACING_CONFIG_VERSION = 1;
 
-/** Every version a bot configuration record is written against, in one object. */
+/**
+ * The shape of one match's bot pacing and provenance summary (M09.17).
+ *
+ * A **fourth artifact**, versioned separately from the three above for the
+ * reason this file exists at all: a summary is written once, at the end of a
+ * match, and then lives in a playtest note on somebody's disk long after the
+ * build that produced it has gone. `PROTOCOL_VERSION` cannot serve that — it
+ * versions a live wire and is compared at a handshake, and an exported file has
+ * no handshake to be refused at. So the document carries its own version and
+ * `readBotMatchSummary` refuses a future one, which is what makes reading an
+ * exported summary a decision rather than a guess.
+ *
+ * It moves when the *summary's* shape moves, and for nothing else. A new
+ * difficulty, a changed budget or a widened seat configuration each move their
+ * own constant and leave this where it is; what would move it is a field
+ * appearing in, disappearing from, or changing meaning inside the summary.
+ *
+ * - 1 — M09.17, the first summary.
+ */
+export const BOT_SUMMARY_SCHEMA_VERSION = 1;
+
+/** Every version a bot artifact is written against, in one object. */
 export const CURRENT_BOT_CONFIG_VERSIONS = Object.freeze({
   botConfig: BOT_CONFIG_SCHEMA_VERSION,
   difficultyRegistry: DIFFICULTY_REGISTRY_VERSION,
   pacing: PACING_CONFIG_VERSION,
+  matchSummary: BOT_SUMMARY_SCHEMA_VERSION,
 });
 
 /** Names a version field carries in an issue, so a caller can say which failed. */
-export type BotConfigVersionField = 'botConfig' | 'difficultyRegistry' | 'pacing';
+export type BotConfigVersionField = 'botConfig' | 'difficultyRegistry' | 'pacing' | 'matchSummary';
 
 const VERSION_LABELS: Readonly<Record<BotConfigVersionField, string>> = Object.freeze({
   botConfig: 'bot configuration schema',
   difficultyRegistry: 'difficulty registry',
   pacing: 'bot pacing configuration',
+  matchSummary: 'bot match summary',
 });
 
 /** Stable, machine-readable, and total over the fields. Never derived. */
@@ -84,6 +107,7 @@ const MISSING_VERSION_CODES: Readonly<Record<BotConfigVersionField, string>> = O
   botConfig: 'bot_config/missing_schema_version',
   difficultyRegistry: 'bot_config/missing_difficulty_registry_version',
   pacing: 'bot_config/missing_pacing_version',
+  matchSummary: 'bot_config/missing_summary_version',
 });
 
 /**
@@ -110,7 +134,7 @@ export function refuseFutureVersion(
   if (found > supported) {
     return error(
       'bot_config/unsupported_version',
-      `This bot configuration was written by a newer build (${VERSION_LABELS[field]} version ${found}; this build reads up to ${supported}). Update the application.`,
+      `This record was written by a newer build (${VERSION_LABELS[field]} version ${found}; this build reads up to ${supported}). Update the application.`,
       { path, context: { field, found, supported } },
     );
   }

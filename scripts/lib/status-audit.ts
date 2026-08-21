@@ -75,6 +75,7 @@ import { CALIBRATION_FIXTURES, CALIBRATION_SUITE_VERSION } from '@tcg/bot-interf
 import {
   AVAILABLE_DIFFICULTIES,
   BOT_CONFIG_SCHEMA_VERSION,
+  BOT_SUMMARY_SCHEMA_VERSION,
   DIFFICULTY_REGISTRY_VERSION,
   PACING_CONFIG_VERSION,
 } from '@tcg/bot-config';
@@ -508,6 +509,11 @@ function versionGroups(): readonly VersionGroup[] {
           constant: 'PACING_CONFIG_VERSION',
           value: String(PACING_CONFIG_VERSION),
           pins: 'The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.',
+        },
+        {
+          constant: 'BOT_SUMMARY_SCHEMA_VERSION',
+          value: String(BOT_SUMMARY_SCHEMA_VERSION),
+          pins: 'One match’s bot pacing and provenance summary, as broadcast at completion and exported to a file. Separate from `PROTOCOL_VERSION`, which an exported file has no handshake to be refused at.',
         },
         {
           constant: 'DECK_FINGERPRINT_VERSION',
