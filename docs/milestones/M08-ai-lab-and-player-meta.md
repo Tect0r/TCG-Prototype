@@ -283,7 +283,7 @@ ADR 0023 records why it is independent of the play-contract versions.
 
 ---
 
-## M08.1 — Shared admin contracts and experiment catalog model
+## M08.1 — Shared admin contracts and experiment catalog model — **done (2026-08-21)**
 
 Define the versioned language the service and the client both speak: job and
 batch identity, job and stage status, progress, result reference, experiment
@@ -298,14 +298,176 @@ unknown-field refusals, and `npm run verify`.
 
 **Exclusion:** no filesystem store, no server, no UI, no job execution.
 
+### Post-M09 baseline, re-read 2026-08-21
+
+M08.0's baseline was taken at `6727841` on 2026-08-14 and is deliberately left
+where it is. M09 ran between then and now, so the rows below record what moved
+and — more usefully — what did not.
+
+| Constant                         | M08.0   | Now     | What that means for M08                                                                                                                                                                                                                                                                                                            |
+| -------------------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PROTOCOL_VERSION`               | 6       | 11      | Five bot-seat message shapes. No M08 tranche reads this wire.                                                                                                                                                                                                                                                                      |
+| `RULES_VERSION`                  | `0.4.0` | `1.0.0` | Q49: a Token on the battlefield is a Unit. Replays recorded before it are refused, which M08.10 must report rather than hide.                                                                                                                                                                                                      |
+| `CARD_SCHEMA_VERSION`            | 5       | 5       | Unchanged.                                                                                                                                                                                                                                                                                                                         |
+| `MATCH_SCHEMA_VERSION`           | 7       | 7       | Unchanged.                                                                                                                                                                                                                                                                                                                         |
+| Every simulator artifact version | —       | —       | `CONFIG_SCHEMA_VERSION` 1, `MANIFEST_SCHEMA_VERSION` 8, `SUMMARY_SCHEMA_VERSION` 7, `REPORT_SCHEMA_VERSION` 8, `TELEMETRY_SCHEMA_VERSION` 6, `SEARCH_CHECKPOINT_VERSION` 2, `SEED_DERIVATION_VERSION` 2, `HASH_VERSION` 1 — **all exactly as M08.0 found them.** M08.3, M08.4 and M08.5 face the surface they were scoped against. |
+
+Four M09 additions change later M08 work, and each is a thing to **use** rather
+than to rebuild:
+
+- **`BotSummarySink` is the human-match ingestion seam, and it already exists.**
+  M09.17 defined one interface with one method and one call site in
+  `apps/multiplayer-server/src/bot-match-summary.ts`, checked by a source scan,
+  and `NO_DURABLE_SUMMARY_STORE` says in a constant that M08 Player Meta owns the
+  store. **M08.22 implements that interface**; it does not invent a second one,
+  and M08.1 defines no summary shape, because `botMatchSummarySchema` in
+  `@tcg/protocol` at `BOT_SUMMARY_SCHEMA_VERSION` 1 is already the record.
+- **`@tcg/deck-generator` was extracted in M09.8** and owns deck identity, the
+  legality check, deck plan resolution and `HASH_VERSION`. It declares itself
+  **server-only** (`node:crypto`). M08's admin client must not import it; the
+  admin server may.
+- **`@tcg/bot-config` (M09.1) owns controller provenance, the difficulty and
+  style registries and the four deck-source modes.** `DIFFICULTY_REGISTRY_VERSION`
+  is now 3 with three available difficulties — easy, normal and hard — and
+  `DifficultyDefinition` carries `tactics`. M08.8's pilot and difficulty controls
+  read those registries; nothing in M08 restates them.
+- **The future-version refusal now has a settled shape.**
+  `@tcg/bot-config#refuseFutureVersion` fixes the sentence, `isFutureVersion`
+  fixes how narrow the predicate is, and `@tcg/protocol/bot-compatibility` shows
+  the decode-boundary form. M08.1 follows all three.
+
+One correction M08.1 had to make to its own first draft, found by reading the
+manifest rather than the brief: **there is no single content hash on a run.**
+`environmentHashesSchema` splits the address four ways — `mechanicsHash`,
+`pilotInputHash`, `presentationHash`, `fullContentHash` — because M01.3 found
+that one hash made a flavour-text fix invalidate every experiment that had used
+the card, and a manifest records one such set **per environment** with none
+marked primary. A `comparison` or `replacement` run has two on purpose. The
+catalog therefore references an array of environments, and the filter is named
+`fullContentHash` rather than `contentHash` so nobody has to guess which of the
+four it matches.
+
+### What M08.1 built
+
+`packages/admin-contracts` — `@tcg/admin-contracts`, the third workspace
+[ADR 0023](../architecture/0023-admin-lab-boundary.md) §1 named, exporting one
+barrel and depending on exactly `@tcg/shared` and `zod`.
+
+**The lifecycle policy has one implementation.** `JOB_LIFECYCLE` and
+`BATCH_LIFECYCLE` are tables; `nextState`, `legalActions`, `isTerminal`,
+`applyTransition` and `reachableStates` read them, and the tests read them too,
+so a queue screen, a store and a runner cannot hold three copies that disagree.
+A job has nine states and a batch eight, and the differences are the argument:
+there is no batch `failed` or `interrupted` — a batch of ten jobs where two
+failed has not failed, and a batch owns no worker to interrupt — and no job
+`draft`, because M08.9 edits membership before start and a job is validated when
+it is created. `cancelling` exists because M08.5's cancel is graceful, and a
+screen that showed `running` after the operator cancelled, or `cancelled` while
+matches were still being written, would be telling the same class of lie as
+recovering `running` work as `completed`. **`interrupted` cannot reach
+`completed` at all.** `retry` is the milestone's one declared exception to
+terminality, which is why `terminal` is declared rather than derived from "has no
+outgoing row".
+
+**The catalog indexes and never copies.** A job document holds identity —
+experiment ID, kind, seed, config hash, per-environment content hashes, manifest
+version, software commit — plus lifecycle, progress, timestamps and annotations,
+and **no result**. Two projections rather than one habit: `storedResultReference`
+carries a `rootId` and a relative directory and never leaves the server;
+`resultReference` has no `location` to strip, so a future tranche that wants one
+must widen the schema deliberately. `statusTimestampProblems` is the single rule
+both shapes apply, and it is what makes `retry` honest — `failed → queued` is
+only a legal document once `completedAt` is cleared. Deleting an entry cannot
+mean deleting a run, because nothing in the package can express removing one.
+
+**Requests name identifiers, and there is nowhere to put a path.** Every request
+payload is a strict object over IDs, and the closed set is exported so the test
+can be total over it. `jobActionRequestSchema` carries the _action_, never the
+target state, so no client decides what `cancel` means from `running`.
+
 ### Checklist
 
-- [ ] Strict schemas for identity, status, progress, result reference, purpose,
-      source class and timestamps.
-- [ ] Legal state transitions and terminal states, exhaustively tested.
-- [ ] Catalog entry references the experiment directory and its hashes.
-- [ ] Pagination, filter and structured-error contracts.
-- [ ] Version constant, and a future version refused with a readable message.
+- [x] **Strict schemas for identity, status, progress, result reference, purpose,
+      source class and timestamps.** IDs are prefixed and restricted to
+      `[a-z0-9]` because M08.2 uses them as file names, so the alphabet _is_ the
+      traversal defence. Timestamps are UTC ISO 8601 with milliseconds — stricter
+      than a saved deck's — so lexicographic and chronological order are the same
+      order, which is what lets a continuation token mean anything. Source class
+      is a **set** of the milestone's six words, canonically ordered so two equal
+      classifications serialize to equal bytes, with `mixed` refused beside `ai`
+      or `human` because it already means both.
+- [x] **Legal state transitions and terminal states, exhaustively tested.** Every
+      declared row is applied and checked; every state/action pair the tables do
+      **not** declare is applied and refused, derived from the tables rather than
+      listed. Terminal states, unreachable states, unused actions, duplicate rows
+      and batch/job separation are all asserted from the models.
+- [x] **Catalog entry references the experiment directory and its hashes.** Per
+      the correction above, an array of environments each carrying the four
+      addresses, beside the config hash, the manifest version and the commit. A
+      test asserts the reference retains hashes and canonical-run identity while
+      the document carries no field that could hold a result.
+- [x] **Pagination, filter and structured-error contracts.** Pagination is
+      bounded at 1–200 with a base64url cursor that cannot spell a path; `total`
+      is nullable because a file-backed store can answer "here are fifty" far
+      more cheaply than "there are 8,412". The filter covers what M08.1 itself
+      defines and nothing more — no Commander and no precon, because a filter for
+      a field this contract does not model could not be honoured. Errors are a
+      closed code list with context validated rather than trusted: a forbidden
+      key is matched as a case-insensitive substring, and unsafe context is
+      **refused with a visible marker** rather than silently redacted.
+- [x] **Version constant, and a future version refused with a readable message.**
+      Two constants, both `1`, both owned by a named schema — see below.
+- [x] Verified: 254 focused tests in 9 files, `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` all pass.
+
+### Versions
+
+Two introduced, and no other constant in the repository moved.
+
+| Constant                   | Value | Owned by                                                    |
+| -------------------------- | ----- | ----------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION`   | 1     | `adminRequest` / `adminResponse` — the negotiated language. |
+| `CATALOG_DOCUMENT_VERSION` | 1     | `catalogJobDocumentSchema` / `catalogBatchDocumentSchema`.  |
+
+**Two rather than one**, because ADR 0023 §7 says they answer different
+questions: a contract version fails as "these two builds cannot converse", and a
+document version fails as "this file is from the future", read possibly months
+later by a build with no counterpart to negotiate with. Collapsing them would
+mean either refusing a perfectly good stored catalog because the request language
+moved, or claiming a stored document is readable because two ends of a socket
+agree.
+
+**Two rather than four**: the batch document and the job document are one family,
+written by one store into one directory, and a build that can read a batch but
+not its jobs has not read the batch. M08.2's per-job event log is a separate
+artifact with its own lifetime and would be a reason to add a third.
+
+**No play-contract version moves, and this is a claim about what M08.1 did.**
+`PROTOCOL_VERSION`, `MATCH_SCHEMA_VERSION`, `RULES_VERSION`,
+`CARD_SCHEMA_VERSION` and every `@tcg/bot-config` constant stay exactly where
+they are: this tranche adds no message to the play wire, no field to a serialized
+match, no rule, no card and no bot-seat field. The strongest form of the claim is
+structural rather than promised — `@tcg/admin-contracts` depends on `@tcg/shared`
+and `zod` and nothing else, so none of those constants is reachable from it, and
+a test reads the manifest to keep it that way. The simulator's artifact versions
+do not move either, for the stronger reason that M08.1 writes none of those
+files: the catalog **records** the manifest version a run was written with, which
+is reading a number rather than owning one.
+
+`refuseFutureVersion` copies `@tcg/bot-config`'s sentence rather than importing
+its function. That function is closed over `BotConfigVersionField` and reports
+`bot_config/*` codes, so reusing it would mean either widening a bot seat's
+vocabulary to include the admin catalog or reporting an admin failure under a
+bot's code. ADR 0023 §7 asks for the treatment, not the module.
+
+### Exclusions honoured
+
+No filesystem store, no HTTP server, no admin client, no job execution, no
+estimator, no preset, no queue control and no chart. The package imports no Node
+built-in at all, spawns nothing, and is depended on by neither
+`@tcg/web-client` nor `@tcg/multiplayer-server` — each asserted by a source scan
+over the package's own sources and the two manifests, so the absence fails when
+it stops being true rather than when somebody notices.
 
 ## M08.2 — Durable catalog and queue store
 

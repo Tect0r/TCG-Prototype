@@ -79,6 +79,7 @@ import {
   DIFFICULTY_REGISTRY_VERSION,
   PACING_CONFIG_VERSION,
 } from '@tcg/bot-config';
+import { ADMIN_CONTRACT_VERSION, CATALOG_DOCUMENT_VERSION } from '@tcg/admin-contracts';
 import { BOARD_TELEMETRY_VERSION, STALL_DEFINITION_VERSION } from '@tcg/board-telemetry';
 import { DECK_GENERATOR_VERSION, SUPPORTED_RUNTIMES } from '@tcg/deck-generator';
 import {
@@ -519,6 +520,22 @@ function versionGroups(): readonly VersionGroup[] {
           constant: 'DECK_FINGERPRINT_VERSION',
           value: String(DECK_FINGERPRINT_VERSION),
           pins: 'How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address.',
+        },
+      ],
+    },
+    {
+      title: 'Admin surface',
+      note: "The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contract because an admin client and an admin server can disagree without any card, match or protocol meaning having changed — and independent of each other because a stored document is read by a build with no counterpart to negotiate with.",
+      entries: [
+        {
+          constant: 'ADMIN_CONTRACT_VERSION',
+          value: String(ADMIN_CONTRACT_VERSION),
+          pins: 'The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.',
+        },
+        {
+          constant: 'CATALOG_DOCUMENT_VERSION',
+          value: String(CATALOG_DOCUMENT_VERSION),
+          pins: 'A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build.',
         },
       ],
     },

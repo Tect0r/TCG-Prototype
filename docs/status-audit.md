@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `c0bf4bcc504964c5653a15993d41c8f9cfd37365` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-21                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `0913dcc7b4756128acb7c48dda11ce1c00959df1`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-21                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 80      | 1863     |
+| packages       | 89      | 2117     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
 | simulator      | 23      | 433      |
 | web-client     | 20      | 272      |
-| **total**      | **144** | **2982** |
+| **total**      | **153** | **3236** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -97,6 +97,15 @@ What a bot seat is configured by. Independent of the play contract on purpose (A
 | `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.                                                                                                     |
 | `BOT_SUMMARY_SCHEMA_VERSION`  | 1     | One match’s bot pacing and provenance summary, as broadcast at completion and exported to a file. Separate from `PROTOCOL_VERSION`, which an exported file has no handshake to be refused at. |
 | `DECK_FINGERPRINT_VERSION`    | 1     | How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address.                   |
+
+### Admin surface
+
+The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contract because an admin client and an admin server can disagree without any card, match or protocol meaning having changed — and independent of each other because a stored document is read by a build with no counterpart to negotiate with.
+
+| Constant                   | Value | Pins                                                                                                                                   |
+| -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION`   | 1     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `CATALOG_DOCUMENT_VERSION` | 1     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments
 
@@ -272,13 +281,13 @@ No question the plan calls open is missing or answered in the question file.
 
 ## Repository inventory
 
-| Reading                                  | Value                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspaces                               | `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/deck-generator`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
-| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                                                        |
-| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                                                          |
-| Architecture decision records            | 24                                                                                                                                                                                                                                                                                                                            |
-| Milestone documents                      | 9                                                                                                                                                                                                                                                                                                                             |
+| Reading                                  | Value                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspaces                               | `packages/admin-contracts`, `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/deck-generator`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
+| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                                                                                    |
+| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                                                                                      |
+| Architecture decision records            | 24                                                                                                                                                                                                                                                                                                                                                        |
+| Milestone documents                      | 9                                                                                                                                                                                                                                                                                                                                                         |
 
 ### Architecture decision records
 

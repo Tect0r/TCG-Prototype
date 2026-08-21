@@ -29,17 +29,18 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-21)   | M08.2        |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
-**M08 is deferred and M09 is complete (2026-08-21).** M08.0 opened the AI Lab milestone — its
-record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
-and stopped there. The owner then chose **M09 Play Against AI** to run first,
-because it turns the software into something a person can play against, which is
-what the structured manual playtests below have been waiting for. M08 is planned,
-not cancelled: its record and its ADR stay exactly as M08.0 left them, and no
-part of it was scaffolded while M09 ran. **M09 finished on 2026-08-21**, so M08.1
-is now available to be chosen rather than blocked.
+**M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
+milestone — its record, its scope and
+[ADR 0023](docs/architecture/0023-admin-lab-boundary.md) — and stopped there. The
+owner then chose **M09 Play Against AI** to run first, because it turns the
+software into something a person can play against, which is what the structured
+manual playtests below have been waiting for. No part of M08 was scaffolded while
+M09 ran. **M09 finished on 2026-08-21**, and **M08.1 landed the same day**: the
+milestone is now under way rather than deferred, and **M08.2 is the next
+tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -161,16 +162,79 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**None. M09 is complete, and the next task is an owner choice.** Every tranche in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md) is done, its
-acceptance clause is met, and nothing in this file names work that has not been
-handed back to the owner. The four candidates, in the order the record suggests
-rather than as a recommendation with authority, are **M08.1** — the AI Lab
-milestone deferred on 2026-08-14, whose record and
-[ADR 0023](docs/architecture/0023-admin-lab-boundary.md) are exactly as M08.0 left
-them and none of which is scaffolded — **Q51**, the trade M09.20 measured and
-raised, **the unverified rendering** M09.19 recorded, and **the 50-card
-expansion**, which still needs 8–9 more colour-legal cards per Commander first.
+**M08.2 — Durable catalog and queue store.** Persist batches and jobs behind an
+interface and recover their truthful state: atomic write and append discipline,
+every document validated on read as well as on write, `running` work recovered
+after a restart as an explicit resumable or interrupted state and **never** as
+completed, ordered batch membership with independent jobs, and refusal of
+duplicate IDs and unsafe result-root references. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m082--durable-catalog-and-queue-store).
+No simulator process and no HTTP API; both are later tranches.
+
+It has a contract to build on rather than one to invent.
+**M08.1 landed the language, and nothing that acts on it.**
+`packages/admin-contracts` is the third workspace
+[ADR 0023](docs/architecture/0023-admin-lab-boundary.md) §1 named: strict
+versioned schemas for batch and job identity, lifecycle and its transitions,
+progress, catalog and result references, pagination, filters, requests and
+structured errors, depending on exactly `@tcg/shared` and `zod`. It imports no
+Node built-in, spawns nothing, renders nothing, and is depended on by neither the
+player bundle nor the live match server — each a source scan rather than a
+promise.
+
+**The transition policy has one implementation, and the batch/job difference is
+real.** A job has nine states and a batch eight, because a batch of ten jobs
+where two failed has not failed and a batch owns no worker to interrupt, so
+`failed` and `interrupted` are a job's alone; and `draft` is a batch's alone,
+because M08.9 edits membership before start. `cancelling` exists because M08.5's
+cancel is graceful, and a screen showing `running` after the operator cancelled
+would be the same class of lie as recovering `running` work as `completed` —
+which the table makes impossible: **`interrupted` has no route to `completed`**,
+and a restart interrupts `running`, `pausing` and `cancelling` uniformly rather
+than inferring that a cancellation finished. `resume` returns to `queued` rather
+than `running`, so `start` stays the only thing that claims a worker and M08.5's
+bound holds by construction. `retry` is the one declared exception to
+terminality, which is why terminal states are declared and not derived.
+
+**The catalog indexes and never copies.** A job document holds identity,
+lifecycle, progress, timestamps and annotations, and **no result**; every number
+a view shows is read back out of the canonical artefacts. Two projections rather
+than one habit — the stored reference carries a root ID and a relative directory
+and never leaves the server, and the client-visible one has no `location` field
+to strip. Deleting an entry cannot mean deleting a run, because nothing in the
+package can express removing one.
+
+**The tranche corrected its own first draft by reading the manifest**: there is
+no single content hash on a run. M01.3 split the address four ways —
+`mechanicsHash`, `pilotInputHash`, `presentationHash`, `fullContentHash` —
+because one hash made a flavour-text fix invalidate every experiment that had
+used the card, and a manifest records one set **per environment**, two of them on
+purpose for a `comparison` or `replacement` run. The reference is an array, and
+the filter is named `fullContentHash` so nobody guesses which of the four it
+matches.
+
+**Two version constants are introduced and nothing else moved.**
+`ADMIN_CONTRACT_VERSION` and `CATALOG_DOCUMENT_VERSION` are both `1` and both
+owned by a named schema; ADR 0023 §7's two domains are kept apart because a
+request version fails as "these builds cannot converse" and a document version as
+"this file is from the future". `PROTOCOL_VERSION`, `MATCH_SCHEMA_VERSION`,
+`RULES_VERSION`, `CARD_SCHEMA_VERSION`, every `@tcg/bot-config` constant and every
+simulator artifact version all stay, and the claim is structural: none of them is
+reachable from a package that depends on `@tcg/shared` and `zod`.
+
+**The post-M09 baseline was re-read rather than inherited.** M09 moved
+`PROTOCOL_VERSION` 6 → 11 and `RULES_VERSION` `0.4.0` → `1.0.0`, and moved **no
+simulator artifact version at all** — so M08.3, M08.4 and M08.5 face the surface
+M08.0 scoped them against. Three M09 additions are things later M08 tranches
+**use** rather than rebuild: `BotSummarySink` is already the human-match
+ingestion seam M08.22 implements, `@tcg/deck-generator` owns deck identity and
+declares itself server-only, and `@tcg/bot-config` owns controller provenance and
+the difficulty and style registries that M08.8's controls read.
+
+The other candidates the record still holds, none of them blocking, are **Q51**,
+the trade M09.20 measured and raised, **the unverified rendering** M09.19
+recorded, and **the 50-card expansion**, which still needs 8–9 more colour-legal
+cards per Commander first.
 
 **M09.19 played the whole feature, and found two defects doing it.** The last
 tranche crossed the four seat mixtures with the four deck modes — a three-bot
@@ -651,10 +715,11 @@ What the playtests should capture, per session:
 5. **Obvious archetype problems** — a precon that cannot function, a matchup that
    is not a game, a deck whose plan never assembles.
 
-**Then evaluate the results before selecting the milestone after M09.** The
-evidence decides whether that one is implementation (a defect class worth fixing
-properly), rules (a friction point that needs an owner decision), content, or the
-deferred M08.
+**Then evaluate the results, and let them decide what runs beside M08.** The
+evidence says whether the next thing is implementation (a defect class worth
+fixing properly), rules (a friction point that needs an owner decision) or
+content. It does not decide M08 itself, which is under way; it decides what
+interrupts or follows it.
 
 The **50-card expansion remains the next intended content milestone**: 8–9 further
 colour-legal cards per Commander, or an equivalent shared package, measured
@@ -708,7 +773,8 @@ Do not reopen these while implementing:
   stay canonical — is in
   [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#locked-interpretation),
   with the boundaries in [ADR 0023](docs/architecture/0023-admin-lab-boundary.md).
-  It stays locked while M08 is deferred.
+  M08 is under way as of M08.1, and the interpretation is locked for the rest of
+  it.
 - M09's own locked interpretation — a bot is a server-owned seat controller with
   no connection identity, it sees exactly what a human in that seat sees and acts
   through the same `applyAction` path, a deck source is public at the Commander
