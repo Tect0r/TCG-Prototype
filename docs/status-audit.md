@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                       |
-| ---------------- | ------------------------------------------- |
-| Commit           | `0913dcc7b4756128acb7c48dda11ce1c00959df1`  |
-| Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-08-21                                  |
-| Node             | v24.15.0                                    |
-| `npm run verify` | not run for this audit                      |
+| Reading          | Value                                      |
+| ---------------- | ------------------------------------------ |
+| Commit           | `410117d26e5e15edf33d47222f06c24f1ee04b04` |
+| Working tree     | clean                                      |
+| Taken on         | 2026-08-21                                 |
+| Node             | v24.15.0                                   |
+| `npm run verify` | passed at this commit                      |
 
 ### Verification chain
 
