@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-21)   | M08.2        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-21)   | M08.3        |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -38,9 +38,14 @@ milestone — its record, its scope and
 owner then chose **M09 Play Against AI** to run first, because it turns the
 software into something a person can play against, which is what the structured
 manual playtests below have been waiting for. No part of M08 was scaffolded while
-M09 ran. **M09 finished on 2026-08-21**, and **M08.1 landed the same day**: the
-milestone is now under way rather than deferred, and **M08.2 is the next
-tranche**.
+M09 ran. **M09 finished on 2026-08-21**, and **M08.1 and M08.2 landed the same
+day**: the milestone is now under way rather than deferred. M08.1 gave the AI Lab
+its language — `packages/admin-contracts`, and nothing that acts on it — and
+M08.2 gave it a durable catalog: `apps/admin-server`, a store behind an interface
+that persists batches and jobs, recovers in-flight work after a restart as
+`interrupted` and never as completed, and refuses a result reference that
+resolves outside its configured root. Neither runs an experiment and neither
+opens a port; **M08.3 is the next tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -162,74 +167,80 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.2 — Durable catalog and queue store.** Persist batches and jobs behind an
-interface and recover their truthful state: atomic write and append discipline,
-every document validated on read as well as on write, `running` work recovered
-after a restart as an explicit resumable or interrupted state and **never** as
-completed, ordered batch membership with independent jobs, and refusal of
-duplicate IDs and unsafe result-root references. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m082--durable-catalog-and-queue-store).
-No simulator process and no HTTP API; both are later tranches.
+**M08.3 — Match-count estimator and honest presets.** Let the UI state exactly
+how much work a configuration schedules, by deriving the estimate from
+`buildSchedule` — the function that produces the real schedule — rather than from
+a second formula written beside it. Seven typed presets, each expanding into an
+ordinary validated config or stage plan and recording every value it chose. Games
+shown **per seat order**; a search or adaptive total labelled as a bound rather
+than presented as exact; and the forced-inclusion floor reported per Commander
+from legal pool size and deck size. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m083--match-count-estimator-and-honest-presets).
+Adaptive Counter Search stays a reserved type only; its algorithm is M08.16.
 
-It has a contract to build on rather than one to invent.
-**M08.1 landed the language, and nothing that acts on it.**
-`packages/admin-contracts` is the third workspace
-[ADR 0023](docs/architecture/0023-admin-lab-boundary.md) §1 named: strict
-versioned schemas for batch and job identity, lifecycle and its transitions,
-progress, catalog and result references, pagination, filters, requests and
-structured errors, depending on exactly `@tcg/shared` and `zod`. It imports no
-Node built-in, spawns nothing, renders nothing, and is depended on by neither the
-player bundle nor the live match server — each a source scan rather than a
-promise.
+It has a place to put the answer now.
+**M08.2 landed the durable catalog, and nothing that runs an experiment.**
+`apps/admin-server` is the second workspace
+[ADR 0023](docs/architecture/0023-admin-lab-boundary.md) §1 named, depending on
+exactly `@tcg/admin-contracts`, `@tcg/shared` and `zod`. It is a store and no
+more: no `main.ts`, no `start` script, no port, no simulator import, no child
+process and no shell — each asserted by a scan over its own sources, because M08.4
+owns the first thing that runs and M08.6 owns the first thing that listens.
 
-**The transition policy has one implementation, and the batch/job difference is
-real.** A job has nine states and a batch eight, because a batch of ten jobs
-where two failed has not failed and a batch owns no worker to interrupt, so
-`failed` and `interrupted` are a job's alone; and `draft` is a batch's alone,
-because M08.9 edits membership before start. `cancelling` exists because M08.5's
-cancel is graceful, and a screen showing `running` after the operator cancelled
-would be the same class of lie as recovering `running` work as `completed` —
-which the table makes impossible: **`interrupted` has no route to `completed`**,
-and a restart interrupts `running`, `pausing` and `cancelling` uniformly rather
-than inferring that a cancellation finished. `resume` returns to `queued` rather
-than `running`, so `start` stays the only thing that claims a worker and M08.5's
-bound holds by construction. `retry` is the one declared exception to
-terminality, which is why terminal states are declared and not derived.
+**The catalog is a directory keyed by identifier**, which is what M08.1's ID
+alphabet was chosen for: `[a-z0-9]` with no dot, no separator and no uppercase
+means a document name is safe by construction rather than by escaping. Every
+write is a temporary file plus `rename`, so a reader sees the whole old document
+or the whole new one and a crash leaves the previous one intact. Every document is
+parsed by its schema **on the way in and on the way out**, with the version read
+before the shape so a file from a newer build gets the repository's readable
+refusal instead of a literal mismatch.
 
-**The catalog indexes and never copies.** A job document holds identity,
-lifecycle, progress, timestamps and annotations, and **no result**; every number
-a view shows is read back out of the canonical artefacts. Two projections rather
-than one habit — the stored reference carries a root ID and a relative directory
-and never leaves the server, and the client-visible one has no `location` field
-to strip. Deleting an entry cannot mean deleting a run, because nothing in the
-package can express removing one.
+**Recovered work is never finished work.** A restart interrupts exactly the
+statuses the lifecycle table gives an `interrupt` transition, so the rule is the
+table's rather than a list that can drift; `queued` and `paused` are left
+byte-for-byte untouched; and every one of the nine statuses is driven into a real
+store, restarted over, and checked. Recovery happens as part of opening the
+catalog, so nothing can read a `running` that no process is running.
 
-**The tranche corrected its own first draft by reading the manifest**: there is
-no single content hash on a run. M01.3 split the address four ways —
-`mechanicsHash`, `pilotInputHash`, `presentationHash`, `fullContentHash` —
-because one hash made a flavour-text fix invalidate every experiment that had
-used the card, and a manifest records one set **per environment**, two of them on
-purpose for a `comparison` or `replacement` run. The reference is an array, and
-the filter is named `fullContentHash` so nobody guesses which of the four it
-matches.
+**The per-job event log is the history a rewritten document cannot hold**, and it
+is what will make M08.5's _retry is never a silent automatic success_ true: a job
+that failed once and was retried ends up spelling `completed`, and only the log
+says otherwise. A cause of `operator`, `runner` or `recovery` keeps a
+crash-recovery interrupt apart from an operator's cancel. Progress is deliberately
+not logged — the document answers "how far along" exactly and cheaply, and 2,000
+matches would otherwise write 2,000 lines saying a counter moved.
 
-**Two version constants are introduced and nothing else moved.**
-`ADMIN_CONTRACT_VERSION` and `CATALOG_DOCUMENT_VERSION` are both `1` and both
-owned by a named schema; ADR 0023 §7's two domains are kept apart because a
-request version fails as "these builds cannot converse" and a document version as
-"this file is from the future". `PROTOCOL_VERSION`, `MATCH_SCHEMA_VERSION`,
-`RULES_VERSION`, `CARD_SCHEMA_VERSION`, every `@tcg/bot-config` constant and every
-simulator artifact version all stay, and the claim is structural: none of them is
-reachable from a package that depends on `@tcg/shared` and `zod`.
+**A result is a reference that is checked before it is stored.** The root
+identifier is looked up in configuration, the directory is re-validated rather
+than trusted, and the **real** path of the longest existing prefix is compared
+against the real root — the only check that sees a symlink. Real directory links
+are created in the tests, and an escaping leaf, an escaping parent and a
+same-prefix sibling are all refused while a link that stays inside is followed. No
+refusal carries a path: they name the identifier the administrator configured.
 
-**The post-M09 baseline was re-read rather than inherited.** M09 moved
-`PROTOCOL_VERSION` 6 → 11 and `RULES_VERSION` `0.4.0` → `1.0.0`, and moved **no
-simulator artifact version at all** — so M08.3, M08.4 and M08.5 face the surface
-M08.0 scoped them against. Three M09 additions are things later M08 tranches
-**use** rather than rebuild: `BotSummarySink` is already the human-match
-ingestion seam M08.22 implements, `@tcg/deck-generator` owns deck identity and
-declares itself server-only, and `@tcg/bot-config` owns controller provenance and
-the difficulty and style registries that M08.8's controls read.
+**One version constant is introduced and nothing else moved.** `JOB_EVENT_VERSION`
+is `1`, and it exists because M08.1 wrote the test it had to pass — a third
+artifact with its own lifetime earns a third constant, and a log that is appended
+to and never rewritten is read by builds that came after every line in it.
+`ADMIN_CONTRACT_VERSION` and `CATALOG_DOCUMENT_VERSION` stay `1`: no request shape
+changed, and M08.2 is the first thing to _write_ a catalog document, so there is
+no older file anywhere and nothing to migrate.
+
+**One platform finding was measured rather than assumed.** `rename` over a
+destination another handle has open fails on Windows and succeeds silently on
+POSIX. In-process the store now takes the same per-document lock for reads as for
+writes, which removes the collision it would otherwise have with itself under
+M08.6's concurrency; out of process a bounded retry absorbs ordinary overlap and
+then reports honestly, because a file held open **continuously** cannot be
+replaced on Windows at all and no backoff changes that.
+
+**Two limitations are recorded rather than worked around.** The `kinds` and
+`fullContentHash` filters can only match a job that already has a result, because
+both read the run identity and M08.1's job document carries no configuration
+reference — **M08.4** is the first tranche that could give a queued job a kind.
+And cross-process write exclusion is not claimed, which is what ADR 0023 §4's one
+administrator and one orchestration process already assume.
 
 The other candidates the record still holds, none of them blocking, are **Q51**,
 the trade M09.20 measured and raised, **the unverified rendering** M09.19

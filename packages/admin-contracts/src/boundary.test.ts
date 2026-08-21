@@ -161,7 +161,13 @@ describe('nothing admin is reachable from the player bundle', () => {
     expect(Object.keys(server.dependencies ?? {})).not.toContain('@tcg/admin-contracts');
   });
 
-  it('is imported by no source outside this package', () => {
+  it('is imported by the admin workspaces and by nothing else', () => {
+    // M08.1 could state this as "imported by nobody", because the applications
+    // ADR 0023 §1 names did not exist yet. M08.2 built the first of them, so the
+    // claim becomes the one that actually matters and will keep mattering: the
+    // *only* importers are admin workspaces. A hit under `apps/web-client`,
+    // `apps/multiplayer-server` or any package is what this exists to fail on.
+    const ALLOWED = [join('apps', 'admin-server'), join('apps', 'admin-client')];
     const hits: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -173,11 +179,24 @@ describe('nothing admin is reachable from the player bundle', () => {
         }
         if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue;
         if (path.startsWith(PACKAGE_ROOT)) continue;
-        if (readFileSync(path, 'utf8').includes("'@tcg/admin-contracts'")) hits.push(path);
+        if (!readFileSync(path, 'utf8').includes("'@tcg/admin-contracts'")) continue;
+        const relative = path.slice(REPO_ROOT.length + 1);
+        if (ALLOWED.some((allowed) => relative.startsWith(allowed))) continue;
+        hits.push(relative);
       }
     };
     for (const root of ['packages', 'apps']) walk(join(REPO_ROOT, root));
     expect(hits).toEqual([]);
+  });
+
+  it('is imported by an admin workspace, so the allowance above is doing work', () => {
+    // An allow-list that matched nothing would make the test above pass for the
+    // wrong reason from the day the last importer was removed.
+    const store = readFileSync(
+      join(REPO_ROOT, 'apps', 'admin-server', 'src', 'catalog', 'file-catalog-store.ts'),
+      'utf8',
+    );
+    expect(store).toContain("from '@tcg/admin-contracts'");
   });
 });
 

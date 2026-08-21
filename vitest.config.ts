@@ -41,6 +41,19 @@ export default defineConfig({
       },
       {
         test: {
+          // The admin catalog (M08.2). Every suite writes real files under a
+          // temporary root and reads them back, because "a reader never sees
+          // half a document" and "a restart never recovers running work as
+          // completed" are claims about a filesystem, and a mocked one would
+          // only prove the mock agrees with the code.
+          name: 'admin-server',
+          root: import.meta.dirname,
+          include: ['apps/admin-server/src/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'scripts',
           root: import.meta.dirname,
           include: ['scripts/**/*.test.ts'],

@@ -23,12 +23,22 @@ import { adminError, type AdminError } from './errors.js';
  * catalog because the request language moved, or claiming a stored document is
  * readable because the two ends of a socket happen to agree. Neither is true.
  *
- * Two rather than four: there is no separate constant for the batch document and
- * the job document. They are one family — written by one store, into one
- * directory, in one transaction's worth of intent — and a build that can read a
- * batch but not its jobs has not read the batch. A third artifact with its own
- * lifetime, such as M08.2's per-job event log, is a reason to add a third
- * constant; a second schema inside the same family is not.
+ * - **`JOB_EVENT_VERSION`** is what a line in a job's append-only event log was
+ *   written in. M08.1 named the test this constant had to pass before it could
+ *   exist — *a third artifact with its own lifetime is a reason to add a third
+ *   constant; a second schema inside the same family is not* — and M08.2's event
+ *   log passes it. The log is a different artifact from the document beside it:
+ *   the document is rewritten in place and only its latest state is ever read,
+ *   while the log is appended to and never rewritten, so a build reads lines
+ *   written by every build that came before it. Adding an event kind does not
+ *   change a job document, and changing a job document does not make one
+ *   historical line unreadable, which is exactly the independence two version
+ *   numbers are for.
+ *
+ * Still no separate constant for the batch document and the job document. They
+ * are one family — written by one store, into one directory, in one
+ * transaction's worth of intent — and a build that can read a batch but not its
+ * jobs has not read the batch.
  *
  * ## Why no play-contract version moves
  *
@@ -59,10 +69,19 @@ export const ADMIN_CONTRACT_VERSION = 1;
  */
 export const CATALOG_DOCUMENT_VERSION = 1;
 
+/**
+ * The version stamped into one line of a job's append-only event log.
+ *
+ * - 1 — M08.2, the first shape. Nothing has been written by an earlier build,
+ *   so there is no older line anywhere and no migration to write.
+ */
+export const JOB_EVENT_VERSION = 1;
+
 /** Every version the admin surface stamps, in one object. */
 export const CURRENT_ADMIN_VERSIONS = Object.freeze({
   contract: ADMIN_CONTRACT_VERSION,
   catalogDocument: CATALOG_DOCUMENT_VERSION,
+  jobEvent: JOB_EVENT_VERSION,
 });
 
 /** Names the version domain an error is about, so a caller can say which failed. */
@@ -76,6 +95,7 @@ export const ADMIN_VERSION_FIELDS = Object.keys(
 const VERSION_LABELS: Readonly<Record<AdminVersionField, string>> = Object.freeze({
   contract: 'admin contract',
   catalogDocument: 'admin catalog document',
+  jobEvent: 'admin job event',
 });
 
 /**
@@ -88,6 +108,7 @@ const VERSION_LABELS: Readonly<Record<AdminVersionField, string>> = Object.freez
  */
 export const contractVersionSchema = z.literal(ADMIN_CONTRACT_VERSION);
 export const catalogDocumentVersionSchema = z.literal(CATALOG_DOCUMENT_VERSION);
+export const jobEventVersionSchema = z.literal(JOB_EVENT_VERSION);
 
 /**
  * Whether `found` is a readable version number this build is simply too old for.

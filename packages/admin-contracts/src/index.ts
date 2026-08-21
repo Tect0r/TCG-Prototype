@@ -39,12 +39,31 @@ export {
   ADMIN_CONTRACT_VERSION,
   CATALOG_DOCUMENT_VERSION,
   CURRENT_ADMIN_VERSIONS,
+  JOB_EVENT_VERSION,
   catalogDocumentVersionSchema,
   contractVersionSchema,
   isFutureVersion,
+  jobEventVersionSchema,
   refuseFutureVersion,
   type AdminVersionField,
 } from './version.js';
+
+export {
+  JOB_EVENT_CAUSES,
+  JOB_EVENT_KINDS,
+  jobAnnotatedEventSchema,
+  jobCreatedEventSchema,
+  jobEventCauseSchema,
+  jobEventKindSchema,
+  jobEventLogSchema,
+  jobEventSchema,
+  jobResultAttachedEventSchema,
+  jobTransitionEventSchema,
+  type JobEvent,
+  type JobEventCause,
+  type JobEventKind,
+  type JobEventLog,
+} from './events.js';
 
 export {
   ADMIN_ERROR_CODES,

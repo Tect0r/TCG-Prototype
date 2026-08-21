@@ -469,7 +469,7 @@ built-in at all, spawns nothing, and is depended on by neither
 over the package's own sources and the two manifests, so the absence fails when
 it stops being true rather than when somebody notices.
 
-## M08.2 — Durable catalog and queue store
+## M08.2 — Durable catalog and queue store — **done (2026-08-21)**
 
 Persist batches and jobs and recover their truthful state: the catalog behind an
 interface, atomic write and append discipline, validation on read and on write,
@@ -482,13 +482,225 @@ transition and path-boundary tests.
 
 **Exclusion:** no simulator process, no HTTP API.
 
+### What M08.2 built
+
+`apps/admin-server` — `@tcg/admin-server`, the second of the three workspaces
+[ADR 0023](../architecture/0023-admin-lab-boundary.md) §1 named, depending on
+exactly `@tcg/admin-contracts`, `@tcg/shared` and `zod`.
+
+It is a **store and nothing else**, and the absence is deliberate: there is no
+`main.ts`, no `start` script and no port. M08.4 adds the `@tcg/simulator`
+dependency and the first thing that runs an experiment; M08.6 adds the HTTP
+boundary and the loopback refusal. An entry point that bound nothing would be the
+decorative scaffolding the milestone warns against, so the boundary suite asserts
+the manifest declares `typecheck` and no other script.
+
+**The catalog is a directory keyed by identifier.** `batches/batch_<id>.json`,
+`jobs/job_<id>.json`, `events/job_<id>.jsonl`. Flat, because M08.1 chose the ID
+alphabet for exactly this and said so — an ID body is lowercase letters and
+digits, with no dot, no separator, no parent reference and no uppercase, so a
+document name is safe by construction rather than by escaping, and two IDs cannot
+collide on a case-insensitive filesystem. The traversal defence is the alphabet,
+and this tranche is where it started earning that description.
+
+**A reader never sees half a document.** Every write is a temporary file in the
+destination's own directory, then a flush, then a `rename`. A crash leaves the
+previous document whole and at most one temporary file, which no listing reads
+because listings match `.json` only. This differs from `@tcg/simulator`'s
+`writeJson` on purpose: a run's own output belongs to a run that is gone if it
+was killed mid-write, while a catalog document is read by the _next_ process.
+
+**Nothing is trusted in one direction only.** Every document is parsed by its
+schema before it is written and again after it is read, and the four ways a read
+can fail are kept apart because a caller does four different things about them:
+absent, unparseable, from a newer build, or the wrong shape. The version is read
+**before** the schema, so a document from a future build gets the repository's
+sentence — _this record was written by a newer build … update the application_ —
+rather than a literal mismatch nobody can act on.
+
+**Recovered work is never finished work, and the rule is derived rather than
+listed.** Recovery interrupts exactly the statuses the lifecycle table gives an
+`interrupt` transition — today `running`, `pausing` and `cancelling` — so a state
+added to the table later is swept or left alone by the table's own decision.
+`queued` and `paused` are settled and durable and are left byte-for-byte
+untouched; terminal jobs are finished and are not reopened. That `completed` is
+unreachable is asserted from the model rather than from an example, and every one
+of the nine job statuses is driven into a real store, restarted over, and
+checked. Recovery is part of opening the catalog, so no caller can forget it and
+then read a `running` that no process is running.
+
+**Jobs are independent, and batch membership is ordered.** A job is its own file
+with its own lifecycle; moving one rewrites neither its siblings nor its batch,
+which is asserted by comparing the untouched documents rather than by inspection.
+Membership is the array's order and never a sort, and it is editable only while
+the batch is a `draft` — `enqueue` is the moment an ordering becomes final, and a
+job appearing in a batch that had already started would change what "the
+scheduled work" meant after a person had read it. M08.9 owns the controls for
+adding, duplicating, removing and reordering; M08.2 owns the invariant they will
+act through.
+
+**Identifiers are minted by the store.** The contract says why — _minting one is
+the store's job, never a caller's_ — so a job input has nowhere to put an ID, and
+`admin/duplicate_id` is tested by injecting an `IdSources` that repeats itself
+rather than by waiting for a collision that should never happen. A refused
+duplicate leaves the first entry intact and does not join the batch.
+
+**A result reference is checked before it is stored, never after.** Resolution
+looks the root identifier up in configuration, re-applies
+`experimentDirectorySchema` rather than trusting a document that may not have
+come from this build, and then compares the **real** path of the longest existing
+prefix against the real root — which is the only check that sees a symlink. Real
+directory links are created in the tests, and both an escaping leaf and an
+escaping _parent_ are refused; a link that stays inside the root is followed. The
+comparison uses `relative` rather than a string prefix, so a sibling directory
+whose name merely starts with the root's is not read as being inside it. No
+refusal names a path: the message and the context carry the identifier the
+administrator configured, and a test walks every refusal asserting no separator,
+drive letter or parent reference reaches either.
+
+**The store writes nothing inside a result root at all.** It indexes runs; it
+does not produce them, and a test asserts the result root is never even created.
+There is no delete, no remove and no move anywhere in the interface, which is
+what makes "deleting a catalog entry must not delete an experiment directory" a
+property rather than a policy — M08.28 decides whether deletion exists, with the
+standing preference that omission beats an unsafe delete button.
+
+**The per-job event log is the history the document cannot hold.** Four kinds —
+`created`, `transition`, `annotated`, `result_attached` — appended one line at a
+time and never rewritten. It is what makes M08.5's _retry is a visible lifecycle
+action, never a silent automatic success_ true: a job that went
+`failed → queued → running → completed` ends up spelling `completed` on its
+document, and only the log can say it failed once. A cause of `operator`,
+`runner` or `recovery` keeps a crash-recovery interrupt distinguishable from an
+operator's cancel. **Progress is not logged** — 2,000 matches would write 2,000
+lines saying a counter moved, and the document answers that exactly and cheaply.
+A truncated final line is dropped and reported, the discipline `readJsonl`
+already fixed for `matches.jsonl`.
+
+**The document is written before its event.** A crash between the two loses a
+line of history about a change that really happened, which is recoverable; the
+reverse would leave a log claiming a transition the catalog never made, which is
+not.
+
+**The cursor is a position, not an offset.** The pagination contract says
+stability is the store's promise rather than the schema's, and this is that
+promise: a token encodes the creation instant and the ID in base64url — an
+alphabet with no slash, plus or padding, so the contract's path-free guarantee
+holds by construction — and a listing walks every row exactly once even when
+entries are created underneath it, which is tested by inserting one mid-listing.
+A token this build did not issue is refused with `admin/invalid_cursor`, and with
+the same sentence however it failed.
+
+### One platform finding, measured rather than assumed
+
+`rename` over a destination another handle has open **fails on Windows**; POSIX
+replaces it silently. This was found by a test, not predicted. Two things answer
+it, and the second is a limit rather than a fix:
+
+- **In-process, reads take the same per-document lock writes do.** That removes
+  the collision the store would otherwise have with itself — the one M08.6's
+  concurrent request handlers would create — and it is why the concurrency test
+  lives at the store level, where a reader hammering a job beside forty rewrites
+  always gets a whole, schema-valid document.
+- **Out of process, a bounded retry absorbs ordinary overlap and then reports.**
+  Measured at roughly a quarter of renames colliding under a tight external
+  reader, with almost all landing within five attempts. The rest do not land at
+  all: a destination held open **continuously** cannot be replaced on Windows,
+  and a jittered backoff was tried and did marginally worse, because the cause is
+  occupancy rather than phase. So the write fails loudly after about a fifth of a
+  second, leaving the previous document intact — asserted as a test rather than
+  left as a hope.
+
 ### Checklist
 
-- [ ] Store behind an interface, with the smallest justified local persistence.
-- [ ] Atomic writes; every document validated both directions.
-- [ ] Restart recovers `running` as resumable or interrupted, never completed.
-- [ ] Ordered batch membership; jobs independent.
-- [ ] Duplicate IDs and result-root escapes refused.
+- [x] **Store behind an interface, with the smallest justified local
+      persistence.** `CatalogStore` is written against the successor ADR 0023 §3
+      keeps the option open for rather than against a directory of JSON: every
+      method is asynchronous, no method takes or returns a path, and identifiers
+      are minted rather than passed in. The persistence is files plus one
+      append-only log per job, exactly what the ADR chose and no more — no
+      database, no index, no second copy of a run.
+- [x] **Atomic writes; every document validated both directions.** Temporary file
+      plus flush plus `rename`, with the Windows contention finding above; and
+      both the write path and the read path parse through the same schema, with
+      the version read first so a newer build is refused readably.
+- [x] **Restart recovers `running` as resumable or interrupted, never completed.**
+      Derived from the lifecycle table, applied by a second store over the same
+      directory — which is what a restarted process actually is — and checked for
+      every one of the nine statuses. `interrupted` resumes to `queued`, so
+      `start` stays the only thing that claims a worker.
+- [x] **Ordered batch membership; jobs independent.** Creation order is the
+      administrator's order and nothing sorts it; a job's move rewrites nothing
+      else; concurrent mutations of four jobs all land; and a batch that has left
+      `draft` refuses a new member.
+- [x] **Duplicate IDs and result-root escapes refused.** A repeated mint is
+      refused without overwriting or joining the batch; an unknown root, a
+      lexical traversal, an escaping link and an escaping parent link are all
+      refused, and no refusal carries a path.
+- [x] Verified: 142 focused tests in 6 files in the new `admin-server` project
+      and 277 in 10 files in `packages`; `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` all pass.
+
+### Versions
+
+One introduced. No other constant in the repository moved.
+
+| Constant            | Value | Owned by                                          |
+| ------------------- | ----- | ------------------------------------------------- |
+| `JOB_EVENT_VERSION` | 1     | `jobEventSchema` — one line of a job's event log. |
+
+**A third, and M08.1 wrote the test it had to pass**: _a third artifact with its
+own lifetime is a reason to add a third constant; a second schema inside the same
+family is not._ The event log passes it. A job document is rewritten in place and
+only its latest state is ever read; a log is appended to and never rewritten, so
+a build reads lines written by every build before it. Adding an event kind does
+not change a document, and changing a document does not make one historical line
+unreadable — which is the independence two numbers are for.
+
+**`ADMIN_CONTRACT_VERSION` and `CATALOG_DOCUMENT_VERSION` both stay 1**, and both
+for a reason rather than by omission. No request or response shape changed, so
+two builds that could converse still can. No persisted document shape changed
+either: M08.1 defined the job and batch documents and M08.2 is the first thing to
+_write_ one, so there is no older file anywhere and nothing to migrate.
+
+**No play-contract or simulator artifact version moves.** `PROTOCOL_VERSION`,
+`MATCH_SCHEMA_VERSION`, `RULES_VERSION`, `CARD_SCHEMA_VERSION`,
+`MANIFEST_SCHEMA_VERSION`, `SUMMARY_SCHEMA_VERSION` and every other artifact
+constant are exactly where M08.1 found them. The strongest form of the claim is
+structural: `@tcg/admin-server` depends on `@tcg/admin-contracts`, `@tcg/shared`
+and `zod`, so none of those constants is reachable from it, and a source scan
+names each of them and requires the sources not to.
+
+### Exclusions honoured
+
+No simulator import, no experiment execution, no HTTP server, no socket, no child
+process, no shell, no UI. Each is a scan over the workspace's own sources rather
+than a promise, so it fails when it stops being true rather than when somebody
+notices. Nothing under `apps/web-client` or `apps/multiplayer-server` depends on
+either admin workspace, and `@tcg/admin-contracts`' own boundary test was widened
+from "imported by nobody" — which was only true while no admin application
+existed — to "imported by admin workspaces and nothing else", with a second test
+asserting the allowance actually matches something so it cannot pass for the
+wrong reason.
+
+### Limitations recorded rather than worked around
+
+- **`kinds` and `fullContentHash` can only match a job that has a result.** Both
+  read the run identity, and a job acquires one when its experiment directory
+  exists. The job document carries no configuration reference at all — M08.1
+  stopped deliberately short of one — so a queued job has no kind to filter on.
+  **M08.4** is the tranche that maps a job to a config and a directory and is the
+  first that could put a kind on a job before it runs; until then a job with no
+  result matches neither filter, which is the honest answer for a run that is not
+  yet a run. Tested in both states.
+- **Cross-process exclusion is not claimed.** Mutations are serialized per
+  document within one process, which is what ADR 0023 §4 describes — one
+  administrator, one orchestration process. A second _reader_ is always safe
+  because of the `rename`; a second writer is out of scope, and there is no lock
+  file to go stale.
+- **`total` is reported exactly because every document is read anyway.** ADR 0023
+  §3 accepted that cost, and the contract makes `total` nullable precisely so a
+  successor that cannot count cheaply can decline to.
 
 ## M08.3 — Match-count estimator and honest presets
 

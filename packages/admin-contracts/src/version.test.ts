@@ -5,9 +5,11 @@ import {
   ADMIN_VERSION_FIELDS,
   CATALOG_DOCUMENT_VERSION,
   CURRENT_ADMIN_VERSIONS,
+  JOB_EVENT_VERSION,
   catalogDocumentVersionSchema,
   contractVersionSchema,
   isFutureVersion,
+  jobEventVersionSchema,
   refuseFutureVersion,
   type AdminVersionField,
 } from './version.js';
@@ -20,6 +22,7 @@ import {
 const SCHEMAS: Readonly<Record<AdminVersionField, typeof contractVersionSchema>> = {
   contract: contractVersionSchema,
   catalogDocument: catalogDocumentVersionSchema,
+  jobEvent: jobEventVersionSchema,
 };
 
 describe('the admin version constants', () => {
@@ -31,10 +34,13 @@ describe('the admin version constants', () => {
     }
   });
 
-  it('are exactly two, and each is owned by a named schema', () => {
-    // ADR 0023 §7 asks for two version domains and no more: a version with no
-    // artifact to own it is a number nobody can disagree over.
-    expect([...ADMIN_VERSION_FIELDS].sort()).toEqual(['catalogDocument', 'contract']);
+  it('are exactly three, and each is owned by a named schema', () => {
+    // A version with no artifact to own it is a number nobody can disagree over.
+    // The third joined in M08.2 with the artifact that needed it: the per-job
+    // event log is appended to and never rewritten, so a build reads lines
+    // written by every build before it, which the rewritten-in-place document
+    // beside it never has to do.
+    expect([...ADMIN_VERSION_FIELDS].sort()).toEqual(['catalogDocument', 'contract', 'jobEvent']);
     for (const field of ADMIN_VERSION_FIELDS) {
       expect(SCHEMAS[field].parse(CURRENT_ADMIN_VERSIONS[field])).toBe(
         CURRENT_ADMIN_VERSIONS[field],
@@ -45,6 +51,7 @@ describe('the admin version constants', () => {
   it('expose the same numbers through the map and through the constants', () => {
     expect(CURRENT_ADMIN_VERSIONS.contract).toBe(ADMIN_CONTRACT_VERSION);
     expect(CURRENT_ADMIN_VERSIONS.catalogDocument).toBe(CATALOG_DOCUMENT_VERSION);
+    expect(CURRENT_ADMIN_VERSIONS.jobEvent).toBe(JOB_EVENT_VERSION);
   });
 
   it('are frozen, so nothing can move one at runtime', () => {
@@ -100,11 +107,14 @@ describe('a future version is refused readably', () => {
     );
   });
 
-  it('names the domain that failed, so two versions cannot be confused', () => {
+  it('names the domain that failed, so three versions cannot be confused', () => {
     const contract = refuseFutureVersion('contract', ADMIN_CONTRACT_VERSION + 1, 'v');
     const document = refuseFutureVersion('catalogDocument', CATALOG_DOCUMENT_VERSION + 1, 'v');
+    const event = refuseFutureVersion('jobEvent', JOB_EVENT_VERSION + 1, 'v');
     expect(contract?.message).toContain('admin contract version');
     expect(document?.message).toContain('admin catalog document version');
+    expect(event?.message).toContain('admin job event version');
+    expect(new Set([contract?.message, document?.message, event?.message]).size).toBe(3);
   });
 
   it('refuses a version far ahead as readily as the next one', () => {
