@@ -9,11 +9,11 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `400a55258ad0ffe570f3e0d04d9e38efacb50309` |
+| Commit           | `6f9e1906f5930db724bac6f5362da3e34912f4a8` |
 | Working tree     | clean                                      |
 | Taken on         | 2026-08-21                                 |
 | Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| `npm run verify` | not run for this audit                     |
 
 ### Verification chain
 
@@ -275,8 +275,8 @@ No question the plan calls open is missing or answered in the question file.
 | Reading                                  | Value                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Workspaces                               | `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/deck-generator`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
-| Root files                               | `CLAUDE.md`, `CLAUDE_AI_LAB_AND_PLAYER_META.md`, `CLAUDE_M09_PLAY_AGAINST_AI.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                   |
-| Root Markdown beyond the three permitted | `CLAUDE_AI_LAB_AND_PLAYER_META.md`, `CLAUDE_M09_PLAY_AGAINST_AI.md`                                                                                                                                                                                                                                                           |
+| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                                                        |
+| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                                                          |
 | Architecture decision records            | 24                                                                                                                                                                                                                                                                                                                            |
 | Milestone documents                      | 9                                                                                                                                                                                                                                                                                                                             |
 
