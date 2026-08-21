@@ -9,11 +9,11 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `6f9e1906f5930db724bac6f5362da3e34912f4a8` |
+| Commit           | `c0bf4bcc504964c5653a15993d41c8f9cfd37365` |
 | Working tree     | clean                                      |
 | Taken on         | 2026-08-21                                 |
 | Node             | v24.15.0                                   |
-| `npm run verify` | not run for this audit                     |
+| `npm run verify` | passed at this commit                      |
 
 ### Verification chain
 
