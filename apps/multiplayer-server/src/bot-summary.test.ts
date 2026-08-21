@@ -349,7 +349,7 @@ function seatConfig(overrides: Partial<BotSeatConfig> = {}): BotSeatConfig {
   return {
     schemaVersion: BOT_CONFIG_SCHEMA_VERSION,
     difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
-    controller: { botId: 'bot_1', displayName: 'Bot 2' },
+    controller: { botId: 'bot_1', displayName: 'AI 2' },
     difficulty: DEFAULT_BOT_DIFFICULTY,
     styleSetting: 'value',
     style: 'value',
@@ -498,7 +498,7 @@ describe('a table whose bots wait at the same time', () => {
         { seatId: 'seat_2', config: seatConfig(), commanderId: null },
         {
           seatId: 'seat_3',
-          config: seatConfig({ controller: { botId: 'bot_2', displayName: 'Bot 3' } }),
+          config: seatConfig({ controller: { botId: 'bot_2', displayName: 'AI 3' } }),
           commanderId: null,
         },
       ],

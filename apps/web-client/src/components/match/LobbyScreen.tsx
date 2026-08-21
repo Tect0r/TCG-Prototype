@@ -212,7 +212,11 @@ export function LobbyScreen() {
                   {/* What is in the seat, said rather than inferred from the
                       absence of a disconnect tag. */}
                   {bot ? (
-                    <span className="tag tag--bot">bot</span>
+                    /* The controller, named for a player rather than for a
+                       schema: the wire discriminant is `bot` and stays `bot`,
+                       and this is the only place that fact is put into words
+                       somebody reads (M09.18). */
+                    <span className="tag tag--bot">AI opponent</span>
                   ) : (
                     <span className={seat.connected ? 'tag tag--ok' : 'tag tag--warn'}>
                       {seat.connected ? 'connected' : 'disconnected'}

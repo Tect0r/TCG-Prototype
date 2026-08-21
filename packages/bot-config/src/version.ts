@@ -117,6 +117,28 @@ const MISSING_VERSION_CODES: Readonly<Record<BotConfigVersionField, string>> = O
 });
 
 /**
+ * Whether `found` is a readable version number this build is simply too old for.
+ *
+ * Deliberately narrower than `refuseFutureVersion`, which also answers "this
+ * record declares no readable version at all". A caller standing at a decode
+ * boundary needs the two apart: a value that names a **newer build** deserves
+ * the readable refusal below, and everything else — a missing field, a string, a
+ * fraction, a zero, a negative number — is an ordinary malformed value and must
+ * keep whatever the boundary already says about malformed values. M09.18 turns
+ * the first into `protocol/bot_config_invalid` at the codec and leaves the
+ * second as `protocol/malformed_message`, and this predicate is the whole of the
+ * line between them.
+ */
+export function isFutureVersion(field: BotConfigVersionField, found: unknown): found is number {
+  return (
+    typeof found === 'number' &&
+    Number.isInteger(found) &&
+    found >= 1 &&
+    found > CURRENT_BOT_CONFIG_VERSIONS[field]
+  );
+}
+
+/**
  * The single refusal, shared by every version field.
  *
  * Returns `null` when the record is readable. A future version is an `Issue`
@@ -130,18 +152,18 @@ export function refuseFutureVersion(
   path: string,
 ): Issue | null {
   const supported = CURRENT_BOT_CONFIG_VERSIONS[field];
+  if (isFutureVersion(field, found)) {
+    return error(
+      'bot_config/unsupported_version',
+      `This record was written by a newer build (${VERSION_LABELS[field]} version ${found}; this build reads up to ${supported}). Update the application.`,
+      { path, context: { field, found, supported } },
+    );
+  }
   if (typeof found !== 'number' || !Number.isInteger(found) || found < 1) {
     return error(
       MISSING_VERSION_CODES[field],
       `This record does not declare a readable ${VERSION_LABELS[field]} version, so it cannot be read.`,
       { path },
-    );
-  }
-  if (found > supported) {
-    return error(
-      'bot_config/unsupported_version',
-      `This record was written by a newer build (${VERSION_LABELS[field]} version ${found}; this build reads up to ${supported}). Update the application.`,
-      { path, context: { field, found, supported } },
     );
   }
   return null;

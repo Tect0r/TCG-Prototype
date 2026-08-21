@@ -30,9 +30,12 @@ against.
 1. A lobby holds two to four seats, at least one human, and up to three bots.
 2. The host adds, configures, rerolls and removes bot seats before the match, and
    the configuration locks when it starts.
-3. Every bot offers three deck modes: an exact list (a shipped precon or one of
-   the host's saved decks), a deck the bot builds under a Commander the host
-   chose, or a Commander and deck the bot chooses itself.
+3. Every bot offers four deck modes: a shipped precon, one of the host's saved
+   decks, a deck the bot builds under a Commander the host chose, or a Commander
+   and deck the bot chooses itself. (Written as "three" until M09.18, which
+   grouped the two exact modes into one and so undercounted `BOT_DECK_MODES`,
+   the picker, and `DECK_MODE_SUPPORT` — all four of which have listed four
+   members since M09.1.)
 4. Difficulty, style, deck source and timing are configured independently.
 5. Bots are server-authoritative seats inside the existing match, acting through
    the same `applyAction` path a human uses, seeing exactly what a human in that
@@ -3502,10 +3505,10 @@ that the summary schema can name a seat without importing the message module tha
 imports it back: two modules whose top level _evaluates_ Zod schemas cannot import
 each other. `messages.ts` re-exports all of it, so no caller learned anything.
 
-## M09.18 — Help, provenance, and compatibility pass
+## M09.18 — Help, provenance, and compatibility pass — **done (2026-08-21)**
 
 Make the feature understandable and every artifact honest: add player help for
-adding bots, the three deck modes, privacy, difficulty versus style, timing
+adding bots, the four deck modes, privacy, difficulty versus style, timing
 percentages, bot pacing versus human timeout, and the small-pool limitation.
 Lobby, match and result surfaces name bots and controllers consistently. Bot
 configuration, deck, generator, pilot and difficulty versions, seed derivation
@@ -3519,11 +3522,254 @@ provenance round trip, stale-wording checks, and `npm run verify`.
 
 ### Checklist
 
-- [ ] Player help covers every approved control and every stated limit.
-- [ ] Consistent naming across lobby, match and result.
-- [ ] Provenance recorded wherever the artifact contract requires it.
-- [ ] Incompatible data refused, not approximated.
-- [ ] No document still says online play is human-only.
+- [x] Player help covers every approved control and every stated limit.
+- [x] Consistent naming across lobby, match and result.
+- [x] Provenance recorded wherever the artifact contract requires it.
+- [x] Incompatible data refused, not approximated.
+- [x] No document still says online play is human-only.
+
+### The help section, and the eight things it had to answer
+
+`ai_opponents` is the rulebook's nineteenth section, at order 125 — between the
+multiplayer rules and the targeting rules, because an AI opponent is a seat at
+the table rather than a mode beside the game. It is in `REQUIRED_SECTIONS`, so
+the book cannot ship without it, and it answers the eight questions the tranche
+named: how a host adds one, the four deck modes, what one can see, difficulty
+against style, the timing percentages, what 50% is half **of**, the difference
+between an AI opponent's pacing and any deadline on a person, and why two
+generated decks look alike.
+
+**Every claim in it is one this build enforces.** The privacy paragraph is the
+narrowest and was written from `#observationFor` and `playerView`: a bot is
+handed the redacted `PlayerView` its seat would send a human and the engine's
+legal actions, and `playerView` reveals a hand only to its own viewer, so "it
+does not see your hand — it sees how many cards you are holding" is a statement
+about a line of code rather than a promise. Nothing claims an AI opponent is
+prevented from cheating by policy; the section says it is given a seat's view,
+which is the thing that is true.
+
+Three numbers come out of live configuration rather than out of the prose:
+`{matchConfig.maxPlayers}`, `{deckRules.deckSize}`, and
+`{matchConfig.disconnectGraceSeconds}` in the callout that says a budget is not
+a clock on the player. The small-pool paragraph deliberately states **no** pool
+size: the lobby prints the real numbers for the Commander actually chosen, and a
+number written here would be a second answer that goes stale when a card is
+added.
+
+The regression test asserts claims rather than prose. Difficulties and styles are
+read from `AVAILABLE_DIFFICULTIES` and `BOT_STYLES`, so one added without help
+text fails there; the grace window and the deck size are read from the same
+configuration the page resolves; and the section is required to be reachable both
+from the table of contents and by searching "ai opponent", "bot", "difficulty"
+and "pacing" — the words a player types, including the internal one, because a
+search term is not a label. The section can be rewritten without touching the
+test; what it cannot do is quietly stop saying one of these things.
+
+### The naming boundary, stated once and tested from both sides
+
+**"AI opponent" everywhere a person reads. "bot" everywhere a machine does.** One
+vocabulary would have had to pick an audience to be wrong for: a lobby that calls
+a seat a "bot" is jargon, and a wire that called it an `ai_opponent` would be a
+protocol break bought with a rename.
+
+The player's side moved: the panel heading, the seat tag, every field label, the
+add and paste controls, the pacing budget labels and their explanations, the
+post-match pacing summary, the revealed-deck heading, and every sentence inside
+them. So did `defaultBotDisplayName`, which now mints `AI 2` rather than `Bot 2`
+— it is the one identifier the **server** creates that a player reads, so it
+belongs on the player's side even though `botIdFor` beside it does not move.
+
+The machine's side did not move at all. `add_bot`, `update_bot`, `reroll_bot`,
+`remove_bot` and `set_bot_pacing` are the messages they were; `SeatController` is
+still `'human' | 'bot'`; `lobbySeatViewSchema` still discriminates on
+`controller`; every schema, error code, log key and provenance field keeps its
+name. `PROTOCOL_VERSION` therefore does not move, which is the point of drawing
+the line where it is drawn.
+
+**Controller provenance was re-checked rather than rebuilt.** M09.1 made a seat's
+controller explicit and stored rather than inferred, and that is still the whole
+answer: `SEAT_CONTROLLERS` is `['human', 'bot']`, `BotSeatConfig.controller` is
+the identity half, `publicBotSeatOf` is the only route to the public projection,
+and `FIELDS_A_BOT_CONTROLLER_NEVER_HAS` keeps a bot from acquiring a connection
+identity by type. Nothing was added, because nothing was missing.
+
+**No tactical-profile identifier can reach a player, and the reason is
+structural.** `TACTICAL_PROFILE_IDS` lives in `@tcg/bot-interface`, which the web
+client does not depend on and must not; `createBotPilot` resolves a profile
+server-side and the pilot's `id` is the **style's** weight vector — `aggressive`,
+`defensive`, `value` — so the `pilotId` a match summary publishes is a word the
+lobby already shows. A test asserts `hard_tactical` never reaches the page, and a
+second asserts the client's manifest does not list the package that owns the
+name. The second is the stronger one: a profile added over there cannot leak
+here, because there is no import to leak through.
+
+### Two deferred compatibility findings, closed together
+
+M09.3 and M09.11 recorded the same defect in different words and both named this
+tranche as its owner. `botSetupSchema` bounds `schemaVersion` and
+`difficultyRegistryVersion` by this build's constants, and
+`botPacingBudgetsSchema` makes `pacingVersion` a literal — so a record from a
+**newer build** has always been refused, correctly. What it has never had is a
+reason: `clientMessageSchema` failed, the codec said
+`protocol/malformed_message`, and a host running next month's client was told
+their message was gibberish rather than that this server was old.
+
+`decodeClientMessage` now takes an `explain` hook, consulted **only on a frame
+that has already failed**, so nothing here can refuse a message this build would
+otherwise have accepted. The one implementation, `botConfigVersionRefusal`,
+recognises exactly one cause: `add_bot` and `update_bot` carrying a future
+`setup.schemaVersion` or `setup.difficultyRegistryVersion`, and `set_bot_pacing`
+carrying a future `budgets.pacingVersion`. It answers with
+`botLobbyError('config_invalid', …)` — the same `protocol/bot_config_invalid`
+the server already gives when `readBotSeatConfig` or `readBotPacingBudgets`
+refuses — carrying the same `refuseFutureVersion` sentence those readers produce.
+There is one wording for "this was written by a newer build" and it is still the
+only one.
+
+**The narrowness is the load-bearing half.** `isFutureVersion` is new and is
+deliberately narrower than `refuseFutureVersion`: it is true only of an integer
+at or above 1 that exceeds what this build reads. A missing version, a string, a
+fraction, a zero and a negative are ordinary malformed values and keep
+`protocol/malformed_message`; so does every other failure in the message — an
+out-of-range budget, an unknown member, a bad seat ID, an unrelated message type,
+invalid JSON. A compatibility refusal that fired on ordinary malformed input
+would tell a host to update an application that is already current, which is
+worse than the wording it replaced. Both halves are driven for all three message
+types and at the boundary — `current` accepted, `current + 1` refused, both read
+off the constants so a future bump moves the boundary rather than the test.
+
+Version checks keep the priority `readBotSeatConfig` already gave them: a message
+that is both from the future **and** otherwise unreadable is told it is from the
+future, rather than handed complaints about fields this build has not learned
+about yet.
+
+### The frozen deck list has a ceiling, and it is not a new number
+
+`botDeckSnapshotSchema.cardIds` was bounded below and not above, so a snapshot
+could carry an arbitrarily long array through the codec and be refused only later
+by `validateDeck`. The ceiling is `MAX_FORMAT_DECK_SIZE`, extracted from the
+`250` that has been the bound on `deckConstruction.size` since the format schema
+was written and exported from `@tcg/card-data` rather than restated: this schema
+and the format schema must not be able to disagree about how long a deck list
+can be. It is the largest deck **any** format this build can read may require, so
+a longer list is a malformed snapshot rather than an illegal deck, and it is
+classified as one — `too_big` on `cardIds`, a readable message naming the limit,
+and `protocol/malformed_message` at the wire.
+
+The bound refuses nothing a host could legitimately send, and the tests say so
+rather than assuming it. `precon_wave_1` asks for exactly 40 singleton cards, so
+its legal decks are nowhere near the ceiling; the client's freeze path runs
+`validateDeck` first, so an over-long saved deck is refused on the format rule
+with a sentence the host can act on, and the schema is the backstop behind that
+rather than the first thing they meet. A format asking for more than
+`MAX_FORMAT_DECK_SIZE` fails to parse, which is the claim the whole ceiling rests
+on and is asserted directly.
+
+### Versions — every one deliberately unchanged
+
+**`PROTOCOL_VERSION` stays 11.** No message gained, lost or changed a member.
+`protocol/bot_config_invalid` has been in `PROTOCOL_ERROR_CODES` since M09.2, so
+every build that can complete a handshake with this one already knows the code
+the refusal arrives under; what changed is which of two existing codes a
+**already-refused** message earns. A version exists to stop two builds
+misunderstanding a shape, and there is no shape here to misunderstand.
+
+**`BOT_CONFIG_SCHEMA_VERSION` stays 2, and this is the one that needed
+arguing.** Narrowing `cardIds` shrinks the set of records this build accepts,
+which looks like exactly what a version is for — but bumping could not express
+it. The constant's whole contract is "refuse a record from a **newer** build";
+moving it to 3 would change which future versions are refused and would not make
+a single over-long list readable or unreadable anywhere. The compatibility
+question it leaves is whether an older build could have produced a record this
+one now refuses, and it could not have produced a **playable** one: no format
+this build can read may require more than `MAX_FORMAT_DECK_SIZE` cards, so every
+list past the ceiling was already illegal and already refused, one step later and
+under `protocol/bot_deck_illegal` instead of `protocol/malformed_message`. And
+nothing persists a bot configuration — it lives in a lobby's memory and on the
+wire, as `version.ts` has recorded since M09.16 — so there is no stored record to
+migrate either way.
+
+**`PACING_CONFIG_VERSION` stays 1** — the budget shape and the
+percentage-to-delay calculation are untouched, and a better error message about a
+version is not a change to what the version means. **`DIFFICULTY_REGISTRY_VERSION`
+stays 3**: no difficulty appeared, disappeared or changed status.
+**`BOT_SUMMARY_SCHEMA_VERSION` stays 1**: the summary's shape is exactly what
+M09.17 wrote, and no provenance field was added to it.
+
+**`MATCH_SCHEMA_VERSION`, `RULES_VERSION`, `CARD_SCHEMA_VERSION`,
+`DECK_SCHEMA_VERSION`, `FORMAT_SCHEMA_VERSION`, `SEED_DERIVATION_VERSION` and
+`DECK_GENERATOR_VERSION` all stay.** No engine, card, deck, format or generator
+behaviour changed. `MAX_FORMAT_DECK_SIZE` is the same `250` `deckConstruction`
+has always been bounded by, given a name — a format that parsed yesterday parses
+today, byte for byte. A rulebook section is content, and content is not a rule.
+
+**Older and newer builds stay correctly separated**, and by the mechanisms that
+already existed: the handshake compares `PROTOCOL_VERSION`, `CARD_SCHEMA_VERSION`
+and `RULES_VERSION`; each bot artifact carries its own version and is refused
+through one `refuseFutureVersion`; and this tranche made that refusal _legible_
+at one more boundary without moving any of the lines. A test drives a v1
+configuration through `add_bot` and requires it to decode, so the "older records
+keep working" half is asserted rather than assumed.
+
+### Stale wording, corrected only where behaviour contradicts it
+
+The README's play section now says a seat need not hold a person, and describes
+adding AI opponents, the four deck modes, difficulty against style, the timing
+dial, the privacy boundary and the small-pool limit — while keeping every word of
+the invite-code, LAN and TLS guidance, and keeping **no matchmaking** exactly as
+prominent as it was.
+
+The milestone's own Objective said "three deck modes" and then enumerated four;
+`BOT_DECK_MODES`, `DECK_MODE_SUPPORT` and the picker have all listed four since
+M09.1, so the sentence was corrected and the correction recorded in it. M09.18's
+scope paragraph said "three" for the same reason and now says four.
+
+Nothing else was changed. The seven categories were swept — AI opponent against
+bot, human against bot provenance, difficulty against style, pacing against
+timeout, deck modes, privacy, planned against selectable difficulties — and the
+remaining hits are all **historical records**, which are accurate as history and
+are labelled as such: the "Revalidated baseline — read from code at `1bcf615`"
+section says online lobbies were human-only, and they were, on 2026-08-14; the
+M09.5 and M09.13 records say Hard was absent, and it was, in those tranches. The
+panel's planned-difficulty sentence is read from `PLANNED_DIFFICULTIES`, which
+M09.20 emptied, so it renders nothing without anybody editing it — exactly as
+M09.16 designed it to.
+
+### Findings recorded rather than fixed
+
+- **A match summary cannot say how many people were at the table.**
+  `botMatchSummarySchema` lists bot seats and `totals.bots`, and carries no
+  count of human seats — so a reader holding only an exported file cannot tell
+  1H+1B from 3H+1B. Controller provenance is complete everywhere it is _live_
+  (`SeatController` on every lobby seat view), and the gap is only in the durable
+  artifact. It is recorded rather than closed because closing it means adding a
+  member to a strict schema M09.17 finished two tranches ago, which would move
+  `BOT_SUMMARY_SCHEMA_VERSION` 1 → 2 and make every v1 note unreadable unless the
+  member were optional — a shape decision belonging to whoever next opens that
+  record, not to a help-and-naming pass.
+- **`savedDeckSchema.cards` is still unbounded.** The ceiling added here is on
+  the bot snapshot, which is the list this tranche was asked about; a person's
+  own saved deck can still hold an arbitrarily long array and is refused by
+  `validateDeck` on the format's exact size, exactly as before. The same
+  `MAX_FORMAT_DECK_SIZE` would serve it, and the change is deliberately not made
+  here because `submit_deck` is not a bot path and widening the tranche to reach
+  it would put a deck-builder change in a help pass.
+- **The external brief still says "three deck modes".**
+  `CLAUDE_M09_PLAY_AGAINST_AI.md` is the brief as it was given rather than a
+  repository-owned scope document, and CLAUDE.md places detailed scope in exactly
+  one file under `docs/milestones/`. It is left as the input it is, and the
+  correction lives in the milestone.
+- **The naming sweep is bounded to the M09 surfaces and says so.** The AI
+  Spectator still calls its seats bots, in its own screens and its own fixtures,
+  because a simulated pilot in a spectator run is not an AI opponent at somebody's
+  lobby table. Renaming it would have been cosmetic churn in a feature this
+  tranche was told not to touch.
+- **The rulebook's "AI opponent" wording is not derived from a registry.** Unlike
+  the difficulty and style lists, the phrase itself is prose in
+  `rulebook.json`. Nothing enforces that a future control named in the lobby also
+  appears in the help section; the regression test pins the claims that exist
+  rather than proving the set is complete, and there is no mechanism that could
+  prove the latter without a vocabulary the help content does not have.
 
 ## M09.19 — End-to-end hardening and milestone acceptance
 

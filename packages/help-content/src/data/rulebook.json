@@ -773,6 +773,149 @@
       ]
     },
     {
+      "id": "ai_opponents",
+      "title": "Playing against an AI opponent",
+      "order": 125,
+      "searchTerms": [
+        "ai",
+        "ai opponent",
+        "bot",
+        "computer",
+        "solo",
+        "practice",
+        "difficulty",
+        "easy",
+        "normal",
+        "hard",
+        "style",
+        "aggressive",
+        "defensive",
+        "value",
+        "automatic",
+        "timing",
+        "pacing",
+        "delay",
+        "privacy",
+        "reroll"
+      ],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "You do not need another person to play. Any free seat at your table can be filled by an AI opponent, which plays through the same server, under the same rules, with the same legal actions you have. At the board it is an ordinary opponent: it takes turns, attacks, blocks, answers Reaction windows, and can be defeated or eliminated the same way anyone else can."
+        },
+        {
+          "type": "heading",
+          "text": "Adding one"
+        },
+        {
+          "type": "bulletList",
+          "items": [
+            "Only the player who created the lobby can add, change or remove an AI opponent, and only before the match starts. Once the match starts, every seat is locked as it stands.",
+            "You do not choose which seat it takes. It is placed in the next free seat, and it never takes a seat a person is already sitting in.",
+            "A table can hold one fewer AI opponent than it has seats, so at least one person is always playing. On a full table of {matchConfig.maxPlayers} that is three of them.",
+            "Removing one before the match frees its seat again, for another AI opponent or for a person.",
+            "A lobby exists for the people in it. If the last person leaves, it closes and its AI opponents go with it."
+          ]
+        },
+        {
+          "type": "heading",
+          "text": "Choosing its deck"
+        },
+        {
+          "type": "paragraph",
+          "text": "There are four ways to decide what an AI opponent brings. Whichever you choose, its deck is checked against the same format rules and the same card pool your own deck is, and an illegal one is refused with the same reasons yours would be."
+        },
+        {
+          "type": "bulletList",
+          "items": [
+            "A built-in deck. One of the preconstructed decks that ship with the game, chosen by name. Everyone at the table can see which one it is, because everyone already has the list.",
+            "One of your saved decks. The contents are frozen at the moment you choose them. Editing that deck in the Deck Builder afterwards changes your copy and not the one in play; the lobby tells you when the two have come apart and offers to freeze it again.",
+            "A deck built for a Commander you pick. You choose the Commander from the ones the format allows, and the server builds a legal deck under it. You can reroll for a different one until the match starts.",
+            "A Commander and deck the AI picks. It chooses the Commander as well, from the same list, and builds the deck under it. Rerolling this mode can change the Commander too."
+          ]
+        },
+        {
+          "type": "heading",
+          "text": "What an AI opponent can see"
+        },
+        {
+          "type": "paragraph",
+          "text": "It is handed exactly what a person sitting in that seat would be handed, and nothing else: its own hand, the public board, the public log, and the list of actions the rules currently allow it. It reads the same view the server would send a human in that seat, so the hidden information in your game is hidden from it for the same reason it is hidden from anybody else."
+        },
+        {
+          "type": "bulletList",
+          "items": [
+            "It does not see your hand. It sees how many cards you are holding, exactly as you see how many it is holding.",
+            "It does not see the contents or the order of your deck, and it cannot look ahead at its own.",
+            "It is given no extra Energy, no extra cards, no extra time and no knowledge of what has not happened yet. Difficulty changes how it chooses, never what it is allowed to know.",
+            "Its own deck list is private from the other seats while the match runs, in every mode except a built-in deck. Its Commander is always public, so you always know what you are sitting down against.",
+            "When the match ends, every AI deck list is revealed to everyone at the table and can be saved as a file.",
+            "If you chose the deck yourself, you know what is in it. The privacy is about what the other seats learn, not about keeping a secret from the person who set it up."
+          ]
+        },
+        {
+          "type": "heading",
+          "text": "Difficulty and style are two different settings"
+        },
+        {
+          "type": "paragraph",
+          "text": "Difficulty is how well an AI opponent chooses. Style is what it prefers when several choices look reasonable. They are set separately, neither one is a disguised version of the other, and both are shown beside the seat so nothing about the opponent is a surprise."
+        },
+        {
+          "type": "bulletList",
+          "items": [
+            "Easy, Normal and Hard are the three difficulties, and all three can be chosen. Easy makes bounded, deliberately imperfect choices from the same legal options. Normal takes the best option its scoring finds. Hard scores the same options more carefully than Normal does.",
+            "Aggressive prices damage and pressure above its own board safety.",
+            "Defensive prices its own survival and its blockers above racing you.",
+            "Value prices card advantage and board value above either of those.",
+            "Automatic is not a fourth style: it is the setting the style control starts on. It reads the deck plan the chosen Commander was authored with and picks one of the three above, and the seat then shows both the style it is flying and the fact that nobody chose it by hand."
+          ]
+        },
+        {
+          "type": "heading",
+          "text": "How long it waits before answering"
+        },
+        {
+          "type": "paragraph",
+          "text": "An AI opponent decides immediately. The timing setting is what makes it wait before submitting, so a match can be played at a pace that feels like sitting across from someone rather than at the speed the software is actually capable of. It changes nothing about what the opponent decides: the same match played at a different timing setting produces the same decisions."
+        },
+        {
+          "type": "bulletList",
+          "items": [
+            "Timing is set for each AI opponent separately, as a percentage in steps of ten from 0% to 100%. At 0% it answers as soon as it is asked.",
+            "The percentage is a share of the table’s budget rather than a fixed number of seconds. The table has two budgets: a longer one for an ordinary decision or a choice, and a shorter one for a Reaction window.",
+            "50% therefore means half of whichever of those two budgets applies to what the opponent has just been asked — half the decision budget for a decision or a choice, half the Reaction budget in a Reaction window.",
+            "100% stops a little short of the whole budget, because the opponent still has to decide and submit inside it. The lobby prints the seconds every percentage works out to, so you never have to do that arithmetic.",
+            "Reactions can be given their own percentage. Without that, they use the same one as everything else.",
+            "The two budgets belong to the table rather than to one opponent, only the host can change them, and they lock when the match starts."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "Nothing here puts a clock on you",
+          "text": "These budgets pace AI opponents and nothing else. There is no time limit on your turn, your phase, your choices or your Reaction windows, and no setting anywhere makes one — an AI opponent waiting for 30 seconds is not a rule saying that you have 30 seconds. The only deadline in a match is the reconnection window after you lose your connection: {matchConfig.disconnectGraceSeconds} seconds to come back before that seat is timed out."
+        },
+        {
+          "type": "heading",
+          "text": "Why two generated decks look so alike"
+        },
+        {
+          "type": "paragraph",
+          "text": "The two generated modes build from the cards this format leaves legal under the chosen Commander, and the current card set is small: under any one Commander there are only slightly more legal cards than a {deckRules.deckSize}-card deck needs. Almost every card is therefore forced in, and two decks generated under the same Commander come out nearly identical."
+        },
+        {
+          "type": "bulletList",
+          "items": [
+            "The lobby prints the real numbers for the Commander you picked: how many cards the format leaves legal, how many any legal deck has to include, and how many a reroll can actually change.",
+            "A reroll that changes one or two cards is not a failure. Under a pool this small there is nothing else for it to choose.",
+            "Letting the AI pick the Commander as well gives a reroll more room, because it can land on a different Commander and so on a different pool.",
+            "For a genuinely different opponent today, give it a built-in deck or one of your own rather than a generated one."
+          ]
+        }
+      ]
+    },
+    {
       "id": "choices_and_targets",
       "title": "Targets, choices and how effects resolve",
       "order": 130,

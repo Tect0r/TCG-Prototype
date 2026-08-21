@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { DEFAULT_BOT_PACING_BUDGETS } from '@tcg/bot-config';
+import {
+  AVAILABLE_DIFFICULTIES,
+  BOT_STYLES,
+  DEFAULT_BOT_PACING_BUDGETS,
+  MAX_PACING_PERCENT,
+  botStyleDefinition,
+  difficultyDefinition,
+} from '@tcg/bot-config';
 import { formatDatabase } from '@tcg/card-data';
-import { DECK_SCHEMA_VERSION, DECK_STORAGE_KEY, MemoryStore, type SavedDeck } from '@tcg/deck';
+import {
+  DECK_SCHEMA_VERSION,
+  DECK_STORAGE_KEY,
+  DEFAULT_DECK_FORMAT,
+  MemoryStore,
+  type SavedDeck,
+} from '@tcg/deck';
 import { DEFAULT_RULES_CONFIG } from '@tcg/rules-engine';
 import {
   CURRENT_VERSIONS,
@@ -169,6 +182,13 @@ async function openBoard(state: MatchState = playingState()) {
 
 /* --------------------------------------------------------------- rulebook */
 
+/** One rulebook section's rendered text, so a claim is checked where it lives. */
+function sectionText(dialog: HTMLElement, sectionId = 'ai_opponents'): string {
+  const section = dialog.querySelector(`#rulebook-${sectionId}`);
+  if (!section) throw new Error(`The rulebook has no "${sectionId}" section.`);
+  return section.textContent ?? '';
+}
+
 describe('lobby rulebook', () => {
   it('opens from the lobby without leaving it', async () => {
     const harness = await openLobby();
@@ -198,6 +218,7 @@ describe('lobby rulebook', () => {
       'Damage, defeat and elimination',
       'Your Commander',
       'Three and four player games',
+      'Playing against an AI opponent',
       'Targets, choices and how effects resolve',
       'Keywords',
       'Glossary',
@@ -317,6 +338,138 @@ describe('lobby rulebook', () => {
 });
 
 /* ------------------------------------------------------- card inspection */
+
+/**
+ * The AI-opponent section of the rulebook (M09.18).
+ *
+ * A player can put an AI opponent in any free seat, and until this section
+ * existed the book could not answer a single question about one. The assertions
+ * below are about **claims**, not prose: each one is either read from the
+ * registry that owns the fact or is one of the distinctions the tranche exists
+ * to make — difficulty against style, pacing against a timeout, a percentage
+ * against a number of seconds. Nothing here snapshots the wording, so the
+ * section can be rewritten without this test needing an edit; what it cannot do
+ * is quietly stop saying one of these things.
+ */
+describe('the rulebook on AI opponents', () => {
+  async function openSection() {
+    const harness = await openLobby();
+    await harness.user.click(screen.getByRole('button', { name: 'Rulebook' }));
+    const dialog = await screen.findByRole('dialog', { name: 'How to Play' });
+    return { harness, dialog };
+  }
+
+  it('is routed to from the table of contents', async () => {
+    const { dialog } = await openSection();
+
+    const nav = within(dialog).getByRole('navigation', { name: 'Rulebook contents' });
+    expect(
+      within(nav).getByRole('button', { name: 'Playing against an AI opponent' }),
+    ).toBeInTheDocument();
+
+    // And the section itself is on the page, under the heading the contents name.
+    const heading = within(dialog).getByRole('heading', {
+      name: 'Playing against an AI opponent',
+      level: 3,
+    });
+    expect(heading.closest('section')?.id).toBe('rulebook-ai_opponents');
+  });
+
+  it('is found by searching for what a player would actually type', async () => {
+    const { harness, dialog } = await openSection();
+    const search = within(dialog).getByRole('searchbox');
+
+    for (const term of ['ai opponent', 'bot', 'difficulty', 'pacing']) {
+      await harness.user.clear(search);
+      await harness.user.type(search, term);
+      const nav = within(dialog).getByRole('navigation', { name: 'Rulebook contents' });
+      await waitFor(() =>
+        expect(
+          within(nav).getByRole('button', { name: 'Playing against an AI opponent' }),
+          `searching "${term}" did not find the section`,
+        ).toBeInTheDocument(),
+      );
+    }
+  });
+
+  it('names all four deck-selection modes', async () => {
+    const { dialog } = await openSection();
+    const text = sectionText(dialog);
+
+    expect(text).toContain('A built-in deck.');
+    expect(text).toContain('One of your saved decks.');
+    expect(text).toContain('A deck built for a Commander you pick.');
+    expect(text).toContain('A Commander and deck the AI picks.');
+  });
+
+  it('keeps difficulty and style apart, and names every one of each', async () => {
+    const { dialog } = await openSection();
+    const text = sectionText(dialog);
+
+    // Read from the registries rather than listed here, so a difficulty or a
+    // style appearing without help text fails this rather than passing quietly.
+    for (const difficulty of AVAILABLE_DIFFICULTIES) {
+      expect(text, `${difficulty} is missing`).toContain(difficultyDefinition(difficulty).label);
+    }
+    for (const style of BOT_STYLES) {
+      expect(text, `${style} is missing`).toContain(botStyleDefinition(style).label);
+    }
+
+    // The distinction itself, which is the reason the two are in one section.
+    expect(text).toContain('Difficulty is how well an AI opponent chooses');
+    expect(text).toContain('Style is what it prefers');
+    // Automatic is described as a setting rather than as a fourth style.
+    expect(text).toContain('Automatic is not a fourth style');
+  });
+
+  it('says a percentage is a share of a budget, and what 50% is half of', async () => {
+    const { dialog } = await openSection();
+    const text = sectionText(dialog);
+
+    expect(text).toContain(`0% to ${MAX_PACING_PERCENT}%`);
+    expect(text).toContain('50%');
+    expect(text).toMatch(/50% therefore means half of whichever of those two budgets/);
+    // The two budgets it can be half of, named as the pair they are.
+    expect(text).toContain('an ordinary decision or a choice');
+    expect(text).toContain('a Reaction window');
+    // And why 100% is not the whole of one.
+    expect(text).toContain(`${MAX_PACING_PERCENT}% stops a little short`);
+  });
+
+  it('separates AI pacing from any deadline on the player', async () => {
+    const { dialog } = await openSection();
+    const text = sectionText(dialog);
+
+    expect(text).toContain('There is no time limit on your turn');
+    // The one real deadline, with the live value rather than a written number.
+    expect(text).toContain(`${DEFAULT_RULES_CONFIG.disconnectGraceSeconds} seconds to come back`);
+    // No unresolved reference reached the page.
+    expect(text).not.toMatch(/\{matchConfig|\{deckRules/);
+  });
+
+  it('states the hidden-information boundary the server actually enforces', async () => {
+    const { dialog } = await openSection();
+    const text = sectionText(dialog);
+
+    expect(text).toContain('It does not see your hand.');
+    expect(text).toContain('does not see the contents or the order of your deck');
+    expect(text).toContain('no extra Energy, no extra cards, no extra time');
+    // And the deck-privacy rule, in both directions: private during, revealed after.
+    expect(text).toContain('private from the other seats while the match runs');
+    expect(text).toContain('Its Commander is always public');
+    expect(text).toContain('When the match ends, every AI deck list is revealed');
+  });
+
+  it('warns about the small card pool rather than implying variety', async () => {
+    const { dialog } = await openSection();
+    const text = sectionText(dialog);
+
+    expect(text).toContain('come out nearly identical');
+    expect(text).toContain('A reroll that changes one or two cards is not a failure');
+    // The deck size is the live one, so the sentence cannot outlive the format.
+    expect(text).toContain(`${DEFAULT_DECK_FORMAT.deckSize}-card deck`);
+  });
+});
 
 describe('in-match card inspection', () => {
   it('is off by default and leaves card clicks alone', async () => {

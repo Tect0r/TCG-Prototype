@@ -61,8 +61,8 @@ export function BotPacingSummary() {
   const budgets = lobby.botPacing;
 
   return (
-    <section className="board__pacing" aria-label="Bot pacing">
-      <h3>Bot pacing this match</h3>
+    <section className="board__pacing" aria-label="AI opponent pacing">
+      <h3>AI opponent pacing this match</h3>
       <p className="board__pacing-head">
         Budgets locked at start: {budgets.ordinarySeconds} s for a decision or a choice,{' '}
         {budgets.reactionSeconds} s for a Reaction window. {PACING_IS_NOT_A_HUMAN_TIMER}
@@ -77,8 +77,8 @@ export function BotPacingSummary() {
       </ul>
       <p className="board__pacing-head">
         {bots.every((seat) => seatIsInstant(seat.bot.pacing))
-          ? `${bots.length === 1 ? 'This bot was' : 'These bots were'} set to answer immediately, so the match waited for nothing.`
-          : `${bots.length === 1 ? 'This bot waited' : 'These bots waited'} for the times above before each decision.`}
+          ? `${bots.length === 1 ? 'This AI opponent was' : 'These AI opponents were'} set to answer immediately, so the match waited for nothing.`
+          : `${bots.length === 1 ? 'This AI opponent waited' : 'These AI opponents waited'} for the times above before each decision.`}
       </p>
 
       {botMatchSummary && <MeasuredSummary summary={botMatchSummary} />}
@@ -94,10 +94,10 @@ function MeasuredSummary({ summary }: { readonly summary: BotMatchSummary }) {
     <div className="board__pacing-measured" aria-label="Pacing summary">
       <h4>What it cost</h4>
       <p className="board__pacing-head">
-        The match lasted {durationLabel(clock.matchDurationMs)} on the clock. Bots were waiting for{' '}
-        {durationLabel(clock.botPacingMs)} of it
-        {clock.botPacingPercent === null ? '' : ` — ${clock.botPacingPercent}%`}, and the per-bot
-        total was {durationLabel(clock.botWaitSumMs)}.
+        The match lasted {durationLabel(clock.matchDurationMs)} on the clock. AI opponents were
+        waiting for {durationLabel(clock.botPacingMs)} of it
+        {clock.botPacingPercent === null ? '' : ` — ${clock.botPacingPercent}%`}, and the
+        per-opponent total was {durationLabel(clock.botWaitSumMs)}.
       </p>
       {/* Deliberately its own sentence rather than a column beside the seconds:
           engine progress and wall-clock time are separate measurements, and a
@@ -108,7 +108,7 @@ function MeasuredSummary({ summary }: { readonly summary: BotMatchSummary }) {
         sequence {engine.sequence}. Those are turns and actions, not seconds.
       </p>
       <p className="board__pacing-head">
-        {totals.decisions} bot {totals.decisions === 1 ? 'decision' : 'decisions'} in total:{' '}
+        {totals.decisions} AI {totals.decisions === 1 ? 'decision' : 'decisions'} in total:{' '}
         {SUMMARY_CATEGORY_ORDER.map(
           (category) =>
             `${totals.decisionsByCategory[category]} in ${DECISION_CATEGORY_LABELS[category]}`,
@@ -125,7 +125,7 @@ function MeasuredSummary({ summary }: { readonly summary: BotMatchSummary }) {
       {(summary.stalled || summary.crashed) && (
         <p className="board__pacing-head" role="status">
           {summary.stalled ? `Stalled: ${summary.stalled}. ` : ''}
-          {summary.crashed ? `The bot runner stopped: ${summary.crashed}.` : ''}
+          {summary.crashed ? `The AI opponents stopped running: ${summary.crashed}.` : ''}
         </p>
       )}
 

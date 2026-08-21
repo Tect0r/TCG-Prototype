@@ -372,7 +372,7 @@ describe('difficulty and style remain independent at a live seat', () => {
     const easy = createBotPilot({
       schemaVersion: BOT_CONFIG_SCHEMA_VERSION,
       difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
-      controller: { botId: 'bot_1', displayName: 'Bot 2' },
+      controller: { botId: 'bot_1', displayName: 'AI 2' },
       difficulty: 'easy',
       styleSetting: 'defensive',
       style: 'defensive',
@@ -382,7 +382,7 @@ describe('difficulty and style remain independent at a live seat', () => {
     const normal = createBotPilot({
       schemaVersion: BOT_CONFIG_SCHEMA_VERSION,
       difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
-      controller: { botId: 'bot_1', displayName: 'Bot 2' },
+      controller: { botId: 'bot_1', displayName: 'AI 2' },
       difficulty: 'normal',
       styleSetting: 'defensive',
       style: 'defensive',

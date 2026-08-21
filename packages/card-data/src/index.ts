@@ -153,6 +153,7 @@ export {
 
 export {
   FORMAT_SCHEMA_VERSION,
+  MAX_FORMAT_DECK_SIZE,
   formatIdSchema,
   deckConstructionSchema,
   playFormatSchema,

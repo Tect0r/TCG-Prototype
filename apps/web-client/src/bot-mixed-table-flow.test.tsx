@@ -208,7 +208,7 @@ async function enterLobby(harness: Harness, view: LobbyView): Promise<void> {
   await screen.findByText(view.inviteCode);
 }
 
-const panel = (): HTMLElement => screen.getByLabelText('Bot opponents');
+const panel = (): HTMLElement => screen.getByLabelText('AI opponents');
 
 /* ----------------------------------------------------------- three named forms */
 
@@ -218,7 +218,7 @@ describe('a table holding several bots', () => {
     await enterLobby(harness, mixedLobby(3));
 
     for (const seat of [2, 3, 4]) {
-      const form = screen.getByLabelText(`Bot in seat ${seat}`);
+      const form = screen.getByLabelText(`AI opponent in seat ${seat}`);
       expect(within(form).getByLabelText(`Seat ${seat} deck`)).toBeInTheDocument();
       expect(within(form).getByLabelText(`Seat ${seat} difficulty`)).toBeInTheDocument();
       expect(within(form).getByLabelText(`Seat ${seat} style`)).toBeInTheDocument();
@@ -229,12 +229,12 @@ describe('a table holding several bots', () => {
     }
     // The unscoped names belong to the form for the *next* bot and to nothing
     // else, so no seated bot's control is called "Bot deck".
-    const adding = screen.getByLabelText('Add a bot');
-    expect(within(adding).getByLabelText('Bot deck')).toBeInTheDocument();
+    const adding = screen.getByLabelText('Add an AI opponent');
+    expect(within(adding).getByLabelText('AI opponent deck')).toBeInTheDocument();
     for (const seat of [2, 3, 4]) {
-      const form = screen.getByLabelText(`Bot in seat ${seat}`);
-      expect(within(form).queryByLabelText('Bot deck')).not.toBeInTheDocument();
-      expect(within(form).queryByLabelText('Bot style')).not.toBeInTheDocument();
+      const form = screen.getByLabelText(`AI opponent in seat ${seat}`);
+      expect(within(form).queryByLabelText('AI opponent deck')).not.toBeInTheDocument();
+      expect(within(form).queryByLabelText('AI opponent style')).not.toBeInTheDocument();
     }
   });
 
@@ -288,11 +288,11 @@ describe('a table holding several bots', () => {
       ]),
     });
 
-    expect(await screen.findByLabelText('Bot in seat 2')).toBeInTheDocument();
-    expect(screen.getByLabelText('Bot in seat 4')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Bot in seat 3')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('AI opponent in seat 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('AI opponent in seat 4')).toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent in seat 3')).not.toBeInTheDocument();
     // A seat came free, so there is somewhere to put another bot again.
-    expect(screen.getByRole('button', { name: 'Add a bot' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).not.toBeDisabled();
   });
 });
 
@@ -303,13 +303,16 @@ describe('at most three bots, and never a table without a person', () => {
     const harness = renderApp();
     await enterLobby(harness, mixedLobby(1));
 
-    const add = screen.getByRole('button', { name: 'Add a bot' });
+    const add = screen.getByRole('button', { name: 'Add an AI opponent' });
     expect(add).not.toBeDisabled();
     // The form for the next bot keeps the unscoped names: it belongs to no seat
     // yet, because the server is what decides which one it lands in.
-    expect(screen.getByLabelText('Bot deck')).toBeInTheDocument();
+    expect(screen.getByLabelText('AI opponent deck')).toBeInTheDocument();
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot deck'), 'precon_grave_sacrifice');
+    await harness.user.selectOptions(
+      screen.getByLabelText('AI opponent deck'),
+      'precon_grave_sacrifice',
+    );
     await harness.user.click(add);
 
     const sent = harness.transport().last('add_bot');
@@ -330,7 +333,7 @@ describe('at most three bots, and never a table without a person', () => {
     // full table: a control that vanishes leaves the host guessing why.
     expect(within(panel()).getByText(/at most 3 bots/)).toBeInTheDocument();
     expect(within(panel()).getByText(/at least one seat always belongs to a person/)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Add a bot' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).toBeDisabled();
   });
 
   it('distinguishes a full table from the bot ceiling, because the host fixes them differently', async () => {
@@ -351,14 +354,16 @@ describe('at most three bots, and never a table without a person', () => {
 
     expect(within(panel()).getByText(/Every seat at this table is taken/)).toBeInTheDocument();
     expect(within(panel()).queryByText(/at most 3 bots/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add a bot' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).toBeDisabled();
   });
 
-  it('says how much of the table is bots, and that the rest is people', async () => {
+  it('says how much of the table is AI opponents, and that the rest is people', async () => {
     const harness = renderApp();
     await enterLobby(harness, mixedLobby(2));
 
-    expect(within(panel()).getByText(/2 of this table’s 4 seats hold bots/)).toBeInTheDocument();
+    expect(
+      within(panel()).getByText(/2 of this table’s 4 seats hold AI opponents/),
+    ).toBeInTheDocument();
     expect(within(panel()).getByText(/the rest of the table is people/)).toBeInTheDocument();
   });
 });
@@ -400,7 +405,7 @@ describe('two mutations are never in flight at once', () => {
 
     const remove = await screen.findByRole('button', { name: 'Remove seat 3' });
     expect(remove).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Add a bot' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).not.toBeDisabled();
   });
 
   it('frees the controls again when the server refuses instead of applying', async () => {
@@ -439,10 +444,10 @@ describe('a started mixed table', () => {
       within(panel()).getByText(/these bots are locked for the rest of it/),
     ).toBeInTheDocument();
     for (const seat of [2, 3, 4]) {
-      expect(screen.queryByLabelText(`Bot in seat ${seat}`)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(`AI opponent in seat ${seat}`)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: `Remove seat ${seat}` })).not.toBeInTheDocument();
     }
-    expect(screen.queryByRole('button', { name: 'Add a bot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add an AI opponent' })).not.toBeInTheDocument();
   });
 
   it('says the singular thing about a single bot', async () => {

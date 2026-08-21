@@ -81,9 +81,14 @@ export function botIdFor(sequence: number): string {
  *
  * Named after the seat rather than after a counter, so the name a player reads
  * beside seat 3 says "seat 3" and keeps saying it after another bot is removed.
+ *
+ * "AI" rather than "Bot" since M09.18: this is the one identifier the server
+ * mints that a **player** reads, so it sits on the player's side of the naming
+ * boundary even though everything around it — `botIdFor`, the schema, the wire —
+ * stays `bot`. A host who types their own name overrides it entirely.
  */
 export function defaultBotDisplayName(seatId: SeatId): string {
-  return `Bot ${seatId.replace('seat_', '')}`;
+  return `AI ${seatId.replace('seat_', '')}`;
 }
 
 function refusal(

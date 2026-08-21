@@ -81,3 +81,5 @@ export {
 } from './bot-summary.js';
 
 export { encode, decodeClientMessage, decodeServerMessage } from './codec.js';
+
+export { botConfigVersionRefusal } from './bot-compatibility.js';

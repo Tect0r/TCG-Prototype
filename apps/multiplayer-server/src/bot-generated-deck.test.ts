@@ -598,7 +598,7 @@ describe('the two rules the seat keeps to itself', () => {
     const config = {
       schemaVersion: BOT_CONFIG_SCHEMA_VERSION,
       difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
-      controller: { botId: 'bot_1', displayName: 'Bot 2' },
+      controller: { botId: 'bot_1', displayName: 'AI 2' },
       difficulty: DEFAULT_BOT_DIFFICULTY,
       styleSetting: 'value' as const,
       style: 'value' as const,
@@ -631,7 +631,7 @@ describe('the two rules the seat keeps to itself', () => {
     // it safe to feed straight back through `resolveBotSeat`.
     const setup = setupOf(config);
     expect(setup.deck).toEqual(generatedSource());
-    expect(setup.displayName).toBe('Bot 2');
+    expect(setup.displayName).toBe('AI 2');
     expect('controller' in setup).toBe(false);
     // The public projection of that same configuration still leaks nothing.
     expect(JSON.stringify(publicBotSeatOf(config))).not.toContain('abcdef0123456789');

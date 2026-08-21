@@ -171,7 +171,7 @@ function savedDeckBotSeat(
 ): BotLobbySeatView {
   return {
     seatId: 'seat_2',
-    displayName: 'Bot 2',
+    displayName: 'AI 2',
     connected: true,
     ready: true,
     // The one thing a saved-deck seat never publishes: the deck's name.
@@ -184,7 +184,7 @@ function savedDeckBotSeat(
     bot: {
       controller: 'bot',
       botId: 'bot_1',
-      displayName: 'Bot 2',
+      displayName: 'AI 2',
       difficulty: 'normal',
       styleSetting: 'value',
       style: 'value',
@@ -225,11 +225,14 @@ async function enterLobby(harness: Harness, view: LobbyView = lobby([humanSeat()
   await screen.findByText(view.inviteCode);
 }
 
-const panel = (): HTMLElement => screen.getByLabelText('Bot opponents');
+const panel = (): HTMLElement => screen.getByLabelText('AI opponents');
 
 /** Puts the deck picker on "one of your saved decks" and chooses one. */
 async function chooseSavedDeck(harness: Harness, deckId: string): Promise<void> {
-  await harness.user.selectOptions(screen.getByLabelText('Bot deck source'), 'exact_saved_deck');
+  await harness.user.selectOptions(
+    screen.getByLabelText('AI opponent deck source'),
+    'exact_saved_deck',
+  );
   await harness.user.selectOptions(screen.getByLabelText('Your deck'), deckId);
 }
 
@@ -240,7 +243,7 @@ describe('the deck source picker', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    const source = screen.getByLabelText('Bot deck source');
+    const source = screen.getByLabelText('AI opponent deck source');
     expect(
       within(source)
         .getAllByRole('option')
@@ -252,7 +255,7 @@ describe('the deck source picker', () => {
       // its own, so the picker gained each control by the entry it already owned
       // rather than by a change here.
       'A deck built for a Commander you pick',
-      'A Commander and deck the bot picks',
+      'A Commander and deck the AI picks',
     ]);
 
     // Driven from the support table rather than from a list written here, so a
@@ -267,7 +270,10 @@ describe('the deck source picker', () => {
   it('lists the player’s own decks once that mode is chosen', async () => {
     const harness = renderApp([MY_DECK, OTHER_DECK]);
     await enterLobby(harness);
-    await harness.user.selectOptions(screen.getByLabelText('Bot deck source'), 'exact_saved_deck');
+    await harness.user.selectOptions(
+      screen.getByLabelText('AI opponent deck source'),
+      'exact_saved_deck',
+    );
 
     expect(
       within(screen.getByLabelText('Your deck'))
@@ -276,7 +282,7 @@ describe('the deck source picker', () => {
     ).toEqual(['My secret brew', 'Wall of people']);
     // The built-in picker is gone rather than disabled: it belongs to the other
     // mode, and two deck pickers on screen would be two answers to one question.
-    expect(screen.queryByLabelText('Bot deck')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent deck')).not.toBeInTheDocument();
   });
 });
 
@@ -287,7 +293,7 @@ describe('sending a saved deck', () => {
     const harness = renderApp();
     await enterLobby(harness);
     await chooseSavedDeck(harness, 'deck_mine');
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
 
     const sent = harness.transport().last('add_bot');
     expect(sent?.setup.deck).toEqual({
@@ -326,7 +332,7 @@ describe('a saved deck the host cannot send', () => {
     await chooseSavedDeck(harness, 'deck_half');
 
     expect(within(panel()).getByText(/11 of 40/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add a bot' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).toBeDisabled();
     expect(harness.transport().all('add_bot')).toHaveLength(0);
   });
 
@@ -336,14 +342,14 @@ describe('a saved deck the host cannot send', () => {
     await chooseSavedDeck(harness, 'deck_nocmd');
 
     expect(within(panel()).getByText(/has no Commander yet/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add a bot' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).toBeDisabled();
   });
 
   it('prints the server’s own refusal beside the form', async () => {
     const harness = renderApp();
     await enterLobby(harness);
     await chooseSavedDeck(harness, 'deck_mine');
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
 
     harness.transport().deliver({
       type: 'error',
@@ -357,7 +363,7 @@ describe('a saved deck the host cannot send', () => {
     const alert = await within(panel()).findByRole('alert');
     expect(alert).toHaveTextContent(/edited after it was chosen/);
     // The refused request applied nothing, so the button is offered again.
-    expect(screen.getByRole('button', { name: 'Add a bot' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).toBeEnabled();
   });
 });
 
@@ -367,12 +373,12 @@ describe('a seated saved-deck bot', () => {
   async function seatOne(harness: Harness): Promise<void> {
     await enterLobby(harness);
     await chooseSavedDeck(harness, 'deck_mine');
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
     harness.transport().deliver({
       type: 'lobby_updated',
       lobby: lobby([humanSeat(), savedDeckBotSeat(MY_COMMANDER)]),
     });
-    await within(await screen.findByLabelText('Seats')).findByText('Bot 2');
+    await within(await screen.findByLabelText('Seats')).findByText('AI 2');
   }
 
   it('tells the host which deck was frozen, and its fingerprint', async () => {
@@ -389,11 +395,11 @@ describe('a seated saved-deck bot', () => {
     const harness = renderApp();
     await seatOne(harness);
 
-    const seat = within(screen.getByLabelText('Seats')).getByText('Bot 2').closest('li');
+    const seat = within(screen.getByLabelText('Seats')).getByText('AI 2').closest('li');
     const tags = within(seat as HTMLElement)
       .getAllByText(/.+/)
       .map((node) => node.textContent);
-    expect(tags).toContain('bot');
+    expect(tags).toContain('AI opponent');
     expect(tags).toContain('deck hidden');
     expect(tags).toContain('Goblin Warboss');
     expect(tags).toContain('legal');
@@ -415,7 +421,9 @@ describe('a seated saved-deck bot', () => {
 
     // Nothing was sent: an edit in the builder is not a reconfiguration.
     expect(harness.transport().sent).toHaveLength(before);
-    expect(within(panel()).getByText(/has changed since you seated this bot/)).toBeInTheDocument();
+    expect(
+      within(panel()).getByText(/has changed since you seated this AI opponent/),
+    ).toBeInTheDocument();
     // And the host is still told what the bot is actually playing.
     expect(within(panel()).getByText(/Frozen from your deck/)).toHaveTextContent(
       deckFingerprint(MY_DECK),

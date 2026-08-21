@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_FORMAT_DECK_SIZE, deckConstructionSchema } from '@tcg/card-data';
 import {
   BOT_DECK_MODES,
   DECK_MODE_SUPPORT,
@@ -149,6 +150,71 @@ describe('the snapshot and its provenance', () => {
   it('refuses an empty list and an unknown member', () => {
     expect(botDeckSnapshotSchema.safeParse({ ...SNAPSHOT, cardIds: [] }).success).toBe(false);
     expect(botDeckSnapshotSchema.safeParse({ ...SNAPSHOT, updatedAt: 'now' }).success).toBe(false);
+  });
+
+  /**
+   * The upper bound on the frozen list (M09.18).
+   *
+   * The list was bounded below and not above, so a snapshot could carry an
+   * arbitrarily long array through the codec and be refused only later, by
+   * `validateDeck`, on the format's exact size. The ceiling is
+   * `MAX_FORMAT_DECK_SIZE`, which is not a number chosen here: it is the largest
+   * `size` a `deckConstruction` can declare, so it is the largest deck any
+   * format this build can read could ever require.
+   */
+  describe('the length of the frozen list', () => {
+    const listOf = (count: number) => Array.from({ length: count }, () => 'card_one');
+
+    it('accepts an ordinary deck', () => {
+      // A precon_wave_1 deck is 40 cards, and nothing near the ceiling.
+      expect(botDeckSnapshotSchema.safeParse({ ...SNAPSHOT, cardIds: listOf(1) }).success).toBe(
+        true,
+      );
+      expect(botDeckSnapshotSchema.safeParse({ ...SNAPSHOT, cardIds: listOf(40) }).success).toBe(
+        true,
+      );
+    });
+
+    it('accepts exactly the maximum', () => {
+      const parsed = botDeckSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        cardIds: listOf(MAX_FORMAT_DECK_SIZE),
+      });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) expect(parsed.data.cardIds).toHaveLength(MAX_FORMAT_DECK_SIZE);
+    });
+
+    it('refuses the maximum plus one, readably', () => {
+      const parsed = botDeckSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        cardIds: listOf(MAX_FORMAT_DECK_SIZE + 1),
+      });
+      expect(parsed.success).toBe(false);
+      if (parsed.success) return;
+
+      const issue = parsed.error.issues[0];
+      // An ordinary bound failure, classified as one: a list that is too long is
+      // a malformed record, not a record from a newer build.
+      expect(issue?.code).toBe('too_big');
+      expect(issue?.path).toEqual(['cardIds']);
+      expect(issue?.message).toBe(
+        `A deck list may hold at most ${MAX_FORMAT_DECK_SIZE} cards, which is the largest deck size any format can require.`,
+      );
+    });
+
+    it('takes its ceiling from the format schema rather than inventing one', () => {
+      // The claim the bound rests on: no readable format can ask for more than
+      // this, so no legal deck can hold more than this.
+      const base = {
+        size: MAX_FORMAT_DECK_SIZE,
+        singleton: true,
+        maxCommanderColors: 2,
+      };
+      expect(deckConstructionSchema.safeParse(base).success).toBe(true);
+      expect(
+        deckConstructionSchema.safeParse({ ...base, size: MAX_FORMAT_DECK_SIZE + 1 }).success,
+      ).toBe(false);
+    });
   });
 
   it('records the pool a generated deck was built from', () => {

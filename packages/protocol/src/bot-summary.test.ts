@@ -201,7 +201,7 @@ const SUMMARY: BotMatchSummary = {
     {
       seatId: 'seat_2',
       botId: 'bot_1',
-      displayName: 'Bot 2',
+      displayName: 'AI 2',
       difficulty: 'normal',
       difficultyBehaviorVersion: '1.0.0',
       styleSetting: 'automatic',

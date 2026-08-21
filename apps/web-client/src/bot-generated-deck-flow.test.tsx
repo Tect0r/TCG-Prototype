@@ -157,7 +157,7 @@ function generatedBotSeat(
 ): BotLobbySeatView {
   return {
     seatId: 'seat_2',
-    displayName: 'Bot 2',
+    displayName: 'AI 2',
     connected: true,
     ready: true,
     // Never published: the deck the server built has no name a player chose.
@@ -170,7 +170,7 @@ function generatedBotSeat(
     bot: {
       controller: 'bot',
       botId: 'bot_1',
-      displayName: 'Bot 2',
+      displayName: 'AI 2',
       difficulty: 'normal',
       styleSetting: 'value',
       style: 'value',
@@ -219,7 +219,7 @@ async function enterLobby(harness: Harness, view: LobbyView = lobby([humanSeat()
   await screen.findByText(view.inviteCode);
 }
 
-const panel = (): HTMLElement => screen.getByLabelText('Bot opponents');
+const panel = (): HTMLElement => screen.getByLabelText('AI opponents');
 
 /** Puts the picker on the generated mode and chooses a Commander and a seed. */
 async function chooseCommander(
@@ -227,11 +227,14 @@ async function chooseCommander(
   commanderId: string,
   seed?: string,
 ): Promise<void> {
-  await harness.user.selectOptions(screen.getByLabelText('Bot deck source'), 'commander_generated');
-  await harness.user.selectOptions(screen.getByLabelText('Bot Commander'), commanderId);
+  await harness.user.selectOptions(
+    screen.getByLabelText('AI opponent deck source'),
+    'commander_generated',
+  );
+  await harness.user.selectOptions(screen.getByLabelText('AI opponent Commander'), commanderId);
   if (seed !== undefined) {
-    await harness.user.clear(screen.getByLabelText('Bot deck seed'));
-    await harness.user.type(screen.getByLabelText('Bot deck seed'), seed);
+    await harness.user.clear(screen.getByLabelText('AI opponent deck seed'));
+    await harness.user.type(screen.getByLabelText('AI opponent deck seed'), seed);
   }
 }
 
@@ -256,12 +259,12 @@ describe('the Commander picker', () => {
 
     // The mode has a resolver, so it is offered rather than absent.
     expect(DECK_MODE_SUPPORT.commander_generated.supported).toBe(true);
-    expect(screen.queryByLabelText('Bot Commander')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent Commander')).not.toBeInTheDocument();
 
     await chooseCommander(harness, WARBOSS);
-    expect(screen.getByLabelText('Bot Commander')).toBeInTheDocument();
+    expect(screen.getByLabelText('AI opponent Commander')).toBeInTheDocument();
     // One question, one control: the built-in picker belongs to another mode.
-    expect(screen.queryByLabelText('Bot deck')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent deck')).not.toBeInTheDocument();
   });
 
   it('offers this format’s playable Commanders and nothing else', async () => {
@@ -269,7 +272,7 @@ describe('the Commander picker', () => {
     await enterLobby(harness);
     await chooseCommander(harness, WARBOSS);
 
-    const picker = screen.getByLabelText('Bot Commander');
+    const picker = screen.getByLabelText('AI opponent Commander');
     expect(
       within(picker)
         .getAllByRole('option')
@@ -293,7 +296,7 @@ describe('asking the server to build a deck', () => {
     const harness = renderApp();
     await enterLobby(harness);
     await chooseCommander(harness, MATRIARCH, 'seed-alpha');
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
 
     expect(harness.transport().last('add_bot')?.setup.deck).toEqual({
       mode: 'commander_generated',
@@ -310,7 +313,7 @@ describe('asking the server to build a deck', () => {
       const harness = renderApp();
       await enterLobby(harness);
       await chooseCommander(harness, WARBOSS, seed);
-      await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+      await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
       const sent = harness.transport().last('add_bot')?.setup.deck;
       cleanup();
       return sent;
@@ -326,12 +329,17 @@ describe('asking the server to build a deck', () => {
     const harness = renderApp();
     await enterLobby(harness);
     await chooseCommander(harness, WARBOSS);
-    const first = (screen.getByLabelText('Bot deck seed') as HTMLInputElement).value;
+    const first = (screen.getByLabelText('AI opponent deck seed') as HTMLInputElement).value;
     expect(first).not.toBe('');
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot deck source'), 'exact_precon');
+    await harness.user.selectOptions(
+      screen.getByLabelText('AI opponent deck source'),
+      'exact_precon',
+    );
     await chooseCommander(harness, WARBOSS);
-    expect((screen.getByLabelText('Bot deck seed') as HTMLInputElement).value).not.toBe(first);
+    expect((screen.getByLabelText('AI opponent deck seed') as HTMLInputElement).value).not.toBe(
+      first,
+    );
   });
 });
 
@@ -364,7 +372,7 @@ describe('the provenance of a deck the server built', () => {
       seats: [{ seatId: 'seat_2', generated: PROVENANCE }],
     });
 
-    const seat = await screen.findByLabelText('Bot in seat 2');
+    const seat = await screen.findByLabelText('AI opponent in seat 2');
     expect(within(seat).getByText('seed-alpha')).toBeInTheDocument();
     expect(within(seat).getByText('deadbeefcafef00d')).toBeInTheDocument();
     expect(within(seat).getByText(/generator v1/)).toBeInTheDocument();
@@ -383,7 +391,7 @@ describe('the provenance of a deck the server built', () => {
 
     // Arithmetic from the pool report rather than a sentence written in the
     // screen: 41 legal cards for a 40-card deck leaves 2 cards of choice.
-    const seat = await screen.findByLabelText('Bot in seat 2');
+    const seat = await screen.findByLabelText('AI opponent in seat 2');
     expect(within(seat).getByText(/41 cards legal under that Commander/)).toBeInTheDocument();
     expect(within(seat).getByText(/at least 39 of them/)).toBeInTheDocument();
     expect(within(seat).getByText(/changes at most 2 cards/)).toBeInTheDocument();
@@ -432,7 +440,7 @@ describe('the list is private until the match is over', () => {
   const REVEALED: RevealedBotDeck = {
     seatId: 'seat_2',
     botId: 'bot_1',
-    displayName: 'Bot 2',
+    displayName: 'AI 2',
     commanderId: WARBOSS,
     cardIds: ['goblin_spearman', 'goblin_spearman', 'goblin_sneak'],
     generated: PROVENANCE,
@@ -453,7 +461,7 @@ describe('the list is private until the match is over', () => {
         database,
         seats: [
           { playerId: 'player_1', name: 'Player', deck },
-          { playerId: 'player_2', name: 'Bot 2', deck },
+          { playerId: 'player_2', name: 'AI 2', deck },
         ],
       }),
       'match setup',
@@ -468,14 +476,14 @@ describe('the list is private until the match is over', () => {
 
   it('shows no bot list while the match is being played', async () => {
     await board();
-    expect(screen.queryByLabelText('Bot decks')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent decks')).not.toBeInTheDocument();
   });
 
   it('shows every card the bot played once the server reveals it', async () => {
     const harness = await board();
     harness.transport().deliver({ type: 'bot_decks_revealed', decks: [REVEALED] });
 
-    const reveal = await screen.findByLabelText('Bot decks');
+    const reveal = await screen.findByLabelText('AI opponent decks');
     expect(within(reveal).getByText('2× Goblin Spearman')).toBeInTheDocument();
     expect(within(reveal).getByText('Goblin Sneak')).toBeInTheDocument();
     expect(within(reveal).getByText(/played 3 cards under Goblin Warboss/)).toBeInTheDocument();
@@ -488,7 +496,7 @@ describe('the list is private until the match is over', () => {
 
     // The click path is not driven here — jsdom has no download — but the
     // control the milestone asks for is present and names one deck.
-    const reveal = await screen.findByLabelText('Bot decks');
+    const reveal = await screen.findByLabelText('AI opponent decks');
     expect(within(reveal).getByRole('button', { name: 'Export this deck' })).toBeEnabled();
   });
 });

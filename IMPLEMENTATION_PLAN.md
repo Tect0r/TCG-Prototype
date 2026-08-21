@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.18       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.19       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,20 +160,86 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.18 — Help, provenance, and compatibility pass.** Make the feature
-understandable and every artifact honest: player help for adding bots, the four
-deck modes, privacy, difficulty versus style, timing percentages, bot pacing
-versus human timeout, and the small-pool limitation; consistent naming across
-lobby, match and result; provenance recorded wherever the artifact contract
-requires it; incompatible protocol, replay or export data refused rather than
-approximated; and the consistency and audit generators re-run with stale claims
-that online play is human-only removed. The scope and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0918--help-provenance-and-compatibility-pass).
+**M09.19 — End-to-end hardening and milestone acceptance.** The last tranche in
+M09, and the one that plays everything the earlier eighteen built: every seat
+mixture with at least one person, across all four deck modes, all three
+difficulties, every style, 0/50/100% timing, Reaction override, reroll, remove,
+reconnect, failure fallback, concession, elimination and completion; hidden
+information proven not to cross the lobby, player view, log, pacing export or
+opponent boundaries; the simulator and AI Spectator proven still full-speed and
+deterministic; and server action latency benchmarked with deliberate pacing
+excluded. The scope and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0919--end-to-end-hardening-and-milestone-acceptance).
 
-**The note on order is now settled by exhaustion rather than by ruling.** This
-file named M09.17 as the next bounded task while the milestone document placed
-M09.20's section _above_ M09.17's; M09.17 ran, then M09.20 ran, and M09.18 is now
-the earliest incomplete section under either reading. Nothing was reordered.
+It inherits one measured pathology to work on rather than around: M09.20's
+tournament found a `precon_goblin_swarm` mirror spending 98 seconds on a single
+decision at turn 28, and that is a performance finding this tranche owns.
+
+**The note on order is settled by exhaustion rather than by ruling.** This file
+once named M09.17 as the next bounded task while the milestone document placed
+M09.20's section _above_ M09.17's; M09.17 ran, then M09.20, then M09.18, and
+M09.19 is now the only incomplete section under either reading. Nothing was
+reordered.
+
+**M09.18 made the feature explainable and two deferred refusals legible.** The
+rulebook gained `ai_opponents`, a required section answering the eight questions
+the tranche named — how a host adds one, the four deck modes, what one can see,
+difficulty against style, the timing percentages, what 50% is half **of**, the
+difference between an AI opponent's pacing and any deadline on a person, and why
+two generated decks look alike. Every claim in it is one the build enforces: the
+privacy paragraph was written from `#observationFor` and `playerView`, so "it
+does not see your hand — it sees how many cards you are holding" is a statement
+about a line of code. The regression test asserts **claims** rather than prose,
+reading the difficulties and styles from their registries and the grace window
+and deck size from live configuration, so the section can be reworded but cannot
+quietly stop saying one of these things.
+
+**The naming boundary is stated once and tested from both sides: "AI opponent"
+everywhere a person reads, "bot" everywhere a machine does.** The player's side
+moved — panel, seat tag, every field label, both budget labels, the post-match
+summary, the revealed decks, and `defaultBotDisplayName`, which now mints `AI 2`
+because it is the one identifier the server creates that a player reads. The
+machine's side moved not at all: the five messages, `SeatController`, every
+schema, error code and provenance field keep their names, which is why
+`PROTOCOL_VERSION` stays 11. Controller provenance was **re-checked rather than
+rebuilt** — M09.1's explicit `'human' | 'bot'` is still the whole answer — and no
+tactical-profile identifier can reach a player for a structural reason: the web
+client does not depend on the package that owns `TACTICAL_PROFILE_IDS`, and a
+test asserts the manifest as well as the page.
+
+**M09.3's and M09.11's deferred findings closed together.** A bot artifact from a
+newer build had always been refused — the version bounds are in Zod — but as
+`protocol/malformed_message`, which told a host with a current client that their
+message was gibberish. `decodeClientMessage` now takes an `explain` hook
+consulted **only on a frame that already failed**, and its one implementation
+recognises exactly one cause, answering with the same
+`protocol/bot_config_invalid` and the same `refuseFutureVersion` sentence the
+server's own readers give. The narrowness is the load-bearing half: `isFutureVersion`
+is true only of an integer ≥ 1 exceeding what this build reads, so a missing
+version, a string, a fraction, a zero, an out-of-range budget and every unrelated
+failure all keep the generic wording. Both halves are driven for `add_bot`,
+`update_bot` and `set_bot_pacing`, at the boundary, off the constants.
+
+**`botDeckSnapshotSchema.cardIds` gained a ceiling that is not a new number.**
+`MAX_FORMAT_DECK_SIZE` is the `250` that has bounded `deckConstruction.size`
+since the format schema was written, extracted and exported so the two cannot
+disagree. It refuses nothing a host could legitimately send — `precon_wave_1`
+asks for 40 singleton cards and the client's freeze path runs `validateDeck`
+first — and a longer list is classified as the malformed record it is.
+
+**No version constant moved, and the one that needed arguing is
+`BOT_CONFIG_SCHEMA_VERSION`.** Narrowing `cardIds` shrinks what this build
+accepts, which looks like what a version is for, but bumping could not express
+it: the constant's contract is "refuse a record from a **newer** build", and
+moving it would not make a single over-long list readable anywhere. No format
+this build can read may require more than the ceiling, so every list past it was
+already illegal and already refused — one step later, under a different code —
+and nothing persists a bot configuration, so there is no stored record to
+migrate. The README now says a seat need not hold a person, while keeping every
+word of the invite-code and LAN guidance and **no matchmaking** exactly as
+prominent. Two documents that said "three deck modes" and enumerated four were
+corrected; every other stale-looking hit is a dated historical record and was
+left alone.
 
 **M09.20 closed the last strategic gap and published Hard — and found that the
 two were in tension.** The defect was a valuation one: the scorer prices a card

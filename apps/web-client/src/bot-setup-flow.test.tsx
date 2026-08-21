@@ -157,7 +157,7 @@ function humanSeat(overrides: Partial<HumanLobbySeatView> = {}): HumanLobbySeatV
 function botSeat(overrides: Partial<BotLobbySeatView> = {}): BotLobbySeatView {
   return {
     seatId: 'seat_2',
-    displayName: 'Bot 2',
+    displayName: 'AI 2',
     connected: true,
     ready: true,
     deckName: 'Goblin Swarm',
@@ -169,7 +169,7 @@ function botSeat(overrides: Partial<BotLobbySeatView> = {}): BotLobbySeatView {
     bot: {
       controller: 'bot',
       botId: 'bot_1',
-      displayName: 'Bot 2',
+      displayName: 'AI 2',
       difficulty: 'normal',
       styleSetting: AUTOMATIC_STYLE,
       style: 'aggressive',
@@ -210,8 +210,8 @@ async function enterLobby(
   await screen.findByText(view.inviteCode);
 }
 
-const panel = (): HTMLElement => screen.getByLabelText('Bot opponents');
-const addForm = (): HTMLElement => screen.getByLabelText('Add a bot');
+const panel = (): HTMLElement => screen.getByLabelText('AI opponents');
+const addForm = (): HTMLElement => screen.getByLabelText('Add an AI opponent');
 
 /* ------------------------------------------------------ progressive disclosure */
 
@@ -221,7 +221,12 @@ describe('one bot’s complete setup', () => {
     await enterLobby(harness);
 
     // The decisions a host has to make are on the surface.
-    for (const label of ['Bot deck source', 'Bot deck', 'Bot difficulty', 'Bot style']) {
+    for (const label of [
+      'AI opponent deck source',
+      'AI opponent deck',
+      'AI opponent difficulty',
+      'AI opponent style',
+    ]) {
       expect(within(addForm()).getByLabelText(label)).toBeInTheDocument();
     }
 
@@ -231,10 +236,10 @@ describe('one bot’s complete setup', () => {
     const details = disclosure.closest('details');
     expect(details).not.toBeNull();
     expect(details).not.toHaveAttribute('open');
-    for (const label of ['Bot timing', 'Bot Reaction override']) {
+    for (const label of ['AI opponent timing', 'AI opponent Reaction override']) {
       expect(within(details as HTMLElement).getByLabelText(label)).toBeInTheDocument();
     }
-    expect(within(details as HTMLElement).getByLabelText('Bot timing')).toBeEnabled();
+    expect(within(details as HTMLElement).getByLabelText('AI opponent timing')).toBeEnabled();
   });
 
   it('puts the deck seed under the same disclosure, for the modes that have one', async () => {
@@ -242,13 +247,13 @@ describe('one bot’s complete setup', () => {
     await enterLobby(harness);
 
     // An exact list has no seed at all: there is nothing to reproduce.
-    expect(within(addForm()).queryByLabelText('Bot deck seed')).not.toBeInTheDocument();
+    expect(within(addForm()).queryByLabelText('AI opponent deck seed')).not.toBeInTheDocument();
 
     await harness.user.selectOptions(
-      within(addForm()).getByLabelText('Bot deck source'),
+      within(addForm()).getByLabelText('AI opponent deck source'),
       'autonomous_generated',
     );
-    const seed = within(addForm()).getByLabelText('Bot deck seed');
+    const seed = within(addForm()).getByLabelText('AI opponent deck seed');
     expect(seed.closest('details')).toBe(
       within(addForm()).getByText('Timing and deck seed').closest('details'),
     );
@@ -261,7 +266,7 @@ describe('one bot’s complete setup', () => {
     // Seat-scoped names, so a table with three bots is readable to somebody
     // listening to the page rather than looking at it (M09.7), including the
     // disclosure this tranche added.
-    const seat = screen.getByLabelText('Bot in seat 2');
+    const seat = screen.getByLabelText('AI opponent in seat 2');
     for (const label of ['Seat 2 difficulty', 'Seat 2 style']) {
       expect(within(seat).getByLabelText(label)).toBeInTheDocument();
     }
@@ -276,7 +281,7 @@ describe('automatic style', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    const control = within(addForm()).getByLabelText('Bot style') as HTMLSelectElement;
+    const control = within(addForm()).getByLabelText('AI opponent style') as HTMLSelectElement;
     expect([...control.options].map((option) => option.value)).toEqual([...BOT_STYLE_SETTINGS]);
     expect(control).toHaveValue(AUTOMATIC_STYLE);
   });
@@ -286,7 +291,7 @@ describe('automatic style', () => {
     await enterLobby(harness);
 
     await harness.user.selectOptions(
-      within(addForm()).getByLabelText('Bot deck'),
+      within(addForm()).getByLabelText('AI opponent deck'),
       'precon_goblin_swarm',
     );
     // Goblin Swarm's authored plan is `token_swarm`, which the mapping prices as
@@ -303,7 +308,7 @@ describe('automatic style', () => {
     await enterLobby(harness);
 
     await harness.user.selectOptions(
-      within(addForm()).getByLabelText('Bot deck'),
+      within(addForm()).getByLabelText('AI opponent deck'),
       'precon_bastion_guardians',
     );
     // A defensive-attrition plan, which is a different style from Goblin
@@ -318,7 +323,7 @@ describe('automatic style', () => {
     await enterLobby(harness);
 
     await harness.user.selectOptions(
-      within(addForm()).getByLabelText('Bot deck source'),
+      within(addForm()).getByLabelText('AI opponent deck source'),
       'autonomous_generated',
     );
     const note = within(addForm()).getByText(/^Automatic reads/);
@@ -331,7 +336,7 @@ describe('automatic style', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    await harness.user.click(within(addForm()).getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(within(addForm()).getByRole('button', { name: 'Add an AI opponent' }));
     const setup = harness.transport().last('add_bot')?.setup;
     expect(setup?.style).toBe(AUTOMATIC_STYLE);
     // A client that could state the resolved style could state one the server
@@ -343,7 +348,7 @@ describe('automatic style', () => {
     const harness = renderApp();
     await enterLobby(harness, lobby([humanSeat(), botSeat()]));
 
-    const seat = within(screen.getByLabelText('Seats')).getByText('Bot 2').closest('li');
+    const seat = within(screen.getByLabelText('Seats')).getByText('AI 2').closest('li');
     const tags = within(seat as HTMLElement)
       .getAllByText(/.+/)
       .map((node) => node.textContent);
@@ -365,11 +370,14 @@ describe('copying one bot’s setup onto another seat', () => {
     // Configure the first bot on a generated deck and seat it, so this browser
     // holds the private half of its configuration.
     await harness.user.selectOptions(
-      within(addForm()).getByLabelText('Bot deck source'),
+      within(addForm()).getByLabelText('AI opponent deck source'),
       'autonomous_generated',
     );
-    await harness.user.selectOptions(within(addForm()).getByLabelText('Bot difficulty'), 'easy');
-    await harness.user.click(within(addForm()).getByRole('button', { name: 'Add a bot' }));
+    await harness.user.selectOptions(
+      within(addForm()).getByLabelText('AI opponent difficulty'),
+      'easy',
+    );
+    await harness.user.click(within(addForm()).getByRole('button', { name: 'Add an AI opponent' }));
 
     const first = harness.transport().last('add_bot')?.setup;
     if (first?.deck.mode !== 'autonomous_generated') throw new Error('Wrong mode.');
@@ -391,13 +399,15 @@ describe('copying one bot’s setup onto another seat', () => {
     // Copy it, and paste it into the form for the next bot.
     await harness.user.click(await screen.findByRole('button', { name: 'Copy seat 2 setup' }));
     await harness.user.click(
-      within(addForm()).getByRole('button', { name: /Paste seat 2 setup into the next bot/ }),
+      within(addForm()).getByRole('button', {
+        name: /Paste seat 2 setup into the next AI opponent/,
+      }),
     );
 
     // The screen says what pasting a generated deck does, before it is sent.
     expect(within(addForm()).getByText(/starts a new seed/)).toBeInTheDocument();
 
-    await harness.user.click(within(addForm()).getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(within(addForm()).getByRole('button', { name: 'Add an AI opponent' }));
     const second = harness.transport().last('add_bot')?.setup;
     if (second?.deck.mode !== 'autonomous_generated') throw new Error('Wrong mode.');
 
@@ -428,7 +438,7 @@ describe('copying one bot’s setup onto another seat', () => {
 
     // The private half of a saved-deck configuration never comes back down the
     // wire, so the form is showing defaults rather than that seat's setup.
-    const seat = screen.getByLabelText('Bot in seat 2');
+    const seat = screen.getByLabelText('AI opponent in seat 2');
     expect(
       within(seat).queryByRole('button', { name: 'Copy seat 2 setup' }),
     ).not.toBeInTheDocument();
@@ -439,7 +449,7 @@ describe('copying one bot’s setup onto another seat', () => {
     const harness = renderApp();
     await enterLobby(harness, lobby([humanSeat(), botSeat()]));
 
-    const seat = screen.getByLabelText('Bot in seat 2');
+    const seat = screen.getByLabelText('AI opponent in seat 2');
     await harness.user.click(within(seat).getByRole('button', { name: 'Copy seat 2 setup' }));
     expect(within(seat).queryByRole('button', { name: /^Paste/ })).not.toBeInTheDocument();
     expect(within(addForm()).getByRole('button', { name: /^Paste/ })).toBeInTheDocument();
@@ -462,7 +472,7 @@ describe('what the panel says about what it cannot offer', () => {
     expect(within(addForm()).queryByText(/is planned for/)).not.toBeInTheDocument();
 
     // And the control offers every difficulty the registry ships, Hard included.
-    const control = within(addForm()).getByLabelText('Bot difficulty') as HTMLSelectElement;
+    const control = within(addForm()).getByLabelText('AI opponent difficulty') as HTMLSelectElement;
     expect([...control.options].map((option) => option.value)).toEqual([...AVAILABLE_DIFFICULTIES]);
     expect(difficultyDefinition('hard').status).toBe('available');
   });
@@ -472,7 +482,10 @@ describe('what the panel says about what it cannot offer', () => {
     await enterLobby(harness);
 
     expect(within(addForm()).getByText(difficultyDefinition('normal').summary)).toBeInTheDocument();
-    await harness.user.selectOptions(within(addForm()).getByLabelText('Bot difficulty'), 'easy');
+    await harness.user.selectOptions(
+      within(addForm()).getByLabelText('AI opponent difficulty'),
+      'easy',
+    );
     expect(within(addForm()).getByText(difficultyDefinition('easy').summary)).toBeInTheDocument();
   });
 

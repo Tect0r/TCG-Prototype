@@ -49,7 +49,8 @@ export function styleSettingNote(
 
   if (deck.commanderId === null) {
     return (
-      'Automatic reads the Commander’s authored deck plan, and this bot has not picked one yet: ' +
+      'Automatic reads the Commander’s authored deck plan, and this AI opponent has not picked ' +
+      'one yet: ' +
       `its style is decided when the server builds the deck, and falls back to ` +
       `${botStyleDefinition(AUTOMATIC_STYLE_FALLBACK).label} if this format publishes no plan for ` +
       'the Commander it picks.'
@@ -64,8 +65,8 @@ export function styleSettingNote(
     // typed here: the taxonomy owns what it calls itself.
     const archetype = archetypeDefinition(resolution.archetypeId);
     return (
-      `Automatic: ${commander}’s authored deck plan is ${archetype.label}, so this bot plays ` +
-      `${style.label}. ${style.summary}`
+      `Automatic: ${commander}’s authored deck plan is ${archetype.label}, so this AI opponent ` +
+      `plays ${style.label}. ${style.summary}`
     );
   }
   const because =

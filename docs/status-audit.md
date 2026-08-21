@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `ae50dc42e83ae11c5a1afe73253bc90aae6bf369` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-21                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `8ef1a3fa84a7cf0a0126075e0475e8215d9733a4`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-21                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 78      | 1833     |
+| packages       | 79      | 1858     |
 | scripts        | 4       | 69       |
-| server         | 15      | 307      |
+| server         | 16      | 313      |
 | simulator      | 23      | 433      |
-| web-client     | 20      | 259      |
-| **total**      | **140** | **2901** |
+| web-client     | 20      | 272      |
+| **total**      | **142** | **2945** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -164,7 +164,7 @@ plan-generated deck keeps free slots no generator setting can take away.
 | Card behaviour contracts      | 155 of 155 cards in `precon_wave_1`      |
 | Tactical calibration fixtures | 24, of which 11 record a known pilot gap |
 | Glossary entries              | 35                                       |
-| Rulebook sections             | 18                                       |
+| Rulebook sections             | 19                                       |
 
 | Pilot        | Fixtures it misses |
 | ------------ | ------------------ |

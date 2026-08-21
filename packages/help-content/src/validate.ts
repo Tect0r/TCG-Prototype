@@ -257,6 +257,11 @@ const REQUIRED_SECTIONS: readonly string[] = [
   'damage_and_defeat',
   'commander',
   'multiplayer',
+  // M09.18. A player can put an AI opponent in any free seat, and the book has
+  // to be able to answer what that opponent can see, how it is configured and
+  // what the timing dial does — none of which any other section covers, and all
+  // of which a player will otherwise guess at.
+  'ai_opponents',
   'choices_and_targets',
   'keywords',
   'glossary',

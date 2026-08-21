@@ -123,7 +123,7 @@ const DECK_MODE_LABELS: Readonly<Record<BotDeckMode, string | null>> = {
   exact_precon: 'A built-in deck',
   exact_saved_deck: 'One of your saved decks',
   commander_generated: 'A deck built for a Commander you pick',
-  autonomous_generated: 'A Commander and deck the bot picks',
+  autonomous_generated: 'A Commander and deck the AI picks',
 };
 
 const OFFERED_DECK_MODES = BOT_DECK_MODES.filter(
@@ -330,16 +330,16 @@ interface FieldLabels {
 }
 
 const NEW_BOT_LABELS: FieldLabels = {
-  source: 'Bot deck source',
-  precon: 'Bot deck',
+  source: 'AI opponent deck source',
+  precon: 'AI opponent deck',
   saved: 'Your deck',
-  commander: 'Bot Commander',
-  seed: 'Bot deck seed',
-  difficulty: 'Bot difficulty',
-  style: 'Bot style',
-  timing: 'Bot timing',
-  reactionOverride: 'Bot Reaction override',
-  reaction: 'Bot Reaction timing',
+  commander: 'AI opponent Commander',
+  seed: 'AI opponent deck seed',
+  difficulty: 'AI opponent difficulty',
+  style: 'AI opponent style',
+  timing: 'AI opponent timing',
+  reactionOverride: 'AI opponent Reaction override',
+  reaction: 'AI opponent Reaction timing',
   advanced: 'Timing and deck seed',
 };
 
@@ -415,7 +415,7 @@ function reviewDraft(
         ? null
         : { mode: 'autonomous_generated', seed: draft.deck.seed, generated: null },
       problem: none
-        ? 'No Commander in this format can lead a generated deck yet, so a bot has nothing to pick from.'
+        ? 'No Commander in this format can lead a generated deck yet, so an AI opponent has nothing to pick from.'
         : null,
       snapshot: null,
     };
@@ -501,7 +501,7 @@ function GeneratedDeckSummary({
   return (
     <>
       <p className="lobby__hint">
-        {chosenByBot ? 'The bot chose ' : 'Built for '}
+        {chosenByBot ? 'The AI opponent chose ' : 'Built for '}
         <strong>{commanderName ?? provenance.commanderId}</strong>
         {chosenByBot ? ' and built its deck from seed ' : ' from seed '}
         <code>{provenance.seed}</code>
@@ -674,9 +674,9 @@ function BotConfigFields({
 
       {draft.deck.mode === 'autonomous_generated' && (
         <p className="lobby__hint">
-          The bot picks one of this format’s {commanders.length} playable Commanders from this seed
-          alone, and builds its deck under it. It cannot see anyone’s hand, deck or saved decks when
-          it chooses.
+          The AI opponent picks one of this format’s {commanders.length} playable Commanders from
+          this seed alone, and builds its deck under it. It cannot see anyone’s hand, deck or saved
+          decks when it chooses.
         </p>
       )}
 
@@ -948,7 +948,7 @@ function SeatedBotForm({
   const labels = seatFieldLabels(seat.seatId);
 
   return (
-    <section className="lobby__bot" aria-label={`Bot in seat ${seatNumber(seat.seatId)}`}>
+    <section className="lobby__bot" aria-label={`AI opponent in seat ${seatNumber(seat.seatId)}`}>
       <p className="lobby__hint">
         <strong>{bot.displayName}</strong> is in seat {seatNumber(seat.seatId)}, playing{' '}
         {botSeatLabels(bot, database).deckName ?? 'a deck of its own'}.
@@ -967,8 +967,8 @@ function SeatedBotForm({
             </>
           ) : (
             <>
-              This bot plays a saved deck. Its name and list are not published, so this browser
-              cannot say which one — choose a deck below and apply it to be sure.
+              This AI opponent plays a saved deck. Its name and list are not published, so this
+              browser cannot say which one — choose a deck below and apply it to be sure.
             </>
           )}
         </p>
@@ -976,8 +976,8 @@ function SeatedBotForm({
 
       {frozenIsStale && (
         <p className="lobby__hint lobby__hint--warn">
-          That saved deck has changed since you seated this bot. It still plays the list you froze;
-          apply the change to send the current one.
+          That saved deck has changed since you seated this AI opponent. It still plays the list you
+          froze; apply the change to send the current one.
         </p>
       )}
 
@@ -995,8 +995,8 @@ function SeatedBotForm({
           />
         ) : (
           <p className="lobby__hint">
-            This bot plays a deck the server built for it. Its list is not published, and this
-            browser has not been told which one — reroll or apply a change to be sure.
+            This AI opponent plays a deck the server built for it. Its list is not published, and
+            this browser has not been told which one — reroll or apply a change to be sure.
           </p>
         ))}
 
@@ -1014,7 +1014,8 @@ function SeatedBotForm({
       {review.problem && <p className="lobby__error">{review.problem}</p>}
       {review.snapshot && (
         <p className="lobby__hint">
-          A copy of this deck is sent as it is now. Editing it afterwards does not change the bot.
+          A copy of this deck is sent as it is now. Editing it afterwards does not change the AI
+          opponent's deck.
         </p>
       )}
 
@@ -1130,7 +1131,7 @@ function BotCopyControls({
   onPaste,
   disabled,
 }: BotCopyControlsProps) {
-  const here = seatId === null ? 'the next bot' : `seat ${seatNumber(seatId)}`;
+  const here = seatId === null ? 'the next AI opponent' : `seat ${seatNumber(seatId)}`;
   const pasteable = copied !== null && copied.seatId !== seatId;
   const generated =
     copied !== null &&
@@ -1152,8 +1153,8 @@ function BotCopyControls({
         ) : (
           <p className="lobby__hint">
             This browser did not send this seat’s configuration, so it is showing defaults rather
-            than that bot’s setup and there is nothing here to copy. Apply a change to this seat
-            first.
+            than that AI opponent’s setup and there is nothing here to copy. Apply a change to this
+            seat first.
           </p>
         ))}
 
@@ -1170,8 +1171,8 @@ function BotCopyControls({
 
       {pasteable && generated && (
         <p className="lobby__hint">
-          Pasting a generated deck starts a new seed, so this bot gets its own deck rather than a
-          copy of seat {seatNumber(copied.seatId)}’s.
+          Pasting a generated deck starts a new seed, so this AI opponent gets its own deck rather
+          than a copy of seat {seatNumber(copied.seatId)}’s.
         </p>
       )}
     </div>
@@ -1214,7 +1215,7 @@ function AddBotForm({
   const canEdit = pending === null;
 
   return (
-    <section className="lobby__bot" aria-label="Add a bot">
+    <section className="lobby__bot" aria-label="Add an AI opponent">
       <BotConfigFields
         labels={NEW_BOT_LABELS}
         draft={draft}
@@ -1229,7 +1230,8 @@ function AddBotForm({
       {review.problem && <p className="lobby__error">{review.problem}</p>}
       {review.snapshot && (
         <p className="lobby__hint">
-          A copy of this deck is sent as it is now. Editing it afterwards does not change the bot.
+          A copy of this deck is sent as it is now. Editing it afterwards does not change the AI
+          opponent's deck.
         </p>
       )}
 
@@ -1243,7 +1245,7 @@ function AddBotForm({
           }}
           disabled={!canEdit || blocked !== null || review.deckSource === null}
         >
-          {pending?.kind === 'add' ? 'Adding…' : 'Add a bot'}
+          {pending?.kind === 'add' ? 'Adding…' : 'Add an AI opponent'}
         </button>
       </div>
 
@@ -1301,11 +1303,11 @@ function PacingBudgetsForm({ budgets }: PacingBudgetsFormProps) {
   };
 
   return (
-    <section className="lobby__pacing" aria-label="Bot pacing budgets">
+    <section className="lobby__pacing" aria-label="AI opponent pacing budgets">
       <p className="lobby__hint">{PACING_IS_NOT_A_HUMAN_TIMER}</p>
 
       <label className="field">
-        <span>Bot decision budget (seconds)</span>
+        <span>AI decision budget (seconds)</span>
         <input
           type="number"
           min={MIN_BUDGET_SECONDS}
@@ -1323,7 +1325,7 @@ function PacingBudgetsForm({ budgets }: PacingBudgetsFormProps) {
       </label>
 
       <label className="field">
-        <span>Bot Reaction budget (seconds)</span>
+        <span>AI Reaction budget (seconds)</span>
         <input
           type="number"
           min={MIN_BUDGET_SECONDS}
@@ -1397,8 +1399,8 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
   // and no Commander the server could build one under.
   if (precons.length === 0 && decks.length === 0 && commanders.length === 0) {
     return (
-      <section className="lobby__bots" aria-label="Bot opponents">
-        <h3>Bot opponents</h3>
+      <section className="lobby__bots" aria-label="AI opponents">
+        <h3>AI opponents</h3>
         <p className="lobby__hint">
           No built-in decks are published for this format, you have saved none, and no Commander
           here can lead a generated one, so there is nothing for a bot to play.
@@ -1409,12 +1411,12 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
 
   if (locked) {
     return (
-      <section className="lobby__bots" aria-label="Bot opponents">
-        <h3>Bot opponents</h3>
+      <section className="lobby__bots" aria-label="AI opponents">
+        <h3>AI opponents</h3>
         <p className="lobby__hint">
           {botSeats.length > 0
             ? `The match has started; the settings of ${botSeats.length === 1 ? 'this bot are' : 'these bots are'} locked for the rest of it.`
-            : 'The match has started. Bots can only be added before it does.'}
+            : 'The match has started. AI opponents can only be added before it does.'}
         </p>
         {/* What the match locked, read from the view rather than remembered:
             the server freezes the budgets at start and publishes the frozen
@@ -1423,7 +1425,7 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
         {botSeats.length > 0 && (
           <>
             <p className="lobby__hint">
-              Locked bot pacing: {lobby.botPacing.ordinarySeconds} s for a decision or a choice,{' '}
+              Locked AI pacing: {lobby.botPacing.ordinarySeconds} s for a decision or a choice,{' '}
               {lobby.botPacing.reactionSeconds} s for a Reaction window.
             </p>
             <ul className="lobby__pacing-list">
@@ -1475,21 +1477,21 @@ export function BotSeatPanel({ lobby, error }: BotSeatPanelProps) {
         : null;
 
   return (
-    <section className="lobby__bots" aria-label="Bot opponents">
-      <h3>Bot opponents</h3>
+    <section className="lobby__bots" aria-label="AI opponents">
+      <h3>AI opponents</h3>
 
       <p className="lobby__hint">
         {botSeats.length === 0
           ? 'Play against the software: pick a deck, how it should play, and how long it should take.'
-          : `${botSeats.length} of this table’s ${lobby.maxSeats} seats ${botSeats.length === 1 ? 'holds a bot' : 'hold bots'}. You can seat up to ${MAX_BOT_SEATS}; the rest of the table is people.`}
+          : `${botSeats.length} of this table’s ${lobby.maxSeats} seats ${botSeats.length === 1 ? 'holds an AI opponent' : 'hold AI opponents'}. You can seat up to ${MAX_BOT_SEATS}; the rest of the table is people.`}
       </p>
 
       {/* Says what the numbers below now do. Until M09.12 this was a warning
           that they did nothing; it is a statement of behaviour now, and the
           "0% is instant" half is here because that is still the default. */}
       <p className="lobby__hint">
-        Bots wait for the seconds shown against each seat before deciding. Timings are locked when
-        the match starts, and a seat left at 0% answers immediately.
+        AI opponents wait for the seconds shown against each seat before deciding. Timings are
+        locked when the match starts, and a seat left at 0% answers immediately.
       </p>
 
       <PacingBudgetsForm budgets={lobby.botPacing} />

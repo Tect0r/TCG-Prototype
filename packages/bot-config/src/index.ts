@@ -21,6 +21,7 @@ export {
   DIFFICULTY_REGISTRY_VERSION,
   PACING_CONFIG_VERSION,
   botConfigIssues,
+  isFutureVersion,
   refuseFutureVersion,
   type BotConfigVersionField,
 } from './version.js';

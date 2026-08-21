@@ -105,7 +105,7 @@ function botConfigFor(seatPacing: BotPacing): BotSeatConfig {
   return {
     schemaVersion: BOT_CONFIG_SCHEMA_VERSION,
     difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
-    controller: { botId: 'bot_1', displayName: 'Bot 2' },
+    controller: { botId: 'bot_1', displayName: 'AI 2' },
     difficulty: DEFAULT_BOT_DIFFICULTY,
     styleSetting: 'value',
     style: 'value',

@@ -590,7 +590,7 @@ describe('bot_decks_revealed', () => {
         {
           seatId: 'seat_2' as const,
           botId: 'bot_1',
-          displayName: 'Bot 2',
+          displayName: 'AI 2',
           commanderId: 'goblin_warboss',
           cardIds: ['throwing_knife', 'ashen_vermin'],
           generated: PROVENANCE,
@@ -607,7 +607,7 @@ describe('bot_decks_revealed', () => {
     const parsed = revealedBotDeckSchema.safeParse({
       seatId: 'seat_3',
       botId: 'bot_2',
-      displayName: 'Bot 3',
+      displayName: 'AI 3',
       commanderId: 'bastion_commander',
       cardIds: ['throwing_knife'],
       generated: null,

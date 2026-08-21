@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { bundledPrecon, loadBundledCardData } from '@tcg/card-data';
+import { MAX_FORMAT_DECK_SIZE, bundledPrecon, loadBundledCardData } from '@tcg/card-data';
 import { DEFAULT_DECK_FORMAT, deckFingerprint, preconToDeck, type SavedDeck } from '@tcg/deck';
+import { botDeckSnapshotSchema } from '@tcg/bot-config';
 import { botDeckSnapshotOf, reviewSavedDeckForBot, snapshotIsStale } from './bot-deck-snapshot.js';
 
 /**
@@ -95,6 +96,39 @@ describe('reviewSavedDeckForBot', () => {
     // The deck itself is still returned: the host chose it, and hiding it would
     // make the picker disagree with the message beside it.
     expect(review.deck).toBe(short);
+  });
+
+  /**
+   * The one path a saved deck reaches `botDeckSnapshotSchema.cardIds` by, and
+   * what the M09.18 ceiling means on it.
+   *
+   * A deck long enough to breach the ceiling is refused here **as an illegal
+   * deck**, by the format's exact size, and never reaches the bound at all —
+   * which is the evidence that narrowing the schema refuses nothing a host could
+   * legitimately have sent. The bound is the backstop behind that, not the
+   * first line of it.
+   */
+  it('refuses an over-long deck on the format rule, well before the schema ceiling', () => {
+    const base = legalDeck();
+    const first = base.cards[0];
+    if (!first) throw new Error('The fixture precon has no cards.');
+    const huge = legalDeck({
+      cards: [...base.cards, { cardId: first.cardId, quantity: MAX_FORMAT_DECK_SIZE }],
+    });
+
+    const review = reviewSavedDeckForBot(huge.id, [huge], database, DEFAULT_DECK_FORMAT);
+    expect(review.snapshot).toBeNull();
+    expect(review.problem).toContain('is not legal in this format');
+    // The active format asks for exactly 40 singleton cards, so its legal decks
+    // are nowhere near the ceiling and the host is told a rule they can act on
+    // rather than a limit they will never meet.
+    expect(DEFAULT_DECK_FORMAT.deckSize).toBeLessThan(MAX_FORMAT_DECK_SIZE);
+
+    // And had it somehow been sent anyway, the schema is the backstop: the raw
+    // freeze is longer than any format can require, so the codec refuses it.
+    const raw = botDeckSnapshotOf(huge);
+    expect(raw?.cardIds.length).toBeGreaterThan(MAX_FORMAT_DECK_SIZE);
+    expect(botDeckSnapshotSchema.safeParse(raw).success).toBe(false);
   });
 });
 

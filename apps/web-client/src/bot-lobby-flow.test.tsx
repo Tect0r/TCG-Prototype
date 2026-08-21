@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { loadBundledCardData } from '@tcg/card-data';
@@ -146,7 +149,7 @@ function humanSeat(overrides: Partial<HumanLobbySeatView> = {}): HumanLobbySeatV
 function botSeat(overrides: Partial<BotLobbySeatView> = {}): BotLobbySeatView {
   return {
     seatId: 'seat_2',
-    displayName: 'Bot 2',
+    displayName: 'AI 2',
     connected: true,
     ready: true,
     deckName: 'Goblin Swarm',
@@ -158,7 +161,7 @@ function botSeat(overrides: Partial<BotLobbySeatView> = {}): BotLobbySeatView {
     bot: {
       controller: 'bot',
       botId: 'bot_1',
-      displayName: 'Bot 2',
+      displayName: 'AI 2',
       difficulty: 'normal',
       styleSetting: 'aggressive',
       style: 'aggressive',
@@ -204,7 +207,7 @@ async function enterLobby(
   await screen.findByText(view.inviteCode);
 }
 
-const panel = (): HTMLElement => screen.getByLabelText('Bot opponents');
+const panel = (): HTMLElement => screen.getByLabelText('AI opponents');
 
 /* ------------------------------------------------------- adding and configuring */
 
@@ -213,9 +216,12 @@ describe('bot seat controls', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot deck'), 'precon_goblin_swarm');
-    await harness.user.selectOptions(screen.getByLabelText('Bot style'), 'defensive');
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.selectOptions(
+      screen.getByLabelText('AI opponent deck'),
+      'precon_goblin_swarm',
+    );
+    await harness.user.selectOptions(screen.getByLabelText('AI opponent style'), 'defensive');
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
 
     // The whole message. No seat ID and no bot ID: the server allocates both,
     // and a client that could choose either could collide with a real seat.
@@ -242,10 +248,10 @@ describe('bot seat controls', () => {
 
     // The default is still Normal: Easy is a thing a host asks for, not
     // something a first match quietly starts at.
-    expect(screen.getByLabelText('Bot difficulty')).toHaveValue('normal');
+    expect(screen.getByLabelText('AI opponent difficulty')).toHaveValue('normal');
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot difficulty'), 'easy');
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.selectOptions(screen.getByLabelText('AI opponent difficulty'), 'easy');
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
     expect(harness.transport().last('add_bot')?.setup.difficulty).toBe('easy');
     // And nothing else moved: difficulty is one of four independent axes, so
     // choosing one must not choose another.
@@ -266,7 +272,7 @@ describe('bot seat controls', () => {
     // its own, which is why publishing a difficulty needed no change here at
     // all. The loop below is now empty and is kept deliberately: absent-not-
     // disabled is still the rule for whatever is planned next.
-    const difficulty = screen.getByLabelText('Bot difficulty');
+    const difficulty = screen.getByLabelText('AI opponent difficulty');
     expect(
       within(difficulty)
         .getAllByRole('option')
@@ -279,7 +285,7 @@ describe('bot seat controls', () => {
     }
 
     // Deck: the shipped precons for the active format, and no other deck mode.
-    const deck = screen.getByLabelText('Bot deck');
+    const deck = screen.getByLabelText('AI opponent deck');
     expect(
       within(deck)
         .getAllByRole('option')
@@ -289,7 +295,7 @@ describe('bot seat controls', () => {
     // Timing does have a control since M09.11, and every percentage it offers
     // is one the server accepts — the range is `@tcg/bot-config`'s, not this
     // screen's.
-    const timing = screen.getByLabelText('Bot timing');
+    const timing = screen.getByLabelText('AI opponent timing');
     const offered = within(timing)
       .getAllByRole('option')
       .map((node) => Number(node.getAttribute('value')));
@@ -305,7 +311,7 @@ describe('bot seat controls', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    const add = screen.getByRole('button', { name: 'Add a bot' });
+    const add = screen.getByRole('button', { name: 'Add an AI opponent' });
     await harness.user.click(add);
     // The second press lands before the server has answered the first.
     await harness.user.click(screen.getByRole('button', { name: 'Adding…' }));
@@ -318,11 +324,11 @@ describe('bot seat controls', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    screen.getByLabelText('Bot deck').focus();
+    screen.getByLabelText('AI opponent deck').focus();
     await harness.user.tab();
-    expect(screen.getByLabelText('Bot difficulty')).toHaveFocus();
+    expect(screen.getByLabelText('AI opponent difficulty')).toHaveFocus();
     await harness.user.tab();
-    expect(screen.getByLabelText('Bot style')).toHaveFocus();
+    expect(screen.getByLabelText('AI opponent style')).toHaveFocus();
 
     // The refinements sit behind a disclosure since M09.16, and the disclosure
     // is a native `<summary>` precisely so this works: it is in the tab order
@@ -342,11 +348,11 @@ describe('bot seat controls', () => {
     // Timing and its override are inside it, still between the style and the
     // button (M09.11), and still reachable by tabbing on.
     await harness.user.tab();
-    expect(screen.getByLabelText('Bot timing')).toHaveFocus();
+    expect(screen.getByLabelText('AI opponent timing')).toHaveFocus();
     await harness.user.tab();
-    expect(screen.getByLabelText('Bot Reaction override')).toHaveFocus();
+    expect(screen.getByLabelText('AI opponent Reaction override')).toHaveFocus();
     await harness.user.tab();
-    expect(screen.getByRole('button', { name: 'Add a bot' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).toHaveFocus();
 
     await harness.user.keyboard('{Enter}');
     expect(harness.transport().last('add_bot')).toBeDefined();
@@ -360,12 +366,12 @@ describe('a seated bot', () => {
     const harness = renderApp();
     await enterLobby(harness, lobby([humanSeat(), botSeat()]));
 
-    const seat = within(screen.getByLabelText('Seats')).getByText('Bot 2').closest('li');
+    const seat = within(screen.getByLabelText('Seats')).getByText('AI 2').closest('li');
     expect(seat).not.toBeNull();
     const tags = within(seat as HTMLElement)
       .getAllByText(/.+/)
       .map((node) => node.textContent);
-    expect(tags).toContain('bot');
+    expect(tags).toContain('AI opponent');
     expect(tags).toContain('Goblin Swarm');
     expect(tags).toContain('Goblin Warboss');
     expect(tags).toContain('Normal');
@@ -401,10 +407,10 @@ describe('a seated bot', () => {
     // The seated bot's controls are seat-scoped, and the form for the *next* one
     // keeps the unscoped names — so three bots at a table are three
     // unambiguously named forms rather than three copies of "Bot style" (M09.7).
-    expect(screen.getByLabelText('Bot style')).toBeInTheDocument();
+    expect(screen.getByLabelText('AI opponent style')).toBeInTheDocument();
     // This table has two seats and both are taken, so there is nowhere to put
     // another bot: the control says so rather than disappearing.
-    expect(screen.getByRole('button', { name: 'Add a bot' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).toBeDisabled();
 
     await harness.user.selectOptions(screen.getByLabelText('Seat 2 style'), 'value');
     await harness.user.click(screen.getByRole('button', { name: 'Apply seat 2 changes' }));
@@ -428,8 +434,8 @@ describe('a seated bot', () => {
 
     harness.transport().deliver({ type: 'lobby_updated', lobby: lobby([humanSeat()]) });
 
-    expect(await screen.findByRole('button', { name: 'Add a bot' })).toBeInTheDocument();
-    expect(screen.queryByText('Bot 2')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Add an AI opponent' })).toBeInTheDocument();
+    expect(screen.queryByText('AI 2')).not.toBeInTheDocument();
     expect(screen.getByText(/Waiting for a player/)).toBeInTheDocument();
   });
 
@@ -450,13 +456,103 @@ describe('a seated bot', () => {
       'seat_3',
     );
 
-    expect(screen.getByText('Bot 2')).toBeInTheDocument();
+    expect(screen.getByText('AI 2')).toBeInTheDocument();
     expect(screen.queryByLabelText('Bot opponent')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add a bot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add an AI opponent' })).not.toBeInTheDocument();
   });
 });
 
 /* ------------------------------------------------------------- designed states */
+
+/**
+ * The naming boundary (M09.18).
+ *
+ * One word for a player and a different word for a schema, deliberately:
+ * **"AI opponent" everywhere a person reads, "bot" everywhere a machine does.**
+ * A single vocabulary would have to pick one audience to be wrong for — a lobby
+ * that called a seat a "bot" is jargon, and a wire that called it an
+ * "ai_opponent" would be a protocol break for a rename.
+ *
+ * The two assertions below are the boundary itself, so drifting across it in
+ * either direction fails here rather than in review.
+ */
+/**
+ * The internal tactical-profile name, restated here rather than imported.
+ *
+ * It belongs to `@tcg/bot-interface`, which the web client deliberately does not
+ * depend on — so this cannot be imported without breaking the very thing it is
+ * checking. Only the profiles whose IDs are unmistakably internal are listed:
+ * `baseline` is also an ordinary English word and a CSS value, so asserting its
+ * absence from a page would fail on something that is not a leak. The structural
+ * test below is what covers the whole set.
+ */
+const TACTICAL_PROFILE_IDS_THE_CLIENT_MUST_NEVER_SHOW = ['hard_tactical'] as const;
+
+describe('the naming boundary between a player and the wire', () => {
+  it('calls it an AI opponent everywhere a player reads', async () => {
+    const harness = renderApp();
+    await enterLobby(harness, lobby([humanSeat(), botSeat()]));
+
+    expect(panel()).toBeInTheDocument();
+    expect(screen.getByLabelText('AI opponent in seat 2')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AI opponents' })).toBeInTheDocument();
+
+    // And the internal word does not reach the page. The whole lobby is
+    // scanned rather than one node, because the failure this guards against is
+    // a *new* sentence saying "bot" rather than an old one that still does.
+    const shown = screen.getByLabelText('Match lobby').textContent ?? '';
+    expect(shown).toContain('AI opponent');
+    expect(shown, `"bot" reached the lobby: ${shown}`).not.toMatch(/\bbots?\b/i);
+  });
+
+  it('still says bot on the wire, and identifies the controller as one', async () => {
+    const harness = renderApp();
+    // A table with a free seat, so the add control is actually offered.
+    await enterLobby(harness, lobby([humanSeat()]));
+
+    await harness.user.selectOptions(
+      screen.getByLabelText('AI opponent deck'),
+      'precon_goblin_swarm',
+    );
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
+
+    // The control a player read as "Add an AI opponent" put `add_bot` on the
+    // wire. That is the boundary in one assertion.
+    expect(harness.transport().last('add_bot')?.type).toBe('add_bot');
+
+    // The seat view's discriminant is the schema word too, and it is what says
+    // a human is not sitting there — controller provenance, in one field.
+    const seat = botSeat();
+    expect(seat.controller).toBe('bot');
+    expect(seat.bot.controller).toBe('bot');
+    expect(humanSeat().controller).toBe('human');
+  });
+
+  it('never puts a tactical profile identifier in front of a player', async () => {
+    const harness = renderApp();
+    await enterLobby(harness, lobby([humanSeat(), botSeat()]));
+
+    // Difficulty is a player-facing label; the tactical profile a difficulty
+    // flies is not. A seat says "Normal", never the internal name of the scorer
+    // behind it.
+    const shown = document.body.textContent ?? '';
+    for (const internal of TACTICAL_PROFILE_IDS_THE_CLIENT_MUST_NEVER_SHOW) {
+      expect(shown, `${internal} reached the page`).not.toContain(internal);
+    }
+    expect(shown).toContain('Normal');
+  });
+
+  it('cannot name a tactical profile, because it does not depend on the package that owns them', () => {
+    // The structural half of the claim above, and the stronger one: the client
+    // has no route to `TACTICAL_PROFILE_IDS` at all. Adding `@tcg/bot-interface`
+    // here would put a decision procedure on a browser as well as an internal
+    // vocabulary, which is the dependency direction ADR 0024 keeps one-way.
+    const manifest = JSON.parse(
+      readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../package.json'), 'utf8'),
+    ) as { readonly dependencies?: Record<string, string> };
+    expect(Object.keys(manifest.dependencies ?? {})).not.toContain('@tcg/bot-interface');
+  });
+});
 
 describe('bot panel states', () => {
   it('prints a bot refusal beside the form rather than in the screen banner', async () => {
@@ -506,10 +602,10 @@ describe('bot panel states', () => {
     );
 
     expect(within(panel()).getByText(/locked for the rest of it/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Bot deck')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent deck')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Seat 2 deck')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Remove seat 2' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add a bot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add an AI opponent' })).not.toBeInTheDocument();
   });
 
   it('says so when every seat is taken instead of offering to add a bot', async () => {
@@ -519,7 +615,7 @@ describe('bot panel states', () => {
       lobby([humanSeat(), humanSeat({ seatId: 'seat_2', displayName: 'Rival', isHost: false })]),
     );
 
-    expect(screen.getByRole('button', { name: 'Add a bot' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add an AI opponent' })).toBeDisabled();
     expect(within(panel()).getByText(/Every seat at this table is taken/)).toBeInTheDocument();
   });
 
@@ -564,7 +660,7 @@ describe('the match itself', () => {
           },
           {
             playerId: 'player_2',
-            name: 'Bot 2',
+            name: 'AI 2',
             deck: deck('prototype_commander_green', 'thornback_calf'),
           },
         ],
@@ -587,7 +683,7 @@ describe('the match itself', () => {
     expect(await screen.findByLabelText('Match board')).toBeInTheDocument();
     // The bot is an ordinary opponent: a seat and a name, with no controller
     // label, difficulty, style or bot control anywhere on the board.
-    expect(screen.getByText(/seat \d+: Bot 2/)).toBeInTheDocument();
+    expect(screen.getByText(/seat \d+: AI 2/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Bot opponent')).not.toBeInTheDocument();
     expect(screen.queryByText('Aggressive')).not.toBeInTheDocument();
     await waitFor(() =>

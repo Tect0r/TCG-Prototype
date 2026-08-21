@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { cardIdSchema, formatIdSchema, preconIdSchema } from '@tcg/card-data';
+import { cardIdSchema, formatIdSchema, preconIdSchema, MAX_FORMAT_DECK_SIZE } from '@tcg/card-data';
 
 /**
  * Where a bot's cards come from (M09.1) — the third independent axis, and the
@@ -64,8 +64,25 @@ export const botDeckSnapshotSchema = z.strictObject({
   sourceDeckId: z.string().min(1).max(64),
   name: z.string().min(1).max(80),
   commanderId: cardIdSchema,
-  /** The frozen list. `validateDeck` remains the authority on its legality. */
-  cardIds: z.array(cardIdSchema).min(1),
+  /**
+   * The frozen list. `validateDeck` remains the authority on its *legality*;
+   * this bound is only the point past which a list cannot describe a deck at
+   * all.
+   *
+   * The ceiling is `MAX_FORMAT_DECK_SIZE`, which is the largest `size` a format
+   * this build can read may require — a format asking for more fails to parse,
+   * so no legal deck has ever held more, in any format, and a longer list is a
+   * malformed snapshot rather than an illegal deck. It is imported rather than
+   * restated: this schema and the format schema must not be able to disagree
+   * about how long a deck list can be (M09.18).
+   */
+  cardIds: z
+    .array(cardIdSchema)
+    .min(1)
+    .max(
+      MAX_FORMAT_DECK_SIZE,
+      `A deck list may hold at most ${MAX_FORMAT_DECK_SIZE} cards, which is the largest deck size any format can require.`,
+    ),
   deckHash: deckHashSchema,
 });
 export type BotDeckSnapshot = z.infer<typeof botDeckSnapshotSchema>;

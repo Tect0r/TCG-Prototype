@@ -47,10 +47,10 @@ export function RevealedBotDecks() {
   if (revealedBotDecks.length === 0) return null;
 
   return (
-    <section className="board__reveal" aria-label="Bot decks">
+    <section className="board__reveal" aria-label="AI opponent decks">
       <h3>
-        {revealedBotDecks.length === 1 ? 'The bot’s deck' : 'The bots’ decks'}, now the match is
-        over
+        {revealedBotDecks.length === 1 ? 'The AI opponent’s deck' : 'The AI opponents’ decks'}, now
+        the match is over
       </h3>
 
       {revealedBotDecks.map((deck) => {

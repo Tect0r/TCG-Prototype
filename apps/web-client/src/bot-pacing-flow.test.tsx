@@ -156,7 +156,7 @@ function humanSeat(overrides: Partial<HumanLobbySeatView> = {}): HumanLobbySeatV
 function botSeat(pacing: BotPacing, overrides: Partial<BotLobbySeatView> = {}): BotLobbySeatView {
   return {
     seatId: 'seat_2',
-    displayName: 'Bot 2',
+    displayName: 'AI 2',
     connected: true,
     ready: true,
     deckName: 'Goblin Swarm',
@@ -168,7 +168,7 @@ function botSeat(pacing: BotPacing, overrides: Partial<BotLobbySeatView> = {}): 
     bot: {
       controller: 'bot',
       botId: 'bot_1',
-      displayName: 'Bot 2',
+      displayName: 'AI 2',
       difficulty: 'normal',
       styleSetting: 'aggressive',
       style: 'aggressive',
@@ -213,8 +213,8 @@ async function enterLobby(
   await screen.findByText(view.inviteCode);
 }
 
-const panel = (): HTMLElement => screen.getByLabelText('Bot opponents');
-const budgetForm = (): HTMLElement => screen.getByLabelText('Bot pacing budgets');
+const panel = (): HTMLElement => screen.getByLabelText('AI opponents');
+const budgetForm = (): HTMLElement => screen.getByLabelText('AI opponent pacing budgets');
 
 /* ------------------------------------------------------------ table budgets */
 
@@ -223,9 +223,9 @@ describe('the table’s pacing budgets', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    expect(screen.getByLabelText('Bot decision budget (seconds)')).toHaveValue(30);
-    expect(screen.getByLabelText('Bot Reaction budget (seconds)')).toHaveValue(5);
-    expect(within(budgetForm()).getByText(/pace bots only/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('AI decision budget (seconds)')).toHaveValue(30);
+    expect(screen.getByLabelText('AI Reaction budget (seconds)')).toHaveValue(5);
+    expect(within(budgetForm()).getByText(/pace AI opponents only/i)).toBeInTheDocument();
     expect(within(budgetForm()).getByText(/times you out of a phase/i)).toBeInTheDocument();
   });
 
@@ -243,7 +243,7 @@ describe('the table’s pacing budgets', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    const ordinary = screen.getByLabelText('Bot decision budget (seconds)');
+    const ordinary = screen.getByLabelText('AI decision budget (seconds)');
     await harness.user.clear(ordinary);
     await harness.user.type(ordinary, '45');
 
@@ -259,7 +259,7 @@ describe('the table’s pacing budgets', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    const reaction = screen.getByLabelText('Bot Reaction budget (seconds)');
+    const reaction = screen.getByLabelText('AI Reaction budget (seconds)');
     await harness.user.clear(reaction);
     // Empty is not a budget, and neither is one past the supported ceiling.
     expect(harness.transport().all('set_bot_pacing')).toHaveLength(0);
@@ -306,10 +306,10 @@ describe('one bot’s timing', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot timing'), '50');
+    await harness.user.selectOptions(screen.getByLabelText('AI opponent timing'), '50');
     expect(within(panel()).getByText(/50% of 30 s — 15 s before a decision/)).toBeInTheDocument();
 
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
     expect(harness.transport().last('add_bot')?.setup.pacing).toEqual({
       percent: 50,
       reactionPercent: null,
@@ -324,10 +324,10 @@ describe('one bot’s timing', () => {
     // rounding.
     expect(within(panel()).getByText(/0% of 30 s — 0 s before a decision/)).toBeInTheDocument();
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot timing'), '100');
+    await harness.user.selectOptions(screen.getByLabelText('AI opponent timing'), '100');
     expect(within(panel()).getByText(/100% of 30 s — 29\.75 s/)).toBeInTheDocument();
 
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
     expect(harness.transport().last('add_bot')?.setup.pacing.percent).toBe(100);
   });
 
@@ -335,22 +335,22 @@ describe('one bot’s timing', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot timing'), '40');
+    await harness.user.selectOptions(screen.getByLabelText('AI opponent timing'), '40');
     // Inheriting says so, because "40%" beside a Reaction budget means two
     // different configurations and only one of them follows the dial above.
     expect(
       within(panel()).getByText(/40% \(inherited\) of 5 s — 2 s in a Reaction window/),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText('Bot Reaction timing')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent Reaction timing')).not.toBeInTheDocument();
 
-    await harness.user.click(screen.getByLabelText('Bot Reaction override'));
+    await harness.user.click(screen.getByLabelText('AI opponent Reaction override'));
     // Turning the override on changes nothing until the host moves it.
-    expect(screen.getByLabelText('Bot Reaction timing')).toHaveValue('40');
+    expect(screen.getByLabelText('AI opponent Reaction timing')).toHaveValue('40');
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot Reaction timing'), '0');
+    await harness.user.selectOptions(screen.getByLabelText('AI opponent Reaction timing'), '0');
     expect(within(panel()).getByText(/0% of 5 s — 0 s in a Reaction window/)).toBeInTheDocument();
 
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
     // An override of 0 is not "inherit", and the wire distinguishes them.
     expect(harness.transport().last('add_bot')?.setup.pacing).toEqual({
       percent: 40,
@@ -362,12 +362,12 @@ describe('one bot’s timing', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    await harness.user.selectOptions(screen.getByLabelText('Bot timing'), '40');
-    await harness.user.click(screen.getByLabelText('Bot Reaction override'));
-    await harness.user.selectOptions(screen.getByLabelText('Bot Reaction timing'), '0');
-    await harness.user.click(screen.getByLabelText('Bot Reaction override'));
+    await harness.user.selectOptions(screen.getByLabelText('AI opponent timing'), '40');
+    await harness.user.click(screen.getByLabelText('AI opponent Reaction override'));
+    await harness.user.selectOptions(screen.getByLabelText('AI opponent Reaction timing'), '0');
+    await harness.user.click(screen.getByLabelText('AI opponent Reaction override'));
 
-    await harness.user.click(screen.getByRole('button', { name: 'Add a bot' }));
+    await harness.user.click(screen.getByRole('button', { name: 'Add an AI opponent' }));
     expect(harness.transport().last('add_bot')?.setup.pacing).toEqual({
       percent: 40,
       reactionPercent: null,
@@ -398,7 +398,9 @@ describe('one bot’s timing', () => {
     // M09.11 shipped this line as a warning that the control did nothing.
     // M09.12 spends it, so the panel states the behaviour — and still says what
     // the default does, because 0% is what a new bot is seated at.
-    expect(within(panel()).getByText(/Bots wait for the seconds shown/)).toBeInTheDocument();
+    expect(
+      within(panel()).getByText(/AI opponents wait for the seconds shown/),
+    ).toBeInTheDocument();
     expect(within(panel()).getByText(/a seat left at 0% answers immediately/)).toBeInTheDocument();
     expect(within(panel()).queryByText(/still answer immediately in this build/)).toBeNull();
   });
@@ -422,11 +424,11 @@ describe('every seat can read a bot’s timing', () => {
       'seat_3',
     );
 
-    const seat = within(screen.getByLabelText('Seats')).getByText('Bot 2').closest('li');
+    const seat = within(screen.getByLabelText('Seats')).getByText('AI 2').closest('li');
     expect(seat).not.toBeNull();
     expect(within(seat as HTMLElement).getByText('50% · 15 s')).toBeInTheDocument();
     // And still none of the host's controls.
-    expect(screen.queryByLabelText('Bot pacing budgets')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent pacing budgets')).not.toBeInTheDocument();
   });
 });
 
@@ -454,9 +456,9 @@ describe('once the match has started', () => {
       ),
     );
 
-    expect(screen.queryByLabelText('Bot pacing budgets')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent pacing budgets')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Seat 2 timing')).not.toBeInTheDocument();
-    expect(within(panel()).getByText(/Locked bot pacing: 20 s for a decision/)).toBeInTheDocument();
+    expect(within(panel()).getByText(/Locked AI pacing: 20 s for a decision/)).toBeInTheDocument();
     expect(within(panel()).getByText(/50% of 20 s — 10 s before a decision/)).toBeInTheDocument();
     expect(
       within(panel()).getByText(/10% of 4 s — 0\.4 s in a Reaction window/),
@@ -490,7 +492,7 @@ async function board(
       database,
       seats: [
         { playerId: 'player_1', name: 'Player', deck },
-        { playerId: 'player_2', name: 'Bot 2', deck },
+        { playerId: 'player_2', name: 'AI 2', deck },
       ],
     }),
     'match setup',
@@ -511,16 +513,16 @@ async function board(
 describe('the pacing summary beside the result', () => {
   it('says nothing while the match is still being played', async () => {
     await board(false);
-    expect(screen.queryByLabelText('Bot pacing')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('AI opponent pacing')).not.toBeInTheDocument();
   });
 
   it('quotes the locked budgets and every bot’s timing once it is over', async () => {
     await board(true);
 
-    const summary = await screen.findByLabelText('Bot pacing');
+    const summary = await screen.findByLabelText('AI opponent pacing');
     expect(within(summary).getByText(/Budgets locked at start: 30 s/)).toBeInTheDocument();
-    expect(within(summary).getByText(/pace bots only/i)).toBeInTheDocument();
-    expect(within(summary).getByText(/Bot 2: 50% of 30 s — 15 s/)).toBeInTheDocument();
+    expect(within(summary).getByText(/pace AI opponents only/i)).toBeInTheDocument();
+    expect(within(summary).getByText(/AI 2: 50% of 30 s — 15 s/)).toBeInTheDocument();
     // And the honest sentence. Until M09.12 it said the timings were recorded
     // and not waited; a 50% seat now really did wait for them.
     expect(within(summary).getByText(/waited for the times above/)).toBeInTheDocument();
@@ -529,7 +531,7 @@ describe('the pacing summary beside the result', () => {
   it('says a table of instant bots waited for nothing', async () => {
     await board(true, IMMEDIATE_BOT_PACING);
 
-    const summary = await screen.findByLabelText('Bot pacing');
+    const summary = await screen.findByLabelText('AI opponent pacing');
     // 0% is still the default a bot is seated at, so this is the sentence most
     // first matches will carry, and it must not claim a wait that never was.
     expect(within(summary).getByText(/waited for nothing/)).toBeInTheDocument();
@@ -573,7 +575,7 @@ function pacingSummary(overrides: Partial<BotMatchSummary> = {}): BotMatchSummar
       {
         seatId: 'seat_2',
         botId: 'bot_1',
-        displayName: 'Bot 2',
+        displayName: 'AI 2',
         difficulty: 'normal',
         difficultyBehaviorVersion: '1.0.0',
         styleSetting: 'automatic',
@@ -628,7 +630,7 @@ describe('the measured pacing summary beside the result', () => {
     await completedBoard();
     // The configured half still renders: a table always gets its settings back,
     // even if the summary broadcast never arrives.
-    expect(await screen.findByLabelText('Bot pacing')).toBeInTheDocument();
+    expect(await screen.findByLabelText('AI opponent pacing')).toBeInTheDocument();
     expect(screen.queryByLabelText('Pacing summary')).not.toBeInTheDocument();
   });
 
@@ -643,7 +645,7 @@ describe('the measured pacing summary beside the result', () => {
     // quarter of a second, and a screen that rounded would describe a wait the
     // scheduler does not use.
     expect(
-      within(measured).getByText(/Bots were waiting for 30\.01 s of it — 40%/),
+      within(measured).getByText(/AI opponents were\s+waiting for 30\.01 s of it — 40%/),
     ).toBeInTheDocument();
   });
 

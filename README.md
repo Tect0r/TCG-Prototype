@@ -55,11 +55,48 @@ Run the authoritative multiplayer server separately when needed:
 npm run dev:server
 ```
 
-## Playing a match with other people
+## Playing a match
 
 Invite-code lobbies are implemented and the server is authoritative for 2–4
-players. There is **no matchmaking**: somebody runs the server, everybody else
+seats. There is **no matchmaking**: somebody runs the server, everybody else
 connects to it, and a six-character code is how they find each other.
+
+A seat does not have to hold a person. The host can fill any free seat with an
+**AI opponent**, so a table can be one human and one AI opponent, several people,
+or any mixture with at least one person in it. That means you can play a complete
+match on your own, with only `npm run dev` and `npm run dev:server` running and
+nobody else to connect — the rest of this section is about reaching other people
+when you do want them.
+
+### Playing against AI opponents
+
+The host adds, configures and removes AI opponents in the lobby, before the match
+starts. A table holds one fewer AI opponent than it has seats, so at least one
+person is always playing.
+
+Each one is set up independently: which deck it brings (a built-in precon, one of
+your saved decks, a deck the server generates under a Commander you pick, or a
+Commander and deck it picks itself), how well it plays (Easy, Normal or Hard),
+what it prefers (Aggressive, Defensive, Value, or Automatic from the Commander's
+authored deck plan), and how long it waits before answering.
+
+Two things about that last dial are worth knowing before you turn it up. It is a
+percentage of the _table's_ budget rather than a number of seconds, and it paces
+the AI opponent only — **nothing in this repository times a human out of a turn,
+a phase, a choice or a Reaction window.** The full explanation is in the
+in-game rulebook, under _Playing against an AI opponent_, which the lobby's
+**Rulebook** button opens.
+
+An AI opponent is given exactly what a person in the same seat would be given:
+its own hand, the public board, the public log and the legal actions the engine
+offers. It does not see your hand or your deck. Its own list stays private from
+the other seats until the match ends, at which point every AI deck is revealed to
+the whole table and can be exported.
+
+Because the current card pool is small, the two generated modes produce decks
+that are nearly identical under any one Commander. The lobby prints the exact
+numbers — how many cards are legal, how many are forced in, and how many a reroll
+can change — rather than implying variety the content cannot supply.
 
 ### Local development — one machine
 
@@ -83,7 +120,7 @@ against its own format's pool, so a client pointed at a `development` server wil
 have its `precon_wave_1` decks rejected with reasons rather than silently
 accepted.
 
-### Playing with friends on separate machines
+### Playing with other people on separate machines
 
 Two things have to change, and they are different problems.
 

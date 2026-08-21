@@ -78,12 +78,12 @@ export function compactPacingLabel(pacing: BotPacing, budgets: BotPacingBudgets)
  * typed into it.
  */
 export const PACING_SAFETY_MARGIN_NOTE =
-  `A bot never waits a whole budget: ${secondsLabel(PACING_SAFETY_MARGIN_MS)} of it is kept ` +
-  'for deciding and submitting, so 100% stops that much short.';
+  `An AI opponent never waits a whole budget: ${secondsLabel(PACING_SAFETY_MARGIN_MS)} of it is ` +
+  'kept for deciding and submitting, so 100% stops that much short.';
 
 /** Said wherever a budget is offered, so it cannot be mistaken for a rule. */
 export const PACING_IS_NOT_A_HUMAN_TIMER =
-  'These budgets pace bots only. Nothing here times you out of a phase, a choice or a match.';
+  'These budgets pace AI opponents only. Nothing here times you out of a phase, a choice or a match.';
 
 /* ----------------------------------------------- the measured summary (M09.17) */
 
@@ -147,5 +147,5 @@ export const SUMMARY_LIMIT_TEXT: Readonly<Record<BotSummaryLimit, string>> = Obj
     'Measured waits include timer resolution and ordinary event-loop delay, so they run a little past what was configured.',
   pacing_is_not_a_human_timer: PACING_IS_NOT_A_HUMAN_TIMER,
   concurrent_waits_overlap:
-    'Two or more bots waited at the same time, so the per-bot total below is larger than the wall-clock time the table actually spent waiting.',
+    'Two or more AI opponents waited at the same time, so the per-opponent total below is larger than the wall-clock time the table actually spent waiting.',
 });

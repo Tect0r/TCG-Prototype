@@ -240,7 +240,7 @@ describe('the host seats a bot', () => {
     });
 
     const seats = seatViews(harness.host).seats;
-    expect(seats[1]?.displayName).toBe('Bot 2');
+    expect(seats[1]?.displayName).toBe('AI 2');
     expect(seats[2]?.displayName).toBe('Sparring partner');
   });
 
@@ -269,7 +269,7 @@ describe('the host seats a bot', () => {
     expect(seat?.bot).toEqual({
       controller: 'bot',
       botId: 'bot_1',
-      displayName: 'Bot 2',
+      displayName: 'AI 2',
       difficulty: 'normal',
       // The host named the style, so the setting is the style (M09.16).
       styleSetting: 'defensive',
@@ -362,19 +362,25 @@ describe('a bot this build cannot honour is refused by name', () => {
     }
   });
 
-  it('still refuses a difficulty registry it is older than', () => {
+  it('still refuses a difficulty registry it is older than, and now says why', () => {
     // The guard that replaces the planned-difficulty refusal above, and the one
     // that matters now: a host on a *newer* build states a registry version this
-    // server has never seen. It is refused before it is read at all — the cap is
-    // on the message schema, so the answer is `malformed_message` rather than a
-    // seat-level verdict — and nothing is seated either way.
+    // server has never seen. It has always been refused — the cap is on the
+    // message schema, so it never reached a reader — and until M09.18 that made
+    // the answer `protocol/malformed_message`, which told a host with a current
+    // build that their message was gibberish. The codec now recognises the one
+    // cause it can explain and gives the readable newer-build refusal instead.
+    // `bot-compatibility.test.ts` drives the whole distinction; this keeps the
+    // claim beside the refusals it belongs with.
     const harness = createHarness();
     harness.send(harness.host, {
       type: 'add_bot',
       setup: setupFor(PRECON_ID, { difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION + 1 }),
     });
 
-    expect(lastError(harness.host)?.code).toBe('protocol/malformed_message');
+    const error = lastError(harness.host);
+    expect(error?.code).toBe('protocol/bot_config_invalid');
+    expect(error?.details?.join(' ')).toContain('written by a newer build');
     expect(harness.lobby().seats.has('seat_2')).toBe(false);
   });
 
@@ -687,7 +693,7 @@ describe('readiness and start gating', () => {
     const view = harness.host.last('match_state')?.view;
     expect(view?.viewerId).toBe('player_1');
     expect(view?.seatOrder).toEqual(['player_1', 'player_2']);
-    expect(view?.players.map((player) => player.name)).toContain('Bot 2');
+    expect(view?.players.map((player) => player.name)).toContain('AI 2');
 
     // Since M09.4 the bot then plays: it acts through the seat's own idempotent
     // action-identity map, which is the same one a human's `submit_action`
@@ -738,7 +744,7 @@ function savedDeckBotConfig(): BotSeatConfig {
   return {
     schemaVersion: BOT_CONFIG_SCHEMA_VERSION,
     difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION,
-    controller: { botId: 'bot_1', displayName: 'Bot 2' },
+    controller: { botId: 'bot_1', displayName: 'AI 2' },
     difficulty: DEFAULT_BOT_DIFFICULTY,
     styleSetting: 'value',
     style: 'value',
