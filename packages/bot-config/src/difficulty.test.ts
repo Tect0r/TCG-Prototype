@@ -11,7 +11,10 @@ import {
   difficultyRegistryGaps,
   difficultySelection,
   difficultySelectionSchema,
+  difficultyTactics,
+  plannedDifficultyRefusal,
   EASY_SELECTION,
+  type DifficultyDefinition,
   type BotDifficulty,
 } from './difficulty.js';
 import {
@@ -35,7 +38,14 @@ import { DIFFICULTY_REGISTRY_VERSION } from './version.js';
 const EXPECTED_STATUS: Record<BotDifficulty, 'available' | 'planned'> = {
   easy: 'available',
   normal: 'available',
-  hard: 'planned',
+  hard: 'available',
+};
+
+/** Which scorer each one flies. `hard` is the whole of what makes it Hard. */
+const EXPECTED_TACTICS: Record<BotDifficulty, string> = {
+  easy: 'baseline',
+  normal: 'baseline',
+  hard: 'hard_tactical',
 };
 
 const EXPECTED_STYLE_PILOTS: Record<BotStyle, string> = {
@@ -57,37 +67,55 @@ describe('difficulty registry', () => {
     expect(BOT_DIFFICULTIES).toEqual(['easy', 'normal', 'hard']);
   });
 
-  it('ships Easy and Normal, and names the tranche that owns Hard', () => {
+  it('ships all three, and plans nothing', () => {
     for (const difficulty of BOT_DIFFICULTIES) {
       expect(DIFFICULTY_REGISTRY[difficulty].status).toBe(EXPECTED_STATUS[difficulty]);
     }
-    // Easiest first, and the order is the lobby's order: M09.13 turned Easy on,
-    // M09.15 built Hard's behaviour without publishing it, and `plannedIn` moved
-    // to the tranche that owns the decision rather than the implementation.
-    //
-    // M09.16 asked that decision as Q50 and the owner answered **not yet**: the
-    // third strategic gap closes first, so `plannedIn` moves once more, to the
-    // tranche that closes it. Publishing Hard is still not something this
-    // registry *can* do — there is no field for a tactical profile — which is
-    // what keeps the answer a decision rather than a status flip.
-    expect(AVAILABLE_DIFFICULTIES).toEqual(['easy', 'normal']);
-    expect(PLANNED_DIFFICULTIES).toEqual(['hard']);
-    expect(DIFFICULTY_REGISTRY.easy.plannedIn).toBeNull();
-    expect(DIFFICULTY_REGISTRY.hard.plannedIn).toBe('M09.20');
-    expect(Object.keys(DIFFICULTY_REGISTRY.hard)).not.toContain('tacticalProfile');
+    // Easiest first, and the order is the lobby's order. M09.13 turned Easy on;
+    // M09.14 and M09.15 built Hard's behaviour without publishing it; M09.16 put
+    // the publication decision to the owner as Q50 and got "not yet, close the
+    // third strategic gap first"; M09.20 closed it and published Hard on that
+    // condition. Nothing is planned any more, which is what empties the lobby's
+    // planned-difficulty sentence - it is read from here rather than written out
+    // over there.
+    expect(AVAILABLE_DIFFICULTIES).toEqual(['easy', 'normal', 'hard']);
+    expect(PLANNED_DIFFICULTIES).toEqual([]);
+    for (const difficulty of BOT_DIFFICULTIES) {
+      expect(DIFFICULTY_REGISTRY[difficulty].plannedIn).toBeNull();
+    }
   });
 
   it('gives a behaviour version to what it implements, and to nothing else', () => {
-    // A result citing `hard` has to be able to say *which* Hard; a difficulty
-    // with no decision procedure has no Hard to cite yet, and says null.
+    // A result citing `hard` has to be able to say *which* Hard. All three now
+    // implement something, so all three say which one.
     expect(DIFFICULTY_REGISTRY.normal.behaviorVersion).toBe('1.0.0');
     expect(DIFFICULTY_REGISTRY.easy.behaviorVersion).toBe('1.0.0');
-    expect(DIFFICULTY_REGISTRY.hard.behaviorVersion).toBeNull();
+    // The **difficulty's** first version, not the profile's: `hard_tactical` has
+    // been at `1.0.0`, `1.1.0` and `1.2.0` without a difficulty existing to fly
+    // it, and folding the two together is how a reader comes to think Hard
+    // shipped three times.
+    expect(DIFFICULTY_REGISTRY.hard.behaviorVersion).toBe('1.0.0');
     for (const difficulty of BOT_DIFFICULTIES) {
       expect(difficultyIsAvailable(difficulty)).toBe(
         DIFFICULTY_REGISTRY[difficulty].behaviorVersion !== null,
       );
     }
+  });
+
+  it('names a tactical profile for each, and Hard is the only one that is not baseline', () => {
+    // The second half of what a difficulty is (M09.20). Written out rather than
+    // read back for the same reason the selections are: `easy` or `normal`
+    // quietly acquiring a refinement would make "Normal is the published
+    // heuristic, unchanged" false, and this is where that has to be argued.
+    for (const difficulty of BOT_DIFFICULTIES) {
+      expect(DIFFICULTY_REGISTRY[difficulty].tactics).toBe(EXPECTED_TACTICS[difficulty]);
+      expect(difficultyTactics(difficulty)).toBe(EXPECTED_TACTICS[difficulty]);
+    }
+    // The IDs are strings here because the profiles live one package up;
+    // `tactics.test.ts` in `@tcg/bot-interface` resolves every one of them
+    // against the real registry, which is what stops a typo being a bot that
+    // silently flies the baseline.
+    expect(DIFFICULTY_REGISTRY.hard.tactics).not.toBe(DIFFICULTY_REGISTRY.normal.tactics);
   });
 
   it('says how each available difficulty chooses, and refuses to guess for Hard', () => {
@@ -101,14 +129,35 @@ describe('difficulty registry', () => {
       maxBand: 3,
     });
     expect(EASY_SELECTION).toEqual(DIFFICULTY_REGISTRY.easy.selection);
-    expect(DIFFICULTY_REGISTRY.hard.selection).toBeNull();
+    // Hard takes the best candidate, exactly as Normal does. The difference
+    // between them is entirely in the other half, and saying so here is what
+    // keeps "a Hard bot is not luckier and does not get a wider band" checkable.
+    expect(DIFFICULTY_REGISTRY.hard.selection).toEqual({ kind: 'best' });
 
     expect(difficultySelection('easy')).toEqual(EASY_SELECTION);
     expect(difficultySelection('normal')).toEqual({ kind: 'best' });
-    // Refused by name rather than silently falling back to `best`, which is how
-    // a planned difficulty would otherwise end up playing as Normal while the
-    // lobby, the seat label and the match record all said it did not.
-    expect(() => difficultySelection('hard')).toThrow(/Hard.*M09\.20/);
+    expect(difficultySelection('hard')).toEqual({ kind: 'best' });
+  });
+
+  it('still refuses by name for a difficulty with nothing behind it', () => {
+    // Nothing is planned today, so the refusal is exercised against a definition
+    // built here rather than against the shipped table. It is the guard that
+    // stops the *next* planned difficulty from silently playing as Normal, and a
+    // guard that only ran while something happened to be planned would have
+    // rotted the moment the last one shipped.
+    const planned: DifficultyDefinition = {
+      ...DIFFICULTY_REGISTRY.hard,
+      status: 'planned',
+      plannedIn: 'M99.9',
+      behaviorVersion: null,
+      selection: null,
+      tactics: null,
+    };
+    expect(plannedDifficultyRefusal(planned, 'decision procedure')).toMatch(/Hard.*M99\.9/);
+    expect(plannedDifficultyRefusal(planned, 'tactical profile')).toMatch(/Hard.*M99\.9/);
+    // Both accessors are built out of that one wording, so the two cannot drift.
+    expect(() => difficultySelection('hard')).not.toThrow();
+    expect(() => difficultyTactics('hard')).not.toThrow();
   });
 
   it('refuses a bound that would not bound anything', () => {
@@ -133,10 +182,11 @@ describe('difficulty registry', () => {
   });
 
   it('pins the registry version, so a record can say which registry it cited', () => {
-    // 2 since M09.13: `easy` changed status, which is exactly what this constant
-    // is for. A record that cites `easy` against registry 1 was written by a
-    // build that could not fly one.
-    expect(DIFFICULTY_REGISTRY_VERSION).toBe(2);
+    // 3 since M09.20: `hard` changed status and every definition gained
+    // `tactics`. Both are exactly what this constant is for - a record that
+    // cites `hard` against registry 2 was written by a build that could not fly
+    // one, and a v2 reader meets an unknown member on a v3 definition.
+    expect(DIFFICULTY_REGISTRY_VERSION).toBe(3);
   });
 });
 

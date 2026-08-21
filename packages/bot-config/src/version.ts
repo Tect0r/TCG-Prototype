@@ -49,8 +49,14 @@ export const BOT_CONFIG_SCHEMA_VERSION = 2;
  *   to know whether the registry behind it could actually fly one. The registry
  *   also gained `selection`, so a definition read from elsewhere is a wider
  *   shape than a v1 build knows.
+ * - 3 — M09.20, `hard` moves `planned` → `available`, and every definition gains
+ *   `tactics`. Both halves of the reason are here on purpose: the status change
+ *   is what this constant has always been for, and the new field is the second
+ *   half of what a difficulty *is* — a v2 build reading a v3 definition meets an
+ *   unknown member, and a v2 build reading a record that cites `hard` would
+ *   otherwise conclude the registry behind it could not fly one.
  */
-export const DIFFICULTY_REGISTRY_VERSION = 2;
+export const DIFFICULTY_REGISTRY_VERSION = 3;
 
 /**
  * The pacing budget shape and the percentage-to-delay calculation.

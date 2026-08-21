@@ -5,6 +5,7 @@ import { loadBundledCardData } from '@tcg/card-data';
 import {
   AUTOMATIC_STYLE,
   AUTOMATIC_STYLE_FALLBACK,
+  AVAILABLE_DIFFICULTIES,
   BOT_STYLE_SETTINGS,
   DEFAULT_BOT_PACING_BUDGETS,
   PLANNED_DIFFICULTIES,
@@ -448,23 +449,22 @@ describe('copying one bot’s setup onto another seat', () => {
 /* -------------------------------------------------------------- what is stated */
 
 describe('what the panel says about what it cannot offer', () => {
-  it('names the difficulty that is planned rather than leaving a gap', async () => {
+  it('has emptied its planned-difficulty sentence, because the registry did', async () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    // Absent-not-disabled is still the rule; what this tranche adds is saying
-    // so. Read from the registry, so it empties itself when Hard is published.
-    expect(PLANNED_DIFFICULTIES).not.toEqual([]);
-    for (const difficulty of PLANNED_DIFFICULTIES) {
-      const definition = difficultyDefinition(difficulty);
-      const control = within(addForm()).getByLabelText('Bot difficulty') as HTMLSelectElement;
-      expect([...control.options].map((option) => option.value)).not.toContain(difficulty);
-      expect(
-        within(addForm()).getByText(
-          new RegExp(`${definition.label} is planned for ${definition.plannedIn}`),
-        ),
-      ).toBeInTheDocument();
-    }
+    // M09.16 wrote this sentence and said it would empty itself when Hard was
+    // published; M09.20 published Hard, and it did — without a change to the
+    // panel, because the sentence is built from `PLANNED_DIFFICULTIES` rather
+    // than written out. Both halves are asserted: nothing is planned, and no
+    // "is planned for" line is on the screen.
+    expect(PLANNED_DIFFICULTIES).toEqual([]);
+    expect(within(addForm()).queryByText(/is planned for/)).not.toBeInTheDocument();
+
+    // And the control offers every difficulty the registry ships, Hard included.
+    const control = within(addForm()).getByLabelText('Bot difficulty') as HTMLSelectElement;
+    expect([...control.options].map((option) => option.value)).toEqual([...AVAILABLE_DIFFICULTIES]);
+    expect(difficultyDefinition('hard').status).toBe('available');
   });
 
   it('says what the difficulty on offer actually is', async () => {

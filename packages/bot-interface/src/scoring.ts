@@ -1488,3 +1488,69 @@ export function strandedReactionValue(
   }
   return worst;
 }
+
+/* ------------------------------------- card-in-hand valuation (M09.20) */
+
+/**
+ * How much of a card's value a hand keeps when the card is not played this turn.
+ *
+ * A coarse shape factor, in the family of `durationScale` and `ASSUMED_STAT`
+ * rather than of the named `BotWeights`, and for the same reason: it is a
+ * statement about the *shape* of a card's value over time, not a dial a style
+ * should be able to turn. It is high because the claim behind it is narrow. A
+ * card that is not played this turn is still in hand next turn, at the same
+ * statline and the same text, and the Energy that would have bought it grows
+ * rather than shrinks — the rulebook's Energy carries to the seat's own next
+ * turn. What is genuinely lost by waiting is one turn of the card, not the card.
+ *
+ * **The number is not derived, and saying so is part of the record.** Two honest
+ * derivations were available and they disagree. The scorer's own duration ladder
+ * prices one turn of a permanent effect at half of forever, which puts retention
+ * at 0.5. A mid-game body that will stand for the rest of a twenty-turn match
+ * loses nearer a tenth of itself by arriving a turn late, which puts it near
+ * 0.9. Neither forces a value. 0.85 is where a deferred card stops outweighing
+ * one turn of tempo for all three weight vectors on the board M05.6 recorded the
+ * gap on, and it was checked against the whole twenty-four-board suite rather
+ * than against that one board.
+ *
+ * What it costs is measured rather than assumed, and the measurement is in the
+ * M09.20 milestone record: closing that gap at this magnitude removes the
+ * head-to-head advantage `hard_tactical` `1.1.0` had over the baseline. That is
+ * a product trade, not an arithmetic one, and it is recorded as an open question
+ * rather than tuned away.
+ */
+export const DEFERRED_CARD_RETENTION = 0.85;
+
+/**
+ * What a card is still worth to a seat that leaves it in hand this turn.
+ *
+ * The defect this closes: the scorer prices a card **played** at its whole value
+ * and a card **kept** at nothing, so a body reads as a permanent gain rather
+ * than as one turn of tempo over playing the same body next turn — and holding
+ * Energy for a window that has not opened can therefore never win against
+ * playing something. It is a valuation defect in every decision the pilot makes,
+ * which is why the correction is to how *every card in every hand* is valued
+ * rather than to a resource rule.
+ *
+ * Deliberately **uniform over `cardValue`**, and that shape was chosen by
+ * measurement rather than by taste. A version that charged only the part of a
+ * card that pays out every turn — a statline, a Relic's chassis, the statics —
+ * and left a Spell's one-shot text uncharged is more precise about *what* a hand
+ * keeps, and it is much worse to play with: it makes an event cheap relative to
+ * a body in every hand that holds both, and a bot flying it loses to the
+ * baseline far more heavily than this one does. A uniform share leaves the
+ * ordering *among* plays almost exactly where the published heuristic put it and
+ * moves only the comparison between playing and not playing, which is the
+ * comparison the defect is about. The M09.20 record carries all three variants
+ * and their numbers.
+ *
+ * Never negative: it is a share of something the pilot already owns, not a new
+ * term. Never larger than the card's own value, because it is a fraction of it.
+ */
+export function heldCardValue(
+  definition: CardDefinition,
+  weights: BotWeights,
+  database: CardDatabase,
+): number {
+  return Math.max(0, cardValue(definition, weights, database) * DEFERRED_CARD_RETENTION);
+}

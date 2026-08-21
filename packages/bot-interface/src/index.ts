@@ -56,6 +56,7 @@ export {
 
 export {
   assertTacticalProfilesComplete,
+  resolveTacticalProfile,
   tacticalProfile,
   tacticalProfileGaps,
   tacticalProfileIdSchema,

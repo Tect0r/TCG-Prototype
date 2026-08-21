@@ -34,22 +34,15 @@ export const CONTAINMENT_CONTROL_FIXTURES: readonly TacticalFixture[] = [
       defensive: 'penalises unspent Energy and prices no window that has not opened yet',
       value: 'penalises unspent Energy and prices no window that has not opened yet',
     },
-    // Narrowed but not closed by M09.15's `reservesReactionEnergy`, and the
-    // remaining half is a different defect. The window *is* priced now: the
-    // three Energy the counter needs stop being charged the unspent-Energy
-    // penalty, and the body is charged the counter it strands, which moves the
-    // two candidates about four points closer for every style. What is left is
-    // that the scorer values a card played at its whole card value and a card
-    // kept at nothing — so a 3/2 body reads as a permanent gain rather than as
-    // one turn of tempo over playing the same card next turn. Correcting that is
-    // a change to how every card in every hand is valued, not a resource rule,
-    // and it is not M09.15's to make.
-    tacticalGaps: {
-      aggressive:
-        'holds the reserve but still buys the body: a card kept in hand is priced at zero',
-      defensive: 'holds the reserve but still buys the body: a card kept in hand is priced at zero',
-      value: 'holds the reserve but still buys the body: a card kept in hand is priced at zero',
-    },
+    // Closed at `hard_tactical` in two tranches, which is why the record is
+    // worth keeping. M09.15's `reservesReactionEnergy` priced the *window*: the
+    // three Energy the counter needs stopped being charged the unspent-Energy
+    // penalty, and the body was charged the counter it strands, which moved the
+    // two candidates about four points closer for every style and left the body
+    // still winning. M09.20's `pricesCardsInHand` closed the rest by pricing the
+    // *card*: a body kept in hand is no longer worth nothing, so playing one now
+    // buys one turn of tempo rather than a permanent gain. No entry here is what
+    // that looks like.
   },
   {
     id: 'containment_control/dismantle_their_relic_not_mine',

@@ -20,6 +20,7 @@ import {
   createPilot,
   createStyledPilot,
   createTacticalPilot,
+  PILOT_BASE_WEIGHTS,
   STYLED_PILOT_IDS,
 } from './registry.js';
 import {
@@ -28,8 +29,11 @@ import {
   cardValue,
   damageRemovalFraction,
   DEFAULT_WEIGHTS,
+  DEFERRED_CARD_RETENTION,
   enablerLeadBonus,
   greedyBlocks,
+  heldCardValue,
+  parseWeights,
   reactionEnergyReserve,
   resolveHypotheticalCombat,
   strandedReactionValue,
@@ -40,6 +44,7 @@ import {
 } from './scoring.js';
 import {
   assertTacticalProfilesComplete,
+  resolveTacticalProfile,
   tacticalProfile,
   tacticalProfileGaps,
   BASELINE_TACTICS,
@@ -95,16 +100,42 @@ describe('the tactical profile registry', () => {
     expect(TACTICAL_REFINEMENTS.some((refinement) => HARD_TACTICAL_TACTICS[refinement])).toBe(true);
   });
 
-  it('does not publish Hard: the difficulty registry still refuses it', async () => {
-    // M09.14 builds the tactical half and M09.15 owns the strategic half, so
-    // nothing in `@tcg/bot-config` moved and no lobby can select this yet. The
-    // check is here rather than only over there because this is the file whose
-    // existence would otherwise look like publication.
+  it('is what the difficulty registry names, and every name resolves', async () => {
+    // The two registries are in two packages that cannot import each other's
+    // vocabularies, so `DifficultyDefinition.tactics` is a plain string. This is
+    // the join: every profile a difficulty names has to exist here, or a bot
+    // would fly the baseline while the lobby, the seat label and the match
+    // record all said it flew something else (M09.20).
+    const { DIFFICULTY_REGISTRY, BOT_DIFFICULTIES } = await import('@tcg/bot-config');
+    for (const difficulty of BOT_DIFFICULTIES) {
+      const named = DIFFICULTY_REGISTRY[difficulty].tactics;
+      if (named === null) continue;
+      expect(resolveTacticalProfile(named).id).toBe(named);
+    }
+    expect(DIFFICULTY_REGISTRY.hard.tactics).toBe('hard_tactical');
+    // And the other direction: a name this build does not have is refused rather
+    // than quietly resolved to the baseline.
+    expect(() => resolveTacticalProfile('hard_tactical_v2')).toThrow(/not one this build has/);
+  });
+
+  it('publishes Hard, and only through the difficulty registry', async () => {
+    // M09.14 built the tactical half, M09.15 the short-horizon one and M09.20 the
+    // last strategic one. None of them could publish Hard, because publication is
+    // a decision made over there — and now that it has been made, the check is
+    // still here, because this is the file whose existence would otherwise look
+    // like publication.
     const { DIFFICULTY_REGISTRY, AVAILABLE_DIFFICULTIES } = await import('@tcg/bot-config');
-    expect(DIFFICULTY_REGISTRY.hard.status).toBe('planned');
-    expect(DIFFICULTY_REGISTRY.hard.selection).toBeNull();
-    expect(DIFFICULTY_REGISTRY.hard.behaviorVersion).toBeNull();
-    expect(AVAILABLE_DIFFICULTIES).not.toContain('hard');
+    expect(DIFFICULTY_REGISTRY.hard.status).toBe('available');
+    expect(AVAILABLE_DIFFICULTIES).toContain('hard');
+    // Hard's difficulty version is its own and is not this profile's: they move
+    // for different reasons and a record cites both.
+    expect(DIFFICULTY_REGISTRY.hard.behaviorVersion).toBe('1.0.0');
+    expect(HARD_TACTICAL_TACTICS.version).toBe('1.2.0');
+    expect(DIFFICULTY_REGISTRY.hard.behaviorVersion).not.toBe(HARD_TACTICAL_TACTICS.version);
+    // Normal and Easy are still the baseline, which is what keeps publishing Hard
+    // from being a change to either of them.
+    expect(DIFFICULTY_REGISTRY.normal.tactics).toBe('baseline');
+    expect(DIFFICULTY_REGISTRY.easy.tactics).toBe('baseline');
   });
 });
 
@@ -437,12 +468,12 @@ describe('Reaction energy reservation', () => {
     expect(best(HARD_TACTICAL_TACTICS)).toBe('pass');
   });
 
-  it('still spends the Energy when the body is worth more than the answer', () => {
-    // The other direction, and the one that matters for a bot that must not
-    // simply stop playing cards: a 3/2 for two outscores the counter it strands,
-    // so Hard buys it — which is also why `hold_energy_for_the_counter` is still
-    // a recorded gap rather than a closed one.
-    const table = CalibrationTable.open({ preconId: 'precon_containment_control', energy: 3 });
+  it('spends it again as soon as the play no longer strands the answer', () => {
+    // The direction that matters for a bot which must not simply stop playing
+    // cards. The same two cards and one more Energy: the body no longer takes
+    // the seat below what the counter needs, nothing is stranded, and Hard buys
+    // it. The hold is about *this* board, not a standing preference for passing.
+    const table = CalibrationTable.open({ preconId: 'precon_containment_control', energy: 5 });
     table.give('calculated_response');
     table.give('veil_skirmisher');
     const observation = table.observationFor(table.self);
@@ -458,6 +489,68 @@ describe('Reaction energy reservation', () => {
       }))
       .reduce((a, b) => (b.score > a.score ? b : a));
     expect(picked.key).toBe('play:veil_skirmisher:inst_t0083');
+  });
+});
+
+/* ------------------------------------ the card-in-hand price (M09.20) */
+
+describe('the card a play gives up out of its own hand', () => {
+  const database = calibrationDatabase();
+  const weights = DEFAULT_WEIGHTS;
+  const body = database.getOrThrow('veil_skirmisher');
+  const counter = database.getOrThrow('calculated_response');
+
+  it('is a uniform share of what the card is worth, for every card type', () => {
+    // Uniform on purpose (M09.20): the shape that charged only a permanent's
+    // per-turn half and left a Spell's one-shot text alone is more precise about
+    // what a hand keeps and measurably worse to play with, because it makes an
+    // event cheap relative to a body in every hand that holds both. A uniform
+    // share leaves the ordering *among* plays where the published heuristic put
+    // it and moves only the comparison between playing and not playing.
+    for (const definition of [body, counter]) {
+      expect(heldCardValue(definition, weights, database)).toBeCloseTo(
+        cardValue(definition, weights, database) * DEFERRED_CARD_RETENTION,
+      );
+    }
+    // A share, never a new term: it cannot exceed what the card is worth, and it
+    // cannot be negative.
+    expect(heldCardValue(body, weights, database)).toBeLessThan(cardValue(body, weights, database));
+    expect(heldCardValue(body, weights, database)).toBeGreaterThan(0);
+    expect(DEFERRED_CARD_RETENTION).toBeGreaterThan(0);
+    expect(DEFERRED_CARD_RETENTION).toBeLessThan(1);
+  });
+
+  it('never charges a play for a card that is worth nothing to hold', () => {
+    // The clamp, on a definition whose value the weights drive to zero or below.
+    // A card the scorer already dislikes must not be made *attractive* by being
+    // cheap to give up.
+    const worthless = { ...body, attack: 0, health: 0 };
+    expect(heldCardValue(worthless, weights, database)).toBe(0);
+  });
+
+  it('holds the body that would strand the counter, and says so at every style', () => {
+    // The behavioural half, on the calibration board the gap was recorded on:
+    // three Energy, a counter that costs all of it and a 2-cost body. Every
+    // style now passes, which is what `hold_energy_for_the_counter` asked for.
+    for (const pilotId of CALIBRATED_PILOT_IDS) {
+      const weightsFor = PILOT_BASE_WEIGHTS[pilotId];
+      const table = CalibrationTable.open({ preconId: 'precon_containment_control', energy: 3 });
+      table.give('calculated_response');
+      table.give('veil_skirmisher');
+      const observation = table.observationFor(table.self);
+      const parsed = parseWeights(weightsFor);
+      const best = candidateActions(observation, {
+        weights: parsed,
+        mayConcede: false,
+        tactics: HARD_TACTICAL_TACTICS,
+      })
+        .map((candidate) => ({
+          key: candidate.key,
+          score: scoreCandidate(observation, candidate, parsed, HARD_TACTICAL_TACTICS),
+        }))
+        .reduce((a, b) => (b.score > a.score ? b : a));
+      expect(best.key).toBe('pass');
+    }
   });
 });
 
@@ -640,6 +733,8 @@ describe('the named M05.6 tactical gaps', () => {
     // M09.15's sequencing half. Baseline still deploys the Guardian into an
     // empty board and follows with the Relic; Hard leads with the Relic.
     'bastion_guardians/armory_before_the_guardian',
+    // M09.20's. Baseline buys the body and strands the counter; Hard holds.
+    'containment_control/hold_energy_for_the_counter',
   ];
 
   it.each(closed)('%s is answered by every pilot under the hard tactical profile', (fixtureId) => {
@@ -654,24 +749,22 @@ describe('the named M05.6 tactical gaps', () => {
     }
   });
 
-  it('is honest about the strategic gap it did not close', () => {
-    // One of M09.15's three is still open, and it is recorded in both places so
-    // that closing it quietly is impossible: the fixture carries a note for
-    // every pilot, and this names it as the tranche's remaining gap.
-    const open = ['containment_control/hold_energy_for_the_counter'];
-    for (const fixtureId of open) {
-      const fixture = CALIBRATION_FIXTURES.find((entry) => entry.id === fixtureId);
-      if (!fixture) throw new Error(`no fixture "${fixtureId}"`);
-      expect(Object.keys(fixture.tacticalGaps ?? {}).sort()).toEqual(
-        [...CALIBRATED_PILOT_IDS].sort(),
-      );
-      // The reserve is genuinely held — the refinement is not inert here, it is
-      // outweighed — so a profile that stopped reserving would fail elsewhere
-      // rather than silently agreeing with this record.
-      for (const pilotId of CALIBRATED_PILOT_IDS) {
-        expect(runFixture(fixture, pilotId, 'hard_tactical').characteristic).toBe(false);
-      }
+  it('leaves no fixture recording a Hard gap, and says what that does not mean', () => {
+    // M09.20 closed the last of the three strategic gaps, so no fixture carries
+    // a `tacticalGaps` entry any more. That is a statement about the
+    // **instrument**, not about the player: twenty-four hand-authored boards are
+    // twenty-four decisions somebody thought to write down, and a profile that
+    // answers all of them has stopped being measured by them. Asserted here so
+    // that the suite's exhaustion is a recorded fact rather than something a
+    // reader has to notice, and so that a *new* gap appearing fails loudly.
+    for (const fixture of CALIBRATION_FIXTURES) {
+      expect(fixture.tacticalGaps).toBeUndefined();
     }
+    // The baseline is still genuinely missing things, which is what keeps the
+    // suite able to tell the two profiles apart at all.
+    expect(
+      CALIBRATION_FIXTURES.filter((fixture) => fixture.knownGaps !== undefined).length,
+    ).toBeGreaterThan(0);
   });
 
   it('records the sacrifice board as a rules correction rather than as a pilot one', () => {
@@ -701,9 +794,15 @@ describe('the named M05.6 tactical gaps', () => {
       const before = baseline.byPilot.find((row) => row.pilotId === pilotId);
       const after = hard.byPilot.find((row) => row.pilotId === pilotId);
       expect(after?.characteristic ?? 0).toBeGreaterThan(before?.characteristic ?? 0);
-      // Still not a solved player: a rate of 1 would mean the suite had stopped
-      // asking anything hard, and three strategic gaps are still open.
-      expect(after?.rate ?? 1).toBeLessThan(1);
+      // As of M09.20 the rate is 1: every board in the suite is answered by
+      // every style. M09.14 and M09.15 asserted `< 1` here to keep "not a solved
+      // player" honest while gaps remained; asserting it now would be asserting
+      // that a gap is still open, which is the opposite of honest. What the
+      // number means is recorded instead — the suite has stopped measuring this
+      // profile, and widening it is a later tranche's work rather than this
+      // tranche's licence to claim solved play.
+      expect(after?.rate ?? 0).toBe(1);
+      expect(before?.rate ?? 1).toBeLessThan(1);
     }
     expect(hard.byFacet.attacking.total).toBeGreaterThan(0);
     expect(hard.byFacet.blocking.unanimousYes).toBeGreaterThan(

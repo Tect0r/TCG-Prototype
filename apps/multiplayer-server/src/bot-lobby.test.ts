@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AVAILABLE_DIFFICULTIES,
   BOT_CONFIG_SCHEMA_VERSION,
   BOT_DECK_MODES,
   DECK_MODE_SUPPORT,
   DEFAULT_BOT_DIFFICULTY,
   DEFAULT_BOT_PACING_BUDGETS,
-  DIFFICULTY_REGISTRY,
   DIFFICULTY_REGISTRY_VERSION,
   FIELDS_A_BOT_CONTROLLER_NEVER_HAS,
   IMMEDIATE_BOT_PACING,
@@ -346,15 +346,35 @@ describe('a bot this build cannot honour is refused by name', () => {
     },
   );
 
-  it.each(PLANNED_DIFFICULTIES)('refuses difficulty %s until its tranche lands', (difficulty) => {
-    const harness = createHarness();
-    harness.send(harness.host, { type: 'add_bot', setup: setupFor(PRECON_ID, { difficulty }) });
+  it('offers every difficulty the registry ships, and plans none', () => {
+    // M09.20 published Hard, so `PLANNED_DIFFICULTIES` is empty and the refusal
+    // this test used to drive has nothing left to refuse. What is worth keeping
+    // is the other half of the same claim: the lobby's answer is read from the
+    // registry rather than from a list here, so every available difficulty is
+    // seatable and the set of them is exactly the registry's.
+    expect(PLANNED_DIFFICULTIES).toEqual([]);
+    for (const difficulty of AVAILABLE_DIFFICULTIES) {
+      const harness = createHarness();
+      harness.send(harness.host, { type: 'add_bot', setup: setupFor(PRECON_ID, { difficulty }) });
 
-    const error = lastError(harness.host);
-    expect(error?.code).toBe('protocol/bot_config_invalid');
-    expect(error?.details?.join(' ')).toContain(
-      DIFFICULTY_REGISTRY[difficulty].plannedIn as string,
-    );
+      expect(lastError(harness.host)).toBeUndefined();
+      expect(seatViews(harness.host).seats[1]?.bot?.difficulty).toBe(difficulty);
+    }
+  });
+
+  it('still refuses a difficulty registry it is older than', () => {
+    // The guard that replaces the planned-difficulty refusal above, and the one
+    // that matters now: a host on a *newer* build states a registry version this
+    // server has never seen. It is refused before it is read at all — the cap is
+    // on the message schema, so the answer is `malformed_message` rather than a
+    // seat-level verdict — and nothing is seated either way.
+    const harness = createHarness();
+    harness.send(harness.host, {
+      type: 'add_bot',
+      setup: setupFor(PRECON_ID, { difficultyRegistryVersion: DIFFICULTY_REGISTRY_VERSION + 1 }),
+    });
+
+    expect(lastError(harness.host)?.code).toBe('protocol/malformed_message');
     expect(harness.lobby().seats.has('seat_2')).toBe(false);
   });
 
@@ -503,13 +523,20 @@ describe('the host reconfigures and removes a bot', () => {
   it('leaves the previous configuration alone when the new one is refused', () => {
     const harness = createHarness();
     harness.send(harness.host, { type: 'add_bot', setup: setupFor() });
+    // A precon no precon file has, since M09.20 left no planned difficulty to be
+    // refused for. What is being tested is the *rollback* — a refused
+    // reconfiguration must not half-apply — so any seat-level refusal will do,
+    // and this one cannot quietly become valid the way a planned ID eventually
+    // does. The reconfiguration also asks for Hard, which is now accepted: the
+    // seat must still come out at `normal`, because a refused `update_bot`
+    // applies nothing at all rather than the parts that were fine.
     harness.send(harness.host, {
       type: 'update_bot',
       seatId: 'seat_2',
-      setup: setupFor(PRECON_ID, { difficulty: 'hard' }),
+      setup: setupFor('precon_not_a_deck', { difficulty: 'hard' }),
     });
 
-    expect(lastError(harness.host)?.code).toBe('protocol/bot_config_invalid');
+    expect(lastError(harness.host)?.code).toBe('protocol/bot_deck_illegal');
     const seat = seatViews(harness.host).seats[1];
     expect(seat?.bot?.difficulty).toBe('normal');
     expect(seat?.bot?.deck).toEqual({ mode: 'exact_precon', preconId: PRECON_ID });

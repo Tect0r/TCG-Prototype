@@ -4,6 +4,7 @@ import {
   DEFAULT_BOT_PACING_BUDGETS,
   difficultyDefinition,
   difficultySelection,
+  difficultyTactics,
   type BotDecisionCategory,
   type BotDifficulty,
   type BotPacing,
@@ -18,6 +19,7 @@ import {
   createStyledPilot,
   decideSafely,
   pilotIdSchema,
+  resolveTacticalProfile,
   type BotFailureKind,
   type BotObservation,
   type BotPolicy,
@@ -325,20 +327,25 @@ export function botSeedFor(matchSeed: string, seatId: SeatId): string {
 /**
  * The pilot a bot seat flies.
  *
- * Style chooses the weight vector; difficulty chooses which of the scored
- * candidates that vector produces the bot actually takes. Since M09.13 both come
- * out of their own registry — `botStyleDefinition(...).pilotId` and
- * `difficultySelection(...)` — rather than out of a switch here, so a difficulty
- * cannot be added to the registry and forgotten in the runner, and a difficulty
- * with nothing behind it is refused by `difficultySelection` in one place with
- * one wording rather than in every caller that builds a pilot.
+ * Style chooses the weight vector; difficulty chooses **both** halves of how the
+ * candidates that vector produces are decided between — which candidates there
+ * are and what they score (`difficultyTactics`, M09.20), and which of the scored
+ * ones is taken (`difficultySelection`, M09.13). All three come out of their own
+ * registry — `botStyleDefinition(...).pilotId` and the two above — rather than
+ * out of a switch here, so a difficulty cannot be added to the registry and
+ * forgotten in the runner, and a difficulty with nothing behind it is refused in
+ * one place with one wording rather than in every caller that builds a pilot.
  *
  * The two axes stay independent by construction: nothing below lets a difficulty
- * reach the weights or a style reach the selection.
+ * reach the weights or a style reach the selection or the profile.
  */
 export function createBotPilot(config: BotSeatConfig): BotPolicy {
   const pilotId = pilotIdSchema.parse(botStyleDefinition(config.style).pilotId);
-  return createStyledPilot({ pilotId, selection: difficultySelection(config.difficulty) });
+  return createStyledPilot({
+    pilotId,
+    selection: difficultySelection(config.difficulty),
+    tactics: resolveTacticalProfile(difficultyTactics(config.difficulty)),
+  });
 }
 
 /**

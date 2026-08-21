@@ -42,6 +42,8 @@ export {
   difficultySelection,
   difficultySelectionSchema,
   difficultyStatusSchema,
+  difficultyTactics,
+  plannedDifficultyRefusal,
   type BotDifficulty,
   type CandidateSelectionKind,
   type DifficultyDefinition,

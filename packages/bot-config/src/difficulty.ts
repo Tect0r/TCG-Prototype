@@ -15,14 +15,17 @@ import { z } from 'zod';
  * Two properties are structural rather than conventional:
  *
  * - The registry is a **total** `Record` over `BOT_DIFFICULTIES`, so adding an ID
- *   without deciding its status, its summary and its behaviour version is a
- *   compile error. `difficultyRegistryGaps()` says the same at runtime for
- *   callers that arrive with a string.
- * - A difficulty that has **no decision procedure yet** says so in data. M09.1
- *   defines the vocabulary and implements none of it, so `easy` and `hard` are
- *   `planned` with a `null` behaviour version and name the tranche that owns
- *   them. A lobby refuses a planned difficulty by reading this table rather than
- *   by hard-coding a list of what is finished.
+ *   without deciding its status, its summary, its behaviour version, its
+ *   selection and its tactical profile is a compile error.
+ *   `difficultyRegistryGaps()` says the same at runtime for callers that arrive
+ *   with a string.
+ * - A difficulty that has **no decision procedure yet** says so in data, with
+ *   three nulls that cannot disagree with each other. M09.1 defined the
+ *   vocabulary and implemented none of it; M09.13 published Easy and M09.20
+ *   published Hard, so nothing is `planned` today. The shape stays, because a
+ *   lobby refuses a planned difficulty by reading this table rather than by
+ *   hard-coding a list of what is finished — and the next difficulty to be
+ *   named will be planned before it is anything else.
  *
  * **Difficulty is a player-facing label, not an evidence class.** A Hard result
  * is not final-balance evidence and Hard does not become archetype-aware; the
@@ -125,6 +128,30 @@ export interface DifficultyDefinition {
    * disagree about whether a difficulty exists yet.
    */
   readonly selection: DifficultySelection | null;
+  /**
+   * Which **tactical profile** it flies — the other half of a difficulty
+   * (M09.20).
+   *
+   * M09.14 split a difficulty in two: a *selection*, above, which decides which
+   * of the scored candidates is taken, and a *tactical profile*, which decides
+   * what the candidates are and what they score. Only the first was ever in this
+   * registry, and that was deliberate while Hard was unpublished — a registry
+   * that could name a profile is a registry a later tranche could publish Hard
+   * through by accident. M09.20 closes the last strategic gap and publishes it,
+   * so the field arrives in the same change that makes it true.
+   *
+   * A **string** rather than the `TacticalProfileId` union, for the same reason
+   * `BotStyleDefinition.pilotId` is one: the profiles live in
+   * `@tcg/bot-interface`, which depends on this package, and importing them here
+   * would invert the dependency direction ADR 0001 chose. The name is checked
+   * against the real registry from over there — `tactics.test.ts` resolves every
+   * ID this table names — so a typo is a failing test rather than a bot that
+   * silently flies the baseline.
+   *
+   * `null` on the same rule `selection` and `behaviorVersion` follow, so the
+   * three cannot disagree about whether a difficulty exists yet.
+   */
+  readonly tactics: string | null;
 }
 
 export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefinition>> =
@@ -139,6 +166,10 @@ export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefin
       plannedIn: null,
       behaviorVersion: '1.0.0',
       selection: EASY_SELECTION,
+      // Easy is a *selection* difference over the identical scored list, which
+      // is the whole claim M09.13 published it on. Flying anything but the
+      // baseline here would make it a different scorer wearing a bound.
+      tactics: 'baseline',
     },
     normal: {
       id: 'normal',
@@ -152,6 +183,10 @@ export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefin
       // Literally the selection the heuristic has always made, named rather than
       // reimplemented, which is what makes "Normal is unchanged" checkable.
       selection: { kind: 'best' },
+      // The same statement about the other half: `baseline` turns every tactical
+      // refinement off, so "Normal is the published heuristic, unchanged" stays
+      // true by construction rather than by discipline.
+      tactics: 'baseline',
     },
     hard: {
       id: 'hard',
@@ -159,32 +194,51 @@ export const DIFFICULTY_REGISTRY: Readonly<Record<BotDifficulty, DifficultyDefin
       summary:
         'A versioned improvement on named calibration gaps, choosing better among the same legal ' +
         'candidates. It reads no hidden state, and a Hard result is not a balance finding.',
-      status: 'planned',
-      // Its behaviour exists — `hard_tactical` in `@tcg/bot-interface` is at
-      // `1.1.0` and closes six of the twenty-four calibration boards Normal
-      // misses — but a difficulty is not a profile, and nothing here may quietly
-      // become one. Publishing it needs a field this registry does not have,
-      // which is exactly why it cannot happen by accident: `selection` and
-      // `behaviorVersion` are still null, so `difficultySelection('hard')`
-      // throws by name and a lobby's list still does not contain it.
-      //
-      // What is left is a decision rather than an implementation, and M09.16 put
-      // it to the owner as Q50. The answer, on 2026-08-20, was **not yet**: the
-      // third strategic gap M09.15 measured and left open —
-      // `containment_control/hold_energy_for_the_counter`, where the scorer
-      // prices a card played at its whole value and a card kept in hand at
-      // nothing — closes first, and Hard is published with it. That is M09.20,
-      // and it is why this registry still has no field for a tactical profile:
-      // a registry that could carry one is a registry a later tranche could
-      // publish Hard through by accident.
-      plannedIn: 'M09.20',
-      behaviorVersion: null,
-      selection: null,
+      // Published in M09.20, on the condition the owner set in Q50 on
+      // 2026-08-20: the last of the three strategic gaps M09.15 measured and
+      // left open — `containment_control/hold_energy_for_the_counter` — closes
+      // first, and Hard ships with it. It did, in `hard_tactical` `1.2.0`.
+      status: 'available',
+      plannedIn: null,
+      // The **difficulty's** own version, and `1.0.0` because this is the first
+      // Hard anything can select. It is not `hard_tactical`'s version and must
+      // not be confused with it: the profile has been improving since M09.14
+      // without a difficulty existing to fly it, and a record that cites `hard`
+      // is citing this pair — the selection below and the profile named beside
+      // it — rather than either half alone.
+      behaviorVersion: '1.0.0',
+      // Hard takes the best candidate it scored, exactly as Normal does. The
+      // difference between them is entirely in the other half: what the
+      // candidates are and what they score. Saying that here rather than
+      // inventing a third selection kind is what keeps "difficulty is not a
+      // second style" checkable — a Hard bot is not luckier, it is not greedier,
+      // and it does not get a wider band.
+      selection: { kind: 'best' },
+      tactics: 'hard_tactical',
     },
   });
 
 export function difficultyDefinition(difficulty: BotDifficulty): DifficultyDefinition {
   return DIFFICULTY_REGISTRY[difficulty];
+}
+
+/**
+ * What a caller is told when it asks a planned difficulty how it plays.
+ *
+ * One wording, built from the definition rather than from the ID, and exported
+ * so that it stays exercised: as of M09.20 nothing in the shipped registry is
+ * planned, and a refusal that only ran while something happened to be planned
+ * would have rotted the moment the last difficulty was published. The guard
+ * exists for the *next* one.
+ */
+export function plannedDifficultyRefusal(
+  definition: DifficultyDefinition,
+  missing: string,
+): string {
+  return (
+    `Difficulty "${definition.label}" is planned for ${definition.plannedIn ?? 'a later tranche'} ` +
+    `and has no ${missing} behind it.`
+  );
 }
 
 /**
@@ -197,12 +251,26 @@ export function difficultyDefinition(difficulty: BotDifficulty): DifficultyDefin
 export function difficultySelection(difficulty: BotDifficulty): DifficultySelection {
   const definition = DIFFICULTY_REGISTRY[difficulty];
   if (definition.selection === null) {
-    throw new Error(
-      `Difficulty "${definition.label}" is planned for ${definition.plannedIn ?? 'a later tranche'} ` +
-        'and has no decision procedure behind it.',
-    );
+    throw new Error(plannedDifficultyRefusal(definition, 'decision procedure'));
   }
   return definition.selection;
+}
+
+/**
+ * Which tactical profile this difficulty flies, for a caller about to build a
+ * pilot (M09.20).
+ *
+ * Throws on a planned difficulty for the same reason `difficultySelection` does,
+ * and through the same wording: a silent fallback to `baseline` is how a
+ * difficulty that a lobby, a seat label and a match record all call Hard ends up
+ * scoring exactly like Normal.
+ */
+export function difficultyTactics(difficulty: BotDifficulty): string {
+  const definition = DIFFICULTY_REGISTRY[difficulty];
+  if (definition.tactics === null) {
+    throw new Error(plannedDifficultyRefusal(definition, 'tactical profile'));
+  }
+  return definition.tactics;
 }
 
 export function difficultyIsAvailable(difficulty: BotDifficulty): boolean {
@@ -250,10 +318,18 @@ export function difficultyRegistryGaps(): string[] {
           `planned difficulty "${difficulty}" declares how it chooses, but nothing implements it.`,
         );
       }
+      if (definition.tactics !== null) {
+        problems.push(
+          `planned difficulty "${difficulty}" names a tactical profile, but nothing implements it.`,
+        );
+      }
       continue;
     }
     if (definition.behaviorVersion === null) {
       problems.push(`available difficulty "${difficulty}" does not declare a behaviour version.`);
+    }
+    if (definition.tactics === null || definition.tactics.trim() === '') {
+      problems.push(`available difficulty "${difficulty}" does not name a tactical profile.`);
     }
     if (definition.selection === null) {
       problems.push(`available difficulty "${difficulty}" does not say how it chooses.`);

@@ -24,10 +24,11 @@ re-opened months later.
 
 ## Owner decisions a tranche may stop on
 
-These four are the plan's short list. Each is genuinely a design call rather than
+These five are the plan's short list. Each is genuinely a design call rather than
 an engineering one. Q47 and Q48 were on it until 2026-08-14, and Q49 and Q50 were
 each on it for the length of one tranche on 2026-08-20; all four are now under
-[Answered](#answered).
+[Answered](#answered). Q51 joined it on 2026-08-21, when M09.20 measured a trade
+Q50 had assumed was not there.
 
 ### Q4. What should `resilient` do, or should it be deleted?
 
@@ -139,6 +140,47 @@ Answer it when a Reaction is authored that needs one, not before.
 ---
 
 ## Design questions, nothing blocked
+
+### Q51. Keep the card-in-hand price, or keep Hard's win rate? — open
+
+**Raised by M09.20, which measured a trade Q50 assumed was not there.** Q50 set
+one standard for publishing Hard — close
+`containment_control/hold_energy_for_the_counter` — and named no rate, on the
+reasoning that a named gap is a thing that can be finished while a threshold
+would have to be argued about. M09.20 closed the gap and published Hard, and
+found that closing it **costs the profile its measured advantage over Normal**.
+
+Over 384 seeded matches on identical games, Hard seated first and second:
+
+| Profile                                         | Head to head vs Normal |
+| ----------------------------------------------- | ---------------------- |
+| `hard_tactical` `1.1.0` — no card-in-hand price | 53.9%                  |
+| `hard_tactical` `1.2.0` — as shipped            | 50.1%                  |
+
+Three shapes of the charge were built and measured, and every one that closes the
+gap gives ground: a precise one that charges only a card's per-turn half reads
+42.0%, a flat share of the play score reads 47.9%, and the uniform share that
+shipped reads 50.1%. Normal against Normal on the same games is 46.9%/53.1%, so a
+profile equal to Normal reads about 50%.
+
+**The question is which the owner wants Hard to be**, and it is a product call
+rather than an engineering one:
+
+- **Keep it on** (what M09.20 shipped): every one of the twenty-four calibration
+  boards is answered, `hold_energy_for_the_counter` is genuinely closed, and Hard
+  is a bot that plays patiently and wins about as often as Normal.
+- **Turn it off**: `pricesCardsInHand` becomes `false` in `HARD_TACTICAL_TACTICS`,
+  the profile returns to `1.1.0`'s behaviour at a new version, Hard beats Normal
+  by about four points, and the calibration board goes back to being a recorded
+  open gap.
+- **Something else**: a fourth shape of the charge, or a smaller retention that
+  narrows the gap without closing it. M09.20 did not go looking for one, because
+  tuning a pilot until a fixture and a scoreboard agree is fitting the pilot to
+  the scoreboard — the thing that tranche's Stop clause exists to prevent.
+
+Nothing is blocked on the answer: Hard is selectable either way, the reversal is
+one boolean and a version, and no schema, message or rule depends on it. It is
+recorded here so that the trade is a decision rather than an accident.
 
 ### Q6. Is there an alternate victory condition?
 
@@ -581,7 +623,7 @@ prose says it acts when it enters the battlefield while carrying no
 `active` card is a content-build error. The five behaviour contracts in
 `contracts-goblin.ts` claim "when it is deployed" and are unchanged otherwise.
 
-### Q50. Is Hard good enough to publish? — answered 2026-08-20
+### Q50. Is Hard good enough to publish? — answered 2026-08-20, discharged 2026-08-21
 
 **Not yet: close the third strategic gap first.** Raised by M09.15 and put to the
 owner by M09.16 with the measurements in front of them — `hard_tactical` at
@@ -599,13 +641,30 @@ rate was named: the standard is the named gap, which is a thing that can be
 finished rather than a threshold that would have to be argued about.
 
 **Implemented** in M09.16 as the smaller of the two moves the question could
-have caused. `DIFFICULTY_REGISTRY.hard.plannedIn` moves `M09.16` → `M09.20`,
-`difficultySelection('hard')` still throws by name, and `DifficultyDefinition`
-still has **no field for a tactical profile** — which is what keeps publishing
+have caused. `DIFFICULTY_REGISTRY.hard.plannedIn` moved `M09.16` → `M09.20`,
+`difficultySelection('hard')` still threw by name, and `DifficultyDefinition`
+still had **no field for a tactical profile** — which is what kept publishing
 Hard a decision rather than a status flip a later tranche could make by accident.
-`DIFFICULTY_REGISTRY_VERSION` stays 2, because nothing was added, removed, or
-changed status. The tranche that owns the work is
-[M09.20](milestones/M09-play-against-ai.md#m0920--card-in-hand-valuation-and-hards-publication).
+`DIFFICULTY_REGISTRY_VERSION` stayed 2, because nothing was added, removed, or
+changed status.
+
+**Discharged** in
+[M09.20](milestones/M09-play-against-ai.md#m0920--card-in-hand-valuation-and-hards-publication--done-2026-08-21),
+on exactly the condition the ruling set. `pricesCardsInHand` closed
+`containment_control/hold_energy_for_the_counter` at every style — a play is now
+charged what the card would still have been worth in hand, so a body is one turn
+of tempo rather than a permanent gain — and Hard was published in the same
+change: `status` `planned` → `available`, `behaviorVersion` `1.0.0`, `selection`
+`{ kind: 'best' }`, and a new `tactics` field naming `hard_tactical`.
+`DIFFICULTY_REGISTRY_VERSION` moves 2 → 3 for the status change and the new
+field together. Nothing was rebalanced and no fixture was added to make the gap
+close, which was the ruling's other half.
+
+**What the discharge found**, and the reason this ruling has a successor: closing
+the gap **costs** the profile its head-to-head advantage over Normal — 53.9%
+before the change, 50.1% after, over the same 384 seeded matches. Q50 named no
+rate deliberately, so the ruling is satisfied as written; whether the owner wants
+that trade is [Q51](#q51-keep-the-card-in-hand-price-or-keep-hards-win-rate--open).
 
 ### Q49. Does a Token count as a Unit? — answered 2026-08-20
 

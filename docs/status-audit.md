@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `5d17575e62288fbe42f6a751eb10007a5a5e3df4` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-21                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `e33278e168557108751684fc9a538668d841acdf`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-21                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,12 +31,12 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| packages       | 78      | 1826     |
+| packages       | 78      | 1833     |
 | scripts        | 4       | 69       |
 | server         | 15      | 307      |
 | simulator      | 23      | 433      |
 | web-client     | 20      | 259      |
-| **total**      | **140** | **2894** |
+| **total**      | **140** | **2901** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -93,7 +93,7 @@ What a bot seat is configured by. Independent of the play contract on purpose (A
 | Constant                      | Value | Pins                                                                                                                                                                                          |
 | ----------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BOT_CONFIG_SCHEMA_VERSION`   | 2     | One bot seat's configuration — controller, difficulty, style, deck source and pacing.                                                                                                         |
-| `DIFFICULTY_REGISTRY_VERSION` | 2     | Which difficulty IDs exist and what each claims. Available today: easy, normal.                                                                                                               |
+| `DIFFICULTY_REGISTRY_VERSION` | 3     | Which difficulty IDs exist and what each claims. Available today: easy, normal, hard.                                                                                                         |
 | `PACING_CONFIG_VERSION`       | 1     | The bot pacing budget shape and the percentage-to-delay calculation. Not a rules version.                                                                                                     |
 | `BOT_SUMMARY_SCHEMA_VERSION`  | 1     | One match’s bot pacing and provenance summary, as broadcast at completion and exported to a file. Separate from `PROTOCOL_VERSION`, which an exported file has no handshake to be refused at. |
 | `DECK_FINGERPRINT_VERSION`    | 1     | How a saved deck frozen into bot configuration is fingerprinted, so a browser and the server agree. Separate from `HASH_VERSION`, which is the simulator’s content address.                   |
@@ -262,7 +262,8 @@ No match record observes (31):
 | Q47      | May a Reaction answer another Reaction? — answered 2026-08-14          | answered      | no                      |
 | Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | answered      | no                      |
 | Q49      | Does a Token count as a Unit? — answered 2026-08-20                    | answered      | no                      |
-| Q50      | Is Hard good enough to publish? — answered 2026-08-20                  | answered      | no                      |
+| Q50      | Is Hard good enough to publish? — answered 2026-08-20, discharged 2... | answered      | no                      |
+| Q51      | Keep the card-in-hand price, or keep Hard's win rate? — open           | open          | yes                     |
 
 15 question(s) are open in the question file and not on the plan's
 short list, which is the curated set a tranche might have to stop on rather than an index.

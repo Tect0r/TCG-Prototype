@@ -34,13 +34,14 @@ import { z } from 'zod';
  * the calibration table asserts the behavioural one by running every fixture
  * through the same redacted view.
  *
- * **Hard is not published by this file.** `hard_tactical` carried only the
- * tactical half in M09.14; M09.15 added the two short-horizon refinements —
- * `sequencesEnablers` and `reservesReactionEnergy` — that the strategic half was
- * missing. Publication is still a decision made in `@tcg/bot-config`, and
- * `DIFFICULTY_REGISTRY.hard` is still `planned`, so no lobby can select this
- * yet: what a profile does and whether a difficulty ships are two questions, and
- * this file only answers the first.
+ * **Hard is not published by this file**, and was not published by the tranche
+ * that finished its behaviour. `hard_tactical` carried only the tactical half in
+ * M09.14; M09.15 added the two short-horizon refinements — `sequencesEnablers`
+ * and `reservesReactionEnergy`; M09.20 added `pricesCardsInHand` and closed the
+ * last strategic gap. Publication is a decision made in `@tcg/bot-config`, whose
+ * `DIFFICULTY_REGISTRY.hard` names this profile as of M09.20: what a profile
+ * does and whether a difficulty ships stay two questions, and this file only
+ * ever answers the first.
  */
 
 export const TACTICAL_PROFILE_IDS = ['baseline', 'hard_tactical'] as const;
@@ -188,6 +189,33 @@ export interface TacticalProfile {
    * anyway reserves nothing, and no fixed number of points is ever held back.
    */
   readonly reservesReactionEnergy: boolean;
+  /**
+   * Prices the card a play gives up out of its own hand.
+   *
+   * Closes the last of the three strategic gaps M05.6 recorded and M09.15 left
+   * open, `containment_control/hold_energy_for_the_counter`. M09.15 made the
+   * Energy a held Reaction needs stop being idle, and the body still won,
+   * because the scorer prices a card played at its whole value and a card kept
+   * in hand at nothing — so holding for a window that has not opened can never
+   * win against playing something. It is a valuation defect in *every* decision
+   * the pilot makes, not a resource rule, and this is where it is corrected.
+   *
+   * With this on, a play is charged `heldCardValue` — a uniform share of what
+   * the card would still have been worth in hand. What is corrected is the
+   * reading of a body as a permanent gain rather than as one turn of tempo over
+   * playing the same card next turn.
+   *
+   * Charged inside the play's own base score, so the pair search sees the same
+   * price the scorer does and a sequence cannot be valued against a card the
+   * scorer priced differently.
+   *
+   * **What it costs is measured, and it is not free.** `hard_tactical` `1.1.0`
+   * beat the baseline head to head; with this on, that advantage is gone. The
+   * refinement buys the last named calibration gap and pays for it in match
+   * strength, which is a product trade the M09.20 record states in full and
+   * hands to the owner rather than tuning away.
+   */
+  readonly pricesCardsInHand: boolean;
 }
 
 /**
@@ -211,28 +239,37 @@ export const BASELINE_TACTICS: TacticalProfile = Object.freeze({
   modelsOverwhelm: false,
   sequencesEnablers: false,
   reservesReactionEnergy: false,
+  pricesCardsInHand: false,
 });
 
 /**
  * Hard's tactical half (M09.14).
  *
- * Five named corrections, all of them about the decision in front of the pilot
- * *now*: which body removal removes, which body blocks, what a trade costs, and
- * what the two combat keywords in the shipped pool actually do. It carries none
- * of the strategic gaps M05.6 also recorded — sequencing, additional-sacrifice
- * payoff, holding Energy for a window — and M09.15 owns those. A record citing
- * this profile is citing a bot that is better at combat and target choice, and
- * nothing more; it is not evidence about balance, which is the agent-class
- * taxonomy's decision and not this file's.
+ * Five named corrections in M09.14, all of them about the decision in front of
+ * the pilot *now*: which body removal removes, which body blocks, what a trade
+ * costs, and what the two combat keywords in the shipped pool actually do.
+ * M09.15 added the two short-horizon ones and M09.20 the last strategic one, so
+ * the profile now answers every board in the calibration suite for every style.
+ *
+ * That last sentence is a statement about the **instrument**, not about the
+ * player. Twenty-four hand-authored boards are twenty-four decisions somebody
+ * thought to write down; a profile that answers all of them has stopped being
+ * measured by them, which is a reason to widen the suite in a later tranche
+ * rather than a claim that play is solved. A record citing this profile is
+ * citing a bot that is better at combat, target choice, sequencing and
+ * patience, and nothing more; it is not evidence about balance, which is the
+ * agent-class taxonomy's decision and not this file's.
  */
 export const HARD_TACTICAL_TACTICS: TacticalProfile = Object.freeze({
   id: 'hard_tactical',
-  version: '1.1.0',
+  version: '1.2.0',
   summary:
     'Tactical corrections for immediate combat and target choice: removal is aimed at what it ' +
     'defeats, a block that loses nothing is on the menu, an even trade is worth nothing, and ' +
     'Barrier and Overwhelm are modelled. Plus two short-horizon corrections (M09.15): the play ' +
-    'that improves the next play leads, and the Energy a held Reaction needs is not spent.',
+    'that improves the next play leads, and the Energy a held Reaction needs is not spent. Plus ' +
+    'the card a play gives up out of its own hand (M09.20), so a body is one turn of tempo ' +
+    'rather than a permanent gain.',
   readsRemovalLethality: true,
   offersPreservingBlocks: true,
   ownLossAversion: true,
@@ -240,6 +277,7 @@ export const HARD_TACTICAL_TACTICS: TacticalProfile = Object.freeze({
   modelsOverwhelm: true,
   sequencesEnablers: true,
   reservesReactionEnergy: true,
+  pricesCardsInHand: true,
 });
 
 export const TACTICAL_PROFILES: Readonly<Record<TacticalProfileId, TacticalProfile>> =
@@ -252,6 +290,26 @@ export function tacticalProfile(id: TacticalProfileId): TacticalProfile {
   return TACTICAL_PROFILES[id];
 }
 
+/**
+ * The profile a difficulty names, resolved from a plain string (M09.20).
+ *
+ * `DifficultyDefinition.tactics` is a `string` because `@tcg/bot-config` sits
+ * *below* this package and cannot import the union — the same arrangement
+ * `BotStyleDefinition.pilotId` has. This is the one place that string becomes a
+ * profile, and it parses rather than indexes: an ID this build does not have is
+ * a named refusal, because the alternative is a bot that quietly flies the
+ * baseline while a lobby, a seat label and a match record all say it did not.
+ */
+export function resolveTacticalProfile(id: string): TacticalProfile {
+  const parsed = tacticalProfileIdSchema.safeParse(id);
+  if (!parsed.success) {
+    throw new Error(
+      `Tactical profile "${id}" is not one this build has: ${TACTICAL_PROFILE_IDS.join(', ')}.`,
+    );
+  }
+  return TACTICAL_PROFILES[parsed.data];
+}
+
 /** Every refinement switch, so a check can be total without listing them twice. */
 export const TACTICAL_REFINEMENTS = [
   'readsRemovalLethality',
@@ -261,6 +319,7 @@ export const TACTICAL_REFINEMENTS = [
   'modelsOverwhelm',
   'sequencesEnablers',
   'reservesReactionEnergy',
+  'pricesCardsInHand',
 ] as const;
 export type TacticalRefinement = (typeof TACTICAL_REFINEMENTS)[number];
 

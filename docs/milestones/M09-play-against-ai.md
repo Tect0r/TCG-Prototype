@@ -2922,7 +2922,7 @@ gained a member rather than changing one. `createBotPilot` reads `config.style`
 and is untouched, which is the check that the resolution really does happen
 before a pilot exists.
 
-## M09.20 — Card-in-hand valuation, and Hard's publication
+## M09.20 — Card-in-hand valuation, and Hard's publication — **done (2026-08-21)**
 
 **Runs before M09.19, and is numbered 20 because M09.17–M09.19 are already named
 in source comments and in the external brief.** This document places it where it
@@ -2955,10 +2955,308 @@ make the gap close.
 
 ### Checklist
 
-- [ ] `hold_energy_for_the_counter` closes, with Normal and Easy unchanged.
-- [ ] `DifficultyDefinition` carries a tactical profile; registry version 2 → 3.
-- [ ] Hard is selectable, and the planned-difficulty statement empties itself.
-- [ ] A recorded seat says which Hard it flew.
+- [x] `hold_energy_for_the_counter` closes, with Normal and Easy unchanged.
+- [x] `DifficultyDefinition` carries a tactical profile; registry version 2 → 3.
+- [x] Hard is selectable, and the planned-difficulty statement empties itself.
+- [x] A recorded seat says which Hard it flew.
+
+### The defect, and what it actually was
+
+The scorer prices a card **played** at its whole value and a card **kept** at
+nothing. A card left in hand is still there next turn at the same statline and
+the same text, and the Energy that would have bought it grows rather than shrinks
+— the rulebook's Energy carries to a seat's own next turn. So what playing now
+actually buys, over playing the same card next turn, is one turn of it; what the
+baseline charges the play for is all of it. A 3/2 therefore reads as a permanent
+gain rather than as one turn of tempo, and holding Energy for a window that has
+not opened can never win against playing something.
+
+That is why no honest reservation charge could ever settle the recorded board:
+M09.15's `reservesReactionEnergy` moved the two candidates about four points
+closer and the body still won by roughly its own card value. The correction is to
+how _every card in every hand_ is valued, in every decision the pilot makes — not
+to a resource rule.
+
+**`pricesCardsInHand`** charges a play `heldCardValue`: a uniform share,
+`DEFERRED_CARD_RETENTION`, of what the card is worth. It is charged inside
+`basePlayScore` rather than beside it, so the depth-two pair search prices its
+horizon with exactly the same arithmetic as the candidate it is comparing
+against; a sequence is never scored against a card the scorer priced differently.
+
+### The shape was chosen by measurement, and two more precise ones were rejected
+
+Uniform is not the obvious shape. A more precise one is available and it was
+built first: charge only the part of a card that pays out **every turn** — a
+statline, its keywords, a Relic's chassis, its static abilities — and charge
+nothing for a one-shot **event**, because a Spell resolves and is gone. That
+version also read Rush as a rule rather than as a keyword valuation: Rush is the
+printed statement that Newly Deployed does not apply, so a Rush body starts
+earning the turn it lands and keeps nothing back. A third version charged a flat
+share of the play's whole score, which preserves the ordering among plays
+exactly.
+
+All three close the calibration gap. They do not play equally well, and the
+difference is large — every row below is the same 384 seeded matches, Hard seated
+first and second:
+
+| Shape of the charge                               | Hard, head to head vs Normal |
+| ------------------------------------------------- | ---------------------------- |
+| Per-turn half only, Rush exempt (the precise one) | 42.0%                        |
+| Flat share of the whole play score                | 47.9%                        |
+| **Uniform share of `cardValue`** (shipped)        | **50.1%**                    |
+| No charge at all — `hard_tactical` `1.1.0`        | 53.9%                        |
+
+The precise shape loses badly for a reason that is obvious once measured: it
+makes an event cheap relative to a body in every hand that holds both, so the
+pilot empties its Spells into boards that do not need answering and under-builds.
+Precision about _what_ a hand keeps bought a systematic distortion of _which_
+card to play. The uniform share leaves the ordering among plays almost exactly
+where the published heuristic put it and moves only the comparison between
+playing and not playing, which is the comparison the defect is about.
+
+### The number, named rather than derived
+
+`DEFERRED_CARD_RETENTION` is **0.85**, a coarse shape factor in the family of
+`durationScale` and `ASSUMED_STAT` rather than one of the named `BotWeights` — a
+statement about the shape of a card's value over time, not a dial a style should
+be able to turn.
+
+It is **not derived, and the record says so.** Two honest derivations were
+available and they disagree: the scorer's own duration ladder prices one turn of
+a permanent effect at half of forever, which puts retention at 0.5, and a
+mid-game body that will stand for the rest of a twenty-turn match loses nearer a
+tenth of itself by arriving a turn late, which puts it near 0.9. Neither forces a
+value. 0.85 is where a deferred card stops outweighing one turn of tempo for all
+three weight vectors on the recorded board — the aggressive one is the tightest —
+and it was checked against the whole twenty-four-board suite rather than against
+that one board.
+
+### What it does to the suite
+
+Every one of the twenty-four calibration boards is now answered by every one of
+the three styles under `hard_tactical`. `hold_energy_for_the_counter` closes and
+none of the other twenty-three regresses, at any style.
+
+**That is a statement about the instrument, not about the player**, and it is
+recorded in three places rather than left to be noticed — in `tactics.test.ts`,
+in `hard_tactical`'s own doc comment, and here. Twenty-four hand-authored boards
+are twenty-four decisions somebody thought to write down; a profile that answers
+all of them has stopped being measured by them. Widening the suite is a later
+tranche's work. It was explicitly **not** this tranche's, which was forbidden
+from adding a fixture to make the gap close and did not add one.
+
+The two assertions M09.14 and M09.15 used to keep "not a solved player" honest
+moved with the fact rather than being deleted: `rate < 1` became `rate === 1`
+with the reason written beside it, and the fixture-level record that named the
+open gap became a check that **no** fixture records a Hard gap while the baseline
+still records plenty — which is what keeps the suite able to tell the two
+profiles apart at all.
+
+### Publishing Hard
+
+A difficulty has had two halves since M09.14 and the registry only ever carried
+one of them. That was deliberate: a registry that could name a tactical profile
+is a registry a later tranche could publish Hard through by accident. M09.20 adds
+`DifficultyDefinition.tactics` in the same change that makes it true.
+
+- `hard` moves `planned` → `available`, `plannedIn` → `null`,
+  `behaviorVersion` → `'1.0.0'`, `selection` → `{ kind: 'best' }`,
+  `tactics` → `'hard_tactical'`.
+- `easy` and `normal` name `'baseline'`, which is the same statement M09.13 made
+  about their selections: Easy is a _selection_ difference over an identical
+  scored list, and Normal is the published heuristic unchanged.
+- Hard's `selection` is deliberately `{ kind: 'best' }` — the same one Normal
+  takes. A Hard bot is not luckier, is not greedier and does not get a wider
+  band; the whole of the difference is in the other half.
+- `difficultyTactics()` refuses a planned difficulty exactly as
+  `difficultySelection()` does, through one shared wording in
+  `plannedDifficultyRefusal`. Nothing is planned today, so that wording is
+  exercised against a definition the test builds rather than against the shipped
+  table — a guard that only ran while something happened to be planned would have
+  rotted the moment the last difficulty shipped.
+- The field is a **`string`**, not the `TacticalProfileId` union, because
+  `@tcg/bot-config` sits below `@tcg/bot-interface` and importing the union would
+  invert the dependency direction ADR 0001 chose — the same arrangement
+  `BotStyleDefinition.pilotId` has. `resolveTacticalProfile` is the one place the
+  string becomes a profile and it parses rather than indexes, and a test over in
+  `@tcg/bot-interface` resolves every ID the difficulty registry names. A typo is
+  a failing test rather than a bot that quietly flies the baseline while a lobby,
+  a seat label and a match record all say it did not.
+
+`BotRunner` builds the pilot through both halves, and neither axis can reach the
+other's: nothing lets a difficulty touch the weights or a style touch the
+selection or the profile.
+
+### What a host sees, and what changed to make it so
+
+**Nothing in the lobby changed, and that is the point.** The difficulty control
+is built from `AVAILABLE_DIFFICULTIES`, so Hard appeared in it the moment the
+registry said so — exactly as Easy did in M09.13. The sentence M09.16 added
+beneath it, naming what is planned and the tranche that owns it, is built from
+`PLANNED_DIFFICULTIES` and **emptied itself**, exactly as M09.16 said it would.
+The summary line under the control is the registry's own `summary`, so Hard
+explains itself in the registry's words.
+
+The M09.16 panel's four stated situations lose one: **unavailable** was Hard, and
+there is nothing unavailable any more. Locked, private and pool-limited are
+unchanged.
+
+A seat that flew Hard already recorded which Hard: `BotSeatSummary` has carried
+`difficulty` and `difficultyBehaviorVersion` as a pair since M09.17, and the pair
+is the point — the label is what a host picked and the version is which procedure
+was behind it. The version reads `1.0.0` for Hard, and it is **the difficulty's**
+version rather than the profile's. Those are two numbers that move for two
+different reasons: `hard_tactical` has been at `1.0.0`, `1.1.0` and now `1.2.0`
+without a difficulty existing to fly it, and folding them together is how a reader
+comes to think Hard shipped three times.
+
+### The tournament, and the thing it found
+
+A deterministic seeded tournament in M09.15's shape, and rebuilt in one important
+respect: **the seed is not keyed by configuration**, so every row below is the
+_same_ 192 games — all sixteen ordered pairings of the four Wave 1 precons, at
+all three styles, over four seeds — with only the profile in each seat changed.
+M09.15's run keyed the configuration into the seed, which meant its rows were
+comparing different games; that is corrected here and the M09.15 numbers are left
+where they are rather than restated.
+
+| Configuration                       | Seat 1 wins | Seat 2 wins | Illegal | Unfinished | Actions/match | Passes/match | Turns/match | Deck-outs |
+| ----------------------------------- | ----------- | ----------- | ------- | ---------- | ------------- | ------------ | ----------- | --------- |
+| Normal vs Normal                    | 90 (46.9%)  | 102 (53.1%) | 0       | 0          | 111.7         | 38.9         | 20.0        | 6         |
+| `hard_tactical` 1.1.0 (1) vs Normal | 99 (51.6%)  | 93 (48.4%)  | 0       | 0          | 110.8         | 38.8         | 19.9        | 7         |
+| Normal vs `hard_tactical` 1.1.0 (2) | 84 (43.8%)  | 108 (56.3%) | 0       | 0          | 108.3         | 38.1         | 19.6        | 6         |
+| Hard 1.2.0 vs Hard 1.2.0            | 90 (47.1%)  | 101 (52.9%) | 0       | 0          | 107.2         | 37.8         | 19.4        | 6         |
+| Hard 1.2.0 (1) vs Normal            | 91 (47.4%)  | 101 (52.6%) | 0       | 0          | 109.6         | 38.6         | 19.8        | 5         |
+| Normal vs Hard 1.2.0 (2)            | 90 (47.1%)  | 101 (52.9%) | 0       | 0          | 109.3         | 38.4         | 19.7        | 7         |
+
+**Nothing broke.** No illegal action, no pilot failure, no unfinished match and no
+draw anywhere in the run. Matches are slightly shorter under either Hard than
+under Normal, which is the shape a better attacker produces rather than a more
+cautious one — the retention did not turn the bots into passers.
+
+**Seat two is worth about six points on this pool.** Normal against Normal is
+90–102, so a profile merely equal to Normal should read about 46.9% seated first
+and 53.1% seated second. That baseline is what makes the two readings below
+possible at all.
+
+**`hard_tactical` `1.1.0` — the profile M09.15 left unpublished — is genuinely
+better than Normal:** 51.6% seated first and 56.3% seated second, against a
+46.9/53.1 baseline. That is +4.7 and +3.2 points on the two sides, and 207 of 384
+head to head, **53.9%**.
+
+**Hard `1.2.0`, the profile this tranche publishes, is not.** 47.4% seated first
+and 52.9% seated second — +0.5 and −0.2 against the same baseline, and 192 of 383
+head to head, **50.1%**. Closing `hold_energy_for_the_counter` at the magnitude
+that closes it costs `hard_tactical` the head-to-head advantage it had.
+
+That is the tranche's central finding and it is stated here rather than buried:
+**the last calibration gap and the measured match advantage are in conflict, and
+this tranche bought the gap.** It did so because that is exactly what Q50 asked
+for — the owner ruled that "no rate was named: the standard is the named gap" —
+and because tuning the refinement until both the fixture and the win rate came
+out right would be fitting the pilot to a scoreboard, which is the thing the
+Stop clause exists to prevent. The trade is now the owner's to accept or reverse,
+as **Q51**, and reversing it is one boolean: `pricesCardsInHand` in
+`HARD_TACTICAL_TACTICS`.
+
+**One match in 192 is abandoned rather than played.** A `precon_goblin_swarm`
+mirror develops a board wide enough that a single decision takes minutes — 98
+seconds for one at turn 28, growing with the turn count — so the tournament gives
+each match a 20-second wall-clock budget and records the abandonments instead of
+waiting. It is a **baseline** pathology, not a profile one: the first one found
+was a Normal-versus-Normal match, and it is recorded below as a finding rather
+than fixed, because it belongs to M09.19's hardening.
+
+The tournament is a **recorded measurement, not a test**. It is reproducible from
+the repository — `driveMatch` over `preconMatchDeck` for each ordered pairing,
+`createTacticalPilot` per style, seeds `m0920-a`…`m0920-d` composed with the
+pairing and style and **not** with the configuration. The corner of it that would
+rot is committed: `tactics.test.ts` plays four precon-versus-precon matches under
+the profile end to end.
+
+### Findings recorded rather than fixed
+
+- **Closing the last calibration gap costs Hard its head-to-head advantage, and
+  the two cannot both be had by any shape tried.** `hard_tactical` `1.1.0` beats
+  Normal 53.9% over 384 seeded matches; `1.2.0` reads 50.1% over the same games.
+  Three formulations of the charge were built and measured and every one that
+  closes the gap loses ground, from 42.0% to 50.1%. This is a product trade
+  rather than a bug, it is raised as **Q51**, and it is reversible by one
+  boolean. It is recorded rather than tuned away because tuning a pilot until a
+  fixture and a scoreboard agree is fitting the pilot to the scoreboard.
+- **The calibration suite no longer measures `hard_tactical`.** Twenty-four of
+  twenty-four boards, three of three styles. The suite still measures the
+  baseline — it records gaps on more than half its boards there — so it remains a
+  working instrument for the difference between the profiles, but it has nothing
+  left to say about Hard on its own. Recorded rather than fixed because fixing it
+  means authoring fixtures, which this tranche was told not to do. It is also the
+  reason the finding above could exist at all: a suite that has run out of
+  questions cannot notice a profile getting worse.
+- **A `precon_goblin_swarm` mirror can take minutes for a single decision.** The
+  board grows wide enough with Tokens that one decision took 98 seconds at turn
+  28 and the cost was still growing; the same match at turn 12 took 120ms. It is
+  a **baseline** pathology — the first one found was Normal versus Normal, and
+  neither profile is implicated — but it matters for a live server, where a bot
+  seat holding the event loop for a minute is a table that has stopped. Not fixed
+  here: it is a performance property of candidate enumeration and scoring on a
+  wide board, and it belongs to M09.19's hardening and latency benchmark. The
+  tournament works around it with a per-match wall-clock budget and reports the
+  abandonments.
+- **M09.15's tournament keyed the configuration into the seed.** Its four rows
+  were therefore playing four different sets of games, which weakens "Hard is
+  better on both sides of the table" from a paired comparison to an unpaired one.
+  The correction is in this tranche's own run and is described above; M09.15's
+  numbers are left as recorded rather than restated, because re-running its
+  profile against a different design would replace one measurement with another
+  under the same label.
+- **`DEFERRED_CARD_RETENTION` is a chosen number, not a derived one.** Two
+  defensible derivations bracket it at 0.5 and 0.9 and neither forces a value. A
+  smaller number inside that bracket leaves the gap open; that is the
+  sensitivity, and it is why the constant sits beside `durationScale`'s shape
+  factors rather than in `BotWeights`.
+- **`report()` reads the difficulty registry by ID.** A seat carrying a
+  difficulty the registry does not have crashes the report rather than halting
+  the seat. No message can produce one — every axis is a Zod enum on the wire —
+  and until this tranche the unbuildable-pilot test used a _planned_ difficulty,
+  which was a real ID. Publishing Hard left none, so that test now fabricates an
+  unknown **style** instead, which every registry read in `report()` survives.
+  Recorded rather than hardened: the state is unreachable, and a defensive
+  fallback there would hide a genuine registry mistake rather than surface it.
+- **The panel's "unavailable" state is now unreachable.** It is kept rather than
+  deleted, for the same reason `DECK_MODE_SUPPORT`'s planned branch is: the next
+  thing that is planned should meet a sentence built from the registry rather
+  than one somebody has to remember to write. The same is true of
+  `plannedDifficultyRefusal`, which is exported precisely so that the refusal
+  stays exercised now that nothing is planned.
+
+### Versions
+
+**`DIFFICULTY_REGISTRY_VERSION` moves 2 → 3**, for two reasons recorded together
+because they arrived together. `hard` changed status, which is exactly what this
+constant has always been for — a build reading a record that cites `hard` against
+registry 2 was written by a build that could not fly one — and every definition
+gained `tactics`, so a v2 reader meets an unknown member on a v3 definition.
+
+**`hard_tactical`'s own `version` moves `1.1.0` → `1.2.0`**, and
+`TACTICS_REGISTRY_VERSION` stays 1: a refinement changing what a profile does
+moves the profile's version, and the registry constant pins which profiles exist.
+Neither is `DIFFICULTY_REGISTRY.hard.behaviorVersion`, which is `1.0.0` because it
+is the first Hard anything can select.
+
+**`PROTOCOL_VERSION` stays 11.** `botDifficultySchema` has carried the `hard` ID
+since M09.1 and nothing on any wire changed shape: the tactical profile is a fact
+about the server's registry, and a seat summary already carried the difficulty
+and its behaviour version as a pair. **`BOT_CONFIG_SCHEMA_VERSION` stays 2** —
+`botSeatConfigSchema` is exactly the shape M09.16 left it, and a configuration
+naming `hard` was always a valid v2 configuration; it was refused by the
+registry, not by the schema. **`BOT_SUMMARY_SCHEMA_VERSION` stays 1**, because a
+summary that can already say which Easy it flew can say which Hard without
+changing shape. **`PACING_CONFIG_VERSION` stays 1**, **`MATCH_SCHEMA_VERSION`
+stays where it is**, and **`RULES_VERSION` does not move**: a difficulty getting
+better is not a rule changing, and no card, cost, keyword or timing rule was
+touched. **`DECK_GENERATOR_VERSION` stays `'1'`** — nothing about deck
+construction was read or changed, which is the ADR 0024 §5 promise that a Hard bot
+does not silently receive a better deck.
 
 ## M09.17 — Pacing and bot provenance summary — **done (2026-08-21)**
 

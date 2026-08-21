@@ -4,6 +4,8 @@ import {
   BOT_CONFIG_SCHEMA_VERSION,
   DEFAULT_BOT_DIFFICULTY,
   difficultyDefinition,
+  difficultySelection,
+  difficultyTactics,
   DIFFICULTY_REGISTRY_VERSION,
   EASY_SELECTION,
   IMMEDIATE_BOT_PACING,
@@ -13,6 +15,7 @@ import {
 import {
   createPilot,
   createRandomLegalPilot,
+  resolveTacticalProfile,
   type BotObservation,
   type BotPolicy,
 } from '@tcg/bot-interface';
@@ -480,19 +483,25 @@ describe('one independent deterministic stream per bot seat', () => {
     expect(createBotPilot(botConfigFor('value'))).not.toBe(value);
   });
 
-  it('refuses a difficulty that has no decision procedure behind it', () => {
-    // Hard is the only one left: M09.13 gave Easy a procedure and turned it on,
-    // and M09.15 built Hard's behaviour without publishing it — the registry is
-    // still the only thing that decides, and it still says no. The refusal comes
-    // from `difficultySelection` in `@tcg/bot-config`, so there is one wording
-    // rather than one per caller that builds a pilot, and the tranche it names
-    // is read from the registry rather than spelled here.
-    expect(() => createBotPilot({ ...botConfigFor('value'), difficulty: 'hard' })).toThrow(
-      new RegExp(difficultyDefinition('hard').plannedIn ?? 'never'),
-    );
+  it('builds every difficulty the registry ships, and asks the registry which', () => {
+    // M09.13 gave Easy a procedure and turned it on; M09.20 published Hard once
+    // the last strategic gap closed. Nothing is planned any more, so what this
+    // asserts is the wiring rather than a refusal: every available difficulty
+    // builds, and each one carries the *pair* the registry names — the selection
+    // and the tactical profile — rather than a switch in the runner.
     for (const difficulty of AVAILABLE_DIFFICULTIES) {
-      expect(() => createBotPilot({ ...botConfigFor('value'), difficulty })).not.toThrow();
+      const pilot = createBotPilot({ ...botConfigFor('value'), difficulty });
+      expect(pilot.config.selection).toEqual(difficultySelection(difficulty));
+      expect(pilot.config.tactics).toEqual(resolveTacticalProfile(difficultyTactics(difficulty)));
     }
+    // And the difference between Hard and Normal is entirely in that profile:
+    // same style, same weights, same selection, different scorer.
+    const hard = createBotPilot({ ...botConfigFor('value'), difficulty: 'hard' });
+    const normal = createBotPilot({ ...botConfigFor('value'), difficulty: 'normal' });
+    expect(hard.config.weights).toEqual(normal.config.weights);
+    expect(hard.config.selection).toEqual(normal.config.selection);
+    expect(hard.config.tactics).not.toEqual(normal.config.tactics);
+    expect(difficultyDefinition('hard').plannedIn).toBeNull();
   });
 
   it('builds an Easy bot from the registry rather than from a name in the runner', () => {
@@ -515,10 +524,13 @@ describe('one independent deterministic stream per bot seat', () => {
     const lobby = harness.server.lobbyByCode(harness.inviteCode);
     const seat = lobby?.seats.get('seat_2');
     if (!seat || seat.controller !== 'bot') throw new Error('The bot seat is missing.');
-    // No message can reach this state — the lobby refuses `hard` — so it is set
-    // directly. The point is that a pilot that cannot be built sits the match out
-    // instead of throwing inside `start_match`.
-    seat.config = { ...seat.config, difficulty: 'hard' };
+    // No message can reach this state — every axis is an enum on the wire — so
+    // it is set directly. Until M09.20 the unbuildable pilot was a *planned
+    // difficulty*; publishing Hard left none, so it is a style with no weight
+    // vector instead. The point has never been which axis fails, only that a
+    // pilot which cannot be built sits the match out instead of throwing inside
+    // `start_match`.
+    seat.config = { ...seat.config, style: 'nightmare' as BotStyle };
     harness.send(harness.host, { type: 'set_ready', ready: true });
     await harness.server.whenBotsIdle();
 

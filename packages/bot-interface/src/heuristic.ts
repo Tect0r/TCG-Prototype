@@ -11,6 +11,7 @@ import { BASELINE_TACTICS, type TacticalProfile } from './tactics.js';
 import {
   enablerLeadBonus,
   greedyBlocks,
+  heldCardValue,
   reactionEnergyReserve,
   resolveHypotheticalCombat,
   selfSummary,
@@ -269,14 +270,14 @@ function scorePlayCard(
   );
   if (!playable) return 0;
 
-  const base = basePlayScore(observation, playable, weights);
+  const base = basePlayScore(observation, playable, weights, tactics);
   const energy = selfSummary(observation.view).energy;
 
   let score = base;
   if (tactics.sequencesEnablers) {
     score += enablerLeadBonus(
       { ...playable, baseScore: base },
-      playHorizon(observation, weights),
+      playHorizon(observation, weights, tactics),
       energy,
       weights,
       observation.database,
@@ -297,11 +298,19 @@ function scorePlayCard(
   return score;
 }
 
-/** What a play is worth on its own, before any short-horizon correction. */
+/**
+ * What a play is worth on its own, before any short-horizon correction.
+ *
+ * With `pricesCardsInHand` on, the play is charged what the card would still
+ * have been worth in hand (M09.20) — here rather than in `scorePlayCard`, so the
+ * pair search's horizon is priced by exactly the same arithmetic as the
+ * candidate it is being compared against.
+ */
 function basePlayScore(
   observation: BotObservation,
   playable: BotObservation['legal']['playableCards'][number],
   weights: BotWeights,
+  tactics: TacticalProfile,
 ): number {
   const definition = observation.database.get(playable.definitionId);
   if (!definition) return 0;
@@ -309,7 +318,8 @@ function basePlayScore(
     cardValue(definition, weights, observation.database) +
     weights.energyEfficiency * playable.energyCost -
     replacedRelicCost(observation, definition, weights) -
-    emptySourceZonePenalty(observation, definition, weights)
+    emptySourceZonePenalty(observation, definition, weights) -
+    (tactics.pricesCardsInHand ? heldCardValue(definition, weights, observation.database) : 0)
   );
 }
 
@@ -320,10 +330,14 @@ function basePlayScore(
  * follower is valued by the scorer that shipped, so the search cannot recurse
  * into itself and a sequence is never scored against another sequence.
  */
-function playHorizon(observation: BotObservation, weights: BotWeights): PlayableEntry[] {
+function playHorizon(
+  observation: BotObservation,
+  weights: BotWeights,
+  tactics: TacticalProfile,
+): PlayableEntry[] {
   return observation.legal.playableCards.map((playable) => ({
     ...playable,
-    baseScore: basePlayScore(observation, playable, weights),
+    baseScore: basePlayScore(observation, playable, weights, tactics),
   }));
 }
 

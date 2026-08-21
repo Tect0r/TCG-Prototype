@@ -30,7 +30,7 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.20       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.18       |
 
 **M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
@@ -160,27 +160,77 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.20 — Card-in-hand valuation, and Hard's publication.** Close the third
-strategic gap M09.15 measured and left open —
-`containment_control/hold_energy_for_the_counter` — and publish Hard. The gap is
-a valuation defect rather than a resource rule: the scorer prices a card played
-at its whole value and a card kept in hand at nothing, so holding Energy for a
-window that has not opened can never win against playing a body, in every
-decision the pilot makes rather than only in Reaction decks. Closing it is a
-change to `hard_tactical`, measured at the three grains M09.14 established.
-Publishing Hard is then the piece of work Q50 named: `DifficultyDefinition` gains
-a tactical profile and `DIFFICULTY_REGISTRY_VERSION` moves 2 → 3, `BotRunner`
-builds the pilot through it, and the lobby's planned-difficulty sentence empties
-itself because it is read from the registry. The scope and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0920--card-in-hand-valuation-and-hards-publication).
+**M09.18 — Help, provenance, and compatibility pass.** Make the feature
+understandable and every artifact honest: player help for adding bots, the four
+deck modes, privacy, difficulty versus style, timing percentages, bot pacing
+versus human timeout, and the small-pool limitation; consistent naming across
+lobby, match and result; provenance recorded wherever the artifact contract
+requires it; incompatible protocol, replay or export data refused rather than
+approximated; and the consistency and audit generators re-run with stale claims
+that online play is human-only removed. The scope and the checklist are in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0918--help-provenance-and-compatibility-pass).
 
-**A note on order, recorded rather than resolved.** This file named M09.17 as the
-next bounded task while the milestone document placed M09.20's section _above_
-M09.17's and said it "places it where it runs rather than where its number would
-sort". M09.17 ran, because this file is the root work queue. The two readings now
-agree on what follows it — M09.20 is the earliest incomplete section either way —
-but they still disagree about whether M09.18 comes before or after it. That is
-the owner's to settle; nothing was reordered to hide it.
+**The note on order is now settled by exhaustion rather than by ruling.** This
+file named M09.17 as the next bounded task while the milestone document placed
+M09.20's section _above_ M09.17's; M09.17 ran, then M09.20 ran, and M09.18 is now
+the earliest incomplete section under either reading. Nothing was reordered.
+
+**M09.20 closed the last strategic gap and published Hard — and found that the
+two were in tension.** The defect was a valuation one: the scorer prices a card
+**played** at its whole value and a card **kept** at nothing. A card left in hand
+is the same card next turn, and the Energy that would have bought it grows rather
+than shrinks, so what playing now actually buys over playing next turn is one
+turn of it. A body therefore read as a permanent gain rather than as one turn of
+tempo, and no honest reservation charge could ever outweigh it.
+
+`pricesCardsInHand` charges a play a uniform share — 0.85 — of what the card is
+worth. The retention is a coarse shape factor beside `durationScale`'s, **not a
+derived quantity**, and the record says which two derivations bracket it and why
+neither forces a value. The uniform _shape_ was chosen by measurement rather than
+by taste: a more precise version that charges only a card's per-turn half and
+exempts Rush is much worse to play with, because it makes an event cheap relative
+to a body in every hand holding both.
+
+`containment_control/hold_energy_for_the_counter` closes at every style with no
+regression on the other twenty-three boards — which means every board in the
+suite is now answered by every style. **That is a statement about the instrument
+rather than about the player**, recorded in three places so nobody reads it as
+solved play: twenty-four hand-authored boards are twenty-four decisions somebody
+thought to write down, and widening the suite is a later tranche's work. No
+fixture was added and no card was rebalanced to close the gap.
+
+**The tranche's central finding is that closing the gap costs Hard its measured
+advantage.** Over 384 seeded matches on identical games, seated first and second,
+`hard_tactical` `1.1.0` — the profile M09.15 left unpublished — beats Normal
+**53.9%**; `1.2.0`, the profile published here, reads **50.1%** against a
+46.9%/53.1% seat baseline. Three shapes of the charge were built and measured and
+every one that closes the gap gives ground, from 42.0% to 50.1%. Nothing broke —
+no illegal action, no unfinished match, and matches got slightly _shorter_ rather
+than more cautious — but the trade is real, and it is raised as **Q51** rather
+than tuned away, because tuning a pilot until a fixture and a scoreboard agree is
+fitting the pilot to the scoreboard. Reversing it is one boolean.
+
+The tournament also corrected M09.15's design — that run keyed the configuration
+into the seed, so its four rows compared different games — and it recorded a
+**baseline** performance pathology on the way: a `precon_goblin_swarm` mirror can
+spend 98 seconds on a single decision at turn 28. That belongs to M09.19's
+hardening, and the tournament works around it with a per-match wall-clock budget.
+
+Hard is published on exactly the condition Q50 set. `DifficultyDefinition` gains
+`tactics`, naming the profile a difficulty flies — the half the registry never
+carried, withheld deliberately so that publishing Hard could not be a status flip
+a later tranche made by accident. `hard` becomes `available` at behaviour version
+`1.0.0` with `selection: { kind: 'best' }`, the same selection Normal takes: a
+Hard bot is not luckier and does not get a wider band, and the whole of the
+difference is in the scorer. `BotRunner` builds the pilot through both halves.
+**Nothing in the lobby changed**, which is the point — the control is built from
+`AVAILABLE_DIFFICULTIES` and the planned-difficulty sentence M09.16 wrote emptied
+itself, exactly as M09.16 said it would. `DIFFICULTY_REGISTRY_VERSION` moves
+2 → 3 for the status change and the new field together; `PROTOCOL_VERSION`,
+`BOT_CONFIG_SCHEMA_VERSION`, `BOT_SUMMARY_SCHEMA_VERSION`, `PACING_CONFIG_VERSION`,
+`MATCH_SCHEMA_VERSION`, `DECK_GENERATOR_VERSION` and `RULES_VERSION` all stay: a
+difficulty getting better is not a rule changing, and a Hard bot receives no
+better deck.
 
 **M09.17 gave a finished match a bill.** A match that held a bot now publishes one
 structured, match-local summary at the instant it completes, broadcast to every
@@ -574,6 +624,14 @@ question the project has recorded.
 - Q44: multiple blockers per attacker.
 - Q45: Barrier ordering against future prevention/reduction effects.
 - Q46: whether Reactions may carry interactive additional costs.
+- Q51: keep the card-in-hand price, or keep Hard's win rate. M09.20 closed the
+  last calibration gap on exactly the condition Q50 set, and measured that
+  closing it costs `hard_tactical` its head-to-head advantage over Normal —
+  53.9% before, 50.1% after, over the same 384 seeded matches. Hard is
+  selectable either way and nothing is blocked; reversing the trade is one
+  boolean and a profile version.
+
+Q50 is discharged: Hard is published.
 
 ## Completion evidence for every tranche
 

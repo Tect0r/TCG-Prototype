@@ -260,17 +260,18 @@ describe('bot seat controls', () => {
     const harness = renderApp();
     await enterLobby(harness);
 
-    // Difficulty: the registry's available IDs and no others. Hard is absent
-    // rather than present-and-disabled, because the server refuses it by name
-    // and a control whose only outcome is an error is decoration. Easy appeared
-    // here the moment M09.13 changed its status — this screen reads
-    // `AVAILABLE_DIFFICULTIES` and holds no list of its own.
+    // Difficulty: the registry's available IDs and no others. Easy appeared here
+    // the moment M09.13 changed its status and Hard the moment M09.20 changed
+    // its own — this screen reads `AVAILABLE_DIFFICULTIES` and holds no list of
+    // its own, which is why publishing a difficulty needed no change here at
+    // all. The loop below is now empty and is kept deliberately: absent-not-
+    // disabled is still the rule for whatever is planned next.
     const difficulty = screen.getByLabelText('Bot difficulty');
     expect(
       within(difficulty)
         .getAllByRole('option')
         .map((node) => node.textContent),
-    ).toEqual(['Easy', 'Normal']);
+    ).toEqual(['Easy', 'Normal', 'Hard']);
     for (const planned of PLANNED_DIFFICULTIES) {
       expect(
         within(difficulty).queryByRole('option', { name: difficultyDefinition(planned).label }),

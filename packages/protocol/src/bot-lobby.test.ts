@@ -167,8 +167,16 @@ describe('the protocol version', () => {
     // configuration constant moved, because a summary is a record about a
     // configuration rather than a configuration. The summary's own
     // `BOT_SUMMARY_SCHEMA_VERSION` is what moves when its shape does.
+    //
+    // M09.20 is the first direction again, four tranches later: `hard` went from
+    // planned to available and every definition gained a tactical profile, so
+    // `DIFFICULTY_REGISTRY_VERSION` moved 2 - 3 on its own. No message shape
+    // changed, because `botDifficultySchema` has carried the ID since M09.1 and
+    // the profile is a fact about the server's registry rather than anything on
+    // a wire, so `PROTOCOL_VERSION` and `BOT_CONFIG_SCHEMA_VERSION` both sat
+    // still.
     expect(BOT_CONFIG_SCHEMA_VERSION).toBe(2);
-    expect(DIFFICULTY_REGISTRY_VERSION).toBe(2);
+    expect(DIFFICULTY_REGISTRY_VERSION).toBe(3);
     expect(PROTOCOL_VERSION).toBe(11);
     // And the handshake still compares three things, not five: a bot's
     // configuration is not something two builds must agree on to play at all.
