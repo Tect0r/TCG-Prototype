@@ -137,7 +137,17 @@ export function checkActionOffered(
       const choice = legal.pendingChoice;
       if (!choice) return fail('no choice is pending for this seat');
       if (choice.id !== action.choiceId) return fail('that is not the pending choice');
-      if (new Set(action.selectedIds).size !== action.selectedIds.length) {
+      // A repeat is a malformed answer everywhere except a `divide_damage`
+      // allocation, where it *is* the answer: one entry per point of damage, so
+      // naming the same target twice is how a chooser gives it two. The engine
+      // says exactly this (`submitChoice`, M02.5) and this check must not say
+      // something narrower — a subset check that refuses an action the engine
+      // would accept turns a pilot's considered answer into a recorded pilot
+      // failure and hands the decision to the random-legal fallback (M09.19).
+      if (
+        choice.type !== 'divide_damage' &&
+        new Set(action.selectedIds).size !== action.selectedIds.length
+      ) {
         return fail('the same option was selected twice');
       }
       for (const id of action.selectedIds) {

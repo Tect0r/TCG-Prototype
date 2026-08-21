@@ -3771,7 +3771,7 @@ M09.16 designed it to.
   rather than proving the set is complete, and there is no mechanism that could
   prove the latter without a vocabulary the help content does not have.
 
-## M09.19 — End-to-end hardening and milestone acceptance
+## M09.19 — End-to-end hardening and milestone acceptance — **done (2026-08-21)**
 
 Finish M09 without pulling M08 or content work into it: exercise end-to-end
 1H+1B, 1H+3B, 2H+2B and 3H+1B flows across exact precon, saved deck,
@@ -3795,17 +3795,237 @@ expansion. Report the next owner choice.
 
 ### Checklist
 
-- [ ] Every seat mixture exercised end to end, across every deck mode.
-- [ ] Every difficulty, style, timing and lifecycle path covered.
-- [ ] Hidden information proven not to cross any boundary.
-- [ ] Simulator and Spectator proven unaffected.
-- [ ] Latency benchmarked with pacing excluded; human handling never blocked.
-- [ ] Visual checks recorded honestly, including unavailable tooling.
+- [x] Every seat mixture exercised end to end, across every deck mode.
+- [x] Every difficulty, style, timing and lifecycle path covered.
+- [x] Hidden information proven not to cross any boundary.
+- [x] Simulator and Spectator proven unaffected.
+- [x] Latency benchmarked with pacing excluded; human handling never blocked.
+- [x] Visual checks recorded honestly, including unavailable tooling.
+
+### The matrix, and why it is a crossing rather than a list
+
+`bot-acceptance.test.ts` plays the four mixtures M09.7 opened — 1H+1B, 1H+3B,
+2H+2B, 3H+1B — and it seats a _different_ deck mode on each bot at the same
+table rather than repeating one mode per run. That is the arrangement that would
+break if two modes shared a generator stream, a seed or a frozen list, and it is
+the reason a three-bot table is worth more here than three one-bot tables. The
+mode list is read from `BOT_DECK_MODES`, the difficulties from
+`AVAILABLE_DIFFICULTIES` and the styles from `BOT_STYLES`, so a fifth mode or a
+fourth difficulty arrives in this file as a failing test rather than as a gap
+somebody has to notice.
+
+Timing is checked as a **ladder rather than a sample**: 0%, 50% and 100% of one
+seed are compared by whole outcome — turn count, sequence, result, every human's
+decision count and every bot's per-action tally — because a pacing defect that
+changed _when_ a bot acted would move one of those without moving the winner.
+The three runs are then separated by their clocks, so the comparison is provably
+not three instant matches. The Reaction override is checked by collecting every
+delay the table actually scheduled and requiring both budgets in it.
+
+The lifecycle paths are each a real match: reroll, remove, reconnect, a pilot
+that throws on every decision, a person conceding, elimination, and completion.
+What this file deliberately does **not** re-prove is the detail M09.4–M09.18
+already own; a second, weaker copy of those assertions would drift away from the
+first.
+
+### Two defects, both on the live bot path, both found by playing
+
+**A `divide_damage` allocation is not a selection.** The engine has said so since
+M02.5 — `submitChoice` exempts `divide_damage` from "the same option was selected
+twice", because one entry per point of damage _is_ the answer — and
+`legalActions` builds its own canonical answer the same way. Two things above the
+engine disagreed with it.
+
+`checkActionOffered`, the guard the runner uses to catch an illegal pilot answer
+_before_ it reaches `applyAction`, refused the repeat. It is a subset check
+against `LegalActions`, and a subset check narrower than the engine does not
+prevent a bad action — it converts a good one into a recorded `illegal_action`
+and hands the decision to the substituted fallback. **Every `divide:*` candidate
+the enumerator has ever produced was discarded this way**, and the record blamed
+the pilot for it.
+
+The fallback could not answer the choice either. `random_legal` drew _distinct_
+options, so its answer was short — and illegal — whenever there was more damage
+than there were targets. On the live path that is `engine_rejected`, which halts
+the seat for the rest of the match. Both halves are fixed and both are driven
+against a real board: `mass_offering` with two bodies and two targets for the
+first, with three bodies and an empty opposing board for the second.
+
+It was reachable rather than theoretical. `divide_the_offering` and
+`mass_offering` are both in the `precon_wave_1` pool, so any bot on a generated
+or saved deck could hold one.
+
+**Bot work held the event loop.** The runner has yielded between decisions since
+M09.4, and the yield defaulted to `Promise.resolve()` — a _microtask_, which the
+runtime drains before it looks at a socket again. A bot at 0% pacing takes every
+decision it is offered inside one wake, so an awaited microtask chain is a table
+where nobody else's message is read until the bots have finished. The default is
+now `defaultYieldToScheduler`, a `setImmediate` macrotask, and both directions
+are asserted: the production default lets a queued frame through mid-turn, and
+the microtask it replaced does not.
+
+Nothing about _what_ a bot decides changes. The pump already re-reads the
+authoritative state at the top of every iteration and discards an answer whose
+board has moved, which is exactly the case a real yield makes more likely rather
+than less safe — and every determinism test in the milestone still passes,
+including the mixed-table replay.
+
+### The 98-second decision, measured — and it is not the bot
+
+M09.20 recorded a `precon_goblin_swarm` mirror spending 98 seconds on a single
+decision at turn 28 and left it to this tranche. It reproduces, and the
+measurement reclassifies it.
+
+A `defensive` mirror on `precon_goblin_swarm`, match seed `bot_test_hunt-31`,
+reaches **6 508 units on the battlefield by turn 28**; seed `bot_test_hunt-38`
+reaches **15 213 by turn 27**. The worst single step measured was **8 054 ms**,
+and it breaks down like this:
+
+| Component            | Cost at 6 508 units    |
+| -------------------- | ---------------------- |
+| `playerView`         | 69 ms                  |
+| `legalActions`       | 63 ms                  |
+| the pilot's decision | **0 ms**, 3 candidates |
+| `applyAction`        | **7 921 ms**           |
+
+**The pilot is not implicated at any board size.** A synthetic scaling run over
+identical boards from 50 to 3 200 units gives roughly 19 µs per battlefield
+instance per decision, linear, with the decision itself never exceeding 1.7 ms —
+attacking, blocking and Main-Phase decisions alike. What grows is the engine's
+own work on a board that grows _exponentially_, because the deck makes a Token
+every turn for every Token it already has.
+
+That makes it an engine property rather than a bot one, and a person clicking the
+same ability on the same board pays the same 7.9 seconds. It is therefore
+**measured and recorded rather than fixed here**: CLAUDE.md's product rules say
+the battlefield has no Unit limit and that large boards are measured rather than
+treated as proof that a cap is needed, and redesigning `applyAction` is not a
+bounded hardening task. What M09.19 owed and delivered is the _live-server_
+half — a sequence of bot decisions no longer starves the socket — and an honest
+statement of what a single one of them can still cost.
+
+### Latency, with pacing excluded structurally
+
+"Excluded" is a property of the table rather than a subtraction: the benchmark
+runs at 0% and asserts that **no timer was ever scheduled**, so the elapsed time
+is the server's own work and not a wait that was skipped. On a 1H+3B table across
+three deck modes, handling one human frame stays under 100 ms — a regression
+bound against an order-of-magnitude change on a laptop or in CI, not a
+performance target. The wide-board numbers above are the honest ceiling on that
+bound, and they are stated rather than folded into it.
+
+### Visual checks — what was and was not done
+
+Recorded honestly, as the tranche required, because the answer is mostly
+negative.
+
+**No visual-regression tooling exists in this repository.** There is no
+Playwright, Puppeteer, Storybook or screenshot-diff dependency in any workspace,
+and no image or layout snapshot suite. The web client's component tests are jsdom
+tests: they assert structure, labels and behaviour, and jsdom computes no layout,
+so **none of them can see a wide or narrow rendering** and none of them claims
+to.
+
+**No live inspection was performed in this session.** Both dev servers started
+successfully — the match server on `:8787` and the client on `:5173` — and the
+browser automation extension was not connected, so the page was never opened. No
+screenshot was taken, and nothing here is asserted about how a screen looks.
+
+What is therefore _not_ covered by anything in this milestone: the bot panel's
+wide and narrow layouts, focus order and visible focus, colour contrast, and
+overflow behaviour with three bot seats configured at once. M09.16 states these
+as preserved and its component tests check the structure that underlies them; the
+rendered result is unverified. That is a next owner choice below rather than a
+claim.
+
+### Findings recorded rather than fixed
+
+- **The pacing summary carries the invite code, inside `matchId`.**
+  `botMatchSummarySchema.matchId` documents itself as "No invite code, no player
+  name, no account", and the server builds it as `match_<inviteCode>`; the
+  protocol's own note on `bot_pacing_summary` repeats the claim. The two
+  disagree. Severity is low — a finished lobby refuses `join_lobby` with
+  `protocol/already_started`, so the code is not a live join secret by the time
+  the summary is published — but the summary is explicitly built to be exported
+  to a file and ingested later, and an exported record should not carry a lobby
+  identifier its own schema says it does not. Not fixed here because `matchId` is
+  the key every reader of a summary already joins on, and changing it in the last
+  tranche of a milestone would move a field with no consumer left to re-check it.
+  The acceptance test asserts the current behaviour explicitly, so the day it is
+  changed the change is deliberate.
+- **A single `applyAction` on a very wide board can take seconds, and the runner
+  multiplies the cost by the number of bot seats.** `#nextActionable` rebuilds
+  `legalActions` for _every_ bot seat on every pump iteration — correctly, since
+  that is what makes a scheduled decision an opportunity rather than a stored
+  action — so a three-bot table at 6 500 units pays roughly 190 ms of legality
+  before the first pilot is asked. Bounded by `MAX_BOT_SEATS`, so it is a constant
+  factor rather than a growth term, and caching it would be exactly the thing ADR
+  0024 §4 forbids. Recorded so the next person measuring a wide board knows which
+  multiplier they are looking at.
+- **The `precon_goblin_swarm` mirror's board growth is the underlying condition,
+  and it is content rather than code.** Two of forty seeds reach five figures of
+  battlefield instances; the rest finish by turn 17. Nothing in the engine, the
+  runner or the pilots bounds it, and by the locked product rules nothing should.
+  A deck that cannot stop making Tokens is a balance observation for a future
+  content tranche, and it is named here because it is the only condition under
+  which any of the numbers above are reachable.
+- **The calibration suite still has nothing left to say about Hard**, exactly as
+  M09.20 recorded. Unchanged by this tranche and repeated here only so that the
+  milestone's final state is not read as having closed it.
+
+### Versions — every one deliberately unchanged
+
+No constant moves, and two of the changes look at first like they should move
+one.
+
+`PROTOCOL_VERSION` stays **11**. No message shape, field or error code changed:
+the acceptance suite adds tests and no wire.
+
+`BOT_CONFIG_SCHEMA_VERSION`, `DIFFICULTY_REGISTRY_VERSION` and
+`PACING_CONFIG_VERSION` stay where they are. No configuration record, difficulty
+definition or budget shape changed.
+
+`RULES_VERSION` and `MATCH_SCHEMA_VERSION` stay where they are, and this is the
+one that needed arguing. Widening `checkActionOffered` to accept a repeated
+target on a `divide_damage` allocation looks like a rules change, and it is not:
+the **engine already accepted it**, and has since M02.5. The check is a subset
+check against `LegalActions` and was simply wrong about what the engine offered.
+No state, no serialization and no rule moved — a class of action that was always
+legal stopped being refused one layer above the thing that decides legality.
+
+The pilots' own versions do not move either, for a narrower reason than it may
+seem. `random_legal` now answers an allocation with one entry per point instead
+of a short distinct draw, which changes what it returns on exactly one branch —
+but on that branch its previous answer was an _illegal action the engine
+rejected_, so no match this build can replay ever contained one. Nothing
+recorded, hashed or replayable changes.
 
 ---
 
-## Acceptance — not met
+## Acceptance — met (2026-08-21)
 
-M09 is accepted when every tranche checklist above is complete, `npm run verify`
-passes, the consistency and audit checks pass, and the tree is clean after the
-final record commit.
+Every tranche checklist above is complete. `npm run verify` passed at the
+tranche's own commit, the consistency and audit checks passed, and the working
+tree was clean when the final audit measurement was taken.
+
+**M09 is complete.** A person can create a lobby, seat one to three AI opponents
+on any of four deck sources, at any published difficulty, at any style or none,
+at whatever pace they want the table to move, and play a complete match against
+the software — with the same privacy guarantees, the same protocol and the same
+board a human opponent would give them.
+
+**The next owner choice**, listed in the order the record suggests rather than as
+a recommendation with authority:
+
+1. **M08 AI Lab and Player Meta**, deferred since 2026-08-14 with its record and
+   [ADR 0023](../architecture/0023-admin-lab-boundary.md) in place and nothing
+   scaffolded. M08.1 is its next tranche.
+2. **Q51**, still open: Hard closed its last calibration gap and lost its measured
+   head-to-head advantage doing it, and reversing that is one boolean
+   (`pricesCardsInHand` in `HARD_TACTICAL_TACTICS`).
+3. **The unverified rendering**, above: no visual tooling exists, so the bot
+   panel's wide and narrow layouts, focus behaviour and contrast are structurally
+   tested and visually unchecked. Adding that tooling is a bounded task nobody has
+   been asked to do.
+4. **The 50-card expansion**, which still needs 8–9 more colour-legal cards per
+   Commander before it can start.

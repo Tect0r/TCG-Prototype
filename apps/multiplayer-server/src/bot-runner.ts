@@ -39,6 +39,7 @@ import {
 import {
   defaultMonotonicClock,
   defaultSchedule,
+  defaultYieldToScheduler,
   type MonotonicClock,
   type ScheduleTimer,
 } from './scheduling.js';
@@ -88,9 +89,13 @@ import {
  * all. `PendingDelay` has no member an action could be put in, which is the same
  * sentence as the paragraph above, enforced by a shape rather than by care.
  *
- * The yield below is a stack-safety boundary, not a pacing dial: a bot at 0%
- * still crosses it and still acts inside the wake that offered the opportunity,
- * which is why every match written before M09.12 runs exactly as it did.
+ * The yield below is a stack-safety boundary and an **I/O boundary**, and it is
+ * not a pacing dial: a bot at 0% still crosses it and still acts inside the wake
+ * that offered the opportunity, which is why every match written before M09.12
+ * runs exactly as it did. Since M09.19 the default crossing is a macrotask
+ * rather than a microtask — see `defaultYieldToScheduler` — because a microtask
+ * chain never gives the runtime a chance to read the next socket frame, and a
+ * table whose bots are mid-turn must still be a table that hears a person.
  */
 
 /* ------------------------------------------------------------- vocabulary */
@@ -406,7 +411,11 @@ export interface BotRunnerOptions {
    */
   readonly pilotFor?: (seat: BotRunnerSeat) => BotPolicy;
   readonly decisionLimit?: number;
-  /** The stack-safety boundary between decisions. Injectable so a test can count it. */
+  /**
+   * The stack-safety and I/O boundary between decisions. Injectable so a test
+   * can count it and drive a match without waiting on the event loop; defaults
+   * to `defaultYieldToScheduler`, which is a real macrotask.
+   */
   readonly yieldToScheduler?: () => Promise<void>;
   /**
    * The budgets this match locked at its start (M09.11).
@@ -527,7 +536,7 @@ export class BotRunner {
     this.#state = options.state;
     this.#submit = options.submit;
     this.#decisionLimit = options.decisionLimit ?? DEFAULT_BOT_DECISION_LIMIT;
-    this.#yield = options.yieldToScheduler ?? (() => Promise.resolve());
+    this.#yield = options.yieldToScheduler ?? defaultYieldToScheduler;
     this.#budgets = options.budgets ?? DEFAULT_BOT_PACING_BUDGETS;
     this.#schedule = options.schedule ?? defaultSchedule;
     this.#now = options.now ?? defaultMonotonicClock;

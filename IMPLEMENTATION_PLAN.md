@@ -30,15 +30,16 @@ checklist in the milestone file, then stop.
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
 | [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Deferred (2026-08-14) | M08.1        |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | In progress           | M09.19       |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
-**M08 is deferred and M09 is open.** M08.0 opened the AI Lab milestone — its
+**M08 is deferred and M09 is complete (2026-08-21).** M08.0 opened the AI Lab milestone — its
 record, its scope and [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) —
 and stopped there. The owner then chose **M09 Play Against AI** to run first,
 because it turns the software into something a person can play against, which is
 what the structured manual playtests below have been waiting for. M08 is planned,
 not cancelled: its record and its ADR stay exactly as M08.0 left them, and no
-part of it is scaffolded while M09 is open.
+part of it was scaffolded while M09 ran. **M09 finished on 2026-08-21**, so M08.1
+is now available to be chosen rather than blocked.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -160,26 +161,67 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M09.19 — End-to-end hardening and milestone acceptance.** The last tranche in
-M09, and the one that plays everything the earlier eighteen built: every seat
-mixture with at least one person, across all four deck modes, all three
-difficulties, every style, 0/50/100% timing, Reaction override, reroll, remove,
-reconnect, failure fallback, concession, elimination and completion; hidden
-information proven not to cross the lobby, player view, log, pacing export or
-opponent boundaries; the simulator and AI Spectator proven still full-speed and
-deterministic; and server action latency benchmarked with deliberate pacing
-excluded. The scope and the checklist are in
-[the M09 milestone file](docs/milestones/M09-play-against-ai.md#m0919--end-to-end-hardening-and-milestone-acceptance).
+**None. M09 is complete, and the next task is an owner choice.** Every tranche in
+[the M09 milestone file](docs/milestones/M09-play-against-ai.md) is done, its
+acceptance clause is met, and nothing in this file names work that has not been
+handed back to the owner. The four candidates, in the order the record suggests
+rather than as a recommendation with authority, are **M08.1** — the AI Lab
+milestone deferred on 2026-08-14, whose record and
+[ADR 0023](docs/architecture/0023-admin-lab-boundary.md) are exactly as M08.0 left
+them and none of which is scaffolded — **Q51**, the trade M09.20 measured and
+raised, **the unverified rendering** M09.19 recorded, and **the 50-card
+expansion**, which still needs 8–9 more colour-legal cards per Commander first.
 
-It inherits one measured pathology to work on rather than around: M09.20's
-tournament found a `precon_goblin_swarm` mirror spending 98 seconds on a single
-decision at turn 28, and that is a performance finding this tranche owns.
+**M09.19 played the whole feature, and found two defects doing it.** The last
+tranche crossed the four seat mixtures with the four deck modes — a three-bot
+table seats three _different_ modes at once, which is the arrangement that would
+break if two of them shared a stream — and covered every published difficulty,
+every style and automatic, the 0/50/100% timing ladder, the Reaction override,
+reroll, remove, reconnect, a pilot that throws on every decision, concession,
+elimination and completion. The registries are read rather than listed, so a
+fifth deck mode or a fourth difficulty arrives as a failing test.
 
-**The note on order is settled by exhaustion rather than by ruling.** This file
-once named M09.17 as the next bounded task while the milestone document placed
-M09.20's section _above_ M09.17's; M09.17 ran, then M09.20, then M09.18, and
-M09.19 is now the only incomplete section under either reading. Nothing was
-reordered.
+**The first defect had discarded every considered answer to a `divide_damage`
+allocation.** The engine has permitted a repeated target there since M02.5 —
+one entry per point of damage _is_ the answer — but `checkActionOffered`, the
+guard the runner uses before anything reaches `applyAction`, refused it. A subset
+check narrower than the engine does not prevent a bad action; it converts a good
+one into a recorded `illegal_action` and hands the decision to the fallback. The
+fallback could not answer either: it drew _distinct_ options, so its answer was
+short and illegal whenever there was more damage than targets, which on the live
+path halts the seat. `divide_the_offering` and `mass_offering` are both in the
+`precon_wave_1` pool, so this was reachable in a real match.
+
+**The second was that bot work held the event loop.** The runner's yield between
+decisions defaulted to `Promise.resolve()`, and a microtask chain drains before
+the runtime looks at a socket again — so a table whose bots were mid-turn did not
+read anybody's message until they had finished. The default is now a
+`setImmediate` macrotask, and both directions are asserted: the production
+default lets a queued frame through mid-turn, and the microtask it replaced does
+not. Nothing a bot decides changes, because the pump already re-read the
+authoritative state every iteration and discarded any answer whose board had
+moved.
+
+**The 98-second decision M09.20 handed forward reproduces, and it is not the
+bot.** A `defensive` `precon_goblin_swarm` mirror reaches 6 508 battlefield units
+by turn 28 and 15 213 by turn 27 on another seed; the worst single step measured
+8 054 ms, of which the pilot's own decision was **0 ms over three candidates**
+and `applyAction` was **7 921 ms**. A synthetic scaling run puts the pilot at
+roughly 19 µs per battlefield instance, linear to 3 200 units. It is an engine
+property on an exponentially growing Token board, a person pays it identically,
+and it is recorded rather than fixed: the locked product rules say a large board
+is measured rather than treated as proof that a cap is needed, and redesigning
+`applyAction` is not a bounded hardening task.
+
+**Latency excludes pacing structurally rather than by subtraction**: the
+benchmark runs at 0% and asserts no timer was ever scheduled, so what it measures
+is the server's own work. **No version constant moved**, and the one that needed
+arguing is `RULES_VERSION`: widening a subset check to accept what the engine
+already accepted is not a rules change. **Visual checks are recorded honestly and
+mostly negatively** — the repository has no visual-regression tooling at all, the
+web client's tests are jsdom tests that compute no layout, and the browser
+automation extension was not connected in the session that ran the tranche, so no
+inspection is claimed.
 
 **M09.18 made the feature explainable and two deferred refusals legible.** The
 rulebook gained `ai_opponents`, a required section answering the eight questions

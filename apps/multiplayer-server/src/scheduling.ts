@@ -34,3 +34,28 @@ export const defaultSchedule: ScheduleTimer = (delayMs, callback) => {
 };
 
 export const defaultMonotonicClock: MonotonicClock = () => performance.now();
+
+/**
+ * A boundary between two pieces of bot work that the event loop actually gets
+ * to cross.
+ *
+ * The third seam, and the one M09.19 had to add. The bot runner already yields
+ * between decisions, but it defaulted that yield to `Promise.resolve()` — a
+ * *microtask*, which the runtime drains before it looks at a socket again. A
+ * bot at 0% pacing takes every decision it is offered inside one wake, so on a
+ * board wide enough for a decision to cost real time, an awaited microtask
+ * chain is a table where nobody else's message is read until the bots have
+ * finished the turn.
+ *
+ * `setImmediate` is a macrotask: control returns to the loop, queued I/O is
+ * served, and the pump resumes on the next tick. Nothing about *what* a bot
+ * decides changes — the runner re-reads the authoritative state at the top of
+ * every iteration and discards an answer whose board has moved, which is
+ * precisely the case a real yield makes more likely rather than less safe.
+ */
+export type YieldToScheduler = () => Promise<void>;
+
+export const defaultYieldToScheduler: YieldToScheduler = () =>
+  new Promise((resolve) => {
+    setImmediate(resolve);
+  });

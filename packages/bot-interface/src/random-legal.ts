@@ -75,6 +75,22 @@ export function createRandomLegalPilot(input: RandomLegalConfigInput = {}): BotP
             'random:order',
           );
         }
+        // An allocation is not a selection: `divide_damage` wants one entry per
+        // point of damage, repeats included, so the distinct draw below is
+        // short — and illegal — the moment there is more damage than there are
+        // targets. This is the control pilot *and* the substituted fallback, so
+        // an answer it cannot give is a seat that halts (M09.19).
+        if (choice.type === 'divide_damage') {
+          const points = Array.from(
+            { length: choice.minimum },
+            () => options[pickInt(options.length)] as string,
+          );
+          return finish(
+            { type: 'submit_choice', playerId, choiceId: choice.id, selectedIds: points },
+            'submit_choice',
+            `random:divide_${points.length}`,
+          );
+        }
         const span = Math.max(0, Math.min(choice.maximum, options.length) - choice.minimum);
         const extra = span > 0 ? pickInt(span + 1) : 0;
         const size = Math.min(choice.minimum + extra, options.length);
