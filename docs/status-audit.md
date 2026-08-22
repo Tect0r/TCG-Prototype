@@ -9,9 +9,9 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `19c306bf906f726b0059beea21cfeea48ad6ac44` |
+| Commit           | `c6bcadf44585594768c17ec10cc1fbe265fe5525` |
 | Working tree     | clean                                      |
-| Taken on         | 2026-08-21                                 |
+| Taken on         | 2026-08-22                                 |
 | Node             | v24.15.0                                   |
 | `npm run verify` | passed at this commit                      |
 
@@ -31,13 +31,13 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-server   | 6       | 142      |
-| packages       | 90      | 2140     |
+| admin-server   | 8       | 216      |
+| packages       | 92      | 2192     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
-| simulator      | 23      | 433      |
+| simulator      | 23      | 437      |
 | web-client     | 20      | 272      |
-| **total**      | **160** | **3401** |
+| **total**      | **164** | **3531** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
