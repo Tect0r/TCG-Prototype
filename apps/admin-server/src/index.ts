@@ -7,11 +7,15 @@
  * admin client. What it *is* today is a store, because the milestone builds it in
  * the order the pieces depend on each other:
  *
- * - **M08.2 (here)** persists batches and jobs and recovers their truthful state
- *   after a restart. It opens files under a configured root and nothing else.
- * - **M08.4** adds the `@tcg/simulator` dependency and turns one catalog job into
- *   one canonical experiment directory. It is the first tranche that runs
- *   anything.
+ * - **M08.2** persists batches and jobs and recovers their truthful state after a
+ *   restart. It opens files under a configured root and nothing else.
+ * - **M08.3 (here)** adds the match-count estimator and the typed presets. It is
+ *   the first tranche that imports `@tcg/simulator`, because ADR 0023 §2 puts the
+ *   estimator behind `buildSchedule` and the presets behind
+ *   `experimentConfigSchema`; M08.2's own record predicted M08.4 would add that
+ *   dependency, and this is the correction. Nothing here **runs** an experiment.
+ * - **M08.4** turns one catalog job into one canonical experiment directory. It
+ *   is the first tranche that runs anything.
  * - **M08.6** adds the HTTP boundary, loopback binding and the non-loopback
  *   authentication refusal. It is the first tranche that opens a port, and the
  *   first that gives this workspace a `start` script.
@@ -23,8 +27,12 @@
  *
  * ## The boundaries this package keeps
  *
- * - It imports `@tcg/admin-contracts`, `@tcg/shared` and `zod`, and nothing else.
- *   No engine, no simulator, no protocol, no UI framework, no web server.
+ * - It imports `@tcg/admin-contracts`, `@tcg/shared`, `@tcg/simulator` and `zod`,
+ *   and nothing else. The simulator arrives as a **library**: the estimator calls
+ *   `buildSchedule` and the expansion calls `parseExperimentConfig`, and
+ *   `boundary.test.ts` refuses every entry point that would play a match —
+ *   `runExperiment`, `runBatch`, `runMatch`, `runSearch`, `runOne` and the worker
+ *   pool — so "this package schedules nothing and plays nothing" stays structural.
  * - Nothing in the player bundle or the live match server may import it, and
  *   nothing in it may import them: ADR 0023 §1 keeps the admin process and the
  *   live match process off one event loop, and M08's exclusions keep simulator
@@ -87,3 +95,21 @@ export type {
   RecoveryReport,
   UnreadableEntry,
 } from './catalog/store.js';
+
+export {
+  PRESET_FORMAT_ID,
+  PresetRefused,
+  expandPreset,
+  scrubRefusal,
+  type ExpandedPreset,
+  type ExpandedStage,
+} from './lab/expand.js';
+
+export {
+  deckCountFor,
+  estimateConfig,
+  estimateExperiment,
+  estimatePreset,
+  forcedInclusionFor,
+  type PresetEstimate,
+} from './lab/estimate.js';

@@ -69,18 +69,47 @@ describe('the store runs no experiment', () => {
     expect(sourceFiles().length).toBeGreaterThan(4);
   });
 
-  it('does not import the simulator, the engine, or anything that plays a match', () => {
-    // M08.2's exclusion is "no simulator process". ADR 0023 §2 gives this
-    // workspace its `@tcg/simulator` dependency in M08.4, the tranche that
-    // translates a job into a real experiment directory.
+  it('imports the simulator as a library and never the engine beside it', () => {
+    // M08.3 is where `@tcg/simulator` arrives: ADR 0023 §2 puts the estimator
+    // behind `buildSchedule` and the preset expansion behind
+    // `experimentConfigSchema`, so an admin layer that avoided the dependency
+    // could only get there by writing a second scheduler. M08.2 predicted M08.4
+    // would add it; this is the correction, and the exclusion that survives it is
+    // the one below — nothing here *runs* a match.
+    //
+    // Everything else stays out. Reaching past the simulator into the engine, the
+    // generator or the play protocol would be this workspace acquiring an opinion
+    // about rules, deck legality or the wire, each of which has exactly one owner.
     for (const file of sourceFiles()) {
       for (const forbidden of [
-        "from '@tcg/simulator'",
         "from '@tcg/rules-engine'",
         "from '@tcg/deck-generator'",
         "from '@tcg/bot-interface'",
         "from '@tcg/protocol'",
         "from '@tcg/bot-config'",
+        "from '@tcg/card-data'",
+      ]) {
+        expect(`${file.name}: ${forbidden}: ${String(file.text.includes(forbidden))}`).toBe(
+          `${file.name}: ${forbidden}: false`,
+        );
+      }
+    }
+  });
+
+  it('imports no simulator entry point that would play a match', () => {
+    // The exclusion M08.2 held structurally, held structurally again now that the
+    // dependency exists. Scheduling, configuring and reading a pool are library
+    // calls; `runExperiment` and its neighbours are the ones that consume a
+    // machine, and M08.4 is the tranche that gets to make one.
+    for (const file of sourceFiles()) {
+      for (const forbidden of [
+        'runExperiment',
+        'runBatch',
+        'runMatch',
+        'runSearch',
+        'runOne',
+        'runJobsInPool',
+        'TelemetryCollector',
       ]) {
         expect(`${file.name}: ${forbidden}: ${String(file.text.includes(forbidden))}`).toBe(
           `${file.name}: ${forbidden}: false`,
@@ -150,11 +179,12 @@ describe('the store opens no port', () => {
 });
 
 describe('the declared dependencies', () => {
-  it('are exactly the admin contract, the shared vocabulary and zod', () => {
+  it('are exactly the admin contract, the shared vocabulary, the simulator and zod', () => {
     expect(MANIFEST.name).toBe('@tcg/admin-server');
     expect(Object.keys(MANIFEST.dependencies ?? {}).sort()).toEqual([
       '@tcg/admin-contracts',
       '@tcg/shared',
+      '@tcg/simulator',
       'zod',
     ]);
     expect(MANIFEST.devDependencies).toBeUndefined();
@@ -237,6 +267,12 @@ describe('the public barrel', () => {
       'readJsonLines',
       'readDocument',
       'KeyedMutex',
+      'expandPreset',
+      'estimatePreset',
+      'estimateExperiment',
+      'estimateConfig',
+      'forcedInclusionFor',
+      'deckCountFor',
     ]) {
       expect(Object.keys(barrel)).toContain(name);
     }

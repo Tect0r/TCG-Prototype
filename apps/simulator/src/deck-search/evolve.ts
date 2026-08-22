@@ -5,7 +5,7 @@ import type { Environment } from '../environment.js';
 import type { MatchLimits } from '../run-match.js';
 import { runBatch, type BatchRetention } from '../run-batch.js';
 import type { MatchSink } from '../reporting/match-store.js';
-import { buildSchedule } from '../schedule.js';
+import { buildSchedule, matchesBetween } from '../schedule.js';
 import { normalizedEntropy, proportion, round } from '../analysis/stats.js';
 import { isAbnormal, type MatchRecord } from '../telemetry/schema.js';
 import { seededIndex } from '../seed.js';
@@ -267,13 +267,7 @@ async function evaluate(
   // which tells the search nothing about the candidates it is evaluating.
   const contenderHashes = new Set(population.map((deck) => deck.hash));
   const fieldHashes = new Set(opponents.map((deck) => deck.hash));
-  const relevant = schedule.filter((match) => {
-    const hashes = match.seats.map((seat) => decks[seat.deckIndex]?.hash ?? '');
-    return (
-      hashes.some((hash) => contenderHashes.has(hash)) &&
-      hashes.some((hash) => fieldHashes.has(hash))
-    );
-  });
+  const relevant = matchesBetween(schedule, decks, contenderHashes, fieldHashes);
 
   const outcome = await runBatch({
     experimentId: `${options.experimentId}:g${generation}`,

@@ -8,7 +8,19 @@ import {
   seededIndex,
   type SeedBundle,
 } from './seed.js';
-import type { SimDeck } from '@tcg/deck-generator';
+
+/**
+ * The only thing scheduling reads from a deck: its content address.
+ *
+ * Narrower than `SimDeck` on purpose, and for the reason M09.8 narrowed the
+ * generator's input — the schedule never looks at a card, a Commander or a
+ * construction record, so requiring one would mean a caller that wants to know
+ * *how many* matches a configuration produces has to invent forty card IDs
+ * first. `SimDeck` satisfies this structurally, so no call site had to change.
+ */
+export interface ScheduleDeck {
+  readonly hash: string;
+}
 
 /**
  * Which matches an experiment consists of, decided up front (CLAUDE.md §13.7).
@@ -49,7 +61,7 @@ export interface ScheduleOptions {
   readonly experimentId: string;
   readonly experimentSeed: string;
   readonly environmentId: string;
-  readonly decks: readonly SimDeck[];
+  readonly decks: readonly ScheduleDeck[];
   readonly pilots: readonly PilotSpec[];
   readonly pilotPairing: 'mirror' | 'all_pairs' | 'rotate';
   readonly playerCount: number;
@@ -293,3 +305,33 @@ export function buildSchedule(options: ScheduleOptions): ScheduledMatch[] {
 
 /** Deterministic index helper, re-exported for schedulers built on top of this. */
 export { seededIndex };
+
+/**
+ * The matches in `schedule` that seat a deck from **each** of two named groups.
+ *
+ * Extracted in M08.3 rather than written a third time. A replacement experiment
+ * and a search generation both build one round-robin over the union of two sets
+ * of decks and then keep only the cells that cross between them — the arms
+ * against the opponent field, the contenders against the archive — because a
+ * full round robin over the union would spend most of its budget playing
+ * opponents against each other. Both call sites had the same four lines, and the
+ * match-count estimator needs a *third* copy of them to say how much work such a
+ * configuration schedules (ADR 0023 §2). A second formula is a thing that can be
+ * right today; a third is a thing that will not stay right.
+ *
+ * Membership is by deck hash rather than by index, because a deck can appear in
+ * both groups — a search's opponent field is drawn from the archive *and* the
+ * current population — and the crossing rule is about which decks a match seats,
+ * not about where they landed in the tuple.
+ */
+export function matchesBetween(
+  schedule: readonly ScheduledMatch[],
+  decks: readonly ScheduleDeck[],
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): ScheduledMatch[] {
+  return schedule.filter((match) => {
+    const hashes = match.seats.map((seat) => decks[seat.deckIndex]?.hash ?? '');
+    return hashes.some((hash) => left.has(hash)) && hashes.some((hash) => right.has(hash));
+  });
+}

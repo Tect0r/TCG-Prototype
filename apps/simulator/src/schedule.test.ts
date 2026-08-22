@@ -5,6 +5,7 @@ import {
   deckMultisets,
   deckTuples,
   distinctRotationCount,
+  matchesBetween,
   pilotTuples,
   type ScheduleOptions,
 } from './schedule.js';
@@ -322,5 +323,56 @@ describe('buildSchedule', () => {
     expect(matches).toHaveLength(4);
     expect(matches[0]?.seats).toHaveLength(4);
     expect(matches[0]?.seeds.pilotSeeds).toHaveLength(4);
+  });
+});
+
+/**
+ * The crossing filter a replacement experiment and a search generation both use,
+ * and which M08.3's estimator now counts through (ADR 0023 §2).
+ */
+describe('matchesBetween', () => {
+  const decks = Array.from({ length: 4 }, (_, index) => deck(index));
+  const schedule = buildSchedule(options({ decks, gamesPerPairing: 1 }));
+
+  it('keeps exactly the matches that seat one deck from each group', () => {
+    const arms = new Set([decks[0]?.hash ?? '', decks[1]?.hash ?? '']);
+    const field = new Set([decks[2]?.hash ?? '', decks[3]?.hash ?? '']);
+    const crossing = matchesBetween(schedule, decks, arms, field);
+
+    expect(crossing.length).toBeGreaterThan(0);
+    for (const match of crossing) {
+      const hashes = match.seats.map((seat) => decks[seat.deckIndex]?.hash ?? '');
+      expect(hashes.some((hash) => arms.has(hash))).toBe(true);
+      expect(hashes.some((hash) => field.has(hash))).toBe(true);
+    }
+    // Four decks, two per group: four crossing pairs, two seat orientations each.
+    expect(crossing).toHaveLength(8);
+    // Arm-versus-arm and field-versus-field are what the filter is there to drop.
+    expect(schedule.length - crossing.length).toBe(4);
+  });
+
+  it('is a subset of the schedule it was given, in the same order', () => {
+    const arms = new Set([decks[0]?.hash ?? '']);
+    const field = new Set(decks.map((entry) => entry.hash));
+    const crossing = matchesBetween(schedule, decks, arms, field);
+    expect(crossing).toEqual(schedule.filter((match) => crossing.includes(match)));
+  });
+
+  it('lets one seat satisfy both groups, because a search field overlaps its population', () => {
+    // A search's opponents are drawn from the archive *and* the current
+    // population, so a contender can be its own field. The rule is about the
+    // match seating a member of each group, and one seat can be both members —
+    // which is what `evaluate` has always done and what the estimator must
+    // therefore count the same way.
+    const both = new Set([decks[0]?.hash ?? '', decks[1]?.hash ?? '']);
+    const crossing = matchesBetween(schedule, decks, both, both);
+    // Five of the six tuples seat d0 or d1; each is played in two orientations.
+    expect(crossing).toHaveLength(10);
+    expect(schedule).toHaveLength(12);
+  });
+
+  it('keeps nothing when a group names no deck in the schedule', () => {
+    const arms = new Set([decks[0]?.hash ?? '']);
+    expect(matchesBetween(schedule, decks, arms, new Set(['not-a-deck-hash']))).toEqual([]);
   });
 });

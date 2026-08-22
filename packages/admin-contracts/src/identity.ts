@@ -55,6 +55,17 @@ export const jobIdSchema = prefixedId(JOB_ID_PREFIX, 'experiment job');
 export type JobId = z.infer<typeof jobIdSchema>;
 
 /**
+ * The alphabet an *authored* name uses: lowercase, starting with a letter, with
+ * hyphens and underscores allowed inside.
+ *
+ * Deliberately looser than `ID_BODY` above and for a different reason. A minted
+ * ID is a file name under the catalog root, so its alphabet is the traversal
+ * defence; an authored name is typed by a person and read in a report, and it is
+ * the shape `experimentConfigSchema.id` has always required.
+ */
+const AUTHORED_SLUG = /^[a-z][a-z0-9_-]*$/;
+
+/**
  * A stage: a declared part of a composite job, such as a search followed by a
  * finalist round.
  *
@@ -70,10 +81,34 @@ export const stageIdSchema = z
   .min(1)
   .max(40)
   .regex(
-    /^[a-z][a-z0-9_-]*$/,
+    AUTHORED_SLUG,
     'Stage IDs are lowercase and hyphen/underscore safe, like an experiment ID.',
   );
 export type StageId = z.infer<typeof stageIdSchema>;
+
+/**
+ * The name an administrator gives one experiment, in the shape the simulator's
+ * `experimentConfigSchema.id` already requires.
+ *
+ * Restated for the reason above rather than imported, and *checked* rather than
+ * trusted: M08.3 expands a preset into real configurations in
+ * `apps/admin-server`, which can import both sides, and its test parses a config
+ * carrying an ID this schema accepted. So the two shapes are held together by a
+ * failing test rather than by two comments agreeing.
+ *
+ * Distinct from `stageIdSchema` despite the identical alphabet, because a stage
+ * is named inside a job and an experiment is named across the catalog; giving
+ * them one name would make a later divergence a rename instead of an edit.
+ */
+export const experimentSlugSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(
+    AUTHORED_SLUG,
+    'Experiment IDs are lowercase and start with a letter, like `precon-standard`.',
+  );
+export type ExperimentSlug = z.infer<typeof experimentSlugSchema>;
 
 /**
  * Where a stage sits, in full.

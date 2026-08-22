@@ -20,7 +20,7 @@ import {
 import { freezeEnvironment, serializeSnapshot, snapshotFileName } from './resolved-environment.js';
 import { resolveDeckSource, type ResolvedPrecon } from './deck-source.js';
 import { buildMatchupMatrix, matchupMatrixRows, type MatchupMatrix } from './matchup-matrix.js';
-import { buildSchedule } from './schedule.js';
+import { buildSchedule, matchesBetween } from './schedule.js';
 import { runBatch, type BatchProgress } from './run-batch.js';
 import { runSearch, type GenerationReport, type SearchCheckpoint } from './deck-search/evolve.js';
 import { generatePopulation, resolvePlan, type SimDeck } from '@tcg/deck-generator';
@@ -456,12 +456,7 @@ async function runReplacementExperiment(
     ...baseSource.decks.map((deck) => deck.hash),
     ...variants.map((entry) => entry.deck.hash),
   ]);
-  const relevant = schedule.filter((match) => {
-    const hashes = match.seats.map((seat) => uniqueDecks[seat.deckIndex]?.hash ?? '');
-    return (
-      hashes.some((hash) => armHashes.has(hash)) && hashes.some((hash) => opponentHashes.has(hash))
-    );
-  });
+  const relevant = matchesBetween(schedule, uniqueDecks, armHashes, opponentHashes);
 
   const batch = await runBatch({
     experimentId: config.id,

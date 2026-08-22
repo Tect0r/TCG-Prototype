@@ -13,7 +13,7 @@ import {
   type CardId,
   type PlayFormat,
 } from '@tcg/card-data';
-import { DEFAULT_DECK_FORMAT, type DeckFormatConfig } from '@tcg/deck';
+import { DEFAULT_DECK_FORMAT, deckFormatOf, type DeckFormatConfig } from '@tcg/deck';
 import { DEFAULT_RULES_CONFIG, rulesConfigSchema, type RulesConfig } from '@tcg/rules-engine';
 import { computeEnvironmentHashes, snapshotCards, type EnvironmentHashes } from './content-hash.js';
 import { canonicalJson } from './hash.js';
@@ -219,6 +219,48 @@ function requireFormat(config: EnvironmentConfig): PlayFormat {
     );
   }
   return format;
+}
+
+/**
+ * An environment configuration whose construction rules are a named format's.
+ *
+ * `deckFormatSchema` deliberately refuses to look a format up — an experiment
+ * states its construction rules outright so a later edit to `content/formats`
+ * cannot silently redefine a finished run — which leaves every *author* of a
+ * configuration to write the numbers down. Existing configs do that by hand,
+ * which is correct for a file somebody wrote once and then froze.
+ *
+ * It is not correct for a caller that builds a configuration programmatically.
+ * M08.3's preset expansion is such a caller, and an admin layer that transcribed
+ * "40, singleton, one copy" would be the second copy of the format the milestone
+ * forbids: it would keep working, wrongly, the day a format changed. So the
+ * numbers are read from the format once, here, and the resulting configuration
+ * carries them explicitly exactly as a hand-authored one does.
+ *
+ * An unknown format throws rather than resolving to the default limits, for the
+ * same reason `generationEnvironmentForFormat` does: a run against the wrong
+ * construction rules is worse than a run that did not start.
+ */
+export function environmentConfigForFormat(
+  formatId: string,
+  overrides: Omit<EnvironmentConfigInput, 'format' | 'deckFormat' | 'id'> & {
+    /** Defaults to the format's own ID, which is what a single-format run wants. */
+    readonly id?: string;
+  },
+): EnvironmentConfig {
+  const format = bundledFormat(formatId);
+  if (!format) {
+    throw new Error(
+      `Format "${formatId}" is not defined in content/formats, so there are no construction ` +
+        `rules to state. Known formats: ${BUNDLED_FORMATS.map((entry) => entry.formatId).join(', ')}.`,
+    );
+  }
+  return environmentConfigSchema.parse({
+    ...overrides,
+    id: overrides.id ?? formatId,
+    format: formatId,
+    deckFormat: deckFormatOf(format),
+  });
 }
 
 export function resolveEnvironment(input: EnvironmentConfigInput): Environment {

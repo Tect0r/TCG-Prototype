@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-21)   | M08.3        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-22)   | M08.4        |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -44,8 +44,11 @@ its language — `packages/admin-contracts`, and nothing that acts on it — and
 M08.2 gave it a durable catalog: `apps/admin-server`, a store behind an interface
 that persists batches and jobs, recovers in-flight work after a restart as
 `interrupted` and never as completed, and refuses a result reference that
-resolves outside its configured root. Neither runs an experiment and neither
-opens a port; **M08.3 is the next tranche**.
+resolves outside its configured root. **M08.3 landed on 2026-08-22** and gave the
+lab an honest answer to "how much work is this": the match-count estimator, built
+by calling `buildSchedule` and counting it, and eight typed presets that expand
+into ordinary validated experiment configurations. None of the three runs an
+experiment and none opens a port; **M08.4 is the next tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -167,18 +170,64 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.3 — Match-count estimator and honest presets.** Let the UI state exactly
-how much work a configuration schedules, by deriving the estimate from
-`buildSchedule` — the function that produces the real schedule — rather than from
-a second formula written beside it. Seven typed presets, each expanding into an
-ordinary validated config or stage plan and recording every value it chose. Games
-shown **per seat order**; a search or adaptive total labelled as a bound rather
-than presented as exact; and the forced-inclusion floor reported per Commander
-from legal pool size and deck size. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m083--match-count-estimator-and-honest-presets).
-Adaptive Counter Search stays a reserved type only; its algorithm is M08.16.
+**M08.4 — Existing-experiment execution bridge.** Execute one existing simulator
+configuration through the catalog without changing simulator semantics: call the
+simulator's exported functions directly or spawn a **fixed executable with a
+fixed argument vector**, translate one catalog job into one canonical experiment
+directory and record its process and result identity, derive progress from
+canonical output and checkpoint state rather than from a second counter, preserve
+partial results and resume identities on ordinary success or failure, and capture
+structured failure diagnostics without leaking secrets. Its scope and checklist
+are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m084--existing-experiment-execution-bridge).
+No network service and no UI: M08.6 owns the boundary and M08.7 the shell. It is
+also the first tranche that could give a **queued** job a kind, which is the
+limitation M08.2 recorded against the `kinds` and `fullContentHash` filters.
 
-It has a place to put the answer now.
+It has something honest to run, and something to say about the cost first.
+**M08.3 built the estimator by refusing to write one.** `estimateConfig` calls
+`buildSchedule` with the configuration's own pairing mode, seat mirroring,
+sampling and mirror-inclusion, and counts what comes back; ten representative
+batch configurations and a robustness run are asserted equal to the schedule
+`experiment.ts` builds from really resolved precons. Where a run filters its
+schedule down to the pairings it needs, `matchesBetween` — extracted so the
+replacement experiment, the search evaluation and the estimator share one
+predicate — is what does the filtering in all three. Counting needs deck hashes
+rather than decks, so `ScheduleDeck` is now the one field `buildSchedule` reads.
+
+**Games are reported per seat order because they are counted per seat order**, by
+grouping the built schedule on the `orientation` it stamps. Dividing a total by
+the seat count would be wrong exactly where it matters: the ordered matchup
+matrix's four diagonal cells are mirrors, so its 16 matches split **10 and 6**
+rather than 8 and 8. A bound is labelled and explained — `exact`, `upper_bound`
+and `at_least` are three different claims, a search is an upper bound because its
+opponent field overlaps its population, a replacement is a floor because every
+variant it builds adds matches, and `at_least` beats `upper_bound` when they are
+combined. The schema refuses a bound with no reason, a breakdown that does not add
+up, and a total whose basis its stages do not support.
+
+**Eight presets, not seven, and one reserved type.** The milestone's prose
+enumerates eight expansions where its checklist line counted seven; the
+enumeration is the authority, because each of the eight names a distinct
+expansion. Each expands into a configuration re-parsed by the simulator's own
+`experimentConfigSchema`, records every value it chose and who chose it, and
+carries the limitations it may never be cited past. Commander Search is a
+two-stage plan that **names** the frozen finalist championship it cannot yet
+schedule instead of omitting it. `adaptive_counter` is in the registry as
+`reserved`, with no experiment kind and no member in the choice union, so M08.3's
+exclusion is refused at the schema. The forced-inclusion floor is read from
+`poolReportFor` per Commander — 41–42 legal cards for a 40-card deck, so a floor
+of 38 or 39 — and one exported caveat sentence travels with every estimate that
+fixes a Commander.
+
+**One prediction was corrected rather than rewritten.** M08.2's record said
+M08.4 would add the `@tcg/simulator` dependency; ADR 0023 §2 puts the estimator
+behind `buildSchedule`, so M08.3 needed it first. The exclusion that mattered is
+now held more strongly than the import ban was: the boundary suite refuses every
+simulator entry point that would play a match, and `apps/admin-server` still has
+no entry point, no `start` script, no port, no child process and no shell. **No
+version constant moved**, and the reason each stayed is recorded.
+
 **M08.2 landed the durable catalog, and nothing that runs an experiment.**
 `apps/admin-server` is the second workspace
 [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) §1 named, depending on

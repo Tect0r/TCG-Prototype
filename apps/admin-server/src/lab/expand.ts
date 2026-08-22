@@ -1,0 +1,576 @@
+import {
+  PRESET_REGISTRY,
+  adminError,
+  adminSchemaErrors,
+  looksLikeFilesystemPath,
+  presetChoiceSchema,
+  presetExpansionSchema,
+  type AdminError,
+  type ExperimentPurpose,
+  type PresetChoice,
+  type PresetChoiceInput,
+  type PresetDecision,
+  type PresetExpansion,
+  type PresetValue,
+} from '@tcg/admin-contracts';
+import {
+  environmentConfigForFormat,
+  parseExperimentConfig,
+  resolveEnvironment,
+  type Environment,
+  type EnvironmentConfig,
+  type ExperimentConfig,
+} from '@tcg/simulator';
+import { z } from 'zod';
+
+/**
+ * Turning a preset choice into ordinary validated experiment configurations.
+ *
+ * The whole of this module's authority is *assembling*. Every value it produces
+ * ends up inside `experimentConfigSchema`, which is the simulator's and which
+ * refuses an unknown field, an out-of-range count and an unknown pilot before
+ * anything here can be believed — so the expansion cannot invent a legal-looking
+ * configuration the simulator would not accept. There is no second schema, no
+ * second legality rule and no second scheduler; ADR 0023 §2 fixes the direction,
+ * and `boundary.test.ts` keeps it structural by refusing anything that *runs* a
+ * configuration.
+ *
+ * ## Where the format's numbers come from
+ *
+ * From the format. `environmentConfigForFormat` reads `content/formats` once and
+ * writes the construction rules into the configuration exactly as a hand-authored
+ * file states them. An admin layer that transcribed "40 cards, singleton, one
+ * copy" would be a second copy of the format that keeps working, wrongly, the
+ * day the format changes.
+ *
+ * ## Why a refusal is `admin/schema`
+ *
+ * Every refusal below is a value the request supplied being wrong for the field
+ * it was supplied for — an unknown precon, a Commander this format does not
+ * publish, a card the pool does not contain. That is what `admin/schema` names,
+ * and the error carries the field path so a form can put the message beside the
+ * control. No new error code was added, because none of these is a new *kind* of
+ * failure; a policy refusal that is not a bad value — there is none in M08.3 —
+ * would be, and would move `ADMIN_CONTRACT_VERSION` deliberately.
+ */
+
+/* ------------------------------------------------------------ the vocabulary */
+
+/** The format every preset in this build runs in. */
+export const PRESET_FORMAT_ID = 'precon_wave_1';
+
+/**
+ * The pilot the Engine Soak preset flies, chosen by the preset and not by the
+ * administrator.
+ *
+ * A soak measures whether the engine survives being driven, so the driver has to
+ * be the one that makes no judgements at all. Letting a heuristic pilot fly it
+ * would produce a run that looks like a benchmark and is not one.
+ */
+const SOAK_PILOT_ID = 'random_legal';
+
+/** Games per seat order at each precon-benchmark depth. The depth *is* the preset. */
+const PRECON_DEPTHS = Object.freeze({
+  precon_smoke: 1,
+  precon_standard: 4,
+  precon_deep: 12,
+});
+
+/** A bounded turn limit, so a stalled match is a finding rather than an evening. */
+const SOAK_TURN_LIMIT = 150;
+
+export interface ExpandedStage {
+  readonly stageId: string;
+  readonly label: string;
+  readonly purpose: ExperimentPurpose;
+  /** The ordinary, fully validated configuration this stage runs. */
+  readonly config: ExperimentConfig;
+  readonly decisions: readonly PresetDecision[];
+}
+
+export interface ExpandedPreset {
+  /** What travels to a client: identity, stages, decisions, deferrals, limits. */
+  readonly expansion: PresetExpansion;
+  /** What stays on the server: the same stages, carrying their configurations. */
+  readonly stages: readonly ExpandedStage[];
+  /** The resolved environment the stages were built against, reused by the estimator. */
+  readonly environment: Environment;
+}
+
+/** A refusal carrying the field it is about. Thrown, so no caller can ignore one. */
+export class PresetRefused extends Error {
+  readonly errors: readonly AdminError[];
+
+  constructor(errors: readonly AdminError[]) {
+    super(errors.map((entry) => entry.message).join(' | '));
+    this.name = 'PresetRefused';
+    this.errors = errors;
+  }
+}
+
+/**
+ * A message from another layer, with anything that could be a path taken out.
+ *
+ * The simulator's refusals are the authoritative ones — `resolveDeckSource`
+ * already knows which precons a format publishes — so they are reused rather
+ * than rewritten. What the simulator does not know is that its message is about
+ * to cross an admin boundary, and ADR 0023 §5 keeps filesystem locations off it.
+ * A token that could be a path becomes `<path>`: the sentence still says what
+ * went wrong, and the location does not travel.
+ */
+export function scrubRefusal(message: string): string {
+  return message
+    .split(/\s+/)
+    .map((token) => (looksLikeFilesystemPath(token) ? '<path>' : token))
+    .join(' ')
+    .slice(0, 480);
+}
+
+function refuse(path: string, message: string): never {
+  throw new PresetRefused([adminError('admin/schema', message, { path })]);
+}
+
+/* -------------------------------------------------------------- decisions */
+
+/** Records one settled value. `chosen` means the administrator picked it. */
+function decision(path: string, value: PresetValue, source: 'chosen' | 'preset'): PresetDecision {
+  return { path, value, source };
+}
+
+/* ------------------------------------------------------------- validation */
+
+function requireDistinct(path: string, values: readonly string[], noun: string): void {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value))
+      refuse(path, `${noun} "${value}" is listed twice, and a selection is a set.`);
+    seen.add(value);
+  }
+}
+
+/**
+ * Checks a Commander selection against the ones the environment actually has.
+ *
+ * `generatorConfigSchema.commanderIds` is an array of plain strings, so a
+ * misspelled Commander would parse, produce a search over an empty selection and
+ * be discovered an hour later. The environment is the authority on which
+ * Commanders the format publishes, and this is the only place that answer is
+ * asked for.
+ */
+function requireCommanders(environment: Environment, commanderIds: readonly string[]): void {
+  const known = new Set(environment.commanders.map((card) => card.id));
+  for (const [index, id] of commanderIds.entries()) {
+    if (known.has(id)) continue;
+    refuse(
+      `commanderIds.${String(index)}`,
+      `"${id}" is not a Commander in format "${PRESET_FORMAT_ID}". Available: ` +
+        `${[...known].sort().join(', ')}.`,
+    );
+  }
+}
+
+/** Checks that a candidate change removes cards the pool actually contains. */
+function requirePoolCards(environment: Environment, cardIds: readonly string[]): void {
+  const pool = new Set(environment.pool.map((card) => card.id));
+  for (const [index, id] of cardIds.entries()) {
+    if (pool.has(id)) continue;
+    refuse(
+      `removeCardIds.${String(index)}`,
+      `"${id}" is not in the playable pool of format "${PRESET_FORMAT_ID}", so removing it ` +
+        'would declare a change that does not happen.',
+    );
+  }
+}
+
+/* ------------------------------------------------------------- assembling */
+
+function baseEnvironment(
+  overrides: { readonly id?: string; readonly label?: string; readonly banCardIds?: string[] } = {},
+): EnvironmentConfig {
+  return environmentConfigForFormat(PRESET_FORMAT_ID, {
+    label: 'Precon Wave 1: its own card pool, 40-card singleton construction',
+    ...overrides,
+  });
+}
+
+/** Fields every expanded configuration shares, and the decisions that record them. */
+function common(
+  choice: PresetChoice,
+  pilotIds: readonly string[],
+): { readonly fields: Record<string, unknown>; readonly decisions: PresetDecision[] } {
+  return {
+    fields: {
+      schemaVersion: 1,
+      id: choice.experimentId,
+      seed: choice.seed,
+      playerCount: 2,
+      pilots: pilotIds.map((id) => ({ id })),
+      pilotPairing: 'mirror',
+    },
+    decisions: [
+      decision('id', choice.experimentId, 'chosen'),
+      decision('seed', choice.seed, 'chosen'),
+      decision('playerCount', 2, 'preset'),
+      decision('pilots', [...pilotIds], pilotIds.length > 0 ? 'chosen' : 'preset'),
+      decision('pilotPairing', 'mirror', 'preset'),
+    ],
+  };
+}
+
+/**
+ * Parses an assembled configuration, turning a failure into an admin refusal.
+ *
+ * This is where "expands into an *ordinary validated* config" stops being a
+ * claim: a pilot ID the registry does not know, a count outside its range and a
+ * field this build spelled wrongly all fail here, in the simulator's own words,
+ * before anything is estimated or enqueued.
+ */
+function validated(config: unknown, stageId: string): ExperimentConfig {
+  try {
+    return parseExperimentConfig(config);
+  } catch (cause) {
+    if (cause instanceof z.ZodError) {
+      throw new PresetRefused(
+        adminSchemaErrors(cause).map((entry) => ({
+          ...entry,
+          message: scrubRefusal(`Stage "${stageId}": ${entry.message}`),
+        })),
+      );
+    }
+    throw new PresetRefused([
+      adminError(
+        'admin/schema',
+        scrubRefusal(
+          `Stage "${stageId}" could not be configured: ${
+            cause instanceof Error ? cause.message : String(cause)
+          }`,
+        ),
+      ),
+    ]);
+  }
+}
+
+/* ------------------------------------------------------------- expansions */
+
+function preconBenchmark(
+  choice: Extract<PresetChoice, { presetId: 'precon_smoke' | 'precon_standard' | 'precon_deep' }>,
+  environment: EnvironmentConfig,
+): ExpandedStage[] {
+  const games = PRECON_DEPTHS[choice.presetId];
+  const base = common(choice, choice.pilotIds);
+  return [
+    {
+      stageId: 'matches',
+      label: `${String(choice.preconIds.length)} precons, ${String(games)} games per seat order`,
+      purpose: 'exploration',
+      config: validated(
+        {
+          ...base.fields,
+          kind: 'batch',
+          label: PRESET_REGISTRY[choice.presetId].label,
+          environment,
+          decks: { kind: 'precon', preconIds: [...choice.preconIds] },
+          schedule: 'round_robin',
+          gamesPerPairing: games,
+          mirrorSeats: true,
+        },
+        'matches',
+      ),
+      decisions: [
+        ...base.decisions,
+        decision('decks.preconIds', [...choice.preconIds], 'chosen'),
+        decision('schedule', 'round_robin', 'preset'),
+        decision('gamesPerPairing', games, 'preset'),
+        decision('mirrorSeats', true, 'preset'),
+      ],
+    },
+  ];
+}
+
+function openMeta(
+  choice: Extract<PresetChoice, { presetId: 'open_meta' }>,
+  environment: EnvironmentConfig,
+): ExpandedStage[] {
+  const base = common(choice, choice.pilotIds);
+  return [
+    {
+      stageId: 'search',
+      label: `Open search, ${String(choice.replicates)} replicate(s) of ${String(choice.generations)} generations`,
+      purpose: 'exploration',
+      config: validated(
+        {
+          ...base.fields,
+          kind: 'search',
+          label: PRESET_REGISTRY.open_meta.label,
+          environment,
+          // No `commanderIds`: choosing the Commander is what "open" means.
+          generator: {},
+          populationSize: choice.populationSize,
+          generations: choice.generations,
+          replicates: choice.replicates,
+        },
+        'search',
+      ),
+      decisions: [
+        ...base.decisions,
+        decision('generator.commanderIds', [], 'preset'),
+        decision('populationSize', choice.populationSize, 'chosen'),
+        decision('generations', choice.generations, 'chosen'),
+        decision('replicates', choice.replicates, 'chosen'),
+      ],
+    },
+  ];
+}
+
+function commanderSearch(
+  choice: Extract<PresetChoice, { presetId: 'commander_search' }>,
+  environment: EnvironmentConfig,
+): ExpandedStage[] {
+  const base = common(choice, choice.pilotIds);
+  // Equal budget: the same population, generations and replicates for each
+  // Commander, so a difference between them is not a difference of how long each
+  // was left running.
+  return choice.commanderIds.map((commanderId) => {
+    const stageId = `search-${commanderId.replace(/_/g, '-')}`;
+    const experimentId = `${choice.experimentId}-${commanderId.replace(/_/g, '-')}`.slice(0, 40);
+    return {
+      stageId,
+      label: `Equal-budget search for ${commanderId}`,
+      purpose: 'exploration' as const,
+      config: validated(
+        {
+          ...base.fields,
+          id: experimentId,
+          seed: `${choice.seed}|${commanderId}`,
+          kind: 'search',
+          label: `${PRESET_REGISTRY.commander_search.label}: ${commanderId}`,
+          environment,
+          generator: { commanderIds: [commanderId] },
+          populationSize: choice.populationSize,
+          generations: choice.generations,
+          replicates: choice.replicates,
+        },
+        stageId,
+      ),
+      decisions: [
+        ...base.decisions.filter((entry) => entry.path !== 'id' && entry.path !== 'seed'),
+        decision('id', experimentId, 'preset'),
+        decision('seed', `${choice.seed}|${commanderId}`, 'preset'),
+        decision('generator.commanderIds', [commanderId], 'chosen'),
+        decision('populationSize', choice.populationSize, 'chosen'),
+        decision('generations', choice.generations, 'chosen'),
+        decision('replicates', choice.replicates, 'chosen'),
+      ],
+    };
+  });
+}
+
+function candidateComparison(
+  choice: Extract<PresetChoice, { presetId: 'candidate_comparison' }>,
+  environment: EnvironmentConfig,
+): ExpandedStage[] {
+  const base = common(choice, choice.pilotIds);
+  const candidate = baseEnvironment({
+    id: 'precon_wave_1_candidate',
+    label: 'Precon Wave 1 with the candidate removals applied',
+    banCardIds: [...choice.removeCardIds],
+  });
+  return [
+    {
+      stageId: 'comparison',
+      label: `Baseline against a candidate that removes ${String(choice.removeCardIds.length)} card(s)`,
+      purpose: 'exploration',
+      config: validated(
+        {
+          ...base.fields,
+          kind: 'comparison',
+          label: PRESET_REGISTRY.candidate_comparison.label,
+          baseline: environment,
+          candidate,
+          // The claim is checked against the two resolved pools before a match
+          // runs, and an undeclared difference stops the run rather than being
+          // measured — which is why `onUndeclared` is left at `reject`.
+          declaredChanges: { cardsRemoved: [...choice.removeCardIds] },
+          referenceDecks: { kind: 'precon', preconIds: [...choice.referencePreconIds] },
+          gamesPerPairing: choice.gamesPerSeatOrder,
+          mirrorSeats: true,
+          searchBothEnvironments: choice.searchBothEnvironments,
+        },
+        'comparison',
+      ),
+      decisions: [
+        ...base.decisions,
+        decision('candidate.banCardIds', [...choice.removeCardIds], 'chosen'),
+        decision('declaredChanges.cardsRemoved', [...choice.removeCardIds], 'preset'),
+        decision('declaredChanges.onUndeclared', 'reject', 'preset'),
+        decision('referenceDecks.preconIds', [...choice.referencePreconIds], 'chosen'),
+        decision('gamesPerPairing', choice.gamesPerSeatOrder, 'chosen'),
+        decision('mirrorSeats', true, 'preset'),
+        decision('searchBothEnvironments', choice.searchBothEnvironments, 'chosen'),
+      ],
+    },
+  ];
+}
+
+function pilotRobustness(
+  choice: Extract<PresetChoice, { presetId: 'pilot_robustness' }>,
+  environment: EnvironmentConfig,
+): ExpandedStage[] {
+  const base = common(choice, choice.pilotIds);
+  // `published` is always the reference arm. Listing it here rather than relying
+  // on the runner to add it keeps the recorded decision and the run identical.
+  const profiles = [...new Set(['published', ...choice.profileIds])];
+  return [
+    {
+      stageId: 'robustness',
+      label: `${String(profiles.length)} perturbation profiles on identical seeds`,
+      purpose: 'exploration',
+      config: validated(
+        {
+          ...base.fields,
+          kind: 'robustness',
+          label: PRESET_REGISTRY.pilot_robustness.label,
+          environment,
+          decks: { kind: 'precon', preconIds: [...choice.preconIds] },
+          profiles,
+          gamesPerPairing: choice.gamesPerSeatOrder,
+          mirrorSeats: true,
+          schedule: 'round_robin',
+        },
+        'robustness',
+      ),
+      decisions: [
+        ...base.decisions,
+        decision('decks.preconIds', [...choice.preconIds], 'chosen'),
+        decision('profiles', profiles, 'chosen'),
+        decision('gamesPerPairing', choice.gamesPerSeatOrder, 'chosen'),
+        decision('mirrorSeats', true, 'preset'),
+        decision('schedule', 'round_robin', 'preset'),
+      ],
+    },
+  ];
+}
+
+function engineSoak(
+  choice: Extract<PresetChoice, { presetId: 'engine_soak' }>,
+  environment: EnvironmentConfig,
+): ExpandedStage[] {
+  const base = common(choice, [SOAK_PILOT_ID]);
+  return [
+    {
+      stageId: 'soak',
+      label: `${String(choice.gamesPerSeatOrder)} random-legal games per seat order`,
+      purpose: 'exploration',
+      config: validated(
+        {
+          ...base.fields,
+          kind: 'batch',
+          label: PRESET_REGISTRY.engine_soak.label,
+          environment,
+          decks: { kind: 'precon', preconIds: [...choice.preconIds] },
+          schedule: 'round_robin',
+          gamesPerPairing: choice.gamesPerSeatOrder,
+          mirrorSeats: true,
+          limits: { maxTurns: SOAK_TURN_LIMIT },
+          // A soak is looking for abnormal matches, so it must not stop at the
+          // first one; stopping would throw away every later finding.
+          failFast: false,
+        },
+        'soak',
+      ),
+      decisions: [
+        ...base.decisions,
+        decision('decks.preconIds', [...choice.preconIds], 'chosen'),
+        decision('gamesPerPairing', choice.gamesPerSeatOrder, 'chosen'),
+        decision('limits.maxTurns', SOAK_TURN_LIMIT, 'preset'),
+        decision('failFast', false, 'preset'),
+      ],
+    },
+  ];
+}
+
+/* ---------------------------------------------------------------- the door */
+
+/**
+ * Expands one preset choice into a validated plan.
+ *
+ * Throws `PresetRefused` rather than returning a result, because every caller of
+ * this — the estimator, and the builder screens after it — has to stop when a
+ * choice cannot be honoured, and a returned failure that a caller can forget to
+ * read is exactly the shape that produces an estimate of a run that could never
+ * start.
+ */
+export function expandPreset(input: PresetChoiceInput | unknown): ExpandedPreset {
+  const parsed = presetChoiceSchema.safeParse(input);
+  if (!parsed.success) throw new PresetRefused(adminSchemaErrors(parsed.error));
+  const choice = parsed.data;
+
+  const definition = PRESET_REGISTRY[choice.presetId];
+  const environmentConfig = baseEnvironment();
+  const environment = resolveEnvironment(environmentConfig);
+
+  const stages = ((): ExpandedStage[] => {
+    switch (choice.presetId) {
+      case 'precon_smoke':
+      case 'precon_standard':
+      case 'precon_deep':
+        requireDistinct('preconIds', choice.preconIds, 'Precon');
+        return preconBenchmark(choice, environmentConfig);
+      case 'open_meta':
+        return openMeta(choice, environmentConfig);
+      case 'commander_search':
+        requireDistinct('commanderIds', choice.commanderIds, 'Commander');
+        requireCommanders(environment, choice.commanderIds);
+        return commanderSearch(choice, environmentConfig);
+      case 'candidate_comparison':
+        requireDistinct('referencePreconIds', choice.referencePreconIds, 'Precon');
+        requireDistinct('removeCardIds', choice.removeCardIds, 'Card');
+        requirePoolCards(environment, choice.removeCardIds);
+        return candidateComparison(choice, environmentConfig);
+      case 'pilot_robustness':
+        requireDistinct('preconIds', choice.preconIds, 'Precon');
+        return pilotRobustness(choice, environmentConfig);
+      case 'engine_soak':
+        requireDistinct('preconIds', choice.preconIds, 'Precon');
+        return engineSoak(choice, environmentConfig);
+      default: {
+        const never: never = choice;
+        throw new PresetRefused([
+          adminError('admin/schema', `Unknown preset: ${JSON.stringify(never)}`, {
+            path: 'presetId',
+          }),
+        ]);
+      }
+    }
+  })();
+
+  const expansion = presetExpansionSchema.parse({
+    presetId: choice.presetId,
+    testStyle: definition.testStyle,
+    sourceClasses: [...definition.sourceClasses],
+    stages: stages.map((stage) => ({
+      stageId: stage.stageId,
+      label: stage.label,
+      kind: stage.config.kind,
+      purpose: stage.purpose,
+      experimentId: stage.config.id,
+      decisions: stage.decisions,
+    })),
+    deferredStages:
+      choice.presetId === 'commander_search'
+        ? [
+            {
+              stageId: 'championship',
+              label: 'Frozen finalist championship on fresh seeds',
+              reason:
+                'The finalist field does not exist until the searches finish, and the ' +
+                'diversity rule that selects it is M08.15. This build schedules the searches ' +
+                'and names the stage it cannot yet schedule.',
+            },
+          ]
+        : [],
+    limitations: [...definition.limitations],
+  });
+
+  return { expansion, stages, environment };
+}

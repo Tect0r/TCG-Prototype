@@ -495,6 +495,16 @@ boundary and the loopback refusal. An entry point that bound nothing would be th
 decorative scaffolding the milestone warns against, so the boundary suite asserts
 the manifest declares `typecheck` and no other script.
 
+> **Correction, recorded by M08.3 (2026-08-22).** The sentence above predicted
+> that **M08.4** would add the `@tcg/simulator` dependency. It arrived one
+> tranche earlier: ADR 0023 §2 puts the match-count estimator behind
+> `buildSchedule` and M08.3's presets behind `experimentConfigSchema`, so M08.3
+> could not be built without it. What M08.2 measured is unchanged — this
+> workspace still runs no experiment, opens no port, spawns no process and
+> invokes no shell — and the boundary suite now holds the first of those against
+> the simulator's own entry points rather than against the import. M08.4 remains
+> the first tranche that **runs** anything.
+
 **The catalog is a directory keyed by identifier.** `batches/batch_<id>.json`,
 `jobs/job_<id>.json`, `events/job_<id>.jsonl`. Flat, because M08.1 chose the ID
 alphabet for exactly this and said so — an ID body is lowercase letters and
@@ -702,7 +712,7 @@ wrong reason.
   §3 accepted that cost, and the contract makes `total` nullable precisely so a
   successor that cannot count cheaply can decline to.
 
-## M08.3 — Match-count estimator and honest presets
+## M08.3 — Match-count estimator and honest presets — **done (2026-08-22)**
 
 Let the UI state exactly how much work a configuration schedules, by reusing the
 simulator's real scheduling semantics rather than a second formula that can
@@ -719,12 +729,274 @@ representative configs; preset snapshots and legal-pool calculations tested.
 **Exclusion:** Adaptive Counter Search is a reserved type only. Its algorithm is
 M08.16 and later.
 
+### What M08.3 built
+
+**The estimator does not estimate. It builds the schedule and counts it.**
+`estimateConfig` in `apps/admin-server/src/lab/estimate.ts` calls `buildSchedule`
+with the same pairing mode, seat mirroring, sampling and mirror-inclusion the run
+will use, and reports what comes back. There is no arithmetic about tuples,
+rotations or pilot pairings anywhere in the admin layer, which is ADR 0023 §2 in
+its strongest available form: _a second formula is a thing that can be right
+today._
+
+Ten representative batch configurations are asserted against the schedule
+`experiment.ts` itself would build from really resolved precons — one and three
+games per seat order, mirroring off, the ordered matchup matrix, three pilots as
+mirrors, two pilots in `all_pairs` and in `rotate`, a four-seat table, and a
+sampled schedule both narrower and wider than the pairings it has — plus a
+robustness run counted once per profile. Each equality is the estimate against a
+schedule length, never against a formula.
+
+**Counting a schedule needs deck hashes, not decks.** `buildSchedule` reads
+exactly one field of a deck, so `ScheduleDeck` is now that one field and `SimDeck`
+satisfies it structurally. That is what lets the estimator count a configuration
+without inventing forty card IDs per deck, and it moved no call site. The count is
+the real count; only the seeds differ, and no seed is reported.
+
+**The crossing filter has one implementation now, not three.** A replacement
+experiment and a search generation both build a round robin over two sets of decks
+and keep only the cells that cross between them. `matchesBetween` is that
+predicate, extracted into `schedule.ts` and used by `experiment.ts`,
+`deck-search/evolve.ts` and the estimator — so the estimator counts a search
+generation through the function the search evaluates through.
+
+**Games are reported per seat order because they are counted per seat order.**
+The breakdown is the built schedule grouped by the `orientation` field
+`buildSchedule` stamps on every match. A breakdown obtained by dividing a total by
+the seat count would be wrong exactly where it matters: in the ordered matchup
+matrix the four diagonal cells are mirrors, rotating a deck against a copy of
+itself gives the same table back, and the real split of that 16-match schedule is
+**10 and 6** rather than 8 and 8.
+
+**A bound says it is one, and says why.** The basis has three values, not two:
+`exact`, `upper_bound` and `at_least`. A precon benchmark is exact. A search is an
+upper bound, because its opponent field is drawn from an archive that overlaps the
+current population. A replacement is `at_least`, because how many variants exist
+depends on which comparable cards the builder finds and every variant adds
+matches. `combineBases` is the one place the combination rule lives, and
+`at_least` beats `upper_bound`: a total containing one part that can grow without
+limit is not an upper bound on anything. The schema refuses a bound with no
+reason, a seat-order breakdown that does not add up, a total that is not the sum
+of its stages, and a total whose basis is stronger than its stages support.
+
+**Nothing generates a population to estimate one.** A `generated` deck source is
+reported as an upper bound at its requested count with the reason attached — the
+generator can yield fewer decks when the pool refuses a draw — because a UI
+estimate that spent a minute building two thousand decks would not be an estimate.
+Named precons _are_ resolved, for real, against the environment the run will use,
+so a precon this build cannot play is refused now rather than an hour in.
+
+**The forced-inclusion floor is read, never recomputed.** `poolReportFor` already
+owns the arithmetic; `forcedInclusionFor` reads it per Commander and the contract
+schema is its transport, asserted field for field against the function. The Wave 1
+numbers are pinned in a test as an exact table:
+
+| Commander                   | Legal pool | Capacity | Deck size | Slack | Forced floor |
+| --------------------------- | ---------- | -------- | --------- | ----- | ------------ |
+| `bastion_commander`         | 42         | 42       | 40        | 2     | 38           |
+| `chief_containment_scholar` | 41         | 41       | 40        | 1     | 39           |
+| `goblin_warboss`            | 41         | 41       | 40        | 1     | 39           |
+| `grave_matriarch`           | 42         | 42       | 40        | 2     | 38           |
+
+`FORCED_INCLUSION_CAVEAT` is a single exported sentence rather than prose each
+screen writes for itself, and every estimate that fixes a Commander carries it. An
+unconstrained search reports a floor for **every** legal Commander, because every
+one of them is a Commander it may choose.
+
+**Eight presets, and one reserved type that cannot be expanded.** The registry
+carries a label, a summary, a status, a test style, the experiment kinds it is
+made of, its source classification and its limitations. `adaptive_counter` is
+present with status `reserved`, no kind and no member in the choice union at all,
+so the exclusion is refused at the schema rather than in a branch somebody could
+add to. Every available preset's expansion is re-parsed by
+`experimentConfigSchema` in a test: _expands into an ordinary validated config_ is
+settled by the simulator, not claimed by the admin layer.
+
+The exact table each preset schedules, on all four shipped precons and the
+selections the test names, is asserted rather than recorded automatically:
+
+| Preset               | Kind         | Stages                                    | Matches | Basis         |
+| -------------------- | ------------ | ----------------------------------------- | ------- | ------------- |
+| Precon Smoke         | `batch`      | 1                                         | 12      | `exact`       |
+| Precon Standard      | `batch`      | 1                                         | 48      | `exact`       |
+| Precon Deep          | `batch`      | 1 (two pilots)                            | 288     | `exact`       |
+| Open Meta Search     | `search`     | 1 (2 replicates × 5 generations)          | 2,560   | `upper_bound` |
+| Commander Search     | `search`     | 2 (one per Commander) + 1 deferred        | 2,560   | `upper_bound` |
+| Candidate Comparison | `comparison` | 2 (reference arms, then searches)         | 1,536   | `upper_bound` |
+| Pilot Robustness     | `robustness` | 1 (3 profiles including `published`)      | 144     | `exact`       |
+| Engine Soak          | `batch`      | 1 (random-legal, 25 games per seat order) | 300     | `exact`       |
+
+**A preset records every value it chose, and who chose it.** A decision is a
+dotted configuration path, a value and a source of `chosen` or `preset`, so a
+reader can see that four games per seat order was Standard's decision and the
+precon selection was theirs. Values the configuration schema defaults are
+deliberately absent: a preset that listed every default would bury the six numbers
+it decided under forty it merely did not override, and `config.json` in the run
+directory already holds the complete resolved configuration.
+
+**What the presets decide, and why those are not knobs.** Games per seat order is
+what separates Smoke from Standard from Deep, so it is not a field on any of the
+three — M08.8 owns the custom-workload control and will widen the shape visibly.
+Engine Soak flies the random-legal pilot and cannot be told otherwise, because a
+soak driven by a heuristic pilot would look like a benchmark and not be one, and
+it runs without fail-fast, because stopping at the first abnormal match would
+throw away every later finding. Pilot Robustness always includes `published` as
+the reference arm and does not add it twice. Commander Search gives every
+Commander the same population, generations and replicates, on its own seed family,
+and locks each search to one Commander.
+
+**A Commander Search names the stage it cannot schedule.** The frozen finalist
+championship is real work this build cannot configure — the finalist field does
+not exist until the searches finish, and the diversity rule that selects it is
+M08.15 — so it is a deferred stage with a reason and a limitation on the estimate,
+rather than an omission that would quietly turn "not yet" into "not part of the
+test".
+
+**The format's numbers come from the format.** `environmentConfigForFormat` was
+added to the simulator and reads `content/formats` once, writing the construction
+rules into the configuration exactly as a hand-authored file states them.
+`deckFormatSchema` refuses to look a format up on purpose — a finished run must
+not be silently redefined by a later content edit — which is right for a file
+somebody froze and wrong for a caller that builds a configuration
+programmatically. An admin layer that transcribed "40 cards, singleton, one copy"
+would be a second copy of the format that keeps working, wrongly, the day the
+format changes.
+
+**A refusal names the field and never a path.** Every refusal is `admin/schema`
+with the failing field's path — an unknown Commander names the ones the format
+has, a candidate removal that is not in the pool says it would declare a change
+that does not happen, a repeated selection says a selection is a set. Messages
+reused from the simulator go through `scrubRefusal`, which replaces any token
+`looksLikeFilesystemPath` flags with a marker: the simulator's messages are the
+authoritative ones and it has no idea it is about to cross an admin boundary.
+
+### The dependency M08.2 predicted for M08.4, corrected
+
+M08.2's record says _M08.4 adds the `@tcg/simulator` dependency_. That was a
+prediction and it was wrong by one tranche: ADR 0023 §2 puts the estimator behind
+`buildSchedule` and this tranche's presets behind `experimentConfigSchema`, and an
+admin layer that avoided the dependency could only reach either by writing the
+second scheduler the ADR forbids. `@tcg/admin-server` therefore depends on
+`@tcg/admin-contracts`, `@tcg/shared`, `@tcg/simulator` and `zod`.
+
+What M08.2 was actually protecting is unchanged and is still structural. The
+boundary suite now asserts the workspace imports **no simulator entry point that
+would play a match** — the experiment runner, the batch runner, the match runner,
+the search, the single-match helper, the worker pool and the telemetry collector —
+and still reaches past the simulator into nothing: no `@tcg/rules-engine`,
+`@tcg/deck-generator`, `@tcg/bot-interface`, `@tcg/protocol`, `@tcg/bot-config` or
+`@tcg/card-data`, because each of those would be this workspace acquiring an
+opinion about rules, deck legality or the wire. There is still no entry point, no
+`start` script, no port, no child process and no shell.
+
+One seam M08.1 deferred lands here for the same reason. `EXPERIMENT_KINDS` is
+restated in `@tcg/admin-contracts` because a schema-only package cannot import the
+simulator, and M08.1 said the check that needs both sides belongs to the first
+layer able to import both — naming M08.4. M08.3 is that layer, so the test that
+the five words match `experimentConfigSchema`'s five options is now a test rather
+than a comment.
+
 ### Checklist
 
-- [ ] Estimator derived from `buildSchedule`, not reimplemented.
-- [ ] Seven typed presets, each expanding into a validated config or stage plan.
-- [ ] Games per seat order; bounds labelled as bounds.
-- [ ] Forced-inclusion floor per Commander.
+- [x] **Estimator derived from `buildSchedule`, not reimplemented.** It builds the
+      real schedule with placeholder deck hashes and counts it, and applies
+      `matchesBetween` — extracted so the replacement experiment, the search
+      evaluation and the estimator share one predicate — wherever a run filters
+      its schedule. Ten batch configurations and a robustness run are asserted
+      equal to the schedule `experiment.ts` builds from resolved precons.
+- [x] **Eight typed presets, each expanding into a validated config or stage
+      plan.** The milestone's prose enumerates eight and this line previously
+      counted seven; the enumeration is the authority, because each of the eight
+      names a distinct expansion and the count named none of them. Every expansion
+      is re-parsed by `experimentConfigSchema`, Commander Search is a two-stage
+      plan plus a named deferred stage, and `adaptive_counter` is a reserved
+      registry entry with no member in the choice union.
+- [x] **Games per seat order; bounds labelled as bounds.** The breakdown is the
+      built schedule grouped by orientation, which is why the matrix's mirrors
+      land 10/6 rather than 8/8; the basis separates `exact`, `upper_bound` and
+      `at_least`, the schema refuses a bound with no reason and a total whose
+      basis its stages do not support, and `combineBases` is the only place the
+      combination rule lives.
+- [x] **Forced-inclusion floor per Commander.** Read from `poolReportFor` and
+      asserted against it field for field, with the Wave 1 table above pinned in a
+      test and `FORCED_INCLUSION_CAVEAT` carried by every estimate that fixes a
+      Commander.
+- [x] Verified: 216 focused tests in 8 files in `admin-server` (73 of them new),
+      2,192 in 92 files in `packages` (52 new) and 437 in 23 files in `simulator`
+      (4 new); `npm run check:consistency`, `npm run audit:check` and
+      `npm run verify` all pass on Node v24.15.0.
+
+### Versions
+
+**None introduced, and none moved.** Four constants were considered and each was
+deliberately left where it is.
+
+| Constant                   | Value | Why it did not move                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION`   | 1     | No request or response shape changed: the request payload registry is untouched, no error code was added, and neither envelope gained a member. The estimate and the expansion are computed values no payload yet carries; the tranche that puts them on the wire decides whether the language moved. |
+| `CATALOG_DOCUMENT_VERSION` | 1     | Nothing here writes or reads a catalog document.                                                                                                                                                                                                                                                      |
+| `JOB_EVENT_VERSION`        | 1     | Nothing here appends an event.                                                                                                                                                                                                                                                                        |
+| `CONFIG_SCHEMA_VERSION`    | 1     | The presets _use_ `experimentConfigSchema` and add no field to it. A config a preset produces is identical in shape to one somebody typed.                                                                                                                                                            |
+
+**No new preset-registry constant either, and that is the interesting one.**
+`@tcg/bot-config`'s difficulty registry has its own version because a recorded
+match cites a difficulty and a later reader has to know which registry produced
+it — and M08.1 wrote the test a new constant must pass: _a third artifact with its
+own lifetime is a reason to add a third constant; a second schema inside the same
+family is not._ The preset registry does not pass it yet, because M08.3 persists
+nothing: an expansion is computed, displayed and discarded, and the configuration
+it becomes is versioned by `CONFIG_SCHEMA_VERSION` inside the canonical experiment
+directory. The tranche that first **stores** a preset expansion beside a job —
+M08.4 or M08.8 — is the one that earns the constant, and it will be a visible
+widening of the expansion schema rather than a field that appeared.
+
+**No play-contract or simulator artifact version moves.** `PROTOCOL_VERSION`,
+`MATCH_SCHEMA_VERSION`, `RULES_VERSION`, `CARD_SCHEMA_VERSION`,
+`MANIFEST_SCHEMA_VERSION`, `SUMMARY_SCHEMA_VERSION`, `HASH_VERSION` and
+`SEED_DERIVATION_VERSION` are exactly where M08.2 left them. The simulator changes
+are additive and behaviour-preserving: `ScheduleDeck` narrows a parameter type
+that `SimDeck` already satisfied, `matchesBetween` is the predicate two call sites
+already had, and `environmentConfigForFormat` builds a configuration the schema
+already accepted. No schedule, seed, hash or artifact moved, which the simulator's
+own 437 tests are the check on.
+
+### Exclusions honoured
+
+Adaptive Counter Search is a **reserved type only**: named in the registry,
+carrying no experiment kind, absent from the choice union, and refused at the
+schema. No adaptive algorithm, no deck lineage and no revision history — those are
+M08.16 and later.
+
+No UI. M08.3 adds no navigation entry, no page, no control and no chart: it makes
+the answer available, and M08.7 builds the shell that shows it, M08.8 the Precon
+Benchmark builder, M08.14 the Open Meta form and M08.20 the advanced templates. No
+experiment is executed, no port is opened, no process is spawned and no shell is
+invoked, each asserted by the boundary scan over the workspace's own sources. No
+card was authored, no precon rebalanced, no deck size moved and no Unit cap added.
+
+### Limitations recorded rather than worked around
+
+- **A generated deck source is bounded, not counted.** The estimator does not
+  build a population to find out how many decks it yields. A configuration whose
+  decks are generated therefore reports its requested count as an upper bound,
+  with the reason attached. A tranche that wants exactness there is buying it with
+  the CPU the estimate exists to save.
+- **A comparison's reference arms are an upper bound.** The shared reference
+  population is the decks legal in _both_ environments, and the candidate's
+  legality is not resolved here, so the baseline's count bounds the shared one
+  from above. Resolving both environments would make it exact and would double the
+  content work an estimate does.
+- **A replacement is a floor.** Nothing counts variants, because the variant
+  builder decides how many exist from the comparable cards it finds. What is
+  reported is the arms against the opponent field with no variants at all, which
+  is a real lower bound and labelled as one. No preset produces a `replacement`;
+  M08.20 decides whether one is exposed.
+- **A `files` deck source cannot be resolved from the admin surface.** ADR 0023 §5
+  gives a request no path to name, so a configuration that arrived by another
+  route is estimated as a bound on what its paths hold. No preset produces one.
+- **The presets are `precon_wave_1` only.** Every preset builds its environment
+  from the one playtest format this build ships. A second format is a knob the
+  tranche that has a second format adds.
 
 ## M08.4 — Existing-experiment execution bridge
 
