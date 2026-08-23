@@ -9,9 +9,9 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                      |
 | ---------------- | ------------------------------------------ |
-| Commit           | `c6bcadf44585594768c17ec10cc1fbe265fe5525` |
+| Commit           | `7c95dee069ff36769175b014c5435907c0b0417d` |
 | Working tree     | clean                                      |
-| Taken on         | 2026-08-22                                 |
+| Taken on         | 2026-08-23                                 |
 | Node             | v24.15.0                                   |
 | `npm run verify` | passed at this commit                      |
 
@@ -31,13 +31,13 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-server   | 8       | 216      |
-| packages       | 92      | 2192     |
+| admin-server   | 12      | 284      |
+| packages       | 92      | 2206     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
 | simulator      | 23      | 437      |
 | web-client     | 20      | 272      |
-| **total**      | **164** | **3531** |
+| **total**      | **168** | **3613** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -105,8 +105,8 @@ The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contr
 
 | Constant                   | Value | Pins                                                                                                                                   |
 | -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_CONTRACT_VERSION`   | 1     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
-| `CATALOG_DOCUMENT_VERSION` | 1     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
+| `ADMIN_CONTRACT_VERSION`   | 2     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `CATALOG_DOCUMENT_VERSION` | 2     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments
 
@@ -274,8 +274,9 @@ No match record observes (31):
 | Q49      | Does a Token count as a Unit? — answered 2026-08-20                    | answered      | no                      |
 | Q50      | Is Hard good enough to publish? — answered 2026-08-20, discharged 2... | answered      | no                      |
 | Q51      | Keep the card-in-hand price, or keep Hard's win rate? — open           | open          | yes                     |
+| Q52      | Should `pilotSpecSchema`'s overrides stop carrying the generic vector? | open          | no                      |
 
-15 question(s) are open in the question file and not on the plan's
+16 question(s) are open in the question file and not on the plan's
 short list, which is the curated set a tranche might have to stop on rather than an index.
 
 No question the plan calls open is missing or answered in the question file.
