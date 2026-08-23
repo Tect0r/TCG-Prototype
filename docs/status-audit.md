@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                       |
-| ---------------- | ------------------------------------------- |
-| Commit           | `98aed7f1158c18ed961b36d7391b6c494052d1cd`  |
-| Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-08-23                                  |
-| Node             | v24.15.0                                    |
-| `npm run verify` | passed at this commit                       |
+| Reading          | Value                                      |
+| ---------------- | ------------------------------------------ |
+| Commit           | `55035b7af5ce013721fc512a37d88574ce3a1bc7` |
+| Working tree     | clean                                      |
+| Taken on         | 2026-08-23                                 |
+| Node             | v24.15.0                                   |
+| `npm run verify` | passed at this commit                      |
 
 ### Verification chain
 
@@ -31,13 +31,13 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-server   | 15      | 333      |
-| packages       | 92      | 2206     |
+| admin-server   | 20      | 450      |
+| packages       | 94      | 2259     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
 | simulator      | 24      | 448      |
 | web-client     | 20      | 272      |
-| **total**      | **172** | **3673** |
+| **total**      | **179** | **3843** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -105,8 +105,8 @@ The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contr
 
 | Constant                   | Value | Pins                                                                                                                                   |
 | -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_CONTRACT_VERSION`   | 2     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
-| `CATALOG_DOCUMENT_VERSION` | 2     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
+| `ADMIN_CONTRACT_VERSION`   | 3     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `CATALOG_DOCUMENT_VERSION` | 3     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments
 
