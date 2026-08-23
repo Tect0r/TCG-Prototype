@@ -6,7 +6,7 @@ import { isErr, isOk, unwrap } from '@tcg/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resolveCatalogRoots, resolveResultLocation } from './roots.js';
-import { makeTestCatalog, testIdentity, type TestCatalog } from './test-catalog.js';
+import { makeTestCatalog, testConfig, testIdentity, type TestCatalog } from './test-catalog.js';
 
 /**
  * ADR 0023 §5, tested against a real filesystem: *the resolved real path is
@@ -252,6 +252,7 @@ describe('the store refuses an unsafe reference before it stores one', () => {
         label: 'one',
         purpose: 'exploration',
         sourceClasses: ['ai'],
+        config: testConfig(),
       }),
     );
 
@@ -271,6 +272,7 @@ describe('the store refuses an unsafe reference before it stores one', () => {
         label: 'one',
         purpose: 'exploration',
         sourceClasses: ['ai'],
+        config: testConfig(),
       }),
     );
 
@@ -293,6 +295,7 @@ describe('the store refuses an unsafe reference before it stores one', () => {
         label: 'one',
         purpose: 'exploration',
         sourceClasses: ['ai'],
+        config: testConfig(),
       }),
     );
     unwrap(

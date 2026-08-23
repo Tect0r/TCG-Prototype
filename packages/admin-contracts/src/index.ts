@@ -44,7 +44,9 @@ export {
   contractVersionSchema,
   isFutureVersion,
   jobEventVersionSchema,
+  refuseForeignVersion,
   refuseFutureVersion,
+  refusePastVersion,
   type AdminVersionField,
 } from './version.js';
 
@@ -160,7 +162,9 @@ export {
 } from './lifecycle.js';
 
 export {
+  JOB_EXECUTION_MODES,
   MAX_ENVIRONMENTS_PER_RUN,
+  MAX_JOB_ATTEMPTS,
   MAX_JOBS_PER_BATCH,
   MAX_NOTE_LENGTH,
   MAX_TAGS,
@@ -176,6 +180,11 @@ export {
   environmentContentHashesSchema,
   experimentDirectorySchema,
   fullContentHashesOf,
+  jobExecutionModeSchema,
+  jobExecutionSchema,
+  jobExecutionViewOf,
+  jobExecutionViewSchema,
+  jobSpecSchema,
   resultLocationSchema,
   resultReferenceOf,
   resultReferenceSchema,
@@ -190,6 +199,10 @@ export {
   type CatalogJobDocument,
   type CatalogJobView,
   type EnvironmentContentHashes,
+  type JobExecution,
+  type JobExecutionMode,
+  type JobExecutionView,
+  type JobSpec,
   type ResultLocation,
   type ResultReference,
   type RunEnvironmentRef,

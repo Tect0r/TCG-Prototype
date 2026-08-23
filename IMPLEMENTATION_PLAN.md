@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-22)   | M08.4        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-23)   | M08.5        |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -47,8 +47,13 @@ that persists batches and jobs, recovers in-flight work after a restart as
 resolves outside its configured root. **M08.3 landed on 2026-08-22** and gave the
 lab an honest answer to "how much work is this": the match-count estimator, built
 by calling `buildSchedule` and counting it, and eight typed presets that expand
-into ordinary validated experiment configurations. None of the three runs an
-experiment and none opens a port; **M08.4 is the next tranche**.
+into ordinary validated experiment configurations. **M08.4 landed on 2026-08-23**
+and is the first tranche that runs anything: one catalog job becomes one canonical
+experiment directory named after the job, `runExperiment` is called from exactly
+one file and no shell or argument vector exists anywhere on the path, progress is
+read out of `matches.jsonl` and the checkpoint directory rather than counted, and a
+failure keeps every partial record so a retry resumes rather than restarts. Nothing
+here opens a port yet; **M08.5 is the next tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -170,21 +175,69 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.4 — Existing-experiment execution bridge.** Execute one existing simulator
-configuration through the catalog without changing simulator semantics: call the
-simulator's exported functions directly or spawn a **fixed executable with a
-fixed argument vector**, translate one catalog job into one canonical experiment
-directory and record its process and result identity, derive progress from
-canonical output and checkpoint state rather than from a second counter, preserve
-partial results and resume identities on ordinary success or failure, and capture
-structured failure diagnostics without leaking secrets. Its scope and checklist
-are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m084--existing-experiment-execution-bridge).
-No network service and no UI: M08.6 owns the boundary and M08.7 the shell. It is
-also the first tranche that could give a **queued** job a kind, which is the
-limitation M08.2 recorded against the `kinds` and `fullContentHash` filters.
+**M08.5 — Runner lifecycle, recovery and resource bounds.** Truthful control over
+long-running work: bounded concurrency and worker limits; **pause** stops
+scheduling new match work and lets in-flight matches reach their normal record
+boundary; **resume** uses the existing JSONL and checkpoint contracts; **cancel**
+is graceful and preserves inspectable partial output; interrupted jobs recover
+after an orchestration restart without duplicating matches or lineage; and
+**retry** is a visible lifecycle action, never a silent automatic success. Its
+scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m085--runner-lifecycle-recovery-and-resource-bounds).
+Still no network service and no UI: M08.6 owns the boundary and M08.7 the shell.
 
-It has something honest to run, and something to say about the cost first.
+It inherits a bridge that runs, and several things it must not re-decide.
+
+**M08.4 made a job into a run, and the mapping is a name rather than a
+discipline.** A job writes into `<result root>/<jobId>`, so two jobs cannot
+collide on a directory and one job cannot acquire a second: the location is
+written to the job's `execution` record on the first start and reused by every
+later attempt, re-resolved against its configured root — real path, so a symlink
+escape is refused — before a single match is played. The job document now also
+carries a `spec`, which closes the limitation M08.2 recorded against the `kinds`
+filter: a **queued** job has a kind, because a job is created with a validated
+configuration. `fullContentHash` still needs a result, and that is a different
+limitation for a better reason — a content address is a reading taken from the
+environment a run played in.
+
+**There is no argument vector to get wrong.** ADR 0023 §2 allows a child process
+with a fixed executable and a fixed vector; none is required, so `runExperiment`
+is an ordinary function call, reachable from **one** file and refused in every
+other source by the boundary scan. The one process boundary underneath it is the
+simulator's worker pool, which starts a fixed module with no `argv` and hands it a
+schema-validated setup object — so "the admin service cannot execute arbitrary
+commands" is a property of there being no command line rather than of how
+carefully one is built.
+
+**Progress is read, never counted.** Nothing subscribes to the simulator's
+progress callback: a timer re-reads `matches.jsonl` and the checkpoint directory,
+and a record counts once its newline is on disk, which is the same measure resume
+uses. Two properties came out of building it and are asserted rather than assumed
+— a reading never moves backwards, because a poll that finished reading after the
+run settled is a stale sample; and the directory outranks the estimate, so a stream
+holding more records than an exact schedule says exist withholds the denominator
+rather than reporting a wrong one.
+
+**A failure keeps everything it wrote.** Nothing in the runner removes anything, so
+a failed job keeps its stream, its header, its checkpoints and its location, and
+`resume` is always requested — which is why M08.5's `retry` continues rather than
+restarts. A stream opened by a _different_ configuration is refused before anything
+is played rather than merged into. Diagnostics are `admin/run_failed` with the
+message scrubbed of anything path-shaped, and a test walks every token of every
+refusal to keep it that way.
+
+**One finding is recorded rather than fixed, and M08.5 should not fix it either.**
+`parseExperimentConfig` is not idempotent: an absent `weights` short-circuits to
+`{}` while a present `weights: {}` expands to the complete generic vector, which
+`createAggressivePilot` then merges _over_ the published one. So a configuration
+round-tripped through its own parsed form is a different run with a differently
+weighted pilot — and, in the record already, `perturbPilot` perturbs the generic
+vector rather than the published one, which is what a Pilot Robustness arm has
+been measuring. M08.4 stored the configuration in the shape a hand-authored file
+states it and **proves** the round trip preserves the run's identity per job, so
+the bridge is unaffected. Correcting the defect would move evidence somebody has
+read; [Q52](docs/open-questions.md) records the question and who needs it answered.
+
 **M08.3 built the estimator by refusing to write one.** `estimateConfig` calls
 `buildSchedule` with the configuration's own pairing mode, seat mirroring,
 sampling and mirror-inclusion, and counts what comes back; ten representative

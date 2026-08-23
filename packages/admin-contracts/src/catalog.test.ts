@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  JOB_EXECUTION_MODES,
   MAX_ENVIRONMENTS_PER_RUN,
+  MAX_JOB_ATTEMPTS,
   MAX_JOBS_PER_BATCH,
   MAX_NOTE_LENGTH,
   MAX_TAGS,
@@ -17,6 +19,9 @@ import {
   environmentContentHashesSchema,
   experimentDirectorySchema,
   fullContentHashesOf,
+  jobExecutionModeSchema,
+  jobExecutionSchema,
+  jobSpecSchema,
   resultReferenceOf,
   resultReferenceSchema,
   resultRootIdSchema,
@@ -49,6 +54,23 @@ const IDENTITY: RunIdentity = {
 
 const LOCATION = { rootId: 'default', directory: 'results/precon-smoke' };
 
+const SPEC = {
+  experimentId: 'precon-smoke',
+  kind: 'batch' as const,
+  seed: 'wave-1-smoke',
+  configHash: '0123456789abcdef',
+  configSchemaVersion: 1,
+};
+
+const EXECUTION = {
+  location: LOCATION,
+  mode: 'in_process_workers' as const,
+  workers: 2,
+  attempts: 1,
+  lastStartedAt: '2026-08-21T09:05:00.000Z',
+  resumedMatches: 0,
+};
+
 const TIMESTAMPS: EntryTimestamps = {
   createdAt: '2026-08-21T09:00:00.000Z',
   updatedAt: '2026-08-21T09:30:00.000Z',
@@ -61,6 +83,7 @@ const JOB: CatalogJobDocument = {
   jobId: 'job_fixture1',
   batchId: 'batch_fixture1',
   label: 'Precon smoke',
+  spec: SPEC,
   purpose: 'exploration',
   sourceClasses: ['ai', 'precon'],
   status: 'queued',
@@ -68,6 +91,7 @@ const JOB: CatalogJobDocument = {
   timestamps: TIMESTAMPS,
   annotations: NO_ANNOTATIONS,
   failure: null,
+  execution: null,
   result: null,
 };
 
@@ -80,6 +104,79 @@ const BATCH = {
   annotations: NO_ANNOTATIONS,
   jobIds: ['job_fixture1'],
 };
+
+describe('what a job will run, and where it ran', () => {
+  it('is on the document from creation, so a queued job already has a kind', () => {
+    // M08.2 recorded the cost of not having this: `a queued job has no kind to
+    // filter on`, because the only place a kind appeared was inside a result.
+    const parsed = catalogJobDocumentSchema.parse(JOB);
+    expect(parsed.status).toBe('queued');
+    expect(parsed.result).toBeNull();
+    expect(parsed.spec.kind).toBe('batch');
+  });
+
+  it('refuses a job with no spec at all', () => {
+    const { spec: _spec, ...without } = JOB;
+    expect(catalogJobDocumentSchema.safeParse(without).success).toBe(false);
+  });
+
+  it('holds the run\u2019s address and never the configuration itself', () => {
+    // The configuration is `experimentConfigSchema`'s, and restating it here
+    // would be the second copy of the experiment schema M08 forbids.
+    expect(Object.keys(jobSpecSchema.parse(SPEC)).sort()).toEqual([
+      'configHash',
+      'configSchemaVersion',
+      'experimentId',
+      'kind',
+      'seed',
+    ]);
+  });
+
+  it('refuses a spec whose config hash is not a hash', () => {
+    expect(jobSpecSchema.safeParse({ ...SPEC, configHash: 'not a hash' }).success).toBe(false);
+    expect(jobSpecSchema.safeParse({ ...SPEC, experimentId: 'Precon Smoke' }).success).toBe(false);
+    expect(jobSpecSchema.safeParse({ ...SPEC, unexpected: true }).success).toBe(false);
+  });
+
+  it('records the directory a job owns on the document and never on the view', () => {
+    const document = catalogJobDocumentSchema.parse({ ...JOB, execution: EXECUTION });
+    expect(document.execution?.location).toEqual(LOCATION);
+
+    const view = catalogJobViewOf(document);
+    expect(catalogJobViewSchema.parse(view)).toEqual(view);
+    expect(JSON.stringify(view)).not.toContain('rootId');
+    expect(JSON.stringify(view)).not.toContain('precon-smoke/');
+    expect(view.execution).toEqual({
+      mode: 'in_process_workers',
+      workers: 2,
+      attempts: 1,
+      lastStartedAt: '2026-08-21T09:05:00.000Z',
+      resumedMatches: 0,
+    });
+  });
+
+  it('has one execution mode, and it is the one that has no argument vector', () => {
+    expect(JOB_EXECUTION_MODES).toEqual(['in_process_workers']);
+    expect(jobExecutionModeSchema.safeParse('shell').success).toBe(false);
+  });
+
+  it('refuses an attempt count below one or past the bound', () => {
+    expect(jobExecutionSchema.safeParse({ ...EXECUTION, attempts: 0 }).success).toBe(false);
+    expect(
+      jobExecutionSchema.safeParse({ ...EXECUTION, attempts: MAX_JOB_ATTEMPTS + 1 }).success,
+    ).toBe(false);
+    expect(jobExecutionSchema.safeParse({ ...EXECUTION, resumedMatches: -1 }).success).toBe(false);
+  });
+
+  it('cannot carry a directory that escapes its root', () => {
+    expect(
+      jobExecutionSchema.safeParse({
+        ...EXECUTION,
+        location: { rootId: 'default', directory: '../elsewhere' },
+      }).success,
+    ).toBe(false);
+  });
+});
 
 const started = (status: CatalogJobDocument['status']): CatalogJobDocument => ({
   ...JOB,

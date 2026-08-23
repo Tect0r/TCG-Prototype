@@ -50,6 +50,12 @@ export default defineConfig({
           root: import.meta.dirname,
           include: ['apps/admin-server/src/**/*.test.ts'],
           environment: 'node',
+          // M08.4's job-runner suite plays real matches: the bridge from a
+          // catalog job to a canonical experiment directory is only proven by
+          // driving the simulator's own `runExperiment` into a real directory
+          // and reading the manifest it wrote. Same reason as the projects
+          // above, and the same ceiling.
+          testTimeout: 60_000,
         },
       },
       {

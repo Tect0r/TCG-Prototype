@@ -352,6 +352,50 @@ competent human.
 **Needed by:** the first finding that hinges on a card the pilots plausibly
 misplay.
 
+### Q52. Should `pilotSpecSchema`'s overrides stop carrying the generic vector?
+
+**Open, and measured rather than suspected.** Found by M08.4, which had to write
+an experiment configuration to disk and read it back.
+
+`pilotSpecSchema` declares `weights: botWeightsSchema.partial().default({})`, and
+under zod 4 those two paths do not agree:
+
+- **`weights` absent** — every hand-authored configuration, every M08.3 preset
+  expansion, every fixture in the repository — short-circuits to the literal
+  `{}`. `createAggressivePilot({})` merges nothing, so the pilot flies its
+  published `AGGRESSIVE_WEIGHTS`. This is what every recorded run did.
+- **`weights: {}` present** — which is exactly what serializing a _parsed_
+  configuration produces — is run through `.partial()`, whose per-field defaults
+  all apply, yielding the complete generic vector. `createAggressivePilot` merges
+  that over the published one and replaces every entry, so the aggressive pilot
+  flies a default-weighted scorer under an aggressive name.
+
+Two consequences follow, and only the first is hypothetical:
+
+- **A configuration cannot be round-tripped through its own parsed form.** Its
+  `configHashOf` changes and its pilots change with it, so a run resumed from the
+  `config.json` it wrote itself would be refused for drift — or, worse, would not
+  be. Nothing in the repository does this today; M08.4 avoided it by storing the
+  configuration in the shape a hand-authored file states, and by proving the
+  round trip preserves the run's identity per job rather than assuming it.
+- **`perturbPilot` perturbs the generic vector rather than the published one.**
+  It calls `pilotSpecSchema.parse({ ...spec, weights: { ...spec.weights,
+...weights } })`, and a non-empty `weights` is a present one. So a Pilot
+  Robustness arm labelled "aggressive, +10% on removal" has been flying the
+  generic scorer with that perturbation, not the aggressive one. That is a real
+  reading in the record rather than a possibility.
+
+**The fix is small and its blast radius is not.** Making the override maps carry
+no defaults of their own leaves every absent-`weights` run byte-identical, and
+changes what a robustness arm measures. M08.4 did not take it: correcting a
+measurement is not an execution bridge's to make, and the arms it would move are
+evidence somebody has already read.
+
+**Needed by:** the next tranche that runs, reads or cites a `robustness`
+experiment — M08.20 exposes the template, and M08.11 shows calibration standing
+beside results. Whoever takes it owes a statement of which recorded runs the
+correction invalidates.
+
 ### Q38. When is a multiplayer balance run worth it?
 
 Experiments run 1v1. `playerCount` is carried through every schedule, record, bot

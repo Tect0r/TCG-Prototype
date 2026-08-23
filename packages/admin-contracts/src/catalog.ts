@@ -7,10 +7,12 @@ import {
   entryTimestampsSchema,
   experimentKindSchema,
   experimentPurposeSchema,
+  experimentSlugSchema,
   jobIdSchema,
   labelSchema,
   sourceClassesSchema,
   tagSchema,
+  timestampSchema,
   type EntryTimestamps,
 } from './identity.js';
 import {
@@ -250,6 +252,141 @@ export function resultReferenceOf(stored: StoredResultReference): ResultReferenc
   return { identity: stored.identity };
 }
 
+/* ------------------------------------------------ what a job will run */
+
+/**
+ * What a job runs, recorded before it runs it.
+ *
+ * M08.2 shipped a job document with no configuration reference at all and wrote
+ * down what that cost: *a queued job has no kind to filter on*, because the only
+ * place a kind appeared was inside a result, and a job acquires a result when it
+ * has already finished. M08.4 is the tranche identity.ts named for closing that
+ * — *the seam that needs both sides belongs to M08.4, the tranche that
+ * translates a job into a config* — and this is the shape it closes it with.
+ *
+ * **Identity, and not the configuration itself.** The configuration is
+ * `experimentConfigSchema`'s, which is `@tcg/simulator`'s, and a schema-only
+ * package cannot import an application (ADR 0001, and the reason
+ * `EXPERIMENT_KINDS` is restated rather than imported). Restating it here would
+ * be the second copy of the experiment schema this milestone forbids, and it
+ * would be a copy that drifts the first time the simulator adds a field. So the
+ * catalog holds the **address** of the run — what it is called, what kind it is,
+ * what seed everything derives from, and the hash of the normalized
+ * configuration — and `apps/admin-server` keeps the configuration itself beside
+ * the job, in the simulator's own schema, where the simulator can validate it.
+ *
+ * `configHash` is the load-bearing field. It is `configHashOf`'s answer, the
+ * same value the run stamps into `manifest.json` and into `matches.header.json`,
+ * so "is this partial stream the one this job was resuming" is a comparison
+ * rather than a hope — and it deliberately excludes `output` and `workers`,
+ * which is what lets a job resume into its own directory with a different worker
+ * count.
+ */
+export const jobSpecSchema = z.strictObject({
+  /** The `id` from the experiment configuration. */
+  experimentId: experimentSlugSchema,
+  kind: experimentKindSchema,
+  /** The root seed. Everything in the run derives from it. */
+  seed: z.string().min(1).max(64),
+  /** Hash of the normalized configuration, excluding where and how fast it runs. */
+  configHash: contentHashSchema,
+  /**
+   * The configuration schema version the stored configuration declares.
+   *
+   * Recorded rather than owned, exactly as `manifestSchemaVersion` is: the
+   * number is `@tcg/simulator`'s `CONFIG_SCHEMA_VERSION`, and writing it down
+   * lets a reader say which build's schema the stored configuration was written
+   * against without opening it.
+   */
+  configSchemaVersion: z.number().int().min(1),
+});
+export type JobSpec = z.infer<typeof jobSpecSchema>;
+
+/* ------------------------------------------------------ how a job ran */
+
+/**
+ * How the run was executed.
+ *
+ * One member, and the enum exists so the answer is a recorded fact rather than
+ * an assumption a later reader has to make. ADR 0023 §2 allows a second: *where
+ * a child process is genuinely required, it is spawned with a fixed executable
+ * and a fixed argument vector*. M08.4 does not require one — the simulator is a
+ * library and is called as one — and the day a tranche does, an existing job's
+ * record still says which of the two produced it.
+ */
+export const JOB_EXECUTION_MODES = [
+  /**
+   * `runExperiment` called in the orchestration process, with the simulator's
+   * own worker threads underneath it.
+   *
+   * There is no argument vector anywhere on this path, which is the strongest
+   * available form of "no admin input is ever concatenated into a command
+   * string": the pool starts a fixed bootstrap module and hands it a
+   * schema-validated setup object over the worker channel.
+   */
+  'in_process_workers',
+] as const;
+export const jobExecutionModeSchema = z.enum(JOB_EXECUTION_MODES);
+export type JobExecutionMode = z.infer<typeof jobExecutionModeSchema>;
+
+/** Attempts are bounded because a retry is a person pressing a button. */
+export const MAX_JOB_ATTEMPTS = 1000;
+
+const executionCore = {
+  mode: jobExecutionModeSchema,
+  /** How many simulator workers the latest attempt was given. Non-semantic. */
+  workers: z.number().int().min(1).max(64),
+  /** How many times this job has been started, including the current attempt. */
+  attempts: z.number().int().min(1).max(MAX_JOB_ATTEMPTS),
+  /** When the latest attempt started. Distinct from `timestamps.startedAt`, which is the first. */
+  lastStartedAt: timestampSchema,
+  /**
+   * Matches the latest attempt found already committed to the canonical stream.
+   *
+   * Read from the run's own `matches.jsonl` rather than remembered, which is
+   * what makes it a statement about the evidence on disk and not about what this
+   * process believes it did.
+   */
+  resumedMatches: z.number().int().min(0),
+};
+
+/**
+ * The persisted half: everything above, plus the directory the job owns.
+ *
+ * **One job, one canonical experiment directory, and the mapping is a name
+ * rather than a promise.** The directory is the job's own minted ID, whose
+ * alphabet `identity.ts` restricts to lowercase letters and digits precisely
+ * because M08.2 uses these IDs as file names. Two jobs therefore cannot share a
+ * directory and one job cannot have two, and neither fact depends on anybody
+ * remembering it.
+ *
+ * The location is written once, at the first start, and reused by every later
+ * attempt. That is what "resume identity preserved on failure" means in a
+ * document: a retry continues the stream it already has rather than starting a
+ * second one somewhere else because configuration moved underneath it.
+ */
+export const jobExecutionSchema = z.strictObject({
+  location: resultLocationSchema,
+  ...executionCore,
+});
+export type JobExecution = z.infer<typeof jobExecutionSchema>;
+
+/**
+ * The client-visible half: the same record with no location.
+ *
+ * A separate schema for the reason `resultReferenceSchema` gives — there is
+ * nothing here to strip, so a future tranche that wants a location on a screen
+ * has to widen this deliberately.
+ */
+export const jobExecutionViewSchema = z.strictObject({ ...executionCore });
+export type JobExecutionView = z.infer<typeof jobExecutionViewSchema>;
+
+/** The only route from the persisted execution record to the client-visible one. */
+export function jobExecutionViewOf(execution: JobExecution): JobExecutionView {
+  const { location: _location, ...rest } = execution;
+  return rest;
+}
+
 /* -------------------------------------------------------------- annotations */
 
 /**
@@ -326,6 +463,8 @@ const jobCore = {
   /** The batch this job belongs to. Every job belongs to exactly one. */
   batchId: batchIdSchema,
   label: labelSchema,
+  /** What this job runs. Present from creation, so a queued job has a kind. */
+  spec: jobSpecSchema,
   purpose: experimentPurposeSchema,
   sourceClasses: sourceClassesSchema,
   status: jobStatusSchema,
@@ -358,6 +497,8 @@ export const catalogJobDocumentSchema = z
   .strictObject({
     documentVersion: catalogDocumentVersionSchema,
     ...jobCore,
+    /** Null until the job has been started once. Never cleared afterwards. */
+    execution: jobExecutionSchema.nullable(),
     result: storedResultReferenceSchema.nullable(),
   })
   .superRefine(statusTimestampCheck);
@@ -374,6 +515,7 @@ export type CatalogJobDocument = z.infer<typeof catalogJobDocumentSchema>;
 export const catalogJobViewSchema = z
   .strictObject({
     ...jobCore,
+    execution: jobExecutionViewSchema.nullable(),
     result: resultReferenceSchema.nullable(),
   })
   .superRefine(statusTimestampCheck);
@@ -381,8 +523,12 @@ export type CatalogJobView = z.infer<typeof catalogJobViewSchema>;
 
 /** The only route from the persisted job document to the client-visible view. */
 export function catalogJobViewOf(document: CatalogJobDocument): CatalogJobView {
-  const { documentVersion: _documentVersion, result, ...rest } = document;
-  return { ...rest, result: result === null ? null : resultReferenceOf(result) };
+  const { documentVersion: _documentVersion, execution, result, ...rest } = document;
+  return {
+    ...rest,
+    execution: execution === null ? null : jobExecutionViewOf(execution),
+    result: result === null ? null : resultReferenceOf(result),
+  };
 }
 
 /* ---------------------------------------------------- the batch documents */

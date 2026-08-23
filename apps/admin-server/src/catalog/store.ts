@@ -10,6 +10,7 @@ import type {
   JobAction,
   JobEventCause,
   JobEventLog,
+  JobExecution,
   JobId,
   JobStatus,
   PageInfo,
@@ -19,6 +20,7 @@ import type {
   StoredResultReference,
 } from '@tcg/admin-contracts';
 import type { Result } from '@tcg/shared';
+import type { ExperimentConfig } from '@tcg/simulator';
 
 /**
  * What the catalog can do, stated once and separately from how it does it.
@@ -60,7 +62,14 @@ import type { Result } from '@tcg/shared';
  * There is **no execution**. Nothing here starts a match, opens a socket or
  * spawns anything. `applyJobAction` moves a document from one lifecycle state to
  * another and writes the move down; whether a worker is actually running is
- * M08.4's and M08.5's, and this interface is what they will record through.
+ * M08.4's and M08.5's, and this interface is what they record through.
+ *
+ * > **What M08.4 added, and what it deliberately did not.** A job is now created
+ * > *with* a validated experiment configuration, which the store keeps beside the
+ * > catalog and hands back on request, and it records where a run happened
+ * > through `setJobExecution`. Holding a configuration is not running one: the
+ * > store still starts nothing, and `run/job-runner.ts` is the only thing in this
+ * > workspace that calls `runExperiment`.
  */
 
 /** Every catalog answer is a value or a list of structured refusals, never a throw. */
@@ -80,6 +89,19 @@ export interface NewJobInput {
   readonly purpose: ExperimentPurpose;
   readonly sourceClasses: readonly SourceClass[];
   readonly annotations?: Annotations;
+  /**
+   * The experiment this job runs, already validated by the simulator.
+   *
+   * Required rather than optional, because `lifecycle.ts` says why there is no
+   * job `draft` state: *M08.9 edits membership before start and a job is
+   * validated when it is created*. A job with no configuration would be a job
+   * nothing could ever start, and the queue would be holding a placeholder.
+   *
+   * The type is `@tcg/simulator`'s, so a caller cannot hand over a shape the
+   * simulator would refuse — and the store re-parses it anyway on the way back
+   * out, because a file on disk may not have come from this build.
+   */
+  readonly config: ExperimentConfig;
 }
 
 export interface JobActionInput {
@@ -167,6 +189,27 @@ export interface CatalogStore {
 
   applyJobAction(input: JobActionInput): Promise<CatalogResult<CatalogJobDocument>>;
   setJobProgress(jobId: JobId, progress: Progress): Promise<CatalogResult<CatalogJobDocument>>;
+  /**
+   * The configuration this job was created with, re-validated on the way out.
+   *
+   * A read rather than a field on the document: the configuration is
+   * `experimentConfigSchema`'s and a catalog document cannot hold a shape it
+   * cannot validate. What the document holds is the *address* of the run
+   * (`spec`), which is what a listing, a filter and a queue screen actually need.
+   */
+  readJobConfig(jobId: JobId): Promise<CatalogResult<ExperimentConfig>>;
+  /**
+   * Records where and how this job ran.
+   *
+   * Separate from `applyJobAction` for the reason `setJobProgress` is: starting a
+   * job is a lifecycle decision and belongs in the event log, while *which
+   * directory it owns and how many attempts it has had* is a fact about the run
+   * that the document answers exactly and cheaply.
+   */
+  setJobExecution(
+    jobId: JobId,
+    execution: JobExecution,
+  ): Promise<CatalogResult<CatalogJobDocument>>;
   setJobAnnotations(
     jobId: JobId,
     annotations: Annotations,

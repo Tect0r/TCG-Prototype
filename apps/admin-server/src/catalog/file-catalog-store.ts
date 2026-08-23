@@ -16,6 +16,7 @@ import {
   fullContentHashesOf,
   isTerminalJobStatus,
   jobEventSchema,
+  jobExecutionSchema,
   jobIdSchema,
   jobTransition,
   pageRequestSchema,
@@ -31,6 +32,7 @@ import {
   type EntryTimestamps,
   type JobEvent,
   type JobEventLog,
+  type JobExecution,
   type JobId,
   type JobStatus,
   type PageRequestInput,
@@ -38,6 +40,7 @@ import {
   type StoredResultReference,
 } from '@tcg/admin-contracts';
 import { err, generateId, isErr, ok, type IdSources } from '@tcg/shared';
+import type { ExperimentConfig } from '@tcg/simulator';
 
 import { encodeCursor, comparePositions, decodeCursor, isAfter } from './cursor.js';
 import {
@@ -50,6 +53,7 @@ import {
   readJsonLines,
   writeJsonAtomically,
 } from './files.js';
+import { prepareJobConfig, readJobConfig, writeJobConfig } from './job-config.js';
 import { resolveResultLocation, type ResolvedCatalogRoots } from './roots.js';
 import { KeyedMutex } from './serialize.js';
 import type {
@@ -72,8 +76,16 @@ import type {
  * <catalogRoot>/
  *   batches/batch_<id>.json    one document per test batch, ordered membership
  *   jobs/job_<id>.json         one document per experiment job, independent
+ *   configs/job_<id>.json      the experiment configuration that job runs (M08.4)
  *   events/job_<id>.jsonl      one append-only history per job
  * ```
+ *
+ * The configuration is a fourth file rather than a field, and it is written in
+ * the simulator's own schema: it is byte-shaped exactly like the `config.json` a
+ * run writes into its own directory, because it *is* that document. A catalog
+ * document cannot hold a shape `@tcg/admin-contracts` cannot validate, and
+ * restating `experimentConfigSchema` there would be the second copy of the
+ * experiment schema this milestone forbids.
  *
  * Flat directories keyed by ID, because the ID alphabet was chosen for exactly
  * this: `@tcg/admin-contracts` restricts an ID body to `[a-z0-9]` and says why —
@@ -132,6 +144,7 @@ export class FileCatalogStore implements CatalogStore {
 
   readonly #batchDir: string;
   readonly #jobDir: string;
+  readonly #configDir: string;
   readonly #eventDir: string;
 
   constructor(options: FileCatalogStoreOptions) {
@@ -140,12 +153,13 @@ export class FileCatalogStore implements CatalogStore {
     this.#clock = options.clock ?? (() => new Date());
     this.#batchDir = join(options.roots.catalogRoot, 'batches');
     this.#jobDir = join(options.roots.catalogRoot, 'jobs');
+    this.#configDir = join(options.roots.catalogRoot, 'configs');
     this.#eventDir = join(options.roots.catalogRoot, 'events');
   }
 
   /** Creates the catalog layout. Separate from the constructor because it does I/O. */
   async open(): Promise<void> {
-    for (const directory of [this.#batchDir, this.#jobDir, this.#eventDir]) {
+    for (const directory of [this.#batchDir, this.#jobDir, this.#configDir, this.#eventDir]) {
       await ensureDirectory(directory);
     }
   }
@@ -280,12 +294,19 @@ export class FileCatalogStore implements CatalogStore {
       const jobPath = documentPath(this.#jobDir, jobId);
       if (await documentExists(jobPath)) return err([duplicateId('job', jobId)]);
 
+      // Before anything is minted or written: a configuration that cannot be
+      // stored and read back as itself is refused, so a job is never queued
+      // against a run nobody asked for.
+      const prepared = prepareJobConfig(input.config);
+      if (isErr(prepared)) return prepared;
+
       const now = this.#now();
       const document: CatalogJobDocument = {
         documentVersion: CATALOG_DOCUMENT_VERSION,
         jobId,
         batchId: input.batchId,
         label: input.label,
+        spec: prepared.value.spec,
         purpose: input.purpose,
         sourceClasses: [...input.sourceClasses],
         status: 'queued',
@@ -293,15 +314,19 @@ export class FileCatalogStore implements CatalogStore {
         timestamps: freshTimestamps(now),
         annotations: input.annotations ?? NO_ANNOTATIONS,
         failure: null,
+        execution: null,
         result: null,
       };
 
       const validated = catalogJobDocumentSchema.safeParse(document);
       if (!validated.success) return err(adminSchemaErrors(validated.error));
 
-      // The job first, then its membership: a batch that named a job with no
-      // document would be a dangling reference, while a job whose batch has not
-      // listed it yet is merely a job the next append will list.
+      // The configuration first, then the job, then its membership. Each step
+      // leaves the catalog readable if the next one never happens: a
+      // configuration nothing points at is invisible, a job whose batch has not
+      // listed it yet is a job the next append will list, and a batch naming a
+      // job with no document would be the one dangling reference of the three.
+      await writeJobConfig(this.#configPath(jobId), prepared.value.stored);
       await writeJsonAtomically(jobPath, validated.data);
 
       const withMember: CatalogBatchDocument = {
@@ -405,6 +430,56 @@ export class FileCatalogStore implements CatalogStore {
     return this.#mutateJob(jobId, (current, now) =>
       ok({
         document: { ...current, progress, timestamps: { ...current.timestamps, updatedAt: now } },
+        events: [],
+      }),
+    );
+  }
+
+  /**
+   * The configuration this job was created with, re-validated on the way out.
+   *
+   * Re-parsed rather than trusted, exactly as every catalog document is: the file
+   * may have been edited by hand, restored from a backup, or written by a build
+   * whose `CONFIG_SCHEMA_VERSION` is not this one's — and that last case gets the
+   * readable sentence rather than a literal mismatch.
+   */
+  async readJobConfig(jobId: JobId): Promise<CatalogResult<ExperimentConfig>> {
+    if (!jobIdSchema.safeParse(jobId).success) {
+      return err([adminError('admin/unknown_job', 'That is not a job identifier.')]);
+    }
+    return this.#locks.run(this.#configPath(jobId), () =>
+      readJobConfig(this.#configPath(jobId), { jobId }),
+    );
+  }
+
+  /**
+   * Records where and how this job ran.
+   *
+   * Not an event, for the reason progress is not one: which directory a job owns
+   * is a fact the document answers exactly, and a log line per attempt would say
+   * nothing the `start` transition beside it does not already say.
+   *
+   * The location is checked before it is stored, the same way `attachJobResult`
+   * checks one — so a document in the catalog never names a directory the store
+   * would refuse to open, whichever field it names it in.
+   */
+  async setJobExecution(
+    jobId: JobId,
+    execution: JobExecution,
+  ): Promise<CatalogResult<CatalogJobDocument>> {
+    const validated = jobExecutionSchema.safeParse(execution);
+    if (!validated.success) return err(adminSchemaErrors(validated.error));
+
+    const resolved = await resolveResultLocation(this.#roots, validated.data.location);
+    if (isErr(resolved)) return err(resolved.error);
+
+    return this.#mutateJob(jobId, (current, now) =>
+      ok({
+        document: {
+          ...current,
+          execution: validated.data,
+          timestamps: { ...current.timestamps, updatedAt: now },
+        },
         events: [],
       }),
     );
@@ -547,6 +622,10 @@ export class FileCatalogStore implements CatalogStore {
 
   #eventLogPath(jobId: JobId): string {
     return join(this.#eventDir, `${jobId}.jsonl`);
+  }
+
+  #configPath(jobId: JobId): string {
+    return documentPath(this.#configDir, jobId);
   }
 
   async #append(jobId: JobId, event: JobEvent): Promise<void> {
@@ -815,9 +894,11 @@ export function jobMatchesFilter(job: CatalogJobDocument, filter: CatalogFilter)
     return false;
   }
 
-  if (filter.kinds.length > 0) {
-    if (job.result === null || !filter.kinds.includes(job.result.identity.kind)) return false;
-  }
+  // Read from the spec rather than from the result, which is M08.2's recorded
+  // limitation closed: *a queued job has no kind to filter on* was true only
+  // because a kind lived exclusively inside a result, and a job acquires one of
+  // those by finishing. A job has had a kind since it was created since M08.4.
+  if (filter.kinds.length > 0 && !filter.kinds.includes(job.spec.kind)) return false;
   if (filter.fullContentHash !== null) {
     if (job.result === null) return false;
     if (!fullContentHashesOf(job.result.identity).includes(filter.fullContentHash)) return false;

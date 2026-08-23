@@ -703,6 +703,16 @@ wrong reason.
   first that could put a kind on a job before it runs; until then a job with no
   result matches neither filter, which is the honest answer for a run that is not
   yet a run. Tested in both states.
+
+  > **Half superseded by M08.4 (2026-08-23).** A job document now carries a
+  > `spec` from the moment it is created, so `kinds` reads the configuration's
+  > kind and matches a **queued** job — the limitation this paragraph recorded is
+  > closed, in the tranche it named. `fullContentHash` is unchanged and is a
+  > different limitation for a better reason: a content address is a reading
+  > taken from the resolved environment a run _played in_, so it does not exist
+  > until the run does. Both states are still tested; what M08.2 measured about
+  > its own build stands.
+
 - **Cross-process exclusion is not claimed.** Mutations are serialized per
   document within one process, which is what ADR 0023 §4 describes — one
   administrator, one orchestration process. A second _reader_ is always safe
@@ -998,7 +1008,7 @@ card was authored, no precon rebalanced, no deck size moved and no Unit cap adde
   from the one playtest format this build ships. A second format is a knob the
   tranche that has a second format adds.
 
-## M08.4 — Existing-experiment execution bridge
+## M08.4 — Existing-experiment execution bridge — **done (2026-08-23)**
 
 Execute one existing simulator config through the catalog without changing
 simulator semantics: call simulator APIs directly or spawn a fixed executable
@@ -1013,12 +1023,250 @@ duplicate-start tests.
 
 **Exclusion:** no network service, no UI.
 
+### What M08.4 built
+
+`apps/admin-server/src/run/` — `ExperimentRunner`, and the two readers it is
+built on. It is the first thing in this workspace that runs anything, and the
+last one until M08.5 gives an operator control over it.
+
+**A job holds what it will run, and the catalog says so before it runs.**
+`catalogJobDocumentSchema` gained `spec` — the experiment's ID, kind, seed,
+configuration hash and the `CONFIG_SCHEMA_VERSION` its stored configuration
+declares — and the configuration itself is a fourth file under the catalog root,
+`configs/job_<id>.json`, in the simulator's own schema. The contract holds the
+**address**; `@tcg/simulator` holds the document, and re-validates it on the way
+back out. Restating `experimentConfigSchema` in `@tcg/admin-contracts` would have
+been the second copy of the experiment schema this milestone forbids, and it
+would have drifted the first time the simulator added a field.
+
+That closes the limitation M08.2 recorded against itself. A **queued** job now
+has a kind, so `kinds` filters work that has not started; `fullContentHash` still
+needs a result, because a content address is a reading taken from the environment
+a run played in.
+
+**One job, one directory, and the mapping is a name rather than a discipline.**
+A run writes into `<result root>/<jobId>`. Two jobs cannot collide on a directory
+because two jobs cannot share an ID, and one job cannot acquire a second because
+the location is written to `execution` on the first start and reused by every
+later attempt — a retry resumes into its own stream even if the runner has since
+been pointed at a different result root, which a test drives by reconfiguring it
+between attempts. M08.1 chose the ID alphabet for exactly this (`[a-z0-9]`, no
+dot, no separator, no uppercase), and the location is re-resolved against its
+configured root — real path and all, so a symlink is seen — before a single match
+is played.
+
+**The simulator is called, and there is no argument vector to get wrong.**
+ADR 0023 §2 allows a child process with a fixed executable and a fixed argument
+vector; none is required, so `runExperiment` is an ordinary function call. The one
+process boundary underneath it is the simulator's own worker pool, which starts a
+**fixed module** — a URL relative to its own source — with no `argv` at all and
+hands it a schema-validated setup object over the worker channel. So "the admin
+service cannot execute arbitrary commands" is not a property of how carefully a
+string is built; it is a property of there being no string, and the boundary suite
+holds both halves: this workspace still names no `child_process`, no `spawn`, no
+`execFile` and no shell, and `pool.ts` is read to confirm it builds no command
+line either.
+
+`runExperiment` is reachable from **one** file. The boundary scan used to refuse
+it everywhere; it now requires it in `run/job-runner.ts` and refuses it in every
+other source, so the permission is as narrow as the tranche. Everything below it —
+`runBatch`, `runMatch`, `runSearch`, `runOne`, `runJobsInPool`,
+`TelemetryCollector` — stays refused: reaching past `runExperiment` to any of
+those would be this workspace assembling a run rather than asking for one.
+
+**Progress is read from the directory, never counted.** Nothing subscribes to
+`onProgress`. A timer re-reads the canonical directory, and `progress.ts` gives
+the three reasons the callback is the second counter the tranche rules out: it
+counts what the process has _done_ rather than what is _committed_, it starts
+from zero on a resumed run whose stream already holds hundreds of records, and it
+fires every twenty-five matches, which is never for a twelve-match benchmark.
+Counting newline-terminated records is the same measure resume uses — `runBatch`'s
+own comment says _the file on disk is the progress_ — so the number a screen shows
+and the number a restart would continue from are one number by construction, and a
+half-written final line is not counted, exactly as `readJsonl` does not count it.
+
+Two properties fell out of building it and are now asserted rather than assumed.
+**A reading never moves backwards**: a poll that opened the directory before the
+run settled can finish reading after it, and a stale sample is dropped rather than
+written. **The directory outranks the estimate**: when a committed stream holds
+more records than an _exact_ schedule says exist, the denominator is withheld —
+`progressSchema`'s third honest state — rather than reported as a number the
+evidence contradicts.
+
+The stage comes from checkpoint state, and from the file names rather than their
+contents: a checkpoint holds a whole population of decks, and opening one on a
+timer to learn a stage name would cost megabytes per reading. `total` is `null`,
+because `stageRefSchema` says why — _reporting a total it does not have would be
+the second-formula mistake ADR 0023 §2 exists to prevent_ — and the directory
+knows which stages have started, not how many were configured.
+
+**A failure leaves everything it wrote.** There is no code in the runner that
+removes anything: a failed job keeps its partial `matches.jsonl`, its header, its
+checkpoints and its `execution` record, so `retry` resumes rather than restarts.
+The diagnostics are a structured `admin/run_failed` whose message has been through
+M08.3's `scrubRefusal`, because a failure that fell out of the simulator has no
+idea it is about to cross an admin boundary and is quite likely to be an `ENOENT`
+carrying a path; a test walks every token of every refusal and requires none of
+them to look like one.
+
+**Starting a job twice is refused by the lifecycle table, not by a flag.** The
+`start` transition is taken through the store before anything else happens, and
+the store serializes mutations of one job on that job's own key — so two
+concurrent `run()` calls produce one `admin/illegal_transition` and exactly one
+run, which is asserted by counting the calls rather than by inspecting a lock.
+
+**A result is linked from what the run wrote.** The manifest is read _loosely_ —
+unknown fields are stripped, because a manifest is the simulator's document and it
+grows, and refusing to index a run for being newer than the index would be
+refusing evidence — and recorded _exactly_, through `runIdentitySchema`. The
+manifest version travels rather than being checked, which is M08.1's stated
+policy. A run that wrote no manifest **fails** rather than completing: a catalog
+entry pointing at a run that does not exist is worse than a job that says it fell
+over.
+
+### One finding, measured rather than worked around
+
+**`parseExperimentConfig` is not idempotent, and the difference is how a pilot
+flies.** `pilotSpecSchema` declares `weights: botWeightsSchema.partial()
+.default({})`. An **absent** `weights` short-circuits to the literal `{}` and
+`createAggressivePilot({})` merges nothing over the published
+`AGGRESSIVE_WEIGHTS`. A **present** `weights: {}` — which is exactly what
+serializing a parsed configuration produces — is run through `.partial()`, whose
+per-field defaults all apply, and the resulting complete generic vector is merged
+_over_ the published one and replaces every entry.
+
+So a configuration written out in its parsed form and read back is a different
+configuration, with a different `configHashOf` and a differently-weighted pilot.
+M08.4 could not persist a job's configuration without meeting this, and it did not
+fix it: the same defect means `perturbPilot` perturbs the generic vector rather
+than the published one, so correcting it would move what a Pilot Robustness arm
+measures — evidence somebody has already read, and not an execution bridge's to
+move. [Q52](../open-questions.md) records the question, the blast radius and who
+needs it answered.
+
+What the bridge does instead is not be affected by it. `storableForm` writes the
+configuration in the shape a hand-authored file states it — no property whose
+value is an empty object, which in a parsed configuration is always the trace of a
+default nobody supplied — and `prepareJobConfig` then **proves**, per job and
+before the job is created, that reading the stored bytes back yields a
+configuration with the same hash. A configuration that fails that check is refused
+at creation rather than discovered an hour into a run.
+
 ### Checklist
 
-- [ ] One job maps to one canonical experiment directory.
-- [ ] Progress derived from canonical state.
-- [ ] Fixed argument vector; no shell, ever.
-- [ ] Partial results and resume identity preserved on failure.
+- [x] **One job maps to one canonical experiment directory.** The directory is
+      the job's own minted ID under a configured result root, so the mapping is
+      bijective by naming; the location is written on the first start and reused
+      by every later attempt, and is re-resolved against its root — real path, so
+      a symlink escape is refused — before any match is played. Asserted by
+      running two jobs, by reconfiguring the runner between two attempts of one
+      job, and by refusing a root that is not configured.
+- [x] **Progress derived from canonical state.** Newline-terminated records in
+      `matches.jsonl` and the checkpoint files that exist, on a timer, with no
+      subscription to the simulator's progress callback anywhere. A stale sample
+      cannot move a reading backwards, and a stream that contradicts an exact
+      schedule withholds the denominator rather than reporting a wrong one.
+- [x] **Fixed argument vector; no shell, ever.** No child process is required, so
+      no argument vector exists to build. The scan for `child_process`, `spawn`,
+      `execFile`, `execSync` and `exec(` still finds nothing in this workspace,
+      and the pool underneath `runExperiment` is read to confirm it starts a fixed
+      module with no `argv` and no shell.
+- [x] **Partial results and resume identity preserved on failure.** Nothing in the
+      runner deletes anything; a failed job keeps its stream, its header, its
+      checkpoints and its location, `resume` is always requested so a retry
+      continues rather than restarts, and a stream opened by a _different_
+      configuration is refused before anything is played rather than merged into.
+      Driven by failing a run partway, retrying it, and asserting the second
+      attempt resumes the same directory with the records the first left.
+- [x] Verified: 284 focused tests in 12 files in `admin-server` (68 of them new,
+      in four new files) and 343 in `@tcg/admin-contracts` (14 new); 3,613 tests
+      in 168 files across the whole suite, up from 3,531 in 164;
+      `npm run check:consistency`, `npm run audit:check` and `npm run verify` all
+      pass on Node v24.15.0.
+
+### Versions
+
+Two moved, both deliberately, and no play-contract or simulator artifact version
+moved with them.
+
+| Constant                   | Was | Now | Why                                                                                                                                                                                                                                                               |
+| -------------------------- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION`   | 1   | 2   | The closed error-code list gained `admin/run_failed`, and both job shapes gained `spec` and `execution`. M08.3 wrote the test this had to pass — _a policy refusal that is not a bad value … would move `ADMIN_CONTRACT_VERSION` deliberately_ — and this is one. |
+| `CATALOG_DOCUMENT_VERSION` | 1   | 2   | A job document now records what it will run and where it ran. Both fields are required, because a job with no spec is a job nothing can start.                                                                                                                    |
+| `JOB_EVENT_VERSION`        | 1   | 1   | No event kind was added and no line's shape changed. Recording where a job ran is not a decision, so it is a document field rather than a log line — the same rule that keeps progress off the log.                                                               |
+| `CONFIG_SCHEMA_VERSION`    | 1   | 1   | The catalog stores an experiment configuration and adds no field to it. The number is read and recorded on the spec, which is reading a version rather than owning one.                                                                                           |
+
+**`admin/run_failed` is a new kind of failure rather than a new spelling of an old
+one.** Every other code in the list is about a request or a document being wrong;
+this one is about a run that was accepted, started, and then did not finish. A
+client cannot do about it what it would do about `admin/schema` — the
+configuration was valid, and retrying is a lifecycle action rather than a
+correction — so collapsing them would leave a queue screen unable to tell "fix
+this form" from "this run fell over".
+
+**There is no migration from `CATALOG_DOCUMENT_VERSION` 1, and that is a decision.**
+A v1 job document never recorded which configuration it held, and inventing one
+would be inventing the run. So a v1 document is refused with the counterpart of
+the newer-build sentence — `refusePastVersion`, added here because M08.4 is the
+first tranche to move the constant at all, and without it a v1 document would fail
+its `z.literal` as _expected 2, received 1_, which tells a person nothing. The
+blast radius is nothing: `@tcg/admin-server` has never had an entry point, a port
+or a `start` script, so the only v1 documents that have ever existed were written
+by these tests into temporary directories. The batch document's shape did not
+change and its version moved anyway, because M08.1 chose one constant for the
+family and gave the reason — _a build that can read a batch but not its jobs has
+not read the batch._
+
+**`refuseForeignVersion` is the third refusal, and it is not a fourth version.**
+The stored configuration declares `CONFIG_SCHEMA_VERSION`, which is the
+simulator's number; the admin surface reads it and must not adopt it. So the
+treatment is shared — a newer build, an older build, or no readable version at
+all, each with its own sentence — while the constant stays where it belongs.
+ADR 0023 §7 asks for the treatment, not the module.
+
+**One additive simulator export.** `configHashOf` is now on the barrel. The admin
+layer needs the run's own configuration hash to record an address a resumed stream
+can be checked against, and computing a second one would be exactly the drift
+ADR 0023 §2 forbids. Nothing about it changed; it was already the function
+`manifest.json` and `matches.header.json` are stamped from.
+
+### Exclusions honoured
+
+No network service: no `node:http`, no socket, no `createServer`, no `fetch`, and
+still no `start` script — M08.6 owns the boundary and the loopback refusal. No UI,
+no navigation entry, no chart. No shell and no child process of this workspace's
+own. Nothing was deleted, moved or written inside a result root except by the
+simulator writing its own run. No card was authored, no precon rebalanced, no deck
+size moved and no Unit cap added. Pause, resume, cancel, retry-as-an-operator-
+action, worker bounds and concurrency are **M08.5's** and are untouched: the
+lifecycle table has always had the transitions, and this tranche uses exactly two
+of them — `start`, and one of `complete` or `fail`.
+
+### Limitations recorded rather than worked around
+
+- **A single-worker sequential run gets one progress reading.** `runExperiment`
+  with one worker plays matches in a loop that never yields to the event loop, so
+  the poller cannot fire; the reading taken when the run settles is the only one.
+  That is correct rather than merely acceptable — it is still read from the
+  directory — and it is why ADR 0023 §1 puts real work in workers. A run with two
+  or more workers polls normally, which is the case a person watching a queue is
+  in.
+- **The generation number inside a search is not carried.** `stageRefSchema`
+  names stages, and reading a generation off a checkpoint's _contents_ would cost
+  a population of decks per sample. M08.9 shows a generation on screen and is the
+  tranche that decides how to carry one.
+- **`elapsedMs` is wall-clock, summed across attempts, and includes time the job
+  was not running.** An attempt that was interrupted contributes the time up to
+  its last reading. Nothing here measures CPU, and M08.5 owns the resource bounds
+  that would make a CPU figure meaningful.
+- **Cross-process exclusion is still not claimed.** Two runners in two processes
+  could both pass the `start` transition, because the refusal is a document
+  mutation serialized _within_ one process. ADR 0023 §4 describes one
+  administrator and one orchestration process; M08.5 owns the worker limits and
+  is where a second one would have to be refused.
+- **A `robustness` job's arms fly the generic weight vector.** Q52's second
+  consequence, inherited rather than introduced: this tranche runs whatever
+  configuration it is given, and the perturbation defect is upstream of it.
 
 ## M08.5 — Runner lifecycle, recovery and resource bounds
 

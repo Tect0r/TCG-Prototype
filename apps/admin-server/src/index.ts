@@ -1,11 +1,10 @@
 /**
  * `@tcg/admin-server` — the orchestration process
- * [ADR 0023](../../../docs/architecture/0023-admin-lab-boundary.md) §1 named,
- * and at M08.2 exactly one part of it: the durable catalog.
+ * [ADR 0023](../../../docs/architecture/0023-admin-lab-boundary.md) §1 named.
  *
  * What this workspace is **for** is running balance experiments and serving one
- * admin client. What it *is* today is a store, because the milestone builds it in
- * the order the pieces depend on each other:
+ * admin client. Since M08.4 it does the first of those and none of the second,
+ * because the milestone builds it in the order the pieces depend on each other:
  *
  * - **M08.2** persists batches and jobs and recovers their truthful state after a
  *   restart. It opens files under a configured root and nothing else.
@@ -14,31 +13,41 @@
  *   estimator behind `buildSchedule` and the presets behind
  *   `experimentConfigSchema`; M08.2's own record predicted M08.4 would add that
  *   dependency, and this is the correction. Nothing here **runs** an experiment.
- * - **M08.4** turns one catalog job into one canonical experiment directory. It
- *   is the first tranche that runs anything.
+ * - **M08.4 (here)** turns one catalog job into one canonical experiment
+ *   directory. It is the first tranche that runs anything: a job is created with
+ *   a validated experiment configuration, `ExperimentRunner` plays it into the
+ *   directory the job is named after, progress is read back out of that
+ *   directory rather than counted, and a failure keeps every partial record so a
+ *   retry resumes rather than restarts.
+ * - **M08.5** gives an operator control over it — bounded concurrency, pause,
+ *   resume, cancel and a visible retry. This tranche uses exactly two lifecycle
+ *   actions, `start` and one of `complete` or `fail`, and leaves the rest alone.
  * - **M08.6** adds the HTTP boundary, loopback binding and the non-loopback
  *   authentication refusal. It is the first tranche that opens a port, and the
  *   first that gives this workspace a `start` script.
  *
  * So there is deliberately **no entry point** in this package yet. A `main.ts`
- * that bound nothing and ran nothing would be the premature scaffolding the
- * milestone warns against; the store is imported by its tests today and by the
- * service that owns it in M08.6.
+ * that bound nothing would be the premature scaffolding the milestone warns
+ * against; the runner is driven by its tests today and by the service that owns
+ * it in M08.6.
  *
  * ## The boundaries this package keeps
  *
  * - It imports `@tcg/admin-contracts`, `@tcg/shared`, `@tcg/simulator` and `zod`,
  *   and nothing else. The simulator arrives as a **library**: the estimator calls
- *   `buildSchedule` and the expansion calls `parseExperimentConfig`, and
- *   `boundary.test.ts` refuses every entry point that would play a match —
- *   `runExperiment`, `runBatch`, `runMatch`, `runSearch`, `runOne` and the worker
- *   pool — so "this package schedules nothing and plays nothing" stays structural.
+ *   `buildSchedule`, the expansion calls `parseExperimentConfig`, and exactly one
+ *   file — `run/job-runner.ts` — calls `runExperiment`. `boundary.test.ts`
+ *   requires it there and refuses it in every other source, and refuses
+ *   `runBatch`, `runMatch`, `runSearch`, `runOne` and the worker pool everywhere,
+ *   so "a run is asked for rather than assembled here" stays structural.
  * - Nothing in the player bundle or the live match server may import it, and
  *   nothing in it may import them: ADR 0023 §1 keeps the admin process and the
  *   live match process off one event loop, and M08's exclusions keep simulator
  *   CPU work out of the multiplayer server entirely.
- * - It spawns no process and invokes no shell. When M08.4 needs a child process
- *   it gets a fixed executable and a fixed argument vector (ADR 0023 §2).
+ * - It spawns no process and invokes no shell. M08.4 needed no child process at
+ *   all, so there is no argument vector to fix (ADR 0023 §2): the one process
+ *   boundary a run crosses is the simulator's own worker pool, which starts a
+ *   fixed module with no `argv` and hands it a schema-validated setup object.
  * - Every path it touches is resolved from configuration against a configured
  *   root, and a reference that escapes one is refused rather than followed
  *   (ADR 0023 §5).
@@ -104,6 +113,25 @@ export {
   type ExpandedPreset,
   type ExpandedStage,
 } from './lab/expand.js';
+
+export {
+  ExperimentRunner,
+  type ExperimentRunnerOptions,
+  type JobRunOutcome,
+  type RunExperimentFn,
+} from './run/job-runner.js';
+
+export {
+  NO_CANONICAL_READING,
+  checkpointDirectoryOf,
+  checkpointFileName,
+  countCommittedRecords,
+  readCanonicalProgress,
+  type CanonicalReading,
+  type StreamIdentity,
+} from './run/progress.js';
+
+export { readRunIdentity } from './run/manifest.js';
 
 export {
   deckCountFor,

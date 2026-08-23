@@ -49,6 +49,21 @@ export const ADMIN_ERROR_CODES = [
   'admin/incompatible_filter',
   /** A result reference that does not resolve inside its configured root. */
   'admin/unsafe_result_reference',
+  /**
+   * The experiment this job holds stopped because something went wrong.
+   *
+   * The one code M08.4 adds, and it is a new *kind* of failure rather than a new
+   * spelling of an old one: every code above is about a request or a document
+   * being wrong, and this one is about a run that was accepted, started and then
+   * did not finish. A client cannot do anything about it that it would do about
+   * `admin/schema` — the configuration was valid, and retrying it is a lifecycle
+   * action rather than a correction — so collapsing the two would leave a queue
+   * screen unable to tell "fix this form" from "this run fell over".
+   *
+   * The message is the underlying failure's, with anything that could be a
+   * filesystem path replaced first (ADR 0023 §5).
+   */
+  'admin/run_failed',
   /** Error context that would have leaked a credential or a filesystem path. */
   'admin/unsafe_error_context',
 ] as const;

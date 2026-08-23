@@ -3,6 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { unwrap, type IdSources } from '@tcg/shared';
+import {
+  environmentConfigForFormat,
+  parseExperimentConfig,
+  type ExperimentConfig,
+} from '@tcg/simulator';
 
 import { FileCatalogStore } from './file-catalog-store.js';
 import { resolveCatalogRoots, type ResolvedCatalogRoots } from './roots.js';
@@ -94,6 +99,44 @@ export async function makeTestCatalog(
     now: () => new Date(clock).toISOString(),
     dispose: () => rm(base, { recursive: true, force: true }),
   };
+}
+
+/**
+ * The environment every fixture configuration runs in, resolved once.
+ *
+ * `environmentConfigForFormat` reads `content/formats` rather than the card pool,
+ * so this is cheap — but it is the format's own construction rules rather than a
+ * transcription of them, which is the same reason `expand.ts` gives for using it.
+ */
+const FIXTURE_ENVIRONMENT = environmentConfigForFormat('precon_wave_1', {
+  label: 'Precon Wave 1, for a catalog fixture',
+});
+
+/**
+ * The smallest experiment configuration a job can legally hold.
+ *
+ * A real one, parsed by `parseExperimentConfig`, because M08.4 makes a job's
+ * configuration a thing the store writes, re-reads and re-validates: a fixture
+ * the simulator would refuse would test the wrong file. It schedules one match,
+ * and nothing in the catalog suites ever runs it.
+ */
+export function testConfig(
+  overrides: { readonly id?: string; readonly seed?: string } = {},
+): ExperimentConfig {
+  return parseExperimentConfig({
+    schemaVersion: 1,
+    kind: 'batch',
+    id: overrides.id ?? 'fixture-batch',
+    seed: overrides.seed ?? 'fixture-seed',
+    playerCount: 2,
+    pilots: [{ id: 'aggressive' }],
+    pilotPairing: 'mirror',
+    environment: FIXTURE_ENVIRONMENT,
+    decks: { kind: 'precon', preconIds: ['precon_bastion_guardians', 'precon_goblin_swarm'] },
+    schedule: 'round_robin',
+    gamesPerPairing: 1,
+    mirrorSeats: false,
+  });
 }
 
 /** A run identity that is legal, complete, and obviously a fixture. */

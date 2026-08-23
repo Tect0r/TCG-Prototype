@@ -64,7 +64,10 @@ function manifestOf(path: string): {
 
 const MANIFEST = manifestOf(join(PACKAGE_ROOT, 'package.json'));
 
-describe('the store runs no experiment', () => {
+/** The one module M08.4 lets call the simulator's experiment runner. */
+const RUNNER = 'job-runner.ts';
+
+describe('the store runs one experiment, through exactly one door', () => {
   it('has enough sources for the scans below to mean something', () => {
     expect(sourceFiles().length).toBeGreaterThan(4);
   });
@@ -96,14 +99,28 @@ describe('the store runs no experiment', () => {
     }
   });
 
-  it('imports no simulator entry point that would play a match', () => {
-    // The exclusion M08.2 held structurally, held structurally again now that the
-    // dependency exists. Scheduling, configuring and reading a pool are library
-    // calls; `runExperiment` and its neighbours are the ones that consume a
-    // machine, and M08.4 is the tranche that gets to make one.
+  it('reaches the simulator’s experiment runner from one file and no other', () => {
+    // M08.4 is the tranche that gets to run something, and this is the shape of
+    // the permission: `runExperiment` is reachable from the job runner, which is
+    // the bridge from a catalog job to a canonical experiment directory. Nowhere
+    // else — a store, an estimator or a preset expansion that could start a run
+    // would be four places able to consume a machine instead of one.
+    for (const file of sourceFiles()) {
+      const allowed = file.name === RUNNER;
+      expect(`${file.name}: ${String(file.text.includes('runExperiment'))}`).toBe(
+        `${file.name}: ${String(allowed)}`,
+      );
+    }
+  });
+
+  it('still imports no simulator entry point below the experiment runner', () => {
+    // Scheduling, configuring and reading a directory are library calls.
+    // `runExperiment` composes the rest — the batch runner, the match runner, the
+    // search and the worker pool — and reaching past it to any of those would be
+    // this workspace assembling a run rather than asking for one, which is the
+    // second scheduler ADR 0023 §2 forbids wearing a different hat.
     for (const file of sourceFiles()) {
       for (const forbidden of [
-        'runExperiment',
         'runBatch',
         'runMatch',
         'runSearch',
@@ -118,17 +135,51 @@ describe('the store runs no experiment', () => {
     }
   });
 
+  it('defaults the runner to the simulator’s own function, so the seam is a test seam', () => {
+    // `ExperimentRunnerOptions.runExperiment` exists so a test can drive a real
+    // failure through the real bridge. It would be worth nothing if the default
+    // were anything but the simulator's, so the default is named here.
+    expect(barrel.ExperimentRunner.name).toBe('ExperimentRunner');
+    const runner = readFileSync(join(SOURCE_ROOT, 'run', RUNNER), 'utf8');
+    expect(runner).toContain(
+      "import { configHashOf, runExperiment as runExperimentDirectly } from '@tcg/simulator';",
+    );
+    expect(codeOf(runner)).toContain('options.runExperiment ?? runExperimentDirectly');
+  });
+
   it('spawns nothing and invokes no shell', () => {
     // ADR 0023 §2: where a child process is genuinely required it gets a fixed
-    // executable and a fixed argument vector. M08.2 requires none at all, and
-    // "the admin service cannot execute arbitrary commands" is a structural fact
-    // only while there is nothing here that could.
+    // executable and a fixed argument vector. M08.4 requires none at all — the
+    // simulator is a library and is called as one — and "the admin service cannot
+    // execute arbitrary commands" is a structural fact only while there is
+    // nothing here that could.
     for (const file of sourceFiles()) {
       for (const capability of ['child_process', 'spawn', 'execFile', 'execSync', 'exec(']) {
         expect(`${file.name}: ${capability}: ${String(file.text.includes(capability))}`).toBe(
           `${file.name}: ${capability}: false`,
         );
       }
+    }
+  });
+
+  it('crosses one process boundary, and it has no argument vector to build', () => {
+    // The one place a run becomes more than one process is `@tcg/simulator`'s
+    // worker pool, underneath `runExperiment`. What ADR 0023 §2 asks for is that
+    // nothing an administrator supplies can reach a command line, and the reason
+    // that holds is stronger than care: there is no command line. The pool starts
+    // a *fixed module* — a URL relative to its own source — with no `argv` at
+    // all, and the job payload travels as a structured message rather than as
+    // text a shell would parse.
+    const pool = codeOf(
+      readFileSync(join(REPO_ROOT, 'apps', 'simulator', 'src', 'workers', 'pool.ts'), 'utf8'),
+    );
+    expect(pool).toContain("import { Worker } from 'node:worker_threads'");
+    expect(pool).toContain("new URL('./bootstrap.mjs', import.meta.url)");
+    expect(pool).toContain('new Worker(bootstrap, { workerData: options.setup })');
+    for (const capability of ['child_process', 'execFile', 'execSync', 'exec(', 'shell', 'argv']) {
+      expect(`pool.ts: ${capability}: ${String(pool.includes(capability))}`).toBe(
+        `pool.ts: ${capability}: false`,
+      );
     }
   });
 });
@@ -273,6 +324,10 @@ describe('the public barrel', () => {
       'estimateConfig',
       'forcedInclusionFor',
       'deckCountFor',
+      'ExperimentRunner',
+      'readCanonicalProgress',
+      'countCommittedRecords',
+      'readRunIdentity',
     ]) {
       expect(Object.keys(barrel)).toContain(name);
     }
@@ -291,6 +346,9 @@ describe('no play-contract or artifact version is reachable from here', () => {
     // rule and no card. The catalog *records* a manifest version a run was
     // written with, which is reading a number rather than owning one.
     for (const file of sourceFiles()) {
+      // M08.4 does not weaken this. It reads a manifest's `schemaVersion` field
+      // and writes the number down; reading a number is not owning one, and the
+      // constant that decides it stays the simulator's.
       for (const constant of [
         'PROTOCOL_VERSION',
         'MATCH_SCHEMA_VERSION',

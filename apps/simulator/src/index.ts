@@ -333,6 +333,7 @@ export { REFERENCE_POPULATION_VERSION } from './reference-population.js';
 export {
   MANIFEST_SCHEMA_VERSION,
   SUMMARY_SCHEMA_VERSION,
+  configHashOf,
   detectSoftwareCommit,
   runExperiment,
   type ExperimentOutcome,

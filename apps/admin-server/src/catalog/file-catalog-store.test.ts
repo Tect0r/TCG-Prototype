@@ -19,6 +19,7 @@ import type { CatalogPage } from './store.js';
 import {
   makeTestCatalog,
   sequentialIdSources,
+  testConfig,
   testIdentity,
   type TestCatalog,
 } from './test-catalog.js';
@@ -42,6 +43,7 @@ async function seedJob(label = 'Precon smoke'): Promise<CatalogJobDocument> {
       label,
       purpose: 'exploration',
       sourceClasses: ['ai', 'precon'],
+      config: testConfig(),
     }),
   );
 }
@@ -92,6 +94,7 @@ describe('creating entries', () => {
       label: 'orphan',
       purpose: 'exploration',
       sourceClasses: ['ai'],
+      config: testConfig(),
     });
     expect(isErr(created) && created.error[0]?.code).toBe('admin/unknown_batch');
   });
@@ -126,6 +129,7 @@ describe('duplicate identifiers are refused rather than overwritten', () => {
         label: 'first',
         purpose: 'exploration',
         sourceClasses: ['ai'],
+        config: testConfig(),
       }),
     );
     minter.repeatLast();
@@ -134,6 +138,7 @@ describe('duplicate identifiers are refused rather than overwritten', () => {
       label: 'second',
       purpose: 'exploration',
       sourceClasses: ['ai'],
+      config: testConfig(),
     });
 
     expect(isErr(second) && second.error[0]?.code).toBe('admin/duplicate_id');
@@ -155,6 +160,7 @@ describe('ordered batch membership, with independent jobs', () => {
           label,
           purpose: 'exploration',
           sourceClasses: ['ai'],
+          config: testConfig(),
         }),
       );
       created.push(job.jobId);
@@ -174,6 +180,7 @@ describe('ordered batch membership, with independent jobs', () => {
           label,
           purpose: 'exploration',
           sourceClasses: ['ai'],
+          config: testConfig(),
         }),
       );
     const one = await make('one');
@@ -199,6 +206,7 @@ describe('ordered batch membership, with independent jobs', () => {
             label,
             purpose: 'exploration',
             sourceClasses: ['ai'],
+            config: testConfig(),
           }),
         ).jobId,
       );
@@ -302,6 +310,7 @@ describe('ordered batch membership, with independent jobs', () => {
       label: 'late',
       purpose: 'exploration',
       sourceClasses: ['ai'],
+      config: testConfig(),
     });
     expect(isErr(late) && late.error[0]?.code).toBe('admin/illegal_transition');
     expect(isErr(late) && late.error[0]?.message).toContain('settled ordering');
@@ -608,6 +617,7 @@ describe('listing, filtering and paging', () => {
             label: `job ${String(index)}`,
             purpose: index % 2 === 0 ? 'exploration' : 'validation',
             sourceClasses: index % 2 === 0 ? ['ai', 'precon'] : ['human'],
+            config: testConfig(),
           }),
         ),
       );
@@ -654,6 +664,7 @@ describe('listing, filtering and paging', () => {
         label: 'late arrival',
         purpose: 'exploration',
         sourceClasses: ['ai'],
+        config: testConfig(),
       }),
     );
 
@@ -734,13 +745,26 @@ describe('listing, filtering and paging', () => {
     ]);
   });
 
-  it('matches a run’s kind and content hash only once the run exists', async () => {
-    // The honest limitation: `kinds` and `fullContentHash` read the run identity,
-    // and a job acquires one when its experiment directory does. M08.4 is the
-    // tranche that could give a job a kind before it runs.
-    const job = await seedJob();
+  it('matches a queued job’s kind, because a job has had one since it was created', async () => {
+    // M08.2 recorded this as a limitation — `a queued job has no kind to filter
+    // on` — and named M08.4 as the tranche that could close it. It reads the
+    // spec now, so a queue screen can filter work that has not started.
+    await seedJob();
     const byKind = catalogFilterSchema.parse({ kinds: ['batch'] });
-    expect(unwrap(await catalog.store.listJobs(byKind)).items).toEqual([]);
+    expect(unwrap(await catalog.store.listJobs(byKind)).items).toHaveLength(1);
+
+    const byOtherKind = catalogFilterSchema.parse({ kinds: ['search'] });
+    expect(unwrap(await catalog.store.listJobs(byOtherKind)).items).toEqual([]);
+  });
+
+  it('matches a run’s content hash only once the run exists', async () => {
+    // Still an honest limitation, and a different one: a content hash is a
+    // reading taken from the resolved environment a run played in, so it does
+    // not exist until the run does. The kind above is a property of the
+    // configuration, which exists from the moment the job does.
+    const job = await seedJob();
+    const byHash = catalogFilterSchema.parse({ fullContentHash: '4444444444444444' });
+    expect(unwrap(await catalog.store.listJobs(byHash)).items).toEqual([]);
 
     unwrap(
       await catalog.store.attachJobResult(job.jobId, {
@@ -748,14 +772,7 @@ describe('listing, filtering and paging', () => {
         location: { rootId: 'local', directory: 'precon-smoke' },
       }),
     );
-    expect(unwrap(await catalog.store.listJobs(byKind)).items).toHaveLength(1);
-    expect(
-      unwrap(
-        await catalog.store.listJobs(
-          catalogFilterSchema.parse({ fullContentHash: '4444444444444444' }),
-        ),
-      ).items,
-    ).toHaveLength(1);
+    expect(unwrap(await catalog.store.listJobs(byHash)).items).toHaveLength(1);
   });
 
   it('lists batches by the same ordering', async () => {
@@ -765,6 +782,53 @@ describe('listing, filtering and paging', () => {
       created.push(unwrap(await catalog.store.createBatch({ label })).batchId);
     }
     expect(unwrap(await catalog.store.listBatches()).items.map((b) => b.batchId)).toEqual(created);
+  });
+});
+
+describe('recording where a job ran', () => {
+  const execution = (directory: string) => ({
+    location: { rootId: 'local', directory },
+    mode: 'in_process_workers' as const,
+    workers: 2,
+    attempts: 1,
+    lastStartedAt: '2026-08-21T09:05:00.000Z',
+    resumedMatches: 0,
+  });
+
+  it('stores the location and hands it back on the document', async () => {
+    const job = await seedJob();
+    const recorded = unwrap(await catalog.store.setJobExecution(job.jobId, execution(job.jobId)));
+    expect(recorded.execution).toEqual(execution(job.jobId));
+    expect(unwrap(await catalog.store.readJob(job.jobId)).execution?.attempts).toBe(1);
+  });
+
+  it('checks the location before storing it, exactly as a result reference is checked', async () => {
+    // A document in the catalog must never name a directory the store would
+    // refuse to open, whichever field it names it in.
+    const job = await seedJob();
+    const refused = await catalog.store.setJobExecution(job.jobId, {
+      ...execution(job.jobId),
+      location: { rootId: 'nowhere', directory: job.jobId },
+    });
+    expect(isErr(refused) && refused.error[0]?.code).toBe('admin/unsafe_result_reference');
+    expect(unwrap(await catalog.store.readJob(job.jobId)).execution).toBeNull();
+  });
+
+  it('never leaves the location on the client-visible view', async () => {
+    const job = await seedJob();
+    unwrap(await catalog.store.setJobExecution(job.jobId, execution(job.jobId)));
+    const view = catalogJobViewOf(unwrap(await catalog.store.readJob(job.jobId)));
+    expect(view.execution).not.toBeNull();
+    expect(JSON.stringify(view)).not.toContain('rootId');
+  });
+
+  it('writes no event, because a counter and a directory are not decisions', async () => {
+    // The log records the things a later reader cannot reconstruct. Which
+    // directory a job owns is on the document, exactly and cheaply.
+    const job = await seedJob();
+    unwrap(await catalog.store.setJobExecution(job.jobId, execution(job.jobId)));
+    const log = unwrap(await catalog.store.readJobEvents(job.jobId));
+    expect(log.events.map((entry) => entry.kind)).toEqual(['created']);
   });
 });
 

@@ -26,13 +26,19 @@ import type { z } from 'zod';
  *
  * ## Why the simulator's own functions are not imported
  *
- * M08.2 excludes the simulator process, and ADR 0023 §2 gives `apps/admin-server`
- * its `@tcg/simulator` dependency in **M08.4**, the tranche that translates a
- * job into a real experiment directory. Importing the simulator barrel here to
- * reuse thirty lines would pull a worker pool, a CLI and every analysis function
- * into the store's dependency graph a tranche early, and would make the
- * exclusion a promise instead of a fact. This is the same trade M08.1 made when
- * it copied `@tcg/bot-config`'s newer-build sentence rather than its function.
+ * They are still not imported, and the reason outlived the one M08.2 gave. That
+ * reason was that the dependency did not exist yet; it arrived in M08.3 and the
+ * behaviour below did not move, because what is copied is thirty lines of
+ * discipline rather than a function whose meaning could drift. `writeJson` in
+ * `sinks.ts` and `writeJsonAtomically` here answer different questions — see the
+ * two differences below — so importing one to avoid the other would be sharing a
+ * name rather than an implementation. This is the same trade M08.1 made when it
+ * copied `@tcg/bot-config`'s newer-build sentence rather than its function.
+ *
+ * Where the simulator genuinely owns the answer, it is called: `job-config.ts`
+ * validates a stored experiment configuration with `parseExperimentConfig`, and
+ * `run/progress.ts` asks `experimentPaths` where a run's files are rather than
+ * spelling their names a second time.
  *
  * What is copied is the **behaviour**, and it is copied exactly: a truncated
  * final line is dropped and reported rather than silently discarded or allowed
@@ -243,6 +249,23 @@ export async function readJsonLines<T>(
   });
 
   return { records, skipped };
+}
+
+/**
+ * The bytes of a document, or `null` when there are none.
+ *
+ * Separate from `readDocument` because a job's stored experiment configuration
+ * is validated by `@tcg/simulator`'s parser rather than by a zod schema this
+ * package holds, and it declares a version this package does not own. Sharing
+ * the read but not the validation keeps one answer to "the file is not there"
+ * without pretending the admin surface owns the schema inside it.
+ */
+export async function readDocumentText(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------ validated read */

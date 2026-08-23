@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { z } from 'zod';
 
 import {
   ADMIN_CONTRACT_VERSION,
@@ -10,7 +11,9 @@ import {
   contractVersionSchema,
   isFutureVersion,
   jobEventVersionSchema,
+  refuseForeignVersion,
   refuseFutureVersion,
+  refusePastVersion,
   type AdminVersionField,
 } from './version.js';
 
@@ -19,7 +22,7 @@ import {
  * written as a number, so bumping a version does not silently turn a
  * future-version test into a current-version one.
  */
-const SCHEMAS: Readonly<Record<AdminVersionField, typeof contractVersionSchema>> = {
+const SCHEMAS: Readonly<Record<AdminVersionField, z.ZodType<number>>> = {
   contract: contractVersionSchema,
   catalogDocument: catalogDocumentVersionSchema,
   jobEvent: jobEventVersionSchema,
@@ -162,6 +165,76 @@ describe('an unreadable version is a different refusal', () => {
     // into an error body is how one escapes.
     const refusal = refuseFutureVersion('contract', { nested: 'payload' }, 'contractVersion');
     expect(refusal?.context).toEqual({ field: 'contract', supported: ADMIN_CONTRACT_VERSION });
+  });
+});
+
+describe('an older version is refused readably too', () => {
+  it('says so in the counterpart sentence, without pretending to migrate', () => {
+    // M08.4 is the first tranche to move `CATALOG_DOCUMENT_VERSION`, so a v1 job
+    // document is now a thing that can be read from disk. Without this it would
+    // fail its `z.literal` as `admin/schema` \u2014 *expected 2, received 1* \u2014
+    // which tells a person nothing about what happened.
+    const refusal = refusePastVersion('catalogDocument', CATALOG_DOCUMENT_VERSION - 1, 'v');
+    expect(refusal?.code).toBe('admin/unsupported_version');
+    expect(refusal?.message).toContain('written by an older build');
+    expect(refusal?.message).toContain('no migration');
+    expect(refusal?.context).toEqual({
+      field: 'catalogDocument',
+      found: CATALOG_DOCUMENT_VERSION - 1,
+      supported: CATALOG_DOCUMENT_VERSION,
+    });
+  });
+
+  it('answers nothing about the current version, a future one, or a non-version', () => {
+    for (const field of ADMIN_VERSION_FIELDS) {
+      expect(refusePastVersion(field, CURRENT_ADMIN_VERSIONS[field], 'v')).toBeNull();
+      expect(refusePastVersion(field, CURRENT_ADMIN_VERSIONS[field] + 1, 'v')).toBeNull();
+    }
+    for (const found of [undefined, null, '1', 0, -3, 1.5, Number.NaN]) {
+      expect(refusePastVersion('catalogDocument', found, 'v')).toBeNull();
+    }
+  });
+
+  it('leaves the two refusals disjoint, so a caller can ask both in order', () => {
+    // Exactly one of them answers any given value, which is what makes
+    // `refuseFutureVersion(...) ?? refusePastVersion(...)` a total rule.
+    for (const found of [0, 1, 2, 3, 99, '1', null, undefined, 1.5]) {
+      const future = refuseFutureVersion('catalogDocument', found, 'v');
+      const past = refusePastVersion('catalogDocument', found, 'v');
+      expect(future !== null && past !== null).toBe(false);
+    }
+  });
+});
+
+describe('a version this build reads but does not own', () => {
+  it('gets the same two sentences, under a name that is not an admin field', () => {
+    // `CONFIG_SCHEMA_VERSION` is `@tcg/simulator`'s. ADR 0023 \u00a77 asks for the
+    // treatment, not for the admin surface to adopt the number.
+    expect(refuseForeignVersion('experiment configuration', 1, 1, 'schemaVersion')).toBeNull();
+    expect(
+      refuseForeignVersion('experiment configuration', 2, 1, 'schemaVersion')?.message,
+    ).toContain('written by a newer build');
+    expect(
+      refuseForeignVersion('experiment configuration', 1, 2, 'schemaVersion')?.message,
+    ).toContain('written by an older build');
+  });
+
+  it('names the record rather than an admin version field in its context', () => {
+    const refusal = refuseForeignVersion('experiment configuration', 9, 1, 'schemaVersion');
+    expect(refusal?.context).toEqual({
+      record: 'experiment configuration',
+      found: 9,
+      supported: 1,
+    });
+    expect(Object.keys(refusal?.context ?? {})).not.toContain('field');
+  });
+
+  it('reports an unreadable value as a missing version, not as a past one', () => {
+    for (const found of [undefined, null, '1', 0, -3, 1.5]) {
+      const refusal = refuseForeignVersion('experiment configuration', found, 1, 'schemaVersion');
+      expect(refusal?.code).toBe('admin/missing_version');
+      expect(refusal?.message).toContain('experiment configuration');
+    }
   });
 });
 

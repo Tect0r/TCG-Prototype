@@ -15,7 +15,7 @@ import { isErr, unwrap } from '@tcg/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { FileCatalogStore, openFileCatalogStore } from './file-catalog-store.js';
-import { makeTestCatalog, type TestCatalog } from './test-catalog.js';
+import { makeTestCatalog, testConfig, type TestCatalog } from './test-catalog.js';
 
 /**
  * What a restart does to work that was in flight.
@@ -51,6 +51,7 @@ async function driveTo(status: JobStatus): Promise<string> {
       label: `to ${status}`,
       purpose: 'exploration',
       sourceClasses: ['ai'],
+      config: testConfig(),
     }),
   );
 
@@ -210,6 +211,7 @@ describe('a restart over a real directory', () => {
         label: 'one',
         purpose: 'exploration',
         sourceClasses: ['ai'],
+        config: testConfig(),
       }),
     );
     unwrap(await catalog.store.applyBatchAction(batch.batchId, 'enqueue'));
@@ -220,6 +222,51 @@ describe('a restart over a real directory', () => {
     const after = restart();
     expect(unwrap(await after.readJob(job.jobId)).status).toBe('interrupted');
     expect(unwrap(await after.readBatch(batch.batchId)).status).toBe('running');
+  });
+});
+
+describe('what an interrupted job keeps, so a retry can continue it', () => {
+  it('keeps its directory, its configuration and its attempt count', async () => {
+    // M08.4 gives a job a spec and an execution record, and a restart must not
+    // lose either: without the location a resumed attempt would start a second
+    // stream somewhere else, and without the configuration there would be
+    // nothing to resume.
+    const jobId = await driveTo('running');
+    unwrap(
+      await catalog.store.setJobExecution(jobId, {
+        location: { rootId: 'local', directory: jobId },
+        mode: 'in_process_workers',
+        workers: 2,
+        attempts: 1,
+        lastStartedAt: '2026-08-21T09:05:00.000Z',
+        resumedMatches: 7,
+      }),
+    );
+
+    const restarted = new FileCatalogStore({ roots: catalog.roots });
+    unwrap(await restarted.recover());
+
+    const recovered = unwrap(await restarted.readJob(jobId));
+    expect(recovered.status).toBe('interrupted');
+    expect(recovered.execution).toEqual({
+      location: { rootId: 'local', directory: jobId },
+      mode: 'in_process_workers',
+      workers: 2,
+      attempts: 1,
+      lastStartedAt: '2026-08-21T09:05:00.000Z',
+      resumedMatches: 7,
+    });
+    expect(recovered.spec.kind).toBe('batch');
+    expect(unwrap(await restarted.readJobConfig(jobId)).id).toBe('fixture-batch');
+  });
+
+  it('recovers a job that never started with no execution record at all', async () => {
+    const jobId = await driveTo('queued');
+    const restarted = new FileCatalogStore({ roots: catalog.roots });
+    unwrap(await restarted.recover());
+    const recovered = unwrap(await restarted.readJob(jobId));
+    expect(recovered.status).toBe('queued');
+    expect(recovered.execution).toBeNull();
   });
 });
 
