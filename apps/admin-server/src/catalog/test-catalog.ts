@@ -121,7 +121,24 @@ const FIXTURE_ENVIRONMENT = environmentConfigForFormat('precon_wave_1', {
  * and nothing in the catalog suites ever runs it.
  */
 export function testConfig(
-  overrides: { readonly id?: string; readonly seed?: string } = {},
+  overrides: {
+    readonly id?: string;
+    readonly seed?: string;
+    /**
+     * More than one match, for a suite that has to stop a run partway (M08.5).
+     *
+     * `configHashOf` includes this, so a fixture that changes it is a different
+     * experiment — which is what a resume test wants, and why it is a parameter
+     * rather than a second copy of the fixture.
+     */
+    readonly gamesPerPairing?: number;
+    readonly mirrorSeats?: boolean;
+    /**
+     * Simulator workers this configuration asks for. Excluded from
+     * `configHashOf`, so it changes how a run is executed and never what it is.
+     */
+    readonly workers?: number;
+  } = {},
 ): ExperimentConfig {
   return parseExperimentConfig({
     schemaVersion: 1,
@@ -134,8 +151,9 @@ export function testConfig(
     environment: FIXTURE_ENVIRONMENT,
     decks: { kind: 'precon', preconIds: ['precon_bastion_guardians', 'precon_goblin_swarm'] },
     schedule: 'round_robin',
-    gamesPerPairing: 1,
-    mirrorSeats: false,
+    gamesPerPairing: overrides.gamesPerPairing ?? 1,
+    mirrorSeats: overrides.mirrorSeats ?? false,
+    ...(overrides.workers === undefined ? {} : { workers: overrides.workers }),
   });
 }
 

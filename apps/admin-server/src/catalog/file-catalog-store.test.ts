@@ -375,6 +375,46 @@ describe('lifecycle transitions go through the contract, never around it', () =>
     expect(retried.timestamps.startedAt).not.toBeNull();
   });
 
+  it('clears the diagnostics on retry, so a completed job does not carry an old failure', async () => {
+    // M08.5 makes this reachable for the first time: `retry` is the only route
+    // out of `failed`, so before it had an operator behind it nothing ever left
+    // that state. A document spelling `completed` beside the reason it fell over
+    // is the one reading of it that is certainly wrong — and nothing is lost,
+    // because the `fail` line in the log still carries those diagnostics.
+    const job = await seedJob();
+    unwrap(await catalog.store.applyJobAction({ jobId: job.jobId, action: 'start' }));
+    unwrap(
+      await catalog.store.applyJobAction({
+        jobId: job.jobId,
+        action: 'fail',
+        cause: 'runner',
+        failure: {
+          severity: 'error',
+          code: 'admin/run_failed',
+          message: 'This run stopped: the pilot pool ran out.',
+        },
+      }),
+    );
+
+    const retried = unwrap(
+      await catalog.store.applyJobAction({ jobId: job.jobId, action: 'retry' }),
+    );
+    expect(retried.failure).toBeNull();
+
+    unwrap(await catalog.store.applyJobAction({ jobId: job.jobId, action: 'start' }));
+    const done = unwrap(
+      await catalog.store.applyJobAction({ jobId: job.jobId, action: 'complete' }),
+    );
+    expect(done.status).toBe('completed');
+    expect(done.failure).toBeNull();
+
+    const log = unwrap(await catalog.store.readJobEvents(job.jobId));
+    const failed = log.events.find(
+      (event) => event.kind === 'transition' && event.action === 'fail',
+    );
+    expect(failed?.kind === 'transition' && failed.failure?.code).toBe('admin/run_failed');
+  });
+
   it('records every move in the log, so retry is visible and not a silent success', async () => {
     const job = await seedJob();
     for (const action of ['start', 'fail', 'retry', 'start', 'complete'] as const) {

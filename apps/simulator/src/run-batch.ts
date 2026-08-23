@@ -9,6 +9,7 @@ import type { SimDeck } from '@tcg/deck-generator';
 import { ensureDir, writeJson } from './reporting/sinks.js';
 import { compareRecords, type MatchSink } from './reporting/match-store.js';
 import { isAbnormal, recordIdentity, type MatchRecord } from './telemetry/schema.js';
+import { ExperimentStopped, type StopSignal } from './stop.js';
 import { runJobsInPool } from './workers/pool.js';
 import { workerSetupSchema, type WorkerJob } from './workers/protocol.js';
 
@@ -74,6 +75,20 @@ export interface RunBatchOptions {
   readonly onProgress?: (progress: BatchProgress) => void;
   /** How often to report progress, in completed matches. */
   readonly progressEvery?: number;
+  /**
+   * Asked before each match is dispatched. A reason stops the batch (M08.5).
+   *
+   * Checked between matches and never inside one, so every record this batch
+   * committed is a whole match played under this configuration — which is
+   * exactly the set resume will skip. When it trips, the batch commits what it
+   * has and then throws `ExperimentStopped`; `stop.ts` gives the two reasons
+   * the answer is an exception rather than a flag on `BatchOutcome`.
+   *
+   * Absent by default, and absent is not the same as a signal that always says
+   * `null`: with no signal there is no check at all, so a caller that does not
+   * pass one runs the code path it always ran.
+   */
+  readonly shouldStop?: StopSignal;
 }
 
 export interface BatchOutcome {
@@ -123,6 +138,16 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> 
   const failures: { matchId: string; message: string }[] = [];
   let abnormal = 0;
   let completed = 0;
+
+  // Remembered rather than re-asked, for the reason the pool gives: once a
+  // batch has decided to stop, a signal that changed its mind must not be able
+  // to hand out another match.
+  let stoppedFor: string | null = null;
+  const stopRequested = (): boolean => {
+    if (options.shouldStop === undefined) return false;
+    stoppedFor ??= options.shouldStop();
+    return stoppedFor !== null;
+  };
 
   if (replayDir !== null) ensureDir(replayDir);
 
@@ -177,9 +202,13 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> 
         if (result.type === 'done') accept(result.matchId, result.record, result.replay);
         else accept(result.matchId, null, null, result.message);
       },
+      ...(options.shouldStop === undefined
+        ? {}
+        : { shouldStop: () => (stopRequested() ? stoppedFor : null) }),
     });
   } else {
     for (const job of jobs) {
+      if (stopRequested()) break;
       try {
         const outcome = await runOne({
           experimentId: options.experimentId,
@@ -207,6 +236,16 @@ export async function runBatch(options: RunBatchOptions): Promise<BatchOutcome> 
   // Canonical order, always — this is what makes the aggregates independent of
   // the order results happened to arrive in.
   records.sort(compareRecords);
+
+  // After the sort and after every `accept`, so the sink holds every record the
+  // in-flight matches produced before anything unwinds. A stop that threw
+  // earlier would lose exactly the matches it promised to keep — and the flush
+  // is the same promise applied to the disk rather than to the array, because a
+  // stopped run never reaches the write-up that would otherwise have done it.
+  if (stoppedFor !== null) {
+    sink?.flush?.();
+    throw new ExperimentStopped(stoppedFor, completed);
+  }
 
   return {
     records,

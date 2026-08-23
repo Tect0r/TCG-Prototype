@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-23)   | M08.5        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-23)   | M08.6        |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -52,8 +52,12 @@ and is the first tranche that runs anything: one catalog job becomes one canonic
 experiment directory named after the job, `runExperiment` is called from exactly
 one file and no shell or argument vector exists anywhere on the path, progress is
 read out of `matches.jsonl` and the checkpoint directory rather than counted, and a
-failure keeps every partial record so a retry resumes rather than restarts. Nothing
-here opens a port yet; **M08.5 is the next tranche**.
+failure keeps every partial record so a retry resumes rather than restarts.
+**M08.5 landed the same day** and gave an operator control over it: a bound in two
+dimensions, and pause, resume, cancel and retry as lifecycle verbs whose stop
+reaches the simulator's own dispatch loop, so in-flight matches reach their record
+boundary and a stopped run writes no manifest to be mistaken for a finished one.
+Nothing here opens a port yet; **M08.6 is the next tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -175,18 +179,75 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.5 — Runner lifecycle, recovery and resource bounds.** Truthful control over
-long-running work: bounded concurrency and worker limits; **pause** stops
-scheduling new match work and lets in-flight matches reach their normal record
-boundary; **resume** uses the existing JSONL and checkpoint contracts; **cancel**
-is graceful and preserves inspectable partial output; interrupted jobs recover
-after an orchestration restart without duplicating matches or lineage; and
-**retry** is a visible lifecycle action, never a silent automatic success. Its
-scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m085--runner-lifecycle-recovery-and-resource-bounds).
-Still no network service and no UI: M08.6 owns the boundary and M08.7 the shell.
+**M08.6 — Admin service and access boundary.** The first tranche that opens a
+port: the separate service ADR 0023 chose, loopback by default with the
+non-loopback authentication refusal enforced, versioned endpoints for
+capabilities and presets, batch creation, list and detail, queue actions,
+progress, result summaries and bounded result tables, request and response
+schemas validated on both boundaries, and rate, body and page limits. Its scope
+and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m086--admin-service-and-access-boundary).
+Still no UI: M08.7 owns the shell.
 
-It inherits a bridge that runs, and several things it must not re-decide.
+It inherits a queue that runs, and several things it must not re-decide.
+
+**M08.5 gave an operator control, and the stop is where the matches are handed
+out.** Pause means _stop scheduling new match work and let in-flight matches reach
+their normal record boundary_, and nothing on the admin side can supply that — so
+`runBatch` and the simulator's worker pool take a `shouldStop` predicate, asked
+between matches and never inside one. A stopped run unwinds with
+`ExperimentStopped` **before** `finish()`, so it writes no manifest, no summary
+and no report: ADR 0012 makes the directory the deliverable, and a report over
+half a schedule would be a deliverable that is wrong. Every experiment kind gets
+it, because all five play their matches through `runBatch` and a returned flag
+would have to be checked at five call sites.
+
+**The bound is two numbers and a ceiling, and it is a schema.**
+`maxConcurrentJobs` bounds experiments in flight, `maxWorkers` bounds simulator
+worker threads across all of them, and `maxWorkersPerJob` stops one wide run
+taking the whole budget. A grant is the smallest of what the configuration asked
+for, what one job may have and what is left; when nothing is left the answer is
+**not now** rather than zero. The default is one job at a time on one thread fewer
+than the machine has. **The schema deliberately did not go into
+`@tcg/admin-contracts`** — it crosses no wire yet, and M08.6 is the tranche that
+decides whether a capabilities endpoint reports it and in what shape.
+
+**Every verb is the lifecycle table's, and every one leaves a line.** `pause`,
+`resume`, `cancel` and `retry` go through `applyJobAction`, refused by the same
+table a screen greys a button from and recorded with `cause: operator`. The
+settling action is read from the **document** rather than from the reason the run
+was stopped for, so an operator who escalated a pause into a cancel gets the
+cancel. **Nothing retries or resumes by itself**, and both absences are tested:
+an interrupted job stays interrupted until a person asks, because re-queueing it
+would be the orchestrator deciding the crash did not matter.
+
+**`JobQueue` takes an `ExperimentRunner` rather than building one.** The runner is
+still the only file that may reach the simulator's experiment runner, and the
+boundary suite now reads `queue.ts` to keep the injection a fact rather than a
+habit — a queue holding the runner's own seams could open a second door without
+ever naming the simulator.
+
+**No version constant moved**, and each reason is recorded. The one worth
+repeating: `shouldStop` is a run option rather than a configuration field, so
+`configHashOf` cannot see it, which is exactly what lets a paused run resume as
+the same run.
+
+**One defect was corrected rather than recorded.** A retried job carried the
+previous attempt's diagnostics forward, so a job that failed, was retried and then
+succeeded spelled `completed` beside the reason it fell over. It had never been
+reachable, because `retry` is the only route out of `failed` and nothing before
+M08.5 had an operator behind it. The `fail` line in the event log still carries
+those diagnostics.
+
+**Three limitations are recorded rather than worked around.** A **single-worker
+sequential run cannot be paused in flight** — the match loop never yields, so a
+file write cannot land — which is M08.4's progress-polling limitation with the
+same cause and the same answer. **A resumed search is not equivalent to an
+uninterrupted one**: its match stream resumes exactly, but `runSearchExperiment`
+does not resume from checkpoints, so the generation loop restarts. And
+**cross-process exclusion is still not claimed** — this workspace has no entry
+point at all, so there is nothing yet for a lock to protect; M08.6 creates the
+process, and is where a second one would have to be refused.
 
 **M08.4 made a job into a run, and the mapping is a name rather than a
 discipline.** A job writes into `<result root>/<jobId>`, so two jobs cannot

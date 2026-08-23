@@ -9,13 +9,18 @@ import {
   type RunIdentity,
 } from '@tcg/admin-contracts';
 import { err, isErr, ok } from '@tcg/shared';
-import { configHashOf, runExperiment as runExperimentDirectly } from '@tcg/simulator';
+import {
+  configHashOf,
+  isExperimentStopped,
+  runExperiment as runExperimentDirectly,
+} from '@tcg/simulator';
 import type { ExperimentConfig } from '@tcg/simulator';
 
 import { resolveResultLocation, type ResolvedCatalogRoots } from '../catalog/roots.js';
 import type { CatalogResult, CatalogStore } from '../catalog/store.js';
 import { estimateExperiment } from '../lab/estimate.js';
 import { scrubRefusal } from '../lab/expand.js';
+import { settleActionFor, type RunControl, type StopReason } from './control.js';
 import { readRunIdentity } from './manifest.js';
 import { readCanonicalProgress, type CanonicalReading } from './progress.js';
 
@@ -76,11 +81,31 @@ import { readCanonicalProgress, type CanonicalReading } from './progress.js';
  * Nothing here deletes a directory, truncates a stream or clears an execution
  * record — there is no code in this file that removes anything. A failed job
  * keeps its partial `matches.jsonl`, its header, its checkpoints and its
- * location, so `retry` (M08.5's, and already a legal transition) resumes rather
- * than restarts. The diagnostics are a structured `admin/run_failed` whose
- * message has been through `scrubRefusal`, because the failure that fell out of
- * the simulator has no idea it is about to cross an admin boundary and is quite
+ * location, so `retry` (an operator's action, M08.5) resumes rather than
+ * restarts. The diagnostics are a structured `admin/run_failed` whose message
+ * has been through `scrubRefusal`, because the failure that fell out of the
+ * simulator has no idea it is about to cross an admin boundary and is quite
  * likely to be an `ENOENT` carrying a path.
+ *
+ * ## A stop is a third outcome, and it is neither of the other two (M08.5)
+ *
+ * An operator can ask a run in flight to stop, and the ask reaches the
+ * simulator's own dispatch loop as a `shouldStop` predicate rather than reaching
+ * this process's kill switch. So a stopped run is one whose matches all ran to
+ * their termination and whose records are all committed; what stopped is the
+ * *next* match being handed out. The simulator unwinds with `ExperimentStopped`
+ * before it writes a manifest, a summary or a report, which is what keeps a
+ * half-finished run from leaving behind a document that reads like a finished
+ * one.
+ *
+ * This class does two things with that. It **settles the lifecycle from the
+ * document rather than from the reason it was stopped for** — `pausing` settles
+ * to `paused` and `cancelling` to `cancelled`, so an operator who escalated a
+ * pause into a cancel gets the escalation rather than the first request. And it
+ * **treats a run that finished anyway as finished**: a cancel that arrives after
+ * the last match still settles the job as cancelled, because the document is the
+ * authority, but the result it wrote is attached first so the catalog does not
+ * pretend the evidence is not there.
  */
 
 export type RunExperimentFn = typeof runExperimentDirectly;
@@ -91,10 +116,12 @@ export interface ExperimentRunnerOptions {
   /** Which configured result root a job's directory is created under. */
   readonly resultRootId: string;
   /**
-   * Simulator workers per run. Defaults to whatever the configuration asks for.
+   * Simulator workers per run, when a caller has no per-attempt opinion.
    *
    * Non-semantic: `configHashOf` excludes it, so changing it cannot make a
-   * resumed run into a different run. Bounding it is M08.5's.
+   * resumed run into a different run. The bound that matters is the queue's —
+   * `JobQueue` grants each attempt its share of one budget and passes it to
+   * `run` — and this stays for a caller driving one job with no queue.
    */
   readonly workers?: number;
   /** How often the canonical directory is re-read while a run is in flight. */
@@ -111,9 +138,34 @@ export interface ExperimentRunnerOptions {
   readonly clock?: () => Date;
 }
 
+/** What one attempt at a job is given, as opposed to what the runner always has. */
+export interface JobAttemptOptions {
+  /**
+   * Workers for this attempt, overriding the runner's default and the
+   * configuration's request.
+   *
+   * A grant rather than a preference: `JobQueue` computes it from one budget
+   * shared across every running job, so a run that ignored it would be a run
+   * outside the bound.
+   */
+  readonly workers?: number;
+  /** The switch an operator throws to pause or cancel this attempt while it runs. */
+  readonly control?: RunControl;
+}
+
 export interface JobRunOutcome {
   readonly jobId: JobId;
-  readonly status: 'completed' | 'failed';
+  /**
+   * How the attempt ended.
+   *
+   * `stopped` is neither of the other two and must not be folded into either: a
+   * paused run has failed nothing, and a cancelled one completed nothing. The
+   * lifecycle state the job settled into is on the document; this says which of
+   * the three paths through `run` produced it.
+   */
+  readonly status: 'completed' | 'failed' | 'stopped';
+  /** Why the run stopped, when it did. `null` for every other outcome. */
+  readonly stopReason: StopReason | null;
   /** The last canonical reading taken, whichever way the run ended. */
   readonly progress: Progress;
   /** The run's identity, when it wrote a manifest to read one from. */
@@ -141,7 +193,8 @@ export class ExperimentRunner {
   }
 
   /**
-   * Runs one queued job to completion or to failure.
+   * Runs one queued job to completion, to failure, or to the stop it was asked
+   * for.
    *
    * The `start` transition is taken **first**, through the store, which is what
    * makes a second concurrent call refuse rather than double-run: the lifecycle
@@ -150,14 +203,14 @@ export class ExperimentRunner {
    * table a queue screen greys a button from, rather than a flag this class
    * keeps.
    */
-  async run(jobId: JobId): Promise<CatalogResult<JobRunOutcome>> {
+  async run(jobId: JobId, attempt: JobAttemptOptions = {}): Promise<CatalogResult<JobRunOutcome>> {
     const before = await this.#store.readJob(jobId);
     if (isErr(before)) return before;
 
     const started = await this.#store.applyJobAction({ jobId, action: 'start', cause: 'runner' });
     if (isErr(started)) return started;
 
-    const prepared = await this.#prepare(before.value, started.value);
+    const prepared = await this.#prepare(before.value, started.value, attempt);
     if (isErr(prepared)) return this.#fail(jobId, prepared.error, before.value.progress);
 
     const { config, execution, directory } = prepared.value;
@@ -215,6 +268,7 @@ export class ExperimentRunner {
     await record(await readCanonicalProgress(directory));
     const poll = this.#startPolling(directory, record);
 
+    const control = attempt.control;
     try {
       await this.#runExperiment(config, {
         outputDir: directory,
@@ -223,10 +277,17 @@ export class ExperimentRunner {
         // committed stream is exactly the retry case: `MatchStore` skips what it
         // already has and refuses outright if the configuration drifted.
         resume: true,
+        // Absent when nobody can stop this attempt, so a run with no operator
+        // behind it takes the code path it has always taken.
+        ...(control === undefined ? {} : { shouldStop: () => control.stopRequested() }),
       });
     } catch (cause) {
       poll.stop();
       await record(await readCanonicalProgress(directory));
+      // A stop is not a failure. The simulator unwound deliberately, every
+      // record it played is committed, and the job settles into whichever state
+      // the operator's request left the document in.
+      if (isExperimentStopped(cause)) return this.#settle(jobId, latest, null);
       return this.#fail(jobId, [runFailed(cause, jobId)], latest);
     } finally {
       poll.stop();
@@ -247,6 +308,15 @@ export class ExperimentRunner {
     });
     if (isErr(attached)) return this.#fail(jobId, attached.error, latest);
 
+    // The run finished every match it had. If an operator's pause or cancel
+    // landed while the last one was playing, the document is already in an
+    // in-flight settling state and `complete` is not a move it has — so the
+    // request wins, and the result above is attached either way. A queue screen
+    // can then say "cancelled, and it had already finished", which is what
+    // happened, rather than reporting a failure that did not.
+    const settlement = await this.#settleIfRequested(jobId, latest, identity.value);
+    if (settlement !== null) return settlement;
+
     const completed = await this.#store.applyJobAction({
       jobId,
       action: 'complete',
@@ -257,6 +327,7 @@ export class ExperimentRunner {
     return ok({
       jobId,
       status: 'completed',
+      stopReason: null,
       progress: latest,
       identity: identity.value,
       failure: null,
@@ -279,6 +350,7 @@ export class ExperimentRunner {
   async #prepare(
     before: CatalogJobDocument,
     started: CatalogJobDocument,
+    attempt: JobAttemptOptions,
   ): Promise<
     CatalogResult<{
       readonly config: ExperimentConfig;
@@ -312,7 +384,9 @@ export class ExperimentRunner {
     const execution: JobExecution = {
       location,
       mode: 'in_process_workers',
-      workers: this.#workers ?? config.value.workers,
+      // The queue's grant outranks both, because it is the only one of the three
+      // that knows what every *other* running job is already using.
+      workers: attempt.workers ?? this.#workers ?? config.value.workers,
       attempts: (before.execution?.attempts ?? 0) + 1,
       lastStartedAt: started.timestamps.updatedAt,
       resumedMatches: reading.completedMatches,
@@ -368,6 +442,55 @@ export class ExperimentRunner {
     };
   }
 
+  /**
+   * Finishes a run that stopped because it was asked to.
+   *
+   * The action is read from the **document's** current status rather than from
+   * the reason the control carries, so an operator who escalated a pause into a
+   * cancel between the request and the stop gets the cancel. `control.ts` gives
+   * the argument at length.
+   *
+   * A stop with no settling state under it is a genuine failure rather than a
+   * confusing success: the only way to reach it is for something to have moved
+   * the document out of `pausing` or `cancelling` while a run that had been asked
+   * to stop was unwinding, and a job left in `running` with no process behind it
+   * is exactly the state M08.2 refuses to let a restart resolve quietly.
+   */
+  async #settle(
+    jobId: JobId,
+    progress: Progress,
+    identity: RunIdentity | null,
+  ): Promise<CatalogResult<JobRunOutcome>> {
+    const settled = await this.#settleIfRequested(jobId, progress, identity);
+    if (settled !== null) return settled;
+    return this.#fail(jobId, [stoppedWithoutRequest(jobId)], progress);
+  }
+
+  /** The same settlement, or `null` when the document is not asking for one. */
+  async #settleIfRequested(
+    jobId: JobId,
+    progress: Progress,
+    identity: RunIdentity | null,
+  ): Promise<CatalogResult<JobRunOutcome> | null> {
+    const current = await this.#store.readJob(jobId);
+    if (isErr(current)) return current;
+
+    const action = settleActionFor(current.value.status);
+    if (action === null) return null;
+
+    const moved = await this.#store.applyJobAction({ jobId, action, cause: 'runner' });
+    if (isErr(moved)) return moved;
+
+    return ok({
+      jobId,
+      status: 'stopped',
+      stopReason: action === 'cancel_settled' ? 'cancel' : 'pause',
+      progress,
+      identity,
+      failure: null,
+    });
+  }
+
   async #fail(
     jobId: JobId,
     errors: readonly AdminError[],
@@ -381,7 +504,7 @@ export class ExperimentRunner {
       failure,
     });
     if (isErr(moved)) return moved;
-    return ok({ jobId, status: 'failed', progress, identity: null, failure });
+    return ok({ jobId, status: 'failed', stopReason: null, progress, identity: null, failure });
   }
 }
 
@@ -427,6 +550,14 @@ function streamDrifted(jobId: JobId): AdminError {
     'admin/run_failed',
     'This job’s directory already holds a raw-record stream from a different configuration, so resuming into it would produce a run that is neither. Nothing was played.',
     { path: 'spec.configHash', context: { jobId } },
+  );
+}
+
+function stoppedWithoutRequest(jobId: JobId): AdminError {
+  return adminError(
+    'admin/run_failed',
+    'This run stopped as though it had been asked to, but the job is in no state that a stop settles into. Everything it played is on disk and nothing was written over it.',
+    { path: 'status', context: { jobId } },
   );
 }
 

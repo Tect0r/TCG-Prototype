@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import type { StopSignal } from '../stop.js';
 import {
   workerResultSchema,
   type WorkerJob,
@@ -28,6 +29,18 @@ export interface PoolOptions {
   readonly setup: WorkerSetup;
   /** Called as each result arrives, in completion order. */
   readonly onResult: (result: WorkerResult) => void;
+  /**
+   * Asked before each job is handed to a thread (M08.5).
+   *
+   * A stop stops *dispatch*, never a match. Every job already on a thread runs
+   * to its termination and its result is delivered to `onResult` exactly as it
+   * would have been, and only then does the pool settle. That is the
+   * "in-flight matches reach their normal record boundary" half of pause, and
+   * it is why the pool resolves rather than rejecting: whether a run that
+   * stopped early is a failure, a pause or a cancellation is the caller's
+   * question, and the pool's answer is only "no more were handed out".
+   */
+  readonly shouldStop?: StopSignal;
 }
 
 export class WorkerPoolStartupError extends Error {
@@ -61,6 +74,16 @@ export async function runJobsInPool(
   let outstanding = 0;
   let settled = false;
 
+  // Asked once per dispatch and remembered, so a signal that flickered cannot
+  // hand out another match after the pool has already decided to stop.
+  let stopping = false;
+  const noMoreWork = (): boolean => {
+    if (nextJob >= jobs.length) return true;
+    if (stopping) return true;
+    stopping = options.shouldStop?.() != null;
+    return stopping;
+  };
+
   await new Promise<void>((resolve, reject) => {
     const finish = (error?: Error): void => {
       if (settled) return;
@@ -72,7 +95,7 @@ export async function runJobsInPool(
 
     const dispatch = (worker: Worker): void => {
       if (settled) return;
-      if (nextJob >= jobs.length) {
+      if (noMoreWork()) {
         if (outstanding === 0) finish();
         return;
       }
@@ -111,7 +134,7 @@ export async function runJobsInPool(
         outstanding -= 1;
         options.onResult(parsed.data);
         dispatch(worker);
-        if (nextJob >= jobs.length && outstanding === 0) finish();
+        if (noMoreWork() && outstanding === 0) finish();
       });
 
       worker.on('error', (error: Error) => {

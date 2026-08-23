@@ -831,7 +831,13 @@ function withStatus(
   return {
     ...current,
     status,
-    failure: status === 'failed' ? failure : current.failure,
+    // A job that has *left* `failed` is not failed any more, and the only way to
+    // leave it is `retry` — an operator saying "try this again" (M08.5). Carrying
+    // the previous attempt's diagnostics forward would leave a document spelling
+    // `completed` beside the reason it fell over, which is the one reading of it
+    // that is certainly wrong. Nothing is lost: the `fail` line in the event log
+    // holds those diagnostics, which is where "how did it get here" lives.
+    failure: status === 'failed' ? failure : current.status === 'failed' ? null : current.failure,
     timestamps: {
       ...current.timestamps,
       updatedAt: now,

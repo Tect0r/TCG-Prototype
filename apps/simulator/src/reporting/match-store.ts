@@ -71,6 +71,18 @@ export interface MatchSink {
   /** True when a record with this identity is already committed. */
   has(identity: string): boolean;
   append(record: MatchRecord): void;
+  /**
+   * Puts everything appended so far on disk, for a sink that buffers.
+   *
+   * Optional because an in-memory sink has nothing to do, and it exists because
+   * of the one exit that does not reach `finish()`: a run stopped by an operator
+   * (M08.5) unwinds before the experiment is written up, and up to a buffer's
+   * worth of whole matches would otherwise be played again on resume. They would
+   * not be *duplicated* — identity dedupe sees to that — but "in-flight matches
+   * reach their normal record boundary" is a promise about the evidence on disk,
+   * not about this process's memory of it.
+   */
+  flush?(): void;
 }
 
 export class MatchStore implements MatchSink {

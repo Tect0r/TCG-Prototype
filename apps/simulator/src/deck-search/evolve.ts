@@ -4,6 +4,7 @@ import { simDeckSchema, type ResolvedPlan, type SimDeck } from '@tcg/deck-genera
 import type { Environment } from '../environment.js';
 import type { MatchLimits } from '../run-match.js';
 import { runBatch, type BatchRetention } from '../run-batch.js';
+import type { StopSignal } from '../stop.js';
 import type { MatchSink } from '../reporting/match-store.js';
 import { buildSchedule, matchesBetween } from '../schedule.js';
 import { normalizedEntropy, proportion, round } from '../analysis/stats.js';
@@ -138,6 +139,16 @@ export interface SearchOptions {
   readonly reevaluateElites: boolean;
   readonly outputDir: string | null;
   readonly checkpointEvery: number;
+  /**
+   * Asked before each match is dispatched. A reason stops the search (M08.5).
+   *
+   * Handed straight to `runBatch`, which is where the check belongs: a
+   * generation is not a boundary a stop can wait for, because one generation of
+   * a real search is hundreds of matches. The batch commits what it played and
+   * throws, and the last checkpoint written is the one a resumed search would
+   * have continued from anyway.
+   */
+  readonly shouldStop?: StopSignal;
   readonly onGeneration?: (report: GenerationReport, checkpoint: SearchCheckpoint) => void;
 }
 
@@ -284,6 +295,7 @@ async function evaluate(
     failFast: false,
     sink: options.sink ?? null,
     replayDir: options.replayDir ?? null,
+    ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
   });
 
   return { records: [...outcome.records] };

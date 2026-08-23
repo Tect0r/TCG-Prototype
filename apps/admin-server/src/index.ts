@@ -19,9 +19,14 @@
  *   directory the job is named after, progress is read back out of that
  *   directory rather than counted, and a failure keeps every partial record so a
  *   retry resumes rather than restarts.
- * - **M08.5** gives an operator control over it — bounded concurrency, pause,
- *   resume, cancel and a visible retry. This tranche uses exactly two lifecycle
- *   actions, `start` and one of `complete` or `fail`, and leaves the rest alone.
+ * - **M08.5 (here)** gives an operator control over it. `JobQueue` runs queued
+ *   jobs under a bound in two dimensions — how many experiments at once, and how
+ *   many simulator workers across all of them — and adds the four verbs a person
+ *   has over work in flight. `pause` and `cancel` reach the simulator's own
+ *   dispatch loop as a predicate, so in-flight matches reach their normal record
+ *   boundary and a stopped run writes no manifest, no summary and no report;
+ *   `resume` and `retry` are ordinary starts that continue the stream already on
+ *   disk. Nothing retries or resumes by itself.
  * - **M08.6** adds the HTTP boundary, loopback binding and the non-loopback
  *   authentication refusal. It is the first tranche that opens a port, and the
  *   first that gives this workspace a `start` script.
@@ -117,9 +122,31 @@ export {
 export {
   ExperimentRunner,
   type ExperimentRunnerOptions,
+  type JobAttemptOptions,
   type JobRunOutcome,
   type RunExperimentFn,
 } from './run/job-runner.js';
+
+export {
+  JobStopControl,
+  SETTLE_ACTIONS,
+  settleActionFor,
+  type RunControl,
+  type StopReason,
+} from './run/control.js';
+
+export {
+  DEFAULT_RESOURCE_LIMITS,
+  MAX_CONCURRENT_JOBS,
+  MAX_TOTAL_WORKERS,
+  grantWorkers,
+  parseResourceLimits,
+  resourceLimitsSchema,
+  type ResourceLimits,
+  type ResourceLimitsInput,
+} from './run/limits.js';
+
+export { JobQueue, type JobQueueOptions, type QueueSnapshot } from './run/queue.js';
 
 export {
   NO_CANONICAL_READING,

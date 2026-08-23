@@ -56,6 +56,7 @@ import { REPORT_SCHEMA_VERSION, renderReport } from './reporting/report.js';
 import { experimentPaths, ensureDir, writeCsv, writeJson } from './reporting/sinks.js';
 import { MatchStore } from './reporting/match-store.js';
 import { SEED_DERIVATION_VERSION } from './seed.js';
+import type { StopSignal } from './stop.js';
 import { TELEMETRY_SCHEMA_VERSION, isAbnormal, type MatchRecord } from './telemetry/schema.js';
 import {
   assertSharedPopulation,
@@ -143,6 +144,17 @@ export interface RunExperimentOptions {
   readonly softwareCommit?: string | null;
   readonly onProgress?: (progress: BatchProgress) => void;
   readonly onGeneration?: (report: GenerationReport) => void;
+  /**
+   * Asked before each match is dispatched. A reason stops the run (M08.5).
+   *
+   * Threaded to every `runBatch` and `runSearch` this file drives, which is
+   * every match any of the five experiment kinds plays. When it trips, the run
+   * unwinds with `ExperimentStopped` **before** `finish()` — so a stopped run
+   * leaves its raw stream, its header and its checkpoints exactly as they are
+   * and writes no manifest, no summary and no report. `stop.ts` says why that
+   * is the honest shape rather than the convenient one.
+   */
+  readonly shouldStop?: StopSignal;
 }
 
 export interface ExperimentOutcome {
@@ -297,6 +309,7 @@ async function runBatchExperiment(
     sink: store,
     replayDir: join(outputDir, 'replays'),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+    ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
   });
 
   return finish({
@@ -475,6 +488,7 @@ async function runReplacementExperiment(
     sink: store,
     replayDir: join(outputDir, 'replays'),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+    ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
   });
 
   const records = store.all();
@@ -608,6 +622,7 @@ async function runSearchExperiment(
       reevaluateElites: config.reevaluateElites,
       outputDir,
       checkpointEvery: config.checkpointEvery,
+      ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
       onGeneration: (report: GenerationReport, checkpoint: SearchCheckpoint) => {
         history.push(report);
         options.onGeneration?.(report);
@@ -754,6 +769,7 @@ async function runComparisonExperiment(
       sink: store,
       replayDir: join(outputDir, 'replays'),
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
     });
     failedMatches += batch.failures.length;
     for (const failure of batch.failures) {
@@ -829,6 +845,7 @@ async function runComparisonExperiment(
           reevaluateElites: true,
           outputDir: null,
           checkpointEvery: 1,
+          ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
           onGeneration: (report) => {
             searchHistory.push(report);
           },
@@ -985,6 +1002,7 @@ async function runRobustnessExperiment(
       sink: store,
       replayDir: join(outputDir, 'replays'),
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
     });
     failedMatches += batch.failures.length;
     for (const failure of batch.failures) {

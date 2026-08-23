@@ -1268,7 +1268,7 @@ of them — `start`, and one of `complete` or `fail`.
   consequence, inherited rather than introduced: this tranche runs whatever
   configuration it is given, and the perturbation defect is upstream of it.
 
-## M08.5 — Runner lifecycle, recovery and resource bounds
+## M08.5 — Runner lifecycle, recovery and resource bounds — **done (2026-08-23)**
 
 Truthful control over long-running work: bounded concurrency and worker limits;
 **pause** stops scheduling new match work and lets in-flight matches reach their
@@ -1284,12 +1284,199 @@ uninterrupted execution wherever the simulator promises it.
 
 **Exclusion:** no network service, no UI.
 
+### What M08.5 built
+
+`apps/admin-server/src/run/` gained `limits.ts`, `control.ts` and `queue.ts`, and
+`@tcg/simulator` gained `stop.ts`. M08.4 used exactly two lifecycle transitions —
+`start`, and one of `complete` or `fail` — and left the other eight alone. This
+is the tranche that uses them.
+
+**A stop had to be built where the matches are handed out, not around it.** The
+milestone fixes the meaning of pause: _stops scheduling new match work and lets
+in-flight matches reach their normal record boundary_. No admin-side mechanism
+can supply that — killing a process at an arbitrary instant abandons a match
+halfway and leaves a half-written final line — so `runBatch` and the worker pool
+now take a `shouldStop` predicate, asked **between matches and never inside
+one**. Every match already playing runs to its termination and its record is
+committed; what a stop prevents is the _next_ dispatch. Nothing about a run that
+is never stopped changes: with no signal supplied there is no check at all, and
+the equivalence is asserted rather than assumed.
+
+**A stopped run throws rather than returning, and that is the load-bearing
+choice.** `ExperimentStopped` unwinds past `finish()`, so a partial run writes
+**no manifest, no summary and no report** — ADR 0012 makes the directory the
+deliverable, and a report over half a schedule is a deliverable that is wrong. It
+also means every experiment kind gets the behaviour for free: a batch, a
+replacement's variants, a search's generations, a comparison's two arms and a
+robustness run's arms all play their matches through `runBatch`, and a returned
+flag would have to be checked at each of those call sites, where the first one
+that forgot would silently publish a partial run.
+
+**One thing had to be added to the sink for the promise to be true on disk.**
+`MatchSink` gained an optional `flush()`, called once when a stop unwinds. The
+writer buffers sixteen records and `finish()` is what normally flushes it — so
+without this, up to fifteen whole matches would have been played, counted in
+memory, and then replayed on resume. They would never have been _duplicated_
+(identity dedupe sees to that), but "in-flight matches reach their normal record
+boundary" is a promise about the evidence on disk rather than about a process's
+memory of it.
+
+**The bound has two dimensions, because one number cannot express either.**
+`maxConcurrentJobs` bounds experiments in flight — a job with one worker still
+holds a document, a poller and an open stream. `maxWorkers` bounds simulator
+worker threads across _every_ running job, and is the number that decides whether
+the machine is oversubscribed. `maxWorkersPerJob` stops one wide experiment
+taking the whole budget and stalling the queue behind it. A grant is the smallest
+of what the configuration asked for, what one job may have, and what is left —
+and when there is nothing left the answer is **not now** rather than zero, because
+a queue that started a job with no workers would have quietly ignored its own
+bound. The default is one job at a time on one thread fewer than the machine has:
+concurrency is worth having when a job cannot use the whole budget, and it is not
+a default.
+
+**Every verb is the lifecycle table's, and every one leaves a line.** `pause`,
+`resume`, `cancel` and `retry` go through `applyJobAction`, so each is refused by
+the table a screen would grey a button from and recorded in the append-only log
+with `cause: operator`. The settling action is read from the **document** rather
+than from the reason the run was stopped for, which is what makes an escalation
+work: a job asked to pause and then cancelled is in `cancelling`, and settling it
+as `paused` would discard the second request. A cancel that arrives after the last
+match still settles the job as cancelled — the document is the authority — but the
+result it wrote is attached first, so the catalog does not pretend the evidence is
+not there.
+
+**Nothing retries or resumes by itself.** `retry` is a method because an operator
+presses it; no code path calls it, and no failure schedules one. An interrupted
+job is not re-queued either: a restart interrupts in-flight work while the store
+is opened, and quietly re-queueing it would be the orchestrator deciding the crash
+did not matter — the same class of claim as recovering `running` work as
+`completed`. Both absences are tested rather than promised.
+
+**`JobQueue` takes an `ExperimentRunner` rather than building one**, and that is a
+boundary rather than a convenience. The runner is the only thing in the workspace
+that may reach the simulator's experiment runner; a queue that restated its seams
+could open a second door without ever naming the simulator, and `boundary.test.ts`
+now reads `queue.ts` to keep the injection a fact.
+
+### One defect corrected, first reachable in this tranche
+
+**A retried job carried the previous attempt's diagnostics.** `withStatus` kept
+`failure` on every transition that was not itself a `fail`, so a job that failed,
+was retried and then succeeded ended up spelling `completed` beside the reason it
+fell over — the one reading of that document which is certainly wrong. It had
+never been reachable, because `retry` is the only route out of `failed` and
+nothing before M08.5 had an operator behind it. The diagnostics are now cleared
+when a job **leaves** `failed`, and nothing is lost: the `fail` line in the event
+log still carries them, which is where "how did it get here" lives.
+
 ### Checklist
 
-- [ ] Bounded concurrency and worker limits.
-- [ ] Pause, resume, cancel with the semantics above.
-- [ ] Restart recovery without duplicated matches or lineage.
-- [ ] Retry is an explicit action with its own record.
+- [x] **Bounded concurrency and worker limits.** Two bounds and a per-job
+      ceiling, validated by a strict schema that refuses zero, refuses a per-job
+      ceiling above the whole budget and refuses an undeclared key. The grant is
+      taken before a job starts and released only when its run settles, so the
+      sum outstanding at any instant _is_ the bound; the document records the
+      workers an attempt was actually granted rather than the number its
+      configuration asked for. Driven by three jobs each asking for four workers
+      against a budget of five.
+- [x] **Pause, resume, cancel with the semantics above.** The stop reaches the
+      simulator's own dispatch loop, so in-flight matches reach their record
+      boundary and a stopped run writes no manifest; `resume` returns a job to
+      the queue and the next attempt continues the stream on disk; `cancel` is
+      the same graceful stop with a different settling state, and nothing in this
+      workspace removes anything a run wrote. Proven twice — against a faithful
+      stand-in that can stop at a chosen match, and once end to end with the real
+      simulator across two worker threads, where the pause lands with one match
+      per thread in flight and both are committed before the run unwinds.
+- [x] **Restart recovery without duplicated matches or lineage.** A crash is
+      driven through the real transitions: a run is started, leaves a committed
+      record and is recovered as `interrupted`; the queue that comes up
+      afterwards starts nothing. Resuming replays no match — the stream's own
+      identities decide what is left — and the event log holds one line per move
+      with no repeats.
+- [x] **Retry is an explicit action with its own record.** `retry` is an
+      operator's verb with `cause: operator` on its line, no code path calls it,
+      and a failed job stays failed however many times the queue is pumped. The
+      retried attempt resumes the stream the failed one left rather than starting
+      a second.
+- [x] Verified: 23 new tests in `run/queue.test.ts`, 15 in `run/limits.test.ts`,
+      8 in `run/control.test.ts`, 11 in the simulator's new `stop.test.ts`, plus
+      two boundary assertions and one store assertion — 333 tests in 15 files in
+      `admin-server`, up from 284 in 12, and 448 in 24 files in `simulator`, up
+      from 437 in 23. 3,673 tests in 172 files
+      across the whole suite, up from 3,613 in 168. `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` all pass on Node v24.15.0.
+
+### Versions
+
+**None moved, and that is the answer rather than an omission.**
+
+| Constant                      | Was | Now | Why                                                                                                                                                                                                                           |
+| ----------------------------- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION`      | 2   | 2   | No request or response shape changed and no error code was added: every refusal M08.5 produces is `admin/illegal_transition` from the table M08.1 wrote, or `admin/schema` on a bound. A build speaking 2 has lost nothing.   |
+| `CATALOG_DOCUMENT_VERSION`    | 2   | 2   | Every field this tranche writes — `execution.workers`, `execution.attempts`, `execution.resumedMatches`, `progress`, `failure` — already existed. Clearing `failure` when a job leaves `failed` changes a value, not a shape. |
+| `JOB_EVENT_VERSION`           | 1   | 1   | No event kind was added and no line's shape changed. The settling and resuming actions were already members of `jobActionSchema`, because M08.1 chose the vocabulary against this tranche.                                    |
+| `CONFIG_SCHEMA_VERSION`       | 1   | 1   | `shouldStop` is a run **option**, not a configuration field. `configHashOf` cannot see it, which is exactly what lets a paused run resume as the same run.                                                                    |
+| `MANIFEST_SCHEMA_VERSION`     | 8   | 8   | A stopped run writes no manifest, and nothing about the document a finished run writes changed.                                                                                                                               |
+| `MATCH_STREAM_HEADER_VERSION` | 1   | 1   | `MatchSink.flush()` is an in-process interface method. No byte of the stream or its sidecar header moved, and the stream a stopped run leaves is what a crash would have left after a flush.                                  |
+
+**No resource-limit schema went into `@tcg/admin-contracts`, deliberately.** That
+package is the language the admin client and the admin server speak — identity,
+lifecycle, progress, result references, pagination and errors. A resource limit is
+a property of the machine the orchestrator runs on, it crosses no wire in this
+tranche, and no client sends one; putting it in the shared vocabulary now would be
+adding a schema before anything speaks it. **M08.6** owns the capabilities
+endpoint and decides then whether a client is told these numbers, in a shape it
+can also decide. It is still a strict schema rather than three loose numbers,
+because an operator's configuration is input and an unvalidated `maxWorkers: 0`
+would stall a queue that looked like it was working.
+
+### Exclusions honoured
+
+No network service: no `node:http`, no socket, no `createServer`, no `fetch`, and
+still no `start` script and no entry point — M08.6 owns the boundary and the
+loopback refusal. No UI, no navigation entry, no chart. No shell and no child
+process of this workspace's own; the one process boundary is still the simulator's
+worker pool starting a fixed module with no argument vector. Nothing was deleted,
+moved or written inside a result root except by the simulator writing its own run.
+No card was authored, no precon rebalanced, no deck size moved and no Unit cap
+added. Batch-level ordering, duplication and reordering are **M08.9's** and are
+untouched: the queue takes jobs in the `createdAt`-then-ID order `listJobs`
+already returns, and nothing here sorts or prioritises.
+
+### Limitations recorded rather than worked around
+
+- **A single-worker sequential run cannot be paused while it is in flight.** The
+  match loop never yields to the event loop between matches, so an operator's
+  pause — which is a file write — cannot be recorded until the run ends. This is
+  the same limitation M08.4 recorded against progress polling, with the same cause
+  and the same answer: ADR 0023 §1 puts real work in workers, and a run with two
+  or more workers pauses normally, which is the case an operator watching a queue
+  is in.
+- **Equivalence after a resume is the simulator's promise, and it is not the same
+  promise for every kind.** A batch resumes to byte-identical aggregates, which is
+  asserted directly. A **search** resumes its match _stream_ — no match is
+  replayed and none is duplicated — but `runSearchExperiment` does not resume from
+  its checkpoints, so the generation loop restarts and re-derives fitness from the
+  records it plays in that attempt. Pausing a search is therefore safe and cheap,
+  and is not equivalent to an uninterrupted search. Nothing here changes that;
+  M08.15 is the tranche that runs a real search through the queue.
+- **Cross-process exclusion is still not claimed.** Two orchestrators in two
+  processes could both pass the `start` transition, and the worker budget is one
+  process's own. ADR 0023 §4 describes one administrator and one orchestration
+  process, and this workspace still has no entry point at all — so there is
+  nothing yet for a lock to protect. **M08.6** creates the process, and is where a
+  second one would have to be refused.
+- **A job the queue could not start is skipped rather than reported.** Every
+  refusal the runner can return leaves a job somewhere other than `queued`, so a
+  job that is still queued after being refused should not exist; if one ever did,
+  the fill loop would spin. The queue remembers the refusal and skips the job,
+  which an operator would see as a job that never starts — but nothing surfaces
+  _why_ until M08.6 has somewhere to report it.
+- **Elapsed time is still wall-clock, summed across attempts.** A paused job's
+  `elapsedMs` gains nothing while it is paused, because the clock is read per
+  attempt, but it still measures wall-clock rather than CPU. Nothing here measures
+  CPU.
 
 ## M08.6 — Admin service and access boundary
 

@@ -340,6 +340,13 @@ export {
   type RunExperimentOptions,
 } from './experiment.js';
 
+export {
+  ExperimentStopped,
+  isExperimentStopped,
+  type StopReason,
+  type StopSignal,
+} from './stop.js';
+
 export { runJobsInPool, WorkerPoolStartupError, type PoolOptions } from './workers/pool.js';
 export {
   workerJobSchema,

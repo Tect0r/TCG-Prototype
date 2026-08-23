@@ -140,11 +140,40 @@ describe('the store runs one experiment, through exactly one door', () => {
     // failure through the real bridge. It would be worth nothing if the default
     // were anything but the simulator's, so the default is named here.
     expect(barrel.ExperimentRunner.name).toBe('ExperimentRunner');
-    const runner = readFileSync(join(SOURCE_ROOT, 'run', RUNNER), 'utf8');
-    expect(runner).toContain(
-      "import { configHashOf, runExperiment as runExperimentDirectly } from '@tcg/simulator';",
-    );
-    expect(codeOf(runner)).toContain('options.runExperiment ?? runExperimentDirectly');
+    const runner = codeOf(readFileSync(join(SOURCE_ROOT, 'run', RUNNER), 'utf8'));
+    expect(runner).toContain('runExperiment as runExperimentDirectly');
+    expect(runner).toContain("} from '@tcg/simulator';");
+    expect(runner).toContain('options.runExperiment ?? runExperimentDirectly');
+  });
+
+  it('takes its notion of a deliberate stop from the simulator too (M08.5)', () => {
+    // A stop is a *simulator* outcome: `runExperiment` unwinds with
+    // `ExperimentStopped` before it writes a manifest, and this workspace has to
+    // tell that apart from a run that fell over. Recognising it by message, by
+    // name string, or by a locally declared class would all be this layer
+    // guessing at another package's control flow — and would go on compiling
+    // long after the simulator renamed it.
+    const runner = codeOf(readFileSync(join(SOURCE_ROOT, 'run', RUNNER), 'utf8'));
+    expect(runner).toContain('isExperimentStopped');
+    expect(runner).toContain('isExperimentStopped(cause)');
+    for (const file of sourceFiles()) {
+      expect(`${file.name}: ${String(file.text.includes('class ExperimentStopped'))}`).toBe(
+        `${file.name}: false`,
+      );
+    }
+  });
+
+  it('reaches a run through the one runner, from the queue as from anywhere else', () => {
+    // M08.5 adds the first caller of `ExperimentRunner` that is not a test.
+    // `JobQueue` takes one rather than building one, so the one-door property
+    // above is a fact about what this file *has* rather than about what it
+    // happens not to use: a queue holding the runner's own seams — its result
+    // root, its poll interval, its injectable function — could open a second
+    // door without ever naming the simulator.
+    const queue = codeOf(readFileSync(join(SOURCE_ROOT, 'run', 'queue.ts'), 'utf8'));
+    expect(queue).toContain("import type { ExperimentRunner } from './job-runner.js';");
+    expect(queue).toContain('readonly runner: ExperimentRunner;');
+    expect(queue).not.toContain('new ExperimentRunner');
   });
 
   it('spawns nothing and invokes no shell', () => {
@@ -325,6 +354,12 @@ describe('the public barrel', () => {
       'forcedInclusionFor',
       'deckCountFor',
       'ExperimentRunner',
+      'JobQueue',
+      'JobStopControl',
+      'settleActionFor',
+      'parseResourceLimits',
+      'grantWorkers',
+      'DEFAULT_RESOURCE_LIMITS',
       'readCanonicalProgress',
       'countCommittedRecords',
       'readRunIdentity',
