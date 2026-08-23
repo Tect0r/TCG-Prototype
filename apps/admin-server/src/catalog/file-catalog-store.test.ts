@@ -915,3 +915,47 @@ describe('nothing in the store can express removing a run', () => {
     expect(isOk(listing)).toBe(true);
   });
 });
+
+describe('what asked for a job (M08.6)', () => {
+  it('records `direct` when nothing named a preset', async () => {
+    // Every M08.4 and M08.5 caller hands the store a configuration it assembled
+    // itself, and the document has to be able to say so rather than claim a
+    // preset it never had.
+    const job = await seedJob();
+    expect(job.origin).toEqual({ kind: 'direct' });
+  });
+
+  it('records the preset and stage when one did, and reads it back', async () => {
+    const batch = unwrap(await catalog.store.createBatch({ label: 'Wave 1' }));
+    const created = unwrap(
+      await catalog.store.createJob({
+        batchId: batch.batchId,
+        label: 'Precon smoke',
+        purpose: 'exploration',
+        sourceClasses: ['ai', 'precon'],
+        config: testConfig(),
+        origin: { kind: 'preset', presetId: 'precon_smoke', stageId: 'matches' },
+      }),
+    );
+    expect(created.origin).toEqual({
+      kind: 'preset',
+      presetId: 'precon_smoke',
+      stageId: 'matches',
+    });
+
+    // Re-read rather than trusted from the return value: the document is parsed
+    // by its schema on the way in *and* on the way out, so this is what a later
+    // build would find on disk.
+    const reread = unwrap(await catalog.store.readJob(created.jobId));
+    expect(reread.origin).toEqual(created.origin);
+  });
+
+  it('survives every lifecycle move, because it is a fact about creation', async () => {
+    const job = await seedJob();
+    unwrap(await catalog.store.applyJobAction({ jobId: job.jobId, action: 'start' }));
+    unwrap(await catalog.store.applyJobAction({ jobId: job.jobId, action: 'fail' }));
+    unwrap(await catalog.store.applyJobAction({ jobId: job.jobId, action: 'retry' }));
+    const moved = unwrap(await catalog.store.readJob(job.jobId));
+    expect(moved.origin).toEqual({ kind: 'direct' });
+  });
+});

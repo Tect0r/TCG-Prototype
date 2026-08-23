@@ -7,16 +7,22 @@ import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from './pagination.js';
 import {
   ADMIN_REQUEST_PAYLOAD_NAMES,
   ADMIN_REQUEST_PAYLOAD_SCHEMAS,
+  OPERATOR_JOB_ACTIONS,
   adminRequest,
   adminResponse,
   batchRefSchema,
+  createBatchRequestSchema,
+  emptyRequestSchema,
+  enqueuePresetRequestSchema,
   jobActionRequestSchema,
   jobPageSchema,
   jobRefSchema,
   listBatchesRequestSchema,
   listJobsRequestSchema,
+  resultTableRequestSchema,
   setJobAnnotationsRequestSchema,
 } from './requests.js';
+import { JOB_ACTIONS } from './lifecycle.js';
 import { ADMIN_CONTRACT_VERSION, refuseFutureVersion } from './version.js';
 
 const envelope = adminRequest(listJobsRequestSchema);
@@ -267,5 +273,81 @@ describe('no request payload admits a filesystem location', () => {
         expect(['rootId', 'directory', 'location', 'output', 'path']).not.toContain(key);
       }
     }
+  });
+});
+
+describe('the four verbs a request may carry (M08.6)', () => {
+  it('are the operator’s, and the six left out are the machine’s', () => {
+    expect([...OPERATOR_JOB_ACTIONS]).toEqual(['pause', 'resume', 'cancel', 'retry']);
+    const machine = JOB_ACTIONS.filter(
+      (action) => !(OPERATOR_JOB_ACTIONS as readonly string[]).includes(action),
+    );
+    // Named rather than counted: each of these is produced by a runner reporting
+    // an attempt or by a restart recording what it found, and a request that
+    // could spell one would let a client decide a run's outcome without playing
+    // a match.
+    expect([...machine]).toEqual([
+      'start',
+      'pause_settled',
+      'cancel_settled',
+      'interrupt',
+      'complete',
+      'fail',
+    ]);
+  });
+
+  it('refuses every machine action on the wire', () => {
+    for (const action of JOB_ACTIONS) {
+      const allowed = (OPERATOR_JOB_ACTIONS as readonly string[]).includes(action);
+      const parsed = jobActionRequestSchema.safeParse({ jobId: 'job_abc123', action });
+      expect(`${action}: ${String(parsed.success)}`).toBe(`${action}: ${String(allowed)}`);
+    }
+  });
+});
+
+describe('the payloads M08.6 added', () => {
+  it('accepts an empty request and refuses anything added to it', () => {
+    expect(emptyRequestSchema.parse({})).toEqual({});
+    expect(emptyRequestSchema.safeParse({ verbose: true }).success).toBe(false);
+  });
+
+  it('defaults a new batch’s annotations rather than requiring them', () => {
+    const parsed = createBatchRequestSchema.parse({ label: 'August sweep' });
+    expect(parsed.annotations).toEqual(NO_ANNOTATIONS);
+  });
+
+  it('creates a job only from a preset choice, never from a configuration', () => {
+    const parsed = enqueuePresetRequestSchema.parse({
+      batchId: 'batch_abc123',
+      choice: {
+        presetId: 'precon_smoke',
+        experimentId: 'precon-smoke',
+        seed: 'seed-1',
+        preconIds: ['aurora', 'ember'],
+        pilotIds: ['heuristic'],
+      },
+    });
+    expect(parsed.choice.presetId).toBe('precon_smoke');
+    expect(
+      enqueuePresetRequestSchema.safeParse({
+        batchId: 'batch_abc123',
+        config: { kind: 'batch', id: 'anything' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('names a result table from the closed list, and pages it by default', () => {
+    const parsed = resultTableRequestSchema.parse({ jobId: 'job_abc123', table: 'cards' });
+    expect(parsed.page.limit).toBe(PAGE_SIZE_DEFAULT);
+    expect(
+      resultTableRequestSchema.safeParse({ jobId: 'job_abc123', table: 'replays' }).success,
+    ).toBe(false);
+    expect(
+      resultTableRequestSchema.safeParse({
+        jobId: 'job_abc123',
+        table: 'cards',
+        page: { limit: PAGE_SIZE_MAX + 1 },
+      }).success,
+    ).toBe(false);
   });
 });

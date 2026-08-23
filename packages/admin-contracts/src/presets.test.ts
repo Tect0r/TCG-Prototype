@@ -7,6 +7,7 @@ import {
   PRESET_REGISTRY,
   PRESET_STATUSES,
   PRESET_TEST_STYLES,
+  experimentPresetDefinitionSchema,
   experimentPresetIdSchema,
   presetChoiceSchema,
   presetDecisionSchema,
@@ -376,5 +377,52 @@ describe('an expansion', () => {
     expect(() =>
       presetStageSchema.parse({ ...stage, config: { schemaVersion: 1, kind: 'batch' } }),
     ).toThrow();
+  });
+});
+
+describe('the definition schema M08.6 added', () => {
+  it('parses every entry in the registry, so the interface and the schema agree', () => {
+    // The registry is a constant and needed no parser while it stayed inside the
+    // process. M08.6 sends it to a client, and a response nothing validates on
+    // the way out has whatever shape the handler happened to build.
+    for (const id of EXPERIMENT_PRESET_IDS) {
+      const parsed = experimentPresetDefinitionSchema.safeParse(PRESET_REGISTRY[id]);
+      expect(`${id}: ${String(parsed.success)}`).toBe(`${id}: true`);
+    }
+  });
+
+  it('requires an available preset to carry its limitations and its kinds', () => {
+    expect(
+      experimentPresetDefinitionSchema.safeParse({
+        ...PRESET_REGISTRY.precon_smoke,
+        limitations: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      experimentPresetDefinitionSchema.safeParse({ ...PRESET_REGISTRY.precon_smoke, kinds: [] })
+        .success,
+    ).toBe(false);
+  });
+
+  it('lets a reserved preset carry neither, because it has no results to caveat', () => {
+    const reserved = EXPERIMENT_PRESET_IDS.filter(
+      (id) => PRESET_REGISTRY[id].status === 'reserved',
+    );
+    expect(reserved.length).toBeGreaterThan(0);
+    for (const id of reserved) {
+      expect(`${id}: ${String(PRESET_REGISTRY[id].kinds.length)}`).toBe(`${id}: 0`);
+      expect(
+        `${id}: ${String(experimentPresetDefinitionSchema.safeParse(PRESET_REGISTRY[id]).success)}`,
+      ).toBe(`${id}: true`);
+    }
+  });
+
+  it('refuses a field nobody declared', () => {
+    expect(
+      experimentPresetDefinitionSchema.safeParse({
+        ...PRESET_REGISTRY.precon_smoke,
+        gamesPerPairing: 4,
+      }).success,
+    ).toBe(false);
   });
 });

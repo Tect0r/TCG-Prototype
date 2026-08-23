@@ -64,8 +64,38 @@ function manifestOf(path: string): {
 
 const MANIFEST = manifestOf(join(PACKAGE_ROOT, 'package.json'));
 
+/**
+ * The argument text of every `console.*` call in a source file.
+ *
+ * Balanced-paren scanning rather than a line regex, because the entry point's
+ * banner uses multi-line template strings and a line-based reader would check
+ * the first line of each and miss the rest.
+ */
+function consoleArguments(text: string): string[] {
+  const calls: string[] = [];
+  const pattern = /console\.(?:log|warn|error|info|debug)\(/g;
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
+    let depth = 1;
+    let index = match.index + match[0].length;
+    const start = index;
+    while (index < text.length && depth > 0) {
+      if (text[index] === '(') depth += 1;
+      if (text[index] === ')') depth -= 1;
+      index += 1;
+    }
+    calls.push(text.slice(start, index - 1));
+  }
+  return calls;
+}
+
 /** The one module M08.4 lets call the simulator's experiment runner. */
 const RUNNER = 'job-runner.ts';
+
+/** The one module M08.6 lets open a socket. */
+const TRANSPORT = 'http.ts';
+
+/** The one module allowed to read the environment: the process entry point. */
+const ENTRY = 'main.ts';
 
 describe('the store runs one experiment, through exactly one door', () => {
   it('has enough sources for the scans below to mean something', () => {
@@ -183,11 +213,17 @@ describe('the store runs one experiment, through exactly one door', () => {
     // execute arbitrary commands" is a structural fact only while there is
     // nothing here that could.
     for (const file of sourceFiles()) {
-      for (const capability of ['child_process', 'spawn', 'execFile', 'execSync', 'exec(']) {
+      for (const capability of ['child_process', 'spawn', 'execFile', 'execSync']) {
         expect(`${file.name}: ${capability}: ${String(file.text.includes(capability))}`).toBe(
           `${file.name}: ${capability}: false`,
         );
       }
+      // A bare `exec(` rather than any `.exec(`: M08.6's router calls
+      // `RegExp.prototype.exec`, which is neither a process nor a shell, and a
+      // scan that could not tell the two apart would have to be switched off.
+      expect(`${file.name}: exec: ${String(/(?<![.\w])exec\s*\(/.test(file.text))}`).toBe(
+        `${file.name}: exec: false`,
+      );
     }
   });
 
@@ -213,18 +249,35 @@ describe('the store runs one experiment, through exactly one door', () => {
   });
 });
 
-describe('the store opens no port', () => {
-  it('imports no server or socket module', () => {
-    // M08.2's exclusion is "no HTTP API". M08.6 owns the boundary, the loopback
-    // default and the non-loopback authentication refusal.
+describe('the store opens one port, from one file', () => {
+  it('imports a server module in the transport and nowhere else (M08.6)', () => {
+    // M08.2 through M08.5 held the stronger claim — *no HTTP API anywhere* —
+    // because there was no boundary yet. M08.6 opens the port, and the claim that
+    // replaces it is the one that goes on mattering: there is exactly **one**
+    // door, and `service/http.ts` is it. A second file that could bind, connect
+    // or fetch would be a second boundary with its own authentication, its own
+    // limits and its own mistakes.
+    for (const file of sourceFiles()) {
+      const allowed = file.name === TRANSPORT;
+      for (const forbidden of ["'node:http'", 'createServer']) {
+        expect(`${file.name}: ${forbidden}: ${String(file.text.includes(forbidden))}`).toBe(
+          `${file.name}: ${forbidden}: ${String(allowed)}`,
+        );
+      }
+    }
+  });
+
+  it('never opens an outbound connection, from any file', () => {
+    // The direction that did not change. This process answers an administrator;
+    // it calls nobody. An outbound socket here would be a way for run evidence,
+    // a token or a path to leave the machine, and there is no reason for one.
     for (const file of sourceFiles()) {
       for (const forbidden of [
-        "'node:http'",
         "'node:https'",
         "'node:net'",
         "'node:tls'",
+        "'node:dgram'",
         "'ws'",
-        'createServer',
         'WebSocket',
         'fetch(',
       ]) {
@@ -235,11 +288,76 @@ describe('the store opens no port', () => {
     }
   });
 
-  it('declares no start script, because there is nothing to start yet', () => {
-    // An entry point that bound nothing and ran nothing would be the decorative
-    // scaffolding the milestone warns against. M08.6 adds one when it has a
-    // reason to.
-    expect(Object.keys(MANIFEST.scripts ?? {})).toEqual(['typecheck']);
+  it('takes exactly one thing from `node:http`, and it is the server', () => {
+    // The import list rather than a substring scan, because `request` and
+    // `response` are the transport's central nouns and a scan for either would be
+    // a scan that has to be disabled. `createServer` is what the transport needs;
+    // `request` and `get` are what an outbound call would need, and neither is
+    // imported.
+    const http = codeOf(readFileSync(join(SOURCE_ROOT, 'service', TRANSPORT), 'utf8'));
+    const line = /import \{([^}]*)\} from 'node:http';/.exec(http)?.[1] ?? '';
+    const imported = line
+      .split(',')
+      .map((entry) => entry.replace('type ', '').trim())
+      .filter((entry) => entry !== '');
+    expect(imported).toEqual(['createServer', 'IncomingMessage', 'ServerResponse']);
+  });
+
+  it('binds what the configuration resolved, rather than a literal', () => {
+    // The loopback default and the non-loopback refusal are worth nothing if the
+    // transport binds a hard-coded address. `config.ts` decides; `http.ts` uses
+    // what it decided.
+    const http = codeOf(readFileSync(join(SOURCE_ROOT, 'service', TRANSPORT), 'utf8'));
+    expect(http).toContain('server.listen(config.port, config.host');
+    expect(http).not.toContain("'0.0.0.0'");
+    expect(http).not.toMatch(/listen\(\s*\d/);
+  });
+
+  it('reads the environment from the entry point alone', () => {
+    // A module that reached for `process.env` would be a second place a bind
+    // address or a token could come from, and the refusal in `config.ts` would
+    // then be one of several answers rather than the answer.
+    for (const file of sourceFiles()) {
+      const allowed = file.name === ENTRY;
+      expect(`${file.name}: ${String(file.text.includes('process.env'))}`).toBe(
+        `${file.name}: ${String(allowed)}`,
+      );
+    }
+  });
+
+  it('declares the start script its entry point needs, and no more', () => {
+    // M08.2 through M08.5 asserted there was none, because *an entry point that
+    // bound nothing and ran nothing would be the decorative scaffolding the
+    // milestone warns against.* There is something to start now.
+    expect(Object.keys(MANIFEST.scripts ?? {}).sort()).toEqual(['dev', 'start', 'typecheck']);
+    expect(MANIFEST.scripts?.start).toBe('vite-node src/main.ts');
+  });
+
+  it('never puts a token or a configured root into anything it prints', () => {
+    // ADR 0023 §4: the token travels in a request header and appears in no query
+    // string, no log line and no generated report. §5 keeps a resolved location
+    // off anything that leaves the process, and a start-up banner is where both
+    // are most tempting.
+    //
+    // The arguments to each `console` call are extracted rather than the whole
+    // file scanned, because the entry point legitimately *passes* the catalog
+    // root to the lock and the result root to the runner. What matters is what it
+    // says out loud.
+    const entry = codeOf(readFileSync(join(SOURCE_ROOT, ENTRY), 'utf8'));
+    const printed = consoleArguments(entry);
+    expect(printed.length).toBeGreaterThan(4);
+    for (const call of printed) {
+      // The *values*, never the names. Naming `TCG_ADMIN_CATALOG_ROOT` so an
+      // operator knows which variable to set is help, and saying whether a token
+      // is configured is what `capabilities` reports anyway; interpolating either
+      // one's value is the leak. So the scan looks for the interpolation rather
+      // than for the word.
+      for (const forbidden of ['token}', 'roots.', 'resultRootId']) {
+        expect(`${forbidden} in ${call.slice(0, 40)}: ${String(call.includes(forbidden))}`).toBe(
+          `${forbidden} in ${call.slice(0, 40)}: false`,
+        );
+      }
+    }
   });
 
   it('renders nothing and imports no UI framework', () => {
@@ -250,7 +368,10 @@ describe('the store opens no port', () => {
     for (const file of sourceFiles()) {
       expect(file.text).not.toMatch(/from 'react/);
       expect(file.text).not.toContain('.tsx');
-      expect(file.text).not.toMatch(/\b(?:window|localStorage|navigator)\s*\./);
+      // An identifier after the dot, rather than any dot at all: a message that
+      // ends a sentence with the word "window" is prose, and a scan that read it
+      // as a browser global would be a scan somebody switches off.
+      expect(file.text).not.toMatch(/\b(?:window|localStorage|navigator)\.[A-Za-z_$]/);
       expect(file.text).not.toMatch(
         /\bdocument\s*\.(?:getElementById|querySelector|createElement|body|head|addEventListener)\b/,
       );
@@ -363,6 +484,15 @@ describe('the public barrel', () => {
       'readCanonicalProgress',
       'countCommittedRecords',
       'readRunIdentity',
+      'parseServiceConfig',
+      'serviceConfigFromEnvironment',
+      'acquireOrchestratorLock',
+      'RateLimiter',
+      'ResultReader',
+      'AdminService',
+      'startAdminHttpServer',
+      'resolveRoute',
+      'authorized',
     ]) {
       expect(Object.keys(barrel)).toContain(name);
     }

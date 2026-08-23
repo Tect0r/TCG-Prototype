@@ -1,9 +1,11 @@
 import { z } from 'zod';
 
 import {
+  SOURCE_CLASSES,
   experimentKindSchema,
   experimentPurposeSchema,
   experimentSlugSchema,
+  sourceClassSchema,
   sourceClassesSchema,
   stageIdSchema,
   type SourceClass,
@@ -292,6 +294,46 @@ export const PRESET_REGISTRY: Readonly<Record<ExperimentPresetId, ExperimentPres
 export const AVAILABLE_PRESET_IDS: readonly ExperimentPresetId[] = EXPERIMENT_PRESET_IDS.filter(
   (id) => PRESET_REGISTRY[id].status === 'available',
 );
+
+/**
+ * The definition above, as a schema, so it can cross a wire and be checked on
+ * arrival.
+ *
+ * M08.1 wrote `ExperimentPresetDefinition` as an interface because the registry
+ * is a constant in this package and a constant needs no parser. M08.6 sends the
+ * registry to a client, and a response the service does not validate on its way
+ * out is a response whose shape is decided by whatever the handler happened to
+ * build. It is derived from the same enums the interface's members are, and
+ * `presets.test.ts` parses all eight entries through it, so the two cannot
+ * describe different things without a test failing.
+ *
+ * `limitations` and `kinds` are required to be non-empty for an **available**
+ * preset only: a preset a person can start must say what its results may never be
+ * cited for and what it is made of, and a `reserved` one has neither results nor
+ * stages yet. That is the same asymmetry `PRESET_REGISTRY` already holds —
+ * `adaptive_counter` carries no kinds — expressed as a rule rather than as an
+ * accident of the data.
+ */
+export const experimentPresetDefinitionSchema = z
+  .strictObject({
+    id: experimentPresetIdSchema,
+    label: z.string().min(1).max(80),
+    summary: z.string().min(1).max(800),
+    status: presetStatusSchema,
+    testStyle: presetTestStyleSchema,
+    kinds: z.array(experimentKindSchema).max(8),
+    sourceClasses: z.array(sourceClassSchema).max(SOURCE_CLASSES.length),
+    limitations: z.array(z.string().min(1).max(600)).max(16),
+  })
+  .refine(
+    (preset) => preset.status !== 'available' || preset.limitations.length >= 1,
+    'A preset an administrator can start must say what its results may not be cited for.',
+  )
+  .refine(
+    (preset) => preset.status !== 'available' || preset.kinds.length >= 1,
+    'A preset an administrator can start is made of at least one experiment kind.',
+  );
+export type ExperimentPresetDefinitionValue = z.infer<typeof experimentPresetDefinitionSchema>;
 
 /* -------------------------------------------------------------- the choice */
 

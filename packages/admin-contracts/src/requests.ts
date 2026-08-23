@@ -3,9 +3,11 @@ import { z } from 'zod';
 import { adminErrorSchema } from './errors.js';
 import { catalogFilterSchema } from './filters.js';
 import { annotationsSchema, catalogBatchViewSchema, catalogJobViewSchema } from './catalog.js';
-import { batchIdSchema, jobIdSchema } from './identity.js';
-import { jobActionSchema } from './lifecycle.js';
+import { batchIdSchema, jobIdSchema, labelSchema } from './identity.js';
+import type { JobAction } from './lifecycle.js';
 import { pageOf, pageRequestSchema } from './pagination.js';
+import { presetChoiceSchema } from './presets.js';
+import { resultTableNameSchema } from './results.js';
 import { contractVersionSchema } from './version.js';
 
 /**
@@ -28,11 +30,11 @@ import { contractVersionSchema } from './version.js';
  * is reachable from `catalogJobDocumentSchema` and from nothing here, and the
  * boundary test in `boundary.test.ts` reads these sources to keep it that way.
  *
- * What is deliberately **not** here: endpoints, methods, URLs, transport,
- * authentication, rate limits and body limits. Those are M08.6, and a contract
- * package that guessed at them would be writing the service's interface before
- * the service exists. These are the payload shapes M08.1's own vocabulary can
- * honestly describe, and no more.
+ * Endpoints, methods, URLs, transport, authentication and the two limits that
+ * are properties of a socket rather than of a payload live in `service.ts`,
+ * added by M08.6 — the tranche that actually opened the port. M08.1 declined to
+ * guess at them, and the split it left behind is the one that survived: what a
+ * client *asks* is here, and what the service *is* is there.
  */
 
 /* -------------------------------------------------------------- the envelope */
@@ -149,6 +151,35 @@ export const setJobAnnotationsRequestSchema = z.strictObject({
 export type SetJobAnnotationsRequest = z.infer<typeof setJobAnnotationsRequestSchema>;
 
 /**
+ * The four verbs an operator has, out of the ten the lifecycle table names.
+ *
+ * A narrowing M08.6 made deliberately, and the reason it is a *schema* rather
+ * than a check inside a handler: `start`, `complete`, `fail`, `interrupt`,
+ * `pause_settled` and `cancel_settled` all belong to something that is not a
+ * person. A runner reports what its attempt did and a restart records what it
+ * found; both reach the store with a `cause` that says which. A request that
+ * could spell `complete` would let a client mark a run finished without a single
+ * match having been played, and no amount of transition checking would catch it,
+ * because `running -> completed` is a perfectly legal move.
+ *
+ * `satisfies readonly JobAction[]` rather than a filter over `JOB_ACTIONS`,
+ * because the two directions fail differently and both matter: the constraint
+ * makes a verb that is *not* a lifecycle action a compile error, and
+ * `requests.test.ts` asserts the complement — that every action left out is one
+ * only a runner or a restart produces — so an action added later cannot be
+ * quietly excluded from an operator's reach either.
+ */
+export const OPERATOR_JOB_ACTIONS = [
+  'pause',
+  'resume',
+  'cancel',
+  'retry',
+] as const satisfies readonly JobAction[];
+
+export const operatorJobActionSchema = z.enum(OPERATOR_JOB_ACTIONS);
+export type OperatorJobAction = z.infer<typeof operatorJobActionSchema>;
+
+/**
  * Asking a job to change state.
  *
  * The *action* travels, never the target state. A client that sent
@@ -161,24 +192,90 @@ export type SetJobAnnotationsRequest = z.infer<typeof setJobAnnotationsRequestSc
  */
 export const jobActionRequestSchema = z.strictObject({
   jobId: jobIdSchema,
-  action: jobActionSchema,
+  action: operatorJobActionSchema,
 });
 export type JobActionRequest = z.infer<typeof jobActionRequestSchema>;
 
+/* --------------------------------------------------- creation requests (M08.6) */
+
 /**
- * Every request payload M08.1 defines, in one union.
+ * A request that carries nothing.
  *
- * Exported so a boundary test can be total over them — "no request payload
- * admits a filesystem location" is a claim about a closed set, and a set nobody
- * enumerated is a set a later tranche adds to quietly.
+ * `z.strictObject({})` rather than an absent field, so the envelope has one shape
+ * for every endpoint and a client's paging, error handling and version check are
+ * written once. It is strict, so `{ nonsense: 1 }` sent to the capabilities
+ * endpoint is refused rather than ignored — which is the difference between a
+ * service that has a contract and one that merely has handlers.
+ */
+export const emptyRequestSchema = z.strictObject({});
+export type EmptyRequest = z.infer<typeof emptyRequestSchema>;
+
+/** Opening a test batch: a name, and optionally what to say about it. */
+export const createBatchRequestSchema = z.strictObject({
+  label: labelSchema,
+  annotations: annotationsSchema.prefault({ tags: [], note: '', baseline: false }),
+});
+export type CreateBatchRequest = z.infer<typeof createBatchRequestSchema>;
+export type CreateBatchRequestInput = z.input<typeof createBatchRequestSchema>;
+
+/**
+ * Filling a batch from a preset, which is the only way this build creates a job.
+ *
+ * **There is no endpoint that accepts an experiment configuration.** M08's
+ * exclusions forbid *unvalidated JSON blobs*; a request carrying a whole
+ * `experimentConfigSchema` document would be validated, but it would also be this
+ * package expressing a shape it cannot import, and it would let a client name
+ * pilots, seeds, environments and card bans no preset offers. A preset choice is
+ * a bounded selection over a registry both ends already have; the server expands
+ * it, and every value that reaches the simulator is assembled inside the process
+ * from the format's own numbers.
+ *
+ * One choice becomes **one job per stage**, in the preset's own order, because a
+ * preset is a plan and a stage is the unit the queue runs.
+ */
+export const enqueuePresetRequestSchema = z.strictObject({
+  batchId: batchIdSchema,
+  choice: presetChoiceSchema,
+});
+export type EnqueuePresetRequest = z.infer<typeof enqueuePresetRequestSchema>;
+export type EnqueuePresetRequestInput = z.input<typeof enqueuePresetRequestSchema>;
+
+/**
+ * One page of one of a run's result tables.
+ *
+ * The table is named from a closed list rather than by a path or a column
+ * expression, for the same reason a job is named by an ID: the server resolves
+ * the name against a run directory it already knows, and there is nowhere in this
+ * shape to put a location.
+ */
+export const resultTableRequestSchema = z.strictObject({
+  jobId: jobIdSchema,
+  table: resultTableNameSchema,
+  page: pageRequestSchema.prefault({}),
+});
+export type ResultTableRequest = z.infer<typeof resultTableRequestSchema>;
+export type ResultTableRequestInput = z.input<typeof resultTableRequestSchema>;
+
+/**
+ * Every request payload the admin contract defines, in one object.
+ *
+ * Exported so a boundary test can be total over them — "no request payload admits
+ * a filesystem location" is a claim about a closed set, and a set nobody
+ * enumerated is a set a later tranche adds to quietly. `service.ts` requires every
+ * endpoint's request schema to be one of these, so an endpoint cannot acquire a
+ * private input shape this scan never sees.
  */
 export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
+  empty: emptyRequestSchema,
   listJobs: listJobsRequestSchema,
   listBatches: listBatchesRequestSchema,
   jobRef: jobRefSchema,
   batchRef: batchRefSchema,
   setJobAnnotations: setJobAnnotationsRequestSchema,
   jobAction: jobActionRequestSchema,
+  createBatch: createBatchRequestSchema,
+  enqueuePreset: enqueuePresetRequestSchema,
+  resultTable: resultTableRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;

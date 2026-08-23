@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import {
   CATALOG_DOCUMENT_VERSION,
+  DIRECT_JOB_ORIGIN,
   JOB_EVENT_VERSION,
   NO_ANNOTATIONS,
   NO_CATALOG_FILTER,
@@ -307,6 +308,7 @@ export class FileCatalogStore implements CatalogStore {
         batchId: input.batchId,
         label: input.label,
         spec: prepared.value.spec,
+        origin: input.origin ?? DIRECT_JOB_ORIGIN,
         purpose: input.purpose,
         sourceClasses: [...input.sourceClasses],
         status: 'queued',

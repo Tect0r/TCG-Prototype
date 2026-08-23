@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-23)   | M08.6        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-23)   | M08.7        |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -55,9 +55,14 @@ read out of `matches.jsonl` and the checkpoint directory rather than counted, an
 failure keeps every partial record so a retry resumes rather than restarts.
 **M08.5 landed the same day** and gave an operator control over it: a bound in two
 dimensions, and pause, resume, cancel and retry as lifecycle verbs whose stop
-reaches the simulator's own dispatch loop, so in-flight matches reach their record
-boundary and a stopped run writes no manifest to be mistaken for a finished one.
-Nothing here opens a port yet; **M08.6 is the next tranche**.
+reaches the simulator's own dispatch loop, so in-flight matches reach their
+record boundary and a stopped run writes no manifest to be mistaken for a
+finished one. **M08.6 landed the same day** and opened the port: a service that
+refuses a non-loopback bind with no token _before_ anything binds, thirteen
+versioned endpoints validated in both directions, a lock that refuses a second
+orchestrator against one catalog, and a result reader that answers every number
+out of the run's own directory. There is still no UI; **M08.7 is the next
+tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -179,17 +184,87 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.6 — Admin service and access boundary.** The first tranche that opens a
-port: the separate service ADR 0023 chose, loopback by default with the
-non-loopback authentication refusal enforced, versioned endpoints for
-capabilities and presets, batch creation, list and detail, queue actions,
-progress, result summaries and bounded result tables, request and response
-schemas validated on both boundaries, and rate, body and page limits. Its scope
-and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m086--admin-service-and-access-boundary).
-Still no UI: M08.7 owns the shell.
+**M08.7 — Admin client shell.** The first tranche with a screen in it:
+`apps/admin-client` as its own Vite application with its own bundle, an
+authenticated connection state, a top-level layout, an Overview holding only real
+capability and health data, accessible navigation, and global loading, error and
+empty states — in the project's visual language, kept readable at analytical
+density. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m087--admin-client-shell).
+No experiment form and no chart: M08.8 owns the builder.
 
-It inherits a queue that runs, and several things it must not re-decide.
+It inherits a service that answers, and three things M08.6 left for it to settle.
+
+**M08.6 opened the port, and the refusal is at startup rather than per request.**
+`parseServiceConfig` returns a refusal instead of a configuration when a
+non-loopback bind has no administrator token, so nothing binds — a service that
+bound `0.0.0.0` and then rejected unauthenticated requests would already be
+listening on every interface while somebody read the log line. There is no
+insecure mode, no default token and no generated-and-printed one, and an
+**empty-string token is not a configured token**. A token is thirty-two
+characters of URL-safe text because this service has one administrator, no
+lockout and no way to notice a guess; the rejected value never travels, and its
+refusal carries a length rather than a prefix.
+
+**Every endpoint is a POST with a JSON envelope, and the version is in the
+path.** One framing keeps every input inside a validated body and out of a URL a
+proxy logs, and removes the second, weaker parser a query string would need.
+Addresses are `/admin/v{ADMIN_CONTRACT_VERSION}/{route}`, **derived from the
+constant**, and the router recognises any `/admin/v{n}/` shape — so a client one
+version out gets the repository's readable newer-build or older-build sentence
+instead of a bare 404. **Both boundaries are validated**, and the outbound half
+is the one that would have been easy to skip: an answer a handler built but its
+own contract cannot describe is reported as a defect in the build rather than
+sent.
+
+**A job is created from a preset and from nothing else.** No endpoint accepts an
+experiment configuration — M08's exclusions forbid unvalidated JSON blobs, and a
+request carrying one would let a client name pilots, seeds, environments and card
+bans no preset offers. One choice becomes one job per stage, and M08.3's estimate
+travels back with the jobs rather than from a second call that could disagree
+with what was created. `jobActionRequestSchema` was **narrowed** to the four
+verbs an operator has: a request that could spell `complete` would mark a run
+finished without a match having been played, and `running → completed` is a
+perfectly legal transition.
+
+**The single-orchestrator refusal M08.5 deferred is built.** A second process
+against one catalog is refused with `admin/already_running`, because two of them
+would run the same queued job under two independent worker budgets. A lock a
+crash left behind is **taken over and the takeover reported** — a lab that needed
+a manual removal after every crash is a lab where somebody automates the removal
+away — and a lock naming another host is refused rather than guessed at.
+
+**Result readings are transport; provenance is named exactly.**
+`@tcg/admin-contracts` can express a column, a row and a labelled scalar and
+still cannot express what a win rate _is_: the projection from `summary.json`
+lives in `apps/admin-server`, where the simulator is the authority. What the
+contract does name is the milestone's own result rules — run identity, the
+denominators (refused when usable and abnormal do not account for every record),
+and the calibration standing, which never travels without the sentence saying
+what would change it. **A run with no calibration standing is refused rather than
+served with the field missing.** Seven tables exist because seven are named by
+those rules, and `pilots` and `agent_classes` are separate because M05.4 reports
+a class beside a pilot and never averaged with it.
+
+**Two version constants moved, and one of the moves is the last free one.**
+`ADMIN_CONTRACT_VERSION` 2 → 3 for six new codes, thirteen named endpoints and
+the narrowed action. `CATALOG_DOCUMENT_VERSION` 2 → 3 for `origin` on a job
+document — which preset and stage produced it, or `direct` — because binding a
+preset's published limitations to a finished run needs the run to know, and a tag
+an administrator can delete would make a limitation disappear when somebody
+tidies up. There is no migration from 2, and the blast radius is again nothing:
+M08.6 is the first tranche to give this workspace an entry point, so no catalog
+had ever been written outside a test. **After this build ships that argument is
+gone**, and the next change to a catalog document has to be migrated.
+
+**Three limitations M08.7 or a later tranche has to settle.** **No CORS headers
+are sent** — M08.7 runs a dev server on another port and owns the origin policy,
+and choosing it before the client exists would be widening the boundary on a
+guess. **There is no unauthenticated health probe**, because it would be a second
+quieter door reporting the one fact an unauthenticated caller most wants. And
+**nothing is logged per request**, deliberately: ADR 0023 §4 keeps the token out
+of every log line, and the boundary suite reads the arguments of every `console`
+call to keep a token, a root or a resolved path off the one banner that exists.
 
 **M08.5 gave an operator control, and the stop is where the matches are handed
 out.** Pause means _stop scheduling new match work and let in-flight matches reach

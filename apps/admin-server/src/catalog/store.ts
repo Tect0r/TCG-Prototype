@@ -12,6 +12,7 @@ import type {
   JobEventLog,
   JobExecution,
   JobId,
+  JobOrigin,
   JobStatus,
   PageInfo,
   PageRequestInput,
@@ -102,6 +103,16 @@ export interface NewJobInput {
    * out, because a file on disk may not have come from this build.
    */
   readonly config: ExperimentConfig;
+  /**
+   * What asked for this job. Defaults to `direct`.
+   *
+   * Optional here and required on the document, which is the same asymmetry
+   * `annotations` has and for the same reason: a caller that did not say made a
+   * job from a configuration it assembled itself, and `DIRECT_JOB_ORIGIN` is what
+   * that is. A preset expansion says so, and the run it produces can then be
+   * shown beside the limitations `PRESET_REGISTRY` publishes for it.
+   */
+  readonly origin?: JobOrigin;
 }
 
 export interface JobActionInput {

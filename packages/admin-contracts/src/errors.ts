@@ -66,6 +66,63 @@ export const ADMIN_ERROR_CODES = [
   'admin/run_failed',
   /** Error context that would have leaked a credential or a filesystem path. */
   'admin/unsafe_error_context',
+
+  /* ------------------------------------------------ the service boundary (M08.6) */
+
+  /**
+   * The request carried no administrator token, or not the configured one.
+   *
+   * The first code that is about *who is asking* rather than about what they
+   * asked for, which is why it is not `admin/schema`: the payload may be
+   * perfectly well formed. It is deliberately one code for both the missing and
+   * the wrong token — telling them apart out loud would confirm to an
+   * unauthenticated caller that a token is configured at all — and it never
+   * carries the value it refused, because `FORBIDDEN_CONTEXT_KEYS` above already
+   * refuses to let one travel.
+   */
+  'admin/unauthorized',
+  /** More requests arrived from one caller than the configured window allows. */
+  'admin/rate_limited',
+  /** The request body was longer than the configured limit, so it was not read. */
+  'admin/payload_too_large',
+  /**
+   * No endpoint of this service answers at that address.
+   *
+   * Separate from `admin/schema` because the failure is *routing* rather than
+   * content, and separate from a bare 404 because a versioned service's most
+   * likely wrong address is the right endpoint under a version this build does
+   * not speak — and that answer is `admin/unsupported_version`, which a router
+   * can only give if it recognises the shape of the address first.
+   */
+  'admin/unknown_endpoint',
+  /**
+   * The job exists, and there is no canonical result to read for it.
+   *
+   * One code for every way that happens — nothing attached yet, the reference no
+   * longer resolves, the manifest is gone, the summary is gone, or the directory
+   * now declares a different run — because a client can do exactly one thing
+   * about all five: show the job without its numbers. Which one it was travels
+   * in the message.
+   *
+   * It is emphatically **not** an empty result. ADR 0012 makes the experiment
+   * directory the deliverable; a summary this service could not read is a
+   * missing reading, and returning zeroes for it would be the admin layer
+   * inventing evidence.
+   */
+  'admin/no_result',
+  /**
+   * Another orchestration process already holds this catalog.
+   *
+   * ADR 0023 §4 describes one administrator and one orchestration process, and
+   * M08.5 recorded the gap in as many words: *two orchestrators in two processes
+   * could both pass the `start` transition, and the worker budget is one
+   * process's own... M08.6 creates the process, and is where a second one would
+   * have to be refused.* This is that refusal. It is a startup answer rather than
+   * a request answer — no endpoint can produce it — and it is its own code
+   * because "somebody else is already running the lab" is a thing an operator
+   * fixes by stopping that process, not by correcting a field.
+   */
+  'admin/already_running',
 ] as const;
 
 export const adminErrorCodeSchema = z.enum(ADMIN_ERROR_CODES);

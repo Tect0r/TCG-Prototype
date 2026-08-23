@@ -27,14 +27,19 @@
  *   boundary and a stopped run writes no manifest, no summary and no report;
  *   `resume` and `retry` are ordinary starts that continue the stream already on
  *   disk. Nothing retries or resumes by itself.
- * - **M08.6** adds the HTTP boundary, loopback binding and the non-loopback
- *   authentication refusal. It is the first tranche that opens a port, and the
- *   first that gives this workspace a `start` script.
+ * - **M08.6 (here)** exposes all of it to one admin client, and is the first
+ *   tranche that opens a port. `src/service/` holds the whole boundary: a
+ *   configuration that refuses a non-loopback bind with no token *before*
+ *   anything is bound, a lock that refuses a second orchestrator against one
+ *   catalog, thirteen versioned endpoints whose request and response shapes are
+ *   both validated, a rate limit, a body limit, and a result reader that answers
+ *   every number out of the run's own directory at the moment it is asked for.
  *
- * So there is deliberately **no entry point** in this package yet. A `main.ts`
- * that bound nothing would be the premature scaffolding the milestone warns
- * against; the runner is driven by its tests today and by the service that owns
- * it in M08.6.
+ * So this package now has exactly one entry point — `src/main.ts`, reached by
+ * `npm run start --workspace @tcg/admin-server` — and it is the only file that
+ * reads the environment. Everything under `src/service/` can be driven without
+ * it: `AdminService` takes a parsed payload and answers with a value, and
+ * `startAdminHttpServer` is the only file that knows a socket exists.
  *
  * ## The boundaries this package keeps
  *
@@ -49,6 +54,11 @@
  *   nothing in it may import them: ADR 0023 §1 keeps the admin process and the
  *   live match process off one event loop, and M08's exclusions keep simulator
  *   CPU work out of the multiplayer server entirely.
+ * - It listens on **one** port, from **one** file. `service/http.ts` is the only
+ *   source that imports `node:http`; `boundary.test.ts` requires it there and
+ *   refuses every server, socket and `fetch` in every other source, so "the
+ *   admin surface has one door" is a fact about the sources rather than a
+ *   convention.
  * - It spawns no process and invokes no shell. M08.4 needed no child process at
  *   all, so there is no argument vector to fix (ADR 0023 §2): the one process
  *   boundary a run crosses is the simulator's own worker pool, which starts a
@@ -168,3 +178,54 @@ export {
   forcedInclusionFor,
   type PresetEstimate,
 } from './lab/estimate.js';
+
+export {
+  ADMIN_ENVIRONMENT_KEYS,
+  ADMIN_TOKEN_HEADER,
+  DEFAULT_HOST,
+  DEFAULT_PORT,
+  DEFAULT_REQUEST_LIMITS,
+  ENVIRONMENT_RESULT_ROOT_ID,
+  MIN_TOKEN_LENGTH,
+  adminTokenSchema,
+  isLoopbackHost,
+  parseServiceConfig,
+  requestLimitsSchema,
+  serviceConfigFromEnvironment,
+  type AdminServiceConfig,
+  type AdminServiceConfigInput,
+  type RequestLimits,
+  type RequestLimitsInput,
+} from './service/config.js';
+
+export {
+  ORCHESTRATOR_LOCK_FILE,
+  acquireOrchestratorLock,
+  processIsAlive,
+  type AcquireLockOptions,
+  type OrchestratorLock,
+} from './service/lock.js';
+
+export {
+  DEFAULT_MAX_TRACKED_CLIENTS,
+  RateLimiter,
+  type RateLimitDecision,
+  type RateLimiterOptions,
+} from './service/rate-limit.js';
+
+export {
+  ResultReader,
+  decodeRowCursor,
+  encodeRowCursor,
+  type ResultReaderOptions,
+} from './service/results.js';
+
+export { AdminService, operatorActionsFor, type AdminServiceOptions } from './service/handlers.js';
+
+export {
+  authorized,
+  resolveRoute,
+  startAdminHttpServer,
+  type AdminHttpServer,
+  type StartAdminHttpOptions,
+} from './service/http.js';

@@ -11,10 +11,12 @@ import {
   jobIdSchema,
   labelSchema,
   sourceClassesSchema,
+  stageIdSchema,
   tagSchema,
   timestampSchema,
   type EntryTimestamps,
 } from './identity.js';
+import { experimentPresetIdSchema } from './presets.js';
 import {
   batchStatusSchema,
   isTerminalJobStatus,
@@ -456,6 +458,44 @@ export function statusTimestampProblems(status: JobStatus, timestamps: EntryTime
   return problems;
 }
 
+/* ------------------------------------------------------ where a job came from */
+
+/**
+ * What asked for this job, recorded on the job rather than remembered elsewhere.
+ *
+ * M08.6 needed this to keep a promise the milestone makes about **results**, not
+ * about queues: *evidence-claim and calibration standing* and a preset's
+ * *limitations* must be visible before a reader may treat a number as evidence,
+ * and `PRESET_REGISTRY` states each preset's limitations exactly so they are not
+ * authored at the point of display. Binding them to a finished run needs the run
+ * to know which preset produced it, and nothing before this field could say.
+ *
+ * The alternative was a tag. It was rejected: an administrator's tags are theirs
+ * to add and remove, so a limitation reachable through one is a limitation that
+ * disappears the moment somebody tidies up — which is the exact failure mode
+ * `presets.ts` gives as the reason limitations live in the registry at all.
+ *
+ * `direct` is a real member rather than a placeholder. `CatalogStore.createJob`
+ * takes a validated `ExperimentConfig`, so a job can be created from a
+ * configuration that came from nowhere in particular — every M08.4 and M08.5
+ * test does — and a shape that could only say "preset" would have to lie about
+ * those. It carries no limitations, and that is truthful: a hand-assembled
+ * configuration has made no claim about what it may not be cited for.
+ */
+export const jobOriginSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('preset'),
+    presetId: experimentPresetIdSchema,
+    /** Which stage of the preset's plan this job is. */
+    stageId: stageIdSchema,
+  }),
+  z.strictObject({ kind: z.literal('direct') }),
+]);
+export type JobOrigin = z.infer<typeof jobOriginSchema>;
+
+/** What a job records when nothing named a preset. */
+export const DIRECT_JOB_ORIGIN: JobOrigin = Object.freeze({ kind: 'direct' });
+
 /* ------------------------------------------------------ the job documents */
 
 const jobCore = {
@@ -465,6 +505,8 @@ const jobCore = {
   label: labelSchema,
   /** What this job runs. Present from creation, so a queued job has a kind. */
   spec: jobSpecSchema,
+  /** What asked for it. Present from creation, for the reason `jobOriginSchema` gives. */
+  origin: jobOriginSchema,
   purpose: experimentPurposeSchema,
   sourceClasses: sourceClassesSchema,
   status: jobStatusSchema,

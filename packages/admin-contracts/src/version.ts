@@ -77,8 +77,22 @@ import { adminError, type AdminError } from './errors.js';
  *   language moved. A build that speaks 1 would receive a code it cannot branch
  *   on and a job carrying two fields it does not know, which is what a contract
  *   version is for saying.
+ * - 3 (M08.6) — the language acquired a **service**. Six codes were added to the
+ *   closed list for failures that only exist once there is a boundary and a
+ *   process to fail at — `admin/unauthorized`, `admin/rate_limited`,
+ *   `admin/payload_too_large`, `admin/unknown_endpoint`, `admin/no_result` and
+ *   `admin/already_running` — thirteen endpoints were
+ *   named with a request and a response shape each, and `jobActionRequestSchema`
+ *   was **narrowed**: its `action` is now one of the four verbs an operator has
+ *   rather than any member of `jobActionSchema`, because `start`, `complete`,
+ *   `fail`, `interrupt` and the two settling actions are the runner's and the
+ *   recovery's and were never a request. A build speaking 2 would send an action
+ *   this one refuses and receive codes it cannot branch on, which is exactly what
+ *   a contract version is for saying — and the version segment in every endpoint
+ *   path is derived from this constant, so the refusal is readable rather than a
+ *   bare 404.
  */
-export const ADMIN_CONTRACT_VERSION = 2;
+export const ADMIN_CONTRACT_VERSION = 3;
 
 /**
  * The version stamped into a persisted catalog document.
@@ -107,8 +121,24 @@ export const ADMIN_CONTRACT_VERSION = 2;
  * that can read a batch but not its jobs has not read the batch.* Splitting them
  * now to avoid one unnecessary refusal would trade a stated invariant for a
  * saved keystroke.
+ *
+ * - 3 (M08.6) — a job document records **what asked for it**. `origin` names the
+ *   preset and the stage a job was expanded from, or says `direct` when a
+ *   configuration was handed to the store without one. It is required rather
+ *   than optional for the reason `spec` is: the field exists to bind a preset's
+ *   published limitations to the run it produced, and an optional field is one a
+ *   result view has to be prepared to find missing — which is the same as not
+ *   having it.
+ *
+ * **There is no migration from 2 either, and the blast radius is again
+ * nothing.** M08.6 is the first tranche to give this workspace an entry point
+ * and a `start` script, so at the moment this number moved no catalog had ever
+ * been written outside a test's temporary directory. That is exactly the
+ * argument M08.4 made for the 1 → 2 move, and it is the last time it will be
+ * available: after this build ships, a catalog exists on somebody's disk and the
+ * next change to this shape has to be migrated rather than refused.
  */
-export const CATALOG_DOCUMENT_VERSION = 2;
+export const CATALOG_DOCUMENT_VERSION = 3;
 
 /**
  * The version stamped into one line of a job's append-only event log.

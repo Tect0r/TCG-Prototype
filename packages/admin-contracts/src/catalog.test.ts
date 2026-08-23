@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DIRECT_JOB_ORIGIN,
   JOB_EXECUTION_MODES,
   MAX_ENVIRONMENTS_PER_RUN,
   MAX_JOB_ATTEMPTS,
@@ -21,6 +22,7 @@ import {
   fullContentHashesOf,
   jobExecutionModeSchema,
   jobExecutionSchema,
+  jobOriginSchema,
   jobSpecSchema,
   resultReferenceOf,
   resultReferenceSchema,
@@ -84,6 +86,7 @@ const JOB: CatalogJobDocument = {
   batchId: 'batch_fixture1',
   label: 'Precon smoke',
   spec: SPEC,
+  origin: { kind: 'preset', presetId: 'precon_smoke', stageId: 'matches' },
   purpose: 'exploration',
   sourceClasses: ['ai', 'precon'],
   status: 'queued',
@@ -676,5 +679,42 @@ describe('the catalog references evidence and never owns it', () => {
     expect(completed.result?.identity.experimentId).toBe('precon-smoke');
     expect(completed.result?.identity.seed).toBe('wave-1-smoke');
     expect(completed.result?.location).toEqual(LOCATION);
+  });
+});
+
+describe('where a job came from (M08.6)', () => {
+  it('names the preset and the stage a job was expanded from', () => {
+    const parsed = jobOriginSchema.parse({
+      kind: 'preset',
+      presetId: 'precon_standard',
+      stageId: 'matches',
+    });
+    expect(parsed).toEqual({ kind: 'preset', presetId: 'precon_standard', stageId: 'matches' });
+  });
+
+  it('says `direct` for a configuration that came from nowhere in particular', () => {
+    expect(jobOriginSchema.parse(DIRECT_JOB_ORIGIN)).toEqual({ kind: 'direct' });
+    expect(jobOriginSchema.safeParse({ kind: 'direct', presetId: 'precon_smoke' }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a preset origin with no stage, so a limitation cannot be attached to nothing', () => {
+    expect(jobOriginSchema.safeParse({ kind: 'preset', presetId: 'precon_smoke' }).success).toBe(
+      false,
+    );
+    expect(
+      jobOriginSchema.safeParse({ kind: 'preset', presetId: 'not_a_preset', stageId: 'matches' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('is required on a job document, because an optional one is one a view must handle missing', () => {
+    const { origin: _origin, ...withoutOrigin } = JOB;
+    expect(catalogJobDocumentSchema.safeParse(withoutOrigin).success).toBe(false);
+  });
+
+  it('reaches the client, because a result view needs it to find the limitations', () => {
+    expect(catalogJobViewOf(JOB).origin).toEqual(JOB.origin);
   });
 });

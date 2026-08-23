@@ -1478,7 +1478,7 @@ already returns, and nothing here sorts or prioritises.
   attempt, but it still measures wall-clock rather than CPU. Nothing here measures
   CPU.
 
-## M08.6 — Admin service and access boundary
+## M08.6 — Admin service and access boundary — **done (2026-08-23)**
 
 Expose the catalog and runner safely to one admin client: the separate service
 ADR 0023 chose, loopback by default with the non-loopback authentication refusal
@@ -1493,12 +1493,268 @@ pagination, lifecycle and restart integration tests.
 
 **Exclusion:** no visual UI, no multiplayer telemetry.
 
+### What M08.6 built
+
+`packages/admin-contracts` gained `service.ts` and `results.ts`;
+`apps/admin-server` gained `src/service/` — `config.ts`, `lock.ts`,
+`rate-limit.ts`, `results.ts`, `handlers.ts`, `http.ts` — and, for the first
+time, an entry point: `src/main.ts`, with `start` and `dev` scripts.
+
+**The refusal is at startup, and there is no way to spell "off".**
+`parseServiceConfig` decides where the service binds and whether a token is
+required, and it returns a refusal rather than a configuration when a
+non-loopback bind has no token. A service that bound `0.0.0.0` and then rejected
+unauthenticated requests would already be listening on every interface while
+somebody read the log line. There is no `--insecure`, no
+`TCG_ADMIN_ALLOW_ANONYMOUS`, and an **empty-string token is not a configured
+token** — treating it as one would give a public bind a secret nobody can guess
+and nobody can send. Loopback is a property of the address the operator typed
+rather than of a DNS lookup, because a resolver is a moving part in a security
+decision.
+
+**A token must be long, and the reason is arithmetic rather than policy.** This
+service has one administrator, no lockout, no second factor and no way to notice
+a guess; a rate limit slows an attacker by a constant, and length is the only
+defence whose cost to them is exponential. Thirty-two characters of URL-safe
+text, refused rather than hashed into shape, and the rejected value never travels
+— the refusal carries its **length** and not a prefix, because a prefix is a
+fifth of a secret.
+
+**One door, and the boundary test now says where it is.** M08.2 through M08.5
+asserted _no HTTP anywhere_; that claim retired the moment a port was needed, and
+what replaced it is the one that goes on mattering: `service/http.ts` is the only
+source that may import `node:http`, `main.ts` is the only source that may read
+`process.env`, and **no** source may open an outbound connection in any
+direction. The transport imports exactly `createServer`, `IncomingMessage` and
+`ServerResponse` — checked as an import list rather than a substring scan,
+because `request` and `response` are the transport's central nouns and a scan for
+either would have to be switched off.
+
+**Every endpoint is a POST with a JSON envelope, and the version is in the path.**
+One framing, so nothing an administrator sends can travel in a URL a proxy logs
+(ADR 0023 §4) and there is no second, weaker parser for query text where
+`z.strictObject` could not refuse an unknown field. Addresses are
+`/admin/v{ADMIN_CONTRACT_VERSION}/{route}`, **computed from the constant** rather
+than written beside it — and because the router recognises any `/admin/v{n}/`
+shape, a client one version out gets the repository's readable newer-build or
+older-build sentence instead of a bare 404. `admin/unknown_endpoint` is reserved
+for an address that is not an endpoint under any version.
+
+**Both boundaries are validated, and the outbound half is the one that is easy to
+skip.** A request is parsed by `adminRequest(endpoint.request)`; the answer is
+re-parsed by `endpoint.response` before a byte is written, and a handler that
+built something its own contract does not describe is reported as a **defect in
+the build** rather than sent. Nothing fails when an outbound check is missing,
+which is exactly why it is a registry property rather than a habit:
+`ADMIN_ENDPOINTS` gives every endpoint both schemas, and `service.test.ts` is
+total over the thirteen.
+
+**A job is created from a preset and from nothing else.** There is no endpoint
+that accepts an experiment configuration — M08's exclusions forbid _unvalidated
+JSON blobs_, and a request carrying `experimentConfigSchema` would also let a
+client name pilots, seeds, environments and card bans no preset offers. One
+choice becomes one job per stage, in the preset's own order, and the response
+carries M08.3's estimate beside the jobs rather than from an endpoint of its own,
+because a separate estimate call is one that can disagree with what was created.
+
+**`jobActionRequestSchema` was narrowed to the four verbs an operator has.**
+`start`, `complete`, `fail`, `interrupt` and the two settling actions belong to a
+runner reporting an attempt or a restart recording what it found. A request that
+could spell `complete` would let a client mark a run finished without a match
+having been played, and no transition check would catch it: `running → completed`
+is a perfectly legal move.
+
+**Result readings are transport, and provenance is not.** `results.ts` in the
+contract package can express a column, a row and a labelled scalar; it cannot
+express what a win rate _is_, and the projection from `summary.json` lives in
+`apps/admin-server`, where `@tcg/simulator` is the authority. What it does name
+exactly is the milestone's own result rules: `runIdentitySchema` for provenance,
+`resultDenominatorsSchema` for the counts — which **refuses a summary whose
+usable and abnormal records do not account for every record played** — and
+`evidenceStandingSchema` for the calibration standing, which never travels
+without the sentence saying what would change it. Seven tables exist because
+seven are named by those rules, and `pilots` and `agent_classes` are separate
+because M05.4 reports a class _beside_ a pilot and never averaged with it.
+
+**A run with no calibration standing is refused rather than served.** The result
+rules put evidence-claim and calibration standing among the things visible
+_before_ a reader may treat a number as evidence; a response with the field
+omitted would invite the reading that rule forbids. A run written before
+`SUMMARY_SCHEMA_VERSION` 7 is therefore named as unreadable, pointing at an older
+build the way M07.9 pointed at a newer one.
+
+**Every number is read out of the run's directory at the moment it is asked
+for**, and the location is re-resolved against the configured root on **every**
+request. That is the case `attachJobResult`'s check cannot cover: a symlink
+created after a run finished. A test creates one and requires the refusal.
+
+### The single-orchestrator refusal M08.5 deferred
+
+M08.5 recorded it in as many words — _M08.6 creates the process, and is where a
+second one would have to be refused_ — and `service/lock.ts` is that refusal. The
+damage a second process does is not two writers racing on a file, which the store
+already handles: it is that **both would run the same queued job**, each taking
+the `start` transition on its own read and each opening the same experiment
+directory under an independent worker budget.
+
+It is an advisory PID lock and says so. Same host with the process alive is
+refused; same host with the process gone is **taken over and the takeover
+reported**, because a crash is how the file is normally left behind and a lab
+that needed a manual `rm` after every crash is a lab where people automate the
+`rm` away; a **different host** is refused without guessing, since liveness
+cannot be checked across a machine boundary; and an unreadable lock is taken over
+rather than treated as authority. A process that was declared stale cannot delete
+its successor's lock on the way out.
+
+### One decision M08.5 left open, made here
+
+**The resource bound is reported to a client, in a shape this tranche chose.**
+M08.5 kept `resourceLimitsSchema` out of `@tcg/admin-contracts` deliberately and
+named the tranche that would decide: _M08.6 owns the capabilities endpoint and
+decides then whether a client is told these numbers, in a shape it can also
+decide._ The answer is **yes**, and the shape is `capabilities.orchestrator` — a
+**report** of three plain integers rather than a copy of the server's validator.
+The validator refuses a per-job ceiling above the whole budget and caps the total
+at the largest run the simulator accepts; both are facts about the machine and
+about `@tcg/simulator`, and a second copy of them in a package that can import
+neither would be a checker that goes wrong quietly. A queue screen showing three
+jobs waiting behind one running job is showing a bound, and a client that had to
+guess the bound would have to guess the explanation too.
+
 ### Checklist
 
-- [ ] Loopback default; non-loopback refuses to start unauthenticated.
-- [ ] Versioned endpoints, both boundaries schema-validated.
-- [ ] Rate, body and pagination limits.
-- [ ] Traversal and symlink-escape tests.
+- [x] **Loopback default; non-loopback refuses to start unauthenticated.**
+      `127.0.0.1` unless told otherwise; a non-loopback bind with no token
+      returns `admin/unauthorized` from `parseServiceConfig` and nothing binds.
+      There is no insecure mode, no default token, no generated-and-printed
+      token, and no environment variable that turns authentication off — the last
+      asserted as a closed set of eight keys. Driven by starting the real process
+      against `0.0.0.0`, which refused and exited non-zero.
+- [x] **Versioned endpoints, both boundaries schema-validated.** Thirteen
+      endpoints in one registry, each with a request schema drawn from the closed
+      `ADMIN_REQUEST_PAYLOAD_SCHEMAS` set and a response schema the service
+      re-parses before writing. The path's version segment is derived from
+      `ADMIN_CONTRACT_VERSION`; a recognised route under another version gets the
+      readable newer- or older-build refusal, checked in both directions over a
+      real socket.
+- [x] **Rate, body and pagination limits.** A fixed window per caller over a
+      bounded map, where a refused request does not extend the window — otherwise
+      a retrying client turns a limit into a lockout. A body limit checked
+      against `content-length` _and_ measured as the stream arrives, because the
+      header is a claim; the refusal is flushed before the socket is abandoned,
+      so a caller learns why. Pagination is `pageRequestSchema`'s, refused above
+      `PAGE_SIZE_MAX`, and a listing is walked cursor by cursor in a test.
+- [x] **Traversal and symlink-escape tests.** No request shape has a field for a
+      path — asserted over every endpoint's request schema — the router's route
+      alphabet cannot spell one, a continuation token is base64url, and a run
+      directory that becomes a link out of the configured root is refused at read
+      time with `admin/unsafe_result_reference` and no path in the message.
+- [x] Verified: 19 new tests in `service/config.test.ts`, 11 in
+      `service/lock.test.ts`, 9 in `service/rate-limit.test.ts`, 20 in
+      `service/results.test.ts` and 50 in `service/http.test.ts`, plus 8 new
+      boundary assertions and 3 store assertions — 450 tests in 20 files in
+      `admin-server`, up from 333 in 15. In `@tcg/admin-contracts`, 21 new tests
+      in `service.test.ts`, 17 in `results.test.ts`, 6 in `requests.test.ts`, 5 in
+      `catalog.test.ts` and 4 in `presets.test.ts` — 396 tests in 14 files, up
+      from 343 in 12. 3,843 tests in 179 files across the whole suite, up from
+      3,673 in 172. `npm run check:consistency`, `npm run audit:check` and
+      `npm run verify` all pass on Node v24.15.0.
+
+### Verified by running it, not only by testing it
+
+The service was started against a temporary catalog and driven with `curl`: a
+batch was created, the Precon Smoke preset was enqueued, the **real** simulator
+played its twelve matches into `<result root>/<jobId>`, and the API then served
+the run's summary — `summary.json` v7, twelve of twelve usable, calibration
+standing, the preset's published limitation — and its `decks` and `cards` tables,
+the second of which paged 2 rows of 148 with a continuation token. A `GET`
+answered 405, `/admin/v2/capabilities` answered the older-build sentence, a
+second process against the same catalog was refused with `admin/already_running`,
+and a `0.0.0.0` bind with no token refused to start. No UI was involved and none
+is claimed: M08.7 owns the shell.
+
+### Versions
+
+| Constant                      | Was | Now | Why                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | --- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION`      | 2   | 3   | Six codes joined the closed list for failures that only exist once there is a boundary and a process to fail at; thirteen endpoints were named with a shape each way; and `jobActionRequestSchema` was **narrowed** to the operator's four verbs. A build speaking 2 would send an action this one refuses and receive codes it cannot branch on. |
+| `CATALOG_DOCUMENT_VERSION`    | 2   | 3   | A job document records `origin` — the preset and stage it was expanded from, or `direct`. Required rather than optional, because the field exists to bind a preset's published limitations to the run it produced, and an optional one is a field a result view must handle missing, which is the same as not having it.                          |
+| `JOB_EVENT_VERSION`           | 1   | 1   | No event kind was added and no line's shape changed. Creating a job, moving it and attaching a result all write the lines M08.2 defined.                                                                                                                                                                                                          |
+| `CONFIG_SCHEMA_VERSION`       | 1   | 1   | The service assembles configurations through `expandPreset`, which produces exactly what M08.3 produced. Nothing about an experiment configuration moved.                                                                                                                                                                                         |
+| `MANIFEST_SCHEMA_VERSION`     | 8   | 8   | Read, never written. The result reader parses a manifest leniently and records its declared version.                                                                                                                                                                                                                                              |
+| `SUMMARY_SCHEMA_VERSION`      | 7   | 7   | Same: read leniently, reported as `source.schemaVersion`, and never written by this workspace.                                                                                                                                                                                                                                                    |
+| `MATCH_STREAM_HEADER_VERSION` | 1   | 1   | Untouched. Progress is still read by counting committed newlines.                                                                                                                                                                                                                                                                                 |
+
+**No play-contract version moved.** `PROTOCOL_VERSION`, `MATCH_SCHEMA_VERSION`,
+`RULES_VERSION`, `CARD_SCHEMA_VERSION` and the `@tcg/bot-config` constants are
+where M09 left them: nothing here is reachable from `@tcg/web-client` or
+`@tcg/multiplayer-server`, and the boundary suite keeps it that way.
+
+**`CATALOG_DOCUMENT_VERSION` has no migration from 2, and this is the last time
+that is free.** M08.6 is the first tranche to give this workspace an entry point
+and a `start` script, so at the moment the number moved no catalog had ever been
+written outside a test's temporary directory — the same argument M08.4 made for
+1 → 2. After this build ships, a catalog exists on somebody's disk and the next
+change to that shape has to be migrated rather than refused.
+
+**The orchestrator lock carries no version, deliberately**, by M08.1's own test
+for adding one: _a third artifact with its own lifetime is a reason to add a
+third constant._ The lock has no lifetime — it exists only while a process does,
+and one it cannot parse it discards — so a number in it would be a number nothing
+ever compares.
+
+### Exclusions honoured
+
+No visual UI: no `apps/admin-client`, no React, no `.tsx`, no chart, no
+navigation entry, and the boundary suite still refuses a DOM member in every
+source. No multiplayer telemetry: nothing here touches
+`apps/multiplayer-server`, `@tcg/protocol` or a live match, and neither the
+player bundle nor the match server may import either admin workspace. No shell
+and no child process: `runExperiment` is still an ordinary function call from one
+file, and the only process boundary is the simulator's worker pool starting a
+fixed module with no `argv`. No arbitrary output root: no request payload has a
+field for one, and the service resolves every directory from configuration. No
+card authored, no precon rebalanced, no deck size moved, no Unit cap. Batch
+ordering, duplication and reordering are still M08.9's and are untouched.
+
+### Limitations recorded rather than worked around
+
+- **No CORS headers are sent, and M08.7 has to decide the origin policy.** A
+  browser page from another origin cannot read an answer today. M08.7 builds the
+  admin client and will run a dev server on another port; choosing its origin
+  policy here — before the client exists and with no way to test the choice —
+  would be widening the boundary on a guess.
+- **There is no unauthenticated health probe.** The live match server has one
+  because a person needs to know whether matches are being served without a
+  client; here the equivalent is `capabilities`, which is authenticated when a
+  token is configured. An unauthenticated probe would be a second, quieter door
+  reporting exactly the fact an unauthenticated caller most wants — that a lab is
+  here. A tranche that needs one for a deployment can add it and say why.
+- **Nothing is logged per request.** ADR 0023 §4 keeps the token out of every log
+  line, and a logger added carelessly is the most likely way that stops being
+  true. The entry point prints a bind, a bound and what the restart found, and
+  the boundary suite reads the arguments of every `console` call to keep a token,
+  a root or a resolved path off them.
+- **The rate limit is keyed by remote address, which on a loopback bind is one
+  bucket.** That is the intended deployment — one administrator, one process —
+  and the limit's job there is to stop a looping client, not to separate callers.
+  Off loopback the map is bounded and evicts the coldest window, so the key being
+  caller-controlled is not a way to grow it.
+- **A partly-created batch is left where it is.** If the third of four stages
+  fails to be created, the first two exist, the batch is still `draft`, and an
+  operator sees exactly what was made. Rolling back would mean inventing a
+  removal path for the one case where it is least safe to have one — and
+  `CatalogStore` deliberately has no delete (ADR 0023 §3).
+- **The orchestrator lock is advisory, and a reused PID would refuse rather than
+  admit.** Node has no portable advisory file locking, and a lock this layer
+  could not explain would be worse than one it can. The failure mode is a
+  spurious refusal, which an operator can see and act on, rather than a spurious
+  start.
+- **A `search` run's summary is served through the same reader as a batch's.**
+  Every kind writes `summary.json` with the same `aggregate` block, so the seven
+  tables are populated for all five — but nothing here surfaces a search's
+  generation history or a replacement's variant impacts. M08.10 owns the generic
+  run detail and M08.15 the search view.
 
 ## M08.7 — Admin client shell
 

@@ -9,6 +9,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "dev": "vite-node src/main.ts",
+    "start": "vite-node src/main.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
