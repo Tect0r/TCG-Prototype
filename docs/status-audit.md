@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `7c95dee069ff36769175b014c5435907c0b0417d` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-23                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | passed at this commit                      |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `98aed7f1158c18ed961b36d7391b6c494052d1cd`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-23                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | passed at this commit                       |
 
 ### Verification chain
 
@@ -31,13 +31,13 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-server   | 12      | 284      |
+| admin-server   | 15      | 333      |
 | packages       | 92      | 2206     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
-| simulator      | 23      | 437      |
+| simulator      | 24      | 448      |
 | web-client     | 20      | 272      |
-| **total**      | **168** | **3613** |
+| **total**      | **172** | **3673** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
