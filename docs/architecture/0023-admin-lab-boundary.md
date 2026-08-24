@@ -139,6 +139,17 @@ never a generated report, never anything the browser persists. One administrator
 one token: no accounts, no roles, no sessions, no password reset. Anything more
 is the "generic operations console" M08 explicitly excludes.
 
+**Added in M08.7, when the client that has an origin was built.** No
+cross-origin allowance is granted, and none is needed: the administrator bundle's
+own dev and preview servers forward `/admin` to the orchestration process, so the
+page and the API share an origin. The client holds no host, port or scheme —
+every address it sends is relative — so it can only ever reach the lab it was
+served beside. The alternative, an allowed-origin list on the service, was
+rejected because it converts a closed door into a configurable one: a CORS
+allowance is a standing statement that some other origin may read a lab's
+answers, and the value deciding which one would live on the same machine as the
+token.
+
 ### 5. Every path is resolved against a configured root before it is used
 
 Result roots and the catalog root are configuration. A request never names a

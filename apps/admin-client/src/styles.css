@@ -1,0 +1,461 @@
+/* The administrator surface, in the project's visual language.
+
+   The tokens are the player client's, deliberately: this is the same product
+   seen from the other side, and a lab with its own palette would look like a
+   different piece of software running against the same data. What differs is
+   density — an operator reads tables of exact values here, not cards — so the
+   base size is a step down, the line height is tighter, and every table is a
+   real table rather than a grid of boxes.
+
+   One breakpoint, `60rem`, and `lib/layout.ts` reads the same query so the
+   arrangement the stylesheet draws and the arrangement the components report
+   cannot disagree. */
+
+:root {
+  --bg: #16171b;
+  --surface: #1e2027;
+  --surface-raised: #262932;
+  --border: #363a45;
+  --text: #e6e7ea;
+  --text-dim: #a3a7b3;
+  --accent: #5b8dd6;
+  --danger: #d0664f;
+  --warning: #d6a54a;
+  --ok: #63a86c;
+  --radius: 6px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    13px/1.45 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 1.4rem;
+}
+
+h2 {
+  font-size: 1.05rem;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.6rem;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0e1420;
+  font-weight: 600;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.85em;
+  background: #00000040;
+  padding: 0 0.25em;
+  border-radius: 3px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The first focusable element on the page, visible only while it has focus. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 2;
+  padding: 0.4rem 0.7rem;
+  background: var(--accent);
+  color: #0e1420;
+  border-radius: var(--radius);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.1s ease-in;
+}
+
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+/* ---------- the gate: no connection, so no navigation ---------- */
+
+.gate {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.gate__banner {
+  padding: 0.7rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.gate__body {
+  max-width: 46rem;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.gate__hint {
+  margin: 0;
+  color: var(--text-dim);
+  max-width: 52ch;
+}
+
+.gate__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gate__form label {
+  flex-basis: 100%;
+  color: var(--text-dim);
+}
+
+.gate__form input {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+/* ---------- the shell ---------- */
+
+.admin {
+  min-height: 100vh;
+  display: grid;
+  grid-template-areas:
+    'banner'
+    'nav'
+    'main';
+  grid-template-rows: auto auto 1fr;
+}
+
+.admin[data-layout='wide'] {
+  grid-template-areas:
+    'banner banner'
+    'nav main';
+  grid-template-columns: 13rem 1fr;
+  grid-template-rows: auto 1fr;
+}
+
+.admin__banner {
+  grid-area: banner;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin__product {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.admin__scope {
+  margin: 0.1rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.admin__nav {
+  grid-area: nav;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem;
+}
+
+.admin[data-layout='wide'] .admin__nav {
+  border-bottom: none;
+  border-right: 1px solid var(--border);
+}
+
+.admin__nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.admin[data-layout='wide'] .admin__nav ul {
+  flex-direction: column;
+}
+
+.admin__nav button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+
+.admin__nav button.is-current {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.admin__main {
+  grid-area: main;
+  padding: 1rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.admin__title:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.admin__summary {
+  margin: 0 0 0.4rem;
+  color: var(--text-dim);
+  max-width: 78ch;
+}
+
+/* ---------- panels and tables ---------- */
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.panel__note {
+  margin: 0;
+  color: var(--text-dim);
+  max-width: 78ch;
+}
+
+.facts,
+.presets {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.facts th,
+.facts td,
+.presets th,
+.presets td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.3rem 0.6rem 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.facts th {
+  width: 14rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.facts__value {
+  display: block;
+}
+
+.facts__note {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.9em;
+  max-width: 72ch;
+}
+
+.presets {
+  display: block;
+  overflow-x: auto;
+}
+
+.presets thead th {
+  color: var(--text-dim);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.presets tbody th {
+  font-weight: 500;
+  max-width: 34rem;
+}
+
+.presets__label {
+  display: block;
+  font-weight: 600;
+}
+
+.presets__summary {
+  display: block;
+  color: var(--text-dim);
+}
+
+.presets__limitations {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--warning);
+}
+
+.presets__limitation {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--warning);
+}
+
+.presets .is-reserved {
+  opacity: 0.75;
+}
+
+/* ---------- connection badge ---------- */
+
+.badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+}
+
+.badge__state,
+.badge__checked {
+  margin: 0;
+}
+
+.badge__checked {
+  color: var(--text-dim);
+}
+
+.badge__dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.35rem;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.badge__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* ---------- loading, empty, failed ---------- */
+
+.feedback {
+  margin: 0;
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+}
+
+.feedback--busy {
+  color: var(--text-dim);
+  border: 1px dashed var(--border);
+}
+
+.feedback--empty {
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.feedback--failure {
+  border: 1px solid var(--danger);
+  background: #d0664f14;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.feedback__title {
+  margin: 0;
+  color: var(--danger);
+  font-size: 1rem;
+}
+
+.feedback__messages {
+  margin: 0;
+  padding-left: 1.1rem;
+  max-width: 78ch;
+}
+
+.notice {
+  margin: 0;
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+  max-width: 78ch;
+}
+
+.notice--warning {
+  border: 1px solid var(--warning);
+  background: #d6a54a14;
+}

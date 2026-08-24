@@ -1756,7 +1756,7 @@ ordering, duplication and reordering are still M08.9's and are untouched.
   generation history or a replacement's variant impacts. M08.10 owns the generic
   run detail and M08.15 the search view.
 
-## M08.7 — Admin client shell
+## M08.7 — Admin client shell — **done (2026-08-24)**
 
 A usable, protected, responsive admin surface that does not pretend unfinished
 pages work: the separate client ADR 0023 chose, authenticated connection state,
@@ -1769,11 +1769,293 @@ empty/error states; `npm run verify`.
 
 **Exclusion:** no experiment form, no chart.
 
+### What M08.7 built
+
+`apps/admin-client` — the third workspace ADR 0023 §1 named and the first one
+with a screen in it. Its own `index.html`, its own root element, its own Vite
+application, its own `dist/`, and its own Vitest project. Nine shipped sources:
+`main.tsx`, `App.tsx`, `sections.ts`, `styles.css`, `net/transport.ts`,
+`net/session.ts`, `state/AdminContext.tsx`, `lib/layout.ts`,
+`lib/vocabulary.ts`, and five components — `AdminShell`, `ConnectGate`,
+`ConnectionBadge`, `OverviewScreen`, `FactTable` and `Feedback`.
+
+**The origin policy M08.6 deferred is settled by making the question not
+arise.** M08.6 recorded it as a limitation in as many words: _no CORS headers are
+sent, and M08.7 has to decide the origin policy._ The decision is to **keep
+sending none**. The client's dev and preview servers forward `/admin` to the
+orchestration process, so the page and the API share an origin and there is
+nothing to allow. The alternative — teaching `apps/admin-server` an allowed
+origin list — was rejected because it turns a closed door into a configurable
+one: a CORS allowance is a standing statement that _some_ other origin may read
+a lab's answers, configured on the same machine that holds the token. A proxy
+needs no such statement, and what crosses the boundary is a Node process the
+operator started rather than a page somebody visited. The boundary suite reads
+`apps/admin-server/src` and requires that no source writes an
+`access-control-allow-*` header, and M08.6's own over-the-socket assertion that
+none is sent is checked to still be there.
+
+**The address is relative, so pointing this client at somebody else's lab is
+unrepresentable.** `transport.ts` builds every address from `adminEndpointPath`,
+which is derived from `ADMIN_CONTRACT_VERSION`, and holds no scheme, no host and
+no port — asserted by reading the file. A browser can only send a relative
+address to the origin the page came from, which is what makes the proxy decision
+above a property rather than a convention.
+
+**The token is asked for only because the service asked for it.** The first
+request goes out with no token; a loopback lab with none configured answers it
+and an operator never sees a form. One that requires a token refuses with
+`admin/unauthorized`, and _that_ is what puts the field on the screen. The
+client never predicts the access policy — `access.authenticationRequired` is a
+report the service makes about itself, and asking is the only way to obtain it.
+
+**Nothing the browser persists.** ADR 0023 §4 forbids the token from a query
+string, a log line, a report and _anything the browser persists_. It is a
+private field of `AdminSession`: the published snapshot has no field that could
+hold one, so no screen, no error boundary and no serialized state can print it —
+a test stringifies a connected snapshot and requires the token not to appear
+anywhere in it. There is no "remember me", because offering one would be
+offering to break the rule; the boundary suite reads every source for
+`localStorage`, `sessionStorage`, `indexedDB` and `document.cookie`, and a flow
+test watches the real APIs from the other side. Re-entering the token after a
+reload is the cost, and it is the intended one: a lab that remembered its token
+across reloads is a lab whose token outlives the person sitting at it. A token
+the service **refused is dropped** rather than kept, so an operator correcting a
+typo is not correcting a field that still has the old value behind it.
+
+**A failure is classified, because an operator does something different about
+each.** `refused` is the service's own answer with its own closed code;
+`version` is a contract version this build cannot read, carrying the
+repository's readable newer-build or older-build sentence rather than a schema
+complaint; `unreadable` is something that answered and was not this contract — a
+proxy error page, an empty body, a payload the endpoint's own response schema
+refuses; `unreachable` is nothing answering at all. A client-side failure is
+**never dressed up as an `AdminError`**: the code list is closed and it is the
+service's, and inventing a member of it here would put a code into the wire's
+vocabulary that no service ever sends.
+
+**Both boundaries are still validated, from this side too.** Every answer is
+re-parsed against `adminResponse(ADMIN_ENDPOINTS[name].response)` before a screen
+sees it, so an unknown field in an answer is refused rather than rendered, and
+the envelope's declared version is checked with `refuseFutureVersion` and
+`refusePastVersion` before the schema is reached — a version mismatch is a
+sentence, not "expected 3, received 4". A version failure is the one failure
+where retrying cannot help, so the gate withholds the retry button and says why
+instead of pretending it might.
+
+**The Overview holds capability and health, and nothing this bundle knows on its
+own.** Five panels, every value a field of the `capabilities` or `presets`
+answer: how this page is talking to the lab (address, interface, authentication,
+the three admin version numbers, when the process started and how long it has
+been up, when this reading was taken), the orchestrator bound and what a wait
+means, the request limits with the exact byte count beside the readable one, the
+result roots **by identifier with the sentence saying that is what they are**,
+the format, and what this build can run. The two things the screen computes are
+an uptime and a KiB figure, and both are restatements of a value that is also
+printed. Uptime is measured from the reading's own `checkedAt` rather than from
+`Date.now()`, so it is a fact about the answer being shown.
+
+**A restart is reported, because M08.6 put `startedAt` on the wire for exactly
+that.** When the value changes between two readings the page says the process
+restarted, that work which was running was recovered as interrupted, and that
+nothing resumes on its own — which is M08.5's rule, printed where an operator
+meets its consequence.
+
+**The preset catalog is shown read-only, with its published limitations.**
+_What this build can run_ is a capability, and the limitations `PRESET_REGISTRY`
+authors are what a result may never be cited for — so they are on the row rather
+than saved for a result screen that could forget them. The reserved
+`adaptive_counter` entry is listed and says outright that this build cannot
+schedule one, and its empty kinds and source classes print as an em dash rather
+than as a blank cell a reader could mistake for "not loaded". Nothing on the
+page starts anything: M08.8 owns the builder, and a test requires that no
+control named Start, Run, Enqueue or New test batch exists.
+
+**One navigation entry, because one page is finished.** `sections.ts` is a list
+rather than a switch, so M08.8 adds a line and its screen appears in the
+navigation — and until then the milestone's own rule holds: _a navigation entry
+is added only by the tranche that makes its page honest and usable._ Before there
+is a connection there is no navigation at all; the gate replaces the shell rather
+than sitting inside it, because a rail beside an empty page is offering
+destinations that cannot be reached.
+
+**The two layouts change arrangement and never content.** `lib/layout.ts` reads
+the same `(min-width: 60rem)` query the stylesheet uses and reports `wide` or
+`narrow`, so a component test can drive both rather than assert that a class name
+exists. The document order is identical in both — a layout that reorders the
+document for one viewport reorders the tab order with it — and the test that
+matters is the negative one: **every destination and every connection control is
+present in both**, because a shell whose controls appear only when the window is
+wide is a shell where an administrator's options depend on their window, and that
+failure is invisible in a screenshot taken at the developer's own width.
+
+**Keyboard order is the document's, and the first stop is the way out of it.** A
+skip link is the first tabbable element and targets the `<main>`; the section
+heading takes focus when a destination is chosen, at `tabIndex={-1}` so it is a
+focus target without joining the tab order; `aria-current="page"` marks the
+section in view. The navigation is ordinary buttons rather than a `tablist`,
+because these are pages rather than panels and arrow-key navigation would be a
+second, undiscoverable interaction model over the one every browser already
+gives.
+
+**Loading, empty and failed are three states, not two.** `Feedback.tsx` renders
+each as a live region with a role, and the distinction it exists to keep is the
+third one: an empty answer and a failed one are different facts, and a screen
+that renders "none" for both quietly turns a broken connection into a
+truthful-looking zero. That is the milestone's own result rule — _zero
+observations are not a zero win rate_ — applied one layer up, where a table has
+no rows. The two readings fail apart, too: a service that answered `capabilities`
+and refused `presets` is connected with one section missing, not disconnected.
+
+**Nothing polls.** The page says when it last asked and offers to ask again. A
+poller would be choosing a cadence for state that does not change on its own yet,
+and would keep a lab process answering requests all day for a tab somebody left
+open. M08.9 owns the screens that watch running work, and the tranche that needs
+a cadence is the tranche that can choose one.
+
+### The dev proxy restates two constants, and a test holds them still
+
+`apps/admin-client` must not import `apps/admin-server` — that is the boundary
+this workspace exists to keep — so the service's default host and port are
+written into `vite.config.ts` rather than imported. The boundary suite reads both
+files, extracts `DEFAULT_HOST` and `DEFAULT_PORT` from the service's own source,
+and requires the config to name the same two values; it also requires both to
+read the **same** environment keys the service does, `TCG_ADMIN_HOST` and
+`TCG_ADMIN_PORT`, so one setting moves both ends. A restated constant is only
+honest when something fails on the day it drifts.
+
+### One boundary test elsewhere was amended, and the claim it makes did not change
+
+`apps/admin-server/src/boundary.test.ts` asserted that `'@tcg/admin-server'`
+appears in no source outside that workspace. M08.7 created a workspace whose own
+boundary suite has to **write that name down in order to forbid it**, and the
+scan reads a mention rather than an import. The amendment excludes that one file
+and adds a test immediately after it requiring the mention to be a refusal — the
+`not.toContain` assertion — and not an import. The property is the same one
+M08.2 wrote; what changed is that a file which refuses an import is no longer
+counted as one.
+
+### Verified by running it against the real process
+
+The orchestration process was started against a temporary catalog and result
+root, the client's dev server was started beside it, and the real client was
+rendered against the running service through the proxy — not against a fixture.
+The Overview showed this machine's own numbers: contract 3, catalog document 3,
+job event 1, `startedAt` and an uptime, one experiment at a time on up to 31
+simulator workers, a 128 KiB body limit, 240 requests per 60 seconds, page size
+50 and 200, 16 filter values, 500 jobs per batch, the `default` result root by
+identifier, `precon_wave_1`, and all nine presets with their authored summaries
+and published limitations — including Adaptive Counter Search reading _Reserved —
+this build cannot schedule one_ with an em dash where its kinds would be.
+
+The process was then restarted with `TCG_ADMIN_TOKEN` set. Without the header the
+service answered HTTP 401 and `admin/unauthorized`; the client showed the gate,
+the token was typed into the field, and the connected banner read _Connected ·
+loopback · token required_ beside _This tab is sending the token, and holds it in
+memory only._ The restart also produced two of M08.6's own behaviours
+incidentally: a second orchestrator against the same catalog was refused with
+`admin/already_running`, and the lock a killed process left behind was **taken
+over and the takeover reported**.
+
+**No browser screenshot is claimed.** The rendering evidence is the real DOM
+produced by the real components against the live service, read out in full; the
+Chrome extension this environment offers was not connected, so nothing here rests
+on a rendered browser window.
+
 ### Checklist
 
-- [ ] Separate client bundle; nothing admin reachable from the player bundle.
-- [ ] Authenticated connection state and honest Overview.
-- [ ] Keyboard navigation and narrow/wide layouts tested at component level.
+- [x] **Separate client bundle; nothing admin reachable from the player bundle.**
+      `apps/admin-client` is its own Vite application with its own `index.html`,
+      its own `#admin-root`, no public directory and its own output. Neither
+      `@tcg/web-client` nor `@tcg/multiplayer-server` depends on any admin
+      workspace, no source outside this one imports `@tcg/admin-client`, and the
+      built player bundle contains **zero** occurrences of the string `admin`.
+      The client imports no Node built-in, no simulator, no engine and not the
+      orchestration process — checked by reading the sources and enforced by an
+      ESLint `no-restricted-imports` rule while somebody is typing the import.
+- [x] **Authenticated connection state and honest Overview.** The application
+      asks before it prompts, shows the service's own refusal rather than a
+      paraphrase, drops a refused token, holds the accepted one in memory alone,
+      and offers to forget it. The Overview prints only fields of the
+      `capabilities` and `presets` answers, names result roots by identifier, and
+      shows no filesystem path anywhere on the page.
+- [x] **Keyboard navigation and narrow/wide layouts tested at component level.**
+      Skip link first, navigation before content, Enter and Space both activate a
+      destination and move focus to its heading, `aria-current` marks the page,
+      and the layout mode is a value both arrangements are driven through — with
+      the controls and the document order required to be identical in each.
+- [x] Verified: 120 new tests in 7 files in the new `admin-client` project — 15
+      in `net/transport.test.ts`, 19 in `net/session.test.ts`, 15 in
+      `connection-flow.test.tsx`, 19 in `overview-flow.test.tsx`, 15 in
+      `shell-flow.test.tsx`, 12 in `lib/vocabulary.test.ts` and 25 in
+      `boundary.test.ts` — plus 1 new assertion in `admin-server`, which is now
+      451 tests in 20 files. 3,964 tests in 186 files across the whole suite, up
+      from 3,843 in 179. `npm run check:consistency`, `npm run audit:check` and
+      `npm run verify` all pass on Node v24.15.0.
+
+### Versions — deliberately unchanged
+
+| Constant                   | Was | Now | Why                                                                                                                                                                                                                                                    |
+| -------------------------- | --- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ADMIN_CONTRACT_VERSION`   | 3   | 3   | This tranche adds no endpoint, no error code, no request field and no response field. It is the **first consumer** of the language M08.6 defined, and a consumer that moved the version would be telling every service that a client had been written. |
+| `CATALOG_DOCUMENT_VERSION` | 3   | 3   | Nothing here reads or writes a catalog document. The client sees `capabilities` and `presets`, neither of which is a stored document.                                                                                                                  |
+| `JOB_EVENT_VERSION`        | 1   | 1   | Same: no event line is read by this build. The screen that reads a job's history is M08.10's.                                                                                                                                                          |
+
+**No play-contract version moved.** `PROTOCOL_VERSION`, `MATCH_SCHEMA_VERSION`,
+`RULES_VERSION`, `CARD_SCHEMA_VERSION` and the `@tcg/bot-config` constants are
+where M09 left them. Nothing in this workspace is reachable from
+`@tcg/web-client` or `@tcg/multiplayer-server`, and three boundary suites now
+keep it that way.
+
+**No simulator artifact version moved either**, for the stronger reason that this
+workspace cannot see one: it has no dependency on `@tcg/simulator`, and the only
+numbers it prints are the three the service reports about itself.
+
+### Exclusions honoured
+
+No experiment form: no control on any screen creates, configures or enqueues
+anything, and a test enumerates the button names that would mean otherwise. No
+chart: no `<svg>`, no canvas, and no charting dependency — the boundary suite
+reads the manifest and refuses one by name, because ADR 0023 §6 says the tranche
+that adopts one records its bundle cost and accessibility behaviour at the point
+of adoption. No multiplayer telemetry: nothing here touches
+`apps/multiplayer-server`, `@tcg/protocol` or a live match. No shell, no child
+process, no filesystem: this application is a browser bundle and imports no Node
+built-in. No arbitrary output root: no request this client can send has a field
+for one, because the request schemas are the service's. No card authored, no
+precon rebalanced, no deck size moved, no Unit cap. No accounts, roles, sessions
+or password reset — one administrator and one token, as ADR 0023 §4 says.
+
+### Limitations recorded rather than worked around
+
+- **The client is only reachable through its own dev or preview server.** The
+  origin policy is a proxy, and nothing serves the built `dist/` in production —
+  opening `index.html` from a filesystem would give a page with no lab behind it.
+  That is the same shape the player client is in, and the tranche that needs a
+  deployment story can add one; inventing a static host here would be inventing a
+  second place the boundary has to hold.
+- **The proxy target is loopback by default and is not discovered.** An operator
+  who binds the service elsewhere sets `TCG_ADMIN_HOST` and `TCG_ADMIN_PORT` for
+  both processes. There is no way for the page to ask where the lab is, and there
+  should not be: an address a page could name is an address a page could be
+  pointed at.
+- **The token is entered again after every reload.** The intended cost of ADR
+  0023 §4, stated on the gate so it is not a surprise.
+- **Nothing on the page refreshes by itself.** The reading carries the time it
+  was taken and there is a button; a queue that changes while nobody is looking
+  is M08.9's problem to solve with a cadence it can justify.
+- **The layout mode is read from `matchMedia`, so a browser without it gets the
+  narrow arrangement.** Narrow rather than wide on purpose: it is the one that
+  fits everywhere, and an unknown viewport is served the layout that cannot be
+  too small for it.
+- **The bundle is 314 KB (95 KB gzipped), most of it zod and React.** The
+  contract package is imported whole for its schemas, and no code splitting was
+  attempted: this is a local administrator surface on the same machine as the
+  process it talks to, and the first tranche to have a real reason — a chart
+  library, a large table view — is the one that should measure it.
+- **The Overview shows no queue state.** How many jobs are waiting and what is
+  running are real facts the service can answer, and they belong to the screen
+  that can act on them. An Overview that counted jobs would be the first half of
+  M08.9 built without the half that lets an operator do anything about it.
 
 ## M08.8 — Precon Benchmark builder
 

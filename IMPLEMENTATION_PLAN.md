@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-23)   | M08.7        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-24)   | M08.8        |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -61,7 +61,14 @@ finished one. **M08.6 landed the same day** and opened the port: a service that
 refuses a non-loopback bind with no token _before_ anything binds, thirteen
 versioned endpoints validated in both directions, a lock that refuses a second
 orchestrator against one catalog, and a result reader that answers every number
-out of the run's own directory. There is still no UI; **M08.7 is the next
+out of the run's own directory. **M08.7 landed on 2026-08-24** and gave the lab a
+face: `apps/admin-client`, its own Vite application with its own bundle, which
+asks the service what it is before it prompts for anything, holds an
+administrator token in memory and in nothing the browser persists, and shows an
+Overview whose every value is a field of the service's own answer. It settled the
+origin policy M08.6 deferred by keeping the door shut — no CORS headers, and the
+client's own dev server forwards `/admin` so the page and the API share an
+origin. One navigation entry, because one page is finished; **M08.8 is the next
 tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
@@ -184,16 +191,53 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.7 — Admin client shell.** The first tranche with a screen in it:
-`apps/admin-client` as its own Vite application with its own bundle, an
-authenticated connection state, a top-level layout, an Overview holding only real
-capability and health data, accessible navigation, and global loading, error and
-empty states — in the project's visual language, kept readable at analytical
-density. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m087--admin-client-shell).
-No experiment form and no chart: M08.8 owns the builder.
+**M08.8 — Precon Benchmark builder.** The first tranche that lets an
+administrator configure and enqueue a test without hand-authoring JSON:
+multi-select shipped precons, pilots, preset or custom games per seat order,
+replicates, retention and a worker limit; seat orders mirrored by default, with
+disabling it an advanced action that carries a visible limitation; the exact total
+match count shown before anything is enqueued; and validation against current
+content and format at submission time. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m088--precon-benchmark-builder).
+No result charts and no other builder.
 
-It inherits a service that answers, and three things M08.6 left for it to settle.
+It inherits a shell that connects, and a service that answers.
+
+**M08.7 gave the lab a face, and the page holds nothing the bundle knows on its
+own.** `apps/admin-client` is its own Vite application with its own `index.html`,
+its own root element and its own output; no admin workspace is reachable from the
+player bundle, and the built player bundle contains zero occurrences of the string
+`admin`. The client asks `capabilities` **before** it prompts, so a loopback lab
+with no token configured never shows a form and one that requires a token puts the
+field on screen because the service refused with `admin/unauthorized`. The token
+is a private field of the session — the published snapshot has no member that
+could hold one — and no source names `localStorage`, `sessionStorage`,
+`indexedDB` or `document.cookie`, so a reload asks again by construction. Every
+answer is re-parsed against the endpoint's own response schema, and a version this
+build cannot read gets the repository's readable newer- or older-build sentence
+rather than a schema complaint; the four failure kinds are kept apart —
+`refused`, `version`, `unreadable`, `unreachable` — and a client-side failure is
+never dressed up as one of the service's closed codes.
+
+**Two of M08.6's three deferred limitations are settled, and one is not.** The
+**origin policy** is a proxy rather than an allowance: no CORS header is sent by
+anything, the client's dev and preview servers forward `/admin` to the
+orchestration process, and the client's addresses are relative — so pointing this
+build at somebody else's lab is unrepresentable rather than a misconfiguration
+away. **Nothing is logged per request** and this application logs nothing at all,
+which the boundary suite checks. The **unauthenticated health probe** is still
+absent and still deliberate.
+
+**One navigation entry, and the Overview is read-only.** The milestone's
+information architecture names nine destinations and says an entry arrives with
+the tranche that makes its page honest; `sections.ts` holds one, so M08.8 adds a
+line and its screen appears. The preset catalog is shown with each preset's
+authored limitations beside it and the reserved entry saying outright that this
+build cannot schedule one, but nothing on the page starts anything — a test
+enumerates the control names that would mean otherwise. **No version constant
+moved**: this tranche is the first consumer of the language M08.6 defined, and a
+consumer that moved the version would be telling every service that a client had
+been written.
 
 **M08.6 opened the port, and the refusal is at startup rather than per request.**
 `parseServiceConfig` returns a refusal instead of a configuration when a
@@ -260,11 +304,14 @@ gone**, and the next change to a catalog document has to be migrated.
 **Three limitations M08.7 or a later tranche has to settle.** **No CORS headers
 are sent** — M08.7 runs a dev server on another port and owns the origin policy,
 and choosing it before the client exists would be widening the boundary on a
-guess. **There is no unauthenticated health probe**, because it would be a second
-quieter door reporting the one fact an unauthenticated caller most wants. And
-**nothing is logged per request**, deliberately: ADR 0023 §4 keeps the token out
-of every log line, and the boundary suite reads the arguments of every `console`
-call to keep a token, a root or a resolved path off the one banner that exists.
+guess. _(Settled in M08.7: none are sent, and the client's own dev and preview
+servers proxy `/admin` so the request is same-origin.)_ **There is no
+unauthenticated health probe**, because it would be a second quieter door
+reporting the one fact an unauthenticated caller most wants. _(Still absent.)_
+And **nothing is logged per request**, deliberately: ADR 0023 §4 keeps the token
+out of every log line, and the boundary suite reads the arguments of every
+`console` call to keep a token, a root or a resolved path off the one banner that
+exists. _(Unchanged, and the client logs nothing at all.)_
 
 **M08.5 gave an operator control, and the stop is where the matches are handed
 out.** Pause means _stop scheduling new match work and let in-flight matches reach

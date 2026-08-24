@@ -408,6 +408,17 @@ describe('the declared dependencies', () => {
   });
 });
 
+/**
+ * The one file outside this workspace that may name it, and only to refuse it.
+ *
+ * `apps/admin-client/src/boundary.test.ts` asserts that no administrator screen
+ * imports the orchestration process. Stating that requires writing the package
+ * name, and the scan below reads a mention rather than an import — so the file is
+ * excluded there and checked, immediately after, to be a refusal rather than an
+ * importer.
+ */
+const NAMED_BY_REFUSAL = join(REPO_ROOT, 'apps', 'admin-client', 'src', 'boundary.test.ts');
+
 describe('nothing admin is reachable from the player bundle or the live match server', () => {
   it('is absent from the web client’s dependencies', () => {
     const client = manifestOf(join(REPO_ROOT, 'apps', 'web-client', 'package.json'));
@@ -437,11 +448,23 @@ describe('nothing admin is reachable from the player bundle or the live match se
         }
         if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue;
         if (path.startsWith(PACKAGE_ROOT)) continue;
+        if (path === NAMED_BY_REFUSAL) continue;
         if (readFileSync(path, 'utf8').includes("'@tcg/admin-server'")) hits.push(path);
       }
     };
     for (const root of ['packages', 'apps']) walk(join(REPO_ROOT, root));
     expect(hits).toEqual([]);
+  });
+
+  it('is named by that one exception only in order to forbid it', () => {
+    // M08.7 added `apps/admin-client`, whose own boundary suite asserts that no
+    // screen imports this workspace — which means it has to write the name down.
+    // The scan above reads a *mention* rather than an import, so the honest
+    // allowance is this one file plus a check that its mention really is a
+    // refusal. A file that stopped refusing and started importing fails here.
+    const text = readFileSync(NAMED_BY_REFUSAL, 'utf8');
+    expect(text).toContain(`not.toContain("from '@tcg/admin-server'")`);
+    expect(text).not.toMatch(/^\s*import .*'@tcg\/admin-server'/m);
   });
 });
 

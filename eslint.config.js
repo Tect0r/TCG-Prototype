@@ -32,6 +32,47 @@ export default tseslint.config(
     rules: reactHooks.configs.recommended.rules,
   },
   {
+    // The administrator bundle (M08.7). Same React rules as the player client,
+    // plus the import boundary ADR 0023 §1 draws around it: an admin screen
+    // talks to the orchestration process over the contract and never reaches
+    // into the process itself, into the simulator it drives, or into the player
+    // application beside it. `apps/admin-client/src/boundary.test.ts` reads the
+    // sources for the same properties; the lint rule is what says so while
+    // somebody is typing the import.
+    files: ['apps/admin-client/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@tcg/admin-server',
+                '@tcg/simulator',
+                '@tcg/rules-engine',
+                '@tcg/web-client',
+                '@tcg/multiplayer-server',
+                'node:*',
+              ],
+              message:
+                'The admin client speaks to the orchestration process through @tcg/admin-contracts, and runs in a browser (ADR 0023 §1).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The boundary suite proves those absences by reading the repository's own
+    // files, which takes `node:fs`. Restricting the shipped sources and exempting
+    // the test that checks them is the same shape `packages/admin-contracts` and
+    // `apps/admin-server` already use.
+    files: ['apps/admin-client/**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-imports': 'off' },
+  },
+  {
     // The bot configuration contract describes a bot seat and nothing more: it
     // must not reach the engine, the UI, or the pilots that read it, so a client
     // validating a bot seat view never drags a decision procedure in with it

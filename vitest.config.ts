@@ -76,6 +76,12 @@ export default defineConfig({
         },
       },
       './apps/web-client',
+      // The administrator bundle (M08.7). Its own config for the same reason the
+      // player client has one — jsdom plus the Vite React setup — and its own
+      // project rather than a folder inside the player's, because the two are
+      // separate applications and a shared runner would be the first place they
+      // stopped being separate.
+      './apps/admin-client',
     ],
   },
 });
