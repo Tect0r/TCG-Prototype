@@ -140,8 +140,24 @@ export const MANIFEST_SCHEMA_VERSION = 8;
  *   comparison group never played. Not migratable from v7: a v7 run never
  *   recorded which decks were eligible for a card, so there is no eligibility
  *   to backfill, only one to compute forward from raw records.
+ * - 9 (M08.13): `aggregate.commanders` and `aggregate.commanderMatchups` carry
+ *   Commander-level evidence — match counts, overall/seat/pilot/agent-class win
+ *   rates, turn and end-reason distributions, deck diversity, and (search runs
+ *   only) population/archive survival share. `topDeckFitness`/
+ *   `medianDeckFitness` are part of the shape but read `null` from every run
+ *   today: wiring them to `runSearch`'s real fitness scores surfaced that a
+ *   resumed search's fitness is not equivalent to an uninterrupted one — an
+ *   already-documented limitation of search resume (`docs/milestones/
+ *   M08-ai-lab-and-player-meta.md`'s "Equivalence after a resume" note), not a
+ *   new defect — so this version reports the field honestly rather than a
+ *   number this build cannot show is reproducible (see `deckFitnessByHash`
+ *   below). Not migratable from v8: a v8 run's `summary.json` never grouped
+ *   records by Commander, and a search run's population/archive membership
+ *   lives only in that run's own checkpoints, not in `matches.jsonl` — there is
+ *   nothing to backfill from an old summary, only a forward computation from
+ *   raw records and (for search runs) the checkpoint the run already wrote.
  */
-export const SUMMARY_SCHEMA_VERSION = 8;
+export const SUMMARY_SCHEMA_VERSION = 9;
 
 export interface RunExperimentOptions {
   readonly configPath?: string;
@@ -576,6 +592,14 @@ async function runSearchExperiment(
   const replicateResults: DisplacementReplicate[] = [];
   const allDecks: SimDeck[] = [];
   const diagnostics: string[] = [];
+  // Commander-level population/archive survival share (M08.13) reads this
+  // directly, across every replicate: a deck that ended one replicate's
+  // population and another's archive still gets a straight answer.
+  const populationDeckHashes = new Set<string>();
+  const archiveDeckHashes = new Set<string>();
+  // Deliberately never populated from `search.fitness` — see the comment on
+  // `deckFitnessByHash` below in `FinishInputs` for why.
+  const fitnessByDeckHash = new Map<string, number>();
 
   // Resolved once, outside the replicate loop, so every replicate of a planned
   // search is measured against the same plan. `resolvePlan` throws rather than
@@ -647,6 +671,10 @@ async function runSearchExperiment(
 
     replicateResults.push({ label, decks: [...search.archive] });
     allDecks.push(...search.population, ...search.archive);
+    for (const deck of search.population) populationDeckHashes.add(deck.hash);
+    for (const deck of search.archive) archiveDeckHashes.add(deck.hash);
+    // `search.fitness` is deliberately not folded into `fitnessByDeckHash`
+    // here — see the comment on `deckFitnessByHash` in `FinishInputs` below.
   }
 
   return finish({
@@ -661,6 +689,9 @@ async function runSearchExperiment(
     searchHistory: history,
     workers,
     elapsedMs: Date.now() - started,
+    searchPopulationDeckHashes: populationDeckHashes,
+    searchArchiveDeckHashes: archiveDeckHashes,
+    deckFitnessByHash: fitnessByDeckHash,
     extraLimitations: [
       'Search results describe what the pilots could exploit, not what a human could. ' +
         'A discovered deck is a lead to investigate, never a conclusion.',
@@ -1116,6 +1147,48 @@ interface FinishInputs {
   readonly referencePopulation?: ReferencePopulation;
   readonly displacement?: readonly Displacement[];
   readonly searchReplicates?: readonly DisplacementReplicate[];
+  /**
+   * Final population/archive membership, search runs only (M08.13).
+   *
+   * Wired live because a *fresh, uninterrupted* search is fully deterministic
+   * (`search.test.ts`'s "is deterministic for a given seed"), so an
+   * uninterrupted run's `populationSurvivalShare`/`archiveSurvivalShare` are
+   * reproducible. A **resumed** search inherits the same non-equivalence
+   * `deckFitnessByHash` documents below, because `updateArchive`/`breed` both
+   * rank on the fitness a resumed attempt degrades — the two were only
+   * confirmed identical between a fresh and a resumed run on this tranche's
+   * own small hardening fixture (`hardening-experiment.test.ts`'s "produces an
+   * identical summary whether or not it was interrupted"), which is evidence
+   * about that fixture, not a structural guarantee for every search shape.
+   */
+  readonly searchPopulationDeckHashes?: ReadonlySet<string>;
+  readonly searchArchiveDeckHashes?: ReadonlySet<string>;
+  /**
+   * Deck fitness, keyed by hash (M08.13). Always empty from every search
+   * experiment today, on purpose.
+   *
+   * `runSearchExperiment` never resumes a search from its checkpoints — an
+   * already-documented, accepted limitation of resuming a search at all (see
+   * this file's "Equivalence after a resume" note in
+   * `docs/milestones/M08-ai-lab-and-player-meta.md`) — so a resumed attempt's
+   * generation loop restarts from generation 0 and calls `evaluate()` again
+   * for every generation. `runBatch` returns records only for matches it
+   * actually ran (`run-batch.ts`'s `pending` filter), so a generation whose
+   * matches are all already in the match store returns *no* records at all;
+   * `scoreOne` then has `total = 0` for every deck in it, so `rate.low`,
+   * `opponentBreadth` and `seatRobustness` all collapse to `0` and the score
+   * is left as `novelty * 0.15` — confirmed by hand (a fresh run and a
+   * resumed run of the same search config score the same archive deck 1.0976
+   * versus 0.0406), even though the population, the archive and every
+   * recorded match are byte-identical between the two. Wiring this map live
+   * would report a fitness number this build cannot show is reproducible
+   * after a resume, which is worse than reporting none. `CommanderSummary.
+   * topDeckFitness`/`medianDeckFitness` stay `null` until a future tranche
+   * makes search resume equivalent to an uninterrupted run and this map is
+   * wired from `search.fitness` the same way
+   * `searchPopulationDeckHashes`/`searchArchiveDeckHashes` already are.
+   */
+  readonly deckFitnessByHash?: ReadonlyMap<string, number>;
   readonly robustness?: RobustnessReport;
   readonly counterTargets?: readonly string[];
   readonly counterVariants?: readonly ReplacementVariant[];
@@ -1156,6 +1229,22 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   const agg = aggregate(records, {
     confidence: settings.confidence,
     ...(inputs.environments.length === 1 ? { environment: primary } : {}),
+    // Search evidence for Commander fitness/population/archive (M08.13),
+    // supplied only when a search actually produced it — a batch or
+    // comparison run's `searchPopulationDeckHashes` stays `undefined`, which
+    // is what keeps its Commander summaries reporting `null` there rather
+    // than a guess.
+    ...(inputs.searchPopulationDeckHashes &&
+    inputs.searchArchiveDeckHashes &&
+    inputs.deckFitnessByHash
+      ? {
+          search: {
+            populationDeckHashes: inputs.searchPopulationDeckHashes,
+            archiveDeckHashes: inputs.searchArchiveDeckHashes,
+            fitnessByDeckHash: inputs.deckFitnessByHash,
+          },
+        }
+      : {}),
   });
   // Over `allRecords`, unlike every other analysis here: a match that hit the
   // turn limit is the strongest stall candidate in a batch and usually holds its

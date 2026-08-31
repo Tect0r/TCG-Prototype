@@ -9,11 +9,11 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `b3ba5121c96506f2172a69126f6d2056cffbd844`  |
+| Commit           | `28b2a8e0438317ca80f6b8059c53b140c2499d1a`  |
 | Working tree     | dirty — the audit includes uncommitted work |
 | Taken on         | 2026-08-31                                  |
 | Node             | v24.15.0                                    |
-| `npm run verify` | passed at this commit                       |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -36,9 +36,9 @@ reproducing it means running the suite again.
 | packages       | 95      | 2278     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
-| simulator      | 26      | 466      |
+| simulator      | 27      | 476      |
 | web-client     | 20      | 272      |
-| **total**      | **203** | **4247** |
+| **total**      | **204** | **4257** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -79,7 +79,7 @@ Documents a finished run leaves behind. Every move so far has been a refusal rat
 | `MATCH_STREAM_HEADER_VERSION`         | 1     | `matches.header.json`, which decides whether a run may resume. |
 | `REPORT_SCHEMA_VERSION`               | 9     | `report.md`.                                                   |
 | `MANIFEST_SCHEMA_VERSION`             | 8     | `manifest.json`.                                               |
-| `SUMMARY_SCHEMA_VERSION`              | 8     | `summary.json`.                                                |
+| `SUMMARY_SCHEMA_VERSION`              | 9     | `summary.json`.                                                |
 | `MATCHUP_MATRIX_SCHEMA_VERSION`       | 2     | `matchup-matrix.json` and its CSV.                             |
 | `SEARCH_CHECKPOINT_VERSION`           | 2     | A deck-search checkpoint.                                      |
 | `RESOLVED_ENVIRONMENT_SCHEMA_VERSION` | 1     | A frozen environment snapshot.                                 |

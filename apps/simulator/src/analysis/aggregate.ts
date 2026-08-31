@@ -9,7 +9,14 @@ import {
   isAbnormal,
   type MatchRecord,
 } from '../telemetry/schema.js';
-import { mean, percentile, proportion, round, type ProportionEstimate } from './stats.js';
+import {
+  mean,
+  normalizedEntropy,
+  percentile,
+  proportion,
+  round,
+  type ProportionEstimate,
+} from './stats.js';
 
 /**
  * Turns raw match records into the aggregate views a report is built from
@@ -104,6 +111,143 @@ export const matchupSchema = z.strictObject({
   rate: proportionSchema,
 });
 export type Matchup = z.infer<typeof matchupSchema>;
+
+/**
+ * One Commander's reusable evidence, over every deck this run seated behind it
+ * (M08.13).
+ *
+ * Grouped by `commanderId` rather than by deck: a deck-level view already
+ * exists (`DeckSummary`), and the question this answers is "how did the
+ * Commander do across every list a search or a batch tried it with", not "how
+ * did one list do".
+ *
+ * `byPilot` and `byAgentClass` preserve the same two partitions
+ * `RunSummary.pilotWinRates`/`agentClassWinRates` already preserve at the
+ * run level — both are read from `seat.pilotId`, so pooling them accidentally
+ * would be the exact mistake M05.4 forbade there. Every figure here pools
+ * every replicate and every search generation that seated this Commander —
+ * `replicate` *is* reachable (`MatchRecord.arm`'s `search:<label>:g<n>` and
+ * `experimentId`'s `:r<n>` both carry it, and `MatchStore.arm()` already
+ * partitions on the same field elsewhere), but this tranche deliberately does
+ * not break a Commander's evidence out by it or by generation; a reader
+ * wanting one replicate's or one generation's own numbers filters
+ * `MatchRecord[]` by `arm` before calling `aggregate`.
+ *
+ * `topDeckFitness`, `medianDeckFitness`, `populationSurvivalShare` and
+ * `archiveSurvivalShare` are `null` for every batch, comparison and robustness
+ * run: search state is supplied by the caller only when it exists
+ * (`aggregate`'s `search` option), never guessed. `topDeckFitness`/
+ * `medianDeckFitness` read `null` from every *search* run too, today —
+ * `runSearchExperiment` does not resume a search from its checkpoints (an
+ * already-documented, accepted limitation of resuming a search at all — see
+ * `docs/milestones/M08-ai-lab-and-player-meta.md`'s "Equivalence after a
+ * resume" note), so a resumed attempt's generation loop restarts and
+ * `evaluate()` returns no records for whatever it re-plays that the match
+ * store already had, collapsing `scoreOne` toward its novelty-only floor.
+ * `SearchDeckEvidence.fitnessByDeckHash` is therefore always empty (see
+ * `deckFitnessByHash` on `experiment.ts`'s `FinishInputs`) until a future
+ * tranche makes search resume equivalent; the read here is correct and
+ * tested against whatever it is given.
+ * `populationSurvivalShare`/`archiveSurvivalShare` **inherit the same
+ * non-equivalence**, not an exemption from it: `updateArchive` and `breed`
+ * both rank on the same fitness a resumed attempt degrades, so a resumed
+ * search's final population/archive membership can differ from an
+ * uninterrupted run's the same way its fitness numbers do. The two were
+ * observed identical on this tranche's own small hardening fixture, which is
+ * evidence about that fixture, not a structural guarantee.
+ * `deckDiversity` needs no such caveat: it is Shannon entropy
+ * (`normalizedEntropy`) over match share across this Commander's own distinct
+ * decks, computable from `MatchRecord`s alone, and correctly reads `0` — not
+ * `null` — for a Commander this run seated behind exactly one deck.
+ *
+ * `source`, `construction` and `exploration`/`validation` are not broken out
+ * here even though the milestone names them alongside `pilot class` and
+ * `replicate` (see the M08.13 entry in
+ * `docs/milestones/M08-ai-lab-and-player-meta.md`): neither is a field
+ * `MatchRecord` or `SeatTelemetry` carries. `SimDeck.construction.kind` and
+ * `SimDeck.origin.kind` exist, but only on the deck object a search or a deck
+ * source produces, never on the record a match leaves behind — the same gap
+ * M08.12 documented for card aggregates before this tranche. An
+ * exploration/validation split does not exist anywhere in this codebase to
+ * preserve.
+ *
+ * `endReasons` and `turns` are counted once per **seat**, the same convention
+ * `DeckSummary` already uses: a Commander mirror match (both seats behind the
+ * same Commander) contributes its end reason and its turn count twice, so
+ * `matches` is the correct denominator for both — not `run.matches`, whose
+ * `endReasons` counts once per match. Every `endReasons` value sums to
+ * `matches` for the same reason.
+ */
+export const commanderSummarySchema = z.strictObject({
+  commanderId: z.string(),
+  matches: z.number().int().min(0),
+  winRate: proportionSchema,
+  /** Win rate by the seat this Commander sat in, exposing a mirrored-schedule bias. */
+  bySeat: z.array(z.strictObject({ seatIndex: z.number().int(), rate: proportionSchema })),
+  /** Win rate by pilot, never averaged across pilots (M05.4's rule, applied per Commander). */
+  byPilot: z.array(z.strictObject({ pilotId: z.string(), rate: proportionSchema })),
+  /** Win rate by honest agent class, beside `byPilot` for the same reason `RunSummary` reports both. */
+  byAgentClass: z.array(
+    z.strictObject({
+      agentClass: z.string(),
+      pilotIds: z.array(z.string()),
+      rate: proportionSchema,
+    }),
+  ),
+  turns: z.strictObject({
+    mean: z.number(),
+    median: z.number(),
+    p10: z.number(),
+    p90: z.number(),
+    max: z.number(),
+  }),
+  endReasons: z.record(z.string(), z.number().int().min(0)),
+  /** Distinct deck hashes this run seated behind this Commander. */
+  decks: z.number().int().min(0),
+  /** Normalized Shannon entropy of match share across this Commander's decks. `0` for one deck. */
+  deckDiversity: z.number(),
+  /** Best fitness score among this Commander's decks. `null` when no search supplied fitness. */
+  topDeckFitness: z.number().nullable(),
+  /** Median fitness score among this Commander's decks. `null` on the same terms as the above. */
+  medianDeckFitness: z.number().nullable(),
+  /**
+   * Of the decks this run seated behind this Commander, the share that
+   * survived to the search's final population — **not** this Commander's
+   * share of that population. `null` outside a search.
+   */
+  populationSurvivalShare: z.number().nullable(),
+  /** Same reading as `populationSurvivalShare`, against the search's archive. */
+  archiveSurvivalShare: z.number().nullable(),
+});
+export type CommanderSummary = z.infer<typeof commanderSummarySchema>;
+
+/** One cell of the Commander-vs-Commander opponent matrix (M08.13). */
+export const commanderMatchupSchema = z.strictObject({
+  commanderId: z.string(),
+  opponentCommanderId: z.string(),
+  rate: proportionSchema,
+});
+export type CommanderMatchup = z.infer<typeof commanderMatchupSchema>;
+
+/**
+ * Search evidence `aggregate` folds into `CommanderSummary` (M08.13).
+ *
+ * Supplied only by a search experiment's `finish()` call, from the same
+ * `population`/`archive`/`fitness` a checkpoint already carries
+ * (`deck-search/evolve.ts`'s `SearchResult`) — nothing here is recomputed.
+ * Omitted entirely by every batch, comparison and robustness caller, which is
+ * what keeps their Commander summaries' fitness and share fields `null`
+ * instead of a fabricated zero. `fitnessByDeckHash` is supplied empty by
+ * every caller today, pending a resumed search being made equivalent to an
+ * uninterrupted one; see the comment on `experiment.ts`'s
+ * `FinishInputs.deckFitnessByHash` and the caveat on
+ * `commanderSummarySchema` above.
+ */
+export interface SearchDeckEvidence {
+  readonly populationDeckHashes: ReadonlySet<string>;
+  readonly archiveDeckHashes: ReadonlySet<string>;
+  readonly fitnessByDeckHash: ReadonlyMap<string, number>;
+}
 
 /**
  * What one Commander's legal pool says about a card (M08.12).
@@ -218,6 +362,8 @@ export const aggregateSchema = z.strictObject({
   decks: z.array(deckSummarySchema),
   matchups: z.array(matchupSchema),
   cards: z.array(cardSummarySchema),
+  commanders: z.array(commanderSummarySchema),
+  commanderMatchups: z.array(commanderMatchupSchema),
 });
 export type Aggregate = z.infer<typeof aggregateSchema>;
 
@@ -243,6 +389,13 @@ export function aggregate(
      * assumed.
      */
     readonly environment?: GenerationEnvironment;
+    /**
+     * Final population/archive membership and fitness from a search experiment
+     * (M08.13). Omitted by every non-search caller, which is what keeps a batch
+     * or comparison run's Commander fitness and share fields `null` rather than
+     * a guess at data the run never produced.
+     */
+    readonly search?: SearchDeckEvidence;
   } = {},
 ): Aggregate {
   const confidence = options.confidence ?? 0.95;
@@ -254,6 +407,8 @@ export function aggregate(
     decks: summarizeDecks(usable, confidence),
     matchups: summarizeMatchups(usable, confidence),
     cards: summarizeCards(usable, confidence, options.environment),
+    commanders: summarizeCommanders(usable, confidence, options.search),
+    commanderMatchups: summarizeCommanderMatchups(usable, confidence),
   };
 }
 
@@ -425,6 +580,176 @@ function summarizeMatchups(usable: readonly MatchRecord[], confidence: number): 
       return {
         deckHash,
         opponentHash,
+        rate: rounded(proportion(tally.wins, tally.total, confidence)),
+      };
+    });
+}
+
+interface CommanderTally {
+  wins: number;
+  total: number;
+  bySeat: Map<number, { wins: number; total: number }>;
+  byPilot: Map<string, { wins: number; total: number }>;
+  byAgentClass: Map<string, { wins: number; total: number; pilots: Set<string> }>;
+  turns: number[];
+  endReasons: Record<string, number>;
+  /** Seat-matches per distinct deck under this Commander, the diversity input. */
+  deckMatches: Map<string, number>;
+}
+
+function summarizeCommanders(
+  usable: readonly MatchRecord[],
+  confidence: number,
+  search: SearchDeckEvidence | undefined,
+): CommanderSummary[] {
+  const tallies = new Map<string, CommanderTally>();
+
+  for (const record of usable) {
+    for (const seat of record.seats) {
+      let tally = tallies.get(seat.commanderId);
+      if (!tally) {
+        tally = {
+          wins: 0,
+          total: 0,
+          bySeat: new Map(),
+          byPilot: new Map(),
+          byAgentClass: new Map(),
+          turns: [],
+          endReasons: {},
+          deckMatches: new Map(),
+        };
+        tallies.set(seat.commanderId, tally);
+      }
+      tally.total += 1;
+      if (seat.won) tally.wins += 1;
+      tally.turns.push(record.turns);
+      const reason = record.endReason ?? 'none';
+      tally.endReasons[reason] = (tally.endReasons[reason] ?? 0) + 1;
+
+      const bySeat = tally.bySeat.get(seat.seatIndex) ?? { wins: 0, total: 0 };
+      bySeat.total += 1;
+      if (seat.won) bySeat.wins += 1;
+      tally.bySeat.set(seat.seatIndex, bySeat);
+
+      const byPilot = tally.byPilot.get(seat.pilotId) ?? { wins: 0, total: 0 };
+      byPilot.total += 1;
+      if (seat.won) byPilot.wins += 1;
+      tally.byPilot.set(seat.pilotId, byPilot);
+
+      // Same unclassified-pilot bucketing `summarizeRun` uses (M05.4): an ID
+      // this build does not recognise is unvouched-for, not weak.
+      const classKey = agentClassOf(seat.pilotId) ?? 'unclassified';
+      const byClass = tally.byAgentClass.get(classKey) ?? {
+        wins: 0,
+        total: 0,
+        pilots: new Set<string>(),
+      };
+      byClass.total += 1;
+      if (seat.won) byClass.wins += 1;
+      byClass.pilots.add(seat.pilotId);
+      tally.byAgentClass.set(classKey, byClass);
+
+      tally.deckMatches.set(seat.deckHash, (tally.deckMatches.get(seat.deckHash) ?? 0) + 1);
+    }
+  }
+
+  return [...tallies]
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([commanderId, tally]) => {
+      const deckHashes = [...tally.deckMatches.keys()];
+
+      // `null` — not `0` — for every non-search run: an untried fitness score
+      // is unread evidence, and a batch run's Commander did not "score zero".
+      let topDeckFitness: number | null = null;
+      let medianDeckFitness: number | null = null;
+      let populationSurvivalShare: number | null = null;
+      let archiveSurvivalShare: number | null = null;
+      if (search) {
+        const scores = deckHashes
+          .map((hash) => search.fitnessByDeckHash.get(hash))
+          .filter((score): score is number => score !== undefined)
+          .sort((left, right) => left - right);
+        if (scores.length > 0) {
+          topDeckFitness = round(Math.max(...scores));
+          medianDeckFitness = round(percentile(scores, 0.5));
+        }
+        const survivedToPopulation = deckHashes.filter((hash) =>
+          search.populationDeckHashes.has(hash),
+        ).length;
+        const survivedToArchive = deckHashes.filter((hash) =>
+          search.archiveDeckHashes.has(hash),
+        ).length;
+        populationSurvivalShare = round(survivedToPopulation / deckHashes.length);
+        archiveSurvivalShare = round(survivedToArchive / deckHashes.length);
+      }
+
+      return {
+        commanderId,
+        matches: tally.total,
+        winRate: rounded(proportion(tally.wins, tally.total, confidence)),
+        bySeat: [...tally.bySeat]
+          .sort((left, right) => left[0] - right[0])
+          .map(([seatIndex, seatTally]) => ({
+            seatIndex,
+            rate: rounded(proportion(seatTally.wins, seatTally.total, confidence)),
+          })),
+        byPilot: [...tally.byPilot]
+          .sort((left, right) => left[0].localeCompare(right[0]))
+          .map(([pilotId, pilotTally]) => ({
+            pilotId,
+            rate: rounded(proportion(pilotTally.wins, pilotTally.total, confidence)),
+          })),
+        byAgentClass: [...tally.byAgentClass]
+          .sort((left, right) => left[0].localeCompare(right[0]))
+          .map(([agentClass, classTally]) => ({
+            agentClass,
+            pilotIds: [...classTally.pilots].sort(),
+            rate: rounded(proportion(classTally.wins, classTally.total, confidence)),
+          })),
+        turns: {
+          mean: round(mean(tally.turns), 2),
+          median: percentile(tally.turns, 0.5),
+          p10: percentile(tally.turns, 0.1),
+          p90: percentile(tally.turns, 0.9),
+          max: tally.turns.length === 0 ? 0 : Math.max(...tally.turns),
+        },
+        endReasons: tally.endReasons,
+        decks: deckHashes.length,
+        deckDiversity: round(normalizedEntropy([...tally.deckMatches.values()])),
+        topDeckFitness,
+        medianDeckFitness,
+        populationSurvivalShare,
+        archiveSurvivalShare,
+      };
+    });
+}
+
+function summarizeCommanderMatchups(
+  usable: readonly MatchRecord[],
+  confidence: number,
+): CommanderMatchup[] {
+  const tallies = new Map<string, { wins: number; total: number }>();
+
+  for (const record of usable) {
+    for (const seat of record.seats) {
+      for (const other of record.seats) {
+        if (other.playerId === seat.playerId) continue;
+        const key = `${seat.commanderId}§${other.commanderId}`;
+        const tally = tallies.get(key) ?? { wins: 0, total: 0 };
+        tally.total += 1;
+        if (seat.won) tally.wins += 1;
+        tallies.set(key, tally);
+      }
+    }
+  }
+
+  return [...tallies]
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([key, tally]) => {
+      const [commanderId = '', opponentCommanderId = ''] = key.split('§');
+      return {
+        commanderId,
+        opponentCommanderId,
         rate: rounded(proportion(tally.wins, tally.total, confidence)),
       };
     });

@@ -154,8 +154,12 @@ beforeAll(async () => {
 }, 120_000);
 
 describe('card-inclusion integrity (M08.12)', () => {
-  it('reports SUMMARY_SCHEMA_VERSION 8', () => {
-    expect(SUMMARY_SCHEMA_VERSION).toBe(8);
+  it('reports a SUMMARY_SCHEMA_VERSION at or beyond the one this tranche shipped', () => {
+    // Pinned as "at least 8" rather than "exactly 8": a later tranche (M08.13
+    // bumped it to 9) legitimately moves this forward, and re-pinning the
+    // exact number here every time is not this test's job — `experiment.ts`'s
+    // own version-history comment is.
+    expect(SUMMARY_SCHEMA_VERSION).toBeGreaterThanOrEqual(8);
   });
 
   it('universal-card: a card nobody ever left out has no contrast to report', () => {

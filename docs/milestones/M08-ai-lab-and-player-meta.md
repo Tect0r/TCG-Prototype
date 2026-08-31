@@ -3032,7 +3032,7 @@ forced-inclusion, mixed-source and regeneration tests.
   property of a row, which is the honest shape of that guarantee rather than a
   gap in it.
 
-## M08.13 — Commander aggregates
+## M08.13 — Commander aggregates — **done (2026-08-31)**
 
 Add the reusable Commander-level evidence the current reports lack: match counts,
 overall, seat and pilot win rates, an opponent-Commander matrix, turn and
@@ -3048,9 +3048,71 @@ population and archive, diversity, mixed-source and regeneration tests.
 
 ### Checklist
 
-- [ ] Commander counts, win rates and opponent matrix.
-- [ ] Turn and end-reason distributions; deck fitness and diversity.
-- [ ] Partitions preserved; contract versions moved deliberately.
+- [x] Commander counts, win rates and opponent matrix.
+- [x] Turn and end-reason distributions; deck fitness and diversity.
+- [x] Partitions preserved; contract versions moved deliberately.
+
+### Limitations recorded rather than worked around
+
+- **`source`, `construction` and `exploration`/`validation` are not broken out in
+  `CommanderSummary`, on the same terms M08.12 already recorded for card
+  aggregates.** Neither is a field `MatchRecord` or `SeatTelemetry` carries:
+  `SimDeck.construction.kind` and `SimDeck.origin.kind` exist only on the deck
+  object a search or a deck source produces, never on the record a match leaves
+  behind, and an exploration/validation split does not exist anywhere in this
+  codebase to preserve. `pilot class` is preserved (`CommanderSummary.
+byAgentClass`, read from `seat.pilotId` exactly as `RunSummary.
+agentClassWinRates` already does) because it _is_ reachable from `MatchRecord`
+  alone, and `commanderId` — the whole axis this tranche adds — was reachable
+  from the start. **`replicate` is also reachable and is not an exception to
+  the four above**: `MatchRecord.arm`'s `search:<label>:g<n>` and
+  `experimentId`'s `:r<n>` both carry it (`experiment.ts`'s `runSearchExperiment`
+  writes `armPrefix: search:${label}` with `label = r${replicate}`), and
+  `MatchStore.arm()` already partitions on the same field elsewhere in this
+  codebase. This tranche deliberately pools every replicate and every search
+  generation into one Commander figure rather than breaking either out — a
+  reader wanting one replicate's or one generation's own numbers filters
+  `MatchRecord[]` by `arm` before calling `aggregate`, and the
+  `commanderSummarySchema` doc comment says so.
+- **`topDeckFitness`/`medianDeckFitness` read `null` from every run today,
+  including a search run, and `populationSurvivalShare`/`archiveSurvivalShare`
+  inherit the same caveat rather than being exempt from it.** Wiring live
+  `search.fitness` data during implementation surfaced why: `runSearchExperiment`
+  does not resume a search from its checkpoints — an already-recorded, accepted
+  limitation of resuming a search at all (this milestone's own "Equivalence
+  after a resume" note, above) — so a resumed attempt's generation loop
+  restarts and calls `evaluate()` again for every generation. `runBatch` returns
+  records only for matches it actually ran, so a generation whose matches are
+  all already in the match store returns no records at all; `scoreOne` then has
+  `total = 0` for every deck in it, collapsing `rate.low`, `opponentBreadth` and
+  `seatRobustness` to `0` and leaving the score as `novelty * 0.15` — confirmed
+  by hand (a fresh run and a resumed run of the same search config scored the
+  same archive deck 1.0976 versus 0.0406), even though the population, the
+  archive and every recorded match were byte-identical between the two. That is
+  a consequence of search resume's existing, accepted non-equivalence, not a new
+  defect, and closing it is M08.15's territory, not an aggregates tranche's.
+  `aggregate()`'s `search` option and `CommanderSummary`'s fitness fields are
+  implemented and tested against hand-supplied fitness data (see
+  `commander-aggregates.test.ts`'s "population and archive" case); only the live
+  wire from `experiment.ts`'s `runSearchExperiment` into
+  `FinishInputs.deckFitnessByHash` is deliberately left empty, with the
+  reproduction evidence recorded on that field's own comment. `updateArchive`
+  and `breed` both rank on the same fitness a resumed attempt degrades, so a
+  resumed search's final population/archive membership can in principle differ
+  from an uninterrupted run's the same way its fitness numbers do —
+  `populationSurvivalShare`/`archiveSurvivalShare` were only confirmed identical
+  between a fresh and a resumed run on this tranche's own small hardening
+  fixture (population 4, 2 generations), which is evidence about that fixture,
+  not a structural guarantee, and they are wired live on that basis.
+- **Within-Commander deck diversity is Shannon entropy over match share across
+  distinct deck hashes (`analysis/stats.ts`'s existing `normalizedEntropy`), not
+  the strategic clustering `analysis/clusters.ts` already performs at the run
+  level.** Reusing `clusterDecks` per Commander would need the full deck list and
+  card database threaded into `aggregate()`, which currently takes only
+  `MatchRecord[]` plus optional confidence/environment/search evidence — a
+  materially larger dependency change than a Commander-level entropy reading
+  needs, and "within-Commander deck diversity **where supported**" is read as
+  the hedge for exactly this lighter measure.
 
 ## M08.14 — Open Meta workflow
 

@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.13       |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.14       |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -214,14 +214,64 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.13 — Commander aggregates.** Add the reusable Commander-level evidence
-the current reports lack: match counts, overall, seat and pilot win rates, an
-opponent-Commander matrix, turn and end-reason distributions, top and median
-deck fitness, population and archive share, and within-Commander deck
-diversity where supported. Source, construction, pilot class, replicate and
-exploration/validation partitions preserved, and every changed contract
-versioned with reasoning. **No Open Meta UI yet.** Its scope and checklist are
-in [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0813--commander-aggregates).
+**M08.14 — Open Meta workflow.** Let the AI choose among legal Commanders and
+cards, and show what emerges: all or selected Commanders, unconstrained or plan
+seed policy, population, generations, elite, mutation and crossover, opponents,
+games, archive, replicates, pilots and retention through progressive
+disclosure. Render Commander share over generations, win and matchup views, top
+and median deck results, top decklists, card inclusion, and diversity and
+convergence. The forced-inclusion warning is always beside selection
+statistics. **No per-Commander finalist championship.** Its scope and checklist
+are in [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0814--open-meta-workflow).
+
+**M08.13 added Commander-level evidence beside the deck- and card-level views
+M08.10–M08.12 already had, and traced a fresh-versus-resumed fitness
+discrepancy back to an already-documented search-resume limitation rather than
+reporting a number over it.** `apps/simulator/src/analysis/aggregate.ts` gained
+`commanders` (`CommanderSummary[]`, grouped by `commanderId`: match counts,
+overall/seat/pilot/agent-class win rates, turn and end-reason distributions,
+distinct-deck count, and Shannon-entropy deck diversity) and `commanderMatchups`
+(the ordered Commander-vs-Commander opponent matrix, built the same way the
+existing deck-level `matchups` array already is). `aggregate()` gained an
+optional `search` option (`populationDeckHashes`/`archiveDeckHashes`/
+`fitnessByDeckHash`) so a search experiment's final population and archive
+membership can report `populationSurvivalShare`/`archiveSurvivalShare` per
+Commander — the share of _that Commander's own decks_ that survived, not that
+Commander's share of the population — and every other experiment kind omits it,
+which is what keeps those two fields `null` rather than a guess. Wiring the
+third piece — `topDeckFitness`/`medianDeckFitness` from `runSearch`'s own
+`Fitness.score` — surfaced why a resumed search's fitness is not reproducible:
+`runSearchExperiment` does not resume from checkpoints (a limitation this
+milestone already recorded under "Equivalence after a resume"), so a resumed
+attempt restarts its generation loop and `evaluate()` returns no records for a
+generation whose matches are all already cached, collapsing `scoreOne` to its
+novelty-only floor — a fresh run and a resumed run of the same search config
+scored the same archive deck 1.0976 versus 0.0406, even though the population,
+the archive and every recorded match were byte-identical between the two.
+Closing that gap is M08.15's territory, not an aggregates tranche's, so
+`FinishInputs.deckFitnessByHash` stays deliberately empty — the reading in
+`aggregate.ts` is implemented and tested against hand-supplied fitness data,
+only the live wire from `experiment.ts` is held back, with the reproduction
+evidence recorded on that field's own comment. `populationSurvivalShare`/
+`archiveSurvivalShare` are wired live because a fresh, uninterrupted search is
+fully deterministic, but they inherit the same resume caveat as fitness — both
+`updateArchive` and `breed` rank on the fitness a resumed attempt degrades —
+and were only confirmed identical between a fresh and a resumed run on this
+tranche's own small hardening fixture, not proven exempt. `source`,
+`construction` and `exploration`/`validation` are not broken out, on the same
+terms M08.12 already recorded for card aggregates: neither is a field
+`MatchRecord` or `SeatTelemetry` carries. `replicate` **is** reachable
+(`MatchRecord.arm`'s `search:<label>:g<n>` and `experimentId`'s `:r<n>` both
+carry it) but is deliberately pooled rather than broken out, alongside every
+search generation — a reader wanting one replicate's own numbers filters
+`MatchRecord[]` by `arm` first. `pilot class` is preserved
+(`CommanderSummary.byAgentClass`, reachable from `seat.pilotId` the same way
+`RunSummary.agentClassWinRates` already is), and `commanderId` was reachable
+from the start — the whole axis this tranche adds. `SUMMARY_SCHEMA_VERSION`
+moved 8 → 9 for the two new `Aggregate` fields; `apps/admin-server/src/service/
+results.ts` reads `summary.json` with a loose (non-strict) Zod object, so the
+new fields pass through unread without a schema change there, and
+`ADMIN_CONTRACT_VERSION` did not move.
 
 **M08.12 fixed two defects the milestone's own result rules had already named,
 rather than building the dashboard that would have shown wrong numbers through

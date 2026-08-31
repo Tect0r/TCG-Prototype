@@ -237,9 +237,12 @@ export {
   usableRecords,
   type Aggregate,
   type CardSummary,
+  type CommanderMatchup,
+  type CommanderSummary,
   type DeckSummary,
   type Matchup,
   type RunSummary,
+  type SearchDeckEvidence,
 } from './analysis/aggregate.js';
 
 export {
