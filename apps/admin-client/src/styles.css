@@ -792,3 +792,128 @@ fieldset.builder__field legend {
   grid-template-columns: 1fr;
   gap: 0;
 }
+
+/* ---------- precon result dashboard (M08.11) ---------- */
+
+.dashboard__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dashboard__tabs button.is-current {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.dashboard__view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.dashboard__bars {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.dashboard__bars th,
+.dashboard__bars td {
+  text-align: left;
+  vertical-align: middle;
+  padding: 0.3rem 0.6rem 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard__bar-track {
+  position: relative;
+  display: inline-block;
+  width: 12rem;
+  height: 0.7rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 0.6rem;
+}
+
+.dashboard__bar-interval {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--border);
+}
+
+.dashboard__bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--accent);
+  border-left: 2px solid var(--accent);
+}
+
+.dashboard__bar-value {
+  color: var(--text-dim);
+}
+
+.dashboard__insufficient {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.dashboard__truncation {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  color: var(--warning);
+}
+
+.dashboard__heatmap-wrap {
+  overflow-x: auto;
+}
+
+.dashboard__heatmap {
+  border-collapse: collapse;
+}
+
+.dashboard__heatmap th,
+.dashboard__heatmap td {
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.4rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.dashboard__heatmap thead th {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.dashboard__heatmap-cell button {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0.15rem 0.3rem;
+}
+
+.dashboard__heatmap-cell.is-empty {
+  color: var(--text-dim);
+}
+
+.dashboard__drill {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.8rem;
+}
+
+.dashboard__drill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}

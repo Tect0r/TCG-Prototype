@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.11       |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.12       |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -214,24 +214,54 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.11 — Precon result dashboard.** Answer whether the current precons look
-uneven **under the selected instrument**: overall win-rate bars with intervals
-and sample counts, an ordered matchup heatmap with an exact-value table
-fallback, seat-order, pilot, match-length, termination and replicate views, and
-click-through from a cell or bar to the exact contributing matches, decks and
-replays. Calibration standing appears before any "review" language. **No
-automatic balanced/unbalanced verdict.** Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0811--precon-result-dashboard).
+**M08.12 — Card-inclusion integrity.** Make card-selection numbers
+mathematically defined before more dashboards are built on them: fix the
+zero-observation included/excluded defect so an undefined contrast returns
+`insufficient_data` rather than a fabricated zero rate or a recommendation;
+add eligibility-aware card denominators globally and per Commander; report
+forced-inclusion floors from legal pool size and deck size; preserve source,
+construction, pilot class, replicate and exploration/validation partitions in
+card aggregates; and version every changed summary, report or API contract
+with deliberate refusal or migration reasoning. **No new Commander aggregate,
+no Open Meta UI.** Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0812--card-inclusion-integrity).
 
-It inherits a result catalog that can already list, filter and open one run
-honestly, and it inherits two limitations M08.10 recorded that are its to
-close: no result table is browsable from any screen yet — `result-table` has
-answered since M08.6 and nothing renders it — and there is no chart to
-click-through from, which is the reason M08.10 built no browsing surface for
-one. This is also the first tranche to need a charting decision ADR 0023 §6
-deferred: hand-authored SVG plus the exact table every chart must be
-accompanied by, or a library, recorded at the point of adoption with its
-bundle cost and its accessibility behaviour — not before.
+**M08.11 gave the Results screen a dashboard, and kept ADR 0023 §6's default
+rather than adopting a library before a single chart existed.** Every reading
+is `resultTable`'s own — decks, matchups, seats, pilots and terminations, read
+back at the moment they are shown — so a bar's point estimate, interval and
+sample count are the simulator's `Proportion`, unmodified. Win-rate bars and
+the matchup heatmap are hand-authored HTML and CSS, never a canvas or an
+`<svg>` chart library: a bar's exact interval and count are printed beside it
+rather than behind a tooltip, and every heatmap cell prints its own exact
+percentage, so color is never the only way a value is shown and a screen
+reader gets the same numbers a sighted operator does. Zero observations read
+back as "insufficient data" rather than a zero-width bar or a fabricated 0%,
+and a matchup pair the run never played reads back as a dash rather than an
+invented complement of its mirror. Every table is fetched a full page at a
+time, up to `PAGE_SIZE_MAX`; when the run's own table has more rows than that,
+the screen says so — "Showing the first N of M rows" — and a pair sitting past
+that page reads back as _not confirmed_ rather than as the same "no games"
+dash a genuinely unplayed pair gets, because a truncation boundary is not a
+fact about the run. Two rows sharing a label — a search run's population can
+put several decks under one Commander — gain a short discriminator rather than
+sitting on screen indistinguishable. The heatmap orders both axes by each deck's
+own win rate, richest first, which is the "ordered" the checklist asked for.
+Seat, pilot, match-length and termination are four more views over the same
+tables and the summary's own turn readings; **replicate** is the one view that
+reaches outside its own job — `batchDetail` plus the `-r{n}` stage-naming
+convention `apps/admin-server/src/lab/expand.ts` already committed to is the
+whole of the grouping rule, since no field on a job says "replicate of."
+**Drill-down opens the exact row a bar or cell was drawn from, and stops
+there.** `matches.jsonl` and `replays/` stay exactly as absent as
+`artifacts.ts` already declared them: M08.26's Match Explorer is what can list
+one match or open its replay, and this screen says so instead of pretending
+the link exists. **No automatic balanced/unbalanced verdict** anywhere on the
+page — nothing here computes one. `resultTable` was already wired
+server-to-client since M08.6; M08.11 added the client's own `resultTable`
+session method and the dashboard that calls it. `ADMIN_CONTRACT_VERSION` did
+not move — no endpoint, request or response shape changed — and no persisted
+document changed shape.
 
 **M08.10 gave the lab a Results screen, and answered a deferral rather than
 overruling it.** M08.1 held back a precon and a Commander filter because

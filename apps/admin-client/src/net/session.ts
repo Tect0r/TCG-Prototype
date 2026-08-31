@@ -24,6 +24,8 @@ import type {
   ResultArtifactListing,
   ResultArtifactName,
   ResultSummary,
+  ResultTable,
+  ResultTableName,
   SavedChoiceList,
   SavedChoiceView,
 } from '@tcg/admin-contracts';
@@ -419,6 +421,25 @@ export class AdminSession {
    */
   async resultSummary(jobId: JobId): Promise<AdminOutcome<ResultSummary>> {
     return this.#call('resultSummary', { jobId });
+  }
+
+  /**
+   * One page of one result table — the exact rows a chart's cell or bar
+   * summarizes, for the reason `resultTableSchema` gives: a reading is
+   * transport, not a definition, so a screen that draws a bar from this table
+   * and a screen that lists its rows are reading the same numbers rather than
+   * two computations that could disagree.
+   */
+  async resultTable(
+    jobId: JobId,
+    table: ResultTableName,
+    page?: PageRequestInput,
+  ): Promise<AdminOutcome<ResultTable>> {
+    return this.#call('resultTable', {
+      jobId,
+      table,
+      page: pageRequestSchema.parse(page ?? {}),
+    });
   }
 
   /** Which of a run's canonical documents exist, and which are too large to download. */

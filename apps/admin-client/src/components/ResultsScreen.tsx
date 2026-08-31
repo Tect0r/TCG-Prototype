@@ -32,6 +32,7 @@ import { useAdminSession, useAdminState } from '../state/AdminContext.js';
 import type { AdminFailure } from '../net/transport.js';
 import { Busy, Empty, Failure } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
+import { ResultDashboard } from './ResultDashboard.js';
 
 /**
  * The result catalog: every job this catalog has ever created, completed or
@@ -205,6 +206,13 @@ export function ResultsScreen() {
           key={selected}
           job={items?.find((job) => job.jobId === selected) ?? null}
           jobId={selected}
+          preconNameByCommander={
+            content
+              ? Object.fromEntries(
+                  content.precons.map((precon) => [precon.commanderId, precon.name]),
+                )
+              : {}
+          }
           onAnnotated={(updated) => {
             setItems(
               (held) => held?.map((job) => (job.jobId === updated.jobId ? updated : job)) ?? held,
@@ -457,10 +465,12 @@ interface ResultDetailProps {
   readonly jobId: JobId;
   /** The row from the listing, when it is still on screen. */
   readonly job: CatalogJobView | null;
+  /** Precon names by Commander, so the dashboard can label a deck by its precon. */
+  readonly preconNameByCommander: Readonly<Record<string, string>>;
   readonly onAnnotated: (job: CatalogJobView) => void;
 }
 
-function ResultDetail({ jobId, job, onAnnotated }: ResultDetailProps) {
+function ResultDetail({ jobId, job, preconNameByCommander, onAnnotated }: ResultDetailProps) {
   const session = useAdminSession();
   const [summary, setSummary] = useState<
     | { readonly ok: true; readonly value: ResultSummary }
@@ -522,6 +532,15 @@ function ResultDetail({ jobId, job, onAnnotated }: ResultDetailProps) {
         />
       )}
       {summary !== null && summary.ok && <SummaryFacts summary={summary.value} />}
+
+      {summary !== null && summary.ok && (
+        <ResultDashboard
+          jobId={jobId}
+          job={job}
+          summary={summary.value}
+          preconNameByCommander={preconNameByCommander}
+        />
+      )}
 
       <h3>Downloads</h3>
       {downloadFailure !== null && (

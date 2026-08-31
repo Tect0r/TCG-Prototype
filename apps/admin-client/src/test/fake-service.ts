@@ -20,6 +20,7 @@ import {
   resultArtifactListingSchema,
   resultArtifactSchema,
   resultSummarySchema,
+  resultTableSchema,
   suggestedArtifactFilename,
   type AdminEndpointName,
   type AdminErrorCode,
@@ -43,7 +44,11 @@ import {
   type PresetChoice,
   type ResultArtifactListing,
   type ResultArtifactName,
+  type ResultColumn,
+  type ResultRow,
   type ResultSummary,
+  type ResultTable,
+  type ResultTableName,
   type RunIdentity,
   type SavedChoiceList,
   type SavedChoiceView,
@@ -131,6 +136,13 @@ export interface FakeLab {
    * interrupted evidence side by side, which no operator verb produces here.
    */
   seedResult(options?: SeedResultOptions): SeededResult;
+  /**
+   * Sets what `resultTable` answers for one already-seeded job, keyed by table
+   * name (M08.11). Separate from `seedResult`'s own `tables` option because a
+   * fixture's rows often want to name the job's own ID — `decksTableFixture`'s
+   * `jobId` argument — which only exists once `seedResult` has minted it.
+   */
+  seedTables(jobId: string, tables: Readonly<Partial<Record<ResultTableName, ResultTable>>>): void;
 }
 
 export interface SeedResultOptions {
@@ -149,6 +161,14 @@ export interface SeedResultOptions {
     'none' | ResultSummary | { readonly refuse: AdminErrorCode; readonly message?: string };
   /** Which canonical documents this run wrote, and their content. */
   readonly artifacts?: Readonly<Partial<Record<ResultArtifactName, string>>>;
+  /** What `resultTable` answers for this job, per table name (M08.11). Unseeded tables answer empty. */
+  readonly tables?: Readonly<Partial<Record<ResultTableName, ResultTable>>>;
+  /**
+   * Joins an existing batch instead of minting a new one, for the replicate
+   * view's own tests: several jobs seeded with the same `batchId` are the
+   * sibling replicates `replicateSiblings` groups by `batchId` and `origin`.
+   */
+  readonly batchId?: string;
 }
 
 export interface SeededResult {
@@ -216,6 +236,189 @@ export function resultSummaryFixture(overrides: Partial<ResultSummary> = {}): Re
     limitations: ['A limitation the fake service publishes with every benchmark.'],
     ...overrides,
   });
+}
+
+/* --------------------------------------------------------- result tables (M08.11) */
+
+export interface RateFixture {
+  readonly point: number;
+  readonly low: number;
+  readonly high: number;
+  readonly total: number;
+}
+
+/**
+ * An interval column plus the sample-count column beside it — the pairing
+ * `apps/admin-server/src/service/results.ts`'s `interval()` helper always
+ * produces alongside a `${key}Games` column, and `resultTableSchema`'s own
+ * check (*every cell belongs to a declared column*) means the count column is
+ * not optional: `spreadRate`'s `${key}Games` cell has nowhere to live without it.
+ */
+function rateColumns(key: string, label: string, gamesLabel: string): readonly ResultColumn[] {
+  return [
+    { key, label, kind: 'interval', bounds: { low: `${key}Low`, high: `${key}High` } },
+    { key: `${key}Games`, label: gamesLabel, kind: 'count', bounds: null },
+  ];
+}
+
+function plainColumn(key: string, label: string, kind: ResultColumn['kind']): ResultColumn {
+  return { key, label, kind, bounds: null };
+}
+
+function rateRow(key: string, rate: RateFixture): ResultRow {
+  return {
+    [key]: rate.point,
+    [`${key}Low`]: rate.low,
+    [`${key}High`]: rate.high,
+    [`${key}Games`]: rate.total,
+  };
+}
+
+/** Fixture-only escape hatch for a table whose page is not the whole table (M08.11's own tests). */
+export interface TableFixtureOptions {
+  /** When true, `page.total` reads one higher than the fetched rows and `nextCursor` is non-null. */
+  readonly truncated?: boolean;
+}
+
+function tableOf(
+  jobId: string,
+  table: ResultTableName,
+  columns: readonly ResultColumn[],
+  rows: readonly ResultRow[],
+  options: TableFixtureOptions = {},
+): ResultTable {
+  const truncated = options.truncated ?? false;
+  return resultTableSchema.parse({
+    jobId,
+    table,
+    source: { document: 'summary.json', schemaVersion: 7 },
+    columns,
+    rows,
+    page: {
+      returned: rows.length,
+      limit: PAGE_SIZE_DEFAULT,
+      nextCursor: truncated ? 'more' : null,
+      total: truncated ? rows.length + 1 : rows.length,
+    },
+  });
+}
+
+export interface DeckRowFixture {
+  readonly deckHash: string;
+  readonly deckId?: string;
+  readonly commanderId: string;
+  readonly matches: number;
+  readonly winRate: RateFixture;
+}
+
+/** A `decks` result table, shaped exactly as `apps/admin-server/src/service/results.ts` builds one. */
+export function decksTableFixture(
+  jobId: string,
+  rows: readonly DeckRowFixture[],
+  options?: TableFixtureOptions,
+): ResultTable {
+  return tableOf(
+    jobId,
+    'decks',
+    [
+      plainColumn('deckId', 'Deck', 'identifier'),
+      plainColumn('commanderId', 'Commander', 'identifier'),
+      plainColumn('deckHash', 'Content address', 'identifier'),
+      plainColumn('matches', 'Games', 'count'),
+      ...rateColumns('winRate', 'Win rate', 'Win-rate games'),
+    ],
+    rows.map((row) => ({
+      deckId: row.deckId ?? row.deckHash,
+      commanderId: row.commanderId,
+      deckHash: row.deckHash,
+      matches: row.matches,
+      ...rateRow('winRate', row.winRate),
+    })),
+    options,
+  );
+}
+
+export interface MatchupRowFixture {
+  readonly deckHash: string;
+  readonly opponentHash: string;
+  readonly rate: RateFixture;
+}
+
+/** A `matchups` result table. Omit a pair to fixture a cell the run never played. */
+export function matchupsTableFixture(
+  jobId: string,
+  rows: readonly MatchupRowFixture[],
+  options?: TableFixtureOptions,
+): ResultTable {
+  return tableOf(
+    jobId,
+    'matchups',
+    [
+      plainColumn('deckHash', 'Deck', 'identifier'),
+      plainColumn('opponentHash', 'Opponent', 'identifier'),
+      ...rateColumns('rate', 'Win rate', 'Games'),
+    ],
+    rows.map((row) => ({
+      deckHash: row.deckHash,
+      opponentHash: row.opponentHash,
+      ...rateRow('rate', row.rate),
+    })),
+    options,
+  );
+}
+
+export interface KeyedRateRowFixture {
+  readonly key: string | number;
+  readonly rate: RateFixture;
+}
+
+/** A `seats` result table: one row per seat index. */
+export function seatsTableFixture(
+  jobId: string,
+  rows: readonly KeyedRateRowFixture[],
+): ResultTable {
+  return tableOf(
+    jobId,
+    'seats',
+    [plainColumn('seatIndex', 'Seat', 'count'), ...rateColumns('rate', 'Win rate', 'Games')],
+    rows.map((row) => ({ seatIndex: row.key, ...rateRow('rate', row.rate) })),
+  );
+}
+
+/** A `pilots` result table: one row per pilot ID. */
+export function pilotsTableFixture(
+  jobId: string,
+  rows: readonly KeyedRateRowFixture[],
+): ResultTable {
+  return tableOf(
+    jobId,
+    'pilots',
+    [plainColumn('pilotId', 'Pilot', 'identifier'), ...rateColumns('rate', 'Win rate', 'Games')],
+    rows.map((row) => ({ pilotId: row.key, ...rateRow('rate', row.rate) })),
+  );
+}
+
+export interface TerminationRowFixture {
+  readonly kind: string;
+  readonly matches: number;
+  readonly abnormal: boolean;
+}
+
+/** A `terminations` result table: counts by termination kind, no rate. */
+export function terminationsTableFixture(
+  jobId: string,
+  rows: readonly TerminationRowFixture[],
+): ResultTable {
+  return tableOf(
+    jobId,
+    'terminations',
+    [
+      plainColumn('kind', 'Termination', 'identifier'),
+      plainColumn('matches', 'Games', 'count'),
+      plainColumn('abnormal', 'Excluded from statistics', 'flag'),
+    ],
+    rows.map((row) => ({ kind: row.kind, matches: row.matches, abnormal: row.abnormal })),
+  );
 }
 
 export function capabilitiesFixture(overrides: Partial<Capabilities> = {}): Capabilities {
@@ -322,6 +525,8 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
   >();
   /** Which canonical documents a job's run wrote, and their content, for the artifact endpoints. */
   const jobArtifacts = new Map<string, Readonly<Partial<Record<ResultArtifactName, string>>>>();
+  /** What `resultTable` answers for a job, per table name (M08.11). Unseeded tables answer empty. */
+  const jobTables = new Map<string, Readonly<Partial<Record<ResultTableName, ResultTable>>>>();
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -479,7 +684,14 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     job: (jobId) => jobs.get(jobId),
     batch: (batchId) => batches.get(batchId),
     seedResult(seedOptions = {}) {
-      const batch = mintBatch(seedOptions.label ?? 'Result fixture');
+      // Joining an existing batch (the replicate view's own tests) skips minting
+      // and releasing one: that batch already went through both for its first
+      // member, and re-minting under the same `batchId` a caller asked for would
+      // silently start a second, unrelated batch instead.
+      const joining = seedOptions.batchId !== undefined && batches.has(seedOptions.batchId);
+      const batch = joining
+        ? (batches.get(seedOptions.batchId as string) as CatalogBatchView)
+        : mintBatch(seedOptions.label ?? 'Result fixture');
       const status = seedOptions.status ?? 'completed';
       const terminal = ['completed', 'failed', 'cancelled'].includes(status);
       const job = mintJob(
@@ -505,7 +717,7 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       // browsing screen has no reason to see a draft it did not ask about, and
       // `applyBatchTransition` from `draft` is `enqueue` regardless of what its
       // one member's own status already is.
-      moveBatch(batch.batchId, 'enqueue');
+      if (!joining) moveBatch(batch.batchId, 'enqueue');
 
       jobContent.set(job.jobId, {
         preconIds: seedOptions.preconIds ?? [],
@@ -513,8 +725,12 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       });
       if (seedOptions.summary !== undefined) jobSummaries.set(job.jobId, seedOptions.summary);
       if (seedOptions.artifacts !== undefined) jobArtifacts.set(job.jobId, seedOptions.artifacts);
+      if (seedOptions.tables !== undefined) jobTables.set(job.jobId, seedOptions.tables);
 
       return { jobId: job.jobId, batchId: batch.batchId };
+    },
+    seedTables(jobId, tables) {
+      jobTables.set(jobId, { ...(jobTables.get(jobId) ?? {}), ...tables });
     },
   };
 
@@ -747,6 +963,22 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       }
       if ('refuse' in summary) return refusal(summary.refuse, 409, summary.message);
       return answer({ ...summary, jobId });
+    }
+
+    if (name === 'resultTable') {
+      const jobId = String(payload.jobId ?? '');
+      const job = jobs.get(jobId);
+      if (!job) return refusal('admin/unknown_job', 404);
+      if (job.result === null) {
+        return refusal(
+          'admin/no_result',
+          404,
+          'This job has produced no canonical result yet, so it has no table to read.',
+        );
+      }
+      const table = payload.table as ResultTableName;
+      const seeded = jobTables.get(jobId)?.[table];
+      return answer(seeded ?? tableOf(jobId, table, [plainColumn('key', 'Key', 'text')], []));
     }
 
     if (name === 'resultArtifacts' || name === 'resultArtifact') {

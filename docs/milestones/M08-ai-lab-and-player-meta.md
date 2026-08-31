@@ -2913,7 +2913,7 @@ the actual `dist/` output rather than only against source.
   precon name, because the content catalog has nothing to offer for it. The
   run remains reachable by every other field.
 
-## M08.11 — Precon result dashboard
+## M08.11 — Precon result dashboard — **done (2026-08-31)**
 
 Answer whether the current precons look uneven **under the selected instrument**:
 overall win-rate bars with intervals and sample counts, an ordered matchup
@@ -2927,11 +2927,27 @@ samples, accessibility, filtering and drill-down tests.
 
 ### Checklist
 
-- [ ] Win-rate bars with intervals and counts.
-- [ ] Ordered heatmap plus exact table; no red/green-only meaning.
-- [ ] Seat, pilot, length, termination and replicate views.
-- [ ] Drill-down to exact matches, decks and replays.
-- [ ] Calibration standing shown before any recommendation language.
+- [x] Win-rate bars with intervals and counts.
+- [x] Ordered heatmap plus exact table; no red/green-only meaning.
+- [x] Seat, pilot, length, termination and replicate views.
+- [x] Drill-down to exact matches, decks and replays.
+- [x] Calibration standing shown before any recommendation language.
+
+### Limitations recorded rather than worked around
+
+- **Drill-down reaches the exact deck or matchup row a bar or cell was drawn
+  from, and stops there — it does not reach an individual match or its
+  replay.** `packages/admin-contracts/src/artifacts.ts` already declares
+  `matches.jsonl` and `replays/` deliberately absent: the first is an
+  unbounded stream and the second is a directory, and both need a listing
+  endpoint this build does not have. Opening one is M08.26's Match Explorer to
+  build; this screen states the limitation on every drill-down panel rather
+  than pretending the link exists.
+- **A dashboard table is read one page at a time, up to `PAGE_SIZE_MAX` (200)
+  rows.** For a precon benchmark this is every row; for a search or soak run
+  whose `decks` or `matchups` table exceeds it, the screen says so — "Showing
+  the first N of M rows" — and a matchup pair sitting past that page reads
+  back as _not confirmed_, never as a fabricated "no games played".
 
 ## M08.12 — Card-inclusion integrity
 
