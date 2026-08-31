@@ -22,7 +22,14 @@
  * button. The builder without it would be a form that creates work nothing can
  * run.
  *
- * The remaining six are still absent. The list is still a list rather than a
+ * M08.10 owns **Results**, and it is where a queue's completed, partial and
+ * refused work stops being something you watch and starts being something you
+ * browse: filter by date, type, status, source, content hash, Commander or
+ * precon; open one run's provenance, completion quality and evidence standing;
+ * download the exact document a run wrote; and keep a note, a tag or a baseline
+ * mark beside a run without touching its canonical output.
+ *
+ * The remaining five are still absent. The list is still a list rather than a
  * switch in the layout, so the tranche after this one adds a line and its screen
  * appears in the navigation, in the order an administrator meets it.
  */
@@ -62,6 +69,14 @@ export const ADMIN_SECTIONS = [
     summary:
       'Order a draft before it runs, start it, and watch what it does. Every state, count and ' +
       'instant on this page is the orchestration process reporting on its own work.',
+  },
+  {
+    id: 'results',
+    label: 'Results',
+    title: 'Results',
+    summary:
+      'Browse every job this catalog has ever run — completed, partial or refused — filter it by ' +
+      'what it is, and open one run’s provenance, evidence standing and downloadable documents.',
   },
 ] as const satisfies readonly AdminSection[];
 

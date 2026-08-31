@@ -101,6 +101,10 @@ const STATUS_FOR: Readonly<Record<AdminErrorCode, number>> = Object.freeze({
   'admin/unknown_batch': 404,
   'admin/unknown_job': 404,
   'admin/catalog_limit': 409,
+  // A read this service will not put in one answer. 413 rather than 409: the
+  // request was legal and the *response* is what is too large, which is the one
+  // case where the payload-size status is about the answer rather than the ask.
+  'admin/artifact_too_large': 413,
   'admin/duplicate_id': 409,
   'admin/invalid_cursor': 400,
   'admin/incompatible_filter': 400,

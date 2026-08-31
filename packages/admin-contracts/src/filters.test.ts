@@ -134,19 +134,43 @@ describe('incompatible and malformed filters', () => {
   });
 });
 
-describe('the filter names only what M08.1 defines', () => {
+describe('the filter names only what this package models', () => {
   it('has a field for every classification this package models, and no other', () => {
     expect(Object.keys(NO_CATALOG_FILTER).sort()).toEqual([
       'baseline',
       'batchId',
+      'commanderIds',
       'createdAfter',
       'createdBefore',
       'fullContentHash',
       'kinds',
+      'preconIds',
       'purpose',
       'sourceClasses',
       'status',
       'tags',
     ]);
+  });
+
+  it('filters by precon and by Commander, which M08.1 deferred until they were modelled', () => {
+    const filter = parse({
+      preconIds: ['precon_goblin_swarm'],
+      commanderIds: ['goblin_warboss', 'bastion_marshal'],
+    });
+    expect(filter.success).toBe(true);
+    expect(filter.data?.preconIds).toEqual(['precon_goblin_swarm']);
+    expect(filter.data?.commanderIds).toHaveLength(2);
+  });
+
+  it('refuses a repeated or path-shaped content identifier, like every other value set', () => {
+    expect(parse({ preconIds: ['a', 'a'] }).success).toBe(false);
+    expect(
+      parse({ commanderIds: Array.from({ length: 17 }, (_, i) => `c${String(i)}`) }).success,
+    ).toBe(false);
+  });
+
+  it('names neither by default, so an unfiltered listing asks about neither', () => {
+    expect(NO_CATALOG_FILTER.preconIds).toEqual([]);
+    expect(NO_CATALOG_FILTER.commanderIds).toEqual([]);
   });
 });

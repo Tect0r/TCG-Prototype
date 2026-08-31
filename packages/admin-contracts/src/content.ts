@@ -45,8 +45,14 @@ import { z } from 'zod';
  * of a precon ID belongs to `@tcg/card-data` and a pilot ID's to
  * `@tcg/bot-interface`, and restating either here would be the second copy this
  * package exists to refuse.
+ *
+ * Exported because M08.10 filters a catalog listing by precon and by Commander,
+ * and the values a filter names have to be the values this answer offers. A
+ * second, differently bounded spelling in `filters.ts` would be a filter that
+ * could name an identifier no content catalog can produce.
  */
-const resolvedIdSchema = z.string().min(1).max(64);
+export const contentIdSchema = z.string().min(1).max(64);
+const resolvedIdSchema = contentIdSchema;
 
 /** One precon the active format publishes, with this build's verdict on it. */
 export const contentPreconSchema = z.strictObject({

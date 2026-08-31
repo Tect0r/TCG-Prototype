@@ -6,6 +6,7 @@ import { ConnectGate } from './components/ConnectGate.js';
 import { ConnectionBadge } from './components/ConnectionBadge.js';
 import { OverviewScreen } from './components/OverviewScreen.js';
 import { QueueScreen } from './components/QueueScreen.js';
+import { ResultsScreen } from './components/ResultsScreen.js';
 import { DEFAULT_SECTION, type AdminSectionId } from './sections.js';
 import { useAdminState } from './state/AdminContext.js';
 
@@ -15,13 +16,13 @@ import { useAdminState } from './state/AdminContext.js';
  * Until the orchestration process has answered `capabilities`, there is no
  * navigation, no layout and no page — only the reason there isn't one. The shell
  * appears when there is something behind every destination it offers, which for
- * this build is three destinations.
+ * this build is four destinations.
  *
  * Nothing else here decides anything: `AdminSession` owns the connection,
  * `sections.ts` owns what exists, and each screen owns its own reading.
  *
- * The section switch is exhaustive over `AdminSectionId` by construction — three
- * destinations, three screens — so a fourth entry in `sections.ts` without a
+ * The section switch is exhaustive over `AdminSectionId` by construction — four
+ * destinations, four screens — so a fifth entry in `sections.ts` without a
  * screen behind it would render the wrong page rather than an empty one, which
  * is the failure mode the milestone's *no decorative empty pages* rule exists to
  * prevent and the reason the entry is added by the tranche that builds the page.
@@ -50,6 +51,7 @@ export function App() {
       {section === 'overview' && <OverviewScreen />}
       {section === 'new-test-batch' && <BuilderScreen />}
       {section === 'queue' && <QueueScreen />}
+      {section === 'results' && <ResultsScreen />}
     </AdminShell>
   );
 }

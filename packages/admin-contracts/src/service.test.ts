@@ -50,13 +50,15 @@ const CAPABILITIES = {
 };
 
 describe('the endpoint registry', () => {
-  it('names twenty endpoints, and every one of them has both schemas', () => {
+  it('names twenty-two endpoints, and every one of them has both schemas', () => {
     // Thirteen from M08.6, plus M08.8's four: the builder has to be told what
     // content exists, has to show an exact total *before* anything is enqueued,
     // and has to keep a filled-in form somewhere the browser is not. Plus
     // M08.9's three: an ordering can be changed, a job in a draft can be
-    // duplicated, and a draft has to be released before anything runs.
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(20);
+    // duplicated, and a draft has to be released before anything runs. Plus
+    // M08.10's two: a run's canonical documents can be listed, and one of them
+    // can be downloaded unchanged.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(22);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);

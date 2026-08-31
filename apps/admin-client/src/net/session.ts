@@ -1,21 +1,29 @@
-import { PAGE_SIZE_DEFAULT } from '@tcg/admin-contracts';
+import { PAGE_SIZE_DEFAULT, catalogFilterSchema, pageRequestSchema } from '@tcg/admin-contracts';
 import type {
   AdminEndpointName,
   AdminRequestOf,
   AdminResponseOf,
+  Annotations,
   BatchDetail,
   BatchId,
   BatchPage,
   Capabilities,
+  CatalogFilterInput,
   CatalogJobView,
   ChoiceEstimate,
   ContentCatalog,
   EnqueuePresetResult,
   JobId,
+  JobPage,
   JobProgressView,
   OperatorJobAction,
+  PageRequestInput,
   PresetCatalog,
   PresetChoice,
+  ResultArtifact,
+  ResultArtifactListing,
+  ResultArtifactName,
+  ResultSummary,
   SavedChoiceList,
   SavedChoiceView,
 } from '@tcg/admin-contracts';
@@ -379,6 +387,66 @@ export class AdminSession {
 
   async jobAction(jobId: JobId, action: OperatorJobAction): Promise<AdminOutcome<CatalogJobView>> {
     return this.#call('jobAction', { jobId, action });
+  }
+
+  /* ---------------------------------------------------- the result catalog (M08.10) */
+
+  /**
+   * A filtered, paged listing over every job the catalog holds — completed,
+   * partial, refused and never-run alike.
+   *
+   * Deliberately not a session resource, for the reason the queue's readings
+   * are not: a filter is one screen's current values, and a listing changes
+   * while nobody is watching it. The screen that asked owns the answer.
+   */
+  async listJobs(
+    filter?: CatalogFilterInput,
+    page?: PageRequestInput,
+  ): Promise<AdminOutcome<JobPage>> {
+    return this.#call('listJobs', {
+      filter: catalogFilterSchema.parse(filter ?? {}),
+      page: pageRequestSchema.parse(page ?? {}),
+    });
+  }
+
+  /**
+   * A run's headline reading, or the one refusal that says why there is none.
+   *
+   * A refusal here is not a client failure — a queued job, a run with no
+   * calibration standing and a corrupt summary all answer through this same
+   * call, and the detail screen's job is to tell those apart rather than to
+   * treat every refusal as the same blank state.
+   */
+  async resultSummary(jobId: JobId): Promise<AdminOutcome<ResultSummary>> {
+    return this.#call('resultSummary', { jobId });
+  }
+
+  /** Which of a run's canonical documents exist, and which are too large to download. */
+  async resultArtifacts(jobId: JobId): Promise<AdminOutcome<ResultArtifactListing>> {
+    return this.#call('resultArtifacts', { jobId });
+  }
+
+  /** One canonical document, byte for byte, with the identity that names the run. */
+  async resultArtifact(
+    jobId: JobId,
+    artifact: ResultArtifactName,
+  ): Promise<AdminOutcome<ResultArtifact>> {
+    return this.#call('resultArtifact', { jobId, artifact });
+  }
+
+  /**
+   * Replacing a job's tags, note and baseline mark.
+   *
+   * The whole block, never a patch — `setJobAnnotationsRequestSchema` gives the
+   * reason: there is no way to say "leave this one" that is distinguishable from
+   * "clear it", so a screen that lets an operator edit one field sends the other
+   * two back unchanged rather than omitting them.
+   */
+  async setJobAnnotations(
+    jobId: JobId,
+    annotations: Annotations,
+  ): Promise<AdminOutcome<CatalogJobView>> {
+    return this.#call('setJobAnnotations', { jobId, annotations });
   }
 
   /**

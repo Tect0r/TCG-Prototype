@@ -38,6 +38,7 @@ import { duplicateConfig } from '../lab/duplicate.js';
 import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js';
 import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
+import { ArtifactReader } from './artifacts.js';
 import type { AdminServiceConfig } from './config.js';
 import { ResultReader } from './results.js';
 
@@ -80,6 +81,7 @@ export class AdminService {
   readonly #store: CatalogStore;
   readonly #queue: JobQueue;
   readonly #results: ResultReader;
+  readonly #artifacts: ArtifactReader;
   readonly #startedAt: string;
 
   constructor(options: AdminServiceOptions) {
@@ -87,6 +89,7 @@ export class AdminService {
     this.#store = options.store;
     this.#queue = options.queue;
     this.#results = new ResultReader({ store: options.store, roots: options.config.roots });
+    this.#artifacts = new ArtifactReader({ store: options.store, roots: options.config.roots });
     this.#startedAt = (options.startedAt ?? new Date()).toISOString();
   }
 
@@ -135,6 +138,8 @@ export class AdminService {
       jobProgress: (payload) => this.#jobProgress(payload.jobId),
       resultSummary: (payload) => this.#results.readSummary(payload.jobId),
       resultTable: (payload) => this.#results.readTable(payload.jobId, payload.table, payload.page),
+      resultArtifacts: (payload) => this.#artifacts.list(payload.jobId),
+      resultArtifact: (payload) => this.#artifacts.read(payload.jobId, payload.artifact),
     };
   }
 

@@ -293,6 +293,24 @@ export {
 } from './pagination.js';
 
 export {
+  ARTIFACT_FORMATS,
+  ARTIFACT_MEDIA_TYPES,
+  MAX_ARTIFACT_BYTES,
+  RESULT_ARTIFACTS,
+  RESULT_ARTIFACT_NAMES,
+  artifactFormatSchema,
+  resultArtifactListingSchema,
+  resultArtifactNameSchema,
+  resultArtifactSchema,
+  suggestedArtifactFilename,
+  type ArtifactFormat,
+  type ResultArtifact,
+  type ResultArtifactDefinition,
+  type ResultArtifactListing,
+  type ResultArtifactName,
+} from './artifacts.js';
+
+export {
   MAX_FILTER_VALUES,
   NO_CATALOG_FILTER,
   catalogFilterSchema,
@@ -320,6 +338,7 @@ export {
   operatorActionsFor,
   operatorJobActionSchema,
   reorderBatchRequestSchema,
+  resultArtifactRequestSchema,
   resultTableRequestSchema,
   saveChoiceRequestSchema,
   setJobAnnotationsRequestSchema,
@@ -341,6 +360,7 @@ export {
   type ListJobsRequest,
   type OperatorJobAction,
   type ReorderBatchRequest,
+  type ResultArtifactRequest,
   type ResultTableRequest,
   type ResultTableRequestInput,
   type SaveChoiceRequest,
@@ -414,6 +434,7 @@ export {
 export {
   NO_PLAY_QUALITY_CAVEAT,
   contentCatalogSchema,
+  contentIdSchema,
   contentPilotSchema,
   contentPreconSchema,
   playablePrecons,

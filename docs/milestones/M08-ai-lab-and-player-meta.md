@@ -2754,7 +2754,7 @@ started`, and names Queue as where the batch is ordered and started. The
   somebody stopped mid-run read identically, and deciding what that word means is
   part of the deletion question M08.28 holds.
 
-## M08.10 — Result catalog and generic run detail
+## M08.10 — Result catalog and generic run detail — **done (2026-08-31)**
 
 Browse completed and partial evidence before specialized charts exist: list and
 filter by date, type, status, source, content hash, Commander or precon, and
@@ -2767,12 +2767,151 @@ corrupt and unsupported result schemas handled honestly.
 **Acceptance:** pagination and filter, partial and corrupt result, download
 authorization, baseline, and schema-refusal tests.
 
+### What M08.10 built
+
+**A precon and a Commander became filterable, and M08.1's deferral of them was
+answered rather than overruled.** M08.1 declined to add them with a reason —
+_a filter for a field the contract does not model could not be honoured_ — and
+the reason no longer holds: `contentCatalogSchema` models a precon's
+`commanderId`, so `catalogFilterSchema` widened by `preconIds` and
+`commanderIds`. Both are read off the **run's own configuration**, not off a
+finished result — `apps/admin-server/src/catalog/run-content.ts` walks a
+configuration's deck sources (`precon`, `inline`; `generated` and `files` name
+neither, truthfully) and the store runs that pass only when one of the two
+fields is actually asked for, so an ordinary listing opens no configuration at
+all. A withdrawn precon resolves to no Commander rather than a guessed one.
+
+**Every field `catalogFilterSchema` names has a control on the Results
+screen** — status, purpose, source, type, baseline, precon, Commander, a
+created-date range and a pasted content hash — and applying one is a
+deliberate act, the same habit `BuilderScreen` already has: a person ticks
+boxes, then asks, rather than the catalog being re-read on every keystroke.
+The listing is `listJobs` under a cursor, walked forward with "Show more" — the
+contract's own ordering is `createdAt` then ID, and this tranche did not add a
+second one.
+
+**A detail view is three independent readings, because they fail
+independently.** Selecting a row opens the job itself (already in hand from the
+listing), `resultSummary` (refused rather than served when a run has no
+calibration standing, a corrupt summary, or nothing written yet — the
+`Failure` component prints the service's own sentence for each, so "old build"
+and "no result yet" read as the two different facts they are), and the new
+`resultArtifacts` listing, which survives a refused summary because it never
+opens one: `apps/admin-server/src/service/artifacts.ts` opens the manifest for
+identity and nothing else, precisely so a run whose numbers cannot be shown
+still has downloadable evidence.
+
+**Downloads are the run's own bytes, never a rendering of them.** Two
+endpoints, `result-artifacts` and `result-artifact`, answer out of thirteen
+named documents — `manifest.json`, `config.json`, `summary.json`, `report.md`,
+`decks.json`, the resolved environment, the reference population, both
+matchup-matrix files and the three CSV exports — each mapped to the field
+`experimentPaths` already fixes, with a test that is total over the join. No
+document is parsed, re-serialized or generated: a Markdown report assembled
+here would be a second report ADR 0023 §2 forbids, and a CSV built from
+`resultTableSchema` would be a derivative a reader could quote as the run's own
+output. `matches.jsonl`, replays, checkpoints and per-environment snapshots are
+deliberately absent — the first is an unbounded stream no browser should be
+handed through a JSON envelope, and the rest are directories a listing
+endpoint would have to open, which is M08.26's Match Explorer to build. A
+document larger than `MAX_ARTIFACT_BYTES` (4 MiB) is refused with its exact
+size rather than truncated, because a partial CSV is an artifact somebody can
+quote and nothing marks a spreadsheet as incomplete once it is saved.
+
+**Notes, tags and baseline are the one mutation this screen makes, and the
+request shape is what makes "never mutates canonical output" a fact rather
+than a promise.** `setJobAnnotationsRequestSchema` — on the wire since M08.1 —
+has no field that reaches an experiment directory; a saved form's baseline
+checkbox can express nothing else. The whole block is replaced rather than
+patched, the same rule `annotations.ts` already stated.
+
+**Unsupported and corrupt results are reported, not hidden.** A run written
+before `SUMMARY_SCHEMA_VERSION` 7 (no calibration standing), a summary that is
+not valid JSON, and a directory that no longer resolves all answer through the
+same `resultSummary` refusal `M08.6`'s `ResultReader` already gave, and this
+tranche's contribution is putting a screen in front of it that prints the
+sentence rather than a blank card.
+
 ### Checklist
 
-- [ ] Filterable list over the catalog, bounded and paginated.
-- [ ] Provenance, completion quality and evidence standing on every detail view.
-- [ ] Baseline, notes and tags stored beside the run, never inside it.
-- [ ] Unsupported and corrupt results reported, not hidden.
+- [x] **Filterable list over the catalog, bounded and paginated.** Every field
+      `catalogFilterSchema` names has a control; `listJobs` pages by the
+      contract's own cursor, and the screen's "Show more" walks it forward
+      rather than re-fetching from the start.
+- [x] **Provenance, completion quality and evidence standing on every detail
+      view.** `SummaryFacts` renders `identity`, `denominators` and
+      `evidence` exactly — including the calibration standing and the
+      sentence saying what would promote it — whenever `resultSummary`
+      answers with a value, and prints the service's own refusal, unchanged,
+      whenever it does not.
+- [x] **Baseline, notes and tags stored beside the run, never inside it.**
+      `setJobAnnotationsRequestSchema` carries no field that can reach an
+      experiment directory, so the promise is structural.
+- [x] **Unsupported and corrupt results reported, not hidden.** A refused
+      `resultSummary` — old build, corrupt JSON, or a directory that no
+      longer resolves — is printed with the service's own sentence rather
+      than an empty state, and `resultArtifacts` stays reachable regardless,
+      so raw evidence survives a summary this build cannot interpret.
+
+### Versions
+
+| Constant                 | Was | Now | Why                                                                                                                                                                                                                                            |
+| ------------------------ | --- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION` | 5   | 6   | Two endpoints — `result-artifacts`, `result-artifact` — and `catalogFilterSchema` widened by `preconIds` and `commanderIds`. One new code, `admin/artifact_too_large`. A build speaking 5 could show a run's numbers but offer no file for it. |
+
+`CATALOG_DOCUMENT_VERSION`, `JOB_EVENT_VERSION` and `SAVED_CHOICE_VERSION` are
+untouched: no persisted document changed shape. The precon/Commander filter
+reads a job's existing `spec`-adjacent configuration file rather than adding a
+field to the catalog document, and an artifact answer is assembled from a run
+directory at the moment it is asked for, exactly as `resultSummary` already
+was.
+
+### Exclusions honoured
+
+**No result chart and no charting dependency**: every reading is a
+`FactTable` or a list of exact facts, and the screen renders no `<svg>` and no
+canvas. **No second scheduler and no second report**: `resultArtifact` serves
+what `experimentPaths` already wrote; nothing here calls `buildSchedule`,
+`runExperiment` or assembles a document the simulator did not. **No arbitrary
+filesystem path, output root or JSON blob**: `resultArtifactRequestSchema` is
+`{ jobId, artifact }`, where `artifact` is a closed enum: `boundary.test.ts`
+scans the same closed request-schema registry M08.1 established. **No card
+authored, no precon rebalanced, no deck size moved, no Unit cap, no accounts
+and no MMR.** **No admin control in the player bundle**: the built player
+bundle still contains zero occurrences of the string `admin`, checked against
+the actual `dist/` output rather than only against source.
+
+### Limitations recorded rather than worked around
+
+- **The precon and Commander filters see only what a configuration's deck
+  source states outright.** A `generated` or `files` deck source names
+  neither, which is truthful — a searched population's Commander is a result
+  of the draw, not a selection — but it means these two filters currently
+  answer nothing for search and adaptive evidence. The tranche that models a
+  searched deck's identity (M08.16 and the Deck Explorer) is the one that can
+  extend them.
+- **A content-hash filter matches only a run that has already produced a
+  result.** `fullContentHash` is a reading taken from the resolved
+  environment a run played in (M08.1's own limitation, restated); a queued or
+  running job has none yet, which the filter already handled correctly before
+  this tranche and continues to.
+- **No result table (`decks`, `matchups`, `cards`, `seats`, `pilots`,
+  `agent_classes`, `terminations`) is browsable from this screen.** The
+  contract's `result-table` endpoint has existed since M08.6 and this tranche
+  does not open a UI for it: click-through from a chart to its contributing
+  rows is M08.11's _ordered heatmap plus exact table_ requirement, and
+  building half of that browsing surface here — with no chart to click
+  through from — would be the decorative scaffolding the milestone forbids.
+- **A batch-level view of its member jobs' results does not exist.** The
+  Results screen lists every job in the catalog flat; grouping by the batch
+  that created them is a convenience the Queue screen already gives while a
+  batch is running, and duplicating it here was not this tranche's to build.
+- **The precon and Commander lists on the filter panel come from the active
+  connection's content catalog, which is per-session and per-format.** A
+  historical run played under a format this build no longer serves would
+  still be listed by its stored spec, but could not be _filtered to_ by
+  precon name, because the content catalog has nothing to offer for it. The
+  run remains reachable by every other field.
 
 ## M08.11 — Precon result dashboard
 

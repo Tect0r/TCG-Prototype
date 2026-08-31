@@ -9,17 +9,27 @@ import {
   tagSchema,
   timestampSchema,
 } from './identity.js';
+import { contentIdSchema } from './content.js';
 import { jobStatusSchema } from './lifecycle.js';
 
 /**
  * How a catalog listing is narrowed.
  *
- * Every field here filters on something **M08.1 itself defines**, and that is the
- * whole selection rule. M08.10 will also want to filter by Commander and by
- * precon; neither is in this schema, because a filter for a field the contract
- * does not model could not be honoured, and a page that does not exist cannot
- * say what it needs. The tranche that adds the Deck and Card explorers adds those
- * filters beside the schemas that give them meaning.
+ * Every field here filters on something the contract itself defines, and that is
+ * the whole selection rule.
+ *
+ * **M08.1 wrote that a Commander and a precon filter would wait**, on the
+ * grounds that *a filter for a field the contract does not model could not be
+ * honoured, and a page that does not exist cannot say what it needs*. The first
+ * half was the load-bearing one and M08.10 answers it rather than overruling it:
+ * a precon **is** modelled — `contentPreconSchema` publishes a `preconId` and the
+ * `commanderId` it plays, and a precon deck source names those IDs in the
+ * configuration a job stores. So the two filters below are asked of the run's own
+ * **configuration**, which every job has from the moment it is created, rather
+ * than of a deck table that only a finished run has. What still waits for the
+ * Deck and Card explorers is filtering by a deck a *search* produced, because
+ * that is a result rather than a selection, and `deckSearchFilter` is not a shape
+ * this package can express yet.
  *
  * ## Semantics
  *
@@ -78,6 +88,27 @@ export const catalogFilterSchema = z
      * saw this content" wants that run in the answer.
      */
     fullContentHash: contentHashSchema.nullable().default(null),
+    /**
+     * Runs whose configuration names one of these precons.
+     *
+     * Asked of the configuration rather than of the results, so a queued job
+     * answers it as well as a finished one — an operator narrowing to *the runs
+     * that play Goblin Swarm* means the ones configured to, and half of them may
+     * not have started. A run whose decks are generated or loaded from files
+     * names no precon and matches nothing here, which is truthful: it plays no
+     * precon.
+     */
+    preconIds: valueSet(contentIdSchema),
+    /**
+     * Runs one of whose configured decks is led by one of these Commanders.
+     *
+     * The same reading, one step further: a precon resolves to a Commander
+     * through the content catalog, and an inline deck states one directly. It is
+     * a separate field rather than a translation of `preconIds`, because two
+     * precons can share a Commander and *which Commander was under test* is the
+     * question M08.13 aggregates by.
+     */
+    commanderIds: valueSet(contentIdSchema),
     /** Inclusive lower bound on `timestamps.createdAt`. */
     createdAfter: timestampSchema.nullable().default(null),
     /** Inclusive upper bound on `timestamps.createdAt`. */

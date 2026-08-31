@@ -59,7 +59,9 @@ import {
   readJsonLines,
   writeJsonAtomically,
 } from './files.js';
+import { preconCommanderIds } from '../lab/content.js';
 import { prepareJobConfig, readJobConfig, writeJobConfig } from './job-config.js';
+import { commanderIdsOf, runContentOf, selectionMatches } from './run-content.js';
 import { resolveResultLocation, type ResolvedCatalogRoots } from './roots.js';
 import { KeyedMutex } from './serialize.js';
 import type {
@@ -137,6 +139,16 @@ export interface FileCatalogStoreOptions {
   readonly idSources?: IdSources;
   /** Injectable so timestamps in a test are the test's. */
   readonly clock?: () => Date;
+  /**
+   * Which Commander each published precon plays, for the M08.10 content filter.
+   *
+   * Injected rather than imported at the call site so a store test can filter by
+   * Commander without loading a card environment, and so the **one** expensive
+   * thing this filter needs happens once per listing rather than once per job.
+   * The default is the content catalog's own answer, resolved when a listing
+   * actually asks about a Commander and never otherwise.
+   */
+  readonly commanderOfPrecon?: () => ReadonlyMap<string, string>;
 }
 
 /** The three statuses a restart finds work in, derived rather than listed. */
@@ -148,6 +160,7 @@ export class FileCatalogStore implements CatalogStore {
   readonly #roots: ResolvedCatalogRoots;
   readonly #idSources: IdSources | undefined;
   readonly #clock: () => Date;
+  readonly #commanderOfPrecon: () => ReadonlyMap<string, string>;
   readonly #locks = new KeyedMutex();
 
   readonly #batchDir: string;
@@ -160,6 +173,7 @@ export class FileCatalogStore implements CatalogStore {
     this.#roots = options.roots;
     this.#idSources = options.idSources;
     this.#clock = options.clock ?? (() => new Date());
+    this.#commanderOfPrecon = options.commanderOfPrecon ?? preconCommanderIds;
     this.#batchDir = join(options.roots.catalogRoot, 'batches');
     this.#jobDir = join(options.roots.catalogRoot, 'jobs');
     this.#configDir = join(options.roots.catalogRoot, 'configs');
@@ -427,16 +441,58 @@ export class FileCatalogStore implements CatalogStore {
     return this.#locks.run(documentPath(this.#jobDir, jobId), () => this.#readJobDocument(jobId));
   }
 
+  /**
+   * The catalog's jobs, narrowed and paged.
+   *
+   * **Two passes, and the second one only when it is asked for.** Every
+   * predicate `jobMatchesFilter` holds is a field of the job document and costs
+   * nothing beyond the read this method already does. The precon and Commander
+   * filters M08.10 adds are different: they are questions about the *run's
+   * configuration*, which is a second document per job, so they run as a
+   * separate pass over what the cheap predicates already survived, and a listing
+   * that names neither never opens a configuration at all.
+   *
+   * The pass happens **before** pagination rather than after it. A page filtered
+   * afterwards would return fewer rows than its limit while more matches waited
+   * behind the cursor, and `pageInfoSchema`'s contract — *`nextCursor` is null
+   * exactly when the listing is exhausted* — would stop being true.
+   *
+   * A job whose configuration cannot be read is **excluded from a content-filtered
+   * listing and counted as unreadable**, rather than passed through. Answering
+   * *this run plays Goblin Swarm* about a document nobody could read would be
+   * the catalog inventing a selection.
+   */
   async listJobs(
     filter?: CatalogFilter,
     page?: PageRequestInput,
   ): Promise<CatalogResult<CatalogPage<CatalogJobDocument>>> {
     const active = filter ?? NO_CATALOG_FILTER;
     const loaded = await this.#loadAll(this.#jobDir, catalogJobDocumentSchema, 'admin/unknown_job');
-    const matching = loaded.documents.filter((document) => jobMatchesFilter(document, active));
+    const cheap = loaded.documents.filter((document) => jobMatchesFilter(document, active));
+
+    const asksAboutContent = active.preconIds.length > 0 || active.commanderIds.length > 0;
+    let matching = cheap;
+    const unreadable = [...loaded.unreadable];
+    if (asksAboutContent) {
+      const commanderOfPrecon =
+        active.commanderIds.length > 0 ? this.#commanderOfPrecon() : new Map<string, string>();
+      const kept: CatalogJobDocument[] = [];
+      for (const document of cheap) {
+        const config = await this.readJobConfig(document.jobId);
+        if (isErr(config)) {
+          unreadable.push({ id: document.jobId, errors: config.error });
+          continue;
+        }
+        const selection = runContentOf(config.value);
+        const commanders = commanderIdsOf(selection, commanderOfPrecon);
+        if (selectionMatches(selection, commanders, active)) kept.push(document);
+      }
+      matching = kept;
+    }
+
     return this.#paginate(
       matching,
-      loaded.unreadable,
+      unreadable,
       (document) => ({ createdAt: document.timestamps.createdAt, id: document.jobId }),
       page,
     );

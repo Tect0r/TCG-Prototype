@@ -1,6 +1,7 @@
 import {
   ADMIN_CONTRACT_VERSION,
   ADMIN_ENDPOINTS,
+  ARTIFACT_MEDIA_TYPES,
   applyBatchTransition,
   applyJobTransition,
   CURRENT_ADMIN_VERSIONS,
@@ -9,26 +10,44 @@ import {
   PAGE_SIZE_DEFAULT,
   PAGE_SIZE_MAX,
   PRESET_REGISTRY,
+  RESULT_ARTIFACT_NAMES,
+  RESULT_ARTIFACTS,
   NO_ANNOTATIONS,
   NO_PROGRESS,
   adminError,
+  catalogFilterSchema,
   catalogJobViewSchema,
+  resultArtifactListingSchema,
+  resultArtifactSchema,
+  resultSummarySchema,
+  suggestedArtifactFilename,
   type AdminEndpointName,
   type AdminErrorCode,
+  type Annotations,
   type Capabilities,
   type CatalogBatchView,
+  type CatalogFilter,
   type ChoiceEstimate,
   type BatchDetail,
   type CatalogJobView,
   type ContentCatalog,
   type EnqueuePresetResult,
+  type ExperimentKind,
+  type ExperimentPurpose,
+  type JobOrigin,
   type JobProgressView,
+  type JobStatus,
   type OperatorJobAction,
   type Progress,
   type PresetCatalog,
   type PresetChoice,
+  type ResultArtifactListing,
+  type ResultArtifactName,
+  type ResultSummary,
+  type RunIdentity,
   type SavedChoiceList,
   type SavedChoiceView,
+  type SourceClass,
 } from '@tcg/admin-contracts';
 
 import type { AdminHttpRequest, AdminHttpReply, AdminTransport } from '../net/transport.js';
@@ -104,6 +123,99 @@ export interface FakeLab {
   release(batchId: string): void;
   job(jobId: string): CatalogJobView | undefined;
   batch(batchId: string): CatalogBatchView | undefined;
+  /**
+   * Seeds one job with a finished (or refused, or partial) result, for the
+   * result catalog's own tests (M08.10). Unlike `seedDraft`, this job is not
+   * held behind a draft batch: it is minted already in whatever `status` is
+   * asked for, because a browsing screen has to see completed, failed and
+   * interrupted evidence side by side, which no operator verb produces here.
+   */
+  seedResult(options?: SeedResultOptions): SeededResult;
+}
+
+export interface SeedResultOptions {
+  readonly label?: string;
+  readonly status?: JobStatus;
+  readonly purpose?: ExperimentPurpose;
+  readonly sourceClasses?: readonly SourceClass[];
+  readonly kind?: ExperimentKind;
+  readonly origin?: JobOrigin;
+  readonly annotations?: Annotations;
+  /** What the run's configuration selects, for the precon and Commander filters. */
+  readonly preconIds?: readonly string[];
+  readonly commanderIds?: readonly string[];
+  /** What `resultSummary` answers for this job — a reading, or a named refusal. */
+  readonly summary?:
+    'none' | ResultSummary | { readonly refuse: AdminErrorCode; readonly message?: string };
+  /** Which canonical documents this run wrote, and their content. */
+  readonly artifacts?: Readonly<Partial<Record<ResultArtifactName, string>>>;
+}
+
+export interface SeededResult {
+  readonly jobId: string;
+  readonly batchId: string;
+}
+
+/** A run identity that is legal, complete and obviously a fixture. */
+export function resultIdentityFixture(overrides: Partial<RunIdentity> = {}): RunIdentity {
+  return {
+    experimentId: 'precon-standard',
+    kind: 'batch',
+    seed: 'precon-standard|r1',
+    configHash: 'abcdef0123456789',
+    environments: [
+      {
+        environmentId: 'wave_1',
+        hashes: {
+          mechanicsHash: '1111111111111111',
+          pilotInputHash: '2222222222222222',
+          presentationHash: '3333333333333333',
+          fullContentHash: '4444444444444444',
+        },
+      },
+    ],
+    manifestSchemaVersion: 8,
+    softwareCommit: '900390d',
+    ...overrides,
+  };
+}
+
+/** A complete, readable summary, for a fixture that has nothing wrong with it. */
+export function resultSummaryFixture(overrides: Partial<ResultSummary> = {}): ResultSummary {
+  return resultSummarySchema.parse({
+    jobId: overrides.jobId ?? 'job_fake000001',
+    kind: 'batch',
+    configHash: 'abcdef0123456789',
+    identity: resultIdentityFixture(),
+    source: { document: 'summary.json', schemaVersion: 7 },
+    denominators: {
+      matches: 40,
+      usableMatches: 38,
+      abnormalMatches: 2,
+      failedMatches: 0,
+      resumedMatches: 0,
+      abnormalByKind: { turn_limit: 2 },
+    },
+    evidence: {
+      standing: 'calibration',
+      reasons: ['No pilot in this build carries a final balance conclusion.'],
+      promotionRequires:
+        'A run stops being calibration only when every class that flew it carries it.',
+      analysisVersion: 1,
+    },
+    readings: [{ key: 'matches', label: 'Games played', value: 40, kind: 'count' }],
+    tables: [
+      { table: 'decks', rows: 2 },
+      { table: 'matchups', rows: 1 },
+      { table: 'cards', rows: 160 },
+      { table: 'seats', rows: 2 },
+      { table: 'pilots', rows: 1 },
+      { table: 'agent_classes', rows: 1 },
+      { table: 'terminations', rows: 2 },
+    ],
+    limitations: ['A limitation the fake service publishes with every benchmark.'],
+    ...overrides,
+  });
 }
 
 export function capabilitiesFixture(overrides: Partial<Capabilities> = {}): Capabilities {
@@ -198,14 +310,34 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
   /** The catalog this fake keeps: batches in creation order, jobs by ID. */
   const batches = new Map<string, CatalogBatchView>();
   const jobs = new Map<string, CatalogJobView>();
+  /** What each job's configuration selects, for the M08.10 precon and Commander filters. */
+  const jobContent = new Map<
+    string,
+    { preconIds: readonly string[]; commanderIds: readonly string[] }
+  >();
+  /** What `resultSummary` answers for a job, when it is not the ordinary "no result yet". */
+  const jobSummaries = new Map<
+    string,
+    'none' | ResultSummary | { readonly refuse: AdminErrorCode; readonly message?: string }
+  >();
+  /** Which canonical documents a job's run wrote, and their content, for the artifact endpoints. */
+  const jobArtifacts = new Map<string, Readonly<Partial<Record<ResultArtifactName, string>>>>();
+
+  /** A clock that only ever advances, so listings and date-range filters see a real order. */
+  let ticks = 0;
+  const nextTimestamp = (): string => {
+    ticks += 1;
+    return new Date(Date.parse(NOW) + ticks * 1_000).toISOString();
+  };
 
   const mintBatch = (label: string): CatalogBatchView => {
     batchCounter += 1;
+    const createdAt = nextTimestamp();
     const view: CatalogBatchView = {
       batchId: `batch_fake${String(batchCounter).padStart(6, '0')}`,
       label,
       status: 'draft',
-      timestamps: { createdAt: NOW, updatedAt: NOW, startedAt: null, completedAt: null },
+      timestamps: { createdAt, updatedAt: createdAt, startedAt: null, completedAt: null },
       annotations: { tags: [], note: '', baseline: false },
       jobIds: [],
     };
@@ -214,33 +346,53 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     return view;
   };
 
+  interface MintJobOverrides {
+    readonly status?: JobStatus;
+    readonly purpose?: ExperimentPurpose;
+    readonly sourceClasses?: readonly SourceClass[];
+    readonly kind?: ExperimentKind;
+    readonly origin?: JobOrigin;
+    readonly annotations?: Annotations;
+    readonly result?: CatalogJobView['result'];
+  }
+
   const mintJob = (
     batchId: string,
     label: string,
     experimentId: string,
     seed: string,
+    overrides: MintJobOverrides = {},
   ): CatalogJobView => {
     jobCounter += 1;
+    const createdAt = nextTimestamp();
+    const status = overrides.status ?? 'queued';
+    const terminal = ['completed', 'failed', 'cancelled'].includes(status);
+    const started = terminal || status !== 'queued';
     const view = catalogJobViewSchema.parse({
       jobId: `job_fake${String(jobCounter).padStart(6, '0')}`,
       batchId,
       label,
-      status: 'queued',
-      purpose: 'exploration',
-      sourceClasses: ['ai', 'precon'],
-      timestamps: { createdAt: NOW, updatedAt: NOW, startedAt: null, completedAt: null },
-      annotations: NO_ANNOTATIONS,
+      status,
+      purpose: overrides.purpose ?? 'exploration',
+      sourceClasses: overrides.sourceClasses ?? ['ai', 'precon'],
+      timestamps: {
+        createdAt,
+        updatedAt: createdAt,
+        startedAt: started ? createdAt : null,
+        completedAt: terminal ? createdAt : null,
+      },
+      annotations: overrides.annotations ?? NO_ANNOTATIONS,
       progress: NO_PROGRESS,
       spec: {
         experimentId,
-        kind: 'batch',
+        kind: overrides.kind ?? 'batch',
         seed,
         configHash: 'abcdef0123456789',
         configSchemaVersion: 1,
       },
-      origin: { kind: 'preset', presetId: 'precon_smoke', stageId: 'matches' },
+      origin: overrides.origin ?? { kind: 'preset', presetId: 'precon_smoke', stageId: 'matches' },
       execution: null,
-      result: null,
+      result: overrides.result ?? null,
       failure: null,
     });
     jobs.set(view.jobId, view);
@@ -261,12 +413,13 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     if (!batch) return;
     const moved = applyBatchTransition(batch.status, action);
     if (!moved.ok) return;
+    const at = nextTimestamp();
     batches.set(batchId, {
       ...batch,
       status: moved.to,
       timestamps: {
         ...batch.timestamps,
-        startedAt: batch.timestamps.startedAt ?? (moved.to === 'running' ? NOW : null),
+        startedAt: batch.timestamps.startedAt ?? (moved.to === 'running' ? at : null),
       },
     });
   };
@@ -281,14 +434,15 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     if (!to.ok) return { refusal: 'admin/illegal_transition' };
     const terminal = ['completed', 'failed', 'cancelled'].includes(to.to);
     const started = ['running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(to.to);
+    const at = nextTimestamp();
     const next = catalogJobViewSchema.parse({
       ...job,
       status: to.to,
       timestamps: {
         ...job.timestamps,
-        updatedAt: NOW,
-        startedAt: job.timestamps.startedAt ?? (started || terminal ? NOW : null),
-        completedAt: terminal ? NOW : null,
+        updatedAt: at,
+        startedAt: job.timestamps.startedAt ?? (started || terminal ? at : null),
+        completedAt: terminal ? at : null,
       },
     });
     jobs.set(jobId, next);
@@ -324,6 +478,80 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     },
     job: (jobId) => jobs.get(jobId),
     batch: (batchId) => batches.get(batchId),
+    seedResult(seedOptions = {}) {
+      const batch = mintBatch(seedOptions.label ?? 'Result fixture');
+      const status = seedOptions.status ?? 'completed';
+      const terminal = ['completed', 'failed', 'cancelled'].includes(status);
+      const job = mintJob(
+        batch.batchId,
+        seedOptions.label ?? 'Precon Wave 1 benchmark',
+        `fixture-${String(jobCounter + 1)}`,
+        `fixture-${String(jobCounter + 1)}-seed`,
+        {
+          status,
+          ...(seedOptions.purpose === undefined ? {} : { purpose: seedOptions.purpose }),
+          ...(seedOptions.sourceClasses === undefined
+            ? {}
+            : { sourceClasses: seedOptions.sourceClasses }),
+          ...(seedOptions.kind === undefined ? {} : { kind: seedOptions.kind }),
+          ...(seedOptions.origin === undefined ? {} : { origin: seedOptions.origin }),
+          ...(seedOptions.annotations === undefined
+            ? {}
+            : { annotations: seedOptions.annotations }),
+          result: terminal ? { identity: resultIdentityFixture() } : null,
+        },
+      );
+      // A batch minted only to hold this one job is released immediately: a
+      // browsing screen has no reason to see a draft it did not ask about, and
+      // `applyBatchTransition` from `draft` is `enqueue` regardless of what its
+      // one member's own status already is.
+      moveBatch(batch.batchId, 'enqueue');
+
+      jobContent.set(job.jobId, {
+        preconIds: seedOptions.preconIds ?? [],
+        commanderIds: seedOptions.commanderIds ?? [],
+      });
+      if (seedOptions.summary !== undefined) jobSummaries.set(job.jobId, seedOptions.summary);
+      if (seedOptions.artifacts !== undefined) jobArtifacts.set(job.jobId, seedOptions.artifacts);
+
+      return { jobId: job.jobId, batchId: batch.batchId };
+    },
+  };
+
+  const matchesFilter = (job: CatalogJobView, filter: CatalogFilter): boolean => {
+    if (filter.status.length > 0 && !filter.status.includes(job.status)) return false;
+    if (filter.purpose !== null && job.purpose !== filter.purpose) return false;
+    if (
+      filter.sourceClasses.length > 0 &&
+      !job.sourceClasses.some((value) => filter.sourceClasses.includes(value))
+    ) {
+      return false;
+    }
+    if (filter.kinds.length > 0 && !filter.kinds.includes(job.spec.kind)) return false;
+    if (filter.batchId !== null && job.batchId !== filter.batchId) return false;
+    if (filter.tags.length > 0 && !job.annotations.tags.some((tag) => filter.tags.includes(tag))) {
+      return false;
+    }
+    if (filter.baseline !== null && job.annotations.baseline !== filter.baseline) return false;
+    if (filter.createdAfter !== null && job.timestamps.createdAt < filter.createdAfter)
+      return false;
+    if (filter.createdBefore !== null && job.timestamps.createdAt > filter.createdBefore) {
+      return false;
+    }
+    const content = jobContent.get(job.jobId) ?? { preconIds: [], commanderIds: [] };
+    if (
+      filter.preconIds.length > 0 &&
+      !content.preconIds.some((id) => filter.preconIds.includes(id))
+    ) {
+      return false;
+    }
+    if (
+      filter.commanderIds.length > 0 &&
+      !content.commanderIds.some((id) => filter.commanderIds.includes(id))
+    ) {
+      return false;
+    }
+    return true;
   };
 
   const savedList = (): SavedChoiceList => ({
@@ -477,6 +705,117 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       } satisfies JobProgressView as JobProgressView);
     }
 
+    if (name === 'listJobs') {
+      const filter = catalogFilterSchema.parse(payload.filter ?? {});
+      const page = (payload.page ?? {}) as {
+        readonly limit?: number;
+        readonly cursor?: string | null;
+      };
+      const limit = page.limit ?? PAGE_SIZE_DEFAULT;
+      const matching = [...jobs.values()]
+        .filter((job) => matchesFilter(job, filter))
+        .sort(
+          (a, b) =>
+            a.timestamps.createdAt.localeCompare(b.timestamps.createdAt) ||
+            a.jobId.localeCompare(b.jobId),
+        );
+      const offset = decodeOffset(page.cursor ?? null);
+      const items = matching.slice(offset, offset + limit);
+      const consumed = offset + items.length;
+      return answer({
+        items,
+        page: {
+          returned: items.length,
+          limit,
+          nextCursor: consumed < matching.length ? encodeOffset(consumed) : null,
+          total: matching.length,
+        },
+      });
+    }
+
+    if (name === 'resultSummary') {
+      const jobId = String(payload.jobId ?? '');
+      const job = jobs.get(jobId);
+      if (!job) return refusal('admin/unknown_job', 404);
+      const summary = jobSummaries.get(jobId) ?? 'none';
+      if (summary === 'none') {
+        return refusal(
+          'admin/no_result',
+          404,
+          'This job has produced no canonical result yet, so there is nothing to read.',
+        );
+      }
+      if ('refuse' in summary) return refusal(summary.refuse, 409, summary.message);
+      return answer({ ...summary, jobId });
+    }
+
+    if (name === 'resultArtifacts' || name === 'resultArtifact') {
+      const jobId = String(payload.jobId ?? '');
+      const job = jobs.get(jobId);
+      if (!job) return refusal('admin/unknown_job', 404);
+      if (job.result === null) {
+        return refusal(
+          'admin/no_result',
+          404,
+          'This job has produced no canonical result yet, so it has no documents to download.',
+        );
+      }
+      const present = jobArtifacts.get(jobId) ?? {};
+
+      if (name === 'resultArtifacts') {
+        const listing: ResultArtifactListing = resultArtifactListingSchema.parse({
+          jobId,
+          identity: job.result.identity,
+          artifacts: RESULT_ARTIFACT_NAMES.map((artifactName) => {
+            const content = present[artifactName];
+            return {
+              artifact: artifactName,
+              format: RESULT_ARTIFACTS[artifactName].format,
+              present: content !== undefined,
+              byteLength: content === undefined ? null : content.length,
+              tooLarge: false,
+            };
+          }),
+          readAt: NOW,
+        });
+        return answer(listing);
+      }
+
+      const artifactName = payload.artifact as ResultArtifactName;
+      const content = present[artifactName];
+      if (content === undefined) {
+        return refusal(
+          'admin/no_result',
+          404,
+          `This run wrote no ${RESULT_ARTIFACTS[artifactName].filename}. That is a fact about the run rather than a failure to read it.`,
+        );
+      }
+      const definition = RESULT_ARTIFACTS[artifactName];
+      return answer(
+        resultArtifactSchema.parse({
+          jobId,
+          artifact: artifactName,
+          filename: definition.filename,
+          suggestedFilename: suggestedArtifactFilename(job.spec.experimentId, jobId, artifactName),
+          format: definition.format,
+          mediaType: ARTIFACT_MEDIA_TYPES[definition.format],
+          byteLength: content.length,
+          content,
+          identity: job.result.identity,
+          readAt: NOW,
+        }),
+      );
+    }
+
+    if (name === 'setJobAnnotations') {
+      const jobId = String(payload.jobId ?? '');
+      const job = jobs.get(jobId);
+      if (!job) return refusal('admin/unknown_job', 404);
+      const next = { ...job, annotations: payload.annotations as Annotations };
+      jobs.set(jobId, next);
+      return answer(next);
+    }
+
     return refusal('admin/unknown_endpoint', 404);
   };
 
@@ -520,15 +859,30 @@ function answer(payload: unknown): AdminHttpReply {
   };
 }
 
-function refusal(code: AdminErrorCode, status: number): AdminHttpReply {
+function refusal(code: AdminErrorCode, status: number, message?: string): AdminHttpReply {
   return {
     status,
     body: JSON.stringify({
       ok: false,
       contractVersion: ADMIN_CONTRACT_VERSION,
-      errors: [adminError(code, messageFor(code))],
+      errors: [adminError(code, message ?? messageFor(code))],
     }),
   };
+}
+
+/** A listing position, opaque the way the real cursor is — this fake need not match its bytes. */
+function encodeOffset(offset: number): string {
+  return Buffer.from(JSON.stringify({ o: offset }), 'utf8').toString('base64url');
+}
+
+function decodeOffset(cursor: string | null): number {
+  if (cursor === null) return 0;
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { o?: number };
+    return typeof parsed.o === 'number' ? parsed.o : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /**

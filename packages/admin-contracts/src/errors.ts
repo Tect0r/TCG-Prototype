@@ -143,6 +143,26 @@ export const ADMIN_ERROR_CODES = [
    * other code here.
    */
   'admin/catalog_limit',
+
+  /* --------------------------------------------------- the result catalog (M08.10) */
+
+  /**
+   * The run wrote that document, and it is larger than this service will send.
+   *
+   * A sibling of `admin/catalog_limit` rather than a spelling of it: that one is
+   * a *write* refused because a bounded collection is full, and this one is a
+   * *read* refused because one answer would be too large to put in a JSON
+   * envelope. The two are fixed by opposite actions — remove something, versus
+   * read the run's own copy where it sits — and a client that showed the same
+   * sentence for both would be telling an operator to delete a saved form
+   * because a matchup matrix is four million cells.
+   *
+   * It is not a truncation. `MAX_ARTIFACT_BYTES` says why: a partial CSV is an
+   * artifact somebody can quote, and nothing marks a spreadsheet as incomplete
+   * once it has been saved to a disk. The refusal carries the size, so the
+   * number an operator needs is the one they are given.
+   */
+  'admin/artifact_too_large',
 ] as const;
 
 export const adminErrorCodeSchema = z.enum(ADMIN_ERROR_CODES);

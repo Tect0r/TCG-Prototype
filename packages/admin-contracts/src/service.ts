@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { resultArtifactListingSchema, resultArtifactSchema } from './artifacts.js';
 import {
   catalogBatchViewSchema,
   catalogJobViewSchema,
@@ -28,6 +29,7 @@ import {
   listJobsRequestSchema,
   operatorJobActionSchema,
   reorderBatchRequestSchema,
+  resultArtifactRequestSchema,
   resultTableRequestSchema,
   saveChoiceRequestSchema,
   setJobAnnotationsRequestSchema,
@@ -449,6 +451,18 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'result-table',
     request: resultTableRequestSchema,
     response: resultTableSchema,
+    mutates: false,
+  }),
+  resultArtifacts: endpoint({
+    route: 'result-artifacts',
+    request: jobRefSchema,
+    response: resultArtifactListingSchema,
+    mutates: false,
+  }),
+  resultArtifact: endpoint({
+    route: 'result-artifact',
+    request: resultArtifactRequestSchema,
+    response: resultArtifactSchema,
     mutates: false,
   }),
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { resultArtifactNameSchema } from './artifacts.js';
 import { adminErrorSchema } from './errors.js';
 import { catalogFilterSchema } from './filters.js';
 import {
@@ -366,6 +367,22 @@ export type ResultTableRequest = z.infer<typeof resultTableRequestSchema>;
 export type ResultTableRequestInput = z.input<typeof resultTableRequestSchema>;
 
 /**
+ * One canonical document of one run, named from a closed list (M08.10).
+ *
+ * The same rule `resultTableRequestSchema` follows, applied to a file instead of
+ * a table: the artifact is an **enum member**, the server maps it onto
+ * `experimentPaths` under a directory it resolved itself, and there is nowhere
+ * in this shape to put a location. A request that could name `../../etc/passwd`
+ * — or, far more likely, `replays/0001.json` — is unspellable rather than
+ * filtered.
+ */
+export const resultArtifactRequestSchema = z.strictObject({
+  jobId: jobIdSchema,
+  artifact: resultArtifactNameSchema,
+});
+export type ResultArtifactRequest = z.infer<typeof resultArtifactRequestSchema>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -388,6 +405,7 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   estimateChoice: estimateChoiceRequestSchema,
   saveChoice: saveChoiceRequestSchema,
   resultTable: resultTableRequestSchema,
+  resultArtifact: resultArtifactRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;

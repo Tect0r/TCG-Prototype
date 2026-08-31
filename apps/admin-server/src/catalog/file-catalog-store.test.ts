@@ -14,9 +14,10 @@ import {
   type JobId,
 } from '@tcg/admin-contracts';
 import { isErr, isOk, unwrap } from '@tcg/shared';
+import { environmentConfigForFormat, parseExperimentConfig } from '@tcg/simulator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { jobMatchesFilter } from './file-catalog-store.js';
+import { FileCatalogStore, jobMatchesFilter } from './file-catalog-store.js';
 import type { CatalogPage } from './store.js';
 import {
   makeTestCatalog,
@@ -35,6 +36,27 @@ beforeEach(async () => {
 afterEach(async () => {
   await catalog.dispose();
 });
+
+const FIXTURE_ENVIRONMENT = environmentConfigForFormat('precon_wave_1', {
+  label: 'Precon Wave 1, for a listing fixture',
+});
+
+/** A configuration naming exactly one precon, for the content filter's own tests. */
+function singlePreconConfig(id: string, preconId: string) {
+  return parseExperimentConfig({
+    schemaVersion: 1,
+    kind: 'batch',
+    id,
+    seed: `${id}-seed`,
+    playerCount: 2,
+    pilots: [{ id: 'aggressive' }],
+    pilotPairing: 'mirror',
+    environment: FIXTURE_ENVIRONMENT,
+    decks: { kind: 'precon', preconIds: [preconId] },
+    schedule: 'round_robin',
+    gamesPerPairing: 1,
+  });
+}
 
 /** A draft batch holding one queued job, which most tests start from. */
 async function seedJob(label = 'Precon smoke'): Promise<CatalogJobDocument> {
@@ -900,6 +922,100 @@ describe('listing, filtering and paging', () => {
       }),
     );
     expect(unwrap(await catalog.store.listJobs(byHash)).items).toHaveLength(1);
+  });
+
+  describe('filtering by precon and by Commander (M08.10)', () => {
+    async function seedTwoPrecons(): Promise<{ goblin: JobId; bastion: JobId }> {
+      const batch = unwrap(await catalog.store.createBatch({ label: 'Two precons' }));
+      const goblin = unwrap(
+        await catalog.store.createJob({
+          batchId: batch.batchId,
+          label: 'Goblin Swarm',
+          purpose: 'exploration',
+          sourceClasses: ['ai', 'precon'],
+          config: singlePreconConfig('goblin-only', 'precon_goblin_swarm'),
+        }),
+      );
+      const bastion = unwrap(
+        await catalog.store.createJob({
+          batchId: batch.batchId,
+          label: 'Bastion Guardians',
+          purpose: 'exploration',
+          sourceClasses: ['ai', 'precon'],
+          config: singlePreconConfig('bastion-only', 'precon_bastion_guardians'),
+        }),
+      );
+      return { goblin: goblin.jobId, bastion: bastion.jobId };
+    }
+
+    it('matches a queued job by the precon its configuration names, before it has run', async () => {
+      const { goblin } = await seedTwoPrecons();
+      const filter = catalogFilterSchema.parse({ preconIds: ['precon_goblin_swarm'] });
+      const matched = unwrap(await catalog.store.listJobs(filter)).items;
+      expect(matched.map((job) => job.jobId)).toEqual([goblin]);
+    });
+
+    it('matches a job by the Commander its precon plays, resolved through the injected map', async () => {
+      const { goblin } = await seedTwoPrecons();
+      const withCommander = new FileCatalogStore({
+        roots: catalog.roots,
+        commanderOfPrecon: () =>
+          new Map([
+            ['precon_goblin_swarm', 'goblin_warboss'],
+            ['precon_bastion_guardians', 'bastion_marshal'],
+          ]),
+      });
+      const filter = catalogFilterSchema.parse({ commanderIds: ['goblin_warboss'] });
+      const matched = unwrap(await withCommander.listJobs(filter)).items;
+      expect(matched.map((job) => job.jobId)).toEqual([goblin]);
+    });
+
+    it('is OR within the field, matching either named precon', async () => {
+      const { goblin, bastion } = await seedTwoPrecons();
+      const filter = catalogFilterSchema.parse({
+        preconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+      });
+      const matched = unwrap(await catalog.store.listJobs(filter)).items.map((job) => job.jobId);
+      expect(matched.sort()).toEqual([bastion, goblin].sort());
+    });
+
+    it('opens no configuration at all when neither field is named', async () => {
+      // Cheap by construction: the content pass is skipped entirely, which this
+      // proves by using a store whose `commanderOfPrecon` would throw if it were
+      // ever called for a listing that never asked about a Commander.
+      await seedTwoPrecons();
+      const poisoned = new FileCatalogStore({
+        roots: catalog.roots,
+        commanderOfPrecon: () => {
+          throw new Error('should not have been called');
+        },
+      });
+      const page = await poisoned.listJobs(NO_CATALOG_FILTER);
+      expect(unwrap(page).items).toHaveLength(2);
+    });
+
+    it('names no run for a precon nothing plays', async () => {
+      await seedTwoPrecons();
+      const filter = catalogFilterSchema.parse({ preconIds: ['precon_containment_control'] });
+      expect(unwrap(await catalog.store.listJobs(filter)).items).toEqual([]);
+    });
+
+    it('ANDs a precon filter with an ordinary field filter', async () => {
+      const { goblin } = await seedTwoPrecons();
+      unwrap(await catalog.store.applyJobAction({ jobId: goblin, action: 'start' }));
+      const filter = catalogFilterSchema.parse({
+        preconIds: ['precon_goblin_swarm'],
+        status: ['running'],
+      });
+      expect(unwrap(await catalog.store.listJobs(filter)).items.map((j) => j.jobId)).toEqual([
+        goblin,
+      ]);
+      const wrongStatus = catalogFilterSchema.parse({
+        preconIds: ['precon_goblin_swarm'],
+        status: ['completed'],
+      });
+      expect(unwrap(await catalog.store.listJobs(wrongStatus)).items).toEqual([]);
+    });
   });
 
   it('lists batches by the same ordering', async () => {

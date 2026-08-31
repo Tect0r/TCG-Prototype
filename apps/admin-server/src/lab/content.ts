@@ -52,3 +52,22 @@ export function readContentCatalog(): ContentCatalog {
     })),
   });
 }
+
+/**
+ * Which Commander each published precon plays, resolved the same way (M08.10).
+ *
+ * A projection over `readContentCatalog` rather than a second resolution, so the
+ * mapping a result filter uses is the mapping a builder was offered. It is a map
+ * rather than a list because its one caller answers *is this run's Commander one
+ * of these* per job, and a linear scan per job over a per-listing constant is a
+ * cost with no reason.
+ *
+ * A precon the format no longer publishes is simply absent, which is what lets a
+ * Commander filter say *this run plays no Commander I can name* instead of
+ * guessing one for content that has been withdrawn.
+ */
+export function preconCommanderIds(): ReadonlyMap<string, string> {
+  return new Map(
+    readContentCatalog().precons.map((precon) => [precon.preconId, precon.commanderId]),
+  );
+}

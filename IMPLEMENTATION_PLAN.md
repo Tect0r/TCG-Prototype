@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.10       |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.11       |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -78,7 +78,21 @@ lab a queue — and, more importantly, the window a queue is for: a batch now st
 a `draft` until somebody starts it, the orchestrator's fill loop reads that state
 before it starts anything, and in that window jobs can be added, duplicated,
 withdrawn and reordered with keyboard controls whose whole ordering travels on
-every move. Three navigation entries; **M08.10 is the next tranche**.
+every move. **M08.10 landed the same day** and gave the lab a Results screen: a
+filterable, paginated listing over the whole catalog — filtered by status,
+purpose, source, type, baseline, precon, Commander, a created-date range and a
+pasted content hash, the last two of which needed `catalogFilterSchema` widened
+because M08.1's reason for deferring them (_the contract does not model a
+precon or a Commander_) no longer held once `contentCatalogSchema` did — a
+detail view whose provenance, denominators and evidence standing are read out
+of `resultSummary` and printed honestly whether that call answers or refuses,
+and two new endpoints that serve a run's thirteen canonical documents byte for
+byte rather than regenerating any of them, because ADR 0023 §2 forbids a second
+report and a rendered CSV would be exactly that. Notes, tags and a baseline mark
+are the one mutation the screen makes, and `setJobAnnotationsRequestSchema` has
+no field that reaches an experiment directory, which is what makes "never
+mutates canonical output" structural rather than a habit. Four navigation
+entries; **M08.11 is the next tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -200,20 +214,52 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.10 — Result catalog and generic run detail.** Browse completed and partial
-evidence before specialized charts exist: list and filter by date, type, status,
-source, content hash, Commander or precon, and exploration versus validation;
-render provenance, configuration, completion quality, evidence standing,
-exclusions, limitations and exact downloadable JSON, CSV and Markdown artifacts;
-notes, tags and a deliberate **mark as baseline** action that never mutates
-canonical experiment output; and handle partial, old or refused, corrupt and
-unsupported result schemas honestly. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0810--result-catalog-and-generic-run-detail).
+**M08.11 — Precon result dashboard.** Answer whether the current precons look
+uneven **under the selected instrument**: overall win-rate bars with intervals
+and sample counts, an ordered matchup heatmap with an exact-value table
+fallback, seat-order, pilot, match-length, termination and replicate views, and
+click-through from a cell or bar to the exact contributing matches, decks and
+replays. Calibration standing appears before any "review" language. **No
+automatic balanced/unbalanced verdict.** Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0811--precon-result-dashboard).
 
-It inherits a queue that produces finished runs and a result reader that already
-answers every number out of the run's own directory, and it inherits two
-limitations M08.9 recorded that are its to close: the batch listing is one
-unfiltered page, and nothing yet lists a run by what it produced.
+It inherits a result catalog that can already list, filter and open one run
+honestly, and it inherits two limitations M08.10 recorded that are its to
+close: no result table is browsable from any screen yet — `result-table` has
+answered since M08.6 and nothing renders it — and there is no chart to
+click-through from, which is the reason M08.10 built no browsing surface for
+one. This is also the first tranche to need a charting decision ADR 0023 §6
+deferred: hand-authored SVG plus the exact table every chart must be
+accompanied by, or a library, recorded at the point of adoption with its
+bundle cost and its accessibility behaviour — not before.
+
+**M08.10 gave the lab a Results screen, and answered a deferral rather than
+overruling it.** M08.1 held back a precon and a Commander filter because
+_a filter for a field the contract does not model could not be honoured_; once
+`contentCatalogSchema` modelled both, `catalogFilterSchema` widened to name
+them, read off a job's own configuration — `run-content.ts` walks a
+configuration's deck sources rather than a finished result, so a queued job
+answers the filter as honestly as a completed one, and a `generated` or `files`
+source names neither, truthfully. Every field the filter now has got a control,
+applying one is a deliberate act rather than a re-fetch on every keystroke, and
+`listJobs`'s own cursor is what "Show more" walks. A detail view opens three
+independent readings — the job itself, `resultSummary`, and the new
+`resultArtifacts` listing — because they fail independently: a run whose
+summary this build refuses to read (an old build, a corrupt document, a
+directory that no longer resolves) still has its raw canonical documents
+reachable, since the artifact reader opens the manifest for identity and never
+opens the summary at all. Two new endpoints serve those documents — thirteen of
+them, from `manifest.json` to the CSV exports — **unchanged**, because a
+generated Markdown report or a generated CSV would be the second report
+ADR 0023 §2 forbids; `matches.jsonl`, replays and checkpoints stay absent,
+left for the Match Explorer that can open them safely. Notes, tags and a
+baseline mark are the one mutation the screen makes, through
+`setJobAnnotationsRequestSchema`, which has had no field that could reach an
+experiment directory since M08.1 wrote it — so "never mutates canonical output"
+is a fact about the request shape rather than a habit of this screen.
+`ADMIN_CONTRACT_VERSION` moves 5 → 6 for the two new endpoints, the widened
+filter and one new code, `admin/artifact_too_large`; no persisted document
+changed shape.
 
 **M08.9 gave the lab a queue, and the window a queue is for.** Everything the
 tranche owed happens _before start_ — add, duplicate, remove, reorder — and until
