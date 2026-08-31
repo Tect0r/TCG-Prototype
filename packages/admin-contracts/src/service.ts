@@ -27,6 +27,7 @@ import {
   listBatchesRequestSchema,
   listJobsRequestSchema,
   operatorJobActionSchema,
+  reorderBatchRequestSchema,
   resultTableRequestSchema,
   saveChoiceRequestSchema,
   setJobAnnotationsRequestSchema,
@@ -364,6 +365,24 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'enqueue-preset',
     request: enqueuePresetRequestSchema,
     response: enqueuePresetResultSchema,
+    mutates: true,
+  }),
+  reorderBatch: endpoint({
+    route: 'reorder-batch',
+    request: reorderBatchRequestSchema,
+    response: batchDetailSchema,
+    mutates: true,
+  }),
+  duplicateJob: endpoint({
+    route: 'duplicate-job',
+    request: jobRefSchema,
+    response: batchDetailSchema,
+    mutates: true,
+  }),
+  startBatch: endpoint({
+    route: 'start-batch',
+    request: batchRefSchema,
+    response: batchDetailSchema,
     mutates: true,
   }),
   saveChoice: endpoint({

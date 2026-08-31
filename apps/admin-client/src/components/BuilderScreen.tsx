@@ -60,9 +60,11 @@ import type { AdminFailure } from '../net/transport.js';
  * figure would be a number this screen made up. The page says so where the
  * figures would have gone, which is the honest version of "where available".
  *
- * **No queue.** What happens after the enqueue is M08.9's screen. This one
- * reports exactly what it created — the batch, the jobs and their stages — and
- * stops.
+ * **No queue.** What happens after the enqueue is the Queue screen's, which
+ * M08.9 built. This one reports exactly what it created — the batch, the jobs
+ * and their stages — and stops. Since M08.9 it also creates nothing that is
+ * running: the batch it fills is a **draft**, and releasing it is a separate,
+ * confirmed act on the page that can also reorder it first.
  */
 export function BuilderScreen() {
   const session = useAdminSession();
@@ -740,12 +742,13 @@ function EnqueuedReport({ result }: { readonly result: EnqueuePresetResult }) {
   return (
     <div className="builder__enqueued" role="status">
       <p>
-        Enqueued <strong>{result.jobs.length}</strong> {result.jobs.length === 1 ? 'job' : 'jobs'}{' '}
-        into batch <code>{result.batchId}</code>. Work starts under this lab&rsquo;s own bound;
-        nothing on this page watches it.
+        Added <strong>{result.jobs.length}</strong> {result.jobs.length === 1 ? 'job' : 'jobs'} to
+        draft batch <code>{result.batchId}</code>. <strong>Nothing has started.</strong> The batch
+        is a draft until it is started from Queue, which is also where its jobs can be reordered,
+        duplicated or withdrawn.
       </p>
       <table className="facts">
-        <caption>Jobs this enqueue created</caption>
+        <caption>Jobs this added to the draft</caption>
         <thead>
           <tr>
             <th scope="col">Job</th>

@@ -1,6 +1,8 @@
 import {
   ADMIN_CONTRACT_VERSION,
   ADMIN_ENDPOINTS,
+  applyBatchTransition,
+  applyJobTransition,
   CURRENT_ADMIN_VERSIONS,
   MAX_FILTER_VALUES,
   MAX_JOBS_PER_BATCH,
@@ -16,8 +18,13 @@ import {
   type Capabilities,
   type CatalogBatchView,
   type ChoiceEstimate,
+  type BatchDetail,
+  type CatalogJobView,
   type ContentCatalog,
   type EnqueuePresetResult,
+  type JobProgressView,
+  type OperatorJobAction,
+  type Progress,
   type PresetCatalog,
   type PresetChoice,
   type SavedChoiceList,
@@ -71,6 +78,32 @@ export interface FakeService {
   readonly requests: AdminHttpRequest[];
   /** Replaces the answers mid-test, so a restart or a recovery can be driven. */
   configure(options: FakeServiceOptions): void;
+  /**
+   * The catalog this fake holds, so a queue test can put a job into a state the
+   * client cannot reach on its own.
+   *
+   * A running job with a measured pace, an interrupted one a restart left
+   * behind, a failed one with diagnostics: all three are things the *runner*
+   * produces, and a client test that could only drive them through operator
+   * verbs could never render them. This is the seam that stands in for the
+   * runner, and it moves documents through the contract's own transition table
+   * rather than by assignment, so a state this fake can reach is a state the
+   * real store could reach too.
+   */
+  readonly lab: FakeLab;
+}
+
+export interface FakeLab {
+  /** Creates a draft batch holding `count` queued jobs, the way the builder would. */
+  seedDraft(label: string, count: number): { batchId: string; jobIds: string[] };
+  /** Drives one job through a lifecycle action, as a runner or a restart would. */
+  drive(jobId: string, action: Parameters<typeof applyJobTransition>[1]): void;
+  /** Replaces one job's progress, as the runner's directory reader would. */
+  setProgress(jobId: string, progress: Partial<Progress>): void;
+  /** Marks a batch started without going through the endpoint. */
+  release(batchId: string): void;
+  job(jobId: string): CatalogJobView | undefined;
+  batch(batchId: string): CatalogBatchView | undefined;
 }
 
 export function capabilitiesFixture(overrides: Partial<Capabilities> = {}): Capabilities {
@@ -159,7 +192,139 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
   const kept: SavedChoiceView[] = [];
   let savedCounter = 0;
   let batchCounter = 0;
+  let jobCounter = 0;
   let lastBatchId = 'batch_fake000001';
+
+  /** The catalog this fake keeps: batches in creation order, jobs by ID. */
+  const batches = new Map<string, CatalogBatchView>();
+  const jobs = new Map<string, CatalogJobView>();
+
+  const mintBatch = (label: string): CatalogBatchView => {
+    batchCounter += 1;
+    const view: CatalogBatchView = {
+      batchId: `batch_fake${String(batchCounter).padStart(6, '0')}`,
+      label,
+      status: 'draft',
+      timestamps: { createdAt: NOW, updatedAt: NOW, startedAt: null, completedAt: null },
+      annotations: { tags: [], note: '', baseline: false },
+      jobIds: [],
+    };
+    batches.set(view.batchId, view);
+    lastBatchId = view.batchId;
+    return view;
+  };
+
+  const mintJob = (
+    batchId: string,
+    label: string,
+    experimentId: string,
+    seed: string,
+  ): CatalogJobView => {
+    jobCounter += 1;
+    const view = catalogJobViewSchema.parse({
+      jobId: `job_fake${String(jobCounter).padStart(6, '0')}`,
+      batchId,
+      label,
+      status: 'queued',
+      purpose: 'exploration',
+      sourceClasses: ['ai', 'precon'],
+      timestamps: { createdAt: NOW, updatedAt: NOW, startedAt: null, completedAt: null },
+      annotations: NO_ANNOTATIONS,
+      progress: NO_PROGRESS,
+      spec: {
+        experimentId,
+        kind: 'batch',
+        seed,
+        configHash: 'abcdef0123456789',
+        configSchemaVersion: 1,
+      },
+      origin: { kind: 'preset', presetId: 'precon_smoke', stageId: 'matches' },
+      execution: null,
+      result: null,
+      failure: null,
+    });
+    jobs.set(view.jobId, view);
+    const batch = batches.get(batchId);
+    if (batch) batches.set(batchId, { ...batch, jobIds: [...batch.jobIds, view.jobId] });
+    return view;
+  };
+
+  const detail = (batchId: string): BatchDetail | null => {
+    const batch = batches.get(batchId);
+    if (!batch) return null;
+    const members = batch.jobIds.map((jobId) => jobs.get(jobId)).filter((job) => job !== undefined);
+    return { batch, jobs: members };
+  };
+
+  const moveBatch = (batchId: string, action: Parameters<typeof applyBatchTransition>[1]): void => {
+    const batch = batches.get(batchId);
+    if (!batch) return;
+    const moved = applyBatchTransition(batch.status, action);
+    if (!moved.ok) return;
+    batches.set(batchId, {
+      ...batch,
+      status: moved.to,
+      timestamps: {
+        ...batch.timestamps,
+        startedAt: batch.timestamps.startedAt ?? (moved.to === 'running' ? NOW : null),
+      },
+    });
+  };
+
+  const moveJob = (
+    jobId: string,
+    action: Parameters<typeof applyJobTransition>[1],
+  ): CatalogJobView | { readonly refusal: string } => {
+    const job = jobs.get(jobId);
+    if (!job) return { refusal: 'admin/unknown_job' };
+    const to = applyJobTransition(job.status, action);
+    if (!to.ok) return { refusal: 'admin/illegal_transition' };
+    const terminal = ['completed', 'failed', 'cancelled'].includes(to.to);
+    const started = ['running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(to.to);
+    const next = catalogJobViewSchema.parse({
+      ...job,
+      status: to.to,
+      timestamps: {
+        ...job.timestamps,
+        updatedAt: NOW,
+        startedAt: job.timestamps.startedAt ?? (started || terminal ? NOW : null),
+        completedAt: terminal ? NOW : null,
+      },
+    });
+    jobs.set(jobId, next);
+    return next;
+  };
+
+  const lab: FakeLab = {
+    seedDraft(label, count) {
+      const batch = mintBatch(label);
+      const jobIds: string[] = [];
+      for (let index = 0; index < count; index += 1) {
+        jobIds.push(
+          mintJob(
+            batch.batchId,
+            `Stage ${String(index + 1)}`,
+            `bench-r${String(index + 1)}`,
+            `seed|r${String(index + 1)}`,
+          ).jobId,
+        );
+      }
+      return { batchId: batch.batchId, jobIds };
+    },
+    drive(jobId, action) {
+      moveJob(jobId, action);
+    },
+    setProgress(jobId, progress) {
+      const job = jobs.get(jobId);
+      if (!job) return;
+      jobs.set(jobId, { ...job, progress: { ...job.progress, ...progress } });
+    },
+    release(batchId) {
+      moveBatch(batchId, 'enqueue');
+    },
+    job: (jobId) => jobs.get(jobId),
+    batch: (batchId) => batches.get(batchId),
+  };
 
   const savedList = (): SavedChoiceList => ({
     items: [...kept].reverse(),
@@ -225,26 +390,91 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     }
 
     if (name === 'createBatch') {
-      batchCounter += 1;
-      const view: CatalogBatchView = {
-        batchId: `batch_fake${String(batchCounter).padStart(6, '0')}`,
-        label: String(payload.label ?? 'batch'),
-        status: 'draft',
-        timestamps: {
-          createdAt: NOW,
-          updatedAt: NOW,
-          startedAt: null,
-          completedAt: null,
-        },
-        annotations: { tags: [], note: '', baseline: false },
-        jobIds: [],
-      };
-      lastBatchId = view.batchId;
-      return answer(view);
+      return answer(mintBatch(String(payload.label ?? 'batch')));
     }
 
     if (name === 'enqueuePreset') {
-      return answer(enqueueFor(payload.choice as PresetChoice | undefined, lastBatchId));
+      const batchId = String(payload.batchId ?? lastBatchId);
+      const preview = estimateFor(payload.choice as PresetChoice | undefined);
+      const made = preview.expansion.stages.map((stage) =>
+        mintJob(batchId, stage.label, stage.experimentId, `${stage.stageId}-seed`),
+      );
+      return answer({
+        batchId,
+        jobs: made,
+        expansion: preview.expansion,
+        estimate: preview.estimate,
+      } satisfies EnqueuePresetResult as EnqueuePresetResult);
+    }
+
+    if (name === 'listBatches') {
+      const items = [...batches.values()];
+      return answer({
+        items,
+        page: { returned: items.length, limit: 50, nextCursor: null, total: items.length },
+      });
+    }
+
+    if (name === 'batchDetail' || name === 'startBatch' || name === 'reorderBatch') {
+      const batchId = String(payload.batchId ?? '');
+      if (!batches.has(batchId)) return refusal('admin/unknown_batch', 404);
+
+      if (name === 'reorderBatch') {
+        const batch = batches.get(batchId) as CatalogBatchView;
+        if (batch.status !== 'draft') return refusal('admin/illegal_transition', 409);
+        const wanted = (payload.jobIds ?? []) as string[];
+        const same =
+          wanted.length === batch.jobIds.length && wanted.every((id) => batch.jobIds.includes(id));
+        if (!same) return refusal('admin/schema', 400);
+        batches.set(batchId, { ...batch, jobIds: [...wanted] });
+      }
+      if (name === 'startBatch') {
+        const batch = batches.get(batchId) as CatalogBatchView;
+        if (batch.status !== 'draft') return refusal('admin/illegal_transition', 409);
+        moveBatch(batchId, 'enqueue');
+      }
+      const found = detail(batchId);
+      return found === null ? refusal('admin/unknown_batch', 404) : answer(found);
+    }
+
+    if (name === 'duplicateJob') {
+      const jobId = String(payload.jobId ?? '');
+      const source = jobs.get(jobId);
+      if (!source) return refusal('admin/unknown_job', 404);
+      const batch = batches.get(source.batchId);
+      if (!batch) return refusal('admin/unknown_batch', 404);
+      if (batch.status !== 'draft') return refusal('admin/illegal_transition', 409);
+
+      const copy = mintJob(
+        source.batchId,
+        source.label,
+        `${source.spec.experimentId}-c2`,
+        `${source.spec.seed}|c2`,
+      );
+      const held = batches.get(source.batchId) as CatalogBatchView;
+      const order = held.jobIds.filter((id) => id !== copy.jobId);
+      order.splice(order.indexOf(jobId) + 1, 0, copy.jobId);
+      batches.set(source.batchId, { ...held, jobIds: order });
+      const found = detail(source.batchId);
+      return found === null ? refusal('admin/unknown_batch', 404) : answer(found);
+    }
+
+    if (name === 'jobAction') {
+      const moved = moveJob(String(payload.jobId ?? ''), payload.action as OperatorJobAction);
+      if ('refusal' in moved) return refusal(moved.refusal as AdminErrorCode, 409);
+      return answer(moved);
+    }
+
+    if (name === 'jobProgress') {
+      const job = jobs.get(String(payload.jobId ?? ''));
+      if (!job) return refusal('admin/unknown_job', 404);
+      return answer({
+        jobId: job.jobId,
+        status: job.status,
+        progress: job.progress,
+        inFlight: job.status === 'running',
+        updatedAt: NOW,
+      } satisfies JobProgressView as JobProgressView);
     }
 
     return refusal('admin/unknown_endpoint', 404);
@@ -253,6 +483,7 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
   return {
     transport,
     requests,
+    lab,
     configure(next) {
       options = next;
     },
@@ -424,39 +655,3 @@ const DEPTHS: Readonly<Record<string, number>> = {
   precon_standard: 4,
   precon_deep: 12,
 };
-
-function enqueueFor(choice: PresetChoice | undefined, batchId: string): EnqueuePresetResult {
-  const preview = estimateFor(choice);
-  return {
-    batchId: batchId as EnqueuePresetResult['batchId'],
-    // Parsed by the contract's own schema rather than hand-shaped, so a fixture
-    // the real service could not have sent fails here instead of teaching a
-    // screen to render something no service produces.
-    jobs: preview.expansion.stages.map((stage, index) =>
-      catalogJobViewSchema.parse({
-        jobId: `job_fake${String(index + 1).padStart(6, '0')}`,
-        batchId,
-        label: stage.label,
-        status: 'queued',
-        purpose: stage.purpose,
-        sourceClasses: ['ai', 'precon'],
-        timestamps: { createdAt: NOW, updatedAt: NOW, startedAt: null, completedAt: null },
-        annotations: NO_ANNOTATIONS,
-        progress: NO_PROGRESS,
-        spec: {
-          experimentId: stage.experimentId,
-          kind: 'batch',
-          seed: 'seed',
-          configHash: 'abcdef0123456789',
-          configSchemaVersion: 1,
-        },
-        origin: { kind: 'preset', presetId: preview.expansion.presetId, stageId: stage.stageId },
-        execution: null,
-        result: null,
-        failure: null,
-      }),
-    ),
-    expansion: preview.expansion,
-    estimate: preview.estimate,
-  };
-}

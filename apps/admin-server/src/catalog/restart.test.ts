@@ -374,3 +374,54 @@ describe('a damaged event log does not damage the job', () => {
     expect(unwrap(log).events).toEqual([]);
   });
 });
+
+describe('a restart and the editing window (M08.9)', () => {
+  it('leaves a draft a draft, so nothing an administrator was still ordering has started', async () => {
+    // The durable half of M08.9's hold. `draft` is a batch state on disk, so a
+    // process that came back up finds the batch exactly as the person left it —
+    // reading a file, not deciding anything — and the queue's own guard reads
+    // that same state before it starts anything.
+    const batch = unwrap(await catalog.store.createBatch({ label: 'Half-built' }));
+    const jobIds: string[] = [];
+    for (const label of ['one', 'two']) {
+      const job = unwrap(
+        await catalog.store.createJob({
+          batchId: batch.batchId,
+          label,
+          purpose: 'exploration',
+          sourceClasses: ['ai'],
+          config: testConfig(),
+        }),
+      );
+      jobIds.push(job.jobId);
+    }
+    unwrap(await catalog.store.reorderBatchJobs(batch.batchId, [...jobIds].reverse()));
+
+    const reopened = unwrap(await openFileCatalogStore({ roots: catalog.roots }));
+    const found = unwrap(await reopened.store.readBatch(batch.batchId));
+
+    expect(found.status).toBe('draft');
+    expect(found.jobIds).toEqual([...jobIds].reverse());
+    expect(reopened.recovery.recovered).toEqual([]);
+
+    const members = unwrap(await reopened.store.readBatchJobs(batch.batchId));
+    expect(members.map((job) => job.status)).toEqual(['queued', 'queued']);
+  });
+
+  it('keeps a reordered draft editable after the restart', async () => {
+    const batch = unwrap(await catalog.store.createBatch({ label: 'Half-built' }));
+    const job = unwrap(
+      await catalog.store.createJob({
+        batchId: batch.batchId,
+        label: 'only',
+        purpose: 'exploration',
+        sourceClasses: ['ai'],
+        config: testConfig(),
+      }),
+    );
+
+    const reopened = unwrap(await openFileCatalogStore({ roots: catalog.roots }));
+    const moved = await reopened.store.reorderBatchJobs(batch.batchId, [job.jobId]);
+    expect(isErr(moved)).toBe(false);
+  });
+});

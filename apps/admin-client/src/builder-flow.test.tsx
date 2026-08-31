@@ -281,10 +281,26 @@ describe('enqueueing', () => {
     await userEvent.click(priceButton());
     await userEvent.click(enqueueButton() as HTMLElement);
 
-    const status = await within(main()).findByText(/Enqueued/);
+    const status = await within(main()).findByText(/Added/);
     expect(status.textContent).toContain('1');
-    expect(within(main()).getByText('Jobs this enqueue created')).toBeInTheDocument();
+    expect(within(main()).getByText('Jobs this added to the draft')).toBeInTheDocument();
     expect(main().textContent).toContain('queued');
+  });
+
+  it('says the batch is a draft and that nothing has started (M08.9)', async () => {
+    // The correction M08.9 made to this flow. Until that tranche the same call
+    // that filled the batch also released it, so pressing this button started
+    // real work with no confirmation and nowhere to watch it. It now creates a
+    // draft, and the report has to say so or the screen is claiming a run.
+    await openBuilder();
+
+    await userEvent.click(priceButton());
+    await userEvent.click(enqueueButton() as HTMLElement);
+
+    const status = await within(main()).findByText(/Added/);
+    expect(status.textContent).toContain('Nothing has started');
+    expect(status.textContent).toContain('draft batch');
+    expect(status.textContent).toContain('Queue');
   });
 
   it('creates one job per replicate, which the preview already said', async () => {
@@ -297,7 +313,7 @@ describe('enqueueing', () => {
     expect(main().textContent).toContain('3 jobs');
 
     await userEvent.click(enqueueButton() as HTMLElement);
-    const status = await within(main()).findByText(/Enqueued/);
+    const status = await within(main()).findByText(/Added/);
     expect(status.textContent).toContain('3');
   });
 

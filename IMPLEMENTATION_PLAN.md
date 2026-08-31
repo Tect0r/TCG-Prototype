@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.9        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.10       |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -73,8 +73,12 @@ told which precons and pilots exist rather than holding a list, that shows the
 exact match count _before_ the enqueue and withdraws the offer the moment the
 form changes, that records every setting as a decision and attaches a limitation
 to each choice that makes a result mean less, and that keeps a filled-in form in
-the lab rather than in the browser. Two navigation entries; **M08.9 is the next
-tranche**.
+the lab rather than in the browser. **M08.9 landed the same day** and gave the
+lab a queue — and, more importantly, the window a queue is for: a batch now stays
+a `draft` until somebody starts it, the orchestrator's fill loop reads that state
+before it starts anything, and in that window jobs can be added, duplicated,
+withdrawn and reordered with keyboard controls whose whole ordering travels on
+every move. Three navigation entries; **M08.10 is the next tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
 [ADR 0024](docs/architecture/0024-live-bot-seats.md), with no runtime behaviour
@@ -196,19 +200,70 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.9 — Queue UI and batch ordering.** Make ordered work observable and
-controllable: create an ordered batch, add, duplicate and remove jobs before
-start, reorder with accessible controls where drag is an enhancement and never
-the only control; show queued, running, pausing, paused, interrupted, completed,
-failed and cancelled states, exact completed and total matches where known,
-current stage or generation, elapsed time, and honest remaining-time
-availability; wire pause, resume, cancel and retry with confirmations
-proportional to their consequences, and make clear that queue order does not
-share experimental state. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m089--queue-ui-and-batch-ordering).
+**M08.10 — Result catalog and generic run detail.** Browse completed and partial
+evidence before specialized charts exist: list and filter by date, type, status,
+source, content hash, Commander or precon, and exploration versus validation;
+render provenance, configuration, completion quality, evidence standing,
+exclusions, limitations and exact downloadable JSON, CSV and Markdown artifacts;
+notes, tags and a deliberate **mark as baseline** action that never mutates
+canonical experiment output; and handle partial, old or refused, corrupt and
+unsupported result schemas honestly. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0810--result-catalog-and-generic-run-detail).
 
-It inherits a builder that creates work, and four lifecycle verbs nothing has yet
-put a button on.
+It inherits a queue that produces finished runs and a result reader that already
+answers every number out of the run's own directory, and it inherits two
+limitations M08.9 recorded that are its to close: the batch listing is one
+unfiltered page, and nothing yet lists a run by what it produced.
+
+**M08.9 gave the lab a queue, and the window a queue is for.** Everything the
+tranche owed happens _before start_ — add, duplicate, remove, reorder — and until
+it there was no instant at which that could happen: `enqueue-preset` created the
+jobs and took the batch's `enqueue` transition in the next statement, so `draft`
+was a state with **zero width**. Those two statements moved to a new
+`start-batch` address, and `enqueue-preset` now fills a batch and leaves it a
+draft. The hold is the **orchestrator's**, not the screen's: a job is created
+`queued`, so `JobQueue` reads each candidate's batch and skips it while that
+batch is a draft, and a batch it cannot read is treated as not released, which is
+the safe direction. A batch also finally says what its members did —
+`reconcileBatch` derives `start` and `complete` from the jobs rather than
+remembering them, so one no longer spells `queued` while its jobs run and after
+they all finish.
+
+**Reordering sends the whole order, and that is the concurrent-update answer.** A
+request that said _move this up one_ would describe the batch as it was when the
+button was drawn. `reorderBatchJobs` requires a **permutation** of the membership
+the store holds and refuses a set that has gained or lost a job with a sentence
+naming both directions; there is no revision counter, because the membership _is_
+the version. **Duplicating** is composed rather than added: read the job, read its
+configuration, derive a copy, `createJob` — which already refuses a batch that is
+not a draft — then reorder the new member into place after its source. A copy is a
+**replicate**, on a derived `-c{n}` / `|c{n}` identity, because two jobs on one
+seed play the same matches and would sit in the catalog looking like independent
+evidence. **Removing** added no address at all: cancelling a job that never
+started already means _it will not run_, so a withdrawal is the existing
+`job-action` with `cancel`, and the job stays listed spelling `Cancelled` because
+nothing in this lab deletes a record.
+
+**Confirmations are proportional, and the test is whether the operator can undo
+it here.** `pause`, `resume` and `retry` all can, so none asks; `cancel` cannot —
+`cancelled` is terminal with no outgoing transition — and starting a batch cannot,
+because it settles the order. Those two ask, and the dialog states the consequence
+instead of asking whether somebody is sure. **Remaining time appears only when
+four conditions hold** — running, an exact schedule rather than a bound, at least
+ten committed matches, and a measured elapsed time — and is then extrapolated from
+that run's own pace with the basis printed beside it; every other case prints the
+condition that failed. **Order implies no shared state**, said on the page before
+any row: each job is a whole experiment with its own seed family and canonical
+directory, and one batch pools no evidence between them.
+
+**`ADMIN_CONTRACT_VERSION` moves 4 → 5** for three endpoints — `reorder-batch`,
+`duplicate-job`, `start-batch` — one new request payload, and a **behavioural**
+change to an existing address that no payload schema could express: a build
+speaking 4 would enqueue a preset and wait forever for work this build will not
+start. No new error code: a stale reorder is a bad value for a named field and is
+`admin/schema` on `jobIds`; a settled batch is `admin/illegal_transition`, the
+code `createJob` already gives. `CATALOG_DOCUMENT_VERSION` stayed 3 — no document
+changed shape — and still owes a migration on its next change.
 
 **M08.8 gave the lab a form, and the form holds no list of its own.** The
 `content` endpoint tells a builder which precons the active format publishes and
@@ -265,9 +320,10 @@ knob to a form unreads every stored batch and job. `CATALOG_DOCUMENT_VERSION`
 stayed 3 and still owes a migration on its next change; `saved-choices/` is a new
 directory no earlier build has written, so it owes none.
 
-**Two navigation entries, and the queue is the conspicuous absence.** Until M08.9
-exists an operator watches a run from the answer the enqueue gave them rather
-than from a page that would have to invent one.
+**Two navigation entries when M08.8 shipped, and the queue was the conspicuous
+absence.** M08.9 closed it, and in doing so changed what this button does: the
+builder now reports `Added n jobs to draft batch … Nothing has started` and names
+Queue as where the batch is ordered and released.
 
 **M08.7 gave the lab a face, and the page holds nothing the bundle knows on its
 own.** `apps/admin-client` is its own Vite application with its own `index.html`,

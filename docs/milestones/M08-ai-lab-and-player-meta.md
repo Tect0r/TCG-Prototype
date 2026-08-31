@@ -2388,7 +2388,7 @@ no Unit cap, no accounts and no MMR.**
   repaired because making it deterministic is a change to a tranche this one did not
   open.
 
-## M08.9 — Queue UI and batch ordering
+## M08.9 — Queue UI and batch ordering — **done (2026-08-31)**
 
 Make ordered work observable and controllable: create an ordered batch, add,
 duplicate and remove jobs before start, reorder with accessible controls where
@@ -2402,12 +2402,357 @@ does not share experimental state.
 **Acceptance:** state transition, keyboard reordering, restart recovery,
 concurrent update and action-failure UI tests.
 
+### What M08.9 built
+
+**The editing window did not exist, and opening it is the tranche.** Everything
+this tranche owes happens _before start_ — add, duplicate, remove, reorder — and
+until now there was no instant at which that could happen. `enqueuePreset`
+created the jobs and took the batch's `enqueue` transition in the next statement,
+so `draft` was a state with **zero width**: by the time an administrator could
+have looked at a batch, its ordering was settled and its first job was already
+being handed a worker. The two statements moved to a new `start-batch` address,
+and `enqueue-preset` now fills a batch and leaves it a draft. That is a change to
+what an existing address _does_ rather than to its shape, which is exactly the
+kind of change a payload schema cannot express and a contract version has to —
+`ADMIN_CONTRACT_VERSION` moved 4 → 5.
+
+**The hold is the orchestrator's, not the screen's.** A job is created `queued`
+— there is no job `draft` state, because a job is validated the moment it is
+created — so a screen that merely declined to show a start button would be
+decorating a queue that was already running. `JobQueue.#nextStartable` now reads
+each candidate's batch and skips it while that batch is `draft`, memoised once
+per fill pass so a draft somebody is editing does not become a directory poll. A
+batch that cannot be read is treated as **not released**, which is the safe
+direction: the alternative starts a run on the strength of a document this
+process could not open.
+
+**A batch now says what its members did.** Nothing had ever moved a batch after
+`enqueue`, so one would have spelled `queued` while its jobs ran and after they
+all finished. `JobQueue.reconcileBatch` derives the two moves from the members
+rather than remembering them — `start` once any member has a start instant _or_
+once every member is terminal, `complete` once every member is terminal — and
+ignores the refusals, because `applyBatchAction` is the authority and an
+`admin/illegal_transition` there means the batch is already past that point. The
+_or_ half is not redundant: a batch whose every job was withdrawn before release
+has finished without anything starting, and without it that batch could never
+leave `queued`.
+
+**Reordering sends the whole order, and that is the concurrent-update answer.** A
+request that said _move this job up one_ would be a request whose meaning depends
+on what the batch looked like when the button was drawn, and two screens open on
+the same draft would each apply their move to an order the other had already
+changed. `reorderBatchJobs` requires a **permutation** of the membership the
+store currently holds: a set that has gained or lost a job is refused with a
+sentence naming both directions of the disagreement and ending _the batch changed
+after this order was read, so nothing was written_. There is no revision counter
+and none is needed — the membership _is_ the version, because the only two things
+that change it are a job being created and this method.
+
+**Duplicating is composed out of calls that already had the authority.** There is
+no `duplicateJob` in the store. The handler reads the job, reads its
+configuration, derives a copy, calls `createJob` — which refuses a batch that is
+not `draft`, so _duplicate before start_ needs no separate check and cannot drift
+from the rule membership already obeys — and then calls `reorderBatchJobs` to
+move the new member from the end of the ordering to the position after its
+source. If the reorder fails the copy is still made and sits at the end: visible,
+harmless, reported, and a far better outcome than a handler that deleted a job to
+keep an ordering tidy.
+
+**A copy is a replicate, because the naive reading is the dangerous one.**
+Writing the same configuration twice would put two identical run directories in
+the catalog — an experiment's seed is what every shuffle, mulligan and pilot
+decision derives from — and a later reader would have two records that look like
+independent evidence and are one measurement counted twice. So `duplicateConfig`
+derives a suffixed experiment ID and a suffixed seed exactly the way M08.8
+derives a replicate, spelled `-c{n}` / `|c{n}` rather than `-r{n}` / `|r{n}`
+because the two are not the same claim: a replicate was _scheduled_ as one of n
+and the estimate that priced the batch counted it, while a copy was added
+afterwards by somebody looking at a queue. The ordinal is chosen from the
+experiment IDs the batch already holds, so it is stable under withdrawal, and a
+copy of a copy re-derives from the base rather than nesting.
+
+**Removing a job before start added no address at all.** ADR 0023 §3 gives this
+workspace no delete, and M08.28 is the tranche that decides whether a deletion
+feature exists, with the standing preference that _omission is preferable to an
+unsafe delete button_. Cancelling a job that has never started already means
+exactly _remove it from this batch before start_ — it will not run, and the
+lifecycle table has permitted `queued → cancelled` since M08.1 — so a withdrawal
+is the existing `job-action` with `cancel`. The job stays listed in its batch
+spelling `Cancelled`, dimmed, with the sentence _withdrawn before this batch was
+started … it stays listed here because nothing in this lab deletes a record_. The
+alternative — dropping it from `jobIds` — would have needed a removal method, a
+`withdrawn` projection on the batch detail, and a careful argument about the
+window in which a job could be orphaned into a state the queue would start.
+
+**Reordering is buttons, and drag is deliberately absent.** The milestone asks
+for accessible controls _where drag is an enhancement and never the only
+control_. Move-up and move-down are in the tab order, are ordinary buttons so
+Enter and Space both work, are announced, and need no pointer; the move that
+would go off either end is **disabled rather than hidden**, so the control does
+not move under a keyboard user between rows. Drag would have been the
+enhancement and is not here — the acceptance asks for keyboard reordering, and an
+interaction no test can prove reachable is a liability.
+
+**Confirmations are proportional, and the proportion is one question: can the
+operator undo it from this screen?** `pause`, `resume` and `retry` all can — the
+lifecycle table has a route back from every state they lead to, and nothing they
+do is lost — so none of them asks. `cancel` cannot: `cancelled` is terminal with
+no outgoing transition at all. Starting a batch cannot either: it settles the
+order for good. Those two ask, and the dialog states the consequence rather than
+asking whether the operator is sure, because a dialog on the reversible verbs
+would train somebody to dismiss the one that matters.
+
+**Remaining time is shown, and the conditions for showing it are the tranche's
+most load-bearing piece of arithmetic.** It appears only when the job is
+`running`, its schedule is **exact** rather than a bound, at least ten matches
+have been committed, and the runner has measured how long that took. Then it is
+extrapolated from _this run's own pace on this machine_ — not from a table of
+expected match lengths, which this build has never produced and which M08.8
+declined to invent. Every other case prints a sentence naming the condition that
+failed, because "no estimate" and "no estimate _because the total for this kind
+of run is a bound_" are different facts and an operator can act on the second.
+
+**Order does not imply shared state, and the page says so before anything else.**
+A list of rows in a chosen order looks like a pipeline, and a reader who assumed
+one would expect the second job to inherit a population, a deck or a calibration
+from the first. It inherits nothing: the first paragraph on the screen says that
+order decides which job a worker is offered first and nothing else, that each job
+is a whole experiment with its own configuration, seed family and canonical
+directory, and that running them in one batch **pools no evidence between them**.
+
+**`operatorActionsFor` moved into the contract.** M08.6 put it in
+`apps/admin-server` with a reason — _computing it on the server is what keeps a
+stale bundle from showing a button the server does not have_ — and that reason
+argues for one implementation rather than one location. A queue screen shows tens
+of jobs at once and cannot ask `jobDetail` for each, so the choice was between
+the client deriving the intersection with a **second** copy of the expression or
+with **this** one. The server's refusal is still authoritative, and
+`admin/illegal_transition` still names what was available instead.
+
+### Verified by running it
+
+`npm run verify` passes on Node v24.15.0, with `npm run check:consistency` and
+`npm run audit:check` beside it. The full suite is **4,159 tests in 196 files**,
+up from 4,071 in 192.
+
+**77 new tests in 4 new files** — 29 in `admin-client/src/queue-flow.test.tsx`,
+23 in `admin-client/src/lib/queue-view.test.ts`, 18 in
+`admin-server/src/service/queue-endpoints.test.ts` and 7 in
+`admin-server/src/lab/duplicate.test.ts` — plus 11 added to existing suites: 6 in
+`file-catalog-store.test.ts` for the reorder refusals, 2 in `restart.test.ts` for
+a draft that survives a restart still editable, 1 in `http.test.ts` for a second
+preset into a draft, 1 in `builder-flow.test.tsx` for the report that now says
+nothing has started, and 1 in `service.test.ts` for the three new endpoints all
+answering with the whole batch detail.
+
+The acceptance's five kinds are each named: **state transition** (`releases the
+batch when it is started, and refuses a second start`, `moves to completed once
+every member has finished`, and the client's pause/resume/interrupt/retry rows),
+**keyboard reordering** (`moves a job down…` driven with Enter and `…with the
+space bar` driven with Space, on focused buttons, with no pointer event),
+**restart recovery** (`leaves a draft a draft, so nothing an administrator was
+still ordering has started` and `keeps a reordered draft editable after the
+restart`, both over a second store opened on the same directory), **concurrent
+update** (`refuses the stale order a second screen would send after a job was
+added`), and **action failure in the UI** (`reports a refused reorder in the
+lab's own words and re-reads the batch` and `reports a refused action without
+pretending it worked`).
+
+**Verified by running it against the real process.** The orchestration process
+was started against a temporary catalog and result root, and the four addresses
+were driven over real HTTP before any screen was involved. `capabilities`
+answered `contract 5`, `catalogDocument 3`, `jobEvent 1`, `savedChoice 1`. A
+three-replicate smoke priced at **18 matches, basis `exact`** was enqueued and
+the batch came back **`draft` with three `queued` jobs**; a second later, with
+nothing released, it was still `draft` with **zero matches committed on every
+job** — the hold, observed rather than asserted. `reorder-batch` reversed the
+order to `live-check-r3, r2, r1`; the same call with a two-job order was refused
+`400 admin/schema` with _A new order must name each of this batch's 3 jobs
+exactly once, and it leaves out job_01m1bg1008ds8mpbzg. The batch changed after
+this order was read, so nothing was written._ `duplicate-job` on `live-check-r1`
+produced `live-check-r1-c2` on seed `m089|r1|c2`, and `job-action` with `cancel`
+withdrew `live-check-r2`, which stayed a member of the batch spelling
+`cancelled`.
+
+`start-batch` released it; a second `start-batch` was refused `409
+admin/illegal_transition` — _A batch in `queued` has no `enqueue` transition_ —
+and a reorder afterwards was refused with the same code. The batch then **ran
+real matches and settled `completed`**, with the three released jobs each
+committing **6 of 6** matches into their own canonical directories
+(`live-check-r3`, `live-check-r1`, `live-check-r1-c2`, all `manifestSchemaVersion
+8`) and the **withdrawn job holding 0 matches, no elapsed time and no result** —
+so the copy is a real independent run and the withdrawal really never ran.
+
+**Rendered surface inspected through the real components.** The queue flow suite
+renders the whole application against a fake lab that holds a real catalog and
+moves documents through the contract's own transition table, and the assertions
+read the produced DOM: the draft's three rows in order, the order after a
+keyboard move, the copy's own seed family `bench-r1-c2` / `seed|r1|c2`, the
+confirmation dialog's focused button and its two consequence sentences, the nine
+state meanings in the legend, `20 of 60 matches committed.`, `40s of measured run
+time`, `1m 20s` remaining with the basis `2s per match`, and the sentence
+explaining why a remaining time is absent when only four matches have been
+committed.
+
+The real components were then rendered **against that live service** with a real
+`fetch` over its socket, and the DOM read out in full. A completed batch showed
+`Completed · Every member reached a terminal state. This says nothing about
+whether they succeeded`, four rows in the order the operator set, `6 of 6 matches
+committed.`, `1s of measured run time`, `Not available. Remaining time is only
+extrapolated while a job is running.`, and the withdrawn row spelling `Cancelled`
+with `0 matches committed`. Switching to a live **draft** showed `Start this
+batch`, the sentence `Nothing in this batch has run`, and per row `Move up | Move
+down | Duplicate | Withdraw` — with `Move up` **disabled** on the first row and
+`Move down` disabled on the last, rather than missing.
+
+**No browser screenshot is claimed.** The Chrome extension this environment
+offers was not connected. The rendering evidence is the real DOM produced by the
+real components against the live service, read out in full, exactly as M08.7 and
+M08.8 recorded.
+
 ### Checklist
 
-- [ ] Ordered batch editing before start, keyboard-reachable.
-- [ ] Every lifecycle state visible and named.
-- [ ] Remaining time shown only when it is honestly available.
-- [ ] Queue order does not imply shared state.
+- [x] **Ordered batch editing before start, keyboard-reachable.** A batch stays a
+      `draft` until `start-batch` releases it; the orchestrator's fill loop reads
+      that state before starting anything, so the window is a property of the
+      process. In it a job can be added (a second preset into the same batch is
+      now legal), duplicated, withdrawn and reordered. Reordering is move-up and
+      move-down buttons — in the tab order, Enter and Space both work, disabled
+      rather than hidden at either end — and the whole order travels on every
+      move, so a stale screen is refused rather than silently overwriting.
+- [x] **Every lifecycle state visible and named.** All nine job states carry a
+      label and a sentence in `queue-view.ts`, built from `JOB_STATUSES` itself,
+      and the page renders the whole legend whether or not a job is in each
+      state. `queue-view.test.ts` walks the enumeration and requires both for
+      every member and that no label is the raw token, so a state added to the
+      table later cannot reach a screen as an identifier. The eight batch states
+      are covered the same way, including the sentence that `completed` _says
+      nothing about whether they succeeded_.
+- [x] **Remaining time shown only when it is honestly available.** Four
+      conditions, each with its own refusal sentence, and the one case that
+      passes is extrapolated from the run's own measured pace with the basis
+      printed beside the figure. Exact committed and scheduled counts are shown
+      in whichever of `progressSchema`'s three honest forms they are in — an
+      exact fraction, a figure against a stated **bound**, or no denominator at
+      all — the current stage where a job declares one, and elapsed time summed
+      across attempts.
+- [x] **Queue order does not imply shared state.** Said on the page, in the first
+      paragraph, before any row: order decides which job a worker is offered
+      first and nothing else, each job is a whole experiment with its own seed
+      family and canonical directory, and one batch pools no evidence between
+      them. A test asserts the sentence is rendered.
+
+### Versions
+
+One moved. No other constant in the repository did.
+
+| Constant                   | Was | Now | Why                                                                                                                                                                                                                                                                                          |
+| -------------------------- | --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION`   | 4   | 5   | Three endpoints — `reorder-batch`, `duplicate-job`, `start-batch` — one new request payload, and a **behavioural** change to an existing address: `enqueue-preset` no longer starts anything. A build speaking 4 would enqueue a preset and wait forever for work this build will not start. |
+| `CATALOG_DOCUMENT_VERSION` | 3   | 3   | No document changed shape. `jobIds` was already an ordered array and reordering rewrites it; a withdrawal is an ordinary `cancel` on a job. M08.6's obligation — _the next change to this shape has to be migrated_ — is intact and untouched.                                               |
+| `JOB_EVENT_VERSION`        | 1   | 1   | No line is read or written differently. A withdrawal writes the `transition` line `cancel` already wrote; a duplicate writes the `created` line `createJob` already wrote.                                                                                                                   |
+| `SAVED_CHOICE_VERSION`     | 1   | 1   | A saved builder form holds a `presetChoice` and nothing about a queue. No builder control moved.                                                                                                                                                                                             |
+
+**No new error code, and that is a deliberate reading of the test M08.3 set.** A
+stale reorder is a **bad value for a named field** — the `jobIds` a caller sent
+are not this batch's — so it is `admin/schema` with `path: 'jobIds'` and a
+message that says what the disagreement was. Reordering or duplicating in a
+settled batch is `admin/illegal_transition`, which is the code `createJob`
+already answers a settled batch with. Adding a code for "your copy of the order
+is old" would be adding a fourth spelling of _the value you sent is wrong_.
+
+**No play-contract and no simulator artifact version moved.**
+`PROTOCOL_VERSION`, `MATCH_SCHEMA_VERSION`, `RULES_VERSION`,
+`CARD_SCHEMA_VERSION`, `MANIFEST_SCHEMA_VERSION`, `SUMMARY_SCHEMA_VERSION`,
+`CONFIG_SCHEMA_VERSION`, `SEED_DERIVATION_VERSION`, `HASH_VERSION` and the
+`@tcg/bot-config` constants are where M09 and M08.8 left them. Nothing in this
+tranche is reachable from `apps/web-client` or `apps/multiplayer-server`, and
+nothing here writes a manifest, a summary or a match record.
+
+### Exclusions honoured
+
+**No result charts and no charting dependency**: the client's boundary suite
+still reads the manifest and refuses one by name, and the queue renders no `<svg>`
+and no canvas — progress is a sentence and a table, which is what the milestone's
+result rules ask for anyway. **No other builder**: the queue configures nothing;
+every job it shows was created by M08.8's form or by a duplicate of one.
+**No arbitrary output root, path or JSON blob**: the one new request shape is
+`{ batchId, jobIds }` and the other two are the existing `{ jobId }` and
+`{ batchId }`; the boundary suite's scan over `ADMIN_REQUEST_PAYLOAD_SCHEMAS`
+covers the new member because `service.test.ts` requires every endpoint's request
+schema to be one of them. **No simulator CPU work in the live event loop**:
+nothing here touches `apps/multiplayer-server`, `@tcg/protocol` or a live match,
+and the queue's own draft check is a document read rather than a schedule
+computation. **No admin control in the player bundle**: `apps/admin-client` is
+still its own application and the built player bundle still contains zero
+occurrences of the string `admin`. **No deletion**: the store still offers no
+`delete`, `remove`, `withdrawJob` or `removeBatchMember`, and the suite names all
+four to keep it that way. **No card authored, no precon rebalanced, no deck size
+moved, no Unit cap, no accounts and no MMR.**
+
+### Corrections to what M08.8 recorded
+
+Appended rather than rewritten, because M08.8's record is what M08.8 measured.
+
+- **M08.8 wrote that a form-built configuration _became a real experiment
+  directory_ through `create-batch` and `enqueue-preset`, and that `list-jobs`
+  reported it `completed`.** That was true of the build M08.8 shipped. It is no
+  longer the path: `enqueue-preset` leaves the batch a draft, and `start-batch`
+  is what releases it. The end-to-end route from a form to a canonical directory
+  is unchanged in every other respect and is exercised by
+  `queue-endpoints.test.ts`'s `moves to completed once every member has
+finished`.
+- **M08.8's builder reported `Enqueued n jobs into batch … Work starts under this
+lab's own bound`.** It now reports `Added n jobs to draft batch … Nothing has
+started`, and names Queue as where the batch is ordered and started. The
+  sentence changed because the behaviour did.
+- **M08.8's recorded flake in `apps/admin-server/src/run/queue.test.ts` is still
+  open.** _runs several at once when the bound allows_ observes a peak of
+  concurrent jobs across real 10 ms delays. It passed in every run of this
+  tranche, including the final gate; it is M08.5's test, untouched here, and
+  making it deterministic remains a change to a tranche this one did not open.
+
+### Limitations recorded rather than worked around
+
+- **There is no batch event log, so a reorder leaves no audit line.** A
+  withdrawal and a duplicate each write to a _job's_ append-only log — `cancel`
+  and `created` respectively — but changing an ordering touches no job document,
+  and the only trace it leaves is the batch's `updatedAt`. A batch-level log is a
+  fifth artifact with its own lifetime and its own version constant, and the
+  tranche that needs one — most likely M08.27, which has to say _why_ a
+  comparison was set up the way it was — is the one that can decide its shape.
+- **A withdrawn job keeps its slot in `MAX_JOBS_PER_BATCH`.** Nothing is deleted,
+  so a batch assembled by withdrawing and re-adding repeatedly can reach the
+  500-member bound with few runnable jobs in it. The refusal is
+  `admin/schema` from the document's own array cap, which is truthful but says
+  nothing about withdrawals; a batch that could report _how many of my members
+  will actually run_ is a result-side reading and belongs with the tranche that
+  lists batches by what they produced.
+- **The poll is per job and unconditional within a watched batch.** Every member
+  of a batch with any un-terminal job is re-read every two seconds, including the
+  ones that have already finished. `jobProgress` is the cheap endpoint and a
+  batch is capped at 500 members, so on this machine it is unnoticeable; a
+  narrower poll would need the screen to track which rows have settled, which is
+  a second copy of a fact the answer already carries.
+- **A batch cannot be paused, resumed or cancelled as a whole.** The four verbs
+  are per job, which is what `OPERATOR_JOB_ACTIONS` has always been, and the
+  batch transitions `pause`, `pause_settled`, `resume`, `cancel` and
+  `cancel_settled` in `BATCH_LIFECYCLE` are still unreached by any caller.
+  Wiring them means deciding what a batch-level pause does to a member that is
+  already `pausing` and to one that has already failed, and that decision is
+  worth making beside a screen that can show the outcome.
+- **The batch listing is one page and is not filtered.** `listBatches` is called
+  with the default page size and the screen renders what comes back; a catalog
+  with more than 50 batches would show the first page with no control to reach
+  the rest. Filtering and pagination over the catalog is M08.10's, named there,
+  and building half of it here would be the decorative scaffolding the milestone
+  forbids.
+- **A draft batch is never automatically discarded.** An administrator who
+  configures a benchmark and changes their mind leaves a draft in the catalog
+  forever. Cancelling a `draft` batch is a legal batch transition and no caller
+  takes it, because `BATCH_STATUSES.cancelled` on an empty draft and on a batch
+  somebody stopped mid-run read identically, and deciding what that word means is
+  part of the deletion question M08.28 holds.
 
 ## M08.10 — Result catalog and generic run detail
 

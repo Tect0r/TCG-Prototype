@@ -11,14 +11,20 @@
  * shell's other claims look like the same kind of claim.
  *
  * M08.8 owns **New Test Batch** and adds it here, because there is now a form
- * behind it that configures, prices and enqueues a real precon benchmark. The
- * remaining seven are still absent, and the queue is the conspicuous one: M08.9
- * owns it, and until it exists an operator watches a run from the answer the
- * enqueue gave them rather than from a page that would have to invent one.
+ * behind it that configures, prices and enqueues a real precon benchmark.
  *
- * The list is still a list rather than a switch in the layout, so the tranche
- * after this one adds a line and its screen appears in the navigation, in the
- * order an administrator meets it.
+ * M08.9 owns **Queue**, and it is a destination for a stronger reason than the
+ * other two: until this tranche a batch was released by the same call that
+ * filled it, so an administrator who pressed *enqueue* had already started the
+ * work and had nowhere to see it. Now a batch is a draft until somebody starts
+ * it, and this is the page where that happens — where the order is set, where a
+ * job is duplicated or withdrawn, and where the four lifecycle verbs have a
+ * button. The builder without it would be a form that creates work nothing can
+ * run.
+ *
+ * The remaining six are still absent. The list is still a list rather than a
+ * switch in the layout, so the tranche after this one adds a line and its screen
+ * appears in the navigation, in the order an administrator meets it.
  */
 
 export interface AdminSection {
@@ -46,7 +52,16 @@ export const ADMIN_SECTIONS = [
     title: 'New Test Batch',
     summary:
       'Configure a precon benchmark against the content this lab is running right now, see the ' +
-      'exact number of matches it schedules, and enqueue it. Nothing here is authored as JSON.',
+      'exact number of matches it schedules, and add it to a draft batch. Nothing here is ' +
+      'authored as JSON, and nothing here starts a run.',
+  },
+  {
+    id: 'queue',
+    label: 'Queue',
+    title: 'Queue',
+    summary:
+      'Order a draft before it runs, start it, and watch what it does. Every state, count and ' +
+      'instant on this page is the orchestration process reporting on its own work.',
   },
 ] as const satisfies readonly AdminSection[];
 

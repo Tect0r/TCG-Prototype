@@ -60,6 +60,16 @@ const NOTHING_READ = undefined as unknown as ExperimentOutcome;
 const delay = (milliseconds: number): Promise<void> =>
   new Promise((settle) => setTimeout(settle, milliseconds));
 
+/**
+ * A job in a batch that has been **released**.
+ *
+ * The `enqueue` at the end is M08.9's, and it is not scaffolding: since that
+ * tranche a batch's `draft` state actually holds its jobs back, so a job seeded
+ * into a batch nobody released is a job the queue is right to leave alone. Every
+ * test below is about what the queue does with work it may start, so every one
+ * of them releases the batch — and the two tests that check the *hold* itself
+ * build their batch without this helper.
+ */
 async function seedJob(
   overrides: Parameters<typeof testConfig>[0] = {},
   label = 'Precon smoke',
@@ -74,6 +84,7 @@ async function seedJob(
       config: testConfig(overrides),
     }),
   );
+  unwrap(await catalog.store.applyBatchAction(batch.batchId, 'enqueue'));
   return job.jobId;
 }
 

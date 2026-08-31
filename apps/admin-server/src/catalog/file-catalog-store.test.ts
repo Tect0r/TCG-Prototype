@@ -9,7 +9,9 @@ import {
   catalogFilterSchema,
   catalogJobViewOf,
   jobTransition,
+  type BatchId,
   type CatalogJobDocument,
+  type JobId,
 } from '@tcg/admin-contracts';
 import { isErr, isOk, unwrap } from '@tcg/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -314,6 +316,91 @@ describe('ordered batch membership, with independent jobs', () => {
     });
     expect(isErr(late) && late.error[0]?.code).toBe('admin/illegal_transition');
     expect(isErr(late) && late.error[0]?.message).toContain('settled ordering');
+  });
+});
+
+describe('reordering a draft batch (M08.9)', () => {
+  /** Three jobs in one draft batch, in the order they were created. */
+  async function seedThree(): Promise<{ batchId: BatchId; jobIds: JobId[] }> {
+    const batch = unwrap(await catalog.store.createBatch({ label: 'Wave 1' }));
+    const jobIds: JobId[] = [];
+    for (const label of ['one', 'two', 'three']) {
+      const job = unwrap(
+        await catalog.store.createJob({
+          batchId: batch.batchId,
+          label,
+          purpose: 'exploration',
+          sourceClasses: ['ai'],
+          config: testConfig(),
+        }),
+      );
+      jobIds.push(job.jobId);
+    }
+    return { batchId: batch.batchId, jobIds };
+  }
+
+  it('writes the order it was given, and readBatchJobs reads it back in that order', async () => {
+    const { batchId, jobIds } = await seedThree();
+    const wanted = [jobIds[2], jobIds[0], jobIds[1]] as JobId[];
+
+    const moved = unwrap(await catalog.store.reorderBatchJobs(batchId, wanted));
+    expect(moved.jobIds).toEqual(wanted);
+
+    const members = unwrap(await catalog.store.readBatchJobs(batchId));
+    expect(members.map((job) => job.label)).toEqual(['three', 'one', 'two']);
+  });
+
+  it('touches no member document, because an order is the batch’s and not a job’s', async () => {
+    const { batchId, jobIds } = await seedThree();
+    const before = unwrap(await catalog.store.readJob(jobIds[0] as JobId));
+
+    catalog.advance(1_000);
+    unwrap(await catalog.store.reorderBatchJobs(batchId, [...jobIds].reverse()));
+
+    expect(unwrap(await catalog.store.readJob(jobIds[0] as JobId))).toEqual(before);
+  });
+
+  it('refuses a set that is missing a member, and leaves the order alone', async () => {
+    const { batchId, jobIds } = await seedThree();
+    const answer = await catalog.store.reorderBatchJobs(batchId, jobIds.slice(0, 2));
+    expect(isErr(answer)).toBe(true);
+    if (!isErr(answer)) return;
+    expect(answer.error[0]?.code).toBe('admin/schema');
+    expect(answer.error[0]?.path).toBe('jobIds');
+    expect(unwrap(await catalog.store.readBatch(batchId)).jobIds).toEqual(jobIds);
+  });
+
+  it('refuses a set carrying a job from another batch', async () => {
+    const first = await seedThree();
+    const second = await seedThree();
+    const answer = await catalog.store.reorderBatchJobs(first.batchId, [
+      ...first.jobIds.slice(1),
+      second.jobIds[0] as JobId,
+    ]);
+    expect(isErr(answer)).toBe(true);
+    if (!isErr(answer)) return;
+    expect(answer.error[0]?.message).toContain('which is not in this batch');
+  });
+
+  it('refuses to reorder a batch whose ordering has settled', async () => {
+    const { batchId, jobIds } = await seedThree();
+    unwrap(await catalog.store.applyBatchAction(batchId, 'enqueue'));
+
+    const answer = await catalog.store.reorderBatchJobs(batchId, [...jobIds].reverse());
+    expect(isErr(answer)).toBe(true);
+    if (!isErr(answer)) return;
+    expect(answer.error[0]?.code).toBe('admin/illegal_transition');
+    expect(unwrap(await catalog.store.readBatch(batchId)).jobIds).toEqual(jobIds);
+  });
+
+  it('cannot add a job, so it is not a second way to fill a batch', async () => {
+    const { batchId, jobIds } = await seedThree();
+    const other = await seedThree();
+    const answer = await catalog.store.reorderBatchJobs(batchId, [
+      ...jobIds,
+      other.jobIds[0] as JobId,
+    ]);
+    expect(isErr(answer)).toBe(true);
   });
 });
 
@@ -903,7 +990,16 @@ describe('the filter predicate itself', () => {
 describe('nothing in the store can express removing a run', () => {
   it('offers no delete, unlink or move of any kind', async () => {
     const store = catalog.store as unknown as Record<string, unknown>;
-    for (const name of ['delete', 'deleteJob', 'remove', 'removeJob', 'purge', 'move']) {
+    for (const name of [
+      'delete',
+      'deleteJob',
+      'remove',
+      'removeJob',
+      'removeBatchMember',
+      'withdrawJob',
+      'purge',
+      'move',
+    ]) {
       expect(typeof store[name]).toBe('undefined');
     }
   });

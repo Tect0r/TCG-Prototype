@@ -268,6 +268,59 @@ export class FileCatalogStore implements CatalogStore {
     });
   }
 
+  /**
+   * Rewrites a `draft` batch's ordered membership (M08.9).
+   *
+   * Two refusals, and they are the whole method. The batch must be a **draft**,
+   * for the reason `createJob` gives about membership: `enqueue` is the moment an
+   * ordering becomes final, and re-ordering work that has already been scheduled
+   * would change what "the scheduled work" meant after a person had read it. And
+   * the new order must be a **permutation** of the one on disk — every current
+   * member exactly once, and nothing else — so a client working from a stale
+   * reading is told what it disagreed about rather than having its arithmetic
+   * quietly become the order.
+   *
+   * That second refusal is this store's concurrent-update answer. There is no
+   * revision counter and none is needed: the membership *is* the version, because
+   * the only two things that change it are a job being created and this method,
+   * and both are refused the instant the set differs from what the caller saw.
+   */
+  async reorderBatchJobs(
+    batchId: BatchId,
+    jobIds: readonly JobId[],
+  ): Promise<CatalogResult<CatalogBatchDocument>> {
+    const path = documentPath(this.#batchDir, batchId);
+    return this.#locks.run(path, async () => {
+      const current = await this.#readBatchDocument(batchId);
+      if (isErr(current)) return current;
+
+      if (current.value.status !== 'draft') {
+        return err([
+          adminError(
+            'admin/illegal_transition',
+            `A batch in \`${current.value.status}\` has a settled ordering, so its jobs cannot be reordered.`,
+            {
+              path: 'batchId',
+              context: { entry: 'batch', from: current.value.status, action: 'reorder' },
+            },
+          ),
+        ]);
+      }
+
+      const problem = permutationProblem(current.value.jobIds, jobIds);
+      if (problem !== null) {
+        return err([adminError('admin/schema', problem, { path: 'jobIds' })]);
+      }
+
+      const now = this.#now();
+      return this.#writeBatch(path, {
+        ...current.value,
+        jobIds: [...jobIds],
+        timestamps: { ...current.value.timestamps, updatedAt: now },
+      });
+    });
+  }
+
   /* ---------------------------------------------------------------- jobs */
 
   /**
@@ -952,6 +1005,39 @@ const isLegalId = (id: string): boolean =>
   jobIdSchema.safeParse(id).success ||
   batchIdSchema.safeParse(id).success ||
   savedChoiceIdSchema.safeParse(id).success;
+
+/**
+ * Why `proposed` is not a rearrangement of `current`, or `null` when it is.
+ *
+ * A sentence rather than a boolean, because the caller is a request handler
+ * whose job is to *report* the disagreement: a client that reordered a batch
+ * somebody else had just added a job to needs to be told that a job it has never
+ * seen is now a member, not merely that its request was wrong. Both directions
+ * are named, and the counts are given, because "the same jobs in a different
+ * order" is a claim with two ways to be false.
+ */
+function permutationProblem(
+  current: readonly string[],
+  proposed: readonly string[],
+): string | null {
+  const held = new Set(current);
+  const asked = new Set(proposed);
+  const missing = current.filter((jobId) => !asked.has(jobId));
+  const unknown = proposed.filter((jobId) => !held.has(jobId));
+
+  if (missing.length === 0 && unknown.length === 0 && current.length === proposed.length) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if (missing.length > 0) parts.push(`it leaves out ${missing.join(', ')}`);
+  if (unknown.length > 0) parts.push(`it names ${unknown.join(', ')}, which is not in this batch`);
+  if (parts.length === 0) parts.push('it is a different length');
+  return (
+    `A new order must name each of this batch’s ${String(current.length)} jobs exactly once, and ` +
+    `${parts.join(' and ')}. The batch changed after this order was read, so nothing was written.`
+  );
+}
 
 function duplicateId(kind: string, id: string): AdminError {
   return adminError(

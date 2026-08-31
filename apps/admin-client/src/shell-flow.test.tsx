@@ -36,7 +36,7 @@ describe('what the navigation offers', () => {
     expect(entries).toEqual(ADMIN_SECTIONS.map((section) => section.label));
   });
 
-  it('is two entries, because two pages are finished', async () => {
+  it('is three entries, because three pages are finished', async () => {
     await renderShell();
 
     // The milestone's information architecture names nine destinations and says
@@ -44,11 +44,14 @@ describe('what the navigation offers', () => {
     // greyed-out "Queue" leading to "coming soon" is the decorative empty page
     // it forbids, so the list grows one entry per tranche rather than being
     // aspirational. M08.8 added New Test Batch because there is a working form
-    // behind it; the remaining seven are still absent.
-    expect(ADMIN_SECTIONS.map((section) => section.id)).toEqual(['overview', 'new-test-batch']);
-    expect(
-      screen.queryByRole('button', { name: /queue|results|player meta|explorer/i }),
-    ).toBeNull();
+    // behind it; M08.9 added Queue because a draft batch now has to be ordered
+    // and started from somewhere. The remaining six are still absent.
+    expect(ADMIN_SECTIONS.map((section) => section.id)).toEqual([
+      'overview',
+      'new-test-batch',
+      'queue',
+    ]);
+    expect(screen.queryByRole('button', { name: /results|player meta|explorer/i })).toBeNull();
   });
 
   it('marks the section in view as the current page', async () => {

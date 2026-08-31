@@ -56,10 +56,27 @@ import type { ExperimentConfig } from '@tcg/simulator';
  * preferable to an unsafe delete button*. A store with no way to express removal
  * cannot have an unsafe one.
  *
- * There is **no reorder, no duplicate and no removal of batch membership**.
- * M08.9 owns editing a batch before it starts. What M08.2 owns is that
- * membership is *ordered* and that the order is the administrator's — so jobs
- * are appended in creation order and no method sorts them.
+ * There is **no removal of batch membership**, and after M08.9 there is exactly
+ * one way to change the order: `reorderBatchJobs`, which takes the whole new
+ * order and requires it to be a permutation of the membership the store
+ * currently holds. M08.2 wrote *M08.9 owns editing a batch before it starts*,
+ * and what M08.9 found is that two of the three verbs it expected need no method
+ * here at all.
+ *
+ * - **Duplicating** a job is `readJob` + `readJobConfig` + `createJob` +
+ *   `reorderBatchJobs`, composed by the handler above. A bespoke method would be
+ *   a second place that decides what a copy of a run *is* — and a copy has to
+ *   differ, because two jobs on one seed play the same matches and would look
+ *   like independent evidence.
+ * - **Removing** a job before it starts is `applyJobAction` with `cancel`, which
+ *   the lifecycle table has permitted from `queued` since M08.1. The job stays in
+ *   its batch spelling `cancelled`; nothing is deleted, which keeps the paragraph
+ *   above true and leaves M08.28 the decision it was given.
+ *
+ * `reorderBatchJobs` exists because it is the one thing the composition cannot
+ * express: the administrator's order is the array's order, and no caller may
+ * write that array except through a method that checks it is still the same set
+ * of jobs.
  *
  * There is **no execution**. Nothing here starts a match, opens a socket or
  * spawns anything. `applyJobAction` moves a document from one lifecycle state to
@@ -214,6 +231,25 @@ export interface CatalogStore {
   applyBatchAction(
     batchId: BatchId,
     action: BatchAction,
+  ): Promise<CatalogResult<CatalogBatchDocument>>;
+  /**
+   * Puts a `draft` batch's members into the order they will run in (M08.9).
+   *
+   * **The whole order, and only a permutation of it.** `jobIds` must name every
+   * current member exactly once; a set that has gained or lost one is refused
+   * rather than reconciled, which is what makes this a compare-and-set and what
+   * gives two screens open on the same draft a readable answer instead of a
+   * silent last-writer-wins. It cannot add a job, it cannot remove one, and
+   * there is nothing in its input that names anything outside the batch.
+   *
+   * **`draft` only.** `enqueue` is the moment an ordering becomes final
+   * (`BATCH_LIFECYCLE`), and reordering a batch whose jobs are already running
+   * would change what "the scheduled work" meant after somebody had read it —
+   * the same rule `createJob` applies to membership, applied to order.
+   */
+  reorderBatchJobs(
+    batchId: BatchId,
+    jobIds: readonly JobId[],
   ): Promise<CatalogResult<CatalogBatchDocument>>;
 
   /* jobs */

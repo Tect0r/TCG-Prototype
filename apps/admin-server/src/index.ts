@@ -225,7 +225,7 @@ export {
   type ResultReaderOptions,
 } from './service/results.js';
 
-export { AdminService, operatorActionsFor, type AdminServiceOptions } from './service/handlers.js';
+export { AdminService, type AdminServiceOptions } from './service/handlers.js';
 
 export {
   authorized,

@@ -1,11 +1,19 @@
+import { PAGE_SIZE_DEFAULT } from '@tcg/admin-contracts';
 import type {
   AdminEndpointName,
   AdminRequestOf,
   AdminResponseOf,
+  BatchDetail,
+  BatchId,
+  BatchPage,
   Capabilities,
+  CatalogJobView,
   ChoiceEstimate,
   ContentCatalog,
   EnqueuePresetResult,
+  JobId,
+  JobProgressView,
+  OperatorJobAction,
   PresetCatalog,
   PresetChoice,
   SavedChoiceList,
@@ -324,6 +332,66 @@ export class AdminSession {
     const saved = await this.#call('saveChoice', { label, choice });
     if (saved.ok) await this.reloadSavedChoices();
     return saved;
+  }
+
+  /* ------------------------------------------------------ the queue (M08.9) */
+
+  /**
+   * The queue's readings and verbs, as calls rather than as session resources.
+   *
+   * Deliberately not held here, for the reason the four resources above *are*:
+   * `capabilities`, `presets`, `content` and `savedChoices` describe the build
+   * and change only when the build or the operator's catalog does, so one copy
+   * shared by every screen is right. A queue is the opposite — it changes while
+   * nobody touches it — and a snapshot kept in the session would be a snapshot
+   * some other screen could render minutes later as though it were now.
+   *
+   * So the screen that asked owns the answer and decides when to ask again. That
+   * also settles the cadence question this class recorded and left open:
+   * *nothing polls … the tranche that needs a cadence is the tranche that can
+   * choose one*. M08.9 chooses it, and it chooses it **in the screen**, because
+   * the right interval depends on what is on that screen — a draft nobody has
+   * started needs no poll at all.
+   */
+  async listBatches(): Promise<AdminOutcome<BatchPage>> {
+    return this.#call('listBatches', { page: { limit: PAGE_SIZE_DEFAULT, cursor: null } });
+  }
+
+  async batchDetail(batchId: BatchId): Promise<AdminOutcome<BatchDetail>> {
+    return this.#call('batchDetail', { batchId });
+  }
+
+  /** The whole new order, which is the only shape this request has. */
+  async reorderBatch(
+    batchId: BatchId,
+    jobIds: readonly JobId[],
+  ): Promise<AdminOutcome<BatchDetail>> {
+    return this.#call('reorderBatch', { batchId, jobIds: [...jobIds] });
+  }
+
+  async duplicateJob(jobId: JobId): Promise<AdminOutcome<BatchDetail>> {
+    return this.#call('duplicateJob', { jobId });
+  }
+
+  async startBatch(batchId: BatchId): Promise<AdminOutcome<BatchDetail>> {
+    return this.#call('startBatch', { batchId });
+  }
+
+  async jobAction(jobId: JobId, action: OperatorJobAction): Promise<AdminOutcome<CatalogJobView>> {
+    return this.#call('jobAction', { jobId, action });
+  }
+
+  /**
+   * How far one job has got, without the busy flag.
+   *
+   * The one call that does **not** go through `#call`. Every other request is a
+   * thing a person asked for and belongs in the shell's busy region; a poll is
+   * not, and raising the flag two or three times a second would make the whole
+   * surface flicker and would tell an operator the lab is working when nothing
+   * has been asked of it.
+   */
+  async jobProgress(jobId: JobId): Promise<AdminOutcome<JobProgressView>> {
+    return callAdmin(this.#transport, 'jobProgress', { jobId }, this.#token);
   }
 
   /**

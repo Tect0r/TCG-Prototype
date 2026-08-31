@@ -259,14 +259,23 @@ async function seedBatch(harness: Harness): Promise<{ batchId: string; jobIds: J
   return { batchId, jobIds: jobs.map((job) => job.jobId) };
 }
 
+/** The same batch, released — which since M08.9 is what actually starts it. */
+async function seedStartedBatch(harness: Harness): Promise<{ batchId: string; jobIds: JobId[] }> {
+  const seeded = await seedBatch(harness);
+  const started = await harness.post('startBatch', { batchId: seeded.batchId });
+  expect(started.status).toBe(200);
+  return seeded;
+}
+
 /**
- * Jobs put straight into the store, so they are observably `queued`.
+ * Jobs put straight into the store, in a batch that has been released.
  *
- * `enqueuePreset` pumps the queue, which is the behaviour a person wants and the
- * behaviour a *lifecycle* test cannot observe around: by the time the response is
- * read the job may already be running or finished. Every test below that is about
- * a state rather than about creation seeds through the store and pumps when it
- * means to.
+ * Two things are being avoided rather than one. The store is used instead of the
+ * endpoints because a *lifecycle* test has to see a `queued` job, and a creation
+ * path that pumped would let the job finish before the response was read. The
+ * batch is released because since M08.9 an unreleased batch holds its jobs back —
+ * so a test that pumps and expects work to start needs a batch somebody started,
+ * exactly as an operator's does.
  */
 async function seedQueuedJobs(harness: Harness, count = 1): Promise<JobId[]> {
   const batch = unwrap(await harness.store.createBatch({ label: 'August sweep' }));
@@ -283,6 +292,7 @@ async function seedQueuedJobs(harness: Harness, count = 1): Promise<JobId[]> {
     );
     jobIds.push(job.jobId);
   }
+  unwrap(await harness.store.applyBatchAction(batch.batchId, 'enqueue'));
   return jobIds;
 }
 
@@ -655,9 +665,23 @@ describe('creating work', () => {
     expect(payload.estimate.basis).toBe('exact');
   });
 
+  it('takes a second preset into a batch that is still a draft (M08.9)', async () => {
+    // Legal for the first time in M08.9, and it is the point of the tranche: a
+    // batch stays a draft until somebody starts it, so *add jobs before start*
+    // is a thing an administrator can actually do rather than a sentence.
+    const harness = await startHarness();
+    const { batchId, jobIds } = await seedBatch(harness);
+    const again = await harness.post('enqueuePreset', { batchId, choice: SMOKE_CHOICE });
+    expect(again.status).toBe(200);
+
+    const detail = await harness.post('batchDetail', { batchId });
+    const jobs = (detail.body.payload as { jobs: { jobId: JobId }[] }).jobs;
+    expect(jobs).toHaveLength(jobIds.length * 2);
+  });
+
   it('refuses a second preset into a batch whose ordering has settled', async () => {
     const harness = await startHarness();
-    const { batchId } = await seedBatch(harness);
+    const { batchId } = await seedStartedBatch(harness);
     const again = await harness.post('enqueuePreset', { batchId, choice: SMOKE_CHOICE });
     expect(again.status).toBe(409);
     expect((again.body.errors as { code: string }[])[0]?.code).toBe('admin/illegal_transition');

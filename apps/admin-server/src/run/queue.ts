@@ -1,5 +1,7 @@
 import {
   catalogFilterSchema,
+  isTerminalJobStatus,
+  type BatchId,
   type CatalogJobDocument,
   type JobId,
   type PageRequestInput,
@@ -317,9 +319,15 @@ export class JobQueue {
     );
     if (isErr(listed)) return null;
 
+    // One reading of each batch per fill pass. A draft's members are looked at
+    // repeatedly while an administrator edits it, and re-reading the same
+    // document for every row would turn a held batch into a directory poll.
+    const released = new Map<BatchId, boolean>();
+
     for (const job of listed.value.items) {
       if (this.#inFlight.has(job.jobId)) continue;
       if (this.#unstartable.has(job.jobId)) continue;
+      if (!(await this.#batchReleased(job.batchId, released))) continue;
       const config = await this.#store.readJobConfig(job.jobId);
       // A job whose stored configuration cannot be read is left where it is
       // rather than started or failed. Reading it is `run`'s first job anyway,
@@ -358,11 +366,83 @@ export class JobQueue {
         if (isErr(outcome)) this.#unstartable.add(jobId);
       } finally {
         this.#release(jobId);
+        // The batch is told what its members did before the next fill, so a
+        // screen polling between two jobs never sees a batch claiming to be
+        // waiting for work that has already finished.
+        await this.#reconcileFor(jobId);
         void this.#schedule();
       }
     })();
 
     this.#inFlight.set(jobId, attempt);
+  }
+
+  /**
+   * Whether this job's batch has been released, memoised for one fill pass.
+   *
+   * The guard M08.9 needs, and the reason the tranche's editing window exists at
+   * all. A job is created `queued` — there is no job `draft` state, because a job
+   * is validated at the moment it is created — so before this check the queue
+   * would pick up a job the instant `createJob` returned, and an administrator
+   * reordering a batch would be reordering work that was already playing matches.
+   * The batch's own `draft` state is where "not yet" lives, and this is the one
+   * place that reads it.
+   *
+   * A batch that cannot be read is treated as **not released**. That is the safe
+   * direction: the alternative would start a run on the strength of a document
+   * this process could not open.
+   */
+  async #batchReleased(batchId: BatchId, memo: Map<BatchId, boolean>): Promise<boolean> {
+    const known = memo.get(batchId);
+    if (known !== undefined) return known;
+    const batch = await this.#store.readBatch(batchId);
+    const released = !isErr(batch) && batch.value.status !== 'draft';
+    memo.set(batchId, released);
+    return released;
+  }
+
+  /**
+   * Moves a batch as far as its members justify, and no further.
+   *
+   * A batch owns no worker and plays no match, so nothing about it can be
+   * observed directly — its state is entirely a statement about the jobs inside
+   * it, and until M08.9 nothing ever made that statement after the batch was
+   * released. A queue screen would have shown a batch spelling `queued` while its
+   * jobs ran and after they all finished, which is the same class of untruth as a
+   * job that says `running` after the process that ran it died.
+   *
+   * Two moves, both derived rather than remembered:
+   *
+   * - **`start`** once any member has a start instant, *or* once every member is
+   *   terminal. The second half is not redundant: a batch every one of whose jobs
+   *   was withdrawn before release has finished without anything ever starting,
+   *   and a batch that could never leave `queued` would be a queue entry an
+   *   operator can neither run nor clear.
+   * - **`complete`** once every member is terminal. `BATCH_STATUSES` is explicit
+   *   that this *says nothing about whether they succeeded* — a batch of ten jobs
+   *   where two failed has not failed — so this is a statement about the queue
+   *   being done with it and not about the evidence.
+   *
+   * Refusals are ignored on purpose. `applyBatchAction` is the authority on what
+   * is legal, and an `admin/illegal_transition` here means the batch is already
+   * past that point — which is the answer, not an error. A batch still in `draft`
+   * is therefore never moved by this, because the table has no `start` out of it.
+   */
+  async reconcileBatch(batchId: BatchId): Promise<void> {
+    const members = await this.#store.readBatchJobs(batchId);
+    if (isErr(members) || members.value.length === 0) return;
+
+    const started = members.value.some((job) => job.timestamps.startedAt !== null);
+    const finished = members.value.every((job) => isTerminalJobStatus(job.status));
+    if (started || finished) await this.#store.applyBatchAction(batchId, 'start');
+    if (finished) await this.#store.applyBatchAction(batchId, 'complete');
+  }
+
+  /** Reconciles the batch one job belongs to, when the job can still be read. */
+  async #reconcileFor(jobId: JobId): Promise<void> {
+    const job = await this.#store.readJob(jobId);
+    if (isErr(job)) return;
+    await this.reconcileBatch(job.value.batchId);
   }
 
   #release(jobId: JobId): void {

@@ -114,8 +114,38 @@ import { adminError, type AdminError } from './errors.js';
  *   since the block prefaults — but would receive a `capabilities` answer
  *   carrying a version field it does not know and would be unable to reach any
  *   of the four new addresses. That is what a contract version is for saying.
+ * - 5 (M08.9) — the language acquired a **queue**, and the move that matters
+ *   most is not one of the three new addresses. `enqueue-preset` **no longer
+ *   starts anything**: it fills a batch and leaves it `draft`, and
+ *   `start-batch` is what releases it. Until this version the batch lifecycle's
+ *   `draft` state existed and had zero width — the same call that created the
+ *   jobs took the `enqueue` transition in the next statement — so *add,
+ *   duplicate, remove and reorder before start*, which M08.9 owes, had no
+ *   window to happen in. Opening that window is a change to what an existing
+ *   address does rather than to its shape, which is precisely the kind of change
+ *   a payload schema cannot express and a contract version has to.
+ *
+ *   The three addresses are `reorder-batch`, `duplicate-job` and `start-batch`,
+ *   and all three answer with the whole `batchDetail` rather than an
+ *   acknowledgement, because every one of them changes the ordering and a client
+ *   that patched its own copy would become a second author of the order.
+ *   `reorderBatchRequestSchema` is the one new payload shape; it carries the
+ *   **whole** order rather than a move, so a stale client is refused rather than
+ *   silently applying its move to an order somebody else has already changed.
+ *
+ *   Removing a job before start added **no** address: it is the existing
+ *   `job-action` with `cancel`, which the lifecycle table has always permitted
+ *   from `queued`. A withdrawn job stays in its batch, spelling `cancelled`,
+ *   because ADR 0023 §3 gives this workspace no delete and inventing one for the
+ *   convenience of a tidy list would be the unsafe delete button M08.28 is
+ *   supposed to decide about.
+ *
+ *   A build speaking 4 would enqueue a preset and wait forever for work that
+ *   this build will not start without `start-batch`, and could not reach any of
+ *   the three new addresses to fix it. That is what a contract version is for
+ *   saying.
  */
-export const ADMIN_CONTRACT_VERSION = 4;
+export const ADMIN_CONTRACT_VERSION = 5;
 
 /**
  * The version stamped into a persisted catalog document.

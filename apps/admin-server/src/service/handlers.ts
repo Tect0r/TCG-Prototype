@@ -3,7 +3,6 @@ import {
   MAX_DETAIL_EVENTS,
   MAX_FILTER_VALUES,
   MAX_JOBS_PER_BATCH,
-  OPERATOR_JOB_ACTIONS,
   PAGE_SIZE_DEFAULT,
   PAGE_SIZE_MAX,
   PRESET_REGISTRY,
@@ -12,7 +11,7 @@ import {
   savedChoiceViewOf,
   adminError,
   catalogJobViewOf,
-  legalJobActions,
+  operatorActionsFor,
   type AdminEndpointName,
   type AdminRequestOf,
   type AdminResponseOf,
@@ -26,7 +25,6 @@ import {
   type JobDetail,
   type JobId,
   type JobProgressView,
-  type JobStatus,
   type OperatorJobAction,
   type PresetCatalog,
   type SavedChoiceList,
@@ -36,6 +34,7 @@ import { err, isErr, ok } from '@tcg/shared';
 
 import type { CatalogResult, CatalogStore } from '../catalog/store.js';
 import { readContentCatalog } from '../lab/content.js';
+import { duplicateConfig } from '../lab/duplicate.js';
 import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js';
 import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
@@ -124,6 +123,9 @@ export class AdminService {
       saveChoice: (payload) => this.#saveChoice(payload),
       listSavedChoices: () => this.#listSavedChoices(),
       enqueuePreset: (payload) => this.#enqueuePreset(payload),
+      reorderBatch: (payload) => this.#reorderBatch(payload.batchId, payload.jobIds),
+      duplicateJob: (payload) => this.#duplicateJob(payload.jobId),
+      startBatch: (payload) => this.#startBatch(payload.batchId),
       listBatches: (payload) => this.#listBatches(payload),
       batchDetail: (payload) => this.#batchDetail(payload.batchId),
       listJobs: (payload) => this.#listJobs(payload),
@@ -248,6 +250,20 @@ export class AdminService {
    * (ADR 0023 §3, and `store.ts` has no delete to call), the batch is still
    * `draft`, and an operator sees exactly what was made. Rolling back would mean
    * inventing a removal path for the one case where it is least safe to have one.
+   *
+   * ## What M08.9 took out of this handler, and why
+   *
+   * Until M08.9 the two statements after the loop took the batch's `enqueue`
+   * transition and pumped the queue, so filling a batch and **starting** it were
+   * one call. That made the `draft` state zero-width: there was no instant at
+   * which a batch existed, held its jobs, and had not been released — which is
+   * the only instant in which *add, duplicate, remove and reorder before start*
+   * can happen at all.
+   *
+   * Both statements moved to `startBatch`. This handler now leaves the batch a
+   * draft and starts nothing, which also makes a second preset into the same
+   * batch legal for the first time: `createJob` refuses a batch that is not
+   * `draft`, and this one no longer leaves it in any other state.
    */
   async #enqueuePreset(
     payload: AdminRequestOf<'enqueuePreset'>,
@@ -279,18 +295,6 @@ export class AdminService {
       if (isErr(created)) return created;
       jobs.push(catalogJobViewOf(created.value));
     }
-
-    // Membership stops being editable now, which is what `enqueue` means in the
-    // batch lifecycle. `createJob` already refuses a batch that is not `draft`,
-    // so this is the move that makes a second preset into the same batch a
-    // refusal rather than a surprise.
-    const enqueued = await this.#store.applyBatchAction(payload.batchId, 'enqueue');
-    if (isErr(enqueued)) return enqueued;
-
-    // Starting work is the queue's decision, under the bound `limits.ts` holds.
-    // It is not awaited: a request that waited for a batch to run would be a
-    // request that never returns.
-    void this.#queue.pump();
 
     return ok({
       batchId: payload.batchId,
@@ -426,6 +430,121 @@ export class AdminService {
     return ok(catalogJobViewOf(moved.value));
   }
 
+  /* ------------------------------------------------------- the queue (M08.9) */
+
+  /**
+   * Puts a draft batch's jobs into the order they will run in.
+   *
+   * The whole check is the store's — `draft` only, and a permutation of the
+   * membership it currently holds — because the ordering is a property of the
+   * document and a handler that pre-checked it would be a second reader of a
+   * value that can change between the two reads. What this adds is the answer:
+   * the **whole batch detail**, so the screen that asked renders the order the
+   * server now holds rather than the one it computed before asking.
+   */
+  async #reorderBatch(
+    batchId: BatchId,
+    jobIds: readonly JobId[],
+  ): Promise<CatalogResult<BatchDetail>> {
+    const reordered = await this.#store.reorderBatchJobs(batchId, jobIds);
+    if (isErr(reordered)) return reordered;
+    return this.#batchDetail(batchId);
+  }
+
+  /**
+   * Adds a copy of one queued job to its own batch, immediately after it.
+   *
+   * Composed out of four calls the store already had rather than a method of its
+   * own, and each of the four is carrying its existing authority:
+   *
+   * - `readJob` and `readJobConfig` say what the source *is*, re-validated on the
+   *   way out the way every stored configuration is.
+   * - `duplicateConfig` decides what a copy is — a **replicate**, on its own
+   *   derived seed family, because two jobs on one seed play the same matches and
+   *   would sit in the catalog looking like independent evidence.
+   * - `createJob` refuses a batch that is not `draft`, so *duplicate before
+   *   start* needs no separate check here and cannot drift from the rule
+   *   membership already obeys.
+   * - `reorderBatchJobs` moves the new member from the end of the ordering to the
+   *   position after its source, which is where a person who pressed *duplicate*
+   *   expects to find it.
+   *
+   * If the reorder fails the copy is still made and sits at the end of the
+   * batch. That is visible, harmless and reported — the answer is the batch
+   * detail either way — and it is a far better outcome than a handler that
+   * deleted a job to keep an ordering tidy.
+   *
+   * The copy inherits the source's label, purpose, evidence classes and origin.
+   * `origin` matters most: a copy of a preset stage is still that preset's stage,
+   * so the limitations `PRESET_REGISTRY` publishes for it stay bound to the run
+   * it produces.
+   */
+  async #duplicateJob(jobId: JobId): Promise<CatalogResult<BatchDetail>> {
+    const source = await this.#store.readJob(jobId);
+    if (isErr(source)) return source;
+    const { batchId } = source.value;
+
+    const config = await this.#store.readJobConfig(jobId);
+    if (isErr(config)) return config;
+
+    const members = await this.#store.readBatchJobs(batchId);
+    if (isErr(members)) return members;
+
+    const copy = duplicateConfig(
+      config.value,
+      members.value.map((member) => member.spec.experimentId),
+    );
+    if (!copy.ok) {
+      return err([adminError('admin/schema', copy.problem.message, { path: 'jobId' })]);
+    }
+
+    const created = await this.#store.createJob({
+      batchId,
+      label: source.value.label,
+      purpose: source.value.purpose,
+      sourceClasses: source.value.sourceClasses,
+      config: copy.config,
+      origin: source.value.origin,
+    });
+    if (isErr(created)) return created;
+
+    const order = members.value.map((member) => member.jobId);
+    const at = order.indexOf(jobId);
+    order.splice(at < 0 ? order.length : at + 1, 0, created.value.jobId);
+    const reordered = await this.#store.reorderBatchJobs(batchId, order);
+    if (isErr(reordered)) return this.#batchDetail(batchId);
+
+    return this.#batchDetail(batchId);
+  }
+
+  /**
+   * Releases a draft batch to the queue, which is the moment its ordering
+   * becomes final and the first moment anything can run.
+   *
+   * The two statements M08.9 took out of `enqueuePreset`, given an address of
+   * their own. `enqueue` is the batch lifecycle's own transition and the store
+   * refuses it from anywhere but `draft`, so pressing *start* twice is answered
+   * by the same table that greys the button rather than by a flag this class
+   * would have to keep.
+   *
+   * The pump is **not awaited**, for the reason it was not awaited before: a
+   * request that waited for a batch to run would be a request that never
+   * returns. What comes back is the batch detail, so the screen sees its jobs in
+   * the order it just settled — every one of them still `queued`, because
+   * whether any of them starts is the queue's decision under the bound
+   * `limits.ts` holds and not this call's to promise.
+   */
+  async #startBatch(batchId: BatchId): Promise<CatalogResult<BatchDetail>> {
+    const started = await this.#store.applyBatchAction(batchId, 'enqueue');
+    if (isErr(started)) return started;
+    // Reconciled before the pump, so a batch whose every job was withdrawn
+    // before release settles as `completed` instead of sitting in `queued`
+    // waiting for work that will never run.
+    await this.#queue.reconcileBatch(batchId);
+    void this.#queue.pump();
+    return this.#batchDetail(batchId);
+  }
+
   async #setAnnotations(
     jobId: JobId,
     annotations: AdminRequestOf<'setJobAnnotations'>['annotations'],
@@ -466,18 +585,4 @@ function expandOrRefuse(choice: unknown): CatalogResult<PresetEstimate> {
       ),
     ]);
   }
-}
-
-/**
- * The verbs the lifecycle table allows from a state, narrowed to an operator's.
- *
- * Both halves matter. `legalJobActions` is the authority on what the table
- * permits, so this cannot offer a move the store would refuse; `OPERATOR_JOB_ACTIONS`
- * is the authority on what a request may carry, so this cannot offer a move no
- * client could send. Computing it here rather than in a screen is what keeps a
- * stale bundle from showing a button the server does not have.
- */
-export function operatorActionsFor(status: JobStatus): OperatorJobAction[] {
-  const allowed = new Set<string>(legalJobActions(status));
-  return OPERATOR_JOB_ACTIONS.filter((action) => allowed.has(action));
 }

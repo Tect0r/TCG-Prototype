@@ -2,9 +2,14 @@ import { z } from 'zod';
 
 import { adminErrorSchema } from './errors.js';
 import { catalogFilterSchema } from './filters.js';
-import { annotationsSchema, catalogBatchViewSchema, catalogJobViewSchema } from './catalog.js';
+import {
+  annotationsSchema,
+  catalogBatchViewSchema,
+  catalogJobViewSchema,
+  MAX_JOBS_PER_BATCH,
+} from './catalog.js';
 import { batchIdSchema, jobIdSchema, labelSchema } from './identity.js';
-import type { JobAction } from './lifecycle.js';
+import { legalJobActions, type JobAction, type JobStatus } from './lifecycle.js';
 import { pageOf, pageRequestSchema } from './pagination.js';
 import { presetChoiceSchema } from './presets.js';
 import { savedChoiceLabelSchema } from './saved.js';
@@ -181,6 +186,29 @@ export const operatorJobActionSchema = z.enum(OPERATOR_JOB_ACTIONS);
 export type OperatorJobAction = z.infer<typeof operatorJobActionSchema>;
 
 /**
+ * The verbs the lifecycle table allows from a state, narrowed to an operator's.
+ *
+ * Both halves matter. `legalJobActions` is the authority on what the table
+ * permits, so this cannot offer a move the store would refuse;
+ * `OPERATOR_JOB_ACTIONS` is the authority on what a request may carry, so this
+ * cannot offer a move no client could send.
+ *
+ * It lives in the **contract** rather than in either application, and M08.9 moved
+ * it here from `apps/admin-server`. M08.6 put it there with a reason —
+ * *computing it in a screen rather than on the server is what keeps a stale
+ * bundle from showing a button the server does not have* — and that reason
+ * argues for one implementation, not for one location: a queue screen shows tens
+ * of jobs at once and cannot ask `jobDetail` for each of them, so the choice was
+ * between the client deriving it with a **second** copy of this expression or
+ * with **this** one. The server's refusal is still the authoritative answer, and
+ * `admin/illegal_transition` names what was available instead.
+ */
+export function operatorActionsFor(status: JobStatus): OperatorJobAction[] {
+  const allowed = new Set<string>(legalJobActions(status));
+  return OPERATOR_JOB_ACTIONS.filter((action) => allowed.has(action));
+}
+
+/**
  * Asking a job to change state.
  *
  * The *action* travels, never the target state. A client that sent
@@ -240,6 +268,36 @@ export const enqueuePresetRequestSchema = z.strictObject({
 });
 export type EnqueuePresetRequest = z.infer<typeof enqueuePresetRequestSchema>;
 export type EnqueuePresetRequestInput = z.input<typeof enqueuePresetRequestSchema>;
+
+/* ------------------------------------------------------- queue requests (M08.9) */
+
+/**
+ * Putting a draft batch's jobs into the order they will run in.
+ *
+ * **The whole order travels, not a move.** A request that said *move this job up
+ * one* would be a request whose meaning depends on what the batch looked like
+ * when the operator pressed the button, and two screens open on the same draft
+ * would each apply their move to an order the other had already changed. The
+ * full array is a compare-and-set: the server requires it to be a permutation of
+ * the membership it currently holds, so a client working from a stale reading is
+ * refused with a sentence naming the disagreement rather than silently producing
+ * an order nobody chose. That refusal *is* this contract's concurrent-update
+ * answer, and it is the reason the endpoint answers with the whole batch detail
+ * instead of an acknowledgement.
+ *
+ * It carries no new positions, no indices and no insertion points — only job
+ * IDs the server already has — so there is nothing here that could name
+ * something outside the batch.
+ */
+export const reorderBatchRequestSchema = z.strictObject({
+  batchId: batchIdSchema,
+  jobIds: z
+    .array(jobIdSchema)
+    .min(1)
+    .max(MAX_JOBS_PER_BATCH)
+    .refine((ids) => new Set(ids).size === ids.length, 'A job appears in its batch exactly once.'),
+});
+export type ReorderBatchRequest = z.infer<typeof reorderBatchRequestSchema>;
 
 /* ----------------------------------------------------- builder requests (M08.8) */
 
@@ -326,6 +384,7 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   jobAction: jobActionRequestSchema,
   createBatch: createBatchRequestSchema,
   enqueuePreset: enqueuePresetRequestSchema,
+  reorderBatch: reorderBatchRequestSchema,
   estimateChoice: estimateChoiceRequestSchema,
   saveChoice: saveChoiceRequestSchema,
   resultTable: resultTableRequestSchema,

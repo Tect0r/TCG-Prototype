@@ -50,11 +50,13 @@ const CAPABILITIES = {
 };
 
 describe('the endpoint registry', () => {
-  it('names seventeen endpoints, and every one of them has both schemas', () => {
+  it('names twenty endpoints, and every one of them has both schemas', () => {
     // Thirteen from M08.6, plus M08.8's four: the builder has to be told what
     // content exists, has to show an exact total *before* anything is enqueued,
-    // and has to keep a filled-in form somewhere the browser is not.
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(17);
+    // and has to keep a filled-in form somewhere the browser is not. Plus
+    // M08.9's three: an ordering can be changed, a job in a draft can be
+    // duplicated, and a draft has to be released before anything runs.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(20);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);
@@ -84,15 +86,32 @@ describe('the endpoint registry', () => {
     }
   });
 
-  it('marks exactly the five endpoints that change durable state', () => {
+  it('marks exactly the eight endpoints that change durable state', () => {
     const mutating = ADMIN_ENDPOINT_NAMES.filter((name) => ADMIN_ENDPOINTS[name].mutates);
     expect([...mutating].sort()).toEqual([
       'createBatch',
+      'duplicateJob',
       'enqueuePreset',
       'jobAction',
+      'reorderBatch',
       'saveChoice',
       'setJobAnnotations',
+      'startBatch',
     ]);
+  });
+
+  it('answers every ordering change with the whole batch detail (M08.9)', () => {
+    // Not an acknowledgement, and not the one row that moved. Reordering,
+    // duplicating and starting all change the ordering, and a client that
+    // patched its own copy of it would be a second author of the order the
+    // server holds. Answering with the batch and its members in the batch's own
+    // order means the screen after any of the three renders the server's answer
+    // rather than its own arithmetic.
+    for (const name of ['reorderBatch', 'duplicateJob', 'startBatch'] as const) {
+      expect(`${name}: ${String(ADMIN_ENDPOINTS[name].response === batchDetailSchema)}`).toBe(
+        `${name}: true`,
+      );
+    }
   });
 
   it('leaves the estimate preview non-mutating, because expanding creates nothing', () => {

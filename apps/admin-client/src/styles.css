@@ -603,3 +603,192 @@ fieldset.builder__field legend {
   color: var(--text-dim);
   padding-bottom: 0.3rem;
 }
+
+/* ---------- the queue ---------- */
+
+/*
+ * The Queue screen. Same panel grammar again, with two additions that carry
+ * meaning rather than decoration.
+ *
+ * A **state badge** is a bordered word, never a bare colour: the states this
+ * surface has to distinguish include `paused`, `interrupted` and `cancelling`,
+ * and a reader who could only tell them apart by hue would be a reader who could
+ * not tell them apart at all on a projector, in a screenshot, or with the common
+ * forms of colour blindness. Colour is a second signal on top of the word, and
+ * `data-status` carries the state so the word and the colour cannot disagree.
+ *
+ * A **withdrawn job stays on the page**, dimmed rather than hidden, because
+ * nothing in this lab deletes a record and a screen that hid one would be
+ * claiming otherwise.
+ */
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.queue__ordering-note {
+  margin: 0;
+}
+
+.queue__batches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.queue__batches button {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  text-align: left;
+  background: var(--surface-raised);
+}
+
+.queue__batches button.is-current {
+  border-color: var(--accent);
+}
+
+.queue__batch-label {
+  flex: 1 1 auto;
+}
+
+.queue__batch-count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue__batch-state {
+  color: var(--text-dim);
+  margin: 0 0 0.6rem;
+}
+
+.queue__badge {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 0.4rem;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.queue__badge[data-status='running'],
+.queue__badge[data-status='completed'] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.queue__badge[data-status='pausing'],
+.queue__badge[data-status='paused'],
+.queue__badge[data-status='cancelling'],
+.queue__badge[data-status='interrupted'] {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.queue__badge[data-status='failed'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.queue__jobs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.queue__job {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.7rem;
+  background: var(--surface-raised);
+}
+
+.queue__job[data-status='cancelled'] {
+  opacity: 0.7;
+}
+
+.queue__job-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.queue__position {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  min-width: 1.5em;
+}
+
+.queue__job-label {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.queue__job-meaning,
+.queue__basis,
+.queue__unavailable {
+  color: var(--text-dim);
+}
+
+.queue__job-meaning {
+  margin: 0.3rem 0 0.5rem;
+}
+
+.queue__facts {
+  margin: 0;
+  display: grid;
+  gap: 0.3rem 0.8rem;
+}
+
+.queue__facts > div {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.5rem;
+}
+
+.queue__facts dt {
+  color: var(--text-dim);
+}
+
+.queue__facts dd {
+  margin: 0;
+}
+
+.queue__job-failure {
+  color: var(--danger);
+  margin: 0.5rem 0 0;
+}
+
+.queue__job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.queue__confirm {
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.7rem 0.8rem;
+  position: sticky;
+  bottom: 0.6rem;
+}
+
+.queue__confirm h3 {
+  margin: 0 0 0.4rem;
+}
+
+.admin[data-layout='narrow'] .queue__facts > div {
+  grid-template-columns: 1fr;
+  gap: 0;
+}

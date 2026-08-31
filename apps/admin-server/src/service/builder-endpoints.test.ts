@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  ADMIN_CONTRACT_VERSION,
   ADMIN_ENDPOINTS,
   MAX_SAVED_CHOICES,
   adminResponse,
@@ -97,7 +98,7 @@ function choice(overrides: Record<string, unknown> = {}): PresetChoice {
 function valid<N extends keyof typeof ADMIN_ENDPOINTS>(name: N, payload: unknown): void {
   const parsed = adminResponse(ADMIN_ENDPOINTS[name].response).safeParse({
     ok: true,
-    contractVersion: 4,
+    contractVersion: ADMIN_CONTRACT_VERSION,
     payload,
   });
   expect(parsed.success ? 'valid' : JSON.stringify(parsed.error?.issues)).toBe('valid');
