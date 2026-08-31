@@ -184,6 +184,18 @@ function requirePoolCards(environment: Environment, cardIds: readonly string[]):
 
 /* ------------------------------------------------------------- assembling */
 
+/**
+ * The one environment every preset in this build runs in, resolved.
+ *
+ * Exported so `content.ts` offers a chooser exactly the precons this
+ * environment can play, rather than a second environment that happens to be
+ * spelled the same way. Two constructions of "Precon Wave 1" that drifted would
+ * be a form offering a precon the expansion then refuses.
+ */
+export function presetEnvironment(): Environment {
+  return resolveEnvironment(baseEnvironment());
+}
+
 function baseEnvironment(
   overrides: { readonly id?: string; readonly label?: string; readonly banCardIds?: string[] } = {},
 ): EnvironmentConfig {
@@ -252,39 +264,141 @@ function validated(config: unknown, stageId: string): ExperimentConfig {
 
 /* ------------------------------------------------------------- expansions */
 
+/**
+ * The precon benchmark, at whatever depth and width M08.8's settings asked for.
+ *
+ * Four of the five settings land inside one configuration — the workload becomes
+ * `gamesPerPairing`, the mirror flag becomes `mirrorSeats`, the retention dial
+ * becomes `retention.replaySampleRate`, and the worker request becomes
+ * `workers`. The fifth, `replicates`, cannot: a replicate is an *independent*
+ * run on its own seed family, and two seed families inside one experiment
+ * directory would be one aggregate over both, which is the question
+ * `gamesPerPairing` already answers.
+ *
+ * So `n` replicates expand into `n` stages, which `enqueuePreset` turns into `n`
+ * jobs and `n` canonical experiment directories. Each derives its own seed from
+ * the root one — the same way `commanderSearch` derives one per Commander — so
+ * the whole set is reproducible from the single seed an administrator typed.
+ *
+ * With one replicate the stage keeps its original identity (`matches`, and the
+ * experiment ID as given), because a benchmark that was not replicated should
+ * produce exactly the run M08.6 produced.
+ */
 function preconBenchmark(
   choice: Extract<PresetChoice, { presetId: 'precon_smoke' | 'precon_standard' | 'precon_deep' }>,
   environment: EnvironmentConfig,
 ): ExpandedStage[] {
-  const games = PRECON_DEPTHS[choice.presetId];
+  const settings = choice.settings;
+  const depth = PRECON_DEPTHS[choice.presetId];
+  const custom = settings.workload.mode === 'custom';
+  const games = settings.workload.mode === 'custom' ? settings.workload.gamesPerSeatOrder : depth;
   const base = common(choice, choice.pilotIds);
-  return [
-    {
-      stageId: 'matches',
-      label: `${String(choice.preconIds.length)} precons, ${String(games)} games per seat order`,
-      purpose: 'exploration',
+  const replicates = settings.replicates;
+  const single = replicates === 1;
+
+  return Array.from({ length: replicates }, (_, index) => {
+    const ordinal = String(index + 1);
+    const stageId = single ? 'matches' : `matches-r${ordinal}`;
+    const experimentId = single
+      ? choice.experimentId
+      : `${choice.experimentId}-r${ordinal}`.slice(0, 40);
+    const seed = single ? choice.seed : `${choice.seed}|r${ordinal}`;
+
+    return {
+      stageId,
+      label:
+        `${String(choice.preconIds.length)} precons, ${String(games)} games per seat order` +
+        (single ? '' : ` (replicate ${ordinal} of ${String(replicates)})`),
+      purpose: 'exploration' as const,
       config: validated(
         {
           ...base.fields,
+          id: experimentId,
+          seed,
           kind: 'batch',
           label: PRESET_REGISTRY[choice.presetId].label,
           environment,
           decks: { kind: 'precon', preconIds: [...choice.preconIds] },
           schedule: 'round_robin',
           gamesPerPairing: games,
-          mirrorSeats: true,
+          mirrorSeats: settings.mirrorSeats,
+          retention: {
+            replaySampleRate: settings.retention.replaySampleRate,
+            // Debug-only in the simulator's own words, and settled here rather
+            // than exposed: each holds every action and every per-decision
+            // diagnostic of every match in memory for the length of the run, and
+            // a form offering them would be a form offering to exhaust the lab
+            // machine on a large schedule in one click.
+            keepLogs: false,
+            keepDecisions: false,
+          },
+          workers: settings.workers,
         },
-        'matches',
+        stageId,
       ),
       decisions: [
-        ...base.decisions,
+        ...base.decisions.filter((entry) => entry.path !== 'id' && entry.path !== 'seed'),
+        decision('id', experimentId, single ? 'chosen' : 'preset'),
+        decision('seed', seed, single ? 'chosen' : 'preset'),
         decision('decks.preconIds', [...choice.preconIds], 'chosen'),
         decision('schedule', 'round_robin', 'preset'),
-        decision('gamesPerPairing', games, 'preset'),
-        decision('mirrorSeats', true, 'preset'),
+        decision('gamesPerPairing', games, custom ? 'chosen' : 'preset'),
+        decision('mirrorSeats', settings.mirrorSeats, 'chosen'),
+        decision('retention.replaySampleRate', settings.retention.replaySampleRate, 'chosen'),
+        decision('retention.keepLogs', false, 'preset'),
+        decision('retention.keepDecisions', false, 'preset'),
+        decision('workers', settings.workers, 'chosen'),
+        decision('replicates', replicates, 'chosen'),
       ],
-    },
-  ];
+    };
+  });
+}
+
+/**
+ * What a precon-benchmark choice's own settings make untrue about its results,
+ * beyond what the preset already publishes.
+ *
+ * Attached to the expansion rather than left for a result screen, for the reason
+ * `PRESET_REGISTRY.limitations` is authored at all: *a limitation that is
+ * authored at the point of display is one that can be forgotten at the point of
+ * display*. These four are consequences of what an administrator chose in the
+ * form, and none of them is knowable from the preset ID alone.
+ */
+function preconBenchmarkLimitations(
+  choice: Extract<PresetChoice, { presetId: 'precon_smoke' | 'precon_standard' | 'precon_deep' }>,
+): string[] {
+  const settings = choice.settings;
+  const notes: string[] = [];
+
+  if (settings.workload.mode === 'custom') {
+    notes.push(
+      `Games per seat order was set to ${String(settings.workload.gamesPerSeatOrder)} rather ` +
+        `than this preset's own depth of ${String(PRECON_DEPTHS[choice.presetId])}. The result ` +
+        'carries the preset name and not the support that name implies.',
+    );
+  }
+  if (!settings.mirrorSeats) {
+    notes.push(
+      'Seat orders are not mirrored, so each pairing is played one way round only. A win rate ' +
+        'from this run cannot separate deck strength from seat advantage, and comparing it ' +
+        'against a mirrored run compares two different measurements.',
+    );
+  }
+  if (settings.replicates > 1) {
+    notes.push(
+      `${String(settings.replicates)} independent replicates are scheduled as ` +
+        `${String(settings.replicates)} separate runs, each with its own seed family and its ` +
+        'own experiment directory. This build does not pool them: read them as repeated ' +
+        'measurements that agree or disagree, never as one run with more support.',
+    );
+  }
+  if (settings.retention.replaySampleRate === 0) {
+    notes.push(
+      'No replays are kept for normal matches, so a surprising result in this run cannot be ' +
+        'replayed afterwards. Abnormal matches are retained regardless.',
+    );
+  }
+  return notes;
 }
 
 function openMeta(
@@ -489,6 +603,18 @@ function engineSoak(
   ];
 }
 
+/** Limitations a *choice* creates, on top of the ones its preset publishes. */
+function choiceLimitations(choice: PresetChoice): string[] {
+  switch (choice.presetId) {
+    case 'precon_smoke':
+    case 'precon_standard':
+    case 'precon_deep':
+      return preconBenchmarkLimitations(choice);
+    default:
+      return [];
+  }
+}
+
 /* ---------------------------------------------------------------- the door */
 
 /**
@@ -569,7 +695,7 @@ export function expandPreset(input: PresetChoiceInput | unknown): ExpandedPreset
             },
           ]
         : [],
-    limitations: [...definition.limitations],
+    limitations: [...definition.limitations, ...choiceLimitations(choice)],
   });
 
   return { expansion, stages, environment };

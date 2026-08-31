@@ -459,3 +459,147 @@ code {
   border: 1px solid var(--warning);
   background: #d6a54a14;
 }
+
+/* ---------- the builder ---------- */
+
+/*
+ * The New Test Batch screen. Same panel grammar as the Overview, because a form
+ * and a reading are the same kind of thing to read: one column of bordered
+ * sections, one heading each, and every explanatory sentence in the same dim
+ * body style rather than in a tooltip.
+ */
+
+.builder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.builder__choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.builder__choices > li {
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+.builder__choices > li:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.builder__choices label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.builder__choice-label {
+  font-weight: 600;
+}
+
+.builder__choice-note {
+  margin: 0.15rem 0 0 1.6rem;
+  color: var(--text-dim);
+  max-width: 76ch;
+  display: block;
+}
+
+/*
+ * A precon this environment cannot play is dimmed and still readable. It is not
+ * hidden: "this format has three precons" and "this format has four and one is
+ * broken" are different facts, and only the second is a content finding.
+ */
+.builder__choices > li.is-refused {
+  opacity: 0.72;
+}
+
+.builder__limitations {
+  margin: 0.25rem 0 0 1.6rem;
+  padding-left: 1rem;
+  color: var(--text-dim);
+  max-width: 76ch;
+}
+
+.builder__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 42rem;
+}
+
+.builder__field input[type='text'],
+.builder__field input[type='number'] {
+  background: var(--surface-2, var(--surface));
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  max-width: 26rem;
+}
+
+.builder__field input:disabled {
+  opacity: 0.55;
+}
+
+fieldset.builder__field {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem;
+}
+
+fieldset.builder__field legend {
+  padding: 0 0.35rem;
+  color: var(--text-dim);
+}
+
+.builder__actions {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.builder__problems {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--warning);
+  max-width: 76ch;
+}
+
+.builder__summary {
+  margin: 0;
+}
+
+.builder__estimate,
+.builder__enqueued {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/*
+ * Wide content scrolls inside its own container rather than making the page
+ * scroll sideways — the same treatment `.presets` already gets.
+ */
+.builder__estimate .facts,
+.builder__enqueued .facts {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.builder__estimate caption,
+.builder__enqueued caption {
+  text-align: left;
+  color: var(--text-dim);
+  padding-bottom: 0.3rem;
+}

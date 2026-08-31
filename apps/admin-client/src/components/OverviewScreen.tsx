@@ -44,7 +44,8 @@ import { useAdminSession, useAdminState } from '../state/AdminContext.js';
  * **No control that starts anything.** The presets are shown because *what this
  * build can run* is a capability, and their published limitations are shown
  * beside them because those limitations are what a result may never be cited
- * against. Configuring and enqueueing one is M08.8's.
+ * against. Configuring and enqueueing one is the New Test Batch screen's, which
+ * M08.8 added as its own destination — this page stayed read-only.
  */
 export function OverviewScreen() {
   const session = useAdminSession();
@@ -106,7 +107,8 @@ export function OverviewScreen() {
       <section className="panel" aria-labelledby="overview-presets">
         <h2 id="overview-presets">What this build can run</h2>
         <p className="panel__note">
-          Read-only. Choosing, configuring and enqueueing a test is not part of this build.
+          Read-only here. The precon benchmark can be configured and enqueued from New Test Batch;
+          every other preset in this list is published and has no builder yet.
         </p>
         {state.presets.status === 'loading' && (
           <Busy label="Asking which tests this build offers…" />
@@ -162,6 +164,11 @@ function connectionFacts(
     { label: 'Admin contract version', value: capabilities.versions.contract },
     { label: 'Catalog document version', value: capabilities.versions.catalogDocument },
     { label: 'Job event version', value: capabilities.versions.jobEvent },
+    {
+      label: 'Saved configuration version',
+      value: capabilities.versions.savedChoice,
+      note: 'What a builder form kept by this lab is stamped with. It moves when a builder gains a control, and never when a batch or a job does.',
+    },
     {
       label: 'Process started',
       value: capabilities.startedAt,

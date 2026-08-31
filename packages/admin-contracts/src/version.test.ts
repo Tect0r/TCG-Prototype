@@ -7,6 +7,7 @@ import {
   CATALOG_DOCUMENT_VERSION,
   CURRENT_ADMIN_VERSIONS,
   JOB_EVENT_VERSION,
+  SAVED_CHOICE_VERSION,
   catalogDocumentVersionSchema,
   contractVersionSchema,
   isFutureVersion,
@@ -14,6 +15,7 @@ import {
   refuseForeignVersion,
   refuseFutureVersion,
   refusePastVersion,
+  savedChoiceVersionSchema,
   type AdminVersionField,
 } from './version.js';
 
@@ -26,6 +28,7 @@ const SCHEMAS: Readonly<Record<AdminVersionField, z.ZodType<number>>> = {
   contract: contractVersionSchema,
   catalogDocument: catalogDocumentVersionSchema,
   jobEvent: jobEventVersionSchema,
+  savedChoice: savedChoiceVersionSchema,
 };
 
 describe('the admin version constants', () => {
@@ -37,13 +40,21 @@ describe('the admin version constants', () => {
     }
   });
 
-  it('are exactly three, and each is owned by a named schema', () => {
+  it('are exactly four, and each is owned by a named schema', () => {
     // A version with no artifact to own it is a number nobody can disagree over.
     // The third joined in M08.2 with the artifact that needed it: the per-job
     // event log is appended to and never rewritten, so a build reads lines
     // written by every build before it, which the rewritten-in-place document
-    // beside it never has to do.
-    expect([...ADMIN_VERSION_FIELDS].sort()).toEqual(['catalogDocument', 'contract', 'jobEvent']);
+    // beside it never has to do. The fourth joined in M08.8 on the same test: a
+    // saved builder form holds a preset choice and nothing about a run, so its
+    // shape moves when a *builder* gains a control, and stamping it with the
+    // catalog's number would make adding a knob to a form unread every batch.
+    expect([...ADMIN_VERSION_FIELDS].sort()).toEqual([
+      'catalogDocument',
+      'contract',
+      'jobEvent',
+      'savedChoice',
+    ]);
     for (const field of ADMIN_VERSION_FIELDS) {
       expect(SCHEMAS[field].parse(CURRENT_ADMIN_VERSIONS[field])).toBe(
         CURRENT_ADMIN_VERSIONS[field],
@@ -55,6 +66,7 @@ describe('the admin version constants', () => {
     expect(CURRENT_ADMIN_VERSIONS.contract).toBe(ADMIN_CONTRACT_VERSION);
     expect(CURRENT_ADMIN_VERSIONS.catalogDocument).toBe(CATALOG_DOCUMENT_VERSION);
     expect(CURRENT_ADMIN_VERSIONS.jobEvent).toBe(JOB_EVENT_VERSION);
+    expect(CURRENT_ADMIN_VERSIONS.savedChoice).toBe(SAVED_CHOICE_VERSION);
   });
 
   it('are frozen, so nothing can move one at runtime', () => {

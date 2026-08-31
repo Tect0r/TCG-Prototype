@@ -357,6 +357,113 @@ const commonChoiceFields = {
 const preconSelection = z.array(resolvedIdSchema).min(2).max(16);
 const pilotSelection = z.array(resolvedIdSchema).min(1).max(4);
 
+/* ------------------------------------------- the precon-benchmark settings */
+
+/**
+ * How many games per seat order: the preset's own depth, or a number.
+ *
+ * A discriminated union rather than an optional integer, because "leave it to
+ * the preset" and "I want four" are different intentions and an optional field
+ * cannot hold the first one. `mode: 'preset'` says the depth *is* the preset —
+ * which is what separates Smoke from Standard from Deep — and `mode: 'custom'`
+ * says an administrator overrode it, which is a fact the expansion records as
+ * `chosen` rather than `preset` and which a result reader needs in order to know
+ * that "Precon Standard" did not run at Standard's depth.
+ */
+export const preconWorkloadSchema = z.discriminatedUnion('mode', [
+  z.strictObject({ mode: z.literal('preset') }),
+  z.strictObject({
+    mode: z.literal('custom'),
+    /** Matches per deck tuple, per pilot tuple, per seat order. */
+    gamesPerSeatOrder: z.number().int().min(1).max(10_000),
+  }),
+]);
+export type PreconWorkload = z.infer<typeof preconWorkloadSchema>;
+
+/**
+ * The one retention dial a builder exposes.
+ *
+ * `retentionSchema` in `@tcg/simulator` has three fields and two of them —
+ * `keepLogs` and `keepDecisions` — are marked *debug only* there, because each
+ * holds every action and every per-decision diagnostic of every match in memory
+ * for the length of the run. A form offering them would be a form offering to
+ * exhaust the lab machine on a large schedule, in one click, with nothing to say
+ * that is what it does. So they are settled by the expansion at `false`, and
+ * recorded as `preset` decisions rather than silently omitted; the tranche that
+ * has a real reason to expose them is the one that can also bound them.
+ *
+ * The replay sample rate is different in kind: it decides how much of the run is
+ * reproducible afterwards, an operator genuinely trades it against disk, and its
+ * cost is linear and visible. `0` keeps none and `1` keeps all — the simulator's
+ * own meaning, restated nowhere.
+ */
+export const preconRetentionSchema = z.strictObject({
+  replaySampleRate: z.number().int().min(0).max(100_000).default(50),
+});
+export type PreconRetention = z.infer<typeof preconRetentionSchema>;
+
+/**
+ * What an administrator sets on a precon benchmark beyond *which decks* and
+ * *which pilots*.
+ *
+ * M08.3 named this widening in advance and said it should be visible: *games per
+ * seat order is what separates Smoke from Standard from Deep, so it is not a
+ * knob on any of them; M08.8 owns the custom-workload control and will widen
+ * this shape visibly when it adds one.* This is that widening, and it prefaults
+ * whole — a client that sends no `settings` gets the preset's own depth, one
+ * replicate, mirrored seat orders, the simulator's own replay rate and one
+ * worker, which is exactly the run M08.6 built.
+ *
+ * The four bounds restate `@tcg/simulator`'s, which this package cannot import.
+ * That restatement is safe in one direction only, and it is the safe one: every
+ * value here is re-validated by `parseExperimentConfig` inside the expansion, so
+ * a bound that drifted *wider* than the simulator's is refused there rather than
+ * accepted, and a bound that drifted narrower refuses a run this build would
+ * otherwise have accepted. Neither produces a run nobody asked for.
+ */
+export const preconBenchmarkSettingsSchema = z.strictObject({
+  workload: preconWorkloadSchema.prefault({ mode: 'preset' }),
+  /**
+   * Independent repeats of the whole benchmark, each on its own seed family.
+   *
+   * One stage per replicate, so each is its own job and its own canonical
+   * experiment directory. That is the only honest shape available: replicates
+   * exist to answer *how much does this move between independent runs*, and
+   * pooling them into one directory would answer a different question — the one
+   * `gamesPerSeatOrder` already answers, by adding games inside a single seed
+   * family.
+   *
+   * Nothing in this build pools replicate directories into one number, and the
+   * expansion says so in its own limitations rather than leaving a reader to
+   * assume that four runs are one run with four times the support.
+   */
+  replicates: z.number().int().min(1).max(16).default(1),
+  /**
+   * Play every pairing in both seat orders.
+   *
+   * `true` by default because a matchup played one way round cannot separate
+   * deck strength from seat advantage, and CLAUDE.md §13.7 is the repository's
+   * standing answer to that. Turning it off is offered, because halving a
+   * schedule is a real thing to want from a smoke run — and the expansion
+   * attaches a limitation to the result when it is off, so the saving is visible
+   * wherever the number it produced is read.
+   */
+  mirrorSeats: z.boolean().default(true),
+  retention: preconRetentionSchema.prefault({}),
+  /**
+   * Simulator worker threads this run asks for.
+   *
+   * A request and never a grant: `grantWorkers` in the orchestrator takes the
+   * smallest of what a configuration asked for, what one job may have and what
+   * is left, so raising this can never widen a run past the operator's own
+   * bound. `configHashOf` excludes it, so changing it does not make a resumed
+   * run a different run.
+   */
+  workers: z.number().int().min(1).max(64).default(1),
+});
+export type PreconBenchmarkSettings = z.infer<typeof preconBenchmarkSettingsSchema>;
+export type PreconBenchmarkSettingsInput = z.input<typeof preconBenchmarkSettingsSchema>;
+
 /**
  * What an administrator picks, per preset.
  *
@@ -367,8 +474,15 @@ const pilotSelection = z.array(resolvedIdSchema).min(1).max(4);
  *
  * Everything a preset decides for itself is deliberately absent. Games per seat
  * order is what separates Smoke from Standard from Deep, so it is not a knob on
- * any of them; M08.8 owns the custom-workload control and will widen this
- * shape visibly when it adds one.
+ * any of them — **except** through `settings.workload`, which M08.8 added as the
+ * visible widening M08.3 said it would be. Choosing `mode: 'custom'` overrides
+ * the depth and is recorded as a `chosen` decision, so a run cannot claim a
+ * preset's depth without having used it.
+ *
+ * The `settings` block is on the three precon-benchmark presets and on no
+ * other. M08.8's exclusion is *no other builder*, and a knob on a preset with no
+ * screen behind it would be a shape nothing sends and nothing validates against
+ * a real form.
  */
 export const presetChoiceSchema = z.discriminatedUnion('presetId', [
   z.strictObject({
@@ -376,18 +490,21 @@ export const presetChoiceSchema = z.discriminatedUnion('presetId', [
     ...commonChoiceFields,
     preconIds: preconSelection,
     pilotIds: pilotSelection,
+    settings: preconBenchmarkSettingsSchema.prefault({}),
   }),
   z.strictObject({
     presetId: z.literal('precon_standard'),
     ...commonChoiceFields,
     preconIds: preconSelection,
     pilotIds: pilotSelection,
+    settings: preconBenchmarkSettingsSchema.prefault({}),
   }),
   z.strictObject({
     presetId: z.literal('precon_deep'),
     ...commonChoiceFields,
     preconIds: preconSelection,
     pilotIds: pilotSelection,
+    settings: preconBenchmarkSettingsSchema.prefault({}),
   }),
   z.strictObject({
     presetId: z.literal('open_meta'),

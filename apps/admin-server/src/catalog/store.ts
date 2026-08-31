@@ -17,6 +17,7 @@ import type {
   PageInfo,
   PageRequestInput,
   Progress,
+  SavedChoiceDocument,
   SourceClass,
   StoredResultReference,
 } from '@tcg/admin-contracts';
@@ -152,6 +153,33 @@ export interface UnreadableEntry {
   readonly errors: readonly AdminError[];
 }
 
+/**
+ * A builder form to keep, as the store is asked for it.
+ *
+ * No ID and no timestamps: minting one is the store's job, *never* a caller's,
+ * which is the same rule `NewBatchInput` and `NewJobInput` follow and the reason
+ * `admin/duplicate_id` exists at all. The choice arrives already parsed by
+ * `presetChoiceSchema` and already expanded by the handler, so nothing that
+ * could never run reaches storage.
+ */
+export interface NewSavedChoiceInput {
+  readonly label: string;
+  readonly choice: SavedChoiceDocument['choice'];
+}
+
+/**
+ * Every kept form, and the ones this build could not read.
+ *
+ * Unpaginated, which is a bound rather than an omission: `MAX_SAVED_CHOICES`
+ * caps the collection, so "all of them" is already a bounded answer, and a
+ * builder's *open a saved configuration* control is a list somebody scans rather
+ * than pages through.
+ */
+export interface SavedChoiceListing {
+  readonly items: readonly SavedChoiceDocument[];
+  readonly unreadable: readonly UnreadableEntry[];
+}
+
 /* ----------------------------------------------------------------- recovery */
 
 export interface RecoveredJob {
@@ -230,6 +258,20 @@ export interface CatalogStore {
     jobId: JobId,
     reference: StoredResultReference,
   ): Promise<CatalogResult<CatalogJobDocument>>;
+
+  /* saved builder configurations (M08.8) */
+  /**
+   * Keeps a filled-in builder form under a name.
+   *
+   * Always creates. There is no update and no delete, which is the same shape
+   * the rest of this interface has and for a related reason: a store with no way
+   * to express removal cannot have an unsafe one, and *replacing* a saved
+   * configuration in place would need a way to say "this one, as it was" that
+   * nothing here has. Duplicating is this call with a different label.
+   */
+  createSavedChoice(input: NewSavedChoiceInput): Promise<CatalogResult<SavedChoiceDocument>>;
+  /** Every kept form, newest first, with the unreadable ones counted rather than dropped. */
+  listSavedChoices(): Promise<CatalogResult<SavedChoiceListing>>;
 
   /* history and recovery */
   readJobEvents(jobId: JobId): Promise<CatalogResult<JobEventLog>>;

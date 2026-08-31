@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { AdminShell } from './components/AdminShell.js';
+import { BuilderScreen } from './components/BuilderScreen.js';
 import { ConnectGate } from './components/ConnectGate.js';
 import { ConnectionBadge } from './components/ConnectionBadge.js';
 import { OverviewScreen } from './components/OverviewScreen.js';
@@ -13,10 +14,16 @@ import { useAdminState } from './state/AdminContext.js';
  * Until the orchestration process has answered `capabilities`, there is no
  * navigation, no layout and no page — only the reason there isn't one. The shell
  * appears when there is something behind every destination it offers, which for
- * this build is one destination.
+ * this build is two destinations.
  *
  * Nothing else here decides anything: `AdminSession` owns the connection,
  * `sections.ts` owns what exists, and each screen owns its own reading.
+ *
+ * The section switch is exhaustive over `AdminSectionId` by construction — two
+ * destinations, two screens — so a third entry in `sections.ts` without a screen
+ * behind it would render the wrong page rather than an empty one, which is the
+ * failure mode the milestone's *no decorative empty pages* rule exists to
+ * prevent and the reason the entry is added by the tranche that builds the page.
  */
 export function App() {
   const state = useAdminState();
@@ -39,7 +46,7 @@ export function App() {
         />
       }
     >
-      <OverviewScreen />
+      {section === 'overview' ? <OverviewScreen /> : <BuilderScreen />}
     </AdminShell>
   );
 }

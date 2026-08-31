@@ -123,6 +123,26 @@ export const ADMIN_ERROR_CODES = [
    * fixes by stopping that process, not by correcting a field.
    */
   'admin/already_running',
+
+  /* --------------------------------------------------- the builder (M08.8) */
+
+  /**
+   * A bounded collection in this catalog is full, so nothing was written.
+   *
+   * The first refusal in this list that is neither a bad value nor a missing
+   * record: the request was well formed, the caller may make it, and the answer
+   * is still no. M08.3 named this as the condition for adding a code — *a policy
+   * refusal that is not a bad value … would be [one], and would move
+   * `ADMIN_CONTRACT_VERSION` deliberately* — and `MAX_SAVED_CHOICES` is the
+   * first such bound a request can reach.
+   *
+   * Reporting it as `admin/schema` would tell a builder screen to highlight a
+   * field, and there is no field to highlight; reporting it as a 500 would tell
+   * an operator the lab is broken when their catalog is simply full. What they
+   * do about it is remove something, which is a different action from every
+   * other code here.
+   */
+  'admin/catalog_limit',
 ] as const;
 
 export const adminErrorCodeSchema = z.enum(ADMIN_ERROR_CODES);

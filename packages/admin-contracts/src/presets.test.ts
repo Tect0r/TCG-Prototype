@@ -238,6 +238,7 @@ describe('a choice', () => {
         'referencePreconIds',
         'removeCardIds',
         'replicates',
+        'settings',
         'searchBothEnvironments',
         'seed',
         'profileIds',

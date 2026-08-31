@@ -4,6 +4,7 @@ import {
   CATALOG_DOCUMENT_VERSION,
   DIRECT_JOB_ORIGIN,
   JOB_EVENT_VERSION,
+  MAX_SAVED_CHOICES,
   NO_ANNOTATIONS,
   NO_CATALOG_FILTER,
   NO_PROGRESS,
@@ -21,6 +22,9 @@ import {
   jobIdSchema,
   jobTransition,
   pageRequestSchema,
+  SAVED_CHOICE_VERSION,
+  savedChoiceDocumentSchema,
+  savedChoiceIdSchema,
   storedResultReferenceSchema,
   JOB_STATUSES,
   type AdminError,
@@ -38,6 +42,7 @@ import {
   type JobStatus,
   type PageRequestInput,
   type Progress,
+  type SavedChoiceDocument,
   type StoredResultReference,
 } from '@tcg/admin-contracts';
 import { err, generateId, isErr, ok, type IdSources } from '@tcg/shared';
@@ -64,8 +69,10 @@ import type {
   JobActionInput,
   NewBatchInput,
   NewJobInput,
+  NewSavedChoiceInput,
   RecoveredJob,
   RecoveryReport,
+  SavedChoiceListing,
   UnreadableEntry,
 } from './store.js';
 
@@ -147,6 +154,7 @@ export class FileCatalogStore implements CatalogStore {
   readonly #jobDir: string;
   readonly #configDir: string;
   readonly #eventDir: string;
+  readonly #savedChoiceDir: string;
 
   constructor(options: FileCatalogStoreOptions) {
     this.#roots = options.roots;
@@ -156,11 +164,18 @@ export class FileCatalogStore implements CatalogStore {
     this.#jobDir = join(options.roots.catalogRoot, 'jobs');
     this.#configDir = join(options.roots.catalogRoot, 'configs');
     this.#eventDir = join(options.roots.catalogRoot, 'events');
+    this.#savedChoiceDir = join(options.roots.catalogRoot, 'saved-choices');
   }
 
   /** Creates the catalog layout. Separate from the constructor because it does I/O. */
   async open(): Promise<void> {
-    for (const directory of [this.#batchDir, this.#jobDir, this.#configDir, this.#eventDir]) {
+    for (const directory of [
+      this.#batchDir,
+      this.#jobDir,
+      this.#configDir,
+      this.#eventDir,
+      this.#savedChoiceDir,
+    ]) {
       await ensureDirectory(directory);
     }
   }
@@ -612,6 +627,90 @@ export class FileCatalogStore implements CatalogStore {
     });
   }
 
+  /* --------------------------------------------- saved configurations */
+
+  async createSavedChoice(input: NewSavedChoiceInput): Promise<CatalogResult<SavedChoiceDocument>> {
+    // The bound is checked before an ID is minted, so a refused save leaves
+    // nothing behind at all — not a file, not a name, not a gap in a sequence.
+    const existing = await listDocumentNames(this.#savedChoiceDir);
+    if (existing.length >= MAX_SAVED_CHOICES) {
+      return err([
+        adminError(
+          'admin/catalog_limit',
+          `This catalog already holds ${String(MAX_SAVED_CHOICES)} saved test configurations, ` +
+            'which is the most it lists. Nothing was written.',
+          { context: { limit: MAX_SAVED_CHOICES } },
+        ),
+      ]);
+    }
+
+    const savedChoiceId = this.#mint('saved');
+    if (!savedChoiceIdSchema.safeParse(savedChoiceId).success) {
+      return err([mintingFailed('saved test configuration')]);
+    }
+
+    const now = this.#now();
+    const path = documentPath(this.#savedChoiceDir, savedChoiceId);
+    return this.#locks.run(path, async () => {
+      if (await documentExists(path)) {
+        return err([duplicateId('saved test configuration', savedChoiceId)]);
+      }
+      const validated = savedChoiceDocumentSchema.safeParse({
+        documentVersion: SAVED_CHOICE_VERSION,
+        savedChoiceId,
+        label: input.label,
+        timestamps: freshTimestamps(now),
+        choice: input.choice,
+      });
+      if (!validated.success) return err(adminSchemaErrors(validated.error));
+      await writeJsonAtomically(path, validated.data);
+      return ok(validated.data);
+    });
+  }
+
+  /**
+   * Every kept form, newest first.
+   *
+   * Newest first rather than the `createdAt`-then-ID ascending order the paged
+   * listings use, and the difference is deliberate: those two orders exist so a
+   * continuation token can encode a position in a stable sequence, and this
+   * answer has no cursor. What a person opening a builder wants is the one they
+   * saved last, at the top.
+   */
+  async listSavedChoices(): Promise<CatalogResult<SavedChoiceListing>> {
+    const items: SavedChoiceDocument[] = [];
+    const unreadable: UnreadableEntry[] = [];
+
+    for (const name of await listDocumentNames(this.#savedChoiceDir)) {
+      const id = name.slice(0, -'.json'.length);
+      const path = join(this.#savedChoiceDir, name);
+      const read = await this.#locks.run(path, () =>
+        readDocument(path, savedChoiceDocumentSchema, {
+          // A saved configuration that vanished mid-listing is not a missing
+          // *job*, and `admin/malformed` is the honest code for a document that
+          // was there when the directory was read and is not there now.
+          missingCode: 'admin/malformed',
+          missingMessage: 'This saved test configuration disappeared while it was being listed.',
+          versionField: 'savedChoice',
+        }),
+      );
+      if (isErr(read)) {
+        unreadable.push({ id: isLegalId(id) ? id : null, errors: read.error });
+        continue;
+      }
+      items.push(read.value);
+    }
+
+    items.sort((left, right) => {
+      const byTime = right.timestamps.createdAt.localeCompare(left.timestamps.createdAt);
+      // Ties broken by ID descending, so the order is total and a test that saves
+      // two configurations inside one clock tick still sees a fixed sequence.
+      return byTime !== 0 ? byTime : right.savedChoiceId.localeCompare(left.savedChoiceId);
+    });
+
+    return ok({ items, unreadable });
+  }
+
   /* ------------------------------------------------------- internals */
 
   #now(): string {
@@ -850,7 +949,9 @@ function withStatus(
 }
 
 const isLegalId = (id: string): boolean =>
-  jobIdSchema.safeParse(id).success || batchIdSchema.safeParse(id).success;
+  jobIdSchema.safeParse(id).success ||
+  batchIdSchema.safeParse(id).success ||
+  savedChoiceIdSchema.safeParse(id).success;
 
 function duplicateId(kind: string, id: string): AdminError {
   return adminError(

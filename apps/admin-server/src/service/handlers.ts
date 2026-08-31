@@ -9,6 +9,7 @@ import {
   PRESET_REGISTRY,
   canonicalSourceClasses,
   catalogBatchViewOf,
+  savedChoiceViewOf,
   adminError,
   catalogJobViewOf,
   legalJobActions,
@@ -19,6 +20,8 @@ import {
   type BatchId,
   type CatalogJobView,
   type Capabilities,
+  type ChoiceEstimate,
+  type ContentCatalog,
   type EnqueuePresetResult,
   type JobDetail,
   type JobId,
@@ -26,12 +29,15 @@ import {
   type JobStatus,
   type OperatorJobAction,
   type PresetCatalog,
+  type SavedChoiceList,
+  type SavedChoiceView,
 } from '@tcg/admin-contracts';
 import { err, isErr, ok } from '@tcg/shared';
 
 import type { CatalogResult, CatalogStore } from '../catalog/store.js';
+import { readContentCatalog } from '../lab/content.js';
 import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js';
-import { estimatePreset } from '../lab/estimate.js';
+import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
 import type { AdminServiceConfig } from './config.js';
 import { ResultReader } from './results.js';
@@ -112,7 +118,11 @@ export class AdminService {
     return {
       capabilities: async () => ok(this.#capabilities()),
       presets: async () => ok(this.#presets()),
+      content: async () => ok(this.#content()),
+      estimateChoice: async (payload) => this.#estimateChoice(payload.choice),
       createBatch: (payload) => this.#createBatch(payload),
+      saveChoice: (payload) => this.#saveChoice(payload),
+      listSavedChoices: () => this.#listSavedChoices(),
       enqueuePreset: (payload) => this.#enqueuePreset(payload),
       listBatches: (payload) => this.#listBatches(payload),
       batchDetail: (payload) => this.#batchDetail(payload.batchId),
@@ -176,6 +186,40 @@ export class AdminService {
     };
   }
 
+  /**
+   * What content a builder may choose from, resolved now rather than remembered.
+   *
+   * The projection lives in `lab/content.ts` and the authority lives in
+   * `@tcg/simulator`; this handler decides only *that* to ask. Answering from a
+   * cache would make "validated against current content" mean "against content
+   * as it was when this process started", which is exactly the claim the
+   * milestone asks not to be made.
+   */
+  #content(): ContentCatalog {
+    return readContentCatalog();
+  }
+
+  /**
+   * What a choice would schedule, without scheduling it.
+   *
+   * The same `estimatePreset` call `#enqueuePreset` makes, and the same refusal
+   * path: a choice this answers for is a choice that can be enqueued, and a
+   * choice this refuses is refused in the same words by the same layer. That is
+   * what closes M08.6's objection to a separate estimate endpoint — the two can
+   * only differ if the *content* changed between the calls, which is a real
+   * event and is what the enqueue answer's own estimate is for reporting.
+   *
+   * It writes nothing. `expandPreset` builds configurations in memory; no batch,
+   * no job and no directory exists when this returns.
+   */
+  async #estimateChoice(
+    choice: AdminRequestOf<'estimateChoice'>['choice'],
+  ): Promise<CatalogResult<ChoiceEstimate>> {
+    const expanded = expandOrRefuse(choice);
+    if (isErr(expanded)) return expanded;
+    return ok({ expansion: expanded.value.expansion, estimate: expanded.value.estimate });
+  }
+
   /* -------------------------------------------------------------- creation */
 
   async #createBatch(
@@ -208,28 +252,9 @@ export class AdminService {
   async #enqueuePreset(
     payload: AdminRequestOf<'enqueuePreset'>,
   ): Promise<CatalogResult<EnqueuePresetResult>> {
-    let expanded;
-    try {
-      expanded = estimatePreset(payload.choice);
-    } catch (cause) {
-      if (cause instanceof PresetRefused) return err(cause.errors);
-      // Everything else is still the choice being wrong rather than the service
-      // being broken: an unknown precon, a Commander this format does not
-      // publish or a card outside the pool is refused by the *simulator*, deeper
-      // than `parseExperimentConfig`, and arrives here as an ordinary `Error`.
-      // Its sentence is the authoritative one and is reused, with anything
-      // path-shaped taken out first (ADR 0023 §5). Answering 500 would tell an
-      // operator the lab is broken when their form is.
-      return err([
-        adminError(
-          'admin/schema',
-          scrubRefusal(
-            `This preset choice could not be expanded: ${cause instanceof Error ? cause.message : String(cause)}`,
-          ),
-          { path: 'choice' },
-        ),
-      ]);
-    }
+    const expansion = expandOrRefuse(payload.choice);
+    if (isErr(expansion)) return expansion;
+    const expanded = expansion.value;
 
     const batch = await this.#store.readBatch(payload.batchId);
     if (isErr(batch)) return batch;
@@ -272,6 +297,47 @@ export class AdminService {
       jobs,
       expansion: expanded.expansion,
       estimate: expanded.estimate,
+    });
+  }
+
+  /**
+   * Keeps a filled-in form, after checking that it could actually run.
+   *
+   * The expansion happens **before** the write, deliberately: a saved
+   * configuration that could never be enqueued is a form somebody will reopen
+   * later and be refused by, and the refusal is far more useful now — while the
+   * screen still has the values that caused it — than in a month.
+   *
+   * What it does *not* promise is that reopening it will work. Content moves:
+   * a precon can be withdrawn between saving and reopening, which is why the
+   * builder re-validates on load rather than trusting what it stored. The stale
+   * case is a real one and it is answered by the refusal `estimate` gives,
+   * naming the field.
+   */
+  async #saveChoice(
+    payload: AdminRequestOf<'saveChoice'>,
+  ): Promise<CatalogResult<SavedChoiceView>> {
+    const expanded = expandOrRefuse(payload.choice);
+    if (isErr(expanded)) return expanded;
+
+    const created = await this.#store.createSavedChoice({
+      label: payload.label,
+      choice: payload.choice,
+    });
+    if (isErr(created)) return created;
+    return ok(savedChoiceViewOf(created.value));
+  }
+
+  async #listSavedChoices(): Promise<CatalogResult<SavedChoiceList>> {
+    const listed = await this.#store.listSavedChoices();
+    if (isErr(listed)) return listed;
+    return ok({
+      items: listed.value.items.map(savedChoiceViewOf),
+      total: listed.value.items.length,
+      // Counted rather than dropped: a configuration from a newer build and one
+      // that was never saved are different facts, and a list that showed neither
+      // would make the first look like the second.
+      unreadable: listed.value.unreadable.length,
     });
   }
 
@@ -367,6 +433,38 @@ export class AdminService {
     const updated = await this.#store.setJobAnnotations(jobId, annotations);
     if (isErr(updated)) return updated;
     return ok(catalogJobViewOf(updated.value));
+  }
+}
+
+/**
+ * Expanding a choice, with every way it can be wrong reported as a refusal.
+ *
+ * One helper rather than three copies of the same `try`, because M08.8 gives the
+ * expansion three callers — estimate, save and enqueue — and a caller that
+ * handled the failure differently would answer a bad precon with a 500 on one
+ * address and `admin/schema` on another.
+ */
+function expandOrRefuse(choice: unknown): CatalogResult<PresetEstimate> {
+  try {
+    return ok(estimatePreset(choice));
+  } catch (cause) {
+    if (cause instanceof PresetRefused) return err(cause.errors);
+    // Everything else is still the choice being wrong rather than the service
+    // being broken: an unknown precon, a Commander this format does not publish
+    // or a card outside the pool is refused by the *simulator*, deeper than
+    // `parseExperimentConfig`, and arrives here as an ordinary `Error`. Its
+    // sentence is the authoritative one and is reused, with anything path-shaped
+    // taken out first (ADR 0023 §5). Answering 500 would tell an operator the
+    // lab is broken when their form is.
+    return err([
+      adminError(
+        'admin/schema',
+        scrubRefusal(
+          `This preset choice could not be expanded: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+        { path: 'choice' },
+      ),
+    ]);
   }
 }
 

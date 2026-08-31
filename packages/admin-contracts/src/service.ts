@@ -6,6 +6,7 @@ import {
   MAX_JOBS_PER_BATCH,
   resultRootIdSchema,
 } from './catalog.js';
+import { contentCatalogSchema } from './content.js';
 import { matchCountEstimateSchema } from './estimate.js';
 import { jobEventSchema } from './events.js';
 import { MAX_FILTER_VALUES } from './filters.js';
@@ -19,6 +20,7 @@ import {
   createBatchRequestSchema,
   emptyRequestSchema,
   enqueuePresetRequestSchema,
+  estimateChoiceRequestSchema,
   jobActionRequestSchema,
   jobPageSchema,
   jobRefSchema,
@@ -26,10 +28,12 @@ import {
   listJobsRequestSchema,
   operatorJobActionSchema,
   resultTableRequestSchema,
+  saveChoiceRequestSchema,
   setJobAnnotationsRequestSchema,
   ADMIN_REQUEST_PAYLOAD_SCHEMAS,
 } from './requests.js';
 import { resultSummarySchema, resultTableSchema } from './results.js';
+import { savedChoiceListSchema, savedChoiceViewSchema } from './saved.js';
 import { ADMIN_CONTRACT_VERSION, CURRENT_ADMIN_VERSIONS } from './version.js';
 
 /**
@@ -138,6 +142,7 @@ export const capabilitiesSchema = z.strictObject({
     contract: z.number().int().min(1),
     catalogDocument: z.number().int().min(1),
     jobEvent: z.number().int().min(1),
+    savedChoice: z.number().int().min(1),
   }),
   access: z.strictObject({
     /** Whether the service is bound to a loopback interface (ADR 0023 §4). */
@@ -267,6 +272,27 @@ export const enqueuePresetResultSchema = z
   );
 export type EnqueuePresetResult = z.infer<typeof enqueuePresetResultSchema>;
 
+/**
+ * What a choice *would* schedule, answered without scheduling it (M08.8).
+ *
+ * The same two members `enqueuePresetResultSchema` carries minus the jobs,
+ * because they are produced by the same call — `estimatePreset`, which expands
+ * first and counts what it expanded into. A preview that computed its total any
+ * other way would be the second scheduler ADR 0023 §2 exists to forbid, and a
+ * preview that omitted the expansion would show a number with no account of what
+ * the number is made of.
+ *
+ * The expansion travels because the milestone requires the *stages* to be
+ * visible before enqueue as well as the total: a choice of four replicates is
+ * four jobs, and an administrator seeing one number and receiving four queue
+ * entries has been surprised by their own form.
+ */
+export const choiceEstimateSchema = z.strictObject({
+  expansion: presetExpansionSchema,
+  estimate: matchCountEstimateSchema,
+});
+export type ChoiceEstimate = z.infer<typeof choiceEstimateSchema>;
+
 /* ------------------------------------------------------------- the registry */
 
 export interface AdminEndpoint<Req extends z.ZodType, Res extends z.ZodType> {
@@ -293,7 +319,7 @@ function endpoint<Req extends z.ZodType, Res extends z.ZodType>(
 /**
  * Every address this service answers at, with the shape of what goes each way.
  *
- * One object rather than thirteen registrations scattered through a router, so
+ * One object rather than seventeen registrations scattered through a router, so
  * three properties are checkable rather than habitual: every endpoint has a
  * request schema *and* a response schema, every request schema is one of the
  * closed set `ADMIN_REQUEST_PAYLOAD_SCHEMAS` enumerates, and the set of routes is
@@ -316,6 +342,18 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     response: presetCatalogSchema,
     mutates: false,
   }),
+  content: endpoint({
+    route: 'content',
+    request: emptyRequestSchema,
+    response: contentCatalogSchema,
+    mutates: false,
+  }),
+  estimateChoice: endpoint({
+    route: 'estimate',
+    request: estimateChoiceRequestSchema,
+    response: choiceEstimateSchema,
+    mutates: false,
+  }),
   createBatch: endpoint({
     route: 'create-batch',
     request: createBatchRequestSchema,
@@ -327,6 +365,18 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     request: enqueuePresetRequestSchema,
     response: enqueuePresetResultSchema,
     mutates: true,
+  }),
+  saveChoice: endpoint({
+    route: 'save-choice',
+    request: saveChoiceRequestSchema,
+    response: savedChoiceViewSchema,
+    mutates: true,
+  }),
+  listSavedChoices: endpoint({
+    route: 'saved-choices',
+    request: emptyRequestSchema,
+    response: savedChoiceListSchema,
+    mutates: false,
   }),
   listBatches: endpoint({
     route: 'list-batches',
@@ -422,4 +472,5 @@ export const CURRENT_CAPABILITY_VERSIONS = Object.freeze({
   contract: CURRENT_ADMIN_VERSIONS.contract,
   catalogDocument: CURRENT_ADMIN_VERSIONS.catalogDocument,
   jobEvent: CURRENT_ADMIN_VERSIONS.jobEvent,
+  savedChoice: CURRENT_ADMIN_VERSIONS.savedChoice,
 });

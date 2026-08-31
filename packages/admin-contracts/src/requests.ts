@@ -7,6 +7,7 @@ import { batchIdSchema, jobIdSchema, labelSchema } from './identity.js';
 import type { JobAction } from './lifecycle.js';
 import { pageOf, pageRequestSchema } from './pagination.js';
 import { presetChoiceSchema } from './presets.js';
+import { savedChoiceLabelSchema } from './saved.js';
 import { resultTableNameSchema } from './results.js';
 import { contractVersionSchema } from './version.js';
 
@@ -240,6 +241,56 @@ export const enqueuePresetRequestSchema = z.strictObject({
 export type EnqueuePresetRequest = z.infer<typeof enqueuePresetRequestSchema>;
 export type EnqueuePresetRequestInput = z.input<typeof enqueuePresetRequestSchema>;
 
+/* ----------------------------------------------------- builder requests (M08.8) */
+
+/**
+ * Asking what a choice would schedule, without scheduling it.
+ *
+ * M08.6 declined to add this and gave a reason worth answering rather than
+ * ignoring: *the estimate travels with the jobs rather than from an endpoint of
+ * its own … a separate estimate endpoint would also be an endpoint that can
+ * disagree with what was created, because nothing would tie the two calls
+ * together.* M08.8's requirement is the thing that changes the balance — *the
+ * exact total match count shown before anything is enqueued* — and an estimate
+ * that only exists after the jobs are created cannot be shown before them.
+ *
+ * The disagreement M08.6 feared is closed rather than accepted. Both endpoints
+ * call `estimatePreset` on the choice, so the two answers differ only if the
+ * content differs between the two calls — which is a real event (a rebuild, a
+ * content change) and is exactly what the enqueue answer's own estimate is for
+ * reporting. The preview is a reading, and the enqueue result stays the record.
+ *
+ * It **mutates nothing**: expanding a preset creates no batch, no job and no
+ * directory, and `mutates: false` on the endpoint says so where a rate limiter
+ * and an audit line can read it.
+ */
+export const estimateChoiceRequestSchema = z.strictObject({ choice: presetChoiceSchema });
+export type EstimateChoiceRequest = z.infer<typeof estimateChoiceRequestSchema>;
+export type EstimateChoiceRequestInput = z.input<typeof estimateChoiceRequestSchema>;
+
+/**
+ * Keeping a filled-in form under a name.
+ *
+ * There is no ID in the request, so **save always creates**. Replacing a stored
+ * configuration in place would need an update path and a way to say "this one,
+ * as it was" — and the thing an administrator actually does with a kept form is
+ * open it, change two numbers and keep that too, which is a new one. Duplicating
+ * is therefore the same call with a different label, and no verb was invented
+ * for it.
+ *
+ * The choice is validated by `presetChoiceSchema` on the way in and expanded by
+ * the server before it is stored, so a configuration that could never run is not
+ * one that can be saved. What the *stored* form is not checked against is
+ * content as it will be later — a precon can be withdrawn between saving and
+ * reopening — which is why reopening re-validates rather than trusting.
+ */
+export const saveChoiceRequestSchema = z.strictObject({
+  label: savedChoiceLabelSchema,
+  choice: presetChoiceSchema,
+});
+export type SaveChoiceRequest = z.infer<typeof saveChoiceRequestSchema>;
+export type SaveChoiceRequestInput = z.input<typeof saveChoiceRequestSchema>;
+
 /**
  * One page of one of a run's result tables.
  *
@@ -275,6 +326,8 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   jobAction: jobActionRequestSchema,
   createBatch: createBatchRequestSchema,
   enqueuePreset: enqueuePresetRequestSchema,
+  estimateChoice: estimateChoiceRequestSchema,
+  saveChoice: saveChoiceRequestSchema,
   resultTable: resultTableRequestSchema,
 });
 

@@ -1557,6 +1557,17 @@ choice becomes one job per stage, in the preset's own order, and the response
 carries M08.3's estimate beside the jobs rather than from an endpoint of its own,
 because a separate estimate call is one that can disagree with what was created.
 
+> **Superseded in part by M08.8 (2026-08-31).** The rule that a job is created
+> from a preset and from nothing else is unchanged and still enforced by a test.
+> The refusal of a _read-only_ estimate endpoint was reversed: M08.8's
+> requirement is the exact total shown **before** anything is enqueued, and an
+> estimate that only exists after the jobs are created cannot be shown before
+> them. The disagreement feared here is closed rather than accepted — `estimate`
+> and `enqueue-preset` expand through one helper onto `estimatePreset`, so the
+> two answers can differ only if the _content_ moved between the calls, which is
+> the event the enqueue answer's own estimate reports. `estimate` is
+> `mutates: false` and creates no batch, no job and no directory.
+
 **`jobActionRequestSchema` was narrowed to the four verbs an operator has.**
 `start`, `complete`, `fail`, `interrupt` and the two settling actions belong to a
 runner reporting an attempt or a restart recording what it found. A request that
@@ -2057,7 +2068,7 @@ or password reset — one administrator and one token, as ADR 0023 §4 says.
   that can act on them. An Overview that counted jobs would be the first half of
   M08.9 built without the half that lets an operator do anything about it.
 
-## M08.8 — Precon Benchmark builder
+## M08.8 — Precon Benchmark builder — **done (2026-08-31)**
 
 Configure and enqueue the first immediately useful test without JSON:
 multi-select shipped precons, pilots, preset or custom games per seat order,
@@ -2072,12 +2083,310 @@ content, enqueue and form-restoration tests.
 
 **Exclusion:** no result charts, no other builder.
 
+### What M08.8 built
+
+**A form that is told what exists rather than holding a copy of it.** A builder
+that offers precons has to get the list from somewhere, and there were exactly two
+candidates: a list in the bundle — stale the day a precon is renamed and silently
+wrong the day one becomes unplayable — or the process that resolves them. The
+`content` endpoint is the second. `preconsForEnvironment` and `pilotCatalog` are
+**`@tcg/simulator`'s**, because that is the layer `runExperiment` already asks, and
+`apps/admin-server` is structurally forbidden from importing `@tcg/card-data` or
+`@tcg/bot-interface` to answer it itself. `lab/content.ts` is a projection over
+them and nothing more.
+
+**Playability is asked, never asserted.** Each published precon is resolved
+through `resolveDeckSource` — the _same call_ a run makes — one at a time, because
+`resolvePrecons` throws on the first bad ID and a single call would report one
+refusal and leave every later precon unexamined. A refused precon is **listed,
+disabled and given the environment's own reason**, not filtered out: a chooser
+that dropped it silently would leave an administrator unable to tell _this format
+publishes three precons_ from _this format publishes four and one of them is
+broken_, and only the second is a content finding. Nothing on the answer is a
+card, a decklist or a pool, so it is small enough to be re-fetched every time a
+form opens — which is what makes "validated against current content" mean the
+content as it is now.
+
+**Every pilot carries what a run flying it may be cited for.**
+`playQualityEvidence` is `agentClassSupports(class, 'play_quality')` — the same
+predicate `LEGAL_ONLY_PILOT_IDS` is a view of — so the chooser and the report
+cannot disagree. A selection made only of pilots for which it is `false` puts
+`NO_PLAY_QUALITY_CAVEAT` on screen at the moment the selection is made, rather
+than leaving a result page to say it afterwards to somebody who has already drawn
+a conclusion.
+
+**The exact total is shown before anything is enqueued, and that is structural.**
+The screen holds the **fingerprint** of the form the estimate was obtained for,
+and the enqueue control exists only while that fingerprint still matches what is
+on screen. Change a precon, the depth, the seat orders, the replicates or the seed
+and the enqueue is withdrawn with the sentence saying the number is no longer
+about this configuration. The batch label is deliberately **excluded** from the
+fingerprint: it names the batch in the catalog and changes nothing about the
+schedule, so renaming it should not throw away a number that is still correct.
+
+**M08.6's objection to an estimate endpoint is closed rather than accepted.** It
+declined one because _nothing would tie the two calls together_, and M08.8's
+requirement — the exact total shown **before** anything is enqueued — is what
+changes the balance. Both `estimate` and `enqueue-preset` go through one
+`expandOrRefuse` helper onto `estimatePreset`, so the two can differ only if the
+_content_ moved between the calls, which is a real event and is what the enqueue
+answer's own estimate reports. The preview is a reading; the enqueue result stays
+the record. `mutates: false` says on the endpoint, where a rate limiter and an
+audit line can read it, that expanding a preset creates no batch, no job and no
+directory.
+
+**Five settings, and each one is a decision the expansion records.** The workload
+becomes `gamesPerPairing` and is marked `chosen` rather than `preset` when it
+overrode the depth, so a run cannot carry a preset's name while claiming that
+preset's support. `mirrorSeats` becomes the configuration's own flag.
+`retention.replaySampleRate` is the one retention dial exposed — `keepLogs` and
+`keepDecisions` are _debug only_ in the simulator's own words, each holding every
+action and every per-decision diagnostic of every match in memory for the length
+of the run, so a form offering them would be a form offering to exhaust the lab
+machine in one click; they are settled at `false` and recorded as `preset`
+decisions rather than silently omitted. `workers` is a request and never a grant,
+because `grantWorkers` still takes the smallest of what was asked for, what one
+job may have and what is free.
+
+**Replicates are separate runs, and the schema could not have made them anything
+else.** A replicate exists to answer _how much does this move between independent
+runs_, and pooling two seed families into one experiment directory would answer
+the question `gamesPerPairing` already answers. So `n` replicates expand into `n`
+stages, `n` jobs and `n` canonical experiment directories, each deriving its own
+seed from the root one the way `commanderSearch` derives one per Commander — so
+the whole set is reproducible from the single seed an administrator typed, and the
+derived identity is recorded as `preset` rather than `chosen` because nobody typed
+`lab-check-r2`. With one replicate the stage keeps its original identity, so an
+unreplicated benchmark is exactly the run M08.6 produced.
+
+**Four limitations are attached by the _choice_, not by the preset.** A custom
+depth, a one-way seat schedule, more than one replicate and a zero replay rate
+each add a sentence to the expansion's limitations — and therefore to the estimate
+the screen renders and to the run's own record. `PRESET_REGISTRY.limitations` is
+authored at all because _a limitation authored at the point of display is one that
+can be forgotten at the point of display_, and none of these four is knowable from
+the preset ID alone.
+
+**A kept form is stored by the lab, and that is a boundary decision rather than a
+convenience.** ADR 0023 §4 forbids the token from anything the browser persists,
+and `apps/admin-client`'s boundary suite enforces it by refusing `localStorage`,
+`sessionStorage`, `indexedDB` and `document.cookie` in any source. A saved form put
+in one of those would either weaken that scan into a reviewer's judgement about
+which key is allowed, or live in a second storage mechanism nobody scans. It is
+also the wrong place on its own merits: a configuration kept in one browser profile
+is invisible from the machine's other browser, gone when site data is cleared, and
+impossible for the process that would run it to validate.
+
+**Save always creates, and duplicating is the same call with a different label.**
+There is no ID in the request and no update path: what an administrator actually
+does with a kept form is open it, change two numbers and keep that too, which is a
+new one. The choice is **expanded before it is written**, so a configuration that
+could never be enqueued cannot be saved — the refusal arrives while the screen
+still has the values that caused it rather than in a month. What is _not_ promised
+is that reopening will work: a precon can be withdrawn between saving and
+reopening, which is why the builder re-validates on load rather than trusting what
+it stored. A saved choice is deliberately **not** called a preset:
+`PRESET_REGISTRY` owns that word, its presets are the _build's_ and carry authored
+limitations, and calling both "preset" would make `presetId` ambiguous in every
+signature that takes one.
+
+**Neither estimated runtime nor estimated storage is shown, and the page says
+why.** The milestone asks for both _where available_. Nothing in this build has
+ever measured how long a match takes or how large a run directory grows, so any
+figure would be one the screen made up. Saying so where the figures would have gone
+is the honest reading of "where available", and a test requires the sentence to be
+there and requires no `estimated runtime of` to appear.
+
+### One defect corrected while finishing the tranche
+
+**Three number fields had their explanatory paragraph inside their `<label>`.** A
+label wrapping both the input and the note gives the input an accessible name that
+is the label's _whole_ text content — so a screen reader announced the sentence
+about seed families as the field's name, and a query for the control by its name
+could not find it. The note is now a sibling paragraph, which is the arrangement
+the "Games per seat order" field already had. The same correction was applied to
+the experiment name and seed fields, which no test queried by name.
+
+### Verified by running it against the real process
+
+The orchestration process was started against a temporary catalog and result root,
+and the four new addresses were driven over real HTTP before any screen was
+involved. `content` answered `precon_wave_1` with all four shipped precons at 40
+cards each and **no refusal on any of them**, and four pilots with `random_legal`
+marked as carrying no play-quality evidence. `estimate` on the default form
+answered **48 matches, basis `exact`** — four precons is six pairings, both seat
+orders, four games, one pilot tuple — with the real forced-inclusion floors
+42/41/41/42 against a 40-card deck giving 38/39/39/38. Moving every setting at once
+— two games, three replicates, no mirroring, no replays, two workers — answered
+**36 matches in three stages** named `matches-r1..r3` on seeds `lab-seed|r1..r3`,
+with all four choice limitations attached and the decisions reading
+`gamesPerPairing 2 chosen`, `mirrorSeats false chosen`, `retention.keepLogs false
+preset`, `workers 2 chosen`.
+
+A form was saved, duplicated under a second name, and listed back newest first with
+`startedAt` and `completedAt` both `null` and every setting unchanged through the
+round trip. A choice naming `precon_withdrawn_yesterday` was refused with
+`admin/schema` in the simulator's own words — _Precons published for
+"precon_wave_1": …_ — and the listing still held two, so nothing was written. A body
+carrying `outputRoot` was refused with `Unrecognized key: "outputRoot"` rather than
+ignored, and `/admin/v3/content` answered HTTP 400 with the repository's readable
+older-build sentence rather than a bare 404.
+
+**A form-built configuration then became a real experiment directory.** A smoke
+benchmark previewed at one match was enqueued through `create-batch` and
+`enqueue-preset`, and `list-jobs` reported it `completed` with 1 of 1 matches and a
+run identity carrying `manifestSchemaVersion 8` and this repository's own commit —
+so the path from a form to a canonical directory is exercised end to end and not
+only asserted.
+
+Finally the **real components were rendered against the live service** through the
+client's own `/admin` proxy — the same shape M08.7 used, with a real `fetch`
+transport rather than a fixture. The page showed this machine's own numbers: the
+four precons with their authored strategies and Commanders, the four pilots with
+their agent classes, _at most 31 per job_ read from the running orchestrator's
+bound, _exactly 48 matches_ with the stage row reading `48 / 4 / 4 / 1 / 0: 24, 1:
+24`, the four real forced-inclusion floors, and the two configurations saved earlier
+**over HTTP** — proving the saved list is the lab's and not the browser's.
+
+**No browser screenshot is claimed.** The Chrome extension this environment offers
+was not connected; the rendering evidence is the real DOM produced by the real
+components against the live service, read out in full.
+
 ### Checklist
 
-- [ ] Precon, pilot, workload, replicate, retention and worker controls.
-- [ ] Mirrored seat orders by default; disabling is advanced and labelled.
-- [ ] Exact total matches shown before enqueue.
-- [ ] Submission-time validation against current content.
+- [x] **Precon, pilot, workload, replicate, retention and worker controls.** All
+      six, on one screen, every option derived from an answer the service gave: the
+      precons and pilots from `content`, the depths from the preset catalog
+      filtered by `testStyle`, and the worker ceiling from
+      `capabilities.orchestrator.maxWorkersPerJob`. The two debug-only retention
+      flags are settled at `false` rather than offered, and the reason is recorded
+      as a `preset` decision on every run.
+- [x] **Mirrored seat orders by default; disabling is advanced and labelled.** On
+      by default because a matchup played one way round cannot separate deck
+      strength from seat advantage, behind an `Advanced` disclosure, and turning it
+      off puts a warning on screen _and_ attaches a limitation to the expansion, so
+      the saving is visible wherever the number it produced is read.
+- [x] **Exact total matches shown before enqueue.** Counted by `estimatePreset`,
+      which builds the real schedule; the enqueue control exists only while the
+      form's fingerprint still matches the one the total was taken for, so an
+      edited form withdraws it. Estimated runtime and storage are absent and the
+      page says why.
+- [x] **Submission-time validation against current content.** `estimate`, `save`
+      and `enqueue` all expand through one helper, so a precon this content no
+      longer publishes is refused in the same words by the same layer at all three;
+      a saved configuration is expanded _before_ it is written, and reopening one
+      re-validates rather than trusting what was stored.
+- [x] Verified: 107 new tests in 6 new files — 30 in
+      `admin-client/src/builder-flow.test.tsx`, 19 in
+      `admin-client/src/lib/builder-form.test.ts`, 26 in
+      `admin-server/src/lab/builder.test.ts`, 16 in
+      `admin-server/src/service/builder-endpoints.test.ts`, 6 in
+      `admin-server/src/catalog/saved-choices.test.ts` and 9 in
+      `simulator/src/content-catalog.test.ts` — plus 1 in
+      `admin-contracts/src/service.test.ts`. 4,071 tests in 192 files across the
+      whole suite, up from 3,964 in 186. `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` all pass on Node v24.15.0.
+
+### Versions
+
+Two moved. No other constant in the repository did.
+
+| Constant                   | Was | Now | Why                                                                                                                                                                                                                                                               |
+| -------------------------- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_CONTRACT_VERSION`   | 3   | 4   | Four endpoints — `content`, `estimate`, `save-choice`, `saved-choices` — one new code `admin/catalog_limit`, a fourth member on `capabilities.versions`, and a **widened** `presetChoiceSchema`: the three precon-benchmark presets now carry a `settings` block. |
+| `SAVED_CHOICE_VERSION`     | —   | 1   | Introduced. A saved builder form is a fourth artifact with its own lifetime: written by a person filling in a form, read months later by whichever build is running then, holding a `presetChoice` and nothing about a run.                                       |
+| `CATALOG_DOCUMENT_VERSION` | 3   | 3   | No batch and no job document changed shape. A saved configuration is not in that family, which is exactly why it did not borrow this number.                                                                                                                      |
+| `JOB_EVENT_VERSION`        | 1   | 1   | No event line is read or written differently. The verbs that write one are M08.5's and unchanged.                                                                                                                                                                 |
+
+**Why `SAVED_CHOICE_VERSION` is a fourth constant rather than a fourth use of an
+existing one**, under the test M08.1 set and M08.2 already passed: _a third
+artifact with its own lifetime is a reason to add a third constant; a second schema
+inside the same family is not._ A saved form's shape moves whenever a _builder_
+gains a control. Stamping it with `CATALOG_DOCUMENT_VERSION` would mean that adding
+a knob to a form makes every stored batch and job unreadable — and that reading a
+job document proves a saved form is readable, which it does not.
+
+**A build speaking contract 3** would send a precon choice with no `settings` —
+accepted, because the block prefaults whole — but would receive a `capabilities`
+answer carrying a version field it does not know and would be unable to reach any
+of the four new addresses. That is what a contract version is for saying, and the
+version segment in every path is derived from the constant, so such a build gets
+the repository's readable older-build sentence rather than a bare 404.
+
+**`CATALOG_DOCUMENT_VERSION` did not move, and M08.6 said the next change to a
+catalog document has to be migrated.** That obligation is intact and untouched:
+M08.8 adds a _new_ document kind in its own directory with its own constant, and
+`saved-choices/` has never been written by an earlier build, so there is again no
+older file anywhere and no migration to write. The first change to the batch or job
+document is still the one that owes a migration.
+
+**No play-contract and no simulator artifact version moved.** `PROTOCOL_VERSION`,
+`MATCH_SCHEMA_VERSION`, `RULES_VERSION`, `CARD_SCHEMA_VERSION`,
+`MANIFEST_SCHEMA_VERSION`, `SUMMARY_SCHEMA_VERSION`, `DECK_GENERATOR_VERSION` and
+the `@tcg/bot-config` constants are where M09 and M08.7 left them. The one change
+outside the admin workspaces is `apps/simulator/src/content-catalog.ts`, which adds
+two read-only projections over registries that already existed and changes no
+schedule, no seed, no hash and no report.
+
+### Exclusions honoured
+
+**No result charts**: no `<svg>`, no canvas and no charting dependency — the
+client's boundary suite still reads the manifest and refuses one by name, and the
+builder's own suite asserts the rendered estimate contains neither element. The
+estimate is an exact table, which is what the milestone's result rules ask for
+anyway. **No other builder**: the `settings` block is on the three precon-benchmark
+presets and on no other, because a knob on a preset with no screen behind it would
+be a shape nothing sends and nothing validates; the screen offers no radio for Open
+Meta Search, Engine Soak or Adaptive Counter Search, and a test names each of them.
+**No queue**: what happens after the enqueue is M08.9's, and this screen reports
+exactly the batch and jobs it created and stops. **No arbitrary output root, path
+or JSON blob**: the two new request shapes are `{ choice }` and `{ label, choice }`,
+a test scans both for `output`, `path`, `root`, `directory` and `file`, and an
+unknown key is refused rather than ignored. **No simulator CPU work in the live
+event loop**: nothing here touches `apps/multiplayer-server`, `@tcg/protocol` or a
+live match. **No admin control in the player bundle**: `apps/admin-client` is still
+its own application, and the built player bundle still contains zero occurrences of
+the string `admin`. **No card authored, no precon rebalanced, no deck size moved,
+no Unit cap, no accounts and no MMR.**
+
+### Limitations recorded rather than worked around
+
+- **Replicates are not pooled.** `n` replicates are `n` directories and `n`
+  summaries, and nothing in this build reads them as one measurement. That is
+  stated on the expansion's own limitations rather than left to a reader, and the
+  tranche that aggregates them is the one that can also say what the pooled
+  interval means.
+- **No estimated runtime and no estimated storage.** Nothing has ever measured
+  either. A first honest version needs a measured rate from real runs, which is a
+  result-side fact and belongs to the tranche that reads finished directories.
+- **The content answer is resolved per request and not cached.** That is deliberate
+  — "current content" has to mean now — and it costs a content load every time a
+  builder opens. On this machine it is unnoticeable; a lab with a far larger format
+  is where it would need a cache with an invalidation story, and inventing one here
+  would be inventing the story too.
+- **A saved configuration cannot be renamed, edited in place or deleted.** Save
+  always creates. Removing one is a filesystem action on the catalog, and
+  `MAX_SAVED_CHOICES` (200) is the bound that makes an unpaginated listing an
+  answer whose size is known. A delete verb is a destructive endpoint and the
+  tranche that adds one should also decide what it means for a batch that names the
+  same choice.
+- **A saved choice for a preset this builder does not configure is listed and not
+  openable.** There is one builder, so today nothing can produce such a document;
+  the screen declines to open it rather than guessing, which is what makes adding a
+  second builder a change to `asBenchmarkChoice` rather than a change to the
+  listing.
+- **The client's precon-depth labels restate three numbers the server settles.**
+  `PRESET_DEPTHS` is a client-side copy of Smoke/Standard/Deep, held still by a test
+  that reads each preset's own registry summary. It is a restatement and is admitted
+  as one; the estimate the same form produces would contradict a stale value.
+- **`apps/admin-server/src/run/queue.test.ts` has one timing-sensitive assertion
+  that flakes under a loaded full-suite run.** _runs several at once when the bound
+  allows_ observes a peak of concurrent jobs across real 10 ms delays, and a machine
+  busy enough for one job to finish before the next starts sees a peak of 1. It
+  passed three times in isolation and in the final full gate, and failed once
+  mid-tranche. It is M08.5's test, untouched here, and it is recorded rather than
+  repaired because making it deterministic is a change to a tranche this one did not
+  open.
 
 ## M08.9 — Queue UI and batch ordering
 

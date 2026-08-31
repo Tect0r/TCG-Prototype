@@ -100,6 +100,7 @@ const STATUS_FOR: Readonly<Record<AdminErrorCode, number>> = Object.freeze({
   'admin/illegal_transition': 409,
   'admin/unknown_batch': 404,
   'admin/unknown_job': 404,
+  'admin/catalog_limit': 409,
   'admin/duplicate_id': 409,
   'admin/invalid_cursor': 400,
   'admin/incompatible_filter': 400,

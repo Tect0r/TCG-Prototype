@@ -36,14 +36,16 @@ describe('what the navigation offers', () => {
     expect(entries).toEqual(ADMIN_SECTIONS.map((section) => section.label));
   });
 
-  it('is one entry, because one page is finished', async () => {
+  it('is two entries, because two pages are finished', async () => {
     await renderShell();
 
     // The milestone's information architecture names nine destinations and says
     // a navigation entry arrives with the tranche that makes its page honest. A
     // greyed-out "Queue" leading to "coming soon" is the decorative empty page
-    // it forbids, so the list is short rather than aspirational.
-    expect(ADMIN_SECTIONS.map((section) => section.id)).toEqual(['overview']);
+    // it forbids, so the list grows one entry per tranche rather than being
+    // aspirational. M08.8 added New Test Batch because there is a working form
+    // behind it; the remaining seven are still absent.
+    expect(ADMIN_SECTIONS.map((section) => section.id)).toEqual(['overview', 'new-test-batch']);
     expect(
       screen.queryByRole('button', { name: /queue|results|player meta|explorer/i }),
     ).toBeNull();

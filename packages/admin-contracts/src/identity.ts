@@ -45,6 +45,7 @@ function prefixedId(prefix: string, label: string) {
 /** The prefix each kind of admin ID carries, so a stray ID is recognisable on sight. */
 export const BATCH_ID_PREFIX = 'batch';
 export const JOB_ID_PREFIX = 'job';
+export const SAVED_CHOICE_ID_PREFIX = 'saved';
 
 /** A test batch: the ordered collection of jobs an administrator chose. */
 export const batchIdSchema = prefixedId(BATCH_ID_PREFIX, 'test batch');
@@ -53,6 +54,17 @@ export type BatchId = z.infer<typeof batchIdSchema>;
 /** An experiment job: one validated execution unit in the queue. */
 export const jobIdSchema = prefixedId(JOB_ID_PREFIX, 'experiment job');
 export type JobId = z.infer<typeof jobIdSchema>;
+
+/**
+ * A filled-in builder form an administrator kept (M08.8).
+ *
+ * Its own prefix rather than a reuse of `batch`, because it is neither a batch
+ * nor a job: nothing runs, nothing is scheduled and no evidence is produced by
+ * one existing. It names a *choice*, and the same choice may be enqueued any
+ * number of times or never.
+ */
+export const savedChoiceIdSchema = prefixedId(SAVED_CHOICE_ID_PREFIX, 'saved test configuration');
+export type SavedChoiceId = z.infer<typeof savedChoiceIdSchema>;
 
 /**
  * The alphabet an *authored* name uses: lowercase, starting with a letter, with

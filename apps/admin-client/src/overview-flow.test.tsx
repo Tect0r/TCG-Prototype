@@ -1,4 +1,6 @@
 import {
+  ADMIN_CONTRACT_VERSION,
+  CURRENT_ADMIN_VERSIONS,
   MAX_FILTER_VALUES,
   MAX_JOBS_PER_BATCH,
   PAGE_SIZE_DEFAULT,
@@ -63,7 +65,7 @@ describe('the connection panel', () => {
   it('prints the address as a relative path on this page’s own origin', async () => {
     await renderConnected();
 
-    expect(fact('Address')).toContain('/admin/v3');
+    expect(fact('Address')).toContain(`/admin/v${String(ADMIN_CONTRACT_VERSION)}`);
     expect(fact('Address')).toContain('own origin');
   });
 
@@ -74,12 +76,19 @@ describe('the connection panel', () => {
     expect(fact('Authentication')).toContain('No token configured');
   });
 
-  it('prints all three admin version numbers', async () => {
+  it('prints all four admin version numbers', async () => {
     await renderConnected();
 
-    expect(fact('Admin contract version')).toContain('3');
-    expect(fact('Catalog document version')).toContain('3');
-    expect(fact('Job event version')).toContain('1');
+    // Read from the constants rather than typed, so a version this repository
+    // moves deliberately does not fail here as though a screen had broken.
+    expect(fact('Admin contract version')).toContain(String(CURRENT_ADMIN_VERSIONS.contract));
+    expect(fact('Catalog document version')).toContain(
+      String(CURRENT_ADMIN_VERSIONS.catalogDocument),
+    );
+    expect(fact('Job event version')).toContain(String(CURRENT_ADMIN_VERSIONS.jobEvent));
+    expect(fact('Saved configuration version')).toContain(
+      String(CURRENT_ADMIN_VERSIONS.savedChoice),
+    );
   });
 
   it('prints the process start time and how long it has been up at the last check', async () => {
@@ -183,14 +192,17 @@ describe('what this build can run', () => {
     expect(row.textContent).toContain('Precon Benchmark');
   });
 
-  it('offers nothing that starts a run', async () => {
+  it('offers nothing on the Overview itself that starts a run', async () => {
     await renderConnected();
 
-    // M08.8 owns the builder. A shell that offered an enqueue control would be
-    // the decorative half of a page nobody can finish.
-    for (const label of ['Start', 'Run', 'Enqueue', 'New test batch']) {
+    // The Overview is still read-only. M08.8 put the builder on its own
+    // destination, so the *navigation* now has a "New Test Batch" entry — and
+    // that is the point of the entry — but nothing inside the main region of
+    // this page creates, configures or enqueues anything.
+    const main = screen.getByRole('main');
+    for (const label of ['Start', 'Run', 'Enqueue', 'Save this configuration']) {
       expect(
-        screen.queryByRole('button', { name: new RegExp(label, 'i') }),
+        within(main).queryByRole('button', { name: new RegExp(label, 'i') }),
       ).not.toBeInTheDocument();
     }
   });

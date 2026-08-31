@@ -115,8 +115,10 @@ export type {
   JobActionInput,
   NewBatchInput,
   NewJobInput,
+  NewSavedChoiceInput,
   RecoveredJob,
   RecoveryReport,
+  SavedChoiceListing,
   UnreadableEntry,
 } from './catalog/store.js';
 
@@ -124,10 +126,13 @@ export {
   PRESET_FORMAT_ID,
   PresetRefused,
   expandPreset,
+  presetEnvironment,
   scrubRefusal,
   type ExpandedPreset,
   type ExpandedStage,
 } from './lab/expand.js';
+
+export { readContentCatalog } from './lab/content.js';
 
 export {
   ExperimentRunner,

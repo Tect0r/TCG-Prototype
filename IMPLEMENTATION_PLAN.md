@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-24)   | M08.8        |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.9        |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -68,7 +68,12 @@ administrator token in memory and in nothing the browser persists, and shows an
 Overview whose every value is a field of the service's own answer. It settled the
 origin policy M08.6 deferred by keeping the door shut — no CORS headers, and the
 client's own dev server forwards `/admin` so the page and the API share an
-origin. One navigation entry, because one page is finished; **M08.8 is the next
+origin. **M08.8 landed on 2026-08-31** and gave the lab a form: a builder that is
+told which precons and pilots exist rather than holding a list, that shows the
+exact match count _before_ the enqueue and withdraws the offer the moment the
+form changes, that records every setting as a decision and attaches a limitation
+to each choice that makes a result mean less, and that keeps a filled-in form in
+the lab rather than in the browser. Two navigation entries; **M08.9 is the next
 tranche**.
 
 M09.0 opened M09 the same way: the milestone record, the scope and
@@ -191,17 +196,78 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.8 — Precon Benchmark builder.** The first tranche that lets an
-administrator configure and enqueue a test without hand-authoring JSON:
-multi-select shipped precons, pilots, preset or custom games per seat order,
-replicates, retention and a worker limit; seat orders mirrored by default, with
-disabling it an advanced action that carries a visible limitation; the exact total
-match count shown before anything is enqueued; and validation against current
-content and format at submission time. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m088--precon-benchmark-builder).
-No result charts and no other builder.
+**M08.9 — Queue UI and batch ordering.** Make ordered work observable and
+controllable: create an ordered batch, add, duplicate and remove jobs before
+start, reorder with accessible controls where drag is an enhancement and never
+the only control; show queued, running, pausing, paused, interrupted, completed,
+failed and cancelled states, exact completed and total matches where known,
+current stage or generation, elapsed time, and honest remaining-time
+availability; wire pause, resume, cancel and retry with confirmations
+proportional to their consequences, and make clear that queue order does not
+share experimental state. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m089--queue-ui-and-batch-ordering).
 
-It inherits a shell that connects, and a service that answers.
+It inherits a builder that creates work, and four lifecycle verbs nothing has yet
+put a button on.
+
+**M08.8 gave the lab a form, and the form holds no list of its own.** The
+`content` endpoint tells a builder which precons the active format publishes and
+which pilots can fly them, resolved **per request** through the same
+`resolveDeckSource` call a run makes — so a precon this answer marks playable is
+one `runExperiment` accepts, and a precon the environment refuses is **listed,
+disabled and given the environment's own reason** rather than quietly filtered
+out. The authority is `@tcg/simulator`'s: `apps/admin-server` is structurally
+forbidden from importing `@tcg/card-data` or `@tcg/bot-interface`, and
+`lab/content.ts` is a projection over what the simulator already decides.
+
+**The exact total is shown before anything is enqueued, structurally rather than
+by habit.** The screen holds the fingerprint of the form the estimate was taken
+for, and the enqueue control exists only while it still matches what is on
+screen; editing a control withdraws it with the sentence saying the number is no
+longer about this configuration. The batch label is excluded from the
+fingerprint, because renaming a batch changes nothing about the schedule.
+M08.6's objection to a separate estimate endpoint — _nothing would tie the two
+calls together_ — is closed rather than accepted: `estimate`, `save-choice` and
+`enqueue-preset` all expand through one helper onto `estimatePreset`, so they can
+differ only if the content moved between two calls, which is a real event and is
+what the enqueue answer's own estimate reports. Expanding creates nothing, and
+`mutates: false` says so where a rate limiter can read it.
+
+**Five settings, each recorded as a decision, and four limitations the _choice_
+creates.** A custom depth is marked `chosen` so a run cannot carry a preset's
+name while claiming that preset's support; a one-way seat schedule, more than one
+replicate and a zero replay rate each attach their own sentence to the expansion,
+and therefore to the estimate the screen renders and to the run's own record. The
+two debug-only retention flags are settled at `false` and recorded as `preset`
+decisions rather than offered, because a form offering them would be a form
+offering to exhaust the lab machine on a large schedule in one click. Replicates
+are **separate runs** — `n` stages, `n` jobs, `n` canonical directories, each on
+its own derived seed — because pooling two seed families into one directory would
+answer the question `gamesPerPairing` already answers, and nothing in this build
+pools them.
+
+**A kept form is the lab's, not the browser's.** ADR 0023 §4 forbids the token
+from anything the browser persists and the client's boundary suite enforces it by
+name, so a saved configuration in `localStorage` would either weaken that scan
+into a judgement call or live in a second store nobody scans. Save always
+creates, duplicating is the same call with a different label, and the choice is
+expanded **before** it is written — so a configuration that could never run
+cannot be saved, and the refusal arrives while the screen still holds the values
+that caused it.
+
+**Two version constants moved, and one of them is new.**
+`ADMIN_CONTRACT_VERSION` 3 → 4 for four endpoints, one new code
+`admin/catalog_limit`, a fourth member on `capabilities.versions` and a widened
+`presetChoiceSchema`. `SAVED_CHOICE_VERSION` is introduced at 1, a fourth
+constant under the test M08.1 set: a saved form's shape moves when a _builder_
+gains a control, and stamping it with the catalog's number would mean adding a
+knob to a form unreads every stored batch and job. `CATALOG_DOCUMENT_VERSION`
+stayed 3 and still owes a migration on its next change; `saved-choices/` is a new
+directory no earlier build has written, so it owes none.
+
+**Two navigation entries, and the queue is the conspicuous absence.** Until M08.9
+exists an operator watches a run from the answer the enqueue gave them rather
+than from a page that would have to invent one.
 
 **M08.7 gave the lab a face, and the page holds nothing the bundle knows on its
 own.** `apps/admin-client` is its own Vite application with its own `index.html`,

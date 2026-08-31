@@ -32,7 +32,7 @@ import { NO_ANNOTATIONS } from './catalog.js';
  */
 
 const CAPABILITIES = {
-  versions: { contract: ADMIN_CONTRACT_VERSION, catalogDocument: 2, jobEvent: 1 },
+  versions: { contract: ADMIN_CONTRACT_VERSION, catalogDocument: 2, jobEvent: 1, savedChoice: 1 },
   access: { loopback: true, authenticationRequired: false },
   limits: {
     maxRequestBytes: 131_072,
@@ -50,8 +50,11 @@ const CAPABILITIES = {
 };
 
 describe('the endpoint registry', () => {
-  it('names thirteen endpoints, and every one of them has both schemas', () => {
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(13);
+  it('names seventeen endpoints, and every one of them has both schemas', () => {
+    // Thirteen from M08.6, plus M08.8's four: the builder has to be told what
+    // content exists, has to show an exact total *before* anything is enqueued,
+    // and has to keep a filled-in form somewhere the browser is not.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(17);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);
@@ -81,14 +84,26 @@ describe('the endpoint registry', () => {
     }
   });
 
-  it('marks exactly the four endpoints that change durable state', () => {
+  it('marks exactly the five endpoints that change durable state', () => {
     const mutating = ADMIN_ENDPOINT_NAMES.filter((name) => ADMIN_ENDPOINTS[name].mutates);
     expect([...mutating].sort()).toEqual([
       'createBatch',
       'enqueuePreset',
       'jobAction',
+      'saveChoice',
       'setJobAnnotations',
     ]);
+  });
+
+  it('leaves the estimate preview non-mutating, because expanding creates nothing', () => {
+    // M08.6 declined a separate estimate endpoint partly because it could
+    // disagree with what was created. It cannot create anything: expanding a
+    // preset builds configurations in memory and writes no batch, no job and no
+    // directory, which is what `mutates: false` is here to state where a rate
+    // limiter and an audit line can read it.
+    expect(ADMIN_ENDPOINTS.estimateChoice.mutates).toBe(false);
+    expect(ADMIN_ENDPOINTS.content.mutates).toBe(false);
+    expect(ADMIN_ENDPOINTS.listSavedChoices.mutates).toBe(false);
   });
 
   it('offers no endpoint that accepts an experiment configuration', () => {

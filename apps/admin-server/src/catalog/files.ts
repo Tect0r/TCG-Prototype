@@ -275,6 +275,7 @@ const VERSION_FIELD_NAMES: Readonly<Record<AdminVersionField, string>> = Object.
   contract: 'contractVersion',
   catalogDocument: 'documentVersion',
   jobEvent: 'eventVersion',
+  savedChoice: 'documentVersion',
 });
 
 /**

@@ -150,6 +150,13 @@ export {
 } from './deck-source.js';
 
 export {
+  pilotCatalog,
+  preconsForEnvironment,
+  type PublishedPilot,
+  type PublishedPrecon,
+} from './content-catalog.js';
+
+export {
   buildSchedule,
   deckMultisets,
   deckTuples,

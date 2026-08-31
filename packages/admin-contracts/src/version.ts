@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { adminError, type AdminError } from './errors.js';
 
 /**
- * The three version domains the admin surface has, and the one rule they all
+ * The four version domains the admin surface has, and the one rule they all
  * obey: a record this build cannot read is refused with a readable message
  * rather than migrated on a guess.
  *
@@ -40,6 +40,12 @@ import { adminError, type AdminError } from './errors.js';
  *   change a job document, and changing a job document does not make one
  *   historical line unreadable, which is exactly the independence two version
  *   numbers are for.
+ *
+ * - **`SAVED_CHOICE_VERSION`** is what a builder form an administrator kept was
+ *   written in. M08.8 added it under the same test: a saved choice holds a
+ *   `presetChoice` and nothing about a run, so its shape moves when a *builder*
+ *   gains a control — and stamping it with the catalog's number would mean that
+ *   adding a knob to a form makes every stored batch and job unreadable.
  *
  * Still no separate constant for the batch document and the job document. They
  * are one family — written by one store, into one directory, in one
@@ -91,8 +97,25 @@ import { adminError, type AdminError } from './errors.js';
  *   a contract version is for saying — and the version segment in every endpoint
  *   path is derived from this constant, so the refusal is readable rather than a
  *   bare 404.
+ * - 4 (M08.8) — the language acquired a **builder**. Four endpoints were added —
+ *   `content`, `estimate`, `save-choice` and `saved-choices` — because a form
+ *   that offers precons and pilots has to be told which ones exist, a total that
+ *   is shown *before* anything is enqueued has to be obtainable without
+ *   enqueueing, and a configuration an administrator keeps has to be stored
+ *   somewhere the browser is not. One code was added to the closed list,
+ *   `admin/catalog_limit`. `capabilities.versions` gained a fourth
+ *   member, and `presetChoiceSchema` **widened**: the three precon-benchmark
+ *   presets now carry a `settings` block — workload, replicates, seat-order
+ *   mirroring, replay retention and a worker request — which M08.3 said in as
+ *   many words would happen here: *M08.8 owns the custom-workload control and
+ *   will widen this shape visibly when it adds one.*
+ *
+ *   A build speaking 3 would send a precon choice with no `settings` — accepted,
+ *   since the block prefaults — but would receive a `capabilities` answer
+ *   carrying a version field it does not know and would be unable to reach any
+ *   of the four new addresses. That is what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 3;
+export const ADMIN_CONTRACT_VERSION = 4;
 
 /**
  * The version stamped into a persisted catalog document.
@@ -148,11 +171,34 @@ export const CATALOG_DOCUMENT_VERSION = 3;
  */
 export const JOB_EVENT_VERSION = 1;
 
+/**
+ * The version stamped into a saved builder configuration (M08.8).
+ *
+ * - 1 — M08.8, the first shape. Nothing has been written by an earlier build, so
+ *   there is no older document anywhere and no migration to write.
+ *
+ * **A fourth constant rather than a fourth use of `CATALOG_DOCUMENT_VERSION`**,
+ * and the test M08.1 set for adding one is the test this passes: *a third
+ * artifact with its own lifetime is a reason to add a third constant; a second
+ * schema inside the same family is not.* A saved configuration is not in the
+ * batch-and-job family. It is written by a person filling in a form and read
+ * months later by whichever build is running then; it holds a `presetChoice`,
+ * whose shape moves whenever a preset gains a knob, and it holds nothing about a
+ * run. Stamping it with the catalog's number would mean that adding a control to
+ * a builder makes every stored batch and job unreadable — and that reading a job
+ * document proves a saved form is readable, which it does not.
+ *
+ * This is the same argument `JOB_EVENT_VERSION` was added under, applied to the
+ * other new artifact this milestone has produced.
+ */
+export const SAVED_CHOICE_VERSION = 1;
+
 /** Every version the admin surface stamps, in one object. */
 export const CURRENT_ADMIN_VERSIONS = Object.freeze({
   contract: ADMIN_CONTRACT_VERSION,
   catalogDocument: CATALOG_DOCUMENT_VERSION,
   jobEvent: JOB_EVENT_VERSION,
+  savedChoice: SAVED_CHOICE_VERSION,
 });
 
 /** Names the version domain an error is about, so a caller can say which failed. */
@@ -167,6 +213,7 @@ const VERSION_LABELS: Readonly<Record<AdminVersionField, string>> = Object.freez
   contract: 'admin contract',
   catalogDocument: 'admin catalog document',
   jobEvent: 'admin job event',
+  savedChoice: 'admin saved test configuration',
 });
 
 /**
@@ -180,6 +227,7 @@ const VERSION_LABELS: Readonly<Record<AdminVersionField, string>> = Object.freez
 export const contractVersionSchema = z.literal(ADMIN_CONTRACT_VERSION);
 export const catalogDocumentVersionSchema = z.literal(CATALOG_DOCUMENT_VERSION);
 export const jobEventVersionSchema = z.literal(JOB_EVENT_VERSION);
+export const savedChoiceVersionSchema = z.literal(SAVED_CHOICE_VERSION);
 
 /**
  * Whether `found` is a readable version number this build is simply too old for.

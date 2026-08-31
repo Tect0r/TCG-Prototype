@@ -1,6 +1,24 @@
-import type { Capabilities, PresetCatalog } from '@tcg/admin-contracts';
+import type {
+  AdminEndpointName,
+  AdminRequestOf,
+  AdminResponseOf,
+  Capabilities,
+  ChoiceEstimate,
+  ContentCatalog,
+  EnqueuePresetResult,
+  PresetCatalog,
+  PresetChoice,
+  SavedChoiceList,
+  SavedChoiceView,
+} from '@tcg/admin-contracts';
 
-import { callAdmin, isUnauthorized, type AdminFailure, type AdminTransport } from './transport.js';
+import {
+  callAdmin,
+  isUnauthorized,
+  type AdminFailure,
+  type AdminOutcome,
+  type AdminTransport,
+} from './transport.js';
 
 /**
  * The lab connection, as one observable value.
@@ -25,14 +43,24 @@ import { callAdmin, isUnauthorized, type AdminFailure, type AdminTransport } fro
  * A lab that remembered its token across reloads would be a lab whose token
  * outlives the person sitting at it.
  *
- * ## Two resources, two states, because they fail apart
+ * ## Four resources, four states, because they fail apart
  *
- * `capabilities` decides whether there is a connection at all; `presets`
- * describes what the connected build can run. A service that answered the first
- * and refused the second is connected with one section missing, not
- * disconnected — so the presets carry their own loading and failure state rather
- * than collapsing the whole screen. That is also what gives the shell its
- * section-level error state something real to render.
+ * `capabilities` decides whether there is a connection at all; the other three
+ * describe what the connected build can run (`presets`), what content it can run
+ * it against (`content`), and which forms an administrator has kept
+ * (`savedChoices`). A service that answered the first and refused any of the
+ * rest is connected with one section missing, not disconnected — so each carries
+ * its own loading and failure state rather than collapsing the whole screen.
+ * That is also what gives the shell its section-level error state something real
+ * to render.
+ *
+ * ## What is *not* a resource here
+ *
+ * An estimate, an enqueue and a save are **calls**, not readings: each is about
+ * one form's current values, each is answered once, and holding the last one in
+ * the session would mean a second screen could render a number about a
+ * configuration it never saw. So they are methods that return an outcome, and
+ * the screen that asked owns the answer.
  *
  * ## Nothing polls
  *
@@ -88,6 +116,16 @@ export type AdminConnection =
 export interface AdminSessionState {
   readonly connection: AdminConnection;
   readonly presets: AdminResource<PresetCatalog>;
+  /**
+   * The precons and pilots this build can run, as the service resolves them now.
+   *
+   * Re-read whenever the connection is re-established rather than cached across
+   * one, because the milestone requires a form to be validated against *current*
+   * content and a list held from an earlier reading is a list that was current
+   * once.
+   */
+  readonly content: AdminResource<ContentCatalog>;
+  readonly savedChoices: AdminResource<SavedChoiceList>;
   /** True while any request is in flight, so the shell can show one busy region. */
   readonly busy: boolean;
 }
@@ -101,6 +139,8 @@ export interface AdminSessionOptions {
 const INITIAL: AdminSessionState = Object.freeze<AdminSessionState>({
   connection: { status: 'idle' },
   presets: { status: 'idle' },
+  content: { status: 'idle' },
+  savedChoices: { status: 'idle' },
   busy: false,
 });
 
@@ -163,6 +203,8 @@ export class AdminSession {
         this.#publish({
           connection: { status: 'needs_token', failure: offered ? answer.failure : null },
           presets: { status: 'idle' },
+          content: { status: 'idle' },
+          savedChoices: { status: 'idle' },
           busy: false,
         });
         return;
@@ -170,6 +212,8 @@ export class AdminSession {
       this.#publish({
         connection: { status: 'unavailable', failure: answer.failure },
         presets: { status: 'idle' },
+        content: { status: 'idle' },
+        savedChoices: { status: 'idle' },
         busy: false,
       });
       return;
@@ -188,10 +232,13 @@ export class AdminSession {
         restarted,
       },
       presets: { status: 'loading' },
+      content: { status: 'loading' },
+      savedChoices: { status: 'loading' },
       busy: true,
     });
 
-    await this.#loadPresets();
+    await Promise.all([this.#loadPresets(), this.#loadContent(), this.#loadSavedChoices()]);
+    this.#publish({ ...this.#state, busy: false });
   }
 
   /** Asks both questions again with the connection already established. */
@@ -213,6 +260,8 @@ export class AdminSession {
     this.#publish({
       connection: { status: 'needs_token', failure: null },
       presets: { status: 'idle' },
+      content: { status: 'idle' },
+      savedChoices: { status: 'idle' },
       busy: false,
     });
   }
@@ -222,6 +271,76 @@ export class AdminSession {
     if (this.#state.connection.status !== 'connected') return;
     this.#publish({ ...this.#state, presets: { status: 'loading' }, busy: true });
     await this.#loadPresets();
+    this.#publish({ ...this.#state, busy: false });
+  }
+
+  /** Asks for the content catalog again after it, alone, failed. */
+  async reloadContent(): Promise<void> {
+    if (this.#state.connection.status !== 'connected') return;
+    this.#publish({ ...this.#state, content: { status: 'loading' }, busy: true });
+    await this.#loadContent();
+    this.#publish({ ...this.#state, busy: false });
+  }
+
+  /** Asks for the kept forms again — after a failure, and after saving one. */
+  async reloadSavedChoices(): Promise<void> {
+    if (this.#state.connection.status !== 'connected') return;
+    this.#publish({ ...this.#state, savedChoices: { status: 'loading' }, busy: true });
+    await this.#loadSavedChoices();
+    this.#publish({ ...this.#state, busy: false });
+  }
+
+  /**
+   * Asks what a choice would schedule, without scheduling it.
+   *
+   * Returns the answer rather than publishing it, because it is about one form's
+   * current values and a second screen rendering it would be rendering a number
+   * about a configuration it never saw.
+   */
+  async estimate(choice: PresetChoice): Promise<AdminOutcome<ChoiceEstimate>> {
+    return this.#call('estimateChoice', { choice });
+  }
+
+  /**
+   * Creates the batch and fills it, which is what "enqueue" means here.
+   *
+   * Two calls rather than one, because the service has two endpoints and this
+   * client does not get to invent a third. The order is the service's own: a
+   * batch that could not be created means nothing was enqueued, and an enqueue
+   * that fails leaves an empty draft batch — which is visible and harmless, and
+   * is what the answer says happened.
+   */
+  async enqueue(label: string, choice: PresetChoice): Promise<AdminOutcome<EnqueuePresetResult>> {
+    const batch = await this.#call('createBatch', {
+      label,
+      annotations: { tags: [], note: '', baseline: false },
+    });
+    if (!batch.ok) return batch;
+    return this.#call('enqueuePreset', { batchId: batch.value.batchId, choice });
+  }
+
+  /** Keeps a filled-in form under a name, and re-reads the list it joined. */
+  async saveChoice(label: string, choice: PresetChoice): Promise<AdminOutcome<SavedChoiceView>> {
+    const saved = await this.#call('saveChoice', { label, choice });
+    if (saved.ok) await this.reloadSavedChoices();
+    return saved;
+  }
+
+  /**
+   * One request, with the busy flag raised around it.
+   *
+   * The flag is the shell's single busy region, and raising it here rather than
+   * at each call site is what keeps a screen from forgetting to lower it on the
+   * failure path.
+   */
+  async #call<N extends AdminEndpointName>(
+    name: N,
+    payload: AdminRequestOf<N>,
+  ): Promise<AdminOutcome<AdminResponseOf<N>>> {
+    this.#publish({ ...this.#state, busy: true });
+    const answer = await callAdmin(this.#transport, name, payload, this.#token);
+    this.#publish({ ...this.#state, busy: false });
+    return answer;
   }
 
   async #loadPresets(): Promise<void> {
@@ -231,7 +350,26 @@ export class AdminSession {
       presets: answer.ok
         ? { status: 'ready', value: answer.value }
         : { status: 'failed', failure: answer.failure },
-      busy: false,
+    });
+  }
+
+  async #loadContent(): Promise<void> {
+    const answer = await callAdmin(this.#transport, 'content', {}, this.#token);
+    this.#publish({
+      ...this.#state,
+      content: answer.ok
+        ? { status: 'ready', value: answer.value }
+        : { status: 'failed', failure: answer.failure },
+    });
+  }
+
+  async #loadSavedChoices(): Promise<void> {
+    const answer = await callAdmin(this.#transport, 'listSavedChoices', {}, this.#token);
+    this.#publish({
+      ...this.#state,
+      savedChoices: answer.ok
+        ? { status: 'ready', value: answer.value }
+        : { status: 'failed', failure: answer.failure },
     });
   }
 
