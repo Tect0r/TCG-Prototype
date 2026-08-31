@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Commit           | `424046bfc78988669ac9a11050c99fd665eea941` |
-| Working tree     | clean                                      |
-| Taken on         | 2026-08-31                                 |
-| Node             | v24.15.0                                   |
-| `npm run verify` | **failed** at this commit                  |
+| Reading          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Commit           | `7feae62ec651895ed8445947ef6a755aa53cfa40`  |
+| Working tree     | dirty — the audit includes uncommitted work |
+| Taken on         | 2026-08-31                                  |
+| Node             | v24.15.0                                    |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 13      | 242      |
-| admin-server   | 27      | 562      |
+| admin-client   | 14      | 253      |
+| admin-server   | 27      | 564      |
 | packages       | 95      | 2278     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
-| simulator      | 25      | 457      |
+| simulator      | 26      | 466      |
 | web-client     | 20      | 272      |
-| **total**      | **201** | **4225** |
+| **total**      | **203** | **4247** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -77,9 +77,9 @@ Documents a finished run leaves behind. Every move so far has been a refusal rat
 | `BOARD_TELEMETRY_VERSION`             | 3     | The shared board-size and attack-opportunity schema.           |
 | `TELEMETRY_SCHEMA_VERSION`            | 6     | A simulator match record.                                      |
 | `MATCH_STREAM_HEADER_VERSION`         | 1     | `matches.header.json`, which decides whether a run may resume. |
-| `REPORT_SCHEMA_VERSION`               | 8     | `report.md`.                                                   |
+| `REPORT_SCHEMA_VERSION`               | 9     | `report.md`.                                                   |
 | `MANIFEST_SCHEMA_VERSION`             | 8     | `manifest.json`.                                               |
-| `SUMMARY_SCHEMA_VERSION`              | 7     | `summary.json`.                                                |
+| `SUMMARY_SCHEMA_VERSION`              | 8     | `summary.json`.                                                |
 | `MATCHUP_MATRIX_SCHEMA_VERSION`       | 2     | `matchup-matrix.json` and its CSV.                             |
 | `SEARCH_CHECKPOINT_VERSION`           | 2     | A deck-search checkpoint.                                      |
 | `RESOLVED_ENVIRONMENT_SCHEMA_VERSION` | 1     | A frozen environment snapshot.                                 |

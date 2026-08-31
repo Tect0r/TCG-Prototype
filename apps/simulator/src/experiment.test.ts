@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { experimentConfigSchema, type ExperimentConfig } from './config.js';
 import { runExperiment, type ExperimentOutcome } from './experiment.js';
+import { resolveEnvironment } from './environment.js';
 import { aggregate } from './analysis/aggregate.js';
 import { aggregateBoard } from './analysis/board.js';
 import { cardPairs } from './analysis/pairs.js';
@@ -129,7 +130,12 @@ describe('report reconciliation', () => {
   });
 
   it('re-derives the whole summary from matches.jsonl alone', () => {
-    const rederived = aggregate(records(), { confidence: 0.95 });
+    const batchConfig = config();
+    if (batchConfig.kind !== 'batch') throw new Error('expected a batch config');
+    const rederived = aggregate(records(), {
+      confidence: 0.95,
+      environment: resolveEnvironment(batchConfig.environment),
+    });
     const summary = JSON.parse(readFileSync(experimentPaths(dir).summary, 'utf8'));
     expect(JSON.stringify(rederived)).toBe(JSON.stringify(summary.aggregate));
   });

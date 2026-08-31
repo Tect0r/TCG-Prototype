@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.12       |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.13       |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -214,17 +214,69 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.12 — Card-inclusion integrity.** Make card-selection numbers
-mathematically defined before more dashboards are built on them: fix the
-zero-observation included/excluded defect so an undefined contrast returns
-`insufficient_data` rather than a fabricated zero rate or a recommendation;
-add eligibility-aware card denominators globally and per Commander; report
-forced-inclusion floors from legal pool size and deck size; preserve source,
-construction, pilot class, replicate and exploration/validation partitions in
-card aggregates; and version every changed summary, report or API contract
-with deliberate refusal or migration reasoning. **No new Commander aggregate,
-no Open Meta UI.** Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0812--card-inclusion-integrity).
+**M08.13 — Commander aggregates.** Add the reusable Commander-level evidence
+the current reports lack: match counts, overall, seat and pilot win rates, an
+opponent-Commander matrix, turn and end-reason distributions, top and median
+deck fitness, population and archive share, and within-Commander deck
+diversity where supported. Source, construction, pilot class, replicate and
+exploration/validation partitions preserved, and every changed contract
+versioned with reasoning. **No Open Meta UI yet.** Its scope and checklist are
+in [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0813--commander-aggregates).
+
+**M08.12 fixed two defects the milestone's own result rules had already named,
+rather than building the dashboard that would have shown wrong numbers through
+them.** `apps/simulator/src/analysis/aggregate.ts`'s `summarizeCards` no longer
+reports a fabricated point difference when either side of the included/excluded
+contrast never played: `inclusionWinRateLift` is `null` — read as
+`insufficient_data` — whenever `winRateWhenIncluded.total` or
+`winRateWhenAbsent.total` is zero, covered by a universal card (nobody ever
+left it out) and a colour-ineligible one (nobody eligible ever left it out
+either) in `apps/simulator/src/analysis/card-inclusion.test.ts`. The same test
+file is where the second fix lives: a deck whose Commander could never legally
+run a card no longer counts on the "absent" side of that card's contrast,
+because `summarizeCards` now reads each Commander's own legal pool from
+`poolFor`/`poolReportFor` (`@tcg/deck-generator`) before deciding which seats
+are a real exclusion versus a structural impossibility. Every card carries a
+`perCommander` breakdown — eligible or not, decks under that Commander, decks
+including, and the forced-inclusion floor read from `poolReportFor` rather than
+recomputed — plus a global `eligibleDecks` and `inclusionAmongEligibleShare`.
+`SUMMARY_SCHEMA_VERSION` moved 7 → 8 for the new fields and the lift's new
+nullability; `apps/admin-server/src/service/results.ts` reads both loosely
+(`.nullish()` on the new fields, so a run written before v8 reports "not
+measured" rather than failing to parse) and `ADMIN_CONTRACT_VERSION` did not
+move, because `resultCellSchema` already carried `null` for exactly this
+reason and adding columns to a result table is a data change, not a transport
+one. **No source, construction, pilot-class, replicate or
+exploration/validation partition existed in a card aggregate before this
+tranche**, so "preserved" meant the one partition that already did —
+`seat.commanderId`, now read per Commander rather than pooled — stayed a
+partition rather than becoming an average; adding the other four as a new
+per-card breakdown was not this tranche's to build, and would have been the
+Commander aggregate the exclusion forbids. Eligibility stays `null` and
+`perCommander` stays empty when `aggregate()` is called without an environment
+— `compareEnvironments`' baseline/candidate arms are two environments, not one,
+and reporting a guess would be the same defect from the other direction. Review
+caught the same mistake made once, from the other side: `finish()` originally
+passed the _baseline_ environment to the top-level `aggregate()` call for every
+experiment kind, including a comparison, whose records span both arms — an
+added or removed card would have had its eligibility read from the wrong
+pool's Commander data. `finish()` now supplies `environment` only when
+`inputs.environments.length === 1`, tested by
+`hardening-experiment.test.ts`'s "never reads card eligibility from one arm's
+environment for the other". Review also found `inclusionAmongEligibleShare`
+mixing an all-decks numerator with an eligible-only denominator (fixed to sum
+`decksIncluding` over the same eligible `perCommander` entries) and two
+different silent defaults for a Commander unknown to the environment's
+database (`isEligible`'s `?? true` disagreeing with `perCommander`'s `?? false`
+— now `isEligible` returns `true` only when no environment was supplied at
+all, `false` otherwise, matching `perCommander`), and that the admin `cards`
+table kept publishing `{ point: 0, low: 0, high: 1 }` for a zero-observation
+side while `report.md` already printed "insufficient data" for the same cell
+— `apps/admin-server/src/service/results.ts` now reads `null` there too
+(`spreadRateOrInsufficient`). A new `card-inclusion.test.ts` case asserts the
+"absent-card" acceptance category structurally: a card legal everywhere in a
+run and chosen nowhere produces no row at all, which is the correct shape of
+that guarantee rather than a gap the milestone file now also records.
 
 **M08.11 gave the Results screen a dashboard, and kept ADR 0023 §6's default
 rather than adopting a library before a single chart existed.** Every reading

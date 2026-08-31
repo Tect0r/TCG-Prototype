@@ -2949,7 +2949,7 @@ samples, accessibility, filtering and drill-down tests.
   the first N of M rows" — and a matchup pair sitting past that page reads
   back as _not confirmed_, never as a fabricated "no games played".
 
-## M08.12 — Card-inclusion integrity
+## M08.12 — Card-inclusion integrity — **done (2026-08-31)**
 
 Make card-selection numbers mathematically defined before more dashboards are
 built on them: fix the zero-observation included/excluded defect so an undefined
@@ -2967,10 +2967,70 @@ forced-inclusion, mixed-source and regeneration tests.
 
 ### Checklist
 
-- [ ] Undefined contrast returns `insufficient_data`.
-- [ ] Eligibility-aware denominators, global and per Commander.
-- [ ] Forced-inclusion floor reported wherever inclusion is shown.
-- [ ] Partitions preserved; contract versions moved deliberately.
+- [x] Undefined contrast returns `insufficient_data`.
+- [x] Eligibility-aware denominators, global and per Commander.
+- [x] Forced-inclusion floor reported wherever inclusion is shown.
+- [x] Partitions preserved; contract versions moved deliberately.
+
+### Limitations recorded rather than worked around
+
+- **No source, construction, pilot-class, replicate or exploration/validation
+  partition existed in a card aggregate before this tranche, so none had to be
+  preserved beyond the one that already did: `seat.commanderId`.** Eligibility
+  is computed _within_ each Commander's own legal pool
+  (`apps/simulator/src/analysis/aggregate.ts`'s `summarizeCards`) rather than
+  pooling every deck in the run together, which is what keeps a mixed-Commander
+  population from corrupting one Commander's denominator with another's. Adding
+  a source, construction or pilot-class breakdown _to_ card aggregates is a new
+  reading this tranche does not add — the exclusion is no new Commander
+  aggregate, and a card-level breakdown by every one of those axes would be one
+  in substance.
+- **Eligibility is `null` and `perCommander` is empty whenever the aggregated
+  population spans more than one environment.** `compareEnvironments`'
+  baseline/candidate aggregates (`apps/simulator/src/analysis/compare.ts`) have
+  no single environment to hand `aggregate()`, and neither does a full
+  comparison _experiment_'s top-level summary — `finish()`
+  (`apps/simulator/src/experiment.ts`) aggregates records from **both** arms
+  together, so it now supplies `environment` only when
+  `inputs.environments.length === 1` rather than always reading eligibility
+  from the baseline pool. An earlier draft of this tranche got that call wrong
+  — it always passed the baseline environment, which for an added or removed
+  card would have reported the wrong side's eligibility under a v8 label that
+  claims correctness — caught in review before this tranche closed, and tested
+  by `hardening-experiment.test.ts`'s "never reads card eligibility from one
+  arm's environment for the other". Neither the zero-observation fix (an
+  arithmetic correction, independent of eligibility) nor `compareCards`' own
+  reading of `winRateWhenIncluded.point` (unaffected by
+  `inclusionWinRateLift`'s new nullability) needed eligibility, so extending it
+  into the comparison path — reading each arm against its own environment — is
+  future work rather than a defect of this one.
+- **The forced-inclusion floor lives in `summary.json`'s `perCommander`
+  reading, not in `card-usage.csv` or the admin `cards` result table.** Both of
+  those stay one row per card; a floor is a property of a Commander's pool, and
+  a run with more than one Commander has more than one floor to show for a
+  single card's row. `report.md` prints the caveat and points at
+  `summary.json` rather than flattening a per-Commander number into a
+  single-Commander-shaped column.
+- **The cross-cluster inclusion view (`report.md`'s "Cross-cluster inclusion
+  _(review signal)_" strategy-coverage table and `cluster-inclusion.csv`, from
+  `apps/simulator/src/analysis/inclusion.ts`) is a different, pre-existing
+  reading and stays eligibility-blind.** Its `deckInclusionShare` and
+  `cluster_inclusion` are shares of _all_ decks in a cluster, by design (PHASE4
+  HARDENING §5's cross-strategy coverage question), not the included/excluded
+  win-rate contrast this tranche fixes. Making it Commander-eligibility-aware
+  too is a real improvement and a real scope change to a different analysis
+  module; it is not this tranche's to make, and the checklist item above
+  refers to `CardSummary`'s own fields in `aggregate.ts`, not every view that
+  mentions a card's deck share.
+- **A card no deck in the run ever included cannot produce a `CardSummary` row
+  at all**, because `everSeen`/`tallies` in `summarizeCards` are built only
+  from decks that actually ran a card — there is no deck-level signal to
+  attach a row to for one that was chosen nowhere. The "card present in none"
+  half of the milestone's result rule is therefore asserted structurally
+  (`card-inclusion.test.ts`'s "absent-card" test confirms no row, no
+  fabricated 0%, for a card legal everywhere and run nowhere) rather than as a
+  property of a row, which is the honest shape of that guarantee rather than a
+  gap in it.
 
 ## M08.13 — Commander aggregates
 

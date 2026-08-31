@@ -36,9 +36,10 @@ import { readRunIdentity } from '../run/manifest.js';
  *
  * ## Read loosely, publish exactly
  *
- * `summary.json` is `@tcg/simulator`'s document and it grows — version 7 added
- * the calibration standing, version 6 the deck construction reading — so the
- * schemas below **strip** unknown fields rather than refusing them, exactly as
+ * `summary.json` is `@tcg/simulator`'s document and it grows — version 8 added
+ * eligibility-aware card denominators and the forced-inclusion floor, version 7
+ * added the calibration standing, version 6 the deck construction reading — so
+ * the schemas below **strip** unknown fields rather than refusing them, exactly as
  * `run/manifest.ts` does and for the reason it gives: *a catalog that refused to
  * index a run because the summary had learned a new field would be refusing
  * evidence for being newer than the index.*
@@ -120,11 +121,23 @@ const matchupShape = z.object({
 const cardShape = z.object({
   definitionId: z.string(),
   decksIncluding: z.number(),
+  /**
+   * M08.12 fields. `.nullish()` — never `.nullable()` alone — because a run
+   * written before `SUMMARY_SCHEMA_VERSION` 8 never recorded eligibility at
+   * all: reading it loosely and reporting `null` ("not measured") is the same
+   * choice `calibration` above already made for the same reason.
+   */
+  eligibleDecks: z.number().nullish(),
+  inclusionAmongEligibleShare: z.number().nullish(),
   seatMatches: z.number(),
   copiesPerDeck: z.number(),
   winRateWhenIncluded: proportionShape,
   winRateWhenAbsent: proportionShape,
-  inclusionWinRateLift: z.number(),
+  /**
+   * `null` is `insufficient_data` (M08.12): the contrast this run reported no
+   * observations for, never a fabricated point difference.
+   */
+  inclusionWinRateLift: z.number().nullable(),
   drawRate: z.number(),
   playsPerDraw: z.number(),
   gamesDrawnAndPlayedShare: z.number(),
@@ -198,6 +211,20 @@ function spreadRate(key: string, rate: Proportion): ResultRow {
   };
 }
 
+/**
+ * `spreadRate`, but a zero-observation side reads `null` rather than the
+ * fabricated `{ point: 0, low: 0, high: 1 }` `proportion(0, 0)` returns
+ * (M08.12): `report.md` already prints "insufficient data" for the same cell,
+ * and a table that kept publishing a number here would disagree with its own
+ * markdown about the one thing this tranche exists to fix.
+ */
+function spreadRateOrInsufficient(key: string, rate: Proportion): ResultRow {
+  if (rate.total === 0) {
+    return { [key]: null, [`${key}Low`]: null, [`${key}High`]: null, [`${key}Games`]: 0 };
+  }
+  return spreadRate(key, rate);
+}
+
 function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
   const { run, decks, matchups, cards } = summary.aggregate;
   switch (table) {
@@ -246,6 +273,10 @@ function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
         columns: [
           column('definitionId', 'Card', 'identifier'),
           column('decksIncluding', 'Decks including', 'count'),
+          // `null` on both — read "not measured" — for a run written before
+          // the eligibility reading existed (M08.12).
+          column('eligibleDecks', 'Eligible decks', 'count'),
+          column('inclusionAmongEligibleShare', 'Inclusion among eligible', 'proportion'),
           column('seatMatches', 'Seat-matches', 'count'),
           column('copiesPerDeck', 'Copies per deck', 'number'),
           interval('winRateWhenIncluded', 'Win rate when included'),
@@ -267,10 +298,12 @@ function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
         rows: cards.map((card) => ({
           definitionId: card.definitionId,
           decksIncluding: card.decksIncluding,
+          eligibleDecks: card.eligibleDecks ?? null,
+          inclusionAmongEligibleShare: card.inclusionAmongEligibleShare ?? null,
           seatMatches: card.seatMatches,
           copiesPerDeck: card.copiesPerDeck,
-          ...spreadRate('winRateWhenIncluded', card.winRateWhenIncluded),
-          ...spreadRate('winRateWhenAbsent', card.winRateWhenAbsent),
+          ...spreadRateOrInsufficient('winRateWhenIncluded', card.winRateWhenIncluded),
+          ...spreadRateOrInsufficient('winRateWhenAbsent', card.winRateWhenAbsent),
           inclusionWinRateLift: card.inclusionWinRateLift,
           drawRate: card.drawRate,
           playsPerDraw: card.playsPerDraw,

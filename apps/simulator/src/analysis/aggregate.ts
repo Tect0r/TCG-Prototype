@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { agentClassOf } from '@tcg/bot-interface';
+import { poolFor, poolReportFor, type GenerationEnvironment } from '@tcg/deck-generator';
 import {
   DEAD_HAND_CATEGORIES,
   DEAD_IN_HAND_CATEGORIES,
@@ -104,18 +105,57 @@ export const matchupSchema = z.strictObject({
 });
 export type Matchup = z.infer<typeof matchupSchema>;
 
+/**
+ * What one Commander's legal pool says about a card (M08.12).
+ *
+ * A card is not unpopular in a deck whose Commander could never legally
+ * include it, so eligibility is read per Commander before it is read at all.
+ * `legalPoolSize` and `forcedInclusionFloor` are `poolReportFor`'s own numbers
+ * (`@tcg/deck-generator`), carried rather than recomputed, and are `null` when
+ * `eligible` is `false` — a floor is a statement about a legal pool, and has
+ * nothing to say about a card that pool does not contain.
+ */
+export const cardCommanderInclusionSchema = z.strictObject({
+  commanderId: z.string(),
+  /** Distinct decks in the run seated behind this Commander. */
+  decksUnderCommander: z.number().int().min(0),
+  eligible: z.boolean(),
+  /** Of `decksUnderCommander`, how many ran at least one copy. */
+  decksIncluding: z.number().int().min(0),
+  legalPoolSize: z.number().int().min(0).nullable(),
+  forcedInclusionFloor: z.number().int().min(0).nullable(),
+});
+export type CardCommanderInclusion = z.infer<typeof cardCommanderInclusionSchema>;
+
 export const cardSummarySchema = z.strictObject({
   definitionId: z.string(),
   /** Distinct decks in the run that ran at least one copy. */
   decksIncluding: z.number().int().min(0),
+  /**
+   * Distinct decks in the run whose Commander could legally run this card,
+   * whether or not they chose to. `null` when eligibility was not computed for
+   * this aggregation (no environment was supplied) — never a guess.
+   */
+  eligibleDecks: z.number().int().min(0).nullable(),
+  /** `decksIncluding / eligibleDecks`. `null` on the same terms as the above. */
+  inclusionAmongEligibleShare: z.number().nullable(),
+  /** Eligibility and inclusion, broken out by the Commanders this run seated. */
+  perCommander: z.array(cardCommanderInclusionSchema),
   /** Seat-matches in which the card was in the deck. */
   seatMatches: z.number().int().min(0),
   copiesPerDeck: z.number(),
 
   winRateWhenIncluded: proportionSchema,
   winRateWhenAbsent: proportionSchema,
-  /** Simple difference of the two above. A correlation, and labelled as one. */
-  inclusionWinRateLift: z.number(),
+  /**
+   * Simple difference of the two above. A correlation, and labelled as one.
+   *
+   * `null` — read as `insufficient_data` — when either comparison group has no
+   * observations. A card nobody ever left out, or nobody ever ran, has no
+   * contrast to report; treating a fabricated 0% as the other side of the
+   * comparison was the defect M08.12 fixes.
+   */
+  inclusionWinRateLift: z.number().nullable(),
 
   drawRate: z.number(),
 
@@ -192,7 +232,18 @@ export function usableRecords(records: readonly MatchRecord[]): MatchRecord[] {
 
 export function aggregate(
   records: readonly MatchRecord[],
-  options: { readonly confidence?: number } = {},
+  options: {
+    readonly confidence?: number;
+    /**
+     * Supplies the legal pool per Commander (M08.12). Omitted callers — a
+     * baseline/candidate comparison has no single environment to hand in, and
+     * the `analysis.test.ts` unit fixtures predate this field — get
+     * `eligibleDecks: null` and an empty `perCommander` rather than a guess:
+     * eligibility is either read from the format or left unstated, never
+     * assumed.
+     */
+    readonly environment?: GenerationEnvironment;
+  } = {},
 ): Aggregate {
   const confidence = options.confidence ?? 0.95;
   const all = inOrder(records);
@@ -202,7 +253,7 @@ export function aggregate(
     run: summarizeRun(all, usable, confidence),
     decks: summarizeDecks(usable, confidence),
     matchups: summarizeMatchups(usable, confidence),
-    cards: summarizeCards(usable, confidence),
+    cards: summarizeCards(usable, confidence, options.environment),
   };
 }
 
@@ -433,17 +484,66 @@ function emptyCardTally(): CardTally {
   };
 }
 
-function summarizeCards(usable: readonly MatchRecord[], confidence: number): CardSummary[] {
+/** A Commander's legal pool and forced-inclusion floor, read once per run (M08.12). */
+interface CommanderEligibility {
+  readonly legalPool: ReadonlySet<string>;
+  readonly legalPoolSize: number;
+  readonly forcedInclusionFloor: number;
+}
+
+function summarizeCards(
+  usable: readonly MatchRecord[],
+  confidence: number,
+  environment: GenerationEnvironment | undefined,
+): CardSummary[] {
   const tallies = new Map<string, CardTally>();
   /** Seat-matches in which a card was *not* in the deck, and whether they won. */
   const absence = new Map<string, { wins: number; total: number }>();
   const everSeen = new Set<string>();
+  const deckCommander = new Map<string, string>();
+  const decksByCommander = new Map<string, Set<string>>();
 
   for (const record of usable) {
     for (const card of record.cards) {
       if (card.copiesInDeck > 0) everSeen.add(card.definitionId);
     }
+    for (const seat of record.seats) {
+      deckCommander.set(seat.deckHash, seat.commanderId);
+      let decks = decksByCommander.get(seat.commanderId);
+      if (!decks) {
+        decks = new Set();
+        decksByCommander.set(seat.commanderId, decks);
+      }
+      decks.add(seat.deckHash);
+    }
   }
+
+  // Read once per Commander this run seated, never recomputed per card: the
+  // legal pool and the forced-inclusion floor are properties of the Commander
+  // and the format, not of any one card (M08.12).
+  const eligibility = new Map<string, CommanderEligibility>();
+  if (environment) {
+    for (const commanderId of decksByCommander.keys()) {
+      const commander = environment.database.get(commanderId);
+      if (!commander) continue;
+      const report = poolReportFor(environment, commander);
+      eligibility.set(commanderId, {
+        legalPool: new Set(poolFor(environment, commander).map((card) => card.id)),
+        legalPoolSize: report.legalPoolSize,
+        forcedInclusionFloor: report.forcedInclusionFloor,
+      });
+    }
+  }
+  // Two different defaults for two different situations, never conflated:
+  // no `environment` at all means eligibility was not computed and every seat
+  // counts as before (`true`, unconditionally); an `environment` that does not
+  // recognise a Commander this run seated is eligibility that could not be
+  // read, so it defaults closed (`false`) — the same default `perCommander`
+  // below uses for the same case, so the two never disagree about one row.
+  const isEligible = (commanderId: string, definitionId: string): boolean => {
+    if (!environment) return true;
+    return eligibility.get(commanderId)?.legalPool.has(definitionId) ?? false;
+  };
 
   for (const record of usable) {
     for (const seat of record.seats) {
@@ -454,6 +554,12 @@ function summarizeCards(usable: readonly MatchRecord[], confidence: number): Car
 
       for (const definitionId of [...everSeen].sort()) {
         if (included.has(definitionId)) continue;
+        // A deck whose Commander could never legally run this card is not
+        // choosing to leave it out, so it is not a contrast the "absent" side
+        // may count (M08.12's eligibility-aware denominator). `isEligible`
+        // defaults open only when no environment was supplied at all — see its
+        // definition above.
+        if (!isEligible(seat.commanderId, definitionId)) continue;
         const tally = absence.get(definitionId) ?? { wins: 0, total: 0 };
         tally.total += 1;
         if (seat.won) tally.wins += 1;
@@ -516,14 +622,59 @@ function summarizeCards(usable: readonly MatchRecord[], confidence: number): Car
       const per = (value: number): number =>
         tally.seatMatches === 0 ? 0 : round(value / tally.seatMatches, 3);
 
+      const perCommander: CardCommanderInclusion[] = environment
+        ? [...decksByCommander.entries()]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([commanderId, decks]) => {
+              const commanderEligibility = eligibility.get(commanderId) ?? null;
+              const eligible = commanderEligibility?.legalPool.has(definitionId) ?? false;
+              const decksIncludingUnderCommander = [...tally.decks].filter(
+                (deckHash) => deckCommander.get(deckHash) === commanderId,
+              ).length;
+              return {
+                commanderId,
+                decksUnderCommander: decks.size,
+                eligible,
+                decksIncluding: decksIncludingUnderCommander,
+                legalPoolSize: eligible ? (commanderEligibility?.legalPoolSize ?? null) : null,
+                forcedInclusionFloor: eligible
+                  ? (commanderEligibility?.forcedInclusionFloor ?? null)
+                  : null,
+              };
+            })
+        : [];
+      const eligibleEntries = perCommander.filter((entry) => entry.eligible);
+      const eligibleDecks = environment
+        ? eligibleEntries.reduce((sum, entry) => sum + entry.decksUnderCommander, 0)
+        : null;
+      // The numerator is drawn from the same eligible entries as the
+      // denominator — never `tally.decks.size` (every deck that ran the card,
+      // eligible or not) — so the two sides describe the same population and
+      // the share cannot exceed 1 (M08.12).
+      const inclusionAmongEligibleShare =
+        eligibleDecks === null || eligibleDecks === 0
+          ? null
+          : round(
+              eligibleEntries.reduce((sum, entry) => sum + entry.decksIncluding, 0) / eligibleDecks,
+              4,
+            );
+      // Zero observations are not a zero win rate (M08.12): a contrast where
+      // either side never played is `insufficient_data`, never a fabricated
+      // point difference.
+      const inclusionWinRateLift =
+        included.total === 0 || absent.total === 0 ? null : round(included.point - absent.point);
+
       return {
         definitionId,
         decksIncluding: tally.decks.size,
+        eligibleDecks,
+        inclusionAmongEligibleShare,
+        perCommander,
         seatMatches: tally.seatMatches,
         copiesPerDeck: per(tally.copies),
         winRateWhenIncluded: rounded(included),
         winRateWhenAbsent: rounded(absent),
-        inclusionWinRateLift: round(included.point - absent.point),
+        inclusionWinRateLift,
         drawRate: tally.copies === 0 ? 0 : round(tally.drawn / tally.copies, 3),
         playsPerDraw: tally.drawn === 0 ? 0 : round(tally.played / tally.drawn, 3),
         drawnCopyPlayConversion:

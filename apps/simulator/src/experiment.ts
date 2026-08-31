@@ -133,8 +133,15 @@ export const MANIFEST_SCHEMA_VERSION = 8;
  * - 7 (M05.6): the calibration standing, so "this is not a balance verdict" is a
  *   machine-readable field a downstream tool can refuse to publish on rather
  *   than a sentence in the prose.
+ * - 8 (M08.12): every card reading carries eligibility — `eligibleDecks`,
+ *   `inclusionAmongEligibleShare` and a `perCommander` breakdown against each
+ *   Commander's own legal pool and forced-inclusion floor — and
+ *   `inclusionWinRateLift` is nullable, read as `insufficient_data` when either
+ *   comparison group never played. Not migratable from v7: a v7 run never
+ *   recorded which decks were eligible for a card, so there is no eligibility
+ *   to backfill, only one to compute forward from raw records.
  */
-export const SUMMARY_SCHEMA_VERSION = 7;
+export const SUMMARY_SCHEMA_VERSION = 8;
 
 export interface RunExperimentOptions {
   readonly configPath?: string;
@@ -1033,7 +1040,7 @@ async function runRobustnessExperiment(
   );
 
   const perProfile = arms.map((arm) => {
-    const agg = aggregate(arm.records, { confidence: config.analysis.confidence });
+    const agg = aggregate(arm.records, { confidence: config.analysis.confidence, environment });
     const clustering = clusterDecks(resolved.decks, environment.database, arm.records, {
       confidence: config.analysis.confidence,
     });
@@ -1138,7 +1145,18 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
     inputs.primaryArm === undefined ? allRecords : inputs.store.arm(inputs.primaryArm);
 
   const settings = config.analysis;
-  const agg = aggregate(records, { confidence: settings.confidence });
+  // Eligibility is read from exactly one environment's legal pool (M08.12), so
+  // it is only supplied when the aggregated population came from exactly one:
+  // a comparison's records span *two* environments (`inputs.environments`
+  // holds baseline and candidate), and reading eligibility from `primary`
+  // alone would silently apply the wrong Commander's pool to the other arm's
+  // decks — the exact defect this tranche exists to fix, reintroduced from the
+  // other direction. `eligibleDecks`/`perCommander` stay "not computed" for a
+  // comparison, honestly, rather than guessed from one of its two pools.
+  const agg = aggregate(records, {
+    confidence: settings.confidence,
+    ...(inputs.environments.length === 1 ? { environment: primary } : {}),
+  });
   // Over `allRecords`, unlike every other analysis here: a match that hit the
   // turn limit is the strongest stall candidate in a batch and usually holds its
   // widest board, so excluding abnormal matches would bias the one question board
@@ -1533,10 +1551,14 @@ function finish(inputs: FinishInputs): ExperimentOutcome {
   writeCsv(paths.cardUsage, agg.cards, [
     { header: 'card_id', value: (row) => row.definitionId },
     { header: 'decks_including', value: (row) => row.decksIncluding },
+    { header: 'eligible_decks', value: (row) => row.eligibleDecks },
+    { header: 'inclusion_among_eligible_share', value: (row) => row.inclusionAmongEligibleShare },
     { header: 'seat_matches', value: (row) => row.seatMatches },
     { header: 'copies_per_deck', value: (row) => row.copiesPerDeck },
     { header: 'win_rate_included', value: (row) => row.winRateWhenIncluded.point },
+    { header: 'win_rate_included_games', value: (row) => row.winRateWhenIncluded.total },
     { header: 'win_rate_absent', value: (row) => row.winRateWhenAbsent.point },
+    { header: 'win_rate_absent_games', value: (row) => row.winRateWhenAbsent.total },
     { header: 'inclusion_lift', value: (row) => row.inclusionWinRateLift },
     { header: 'draw_rate', value: (row) => row.drawRate },
     { header: 'plays_per_draw', value: (row) => row.playsPerDraw },

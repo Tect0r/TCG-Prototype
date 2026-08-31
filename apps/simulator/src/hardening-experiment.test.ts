@@ -447,6 +447,29 @@ describe('every experiment kind streams to a resumable matches.jsonl', () => {
     expect(new Set(records.map((record) => record.matchId)).size).toBe(records.length);
   }, 240_000);
 
+  it('never reads card eligibility from one arm’s environment for the other (M08.12)', async () => {
+    // A comparison's records span *two* environments (baseline and candidate),
+    // so `finish()` must not hand the top-level `aggregate()` call a single
+    // environment to read eligibility from — that would silently apply one
+    // arm's legal pool to the other arm's decks, exactly the "eligibility
+    // computed against the wrong Commander" defect M08.12 exists to fix.
+    // Eligibility stays honestly "not computed" for a comparison instead.
+    const dir = tempDir();
+    await runExperiment(comparison(), { outputDir: dir });
+    const summary = JSON.parse(readFileSync(experimentPaths(dir).summary, 'utf8'));
+    const cards: readonly {
+      readonly definitionId: string;
+      readonly decksIncluding: number;
+      readonly eligibleDecks: number | null;
+      readonly perCommander: readonly unknown[];
+    }[] = summary.aggregate.cards;
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      expect(card.eligibleDecks).toBeNull();
+      expect(card.perCommander).toEqual([]);
+    }
+  }, 240_000);
+
   it('labels each search generation and each robustness profile as its own arm', async () => {
     const searchDir = tempDir();
     await runExperiment(search(), { outputDir: searchDir });

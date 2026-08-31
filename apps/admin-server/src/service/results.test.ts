@@ -431,4 +431,71 @@ describe('a result table', () => {
     expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(unwrap(decodeRowCursor(token))).toBe(50);
   });
+
+  describe('the cards table (M08.12)', () => {
+    it('reads an undefined contrast as insufficient_data, never a fabricated lift', async () => {
+      // `card_one`'s fixture is exactly the pre-M08.12 defect: an absent group
+      // with zero observations paired with a fabricated lift of `0`. The reader
+      // must not repeat that arithmetic — it passes through whatever
+      // `summary.json` actually reports, which for a run written before
+      // `SUMMARY_SCHEMA_VERSION` 8 never recorded eligibility at all.
+      const jobId = await seedRun();
+      const table = unwrap(await reader.readTable(jobId, 'cards', page));
+      const row = table.rows.find((entry) => entry.definitionId === 'card_one');
+      expect(row?.eligibleDecks ?? null).toBeNull();
+      expect(row?.inclusionAmongEligibleShare ?? null).toBeNull();
+      expect(table.columns.map((column) => column.key)).toContain('eligibleDecks');
+      expect(table.columns.map((column) => column.key)).toContain('inclusionAmongEligibleShare');
+    });
+
+    it('carries a null lift and populated eligibility from a v8 summary', async () => {
+      const base = summaryDocument().aggregate as Record<string, unknown>;
+      const jobId = await seedRun({
+        summary: summaryDocument({
+          schemaVersion: 8,
+          aggregate: {
+            ...base,
+            cards: [
+              {
+                definitionId: 'card_universal',
+                decksIncluding: 2,
+                eligibleDecks: 2,
+                inclusionAmongEligibleShare: 1,
+                perCommander: [
+                  {
+                    commanderId: 'cmd_bastion',
+                    decksUnderCommander: 2,
+                    eligible: true,
+                    decksIncluding: 2,
+                    legalPoolSize: 41,
+                    forcedInclusionFloor: 38,
+                  },
+                ],
+                seatMatches: 30,
+                copiesPerDeck: 1,
+                winRateWhenIncluded: rate(0.5, 30),
+                winRateWhenAbsent: rate(0.5, 0),
+                inclusionWinRateLift: null,
+                drawRate: 0.4,
+                playsPerDraw: 0.9,
+                gamesDrawnAndPlayedShare: 0.8,
+                gamesDrawn: 12,
+                activationsPerMatch: 0.3,
+                averageEnergySpent: 2.1,
+                deadInHandShare: 0.1,
+                mechanicallyUnusableShare: 0.05,
+                strategicallyUnusedShare: 0.05,
+                removalRate: 0.2,
+              },
+            ],
+          },
+        }),
+      });
+      const table = unwrap(await reader.readTable(jobId, 'cards', page));
+      const row = table.rows.find((entry) => entry.definitionId === 'card_universal');
+      expect(row?.inclusionWinRateLift).toBeNull();
+      expect(row?.eligibleDecks).toBe(2);
+      expect(row?.inclusionAmongEligibleShare).toBe(1);
+    });
+  });
 });

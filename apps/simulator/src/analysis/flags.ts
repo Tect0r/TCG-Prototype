@@ -599,6 +599,9 @@ function cardFlags(inputs: FlagInputs): Flag[] {
     }
 
     if (
+      // `null` is `insufficient_data` (M08.12): a card nobody ever left out, or
+      // nobody ever ran, has no contrast to raise a flag from.
+      card.inclusionWinRateLift !== null &&
       card.inclusionWinRateLift >= settings.autoIncludeWinRateLift &&
       card.winRateWhenIncluded.low > card.winRateWhenAbsent.point
     ) {

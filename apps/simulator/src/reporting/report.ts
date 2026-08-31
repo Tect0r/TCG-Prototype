@@ -81,8 +81,15 @@ import { round } from '../analysis/stats.js';
  * Version 8 (M05.6): every batch opens with its calibration standing — whether
  * the run is an instrument reading or a balance conclusion — derived from the
  * agent classes that flew it and stated before anything it might be mistaken for.
+ *
+ * Version 9 (M08.12): the Cards section's `Decks` cell reads `included/eligible`
+ * rather than a bare count when eligibility was computed, and `With`, `Without`
+ * and `Lift` may now read `insufficient data` instead of a fabricated rate or
+ * difference. A reader that parsed the old cell shapes would misread the new
+ * ones, so the version moves for the same reason `SUMMARY_SCHEMA_VERSION` does
+ * even though nothing here is machine-parsed today.
  */
-export const REPORT_SCHEMA_VERSION = 8;
+export const REPORT_SCHEMA_VERSION = 9;
 
 export interface ReportPilot {
   readonly id: string;
@@ -1369,12 +1376,22 @@ function cards(inputs: ReportInputs): string[] {
       'ever played, and the share of games where a drawn card was also played.',
   );
   lines.push('');
+  lines.push(
+    '**Zero observations are not a zero win rate.** A card nobody ever left out of a deck, or ' +
+      'nobody ever ran, has no contrast to report — `With`, `Without` or `Lift` reads `insufficient ' +
+      'data` rather than a fabricated rate or a manufactured zero. `Decks` reads `included/eligible` ' +
+      'when eligibility was computed: the denominator is the decks whose Commander could legally ' +
+      "run the card, not every deck in the run, so a card is never read as unpopular in a Commander's " +
+      'deck that could never have included it.',
+  );
+  lines.push('');
 
   const reported = [...agg.cards]
     .filter((card) => card.seatMatches >= settings.minMatchesPerCard)
     .sort(
       (left, right) =>
-        right.inclusionWinRateLift - left.inclusionWinRateLift ||
+        (right.inclusionWinRateLift ?? Number.NEGATIVE_INFINITY) -
+          (left.inclusionWinRateLift ?? Number.NEGATIVE_INFINITY) ||
         left.definitionId.localeCompare(right.definitionId),
     )
     .slice(0, TABLE_LIMIT);
@@ -1392,12 +1409,36 @@ function cards(inputs: ReportInputs): string[] {
   );
   lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const card of reported) {
+    const decksCell =
+      card.eligibleDecks === null
+        ? String(card.decksIncluding)
+        : `${card.decksIncluding}/${card.eligibleDecks}`;
+    const includedCell =
+      card.winRateWhenIncluded.total === 0
+        ? 'insufficient data'
+        : pct(card.winRateWhenIncluded.point);
+    const absentCell =
+      card.winRateWhenAbsent.total === 0 ? 'insufficient data' : pct(card.winRateWhenAbsent.point);
+    const liftCell =
+      card.inclusionWinRateLift === null ? 'insufficient data' : pts(card.inclusionWinRateLift);
     lines.push(
-      `| \`${card.definitionId}\` | ${card.decksIncluding} | ${card.seatMatches} | ` +
-        `${pct(card.winRateWhenIncluded.point)} | ${pct(card.winRateWhenAbsent.point)} | ` +
-        `${pts(card.inclusionWinRateLift)} | ${ratio(card.playsPerDraw)} | ` +
+      `| \`${card.definitionId}\` | ${decksCell} | ${card.seatMatches} | ` +
+        `${includedCell} | ${absentCell} | ${liftCell} | ${ratio(card.playsPerDraw)} | ` +
         `${card.drawnCopyPlayConversion === null ? 'unavailable' : pct(card.drawnCopyPlayConversion)} | ` +
         `${pct(card.gamesDrawnAndPlayedShare)} | ${pct(card.deadInHandShare)} |`,
+    );
+  }
+
+  const flooredEntries = reported
+    .flatMap((card) => card.perCommander.map((entry) => ({ card: card.definitionId, entry })))
+    .filter(({ entry }) => entry.eligible && (entry.forcedInclusionFloor ?? 0) > 0);
+  if (flooredEntries.length > 0) {
+    lines.push('');
+    lines.push(
+      'A card that appears in nearly every deck under a Commander may be there because the legal ' +
+        'pool is barely larger than a legal deck, not because anything chose it. The forced-inclusion ' +
+        "floor — copies any two legal decks under that Commander must share — is in `summary.json`'s " +
+        '`perCommander` reading for every card above; read inclusion against it, never on its own.',
     );
   }
 
