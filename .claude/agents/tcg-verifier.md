@@ -85,4 +85,3 @@ or
 
 Only `VERIFICATION: PASS` permits the Opus quality gate to approve a milestone
 tranche.
-

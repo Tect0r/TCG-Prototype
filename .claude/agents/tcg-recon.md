@@ -81,4 +81,3 @@ blocking question and stop rather than answering it.
 
 Give the Sonnet main session a short ordered sequence contained entirely inside
 this tranche. Explicitly name what must not be started.
-

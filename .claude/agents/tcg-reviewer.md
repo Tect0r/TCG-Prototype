@@ -110,4 +110,3 @@ Finish with exactly one line:
 or
 
 `VERDICT: CHANGES REQUIRED`
-
