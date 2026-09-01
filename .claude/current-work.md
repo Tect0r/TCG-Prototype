@@ -150,6 +150,82 @@ typechecks clean. Tranche-close gates (`check:consistency`, `audit:check`,
 `verify`) and `tcg-reviewer` are deferred to M08.17D, per this milestone's
 work-slice split.
 
-Current unit: **M08.17D — Tranche close**
-([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0817--adaptive-evaluation-and-promotion-loop)).
+M08.17D is done pending review: revalidated the combined M08.17 tranche diff
+(`block.ts`, `evaluate.ts`, `promote.ts` and their tests, plus the
+`apps/simulator` barrel export) against this milestone's acceptance list —
+block boundary, deterministic promotion/rollback/tie-breaking, moving-opponent
+staleness, exact-budget shortfall reporting, and series-versus-screening
+evidence separation all present. `npm run verify` first failed at
+`format:check` on 2 unformatted files (`evaluate.ts`, `evaluate.test.ts`); ran
+`prettier --write` on exactly those 2 files, no behavior change. `npm run
+check:consistency`, `npm run audit:check` and `npm run verify` all pass clean
+(215 test files, 4466 tests, typecheck, lint, format, content validation,
+build). Marked M08.17D and the M08.17 checklist complete in the milestone
+file. Root status row's "Next tranche" column left at `M08.17A` rather than
+advanced to `M08.18A`, per CLAUDE.md: the tranche is not marked complete and
+its successor is not named until `tcg-reviewer` returns `VERDICT: APPROVE`.
+
+`tcg-reviewer` returned **`VERDICT: CHANGES REQUIRED`** over the M08.17 commit
+range (`a1af30d..HEAD`) plus the close-record diff, with one HIGH blocking
+finding: `decideAdaptivePromotion`'s moving-opponent staleness filter
+(`apps/simulator/src/adaptive/promote.ts`) used
+`opponentMatches.some((match) => match.opponentDeckHash !== ...)`, which is
+`false` — not stale — for a candidate with **zero** `opponentMatches`. That
+shape is schema-legal and reachable (`blockSize: 1` with `referenceFieldShare`
+≥ 0.5, or `referenceFieldShare: 1`, spends the whole round's budget on the
+reference field, per `./evaluate.ts`'s `fieldPerOrientation` split), so a
+`meta_aware` candidate that was never screened against the current opponent
+at all could be promoted purely on reference-field wins — exactly the
+"promoted from evidence that no longer describes the opponent" failure this
+guard exists to prevent.
+
+Fixed: the staleness filter now also treats an empty `opponentMatches` as
+stale (`evaluate.screening.opponentMatches.length === 0 || ...`), with the
+`stale` decision's reason text updated to name both causes ("screened against
+a different opponent revision, or scheduled zero opponent games this round").
+Updated the file's top-of-file doc comment to state this explicitly. Added a
+focused regression test in `promote.test.ts` (`blockSize: 1`,
+`referenceFieldShare: 1`, one reference-field deck) asserting zero
+`opponentMatches` are produced and the candidate is refused as `stale`. The
+full `apps/simulator/src/adaptive` suite (144 tests, was 143) and
+`apps/simulator` typecheck pass.
+
+The review's three LOW findings and two residual-risk notes are non-blocking
+and recorded here for the tranches that touch this code next, unfixed in this
+close per CLAUDE.md's two-cycle/no-scope-widening rule:
+
+- `block.ts`'s header comment overstates "never adapt from one isolated loss"
+  as type-level when `blockSize: 1` + `mirrorSeats: false` makes one block one
+  game; qualify the comment (or add a schema refinement) next time this file
+  is touched.
+- `selectReferenceField` (`evaluate.ts`) can silently return fewer decks than
+  the field share asks for if its bounded rotation (`deduped.length * 4`
+  draws) runs out before finding `wanted` distinct decks from a pool large
+  enough to supply them; add a deterministic fallback scan next time this file
+  is touched.
+- `tallyGroup` (`evaluate.ts`) attributes every decisive game to the candidate
+  when the candidate and opponent decks share a hash (e.g. a generation-0
+  mirror); document the precondition or refuse same-hash screening next time
+  this file is touched.
+- Residual, not defects: `scheduleAdaptiveCandidateScreening`'s games are not
+  gated against `totalLearningBudget` (only `scheduleAdaptiveBlock` checks
+  `gamesRemaining`) — legitimately an orchestrator concern with no orchestrator
+  slice yet; must close when M08.18 wires the loop or "budget honoured
+  exactly" becomes untrue at run level. `adaptivePromotionScore` pools
+  opponent and field games into one Wilson interval under `meta_aware`
+  (deliberate, documented), an unvalidated balance assumption to revisit once
+  real adaptive runs exist.
+
+Re-ran `npm run check:consistency`, `npm run audit:check` and `npm run
+verify` after the fix: all pass clean (215 test files, 4467 tests, typecheck,
+lint, format, content validation, build).
+
+`tcg-reviewer`'s bounded recheck confirmed the fix closes the vacuous-`some`
+scenario without breaking the fresh-candidate path (4467 tests, +1) and
+returned **`VERDICT: APPROVE`**.
+
+M08.17 tranche-close record committed and pushed. M08.17 is complete.
+
+Current unit: **M08.18A**
+([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0818--adaptive-checkpointing-final-validation-and-raw-report)).
 Not started.

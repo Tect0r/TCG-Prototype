@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { makeDeck, type SimDeck } from '@tcg/deck-generator';
 import { tinyEnvironment, VALUE_PILOT } from '../test-fixtures.js';
-import { adaptiveRevisionSeedPath, makeAdaptiveRevision, type AdaptiveRevision } from './revision.js';
+import {
+  adaptiveRevisionSeedPath,
+  makeAdaptiveRevision,
+  type AdaptiveRevision,
+} from './revision.js';
 import type { AdaptiveConfig } from './config.js';
 import {
   adaptiveObjectiveOf,
@@ -156,11 +160,13 @@ describe('scheduleAdaptiveCandidateScreening', () => {
       expect(entry.seedPath.startsWith(candidate.seedPath)).toBe(true);
     }
     expect(
-      screening.opponentMatches.every((entry) => entry.opponentDeckHash === input.opponentDeck.hash),
+      screening.opponentMatches.every(
+        (entry) => entry.opponentDeckHash === input.opponentDeck.hash,
+      ),
     ).toBe(true);
-    expect(
-      screening.fieldMatches.every((entry) => entry.opponentDeckHash === field[0]!.hash),
-    ).toBe(true);
+    expect(screening.fieldMatches.every((entry) => entry.opponentDeckHash === field[0]!.hash)).toBe(
+      true,
+    );
   });
 
   it('is deterministic: identical input produces an identical schedule', () => {
@@ -169,7 +175,9 @@ describe('scheduleAdaptiveCandidateScreening', () => {
       config: baseConfig({ blockSize: 6, mirrorSeats: true, referenceFieldShare: 0.5 }),
       referenceField: field,
     });
-    expect(scheduleAdaptiveCandidateScreening(input)).toEqual(scheduleAdaptiveCandidateScreening(input));
+    expect(scheduleAdaptiveCandidateScreening(input)).toEqual(
+      scheduleAdaptiveCandidateScreening(input),
+    );
   });
 
   it('doubles both groups across mirrored seat orientations', () => {
@@ -194,7 +202,10 @@ describe('tallyAdaptiveScreening', () => {
     const screening = scheduleAdaptiveCandidateScreening(input);
     const results = [
       { matchId: screening.opponentMatches[0]!.match.matchId, winnerDeckHash: candidate.deck.hash },
-      { matchId: screening.opponentMatches[1]!.match.matchId, winnerDeckHash: input.opponentDeck.hash },
+      {
+        matchId: screening.opponentMatches[1]!.match.matchId,
+        winnerDeckHash: input.opponentDeck.hash,
+      },
       // the third match is left out of `results` entirely to exercise noResult.
     ];
     const tallies = tallyAdaptiveScreening(screening, candidate.deck.hash, results);

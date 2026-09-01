@@ -3306,16 +3306,27 @@ tests.
       order-independently without ever reading candidate-screening evidence;
       full `apps/simulator/src/adaptive` suite (143 tests) and `apps/simulator`
       typecheck pass. Tranche-close gates deferred to M08.17D.
-- [ ] **M08.17D — Tranche close.** Prove block boundaries, ties, promotion,
+- [x] **M08.17D — Tranche close.** Prove block boundaries, ties, promotion,
       rollback, moving opponents, exact budget and deterministic replay through the
       standard tranche-close gate. Do not add checkpointing, final validation or UI.
+      Verified: revalidated the combined M08.17A–C diff (`block.ts`,
+      `evaluate.ts`, `promote.ts` and their tests, plus the `apps/simulator`
+      barrel export) against this milestone's acceptance list — block boundary,
+      deterministic promotion/rollback/tie-breaking, moving-opponent staleness,
+      exact-budget shortfall reporting, and series-versus-screening evidence
+      separation all present. `npm run verify` first failed at `format:check`
+      on 2 unformatted files (`evaluate.ts`, `evaluate.test.ts`); ran
+      `prettier --write` on exactly those 2 files, no behavior change.
+      `npm run check:consistency`, `npm run audit:check` and `npm run verify`
+      then all pass clean (215 test files, 4466 tests, typecheck, lint,
+      format, content validation, build).
 
 ### Checklist
 
-- [ ] Block is the decision unit; single losses never adapt.
-- [ ] Deterministic promotion, rollback and tie-breaking.
-- [ ] Series wins recorded separately from candidate screening.
-- [ ] Budget honoured exactly, or the shortfall explained.
+- [x] Block is the decision unit; single losses never adapt.
+- [x] Deterministic promotion, rollback and tie-breaking.
+- [x] Series wins recorded separately from candidate screening.
+- [x] Budget honoured exactly, or the shortfall explained.
 
 ## M08.18 — Adaptive checkpointing, final validation and raw report
 

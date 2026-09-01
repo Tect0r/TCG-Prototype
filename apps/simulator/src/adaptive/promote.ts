@@ -34,7 +34,12 @@ import type { AdaptiveRevision } from './revision.js';
  *   opponent revision handed in now, and refuses to promote *anything* this
  *   round when even one candidate's evidence was collected against a
  *   different deck — that candidate has to be re-screened against the
- *   current opponent, never promoted on stale evidence.
+ *   current opponent, never promoted on stale evidence. A candidate with zero
+ *   `opponentMatches` (reachable when `referenceFieldShare` leaves no budget
+ *   for opponent games this round, `./evaluate.ts`) is treated the same way:
+ *   it has no evidence describing the current opponent at all, so it is
+ *   named stale rather than silently qualifying on reference-field wins
+ *   alone.
  */
 
 export interface AdaptiveSeriesEntry {
@@ -149,10 +154,12 @@ export function decideAdaptivePromotion(
   const { incumbent, opponentRevision, candidates } = input;
 
   const staleRevisionIds = candidates
-    .filter((evidence) =>
-      evidence.screening.opponentMatches.some(
-        (match) => match.opponentDeckHash !== opponentRevision.deck.hash,
-      ),
+    .filter(
+      (evidence) =>
+        evidence.screening.opponentMatches.length === 0 ||
+        evidence.screening.opponentMatches.some(
+          (match) => match.opponentDeckHash !== opponentRevision.deck.hash,
+        ),
     )
     .map((evidence) => evidence.candidate.revisionId)
     .sort();
@@ -161,8 +168,9 @@ export function decideAdaptivePromotion(
       kind: 'stale',
       staleRevisionIds,
       reason:
-        `${String(staleRevisionIds.length)} candidate(s) were screened against an opponent ` +
-        `revision other than the current opponent ${opponentRevision.revisionId}; re-screen ` +
+        `${String(staleRevisionIds.length)} candidate(s) have no screening evidence against the ` +
+        `current opponent ${opponentRevision.revisionId} (screened against a different opponent ` +
+        'revision, or scheduled zero opponent games this round); re-screen ' +
         `${staleRevisionIds.length === 1 ? 'it' : 'them'} against the current opponent before ` +
         'promotion can be decided.',
     };

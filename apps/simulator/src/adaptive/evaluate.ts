@@ -249,7 +249,9 @@ export function tallyAdaptiveScreening(
   candidateDeckHash: string,
   results: readonly AdaptiveScreeningResult[],
 ): AdaptiveScreeningTallies {
-  const resultsByMatchId = new Map(results.map((result) => [result.matchId, result.winnerDeckHash]));
+  const resultsByMatchId = new Map(
+    results.map((result) => [result.matchId, result.winnerDeckHash]),
+  );
   return {
     opponent: tallyGroup(screening.opponentMatches, candidateDeckHash, resultsByMatchId),
     field:

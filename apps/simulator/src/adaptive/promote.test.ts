@@ -296,6 +296,36 @@ describe('decideAdaptivePromotion', () => {
     expect(decision.kind === 'stale' && decision.staleRevisionIds).toEqual([stale.revisionId]);
   });
 
+  it('refuses to decide when a candidate has zero opponent-screening matches', () => {
+    // blockSize 1 + referenceFieldShare 1 spends this round's entire budget on
+    // the reference field, leaving no opponent games at all — a candidate in
+    // this shape has no evidence describing the current opponent, and must be
+    // named stale rather than silently qualifying on field wins alone.
+    const fieldOnly = revision('field-only-candidate', deck('field-only-candidate'));
+    const screening = scheduleAdaptiveCandidateScreening({
+      environment,
+      config: baseConfig({ blockSize: 1, mirrorSeats: false, referenceFieldShare: 1 }),
+      candidate: fieldOnly,
+      block: 0,
+      opponentDeck: opponentRevision.deck,
+      referenceField: [deck('field-only-deck', 5)],
+      pilots: [VALUE_PILOT],
+    });
+    expect(screening.opponentMatches).toHaveLength(0);
+    const evidence: AdaptiveCandidateEvidence = {
+      candidate: fieldOnly,
+      screening,
+      tallies: { opponent: tally(0, 0), field: tally(9, 1) },
+    };
+    const decision = decideAdaptivePromotion({
+      incumbent,
+      opponentRevision,
+      candidates: [evidence],
+    });
+    expect(decision.kind).toBe('stale');
+    expect(decision.kind === 'stale' && decision.staleRevisionIds).toEqual([fieldOnly.revisionId]);
+  });
+
   it('refuses the whole decision if even one of several candidates is stale', () => {
     const fresh = revision('fresh-candidate', deck('fresh-candidate'));
     const stale = revision('stale-candidate-2', deck('stale-candidate-2'));
