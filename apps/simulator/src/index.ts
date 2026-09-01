@@ -473,3 +473,14 @@ export {
   type AdaptiveScreeningTallies,
   type AdaptiveScreeningTally,
 } from './adaptive/evaluate.js';
+
+export {
+  adaptivePromotionScore,
+  decideAdaptivePromotion,
+  tallyAdaptiveSeries,
+  type AdaptiveCandidateEvidence,
+  type AdaptivePromotionDecision,
+  type AdaptiveSeriesEntry,
+  type AdaptiveSeriesTally,
+  type DecideAdaptivePromotionInput,
+} from './adaptive/promote.js';

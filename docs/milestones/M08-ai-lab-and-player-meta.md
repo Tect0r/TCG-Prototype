@@ -3291,10 +3291,21 @@ tests.
       `field` left `null` when no reference-field games were scheduled; full
       `apps/simulator/src/adaptive` suite (130 tests) and `apps/simulator`
       typecheck pass. Tranche-close gates deferred to M08.17D.
-- [ ] **M08.17C — Promotion, rollback and moving opponents.** Select and promote
+- [x] **M08.17C — Promotion, rollback and moving opponents.** Select and promote
       deterministically, retain or roll back on recorded evidence, re-evaluate after
       an opponent revision moves, and keep cumulative series wins separate from
       candidate-screening evidence.
+      Verified: 13 focused tests in `apps/simulator/src/adaptive/promote.test.ts`
+      covering deterministic promotion of the highest-scoring decisively-winning
+      candidate with a `revisionId` tie-break independent of array order,
+      incumbent retention on a tie and on zero available candidates, `stale`
+      refusal (naming every affected `revisionId`) when a candidate's recorded
+      `opponentDeckHash` no longer matches the current opponent revision's deck
+      — including when only one of several candidates is stale — and
+      `tallyAdaptiveSeries` summing `./block.ts` block decisions
+      order-independently without ever reading candidate-screening evidence;
+      full `apps/simulator/src/adaptive` suite (143 tests) and `apps/simulator`
+      typecheck pass. Tranche-close gates deferred to M08.17D.
 - [ ] **M08.17D — Tranche close.** Prove block boundaries, ties, promotion,
       rollback, moving opponents, exact budget and deterministic replay through the
       standard tranche-close gate. Do not add checkpointing, final validation or UI.

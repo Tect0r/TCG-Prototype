@@ -118,6 +118,38 @@ reports no issues on the changed files, and `apps/simulator` typechecks clean.
 Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
 `tcg-reviewer` are deferred to M08.17D, per this milestone's work-slice split.
 
-Current unit: **M08.17C — Promotion, rollback and moving opponents**
+M08.17C is implemented: candidate promotion, incumbent retention/rollback and
+moving-opponent staleness refusal, in `apps/simulator/src/adaptive/promote.ts`,
+wired into the simulator's barrel export. `decideAdaptivePromotion` selects and
+promotes the highest-scoring candidate that decisively beat the opponent
+(strictly more decisive wins than losses across the groups its objective
+counts — the same "tie is not a win" rule `decideAdaptiveBlock` applies to a
+whole block, restated for one candidate's screening), ranked on the Wilson
+lower bound and tie-broken deterministically by `revisionId`; zero qualifying
+candidates — including zero candidates at all — retains the incumbent with an
+explained reason rather than an arbitrary promotion. Before any of that, every
+candidate's recorded `opponentDeckHash` (M08.17B) is checked against the
+opponent revision handed in now: if even one candidate was screened against a
+different deck, the opponent has moved since, and the whole decision is
+refused as `stale` — naming every affected `revisionId` for re-screening —
+rather than promoting on evidence that no longer describes the opponent it
+would be promoted over. `adaptivePromotionScore` reads only the opponent group
+under `pure_counter` (and any `meta_aware` screening that fell back to
+opponent-only play because its reference field was empty); a `meta_aware`
+screening with field games combines both groups into one pool, matching how
+`scheduleAdaptiveCandidateScreening` already spent one shared game budget
+across them. `tallyAdaptiveSeries` sums a run's cumulative `./block.ts` block
+decisions order-independently and never reads an `AdaptiveCandidateScreening`;
+`decideAdaptivePromotion` never reads a series entry — the two evidence
+streams stay on separate types so a promotion decision can never be justified
+by cumulative series wins. 13 focused tests in
+`apps/simulator/src/adaptive/promote.test.ts` pass, the full
+`apps/simulator/src/adaptive` suite (143 tests) passes, `eslint` and
+`prettier --check` report no issues on the changed files, and `apps/simulator`
+typechecks clean. Tranche-close gates (`check:consistency`, `audit:check`,
+`verify`) and `tcg-reviewer` are deferred to M08.17D, per this milestone's
+work-slice split.
+
+Current unit: **M08.17D — Tranche close**
 ([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0817--adaptive-evaluation-and-promotion-loop)).
 Not started.
