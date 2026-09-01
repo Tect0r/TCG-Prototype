@@ -93,9 +93,31 @@ typechecks clean. Tranche-close gates (`check:consistency`, `audit:check`,
 `verify`) and `tcg-reviewer` are deferred to M08.17D, per this milestone's
 work-slice split.
 
-Current unit: **M08.17B — Candidate and reference-field evaluation**
+M08.17B is implemented: candidate and reference-field evaluation, in
+`apps/simulator/src/adaptive/evaluate.ts`, wired into the simulator's barrel
+export. `adaptiveObjectiveOf` derives `meta_aware`/`pure_counter` from
+`referenceFieldShare` rather than storing it — no `config.ts` or
+`telemetry/schema.ts` change was needed, since M08.16's closed scope already
+treats `referenceFieldShare` as a split of a block's existing game budget, not
+a new deck-source field; the reference field's actual decks are supplied by
+the caller. `scheduleAdaptiveCandidateScreening` schedules a candidate's own
+games — always against the current opponent revision, and (only under
+`meta_aware` with a non-empty field) against a deterministically selected
+slice of the reference field, one game per selected deck — splitting the same
+fixed per-orientation `blockSize` budget `./block.ts` uses rather than adding
+to it; an empty reference field falls back to opponent-only scheduling.
+`AdaptiveScreeningMatch` attributes every game to the candidate's
+`revisionId` and a seed path extending the revision's own `seedPath`.
+`tallyAdaptiveScreening` keeps `opponent`/`field` tallies structurally
+separate, with `field` explicitly `null` (not zero) when no reference-field
+games were scheduled. No match execution here — `runBatch` wiring stays for a
+later, unnamed orchestrator; only scheduling and attribution are this slice's
+job. 11 focused tests in `apps/simulator/src/adaptive/evaluate.test.ts` pass,
+the full `apps/simulator/src/adaptive` suite (130 tests) passes, `eslint`
+reports no issues on the changed files, and `apps/simulator` typechecks clean.
+Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
+`tcg-reviewer` are deferred to M08.17D, per this milestone's work-slice split.
+
+Current unit: **M08.17C — Promotion, rollback and moving opponents**
 ([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0817--adaptive-evaluation-and-promotion-loop)).
-Evaluate exact active revisions against the current opponent and configured
-reference field; keep meta-aware and explicitly labelled pure-counter
-objectives separate and attribute every screening match to its revision and
-seed path. Not started.
+Not started.

@@ -457,3 +457,19 @@ export {
   type AdaptiveBudgetPlan,
   type AdaptiveBudgetShortfall,
 } from './adaptive/block.js';
+
+export {
+  ADAPTIVE_OBJECTIVES,
+  ADAPTIVE_SCREENING_OPPONENT_KINDS,
+  adaptiveObjectiveOf,
+  scheduleAdaptiveCandidateScreening,
+  tallyAdaptiveScreening,
+  type AdaptiveCandidateScreening,
+  type AdaptiveCandidateScreeningInput,
+  type AdaptiveObjective,
+  type AdaptiveScreeningMatch,
+  type AdaptiveScreeningOpponentKind,
+  type AdaptiveScreeningResult,
+  type AdaptiveScreeningTallies,
+  type AdaptiveScreeningTally,
+} from './adaptive/evaluate.js';

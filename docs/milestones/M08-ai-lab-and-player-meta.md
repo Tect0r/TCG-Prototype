@@ -3278,10 +3278,19 @@ tests.
       the real built schedule length rather than a trusted formula; full
       `apps/simulator/src/adaptive` suite (119 tests) and `apps/simulator`
       typecheck pass. Tranche-close gates deferred to M08.17D.
-- [ ] **M08.17B — Candidate and reference-field evaluation.** Evaluate exact
+- [x] **M08.17B — Candidate and reference-field evaluation.** Evaluate exact
       active revisions against the current opponent and configured reference field;
       keep meta-aware and explicitly labelled pure-counter objectives separate and
       attribute every screening match to its revision and seed path.
+      Verified: 11 focused tests in `apps/simulator/src/adaptive/evaluate.test.ts`
+      covering objective derivation, the opponent/reference-field game split
+      (including the empty-field fallback and capping selection to the decks
+      actually available), per-match attribution to the candidate's
+      `revisionId` and seed path, deterministic replay, mirrored-orientation
+      doubling, and `tallyAdaptiveScreening`'s opponent/field separation with
+      `field` left `null` when no reference-field games were scheduled; full
+      `apps/simulator/src/adaptive` suite (130 tests) and `apps/simulator`
+      typecheck pass. Tranche-close gates deferred to M08.17D.
 - [ ] **M08.17C — Promotion, rollback and moving opponents.** Select and promote
       deterministically, retain or roll back on recorded evidence, re-evaluate after
       an opponent revision moves, and keep cumulative series wins separate from
