@@ -188,6 +188,18 @@ describe('reading a document', () => {
     expect(isErr(read) && read.error[0]?.message).not.toContain('expected');
   });
 
+  it('reads the version before the schema, so an older build gets a sentence not a mismatch', async () => {
+    const path = documentPath(base, 'batch_aaaaaa1111');
+    await writeJsonAtomically(path, {
+      ...batchDocument,
+      documentVersion: CATALOG_DOCUMENT_VERSION - 1,
+    });
+    const read = await readDocument(path, catalogBatchDocumentSchema, options);
+    expect(isErr(read) && read.error[0]?.code).toBe('admin/unsupported_version');
+    expect(isErr(read) && read.error[0]?.message).toContain('there is no migration for it');
+    expect(isErr(read) && read.error[0]?.message).not.toContain('expected');
+  });
+
   it('reports a document with no readable version as missing one', async () => {
     const path = documentPath(base, 'batch_aaaaaa1111');
     await writeJsonAtomically(path, { ...batchDocument, documentVersion: 'one' });

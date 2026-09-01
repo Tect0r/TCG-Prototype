@@ -481,6 +481,17 @@ export function statusTimestampProblems(status: JobStatus, timestamps: EntryTime
  * test does — and a shape that could only say "preset" would have to lie about
  * those. It carries no limitations, and that is truthful: a hand-assembled
  * configuration has made no claim about what it may not be cited for.
+ *
+ * `commander_championship` is a third member rather than a fourth stage of the
+ * `commander_search` preset (M08.15), because it names a job that is not one of
+ * that preset's expanded stages at all: its decks do not exist until every named
+ * search job has finished, so nothing in `expandPreset` could ever produce it —
+ * `commander_search`'s own `deferredStages` entry says so in as many words. What
+ * this job *is* — the frozen finalists a diversity rule selected from a named
+ * batch's completed searches, and how many were requested versus how many were
+ * sufficiently distinct to keep — is provenance about where its decks came from,
+ * the same fact `preset`/`stageId` records for an expanded stage, so it belongs
+ * on `JobOrigin` rather than on a tag an administrator could tidy away.
  */
 export const jobOriginSchema = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -490,6 +501,28 @@ export const jobOriginSchema = z.discriminatedUnion('kind', [
     stageId: stageIdSchema,
   }),
   z.strictObject({ kind: z.literal('direct') }),
+  z.strictObject({
+    kind: z.literal('commander_championship'),
+    /** The `commander_search` batch whose completed jobs this championship was frozen from. */
+    sourceBatchId: batchIdSchema,
+    /** One entry per Commander that contributed finalists, in selection order. */
+    finalists: z
+      .array(
+        z.strictObject({
+          commanderId: z.string().min(1).max(64),
+          /** How many finalists this Commander asked for. */
+          requested: z.number().int().min(1).max(16),
+          /** How many were sufficiently distinct to keep. At most `requested`. */
+          selected: z.number().int().min(0).max(16),
+          /** The rule that picked them, named so a second rule can be told apart from this one. */
+          diversityRule: z.literal('greedy_min_pairwise_deck_distance'),
+          /** The minimum pairwise card-swap distance a finalist had to clear. */
+          minDistance: z.number().int().min(0),
+        }),
+      )
+      .min(1)
+      .max(16),
+  }),
 ]);
 export type JobOrigin = z.infer<typeof jobOriginSchema>;
 

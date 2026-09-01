@@ -106,6 +106,20 @@ const SEARCH_VIEWS: readonly { readonly id: ViewId; readonly label: string }[] =
   { id: 'cards', label: 'Card inclusion' },
 ];
 
+/**
+ * The one view a frozen finalist championship adds (M08.15).
+ *
+ * A championship is an ordinary `kind: 'batch'` run, not a search — `isSearch`
+ * would otherwise hide the Commander-level tables `aggregate()` always
+ * computes from its own multi-Commander field, which is exactly the
+ * "opponent-Commander matrix" the milestone asks a championship to render.
+ * Diversity-by-generation and card inclusion stay search-only: a championship
+ * has no generations and no forced-inclusion floor to show either against.
+ */
+const CHAMPIONSHIP_VIEWS: readonly { readonly id: ViewId; readonly label: string }[] = [
+  { id: 'commanders', label: 'Commanders' },
+];
+
 interface DrillTarget {
   readonly title: string;
   readonly facts: readonly Fact[];
@@ -162,12 +176,21 @@ export function ResultDashboard({
   );
 
   const isSearch = summary.kind === 'search';
-  const tabs = isSearch ? [...VIEWS, ...SEARCH_VIEWS] : VIEWS;
+  const isChampionship = job?.origin.kind === 'commander_championship';
+  const tabs = isSearch
+    ? [...VIEWS, ...SEARCH_VIEWS]
+    : isChampionship
+      ? [...VIEWS, ...CHAMPIONSHIP_VIEWS]
+      : VIEWS;
 
   return (
     <section className="panel" aria-labelledby="results-dashboard">
       <h3 id="results-dashboard">
-        {isSearch ? 'Open Meta result dashboard' : 'Precon result dashboard'}
+        {isSearch
+          ? 'Open Meta result dashboard'
+          : isChampionship
+            ? 'Finalist championship result dashboard'
+            : 'Precon result dashboard'}
       </h3>
 
       <div className="dashboard__tabs" role="group" aria-label="Dashboard view">
@@ -223,6 +246,9 @@ export function ResultDashboard({
           decks={tables.decks}
           labelForCommander={labelForCommander}
           onDrill={setDrill}
+          finalists={
+            job?.origin.kind === 'commander_championship' ? job.origin.finalists : undefined
+          }
         />
       )}
       {view === 'diversity' && (
@@ -759,12 +785,23 @@ function ReplicatesView({
 
 /* -------------------------------------------------------------------- commanders */
 
+/** One Commander's frozen finalist selection, as `JobOrigin`'s `commander_championship` carries it. */
+interface FinalistSelectionView {
+  readonly commanderId: string;
+  readonly requested: number;
+  readonly selected: number;
+  readonly diversityRule: string;
+  readonly minDistance: number;
+}
+
 interface CommandersViewProps {
   readonly commanders: TableOutcome | undefined;
   readonly matchups: TableOutcome | undefined;
   readonly decks: TableOutcome | undefined;
   readonly labelForCommander: (commanderId: string) => string;
   readonly onDrill: (target: DrillTarget) => void;
+  /** Present only for a frozen finalist championship (M08.15). */
+  readonly finalists?: readonly FinalistSelectionView[] | undefined;
 }
 
 /**
@@ -780,6 +817,7 @@ function CommandersView({
   decks,
   labelForCommander,
   onDrill,
+  finalists,
 }: CommandersViewProps) {
   if (commanders === undefined) return <Busy label="Reading the Commander table…" />;
   if (!commanders.ok) {
@@ -787,7 +825,10 @@ function CommandersView({
   }
   if (commanders.value.rows.length === 0) {
     return (
-      <Empty>This run recorded no Commander-level evidence — it was not an Open Meta search.</Empty>
+      <Empty>
+        This run recorded no Commander-level evidence — it was neither a search nor a finalist
+        championship.
+      </Empty>
     );
   }
 
@@ -804,6 +845,33 @@ function CommandersView({
 
   return (
     <div className="dashboard__view">
+      {finalists !== undefined && finalists.length > 0 && (
+        <>
+          <h4>Frozen finalists</h4>
+          {finalists.map((entry) => (
+            <FactTable
+              key={entry.commanderId}
+              caption={`Finalist selection for ${labelForCommander(entry.commanderId)}`}
+              facts={[
+                { label: 'Commander', value: labelForCommander(entry.commanderId) },
+                { label: 'Requested', value: entry.requested },
+                {
+                  label: 'Selected',
+                  value: entry.selected,
+                  ...(entry.selected < entry.requested
+                    ? {
+                        note: 'Fewer sufficiently distinct decks existed in this Commander’s search archive than requested — recorded as a shortfall rather than padded with near-duplicates.',
+                      }
+                    : {}),
+                },
+                { label: 'Diversity rule', value: entry.diversityRule },
+                { label: 'Minimum pairwise distance', value: entry.minDistance },
+              ]}
+            />
+          ))}
+        </>
+      )}
+
       <h4>Win rate by Commander</h4>
       {rateNote !== null && (
         <p className="dashboard__truncation" role="note">

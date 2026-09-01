@@ -163,8 +163,23 @@ import { adminError, type AdminError } from './errors.js';
  *   both default to *all of them* — and would be unable to reach either new
  *   address, so its result view could show numbers and offer no file. That is
  *   what a contract version is for saying.
+ * - 7 (M08.15) — the language acquired a **finalist championship**. One address
+ *   was added, `schedule-championship`, so a Commander Search's frozen finalist
+ *   round — deferred since M08.13 because its decks do not exist until the
+ *   named searches finish — can be turned into a real, running job once they
+ *   have. Its request names the completed `commander_search` batch and the
+ *   diversity settings an administrator chooses at that moment (how many
+ *   finalists per Commander, how many fresh-seed games), not a filesystem
+ *   location or a hand-assembled configuration; its response is the same
+ *   `batchDetail` `start-batch` answers with, because scheduling a championship
+ *   creates a batch exactly the way filling one from a preset does.
+ *
+ *   A build speaking 6 could see a Commander Search's jobs complete and could
+ *   not reach the one address that turns them into the comparison the preset
+ *   named in advance — its own `deferredStages` entry would stay deferred
+ *   forever. That is what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 6;
+export const ADMIN_CONTRACT_VERSION = 7;
 
 /**
  * The version stamped into a persisted catalog document.
@@ -209,8 +224,32 @@ export const ADMIN_CONTRACT_VERSION = 6;
  * argument M08.4 made for the 1 → 2 move, and it is the last time it will be
  * available: after this build ships, a catalog exists on somebody's disk and the
  * next change to this shape has to be migrated rather than refused.
+ *
+ * - 4 (M08.15) — `jobOriginSchema` gained a third member, `commander_championship`,
+ *   naming the batch a frozen finalist round was scheduled from and the diversity
+ *   rule and per-Commander shortfall that selected it.
+ *
+ * **There is still no migration, and the 2 → 3 entry's promise — that the next
+ * shape change would need one — is corrected rather than kept.** The shape
+ * change itself is additive and harmless in one direction only: every `origin`
+ * this build has ever written (`preset`, `direct`) still parses unchanged under
+ * the wider `jobOriginSchema`, so a v3 *document's own content* is not the
+ * problem. The `documentVersion` field is: `catalogDocumentVersionSchema` is a
+ * `z.literal`, checked before the shape at all, so a v3 document is refused on
+ * that field alone regardless of whether its `origin` would have parsed. That
+ * refusal was never given the readable sentence `refusePastVersion` exists for
+ * — `apps/admin-server`'s `readDocument` had only ever called
+ * `refuseFutureVersion`, because no version before this one had moved since
+ * `refusePastVersion` was written at M08.4, and this tranche is the first to
+ * wire the older-build half in. The blast radius of not also migrating the
+ * content is the same nothing the 1 → 2 and 2 → 3 moves both had: this
+ * workspace has never had a real deployment, so no catalog exists on a real
+ * disk to be orphaned by it, only test fixtures written to temporary
+ * directories — which is the argument this file has made at every move so far,
+ * restated because the next one should not repeat the promise this entry is
+ * correcting.
  */
-export const CATALOG_DOCUMENT_VERSION = 3;
+export const CATALOG_DOCUMENT_VERSION = 4;
 
 /**
  * The version stamped into one line of a job's append-only event log.

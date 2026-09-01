@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-01)   | M08.15       |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-01)   | M08.16       |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -214,16 +214,97 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.15 — Commander Search and finalist championship.** Compare equal-budget
-Commander ecosystems on fresh validation games: equal-budget independent
-searches for selected Commanders, mutation and crossover kept Commander-legal
-with locked mode never silently changing Commander, a configurable number of
-sufficiently distinct finalists per Commander with the diversity rule and any
-shortfall recorded, finalists frozen, and a fresh-seed mirrored championship
-stage. Render best and median deck strength, exact lists, within-Commander
-diversity, the opponent-Commander matrix, the seat and pilot split, and final
-validation standing. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0815--commander-search-and-finalist-championship).
+**M08.16 — Adaptive Counter schema and deck lineage.** Define a reproducible
+adaptive experiment and its immutable deck revision history **without running
+adaptation yet**. Default policy: Commander locked; the loser adapts after a
+mirrored evaluation block; meta-aware objective; bounded 1–5-card legal swaps;
+the previous successful revision retained; final decks frozen for a fresh-seed
+validation stage. Its full config surface, lineage shape and exclusions are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0816--adaptive-counter-schema-and-deck-lineage).
+
+**M08.15 gave a completed Commander Search a way to become a comparison —
+`schedule-championship`, a ninth mutating address, not a continuation
+`enqueuePreset` makes on its own, because a finalist field that does not exist
+until every named search has finished cannot be part of that call's own
+expansion.** `packages/admin-contracts/src/catalog.ts`'s `jobOriginSchema`
+gained a third member, `commander_championship` (`CATALOG_DOCUMENT_VERSION`
+3 → 4): `sourceBatchId`, and one `finalists` entry per Commander recording
+`requested`, `selected`, `diversityRule` and `minDistance` — provenance, held
+the same way `preset`/`stageId` is, rather than a tag an administrator could
+tidy away. `packages/admin-contracts/src/requests.ts`'s
+`scheduleChampionshipRequestSchema` (`batchId`, `finalistsPerCommander`,
+`gamesPerPairing`, `seed`) is the new address's payload
+(`ADMIN_CONTRACT_VERSION` 6 → 7). `apps/admin-server/src/lab/championship.ts`
+is three pure pieces: `selectFinalists` (deterministic greedy
+farthest-point selection over the existing `deckDistance`, sorted by hash for
+reproducibility, stopping rather than padding when no remaining candidate
+clears `MIN_FINALIST_DISTANCE` — a shortfall recorded rather than silently
+evened out) and `buildChampionshipConfig` (freezes the selection into an
+_ordinary_ `kind: 'batch'` configuration — `decks: { kind: 'inline' }`,
+`schedule: 'round_robin'`, `mirrorSeats: true` — so the "opponent-Commander
+matrix" the milestone asks for is `aggregate()`'s own `commanderMatchups`,
+computed for any batch of match records and not new code); `expand.ts` gained
+the small `presetEnvironmentConfig()`/exported `validated()` this reuses. The
+one I/O piece, `ChampionshipScheduler`, reads each completed search job's own
+`decks.json` back out of its canonical directory (`resolveResultLocation`,
+the same `readDocumentText` seam `ResultReader` uses), groups the candidate
+decks by the Commander each job's `generator.commanderIds` names, and creates
+a **new, still-`draft`** batch and job through the store's existing
+`createBatch`/`createJob` — left for an operator to review and start, exactly
+as `enqueuePreset` leaves its own batch. `apps/admin-server/src/service/
+results.ts`'s `limitationsOf` now branches on `JobOrigin.kind`, giving a
+championship its own two limitations instead of `commander_search`'s
+(finalists frozen before the run started; a Commander's shortfall shows as
+fewer decks rather than padding). `commander_search`'s published limitation
+and its `deferredStages` reason (`expand.ts`) were both reworded from a
+forward promise — "M08.15 owns the selection rule" — to naming
+`schedule-championship` as the request that now exists.
+`apps/admin-client/src/components/ResultDashboard.tsx` adds the Commanders tab
+to a `kind: 'batch'` run whose `origin.kind === 'commander_championship'`
+(previously gated to `summary.kind === 'search'` only), with a "Frozen
+finalists" `FactTable` per Commander ahead of the existing win-rate bars,
+matchup heatmap and top-decks views it already renders generically.
+`apps/admin-client/src/components/QueueScreen.tsx` adds
+`ChampionshipScheduleForm`, shown once every `commander_search`-origin job in
+the selected batch has reached `completed` — checked per job rather than via
+`batch.status`, since a batch can hold other work alongside a Commander
+Search — which calls the new `session.scheduleChampionship` and selects the
+batch it creates. `championship.test.ts` covers the selection rule's
+determinism, its shortfall and its threshold; `championship-endpoint.test.ts`
+drives two Commanders' searches to completion through the real store and
+queue (a stand-in simulator that also writes `decks.json`, the same pattern
+`queue-endpoints.test.ts` uses for a fake match), then schedules and inspects
+the frozen result, and separately proves the request refuses while a search is
+still running and refuses a batch with no Commander Search jobs at all;
+`dashboard-flow.test.tsx`'s "the finalist championship views" and
+`queue-flow.test.tsx`'s "scheduling a finalist championship" cover the
+rendering and the trigger.
+
+**A review pass found the tranche's first draft making an unwired promise and
+two silent decisions, both corrected before commit.** `CATALOG_DOCUMENT_VERSION`
+3 → 4's own prose had claimed old documents were safe because `jobOriginSchema`
+widens without breaking them — true of `origin`'s own shape, false of the
+document as a whole, because `catalogDocumentVersionSchema`'s `z.literal` gate
+was never given the readable older-build sentence `refusePastVersion` exists
+for; `apps/admin-server/src/catalog/files.ts`'s `versionRefusalOf` now calls it
+(the first time since M08.4 built it that any catalog-document version move has
+needed to), and the version-4 entry says so rather than claiming the shape
+change alone made the promise moot. `ChampionshipScheduler.schedule` now also
+refuses — before touching a deck archive — a batch whose Commander Search jobs
+disagree on which pilots searched them (nothing stopped two separate
+`commander_search` submissions filling one draft batch under different pilot
+selections), a batch naming more Commanders than `JobOrigin`'s own 16-Commander
+bound, and a selection that would freeze fewer than two finalist decks in total
+(a round-robin needs two seats; this used to fail only once the batch was
+started). `results.ts`'s championship limitations gained two sentences: a
+frozen championship's finalists read as `hand_authored` in its own
+deck-construction table only because they travel as an inline deck list, not
+because a person built them, and "finalist" means sufficiently distinct from
+its neighbours rather than strongest. `championship-scheduler.test.ts` is new,
+covering the three added refusals and a single-Commander success case over a
+real store; `championship.test.ts`'s determinism test was rebuilt on decks
+whose pairwise distances actually clear the threshold, so it exercises the
+greedy argmax across several rounds instead of stopping after the first.
 
 **M08.14 gave the Open Meta workflow its progressive-disclosure form and the
 dashboard's three search-only views, no part of which compiled before this

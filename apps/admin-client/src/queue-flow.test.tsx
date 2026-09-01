@@ -309,6 +309,90 @@ describe('starting a batch', () => {
   });
 });
 
+/* ------------------------------------------- scheduling a championship (M08.15) */
+
+describe('scheduling a finalist championship', () => {
+  it('offers nothing when the batch holds no completed Commander Search job', async () => {
+    await openDraft();
+    expect(within(main()).queryByRole('button', { name: 'Schedule championship' })).toBeNull();
+  });
+
+  it('offers the form once every Commander Search job in the batch has completed', async () => {
+    const opened = await openQueue((service) => {
+      const first = service.lab.seedResult({
+        label: 'Search: goblin_warboss',
+        status: 'completed',
+        origin: { kind: 'preset', presetId: 'commander_search', stageId: 'search-goblin-warboss' },
+        commanderIds: ['goblin_warboss'],
+      });
+      service.lab.seedResult({
+        label: 'Search: grave_matriarch',
+        status: 'completed',
+        origin: { kind: 'preset', presetId: 'commander_search', stageId: 'search-grave-matriarch' },
+        commanderIds: ['grave_matriarch'],
+        batchId: first.batchId,
+      });
+    });
+    await userEvent.click(within(main()).getByRole('button', { name: /Search: goblin_warboss/ }));
+
+    expect(
+      await within(main()).findByRole('heading', { name: 'Schedule the finalist championship' }),
+    ).toBeVisible();
+    expect(opened.service).toBeDefined();
+  });
+
+  it('does not offer the form while one Commander Search job is still running', async () => {
+    await openQueue((service) => {
+      const first = service.lab.seedResult({
+        label: 'Search: goblin_warboss',
+        status: 'completed',
+        origin: { kind: 'preset', presetId: 'commander_search', stageId: 'search-goblin-warboss' },
+      });
+      service.lab.seedResult({
+        label: 'Search: grave_matriarch',
+        status: 'running',
+        origin: { kind: 'preset', presetId: 'commander_search', stageId: 'search-grave-matriarch' },
+        batchId: first.batchId,
+      });
+    });
+    await userEvent.click(within(main()).getByRole('button', { name: /Search: goblin_warboss/ }));
+
+    await within(main()).findByRole('heading', { level: 2, name: 'Search: goblin_warboss' });
+    expect(
+      within(main()).queryByRole('heading', { name: 'Schedule the finalist championship' }),
+    ).toBeNull();
+  });
+
+  it('schedules a new draft batch, and selects it', async () => {
+    await openQueue((service) => {
+      const first = service.lab.seedResult({
+        label: 'Search: goblin_warboss',
+        status: 'completed',
+        origin: { kind: 'preset', presetId: 'commander_search', stageId: 'search-goblin-warboss' },
+        commanderIds: ['goblin_warboss'],
+      });
+      service.lab.seedResult({
+        label: 'Search: grave_matriarch',
+        status: 'completed',
+        origin: { kind: 'preset', presetId: 'commander_search', stageId: 'search-grave-matriarch' },
+        commanderIds: ['grave_matriarch'],
+        batchId: first.batchId,
+      });
+    });
+    await userEvent.click(within(main()).getByRole('button', { name: /Search: goblin_warboss/ }));
+    await within(main()).findByRole('heading', { name: 'Schedule the finalist championship' });
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Schedule championship' }));
+
+    await within(main()).findByRole('heading', {
+      level: 2,
+      name: /Commander Search finalist championship/,
+    });
+    expect(within(main()).getByText('Frozen finalist championship')).toBeVisible();
+    expect(within(main()).getAllByText('Draft').length).toBeGreaterThan(0);
+  });
+});
+
 /* --------------------------------------------------------- lifecycle UI */
 
 describe('watching work that has started', () => {

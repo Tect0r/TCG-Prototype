@@ -217,9 +217,9 @@ export const PRESET_REGISTRY: Readonly<Record<ExperimentPresetId, ExperimentPres
       kinds: ['search'],
       sourceClasses: ['ai', 'search'],
       limitations: [
-        'Discovery, not validation. The frozen finalist championship that turns these ' +
-          'searches into a comparison is M08.15; until it exists this preset schedules the ' +
-          'searches and says so.',
+        'Discovery, not validation. These searches alone support no comparison between ' +
+          'Commanders; the `schedule-championship` request turns a batch of completed ones ' +
+          'into a frozen, fresh-seed round once every search in it has finished.',
         'Equal budget is equal *configured* budget. Two Commanders with differently sized ' +
           'legal pools are not equally free at the same population size.',
       ],
@@ -649,10 +649,12 @@ export type PresetStage = z.infer<typeof presetStageSchema>;
  * A preset, expanded: an ordered plan of validated stages and what each chose.
  *
  * `deferredStages` is the honest half. A Commander Search's frozen finalist
- * championship is a real part of the test that this build cannot configure —
- * the finalist field does not exist until the searches finish, and M08.15 owns
- * the selection rule — so it is named as a stage that is not scheduled rather
- * than omitted, which would quietly turn "not yet" into "not part of the test".
+ * championship is a real part of the test that **this expansion** cannot
+ * configure — its decks do not exist until every named search has finished —
+ * so it is named as a stage that is not scheduled *here* rather than omitted,
+ * which would quietly turn "not by this call" into "not part of the test".
+ * `scheduleChampionship` (M08.15) is the request that schedules it once the
+ * named batch's searches have completed.
  */
 export const presetExpansionSchema = z
   .strictObject({

@@ -205,6 +205,29 @@ export function QueueScreen({ pollMs = QUEUE_POLL_MS }: QueueScreenProps) {
     setPending(confirmation);
   };
 
+  /**
+   * Turns a completed Commander Search batch into a scheduled finalist
+   * championship (M08.15), then selects the new batch — `loadDetail` follows
+   * from the `selected` effect above, exactly the way selecting any other
+   * batch loads its detail.
+   */
+  const scheduleChampionship = useCallback(
+    async (
+      batchId: BatchId,
+      settings: { finalistsPerCommander: number; gamesPerPairing: number; seed: string },
+    ): Promise<void> => {
+      const answer = await session.scheduleChampionship(batchId, settings);
+      if (!answer.ok) {
+        setActionFailure(answer.failure);
+        return;
+      }
+      setActionFailure(null);
+      await loadBatches();
+      setSelected(answer.value.batch.batchId);
+    },
+    [session, loadBatches],
+  );
+
   return (
     <div className="queue">
       <p className="panel__note queue__ordering-note">{ORDER_IS_NOT_STATE}</p>
@@ -279,6 +302,9 @@ export function QueueScreen({ pollMs = QUEUE_POLL_MS }: QueueScreenProps) {
           onDuplicate={(jobId) => {
             void run(async () => session.duplicateJob(jobId));
           }}
+          onScheduleChampionship={(batchId, settings) => {
+            void scheduleChampionship(batchId, settings);
+          }}
         />
       )}
 
@@ -316,6 +342,10 @@ interface BatchPanelProps {
   readonly onJobAction: (jobId: JobId, action: OperatorJobAction) => void;
   readonly onReorder: (jobIds: readonly JobId[]) => void;
   readonly onDuplicate: (jobId: JobId) => void;
+  readonly onScheduleChampionship: (
+    batchId: BatchId,
+    settings: { finalistsPerCommander: number; gamesPerPairing: number; seed: string },
+  ) => void;
 }
 
 function BatchPanel({
@@ -327,10 +357,18 @@ function BatchPanel({
   onJobAction,
   onReorder,
   onDuplicate,
+  onScheduleChampionship,
 }: BatchPanelProps) {
   const { batch, jobs } = detail;
   const editable = batch.status === 'draft';
   const order = jobs.map((job) => job.jobId);
+  const searchJobs = jobs.filter(isCommanderSearchJob);
+  // Mirrors `ChampionshipScheduler`'s own precondition exactly: every Commander
+  // Search job in this batch has completed. Checked on the jobs rather than on
+  // `batch.status`, because a batch can hold other work alongside a Commander
+  // Search and the search half can finish well before the whole batch does.
+  const canScheduleChampionship =
+    searchJobs.length > 0 && searchJobs.every((job) => job.status === 'completed');
 
   return (
     <section className="panel" aria-labelledby="queue-batch-detail">
@@ -378,6 +416,10 @@ function BatchPanel({
         </p>
       )}
 
+      {canScheduleChampionship && (
+        <ChampionshipScheduleForm batchId={batch.batchId} onSchedule={onScheduleChampionship} />
+      )}
+
       {jobs.length === 0 ? (
         <Empty>This batch holds no jobs.</Empty>
       ) : (
@@ -401,6 +443,90 @@ function BatchPanel({
         </ol>
       )}
     </section>
+  );
+}
+
+/** Whether a job came from `commander_search`, the only preset a championship can be scheduled from. */
+function isCommanderSearchJob(job: CatalogJobView): boolean {
+  return job.origin.kind === 'preset' && job.origin.presetId === 'commander_search';
+}
+
+interface ChampionshipScheduleFormProps {
+  readonly batchId: BatchId;
+  readonly onSchedule: (
+    batchId: BatchId,
+    settings: { finalistsPerCommander: number; gamesPerPairing: number; seed: string },
+  ) => void;
+}
+
+/**
+ * The one control `commander_search`'s own `deferredStages` entry points at:
+ * every search in this completed batch has finished, so its frozen finalist
+ * championship — named but not schedulable when the batch was built — can now
+ * be scheduled (M08.15).
+ *
+ * The three settings are asked for here rather than recovered from the
+ * original choice, because nothing durable remembers it: `enqueuePreset`'s
+ * decisions are a one-time answer to that request, not a stored record, so a
+ * request that needs them again supplies them again.
+ */
+function ChampionshipScheduleForm({ batchId, onSchedule }: ChampionshipScheduleFormProps) {
+  const [finalistsPerCommander, setFinalistsPerCommander] = useState(3);
+  const [gamesPerPairing, setGamesPerPairing] = useState(4);
+  const [seed, setSeed] = useState(`${batchId}-championship`);
+
+  return (
+    <form
+      className="panel__subsection"
+      aria-labelledby="schedule-championship"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSchedule(batchId, { finalistsPerCommander, gamesPerPairing, seed });
+      }}
+    >
+      <h3 id="schedule-championship">Schedule the finalist championship</h3>
+      <p className="panel__note">
+        Every Commander Search job in this batch has finished. Scheduling selects sufficiently
+        distinct finalists per Commander from their own archives, freezes them, and creates a new
+        draft batch with one fresh-seed, mirrored round-robin job — left for you to review and
+        start.
+      </p>
+      <label>
+        Finalists per Commander
+        <input
+          type="number"
+          min={1}
+          max={8}
+          value={finalistsPerCommander}
+          onChange={(event) => {
+            setFinalistsPerCommander(Number(event.target.value));
+          }}
+        />
+      </label>
+      <label>
+        Games per pairing
+        <input
+          type="number"
+          min={1}
+          max={200}
+          value={gamesPerPairing}
+          onChange={(event) => {
+            setGamesPerPairing(Number(event.target.value));
+          }}
+        />
+      </label>
+      <label>
+        Seed
+        <input
+          type="text"
+          value={seed}
+          onChange={(event) => {
+            setSeed(event.target.value);
+          }}
+        />
+      </label>
+      <button type="submit">Schedule championship</button>
+    </form>
   );
 }
 

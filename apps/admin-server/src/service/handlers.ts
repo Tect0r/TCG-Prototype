@@ -33,6 +33,7 @@ import {
 import { err, isErr, ok } from '@tcg/shared';
 
 import type { CatalogResult, CatalogStore } from '../catalog/store.js';
+import { ChampionshipScheduler } from '../lab/championship.js';
 import { readContentCatalog } from '../lab/content.js';
 import { duplicateConfig } from '../lab/duplicate.js';
 import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js';
@@ -82,6 +83,7 @@ export class AdminService {
   readonly #queue: JobQueue;
   readonly #results: ResultReader;
   readonly #artifacts: ArtifactReader;
+  readonly #championships: ChampionshipScheduler;
   readonly #startedAt: string;
 
   constructor(options: AdminServiceOptions) {
@@ -90,6 +92,10 @@ export class AdminService {
     this.#queue = options.queue;
     this.#results = new ResultReader({ store: options.store, roots: options.config.roots });
     this.#artifacts = new ArtifactReader({ store: options.store, roots: options.config.roots });
+    this.#championships = new ChampionshipScheduler({
+      store: options.store,
+      roots: options.config.roots,
+    });
     this.#startedAt = (options.startedAt ?? new Date()).toISOString();
   }
 
@@ -126,6 +132,7 @@ export class AdminService {
       saveChoice: (payload) => this.#saveChoice(payload),
       listSavedChoices: () => this.#listSavedChoices(),
       enqueuePreset: (payload) => this.#enqueuePreset(payload),
+      scheduleChampionship: (payload) => this.#scheduleChampionship(payload),
       reorderBatch: (payload) => this.#reorderBatch(payload.batchId, payload.jobIds),
       duplicateJob: (payload) => this.#duplicateJob(payload.jobId),
       startBatch: (payload) => this.#startBatch(payload.batchId),
@@ -520,6 +527,28 @@ export class AdminService {
     if (isErr(reordered)) return this.#batchDetail(batchId);
 
     return this.#batchDetail(batchId);
+  }
+
+  /**
+   * Turns a completed Commander Search batch into a scheduled finalist
+   * championship (M08.15).
+   *
+   * `commander_search`'s own `deferredStages` entry names the reason this is a
+   * separate call rather than a continuation `enqueuePreset` makes on its own:
+   * the finalist field does not exist until every named search has finished, so
+   * nothing about it could be expanded in advance. `ChampionshipScheduler` reads
+   * the named batch's completed search jobs back out of their own canonical
+   * directories, selects and freezes finalists per Commander, and creates a new
+   * batch and job exactly the way `enqueuePreset` does — which is why the answer
+   * is the same `batchDetail` `startBatch` gives, left `draft` for an operator to
+   * start.
+   */
+  async #scheduleChampionship(
+    payload: AdminRequestOf<'scheduleChampionship'>,
+  ): Promise<CatalogResult<BatchDetail>> {
+    const scheduled = await this.#championships.schedule(payload);
+    if (isErr(scheduled)) return scheduled;
+    return this.#batchDetail(scheduled.value.batchId);
   }
 
   /**

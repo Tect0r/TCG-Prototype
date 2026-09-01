@@ -1073,6 +1073,55 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       return found === null ? refusal('admin/unknown_batch', 404) : answer(found);
     }
 
+    if (name === 'scheduleChampionship') {
+      const sourceBatchId = String(payload.batchId ?? '');
+      const source = batches.get(sourceBatchId);
+      if (!source) return refusal('admin/unknown_batch', 404);
+
+      const searches = source.jobIds
+        .map((jobId) => jobs.get(jobId))
+        .filter((job): job is CatalogJobView => job !== undefined)
+        .filter(
+          (job) => job.origin.kind === 'preset' && job.origin.presetId === 'commander_search',
+        );
+      if (searches.length === 0) return refusal('admin/schema', 400);
+      if (searches.some((job) => job.status !== 'completed')) {
+        return refusal('admin/no_result', 409);
+      }
+
+      const finalistsPerCommander = Number(payload.finalistsPerCommander ?? 3);
+      const commanderIds = [
+        ...new Set(searches.map((job) => jobContent.get(job.jobId)?.commanderIds[0] ?? job.jobId)),
+      ];
+      const championshipBatch = mintBatch(
+        `Commander Search finalist championship (from ${sourceBatchId})`,
+      );
+      mintJob(
+        championshipBatch.batchId,
+        'Frozen finalist championship',
+        'championship',
+        String(payload.seed ?? 'championship-seed'),
+        {
+          kind: 'batch',
+          purpose: 'validation',
+          sourceClasses: ['ai', 'search'],
+          origin: {
+            kind: 'commander_championship',
+            sourceBatchId,
+            finalists: commanderIds.map((commanderId) => ({
+              commanderId,
+              requested: finalistsPerCommander,
+              selected: finalistsPerCommander,
+              diversityRule: 'greedy_min_pairwise_deck_distance',
+              minDistance: 4,
+            })),
+          },
+        },
+      );
+      const found = detail(championshipBatch.batchId);
+      return found === null ? refusal('admin/unknown_batch', 404) : answer(found);
+    }
+
     if (name === 'jobAction') {
       const moved = moveJob(String(payload.jobId ?? ''), payload.action as OperatorJobAction);
       if ('refusal' in moved) return refusal(moved.refusal as AdminErrorCode, 409);

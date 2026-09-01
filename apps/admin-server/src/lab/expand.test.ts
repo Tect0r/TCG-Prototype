@@ -502,10 +502,10 @@ describe('the limitations travel with the estimate', () => {
     }
   });
 
-  it('names the stage a Commander Search cannot yet schedule', () => {
+  it('names the stage this choice cannot itself schedule, and how to schedule it', () => {
     const { estimate } = estimatePreset(CHOICES.commander_search);
     expect(estimate.limitations.join(' ')).toMatch(/Frozen finalist championship/);
-    expect(estimate.limitations.join(' ')).toContain('M08.15');
+    expect(estimate.limitations.join(' ')).toContain('schedule-championship');
   });
 
   it('says a soak is engine health rather than balance', () => {

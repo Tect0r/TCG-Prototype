@@ -6,6 +6,7 @@ import {
   adminError,
   adminSchemaErrors,
   refuseFutureVersion,
+  refusePastVersion,
   type AdminError,
   type AdminErrorCode,
   type AdminVersionField,
@@ -279,19 +280,29 @@ const VERSION_FIELD_NAMES: Readonly<Record<AdminVersionField, string>> = Object.
 });
 
 /**
- * The newer-build refusal, applied before the schema rather than after it.
+ * The newer- and older-build refusals, applied before the schema rather than
+ * after it.
  *
- * Order matters and is the whole point. A document from a future build fails the
- * `z.literal` version field too, but it fails it as "expected 1, received 2" —
- * which tells a person nothing about what to do. Reading the version first means
- * the sentence they get is the repository's own: *this record was written by a
- * newer build … update the application*.
+ * Order matters and is the whole point. A document from a future *or* a past
+ * build fails the `z.literal` version field too, but it fails it as "expected 4,
+ * received 2" or "expected 4, received 5" — which tells a person nothing about
+ * what to do. Reading the version first means the sentence they get is the
+ * repository's own: *this record was written by a newer build … update the
+ * application*, or *this build has no migration for a record this old*.
+ *
+ * Both checks, not only the newer one: `version.ts`'s own history records that
+ * every prior move of `CATALOG_DOCUMENT_VERSION` was exactly the moment an older
+ * document would otherwise fail the `z.literal` with the unreadable sentence
+ * `refusePastVersion` exists to replace. M08.15 is the first tranche to move the
+ * constant since M08.6 and the first to wire this half in — until now the only
+ * thing standing between an older catalog document and a bare schema mismatch
+ * was that the constant had never moved.
  */
 function versionRefusalOf(parsed: unknown, field: AdminVersionField): AdminError | null {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
   const name = VERSION_FIELD_NAMES[field];
   const found = (parsed as Record<string, unknown>)[name];
-  return refuseFutureVersion(field, found, name);
+  return refuseFutureVersion(field, found, name) ?? refusePastVersion(field, found, name);
 }
 
 /**

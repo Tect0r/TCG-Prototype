@@ -341,6 +341,7 @@ export {
   resultArtifactRequestSchema,
   resultTableRequestSchema,
   saveChoiceRequestSchema,
+  scheduleChampionshipRequestSchema,
   setJobAnnotationsRequestSchema,
   type AdminRequestPayloadName,
   type BatchPage,
@@ -365,6 +366,8 @@ export {
   type ResultTableRequestInput,
   type SaveChoiceRequest,
   type SaveChoiceRequestInput,
+  type ScheduleChampionshipRequest,
+  type ScheduleChampionshipRequestInput,
   type SetJobAnnotationsRequest,
 } from './requests.js';
 

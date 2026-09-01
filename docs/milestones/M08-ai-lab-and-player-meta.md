@@ -3152,9 +3152,9 @@ drill-down tests.
 
 ### Checklist
 
-- [ ] Equal-budget independent searches; lock never changes Commander.
-- [ ] Finalist selection records its diversity rule and any shortfall.
-- [ ] Frozen finalists, fresh seeds, mirrored championship.
+- [x] Equal-budget independent searches; lock never changes Commander.
+- [x] Finalist selection records its diversity rule and any shortfall.
+- [x] Frozen finalists, fresh seeds, mirrored championship.
 
 ## M08.16 — Adaptive Counter schema and deck lineage
 

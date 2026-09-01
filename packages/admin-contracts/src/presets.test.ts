@@ -327,7 +327,7 @@ describe('an expansion', () => {
         {
           stageId: 'championship',
           label: 'Frozen finalist championship',
-          reason: 'The finalist field does not exist until the searches finish; M08.15 owns it.',
+          reason: 'The finalist field does not exist until the searches finish.',
         },
       ],
     });

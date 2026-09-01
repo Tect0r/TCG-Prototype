@@ -270,6 +270,38 @@ export const enqueuePresetRequestSchema = z.strictObject({
 export type EnqueuePresetRequest = z.infer<typeof enqueuePresetRequestSchema>;
 export type EnqueuePresetRequestInput = z.input<typeof enqueuePresetRequestSchema>;
 
+/**
+ * Turning a Commander Search's deferred finalist round into a scheduled one
+ * (M08.15).
+ *
+ * `commander_search`'s own `deferredStages` entry names the reason this cannot
+ * be part of `enqueuePreset`: the finalist field does not exist until the named
+ * searches finish, so nothing about it can be expanded in advance. This request
+ * names the **finished** batch instead of a preset choice, and the diversity
+ * settings an administrator picks at the moment the searches are done rather
+ * than at the moment they were started — which is also why they are not on
+ * `commander_search`'s own choice: a value chosen before a single generation has
+ * run cannot be recovered from anywhere durable once the searches complete, and
+ * a request that named it again here needs no such memory.
+ *
+ * Naming a batch rather than the individual search jobs keeps the same shape
+ * `startBatch` already has: an identifier the server resolves, never a location,
+ * and never a caller-assembled list of job IDs it would have to re-derive the
+ * membership rule for.
+ */
+export const scheduleChampionshipRequestSchema = z.strictObject({
+  /** The `commander_search` batch every one of whose search jobs has completed. */
+  batchId: batchIdSchema,
+  /** How many sufficiently distinct finalists to keep, per Commander. */
+  finalistsPerCommander: z.number().int().min(1).max(8).default(3),
+  /** Fresh-seed games per pairing in the mirrored championship round-robin. */
+  gamesPerPairing: z.number().int().min(1).max(200).default(4),
+  /** The root seed the championship's own match schedule derives from. */
+  seed: z.string().min(1).max(64),
+});
+export type ScheduleChampionshipRequest = z.infer<typeof scheduleChampionshipRequestSchema>;
+export type ScheduleChampionshipRequestInput = z.input<typeof scheduleChampionshipRequestSchema>;
+
 /* ------------------------------------------------------- queue requests (M08.9) */
 
 /**
@@ -401,6 +433,7 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   jobAction: jobActionRequestSchema,
   createBatch: createBatchRequestSchema,
   enqueuePreset: enqueuePresetRequestSchema,
+  scheduleChampionship: scheduleChampionshipRequestSchema,
   reorderBatch: reorderBatchRequestSchema,
   estimateChoice: estimateChoiceRequestSchema,
   saveChoice: saveChoiceRequestSchema,

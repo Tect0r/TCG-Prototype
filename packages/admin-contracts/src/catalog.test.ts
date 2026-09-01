@@ -709,6 +709,42 @@ describe('where a job came from (M08.6)', () => {
     ).toBe(false);
   });
 
+  it('names the source batch and per-Commander selection for a frozen championship (M08.15)', () => {
+    const parsed = jobOriginSchema.parse({
+      kind: 'commander_championship',
+      sourceBatchId: 'batch_fixture1',
+      finalists: [
+        {
+          commanderId: 'goblin_warboss',
+          requested: 3,
+          selected: 3,
+          diversityRule: 'greedy_min_pairwise_deck_distance',
+          minDistance: 4,
+        },
+        {
+          commanderId: 'grave_matron',
+          requested: 3,
+          selected: 2,
+          diversityRule: 'greedy_min_pairwise_deck_distance',
+          minDistance: 4,
+        },
+      ],
+    });
+    expect(parsed.kind).toBe('commander_championship');
+    if (parsed.kind !== 'commander_championship') throw new Error('unreachable');
+    expect(parsed.finalists.map((entry) => entry.selected)).toEqual([3, 2]);
+  });
+
+  it('refuses a championship origin naming no Commander at all', () => {
+    expect(
+      jobOriginSchema.safeParse({
+        kind: 'commander_championship',
+        sourceBatchId: 'batch_fixture1',
+        finalists: [],
+      }).success,
+    ).toBe(false);
+  });
+
   it('is required on a job document, because an optional one is one a view must handle missing', () => {
     const { origin: _origin, ...withoutOrigin } = JOB;
     expect(catalogJobDocumentSchema.safeParse(withoutOrigin).success).toBe(false);

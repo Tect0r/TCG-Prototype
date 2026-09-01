@@ -387,6 +387,18 @@ export class AdminSession {
     return this.#call('startBatch', { batchId });
   }
 
+  /**
+   * Turns a completed Commander Search batch into a scheduled finalist
+   * championship (M08.15). Answers with the new, still-`draft` batch —
+   * `startBatch` is what an operator calls next to run it.
+   */
+  async scheduleChampionship(
+    batchId: BatchId,
+    settings: { finalistsPerCommander: number; gamesPerPairing: number; seed: string },
+  ): Promise<AdminOutcome<BatchDetail>> {
+    return this.#call('scheduleChampionship', { batchId, ...settings });
+  }
+
   async jobAction(jobId: JobId, action: OperatorJobAction): Promise<AdminOutcome<CatalogJobView>> {
     return this.#call('jobAction', { jobId, action });
   }

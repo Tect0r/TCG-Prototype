@@ -557,3 +557,124 @@ describe('the Open Meta search views (M08.14)', () => {
     expect(within(drill).getByText('Inclusion lift')).toBeVisible();
   });
 });
+
+/** Seeds one completed finalist championship, an ordinary batch run with a `commander_championship` origin. */
+function seedChampionship(service: FakeService): { jobId: string; batchId: string } {
+  const seeded = service.lab.seedResult({
+    label: 'Frozen finalist championship',
+    summary: resultSummaryFixture({ kind: 'batch' }),
+    origin: {
+      kind: 'commander_championship',
+      sourceBatchId: 'batch_sourcefixture',
+      finalists: [
+        {
+          commanderId: GOBLIN.commanderId,
+          requested: 3,
+          selected: 2,
+          diversityRule: 'greedy_min_pairwise_deck_distance',
+          minDistance: 4,
+        },
+        {
+          commanderId: BASTION.commanderId,
+          requested: 3,
+          selected: 3,
+          diversityRule: 'greedy_min_pairwise_deck_distance',
+          minDistance: 4,
+        },
+      ],
+    },
+  });
+  const jobId = seeded.jobId;
+  service.lab.seedTables(jobId, {
+    decks: decksTableFixture(jobId, [GOBLIN, BASTION]),
+    commanders: commandersTableFixture(jobId, [
+      {
+        commanderId: GOBLIN.commanderId,
+        matches: 30,
+        winRate: { point: 0.6, low: 0.42, high: 0.76, total: 30 },
+        decks: 2,
+        deckDiversity: 0.7,
+        topDeckFitness: 0,
+        medianDeckFitness: 0,
+      },
+      {
+        commanderId: BASTION.commanderId,
+        matches: 30,
+        winRate: { point: 0.4, low: 0.24, high: 0.58, total: 30 },
+        decks: 3,
+        deckDiversity: 0.5,
+        topDeckFitness: 0,
+        medianDeckFitness: 0,
+      },
+    ]),
+    commander_matchups: commanderMatchupsTableFixture(jobId, [
+      {
+        commanderId: GOBLIN.commanderId,
+        opponentCommanderId: BASTION.commanderId,
+        rate: { point: 0.6, low: 0.42, high: 0.76, total: 30 },
+      },
+    ]),
+  });
+  return seeded;
+}
+
+async function openChampionshipDashboard(): Promise<{
+  service: FakeService;
+  jobId: string;
+  batchId: string;
+}> {
+  stubLayout('wide');
+  const service = fakeService({ content: contentCatalogFixture() });
+  const seeded = seedChampionship(service);
+  renderAdmin({ transport: service.transport });
+  await screen.findByRole('heading', { level: 1, name: 'Overview' });
+  await userEvent.click(screen.getByRole('button', { name: 'Results' }));
+  await screen.findByRole('heading', { level: 1, name: 'Results' });
+  await userEvent.click(
+    await within(main()).findByRole('button', { name: /Frozen finalist championship/ }),
+  );
+  await within(main()).findByRole('heading', {
+    level: 3,
+    name: 'Finalist championship result dashboard',
+  });
+  return { service, ...seeded };
+}
+
+describe('the finalist championship views (M08.15)', () => {
+  it('adds only the Commanders tab to a championship run, never Diversity or Card inclusion', async () => {
+    await openChampionshipDashboard();
+
+    expect(within(main()).getByRole('button', { name: 'Commanders' })).toBeVisible();
+    expect(within(main()).queryByRole('button', { name: 'Diversity' })).toBeNull();
+    expect(within(main()).queryByRole('button', { name: 'Card inclusion' })).toBeNull();
+  });
+
+  it('shows the frozen finalist selection per Commander, and flags a shortfall honestly', async () => {
+    await openChampionshipDashboard();
+    await userEvent.click(within(main()).getByRole('button', { name: 'Commanders' }));
+
+    const selections = within(main()).getAllByRole('table', { name: /Finalist selection for/ });
+    expect(selections).toHaveLength(2);
+    const [goblin, bastion] = selections as [HTMLElement, HTMLElement];
+    expect(within(goblin).getByText('3')).toBeVisible();
+    expect(within(goblin).getByText('2')).toBeVisible();
+    expect(within(goblin).getByText('greedy_min_pairwise_deck_distance')).toBeVisible();
+    expect(within(goblin).getByText(/fewer sufficiently distinct decks existed/i)).toBeVisible();
+    expect(within(bastion).queryByText(/fewer sufficiently distinct decks existed/i)).toBeNull();
+  });
+
+  it('still renders the Commander win-rate bars and matchup heatmap for a championship run', async () => {
+    await openChampionshipDashboard();
+    await userEvent.click(within(main()).getByRole('button', { name: 'Commanders' }));
+
+    const bars = within(main()).getByRole('table', {
+      name: 'Win rate by Commander, with interval and sample count',
+    });
+    expect(within(bars).getByText(/60\.0% \(42\.0%–76\.0%, n=30\)/)).toBeVisible();
+
+    const heatmap = within(main()).getByRole('table', {
+      name: "Matchup win rate: the row Commander's exact win rate against the column Commander",
+    });
+    expect(within(heatmap).getByRole('button', { name: /60\.0%/ })).toBeVisible();
+  });
+});

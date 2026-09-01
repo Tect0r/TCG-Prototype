@@ -247,6 +247,52 @@ describe('a run summary', () => {
     expect(summary.limitations).toEqual([]);
   });
 
+  it('carries a frozen championship’s own limitations, including the inline construction reading (M08.15)', async () => {
+    const batch = unwrap(await catalog.store.createBatch({ label: 'Championship' }));
+    const job = unwrap(
+      await catalog.store.createJob({
+        batchId: batch.batchId,
+        label: 'Frozen finalist championship',
+        purpose: 'validation',
+        sourceClasses: ['ai', 'search'],
+        config: testConfig(),
+        origin: {
+          kind: 'commander_championship',
+          sourceBatchId: 'batch_source0001',
+          finalists: [
+            {
+              commanderId: 'goblin_warboss',
+              requested: 3,
+              selected: 2,
+              diversityRule: 'greedy_min_pairwise_deck_distance',
+              minDistance: 4,
+            },
+          ],
+        },
+      }),
+    );
+    const directory = 'championship-run';
+    const full = join(catalog.resultRoot, directory);
+    await mkdir(full, { recursive: true });
+    const paths = experimentPaths(full);
+    await writeFile(paths.summary, JSON.stringify(summaryDocument()), 'utf8');
+    await writeFile(paths.manifest, JSON.stringify(manifestDocument()), 'utf8');
+    unwrap(
+      await catalog.store.attachJobResult(job.jobId, {
+        identity: testIdentity(),
+        location: { rootId: 'local', directory },
+      }),
+    );
+
+    const summary = unwrap(await reader.readSummary(job.jobId));
+    expect(
+      summary.limitations.some((entry) => entry.includes('frozen before this run started')),
+    ).toBe(true);
+    expect(summary.limitations.some((entry) => entry.includes('not silently'))).toBe(true);
+    expect(summary.limitations.some((entry) => entry.includes('not strongest'))).toBe(true);
+    expect(summary.limitations.some((entry) => entry.includes('hand authored'))).toBe(true);
+  });
+
   it('says how many rows each table has, so a client does not fetch seven empty pages', async () => {
     const jobId = await seedRun();
     const summary = unwrap(await reader.readSummary(jobId));

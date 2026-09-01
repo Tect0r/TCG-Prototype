@@ -6,6 +6,7 @@ import {
   type AdminError,
   type CatalogJobDocument,
   type JobId,
+  type JobOrigin,
   type PageRequest,
   type ResultColumn,
   type ResultRow,
@@ -684,8 +685,7 @@ export class ResultReader {
       // display* — and `jobOriginSchema` is what makes the link durable rather
       // than a tag somebody can tidy away. A `direct` job has none, which is
       // truthful: a hand-assembled configuration made no claim to caveat.
-      limitations:
-        job.origin.kind === 'preset' ? [...PRESET_REGISTRY[job.origin.presetId].limitations] : [],
+      limitations: limitationsOf(job.origin),
     };
 
     const validated = resultSummarySchema.safeParse(value);
@@ -838,6 +838,40 @@ function reading(
 
 function noResult(jobId: JobId, message: string): AdminError {
   return adminError('admin/no_result', message, { context: { jobId } });
+}
+
+/**
+ * What a run's own origin says it may not be cited for.
+ *
+ * A preset's limitations live in `PRESET_REGISTRY`, for the reason above this
+ * function's one call site gives. A frozen championship (M08.15) is not a
+ * preset stage — its `deferredStages` entry says exactly why `expandPreset`
+ * could never produce it — so its limitation is written here instead, once,
+ * rather than at the point of display.
+ */
+function limitationsOf(origin: JobOrigin): string[] {
+  switch (origin.kind) {
+    case 'preset':
+      return [...PRESET_REGISTRY[origin.presetId].limitations];
+    case 'commander_championship':
+      return [
+        'Finalists were frozen before this run started: this round measures them exactly as ' +
+          'selected, on fresh seeds, and never re-optimizes or replaces one that loses.',
+        'A Commander whose search fell short of the requested finalist count is represented by ' +
+          'fewer decks here than the others — recorded on the job as a shortfall, not silently ' +
+          'evened out.',
+        'Finalists were chosen for distinctness from each other, from the search’s final ' +
+          'population and archive together, and not ranked by search performance — "finalist" ' +
+          'means sufficiently distinct, not strongest.',
+        'This run carries its finalists as an inline deck list, so its own deck-construction ' +
+          'reading shows "hand authored" for every one of them. That is an artifact of freezing ' +
+          'a fixed list, not a fact about how these decks were built — each was found by search, ' +
+          'and its real construction and lineage are in the source search job’s own decks.json, ' +
+          'findable by the deck hash this run carries unchanged.',
+      ];
+    case 'direct':
+      return [];
+  }
 }
 
 /**

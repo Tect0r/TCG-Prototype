@@ -234,6 +234,11 @@ export function presetEnvironment(): Environment {
   return resolveEnvironment(baseEnvironment());
 }
 
+/** The same environment, unresolved — what a stage's own `environment` field carries. */
+export function presetEnvironmentConfig(): EnvironmentConfig {
+  return baseEnvironment();
+}
+
 function baseEnvironment(
   overrides: { readonly id?: string; readonly label?: string; readonly banCardIds?: string[] } = {},
 ): EnvironmentConfig {
@@ -275,7 +280,7 @@ function common(
  * field this build spelled wrongly all fail here, in the simulator's own words,
  * before anything is estimated or enqueued.
  */
-function validated(config: unknown, stageId: string): ExperimentConfig {
+export function validated(config: unknown, stageId: string): ExperimentConfig {
   try {
     return parseExperimentConfig(config);
   } catch (cause) {
@@ -756,9 +761,10 @@ export function expandPreset(input: PresetChoiceInput | unknown): ExpandedPreset
               stageId: 'championship',
               label: 'Frozen finalist championship on fresh seeds',
               reason:
-                'The finalist field does not exist until the searches finish, and the ' +
-                'diversity rule that selects it is M08.15. This build schedules the searches ' +
-                'and names the stage it cannot yet schedule.',
+                'The finalist field does not exist until every search named here has finished, ' +
+                'so this choice can only schedule the searches. Once they complete, the ' +
+                '`schedule-championship` request selects and freezes finalists per Commander ' +
+                'from this batch and schedules the round this stage names.',
             },
           ]
         : [],

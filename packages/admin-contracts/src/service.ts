@@ -32,6 +32,7 @@ import {
   resultArtifactRequestSchema,
   resultTableRequestSchema,
   saveChoiceRequestSchema,
+  scheduleChampionshipRequestSchema,
   setJobAnnotationsRequestSchema,
   ADMIN_REQUEST_PAYLOAD_SCHEMAS,
 } from './requests.js';
@@ -367,6 +368,12 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'enqueue-preset',
     request: enqueuePresetRequestSchema,
     response: enqueuePresetResultSchema,
+    mutates: true,
+  }),
+  scheduleChampionship: endpoint({
+    route: 'schedule-championship',
+    request: scheduleChampionshipRequestSchema,
+    response: batchDetailSchema,
     mutates: true,
   }),
   reorderBatch: endpoint({
