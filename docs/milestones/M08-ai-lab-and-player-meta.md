@@ -3267,10 +3267,17 @@ tests.
 
 ### Work slices
 
-- [ ] **M08.17A — Mirrored block scheduler and budget.** Make the mirrored block
+- [x] **M08.17A — Mirrored block scheduler and budget.** Make the mirrored block
       the decision unit, define deterministic tie/no-decision behavior and schedule
       only whole work that fits the declared learning budget. Record an explained
       final shortfall instead of silently overspending.
+      Verified: 17 focused tests in `apps/simulator/src/adaptive/block.test.ts`
+      covering deterministic win/tie/no_decision decisions (including that a
+      single lost game inside a won block never flips the decision), budget
+      planning with and without a shortfall, and per-block scheduling gated on
+      the real built schedule length rather than a trusted formula; full
+      `apps/simulator/src/adaptive` suite (119 tests) and `apps/simulator`
+      typecheck pass. Tranche-close gates deferred to M08.17D.
 - [ ] **M08.17B — Candidate and reference-field evaluation.** Evaluate exact
       active revisions against the current opponent and configured reference field;
       keep meta-aware and explicitly labelled pure-counter objectives separate and

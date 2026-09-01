@@ -72,9 +72,30 @@ findings to keep in mind for the tranches that spend this lineage:
 
 M08.16 tranche-close record committed and pushed. M08.16 is complete.
 
-Current unit: **M08.17A — Mirrored block scheduler and budget**
+M08.17A is implemented: the mirrored evaluation block as the sole adaptation
+decision unit, in `apps/simulator/src/adaptive/block.ts`, wired into the
+simulator's barrel export. `decideAdaptiveBlock` reads only a completed
+block's aggregate win tally (never a single game), returning a deterministic
+`win`/`tie`/`no_decision` — a tie is equal decisive wins, `no_decision` is
+zero decisive games (every scheduled game ended without a counted result).
+`planAdaptiveBudget` computes how many whole blocks `totalLearningBudget`
+affords and reports an explained shortfall when it does not divide evenly.
+`scheduleAdaptiveBlock` builds one block's real `ScheduledMatch[]` (via the
+existing `buildSchedule`) and refuses it outright — reporting a shortfall,
+never a truncated partial block — when it needs more games than the caller's
+`gamesRemaining`; the gate always measures the real built schedule rather
+than trusting `adaptiveBlockGameCount`'s single-pilot formula, so extra pilot
+specs cannot silently overspend the budget. No candidate evaluation, revision
+attribution or promotion here — those stay M08.17B/M08.17C. 17 focused tests
+in `apps/simulator/src/adaptive/block.test.ts` pass, the full
+`apps/simulator/src/adaptive` suite (119 tests) passes, and `apps/simulator`
+typechecks clean. Tranche-close gates (`check:consistency`, `audit:check`,
+`verify`) and `tcg-reviewer` are deferred to M08.17D, per this milestone's
+work-slice split.
+
+Current unit: **M08.17B — Candidate and reference-field evaluation**
 ([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0817--adaptive-evaluation-and-promotion-loop)).
-Make the mirrored evaluation block the decision unit, define deterministic
-tie/no-decision behavior, and schedule only whole work that fits the declared
-learning budget, recording an explained shortfall instead of silently
-overspending. Not started.
+Evaluate exact active revisions against the current opponent and configured
+reference field; keep meta-aware and explicitly labelled pure-counter
+objectives separate and attribute every screening match to its revision and
+seed path. Not started.

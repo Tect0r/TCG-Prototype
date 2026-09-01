@@ -441,3 +441,19 @@ export {
   type AdaptiveRejectedCandidate,
   type GenerateAdaptiveCandidatesInput,
 } from './adaptive/generate.js';
+
+export {
+  ADAPTIVE_BLOCK_SIDES,
+  adaptiveBlockGameCount,
+  decideAdaptiveBlock,
+  planAdaptiveBudget,
+  scheduleAdaptiveBlock,
+  type AdaptiveBlockDecision,
+  type AdaptiveBlockOutcome,
+  type AdaptiveBlockScheduleInput,
+  type AdaptiveBlockScheduleResult,
+  type AdaptiveBlockShortfall,
+  type AdaptiveBlockSide,
+  type AdaptiveBudgetPlan,
+  type AdaptiveBudgetShortfall,
+} from './adaptive/block.js';
