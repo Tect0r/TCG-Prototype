@@ -3208,10 +3208,13 @@ another, no candidate evaluation or promotion, no card-definition mutation.
 
 ### Work slices
 
-- [ ] **M08.16A — Adaptive configuration and compatibility.** Add the strict
+- [x] **M08.16A — Adaptive configuration and compatibility.** Add the strict
       config surface, policy enums, bounds, raw/checkpoint/result envelopes and
       readable current/future-version refusal. Prove unknown-field refusal and every
       policy bound without generating candidates or running adaptation.
+      Verified: 67 focused tests across three new files
+      (`apps/simulator/src/adaptive/{version,config,envelopes}.test.ts`) and
+      `apps/simulator` typecheck; tranche-close gates deferred to M08.16D.
 - [ ] **M08.16B — Immutable revision lineage.** Define revision identity,
       parents, exact swaps, generation/block/opponent references, construction and
       seed paths. Prove immutability, round trip and Commander-locked versus open

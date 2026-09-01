@@ -369,3 +369,48 @@ export {
   type WorkerResult,
   type WorkerSetup,
 } from './workers/protocol.js';
+
+export {
+  CURRENT_ADAPTIVE_VERSIONS,
+  ADAPTIVE_CHECKPOINT_SCHEMA_VERSION,
+  ADAPTIVE_CONFIG_SCHEMA_VERSION,
+  ADAPTIVE_RAW_SCHEMA_VERSION,
+  ADAPTIVE_RESULT_SCHEMA_VERSION,
+  ADAPTIVE_VERSION_FIELDS,
+  assertCompatibleAdaptiveVersion,
+  describeAdaptiveVersionProblem,
+  isFutureAdaptiveVersion,
+  parseAdaptiveDocument,
+  type AdaptiveVersionField,
+} from './adaptive/version.js';
+
+export {
+  ADAPTIVE_COMMANDER_POLICIES,
+  ADAPTIVE_INFORMATION_POLICIES,
+  DEFAULT_ADAPTIVE_SWAP_BOUND,
+  adaptiveCommanderPolicySchema,
+  adaptiveConfigSchema,
+  adaptiveExperimentIdSchema,
+  adaptiveInformationPolicySchema,
+  adaptiveRebuildTriggerSchema,
+  adaptiveSwapBoundSchema,
+  parseAdaptiveConfig,
+  type AdaptiveCommanderPolicy,
+  type AdaptiveConfig,
+  type AdaptiveConfigInput,
+  type AdaptiveInformationPolicy,
+  type AdaptiveRebuildTrigger,
+  type AdaptiveSwapBound,
+} from './adaptive/config.js';
+
+export {
+  adaptiveCheckpointSchema,
+  adaptiveRawRecordSchema,
+  adaptiveResultSchema,
+  parseAdaptiveCheckpoint,
+  parseAdaptiveRawRecord,
+  parseAdaptiveResult,
+  type AdaptiveCheckpoint,
+  type AdaptiveRawRecord,
+  type AdaptiveResult,
+} from './adaptive/envelopes.js';
