@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { adaptiveExperimentIdSchema } from './config.js';
+import { adaptiveGenerationRecordSchema } from './generate.js';
 import {
   ADAPTIVE_CHECKPOINT_SCHEMA_VERSION,
   ADAPTIVE_RAW_SCHEMA_VERSION,
@@ -20,12 +21,13 @@ import {
  * an uninterrupted run and a resumed one, and a timestamp would make two
  * otherwise-identical checkpoints disagree on nothing that matters.
  *
- * Each envelope's payload is empty by design. M08.16B adds the immutable
- * revision lineage each of the three needs to name, and M08.16C adds
- * generated and rejected candidates to the raw stream — every one of those is
- * an additive widening of the schema version it lands on, in the same style
- * `MANIFEST_SCHEMA_VERSION`'s and `SEARCH_CHECKPOINT_VERSION`'s histories
- * already record.
+ * Each envelope's payload started empty by design. M08.16B adds the immutable
+ * revision lineage each of the three needs to name; M08.16C adds generated
+ * and rejected candidates to the raw stream, landing on `ADAPTIVE_RAW_SCHEMA_
+ * VERSION` 2 — an additive widening in the same style `MANIFEST_SCHEMA_
+ * VERSION`'s and `SEARCH_CHECKPOINT_VERSION`'s histories already record.
+ * `checkpoint` and `result` stay empty and at version 1 until M08.17 actually
+ * runs an evaluation loop for them to describe.
  */
 
 const adaptiveDocumentIdentity = {
@@ -36,6 +38,8 @@ const adaptiveDocumentIdentity = {
 export const adaptiveRawRecordSchema = z.strictObject({
   schemaVersion: z.literal(ADAPTIVE_RAW_SCHEMA_VERSION),
   ...adaptiveDocumentIdentity,
+  /** One entry per candidate-generation event (M08.16C), append-only. */
+  generations: z.array(adaptiveGenerationRecordSchema).default([]),
 });
 export type AdaptiveRawRecord = z.infer<typeof adaptiveRawRecordSchema>;
 

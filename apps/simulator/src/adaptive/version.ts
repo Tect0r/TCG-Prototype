@@ -27,7 +27,8 @@ import type { z } from 'zod';
  */
 
 export const ADAPTIVE_CONFIG_SCHEMA_VERSION = 1;
-export const ADAPTIVE_RAW_SCHEMA_VERSION = 1;
+/** 2: M08.16C additively widens the raw stream with generation records. */
+export const ADAPTIVE_RAW_SCHEMA_VERSION = 2;
 export const ADAPTIVE_CHECKPOINT_SCHEMA_VERSION = 1;
 export const ADAPTIVE_RESULT_SCHEMA_VERSION = 1;
 
@@ -69,13 +70,15 @@ export function isFutureAdaptiveVersion(
  * strict schema is even reached. `null` when the version is one this build
  * can read.
  *
- * All four fields start at 1, so the "older build" branch below is unreached
- * today — there is no earlier adaptive document anywhere to refuse. It stays
- * beside the "newer build" branch anyway, for the same reason
- * `refusePastVersion` was written into `@tcg/admin-contracts` ahead of the
- * version move that first needed it: the day one of these four numbers moves,
- * the readable refusal must already exist rather than being invented under
- * pressure at that milestone.
+ * Three of the four fields still start at 1, so the "older build" branch below
+ * is unreached for `config`, `checkpoint` and `result` — there is no earlier
+ * document of theirs anywhere to refuse. It stays beside the "newer build"
+ * branch anyway, for the same reason `refusePastVersion` was written into
+ * `@tcg/admin-contracts` ahead of the version move that first needed it: the
+ * day a number moves, the readable refusal must already exist rather than
+ * being invented under pressure at that milestone. `raw` moved first, at
+ * M08.16C — a schemaVersion-1 raw record predates candidate generation and is
+ * refused as an older build, never guessed at.
  */
 export function describeAdaptiveVersionProblem(
   field: AdaptiveVersionField,

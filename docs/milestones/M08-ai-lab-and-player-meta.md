@@ -3221,10 +3221,14 @@ another, no candidate evaluation or promotion, no card-definition mutation.
       lineage without evaluating a candidate.
       Verified: 28 focused tests in `apps/simulator/src/adaptive/revision.test.ts`
       and `apps/simulator` typecheck; tranche-close gates deferred to M08.16D.
-- [ ] **M08.16C — Deterministic legal candidate generation.** Generate bounded
+- [x] **M08.16C — Deterministic legal candidate generation.** Generate bounded
       legal swap/rebuild candidates, retain the previous successful revision and
       record every rejected candidate with its reason. Prove deterministic replay,
       legality, swap bounds and the public-observation versus analysis-only boundary.
+      Verified: 6 focused tests in `apps/simulator/src/adaptive/generate.test.ts`
+      plus the raw-envelope tests in `envelopes.test.ts` covering the additive
+      schemaVersion 1→2 widening, `apps/simulator` typecheck and the full
+      `apps/simulator` suite (579 tests); tranche-close gates deferred to M08.16D.
 - [ ] **M08.16D — Tranche close.** Revalidate all schema, lineage, generation,
       provenance and compatibility acceptance cases; record every moved or retained
       version and run the standard tranche-close gate. Do not start evaluation.

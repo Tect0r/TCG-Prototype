@@ -429,3 +429,15 @@ export {
   type AdaptiveRevisionConstructionKind,
   type AdaptiveRevisionInput,
 } from './adaptive/revision.js';
+
+export {
+  ADAPTIVE_GENERATED_CONSTRUCTION_KINDS,
+  adaptiveGeneratedConstructionKindSchema,
+  adaptiveGenerationRecordSchema,
+  adaptiveRejectedCandidateSchema,
+  generateAdaptiveCandidates,
+  type AdaptiveGeneratedConstructionKind,
+  type AdaptiveGenerationRecord,
+  type AdaptiveRejectedCandidate,
+  type GenerateAdaptiveCandidatesInput,
+} from './adaptive/generate.js';
