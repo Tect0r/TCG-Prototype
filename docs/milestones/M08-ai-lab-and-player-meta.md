@@ -3215,10 +3215,12 @@ another, no candidate evaluation or promotion, no card-definition mutation.
       Verified: 67 focused tests across three new files
       (`apps/simulator/src/adaptive/{version,config,envelopes}.test.ts`) and
       `apps/simulator` typecheck; tranche-close gates deferred to M08.16D.
-- [ ] **M08.16B — Immutable revision lineage.** Define revision identity,
+- [x] **M08.16B — Immutable revision lineage.** Define revision identity,
       parents, exact swaps, generation/block/opponent references, construction and
       seed paths. Prove immutability, round trip and Commander-locked versus open
       lineage without evaluating a candidate.
+      Verified: 28 focused tests in `apps/simulator/src/adaptive/revision.test.ts`
+      and `apps/simulator` typecheck; tranche-close gates deferred to M08.16D.
 - [ ] **M08.16C — Deterministic legal candidate generation.** Generate bounded
       legal swap/rebuild candidates, retain the previous successful revision and
       record every rejected candidate with its reason. Prove deterministic replay,

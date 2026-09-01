@@ -414,3 +414,18 @@ export {
   type AdaptiveRawRecord,
   type AdaptiveResult,
 } from './adaptive/envelopes.js';
+
+export {
+  ADAPTIVE_REVISION_CONSTRUCTION_KINDS,
+  adaptiveCardSwapSchema,
+  adaptiveRevisionConstructionKindSchema,
+  adaptiveRevisionSchema,
+  adaptiveRevisionSeedPath,
+  assertAdaptiveLineage,
+  makeAdaptiveRevision,
+  parseAdaptiveRevision,
+  type AdaptiveCardSwap,
+  type AdaptiveRevision,
+  type AdaptiveRevisionConstructionKind,
+  type AdaptiveRevisionInput,
+} from './adaptive/revision.js';
