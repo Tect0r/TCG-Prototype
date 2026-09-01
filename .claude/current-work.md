@@ -226,6 +226,35 @@ returned **`VERDICT: APPROVE`**.
 
 M08.17 tranche-close record committed and pushed. M08.17 is complete.
 
-Current unit: **M08.18A**
+M08.18A is implemented: the strict checkpoint contract, in
+`apps/simulator/src/adaptive/checkpoint.ts`, wired into the simulator's
+barrel export. `adaptiveCheckpointSchema` holds the run's two co-evolving
+lineages (`incumbent`/`opponent`, keyed the same way `./block.ts` names a
+block's two sides) as straight-chain, root-first revision histories
+(`adaptiveCheckpointLineageSchema`, reusing `./revision.ts`'s
+`adaptiveRevisionSchema`), each side's `activeRevisionId` required to name one
+of its own checkpointed revisions; `gamesSpent`; a verbatim `referenceField`
+(defaults `[]`); `pendingGeneration` (nullable — `null` at a clean block
+boundary, or a valid partial-block state: the current block's generated but
+not-yet-decided candidates, cross-checked to belong to `nextGeneration`/
+`nextBlock` and to have been generated between the two currently-active
+revisions, order-agnostic since either side can be the one that lost and
+generated); `nextGeneration`/`nextBlock`/`nextSeedPath` so a resumed run never
+re-derives a seed path from a stale pair. Deliberately stores state, not
+evidence — no `ScheduledMatch` or screening result is checkpointed, following
+`../schedule.ts`'s own "resume by regenerating the schedule" precedent;
+reading this back into a running loop is M08.18B's job. `envelopes.ts` now
+imports and re-exports the checkpoint schema/type/parse function rather than
+defining them inline. `ADAPTIVE_CHECKPOINT_SCHEMA_VERSION` bumped 1→2 (the
+same additive-widening precedent `ADAPTIVE_RAW_SCHEMA_VERSION` set at
+M08.16C); a schemaVersion-1 checkpoint is now refused as an older build. 26
+focused tests in `apps/simulator/src/adaptive/checkpoint.test.ts` plus updated
+`envelopes.test.ts` (checkpoint coverage moved out of its old shared
+`describe.each`) pass, the full `apps/simulator/src/adaptive` suite (155
+tests) passes, and `apps/simulator` typechecks clean. Tranche-close gates
+(`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are deferred
+to M08.18E, per this milestone's work-slice split.
+
+Current unit: **M08.18B**
 ([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0818--adaptive-checkpointing-final-validation-and-raw-report)).
 Not started.

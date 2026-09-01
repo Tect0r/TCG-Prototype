@@ -416,6 +416,12 @@ export {
 } from './adaptive/envelopes.js';
 
 export {
+  adaptiveCheckpointLineageSchema,
+  assertValidAdaptiveCheckpoint,
+  type AdaptiveCheckpointLineage,
+} from './adaptive/checkpoint.js';
+
+export {
   ADAPTIVE_REVISION_CONSTRUCTION_KINDS,
   adaptiveCardSwapSchema,
   adaptiveRevisionConstructionKindSchema,

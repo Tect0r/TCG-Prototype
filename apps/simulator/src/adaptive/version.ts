@@ -29,7 +29,8 @@ import type { z } from 'zod';
 export const ADAPTIVE_CONFIG_SCHEMA_VERSION = 1;
 /** 2: M08.16C additively widens the raw stream with generation records. */
 export const ADAPTIVE_RAW_SCHEMA_VERSION = 2;
-export const ADAPTIVE_CHECKPOINT_SCHEMA_VERSION = 1;
+/** 2: M08.18A widens the checkpoint from an empty identity stub to real resumable state. */
+export const ADAPTIVE_CHECKPOINT_SCHEMA_VERSION = 2;
 export const ADAPTIVE_RESULT_SCHEMA_VERSION = 1;
 
 export const CURRENT_ADAPTIVE_VERSIONS = Object.freeze({
@@ -70,15 +71,17 @@ export function isFutureAdaptiveVersion(
  * strict schema is even reached. `null` when the version is one this build
  * can read.
  *
- * Three of the four fields still start at 1, so the "older build" branch below
- * is unreached for `config`, `checkpoint` and `result` — there is no earlier
- * document of theirs anywhere to refuse. It stays beside the "newer build"
- * branch anyway, for the same reason `refusePastVersion` was written into
+ * Two of the four fields still start at 1, so the "older build" branch below
+ * is unreached for `config` and `result` — there is no earlier document of
+ * theirs anywhere to refuse. It stays beside the "newer build" branch anyway,
+ * for the same reason `refusePastVersion` was written into
  * `@tcg/admin-contracts` ahead of the version move that first needed it: the
  * day a number moves, the readable refusal must already exist rather than
  * being invented under pressure at that milestone. `raw` moved first, at
  * M08.16C — a schemaVersion-1 raw record predates candidate generation and is
- * refused as an older build, never guessed at.
+ * refused as an older build, never guessed at. `checkpoint` moved next, at
+ * M08.18A — a schemaVersion-1 checkpoint predates every real resumable field
+ * this file now requires and is refused the same way.
  */
 export function describeAdaptiveVersionProblem(
   field: AdaptiveVersionField,

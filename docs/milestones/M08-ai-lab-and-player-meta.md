@@ -3348,9 +3348,14 @@ schema regeneration tests.
 
 ### Work slices
 
-- [ ] **M08.18A — Checkpoint state and persistence.** Persist active revisions,
+- [x] **M08.18A — Checkpoint state and persistence.** Persist active revisions,
       candidate state, spent budget, reference field, lineage and next seed path in
       the strict checkpoint contract, including a valid partial-block state.
+      Verified: `apps/simulator/src/adaptive/checkpoint.ts` (`adaptiveCheckpointSchema`,
+      `adaptiveCheckpointLineageSchema`, `assertValidAdaptiveCheckpoint`),
+      `ADAPTIVE_CHECKPOINT_SCHEMA_VERSION` 1→2; 26 focused tests plus updated
+      `envelopes.test.ts`, full `apps/simulator/src/adaptive` suite (155 tests)
+      and `apps/simulator` typecheck pass.
 - [ ] **M08.18B — Resume equivalence.** Resume without replaying a recorded
       match, changing lineage or spending a seed twice. Prove uninterrupted and
       resumed equivalence, including interruption inside a block.

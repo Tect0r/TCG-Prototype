@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { adaptiveExperimentIdSchema } from './config.js';
 import { adaptiveGenerationRecordSchema } from './generate.js';
 import {
-  ADAPTIVE_CHECKPOINT_SCHEMA_VERSION,
+  adaptiveCheckpointSchema,
+  parseAdaptiveCheckpoint,
+  type AdaptiveCheckpoint,
+} from './checkpoint.js';
+import {
   ADAPTIVE_RAW_SCHEMA_VERSION,
   ADAPTIVE_RESULT_SCHEMA_VERSION,
   parseAdaptiveDocument,
@@ -24,10 +28,12 @@ import {
  * Each envelope's payload started empty by design. M08.16B adds the immutable
  * revision lineage each of the three needs to name; M08.16C adds generated
  * and rejected candidates to the raw stream, landing on `ADAPTIVE_RAW_SCHEMA_
- * VERSION` 2 — an additive widening in the same style `MANIFEST_SCHEMA_
- * VERSION`'s and `SEARCH_CHECKPOINT_VERSION`'s histories already record.
- * `checkpoint` and `result` stay empty and at version 1 until M08.17 actually
- * runs an evaluation loop for them to describe.
+ * VERSION` 2; M08.18A widens the checkpoint from the same empty stub to real
+ * resumable state (`./checkpoint.ts`), landing on `ADAPTIVE_CHECKPOINT_
+ * SCHEMA_VERSION` 2 — each an additive widening in the same style `MANIFEST_
+ * SCHEMA_VERSION`'s and `SEARCH_CHECKPOINT_VERSION`'s histories already
+ * record. `result` stays empty and at version 1 until a later slice defines
+ * what it reports.
  */
 
 const adaptiveDocumentIdentity = {
@@ -43,11 +49,8 @@ export const adaptiveRawRecordSchema = z.strictObject({
 });
 export type AdaptiveRawRecord = z.infer<typeof adaptiveRawRecordSchema>;
 
-export const adaptiveCheckpointSchema = z.strictObject({
-  schemaVersion: z.literal(ADAPTIVE_CHECKPOINT_SCHEMA_VERSION),
-  ...adaptiveDocumentIdentity,
-});
-export type AdaptiveCheckpoint = z.infer<typeof adaptiveCheckpointSchema>;
+/** The checkpoint envelope itself is defined in `./checkpoint.ts` (M08.18A) and re-exported here for the sibling raw/result envelopes it shares identity with. */
+export { adaptiveCheckpointSchema, parseAdaptiveCheckpoint, type AdaptiveCheckpoint };
 
 export const adaptiveResultSchema = z.strictObject({
   schemaVersion: z.literal(ADAPTIVE_RESULT_SCHEMA_VERSION),
@@ -58,11 +61,6 @@ export type AdaptiveResult = z.infer<typeof adaptiveResultSchema>;
 /** Parses one raw record, refusing an unreadable schema version first (M08.16A). */
 export function parseAdaptiveRawRecord(input: unknown): AdaptiveRawRecord {
   return parseAdaptiveDocument('raw', adaptiveRawRecordSchema, input);
-}
-
-/** Parses a checkpoint, refusing an unreadable schema version first (M08.16A). */
-export function parseAdaptiveCheckpoint(input: unknown): AdaptiveCheckpoint {
-  return parseAdaptiveDocument('checkpoint', adaptiveCheckpointSchema, input);
 }
 
 /** Parses a result, refusing an unreadable schema version first (M08.16A). */
