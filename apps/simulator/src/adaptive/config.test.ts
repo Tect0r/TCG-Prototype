@@ -42,7 +42,11 @@ describe('adaptiveConfigSchema: strict surface', () => {
     expect(parsed.swapBound).toEqual({ minCards: 1, maxCards: 5 });
     expect(parsed.rebuildTrigger).toBeNull();
     expect(parsed.referenceFieldShare).toBe(0);
-    expect(parsed.retention).toEqual({ replaySampleRate: 50, keepLogs: false, keepDecisions: false });
+    expect(parsed.retention).toEqual({
+      replaySampleRate: 50,
+      keepLogs: false,
+      keepDecisions: false,
+    });
   });
 
   it('refuses an unrecognized top-level field', () => {
@@ -50,9 +54,9 @@ describe('adaptiveConfigSchema: strict surface', () => {
   });
 
   it('refuses an unrecognized field inside swapBound', () => {
-    expect(() =>
-      adaptiveSwapBoundSchema.parse({ minCards: 1, maxCards: 5, stray: true }),
-    ).toThrow(ZodError);
+    expect(() => adaptiveSwapBoundSchema.parse({ minCards: 1, maxCards: 5, stray: true })).toThrow(
+      ZodError,
+    );
   });
 
   it('refuses an unrecognized field inside rebuildTrigger', () => {
@@ -74,16 +78,14 @@ describe('adaptiveConfigSchema: policy enums', () => {
   });
 
   it('refuses a commander policy outside the enum', () => {
-    expect(() =>
-      parseAdaptiveConfig(validConfig({ commanderPolicy: 'unlocked' })),
-    ).toThrow(ZodError);
+    expect(() => parseAdaptiveConfig(validConfig({ commanderPolicy: 'unlocked' }))).toThrow(
+      ZodError,
+    );
   });
 
   it('accepts every declared information policy', () => {
     for (const policy of ADAPTIVE_INFORMATION_POLICIES) {
-      expect(() =>
-        parseAdaptiveConfig(validConfig({ informationPolicy: policy })),
-      ).not.toThrow();
+      expect(() => parseAdaptiveConfig(validConfig({ informationPolicy: policy }))).not.toThrow();
     }
   });
 
@@ -104,7 +106,10 @@ describe('adaptiveConfigSchema: selectedCommanderIds refinement', () => {
   it('refuses a non-empty list when commanderPolicy is locked', () => {
     expect(() =>
       parseAdaptiveConfig(
-        validConfig({ commanderPolicy: 'locked', selectedCommanderIds: ['prototype_commander_blue'] }),
+        validConfig({
+          commanderPolicy: 'locked',
+          selectedCommanderIds: ['prototype_commander_blue'],
+        }),
       ),
     ).toThrow(ZodError);
   });
@@ -112,7 +117,10 @@ describe('adaptiveConfigSchema: selectedCommanderIds refinement', () => {
   it('refuses a non-empty list when commanderPolicy is open', () => {
     expect(() =>
       parseAdaptiveConfig(
-        validConfig({ commanderPolicy: 'open', selectedCommanderIds: ['prototype_commander_blue'] }),
+        validConfig({
+          commanderPolicy: 'open',
+          selectedCommanderIds: ['prototype_commander_blue'],
+        }),
       ),
     ).toThrow(ZodError);
   });
@@ -146,7 +154,9 @@ describe('adaptiveConfigSchema: numeric bounds', () => {
   });
 
   it('refuses a referenceFieldShare outside 0-1', () => {
-    expect(() => parseAdaptiveConfig(validConfig({ referenceFieldShare: -0.01 }))).toThrow(ZodError);
+    expect(() => parseAdaptiveConfig(validConfig({ referenceFieldShare: -0.01 }))).toThrow(
+      ZodError,
+    );
     expect(() => parseAdaptiveConfig(validConfig({ referenceFieldShare: 1.01 }))).toThrow(ZodError);
   });
 
@@ -185,9 +195,9 @@ describe('adaptiveRebuildTriggerSchema: at least one condition', () => {
   });
 
   it('refuses each field outside its own bound', () => {
-    expect(() =>
-      adaptiveRebuildTriggerSchema.parse({ afterConsecutiveLosses: 51 }),
-    ).toThrow(ZodError);
+    expect(() => adaptiveRebuildTriggerSchema.parse({ afterConsecutiveLosses: 51 })).toThrow(
+      ZodError,
+    );
     expect(() => adaptiveRebuildTriggerSchema.parse({ everyBlocks: 1001 })).toThrow(ZodError);
   });
 });

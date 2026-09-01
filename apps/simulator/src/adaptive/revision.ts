@@ -25,7 +25,9 @@ import { adaptiveExperimentIdSchema } from './config.js';
 
 export const ADAPTIVE_REVISION_CONSTRUCTION_KINDS = ['root', 'swap', 'rebuild'] as const;
 export const adaptiveRevisionConstructionKindSchema = z.enum(ADAPTIVE_REVISION_CONSTRUCTION_KINDS);
-export type AdaptiveRevisionConstructionKind = z.infer<typeof adaptiveRevisionConstructionKindSchema>;
+export type AdaptiveRevisionConstructionKind = z.infer<
+  typeof adaptiveRevisionConstructionKindSchema
+>;
 
 /** One card swapped out for one card swapped in. Empty for `root` and `rebuild`. */
 export const adaptiveCardSwapSchema = z.strictObject({
@@ -82,7 +84,8 @@ export const adaptiveRevisionSchema = z
   .refine(
     (revision) => revision.parentRevisionId === null || revision.opponentRevisionId !== null,
     {
-      message: 'A non-root revision must name the opponent revision it was produced in response to.',
+      message:
+        'A non-root revision must name the opponent revision it was produced in response to.',
       path: ['opponentRevisionId'],
     },
   )
@@ -201,7 +204,8 @@ export function assertAdaptiveLineage(
     if (seen.has(revision.revisionId)) {
       throw new Error(`Revision ${revision.revisionId} appears more than once in this lineage.`);
     }
-    const parent = revision.parentRevisionId !== null ? seen.get(revision.parentRevisionId) : undefined;
+    const parent =
+      revision.parentRevisionId !== null ? seen.get(revision.parentRevisionId) : undefined;
     if (!parent) {
       throw new Error(
         `Revision ${revision.revisionId} names a parent that is not earlier in this lineage.`,

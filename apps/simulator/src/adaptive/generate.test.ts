@@ -109,9 +109,7 @@ function baseInput(
 describe('generateAdaptiveCandidates: legality and swap bounds', () => {
   it('produces only legal decks, each within the configured swap bound', () => {
     const record = generateAdaptiveCandidates(baseInput());
-    expect(record.candidates.length + record.rejected.length).toBe(
-      baseConfig().candidateCount,
-    );
+    expect(record.candidates.length + record.rejected.length).toBe(baseConfig().candidateCount);
     for (const candidate of record.candidates) {
       expect(checkDeck(candidate.deck, environment).legal).toBe(true);
       expect(candidate.swaps.length).toBeGreaterThanOrEqual(1);

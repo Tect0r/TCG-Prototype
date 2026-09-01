@@ -3229,16 +3229,22 @@ another, no candidate evaluation or promotion, no card-definition mutation.
       plus the raw-envelope tests in `envelopes.test.ts` covering the additive
       schemaVersion 1→2 widening, `apps/simulator` typecheck and the full
       `apps/simulator` suite (579 tests); tranche-close gates deferred to M08.16D.
-- [ ] **M08.16D — Tranche close.** Revalidate all schema, lineage, generation,
+- [x] **M08.16D — Tranche close.** Revalidate all schema, lineage, generation,
       provenance and compatibility acceptance cases; record every moved or retained
       version and run the standard tranche-close gate. Do not start evaluation.
+      Verified: revalidated the combined `config`/`version`/`envelopes`/`revision`/
+      `generate` diff against this milestone's acceptance list; formatted 8 files
+      that `format:check` flagged (no behavior change); `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` all pass clean (212 test files,
+      4425 tests, typecheck, lint, format, build). No version moved or retained
+      beyond `ADAPTIVE_RAW_SCHEMA_VERSION` 1→2, already recorded at M08.16C.
 
 ### Checklist
 
-- [ ] Strict adaptive config with the full policy surface above.
-- [ ] Immutable revision lineage with exact swaps and seed paths.
-- [ ] Deterministic candidate generation; rejections recorded with reasons.
-- [ ] Observation boundary preserved; analysis mode unmistakable.
+- [x] Strict adaptive config with the full policy surface above.
+- [x] Immutable revision lineage with exact swaps and seed paths.
+- [x] Deterministic candidate generation; rejections recorded with reasons.
+- [x] Observation boundary preserved; analysis mode unmistakable.
 
 ## M08.17 — Adaptive evaluation and promotion loop
 

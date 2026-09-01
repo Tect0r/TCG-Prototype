@@ -50,9 +50,9 @@ describe('isFutureAdaptiveVersion', () => {
 
 describe('assertCompatibleAdaptiveVersion', () => {
   it('throws the readable message for an incompatible version', () => {
-    expect(() =>
-      assertCompatibleAdaptiveVersion('raw', CURRENT_ADAPTIVE_VERSIONS.raw + 1),
-    ).toThrow(/newer build/);
+    expect(() => assertCompatibleAdaptiveVersion('raw', CURRENT_ADAPTIVE_VERSIONS.raw + 1)).toThrow(
+      /newer build/,
+    );
   });
 
   it('does not throw for the current version', () => {

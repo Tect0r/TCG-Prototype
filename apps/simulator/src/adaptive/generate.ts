@@ -39,8 +39,12 @@ import {
  */
 
 export const ADAPTIVE_GENERATED_CONSTRUCTION_KINDS = ['swap', 'rebuild'] as const;
-export const adaptiveGeneratedConstructionKindSchema = z.enum(ADAPTIVE_GENERATED_CONSTRUCTION_KINDS);
-export type AdaptiveGeneratedConstructionKind = z.infer<typeof adaptiveGeneratedConstructionKindSchema>;
+export const adaptiveGeneratedConstructionKindSchema = z.enum(
+  ADAPTIVE_GENERATED_CONSTRUCTION_KINDS,
+);
+export type AdaptiveGeneratedConstructionKind = z.infer<
+  typeof adaptiveGeneratedConstructionKindSchema
+>;
 
 export const adaptiveRejectedCandidateSchema = z.strictObject({
   /** Which candidate slot, 0-based, this rejection came from. */
@@ -102,7 +106,12 @@ function diffSwaps(before: SimDeck, after: SimDeck): AdaptiveCardSwap[] {
   return removed.map((cardOut, i) => adaptiveCardSwapSchema.parse({ cardOut, cardIn: added[i] }));
 }
 
-function candidateSeedPath(config: AdaptiveConfig, generation: number, block: number, index: number): string {
+function candidateSeedPath(
+  config: AdaptiveConfig,
+  generation: number,
+  block: number,
+  index: number,
+): string {
   return (
     `${adaptiveRevisionSeedPath(config.seed, config.id, generation, block)}` +
     `|cand:${String(index).padStart(4, '0')}`
@@ -173,7 +182,10 @@ function generateRebuildCandidate(
     environment,
     seedFromPath(seedPath, 'r'),
     {},
-    { commanderId: incumbent.deck.commanderId, label: `${incumbent.deck.label} rebuild g${String(generation)}` },
+    {
+      commanderId: incumbent.deck.commanderId,
+      label: `${incumbent.deck.label} rebuild g${String(generation)}`,
+    },
   );
   if (!result.deck) {
     return {
@@ -197,7 +209,12 @@ function generateRebuildCandidate(
   }
 
   if (result.deck.hash === incumbent.deck.hash) {
-    return { index, seedPath, construction, reasons: ['the rebuild reproduced the incumbent deck'] };
+    return {
+      index,
+      seedPath,
+      construction,
+      reasons: ['the rebuild reproduced the incumbent deck'],
+    };
   }
 
   return makeAdaptiveRevision({
@@ -227,8 +244,24 @@ export function generateAdaptiveCandidates(
 
   for (let index = 0; index < config.candidateCount; index += 1) {
     const outcome = rebuild
-      ? generateRebuildCandidate(environment, config, incumbent, opponentRevisionId, generation, block, index)
-      : generateSwapCandidate(environment, config, incumbent, opponentRevisionId, generation, block, index);
+      ? generateRebuildCandidate(
+          environment,
+          config,
+          incumbent,
+          opponentRevisionId,
+          generation,
+          block,
+          index,
+        )
+      : generateSwapCandidate(
+          environment,
+          config,
+          incumbent,
+          opponentRevisionId,
+          generation,
+          block,
+          index,
+        );
     if ('revisionId' in outcome) candidates.push(outcome);
     else rejected.push(outcome);
   }

@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-01)   | M08.16A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-01)   | M08.17A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,22 +223,21 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.16A — Adaptive configuration and compatibility.** Add the strict config
-surface for a reproducible adaptive experiment — starting deck sources,
-Commander policy (`locked`, selected or open), information policy
-(`public_observation` or an explicit `analysis_full_deck`), total learning
-budget, block size, candidate count, swap bound, optional deterministic rebuild
-trigger, reference-field share, retention and final validation games — plus the
-raw/checkpoint/result envelopes and a readable current/future-version refusal.
-Prove unknown-field refusal and every policy bound **without** generating
-candidates or running adaptation. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0816--adaptive-counter-schema-and-deck-lineage).
+**M08.17A — Mirrored block scheduler and budget.** Make the mirrored evaluation
+block the decision unit, define deterministic tie/no-decision behavior and
+schedule only whole work that fits the declared learning budget. Record an
+explained final shortfall instead of silently overspending. Its scope and
+checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0817--adaptive-evaluation-and-promotion-loop).
 
-M08.15 was the last tranche run under the former one-session shape; M08.16
-onward is already divided into bounded work slices in the milestone file — run
-exactly one named slice per session, stop after its focused checks and
-checkpoint commit, and never combine slices merely because they share a
-tranche.
+M08.16 closed on 2026-09-01 (`tcg-reviewer` `VERDICT: APPROVE`, two low-severity
+non-blocking notes recorded in `.claude/current-work.md` for M08.17/M08.18 to
+mind): a reproducible Adaptive Counter config, immutable revision lineage and
+deterministic legal candidate generation exist, with no evaluation, promotion
+or card-definition mutation yet. M08.17 spends that lineage against a mirrored
+evaluation block — run exactly one named slice per session, stop after its
+focused checks and checkpoint commit, and never combine slices merely because
+they share a tranche.
 
 **M08.15 gave a completed Commander Search a way to become a comparison —
 `schedule-championship`, a ninth mutating address, not a continuation

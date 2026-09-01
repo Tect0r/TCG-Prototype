@@ -27,7 +27,9 @@ function deck(commanderId: string, guardQuantity = 1): SimDeck {
   });
 }
 
-function root(overrides: Partial<Parameters<typeof makeAdaptiveRevision>[0]> = {}): AdaptiveRevision {
+function root(
+  overrides: Partial<Parameters<typeof makeAdaptiveRevision>[0]> = {},
+): AdaptiveRevision {
   return makeAdaptiveRevision({
     experimentId: 'my-adaptive-run',
     parentRevisionId: null,
@@ -293,9 +295,9 @@ describe('assertAdaptiveLineage', () => {
   it('refuses a repeated revision in the same lineage', () => {
     const revisionRoot = root();
     const revisionOne = child(revisionRoot);
-    expect(() =>
-      assertAdaptiveLineage('locked', [revisionRoot, revisionOne, revisionOne]),
-    ).toThrow(/more than once/);
+    expect(() => assertAdaptiveLineage('locked', [revisionRoot, revisionOne, revisionOne])).toThrow(
+      /more than once/,
+    );
   });
 
   it('refuses a Commander change under a locked policy', () => {
@@ -309,16 +311,12 @@ describe('assertAdaptiveLineage', () => {
   it('allows a Commander change under an open policy', () => {
     const revisionRoot = root();
     const changedCommander = child(revisionRoot, { deck: deck('prototype_commander_red') });
-    expect(() =>
-      assertAdaptiveLineage('open', [revisionRoot, changedCommander]),
-    ).not.toThrow();
+    expect(() => assertAdaptiveLineage('open', [revisionRoot, changedCommander])).not.toThrow();
   });
 
   it('allows a Commander change under a selected policy', () => {
     const revisionRoot = root();
     const changedCommander = child(revisionRoot, { deck: deck('prototype_commander_red') });
-    expect(() =>
-      assertAdaptiveLineage('selected', [revisionRoot, changedCommander]),
-    ).not.toThrow();
+    expect(() => assertAdaptiveLineage('selected', [revisionRoot, changedCommander])).not.toThrow();
   });
 });

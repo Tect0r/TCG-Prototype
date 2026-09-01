@@ -106,10 +106,7 @@ export function describeAdaptiveVersionProblem(
 }
 
 /** Throws the readable refusal above when `found` is not a version this build reads. */
-export function assertCompatibleAdaptiveVersion(
-  field: AdaptiveVersionField,
-  found: unknown,
-): void {
+export function assertCompatibleAdaptiveVersion(field: AdaptiveVersionField, found: unknown): void {
   const problem = describeAdaptiveVersionProblem(field, found);
   if (problem !== null) throw new Error(problem);
 }

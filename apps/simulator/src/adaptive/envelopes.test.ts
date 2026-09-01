@@ -29,9 +29,7 @@ describe.each([
   });
 
   it('refuses an unrecognized field', () => {
-    expect(() => schema.parse({ schemaVersion: 1, ...identity(), stray: true })).toThrow(
-      ZodError,
-    );
+    expect(() => schema.parse({ schemaVersion: 1, ...identity(), stray: true })).toThrow(ZodError);
   });
 
   it('refuses a missing experimentId or configHash', () => {
@@ -77,7 +75,11 @@ describe('raw envelope', () => {
 
   it('refuses an experimentId outside the lowercase slug alphabet', () => {
     expect(() =>
-      adaptiveRawRecordSchema.parse({ schemaVersion: 2, experimentId: 'Not Valid', configHash: 'x' }),
+      adaptiveRawRecordSchema.parse({
+        schemaVersion: 2,
+        experimentId: 'Not Valid',
+        configHash: 'x',
+      }),
     ).toThrow(ZodError);
   });
 
