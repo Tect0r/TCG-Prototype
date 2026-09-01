@@ -1,11 +1,11 @@
 ---
 name: tcg-reviewer
-description: Use as the final read-only Opus gate for every milestone tranche and for risky TCG changes involving rules, state, persistence, networking, contracts, compatibility, privacy, determinism or architecture.
+description: Final bounded Opus gate once per completed milestone tranche, never per work slice. Read-only review of the tranche commit range and verification evidence.
 model: opus
-effort: high
+effort: medium
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
-maxTurns: 36
+maxTurns: 20
 color: purple
 ---
 
@@ -19,13 +19,19 @@ on the implementer's summary as proof. Read only the exact active tranche,
 directly relevant decisions and files necessary to judge the change; avoid
 reloading whole historical milestone documents.
 
+Run once per tranche after all of its work slices and full gates are complete.
+Never review an intermediate slice, repeat discovery already recorded in the
+diff, or inspect unrelated commits. The caller must name the exact base and head
+of the tranche commit range.
+
 ## Entry conditions
 
 The main session must provide or make discoverable:
 
 - the user's exact request and bounded tranche;
 - the active tranche acceptance criteria and exclusions;
-- the complete uncommitted diff;
+- the exact base and head commits for all tranche slices, plus any uncommitted
+  tranche-close record diff;
 - focused verification results;
 - `npm run check:consistency`, `npm run audit:check` and `npm run verify`
   results for a milestone tranche.

@@ -11,10 +11,19 @@ has moved since; compare a status with the current branch before relying on it.
 
 ## Execution rule
 
-Work on exactly one tranche named by the user. Read only this file, `CLAUDE.md`,
-the active milestone file, and the code and documents that tranche directly
-references. After verification, update the status table and the tranche's
-checklist in the milestone file, then stop.
+Work on exactly one named work slice, or one explicitly named tranche-close run.
+Read only this file's execution rule and status row, the named slice in the
+active milestone file, and the code and decisions that slice directly references.
+Do not load the whole milestone history.
+
+A normal slice ends after focused semantic checks and a coherent checkpoint
+commit. It may mark only its own work-slice checkbox; it must not mark tranche
+acceptance, change the root status row or start the next slice. A tranche-close
+run revalidates the combined tranche, runs `npm run check:consistency`,
+`npm run audit:check` and `npm run verify`, updates the durable record, obtains
+one bounded Opus review over the tranche commit range, resolves material findings
+and only then marks the tranche complete. Full gates and Opus do not run for each
+implementation slice.
 
 ## Status
 
@@ -29,7 +38,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-01)   | M08.16       |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-01)   | M08.16A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -214,13 +223,22 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.16 — Adaptive Counter schema and deck lineage.** Define a reproducible
-adaptive experiment and its immutable deck revision history **without running
-adaptation yet**. Default policy: Commander locked; the loser adapts after a
-mirrored evaluation block; meta-aware objective; bounded 1–5-card legal swaps;
-the previous successful revision retained; final decks frozen for a fresh-seed
-validation stage. Its full config surface, lineage shape and exclusions are in
+**M08.16A — Adaptive configuration and compatibility.** Add the strict config
+surface for a reproducible adaptive experiment — starting deck sources,
+Commander policy (`locked`, selected or open), information policy
+(`public_observation` or an explicit `analysis_full_deck`), total learning
+budget, block size, candidate count, swap bound, optional deterministic rebuild
+trigger, reference-field share, retention and final validation games — plus the
+raw/checkpoint/result envelopes and a readable current/future-version refusal.
+Prove unknown-field refusal and every policy bound **without** generating
+candidates or running adaptation. Its scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0816--adaptive-counter-schema-and-deck-lineage).
+
+M08.15 was the last tranche run under the former one-session shape; M08.16
+onward is already divided into bounded work slices in the milestone file — run
+exactly one named slice per session, stop after its focused checks and
+checkpoint commit, and never combine slices merely because they share a
+tranche.
 
 **M08.15 gave a completed Commander Search a way to become a comparison —
 `schedule-championship`, a ninth mutating address, not a continuation

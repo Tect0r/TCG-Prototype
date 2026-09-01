@@ -222,6 +222,28 @@ Two rules that are defects until a tranche fixes them:
 Charts supplement exact tables and never replace them. A tooltip is never the
 only way to obtain a value.
 
+## Work-slice execution from M08.16
+
+M08.15 remains the final tranche implemented under the original one-session
+shape. Every incomplete tranche after it is divided below into ordered work
+slices. A slice is a checkpoint, not a smaller claim of tranche acceptance.
+
+- Run exactly one named slice per Sonnet session and stop after its focused
+  semantic checks and checkpoint commit.
+- At the start of a slice, revalidate only its stated boundary against current
+  code and accepted ADRs. Paths named by previous slices are evidence, not a
+  permanent ownership map.
+- Mark only the completed slice checkbox. Leave the tranche checklist and root
+  status row unchanged until the close slice.
+- A **tranche close** slice adds no next-tranche implementation. It revalidates
+  the combined acceptance criteria, regenerates derived audit facts when needed,
+  runs `npm run check:consistency`, `npm run audit:check` and `npm run verify`,
+  updates the durable record, and requests one bounded Opus review over the exact
+  tranche commit range. Only an approved tranche is marked complete.
+- If a slice discovers that its result crosses another ownership boundary, split
+  the work at that boundary and record the smallest correction here before
+  implementing it. Do not silently absorb the next slice.
+
 ---
 
 ## M08.0 — Milestone record and architecture decision — **done (2026-08-14)**
@@ -3184,6 +3206,24 @@ and observation-policy tests.
 **Exclusion:** no claim that the algorithm understands _why_ a card counters
 another, no candidate evaluation or promotion, no card-definition mutation.
 
+### Work slices
+
+- [ ] **M08.16A — Adaptive configuration and compatibility.** Add the strict
+      config surface, policy enums, bounds, raw/checkpoint/result envelopes and
+      readable current/future-version refusal. Prove unknown-field refusal and every
+      policy bound without generating candidates or running adaptation.
+- [ ] **M08.16B — Immutable revision lineage.** Define revision identity,
+      parents, exact swaps, generation/block/opponent references, construction and
+      seed paths. Prove immutability, round trip and Commander-locked versus open
+      lineage without evaluating a candidate.
+- [ ] **M08.16C — Deterministic legal candidate generation.** Generate bounded
+      legal swap/rebuild candidates, retain the previous successful revision and
+      record every rejected candidate with its reason. Prove deterministic replay,
+      legality, swap bounds and the public-observation versus analysis-only boundary.
+- [ ] **M08.16D — Tranche close.** Revalidate all schema, lineage, generation,
+      provenance and compatibility acceptance cases; record every moved or retained
+      version and run the standard tranche-close gate. Do not start evaluation.
+
 ### Checklist
 
 - [ ] Strict adaptive config with the full policy surface above.
@@ -3210,6 +3250,24 @@ tests.
 
 **Exclusion:** no checkpoint or resume, no final validation, no UI.
 
+### Work slices
+
+- [ ] **M08.17A — Mirrored block scheduler and budget.** Make the mirrored block
+      the decision unit, define deterministic tie/no-decision behavior and schedule
+      only whole work that fits the declared learning budget. Record an explained
+      final shortfall instead of silently overspending.
+- [ ] **M08.17B — Candidate and reference-field evaluation.** Evaluate exact
+      active revisions against the current opponent and configured reference field;
+      keep meta-aware and explicitly labelled pure-counter objectives separate and
+      attribute every screening match to its revision and seed path.
+- [ ] **M08.17C — Promotion, rollback and moving opponents.** Select and promote
+      deterministically, retain or roll back on recorded evidence, re-evaluate after
+      an opponent revision moves, and keep cumulative series wins separate from
+      candidate-screening evidence.
+- [ ] **M08.17D — Tranche close.** Prove block boundaries, ties, promotion,
+      rollback, moving opponents, exact budget and deterministic replay through the
+      standard tranche-close gate. Do not add checkpointing, final validation or UI.
+
 ### Checklist
 
 - [ ] Block is the decision unit; single losses never adapt.
@@ -3235,6 +3293,25 @@ schema regeneration tests.
 
 **Exclusion:** no admin UI.
 
+### Work slices
+
+- [ ] **M08.18A — Checkpoint state and persistence.** Persist active revisions,
+      candidate state, spent budget, reference field, lineage and next seed path in
+      the strict checkpoint contract, including a valid partial-block state.
+- [ ] **M08.18B — Resume equivalence.** Resume without replaying a recorded
+      match, changing lineage or spending a seed twice. Prove uninterrupted and
+      resumed equivalence, including interruption inside a block.
+- [ ] **M08.18C — Frozen fresh-seed validation.** Freeze final deck lists and run
+      a separate mirrored validation stage on fresh seed families, with no learned
+      series result leaking into the validation standing.
+- [ ] **M08.18D — Canonical adaptive reports.** Produce machine-readable and
+      Markdown evidence for series, screenings, revisions, final diff, reference
+      field and validation. Detect repeated states and cycles descriptively and
+      regenerate schemas intentionally.
+- [ ] **M08.18E — Tranche close.** Revalidate checkpoint/resume, fresh seeds,
+      frozen lists, report separation, cycle fixtures and compatibility through the
+      standard tranche-close gate. Do not add admin UI.
+
 ### Checklist
 
 - [ ] Checkpoint and resume without replaying or double-spending a seed.
@@ -3257,6 +3334,26 @@ replays.
 **Acceptance:** configuration restoration, workload, public and full-information
 labelling, revision drill-down, cycle fixture and incomplete-run tests.
 
+### Work slices
+
+- [ ] **M08.19A — Builder contracts and restoration.** Expose starting decks,
+      Commander/information/adaptation policy, budget, block, candidate, swap,
+      counter-focus, reference-field and final-validation controls. Restore every
+      value and show workload before enqueueing.
+- [ ] **M08.19B — Adaptive result read model.** Serve the bounded tables and
+      provenance the dashboard needs from canonical M08.18 output, including
+      incomplete-run and unsupported-version states, without recomputing simulator
+      meaning in the admin layer.
+- [ ] **M08.19C — Series and revision dashboard.** Render cumulative and rolling
+      results, revision timeline, add/remove history, promotion evidence, start/final
+      diff and reference-field performance with exact tables beside charts.
+- [ ] **M08.19D — Validation, cycles and drill-down.** Present frozen validation
+      separately, label public versus full information unmistakably, show recurring
+      cycles descriptively and link each revision/segment to exact retained evidence.
+- [ ] **M08.19E — Tranche close.** Revalidate restoration, workload, labels,
+      incomplete states and drill-down through the standard tranche-close gate. Do
+      not begin advanced templates.
+
 ### Checklist
 
 - [ ] Full adaptive configuration through controls.
@@ -3278,6 +3375,26 @@ live content.
 
 **Acceptance:** UI-to-config equivalence, declared-change refusal, shared-seed,
 profile partition, soak failure retention and labelling tests.
+
+### Work slices
+
+- [ ] **M08.20A — Candidate Patch Comparison.** Map controls exactly onto the
+      existing comparison contract, require the declared change, preserve identical
+      reference populations and seed families, and prevent a temporary candidate
+      environment from publishing live content.
+- [ ] **M08.20B — Pilot Robustness.** Map controls onto the existing robustness
+      contract, preserve profile partitions and denominators, and refuse any pooled
+      rate whose pilot meaning is unexplained.
+- [ ] **M08.20C — Engine Soak and advanced card analysis.** Map Engine Soak to a
+      bounded batch/random-legal termination configuration that retains failures and
+      reports engine health rather than balance. Expose replacement and insertion
+      only if their current contracts still pass revalidation.
+- [ ] **M08.20D — Template UI and restoration.** Integrate the three templates
+      through progressive controls, exact workload, configuration restoration and
+      truthful result labels without adding a new execution engine.
+- [ ] **M08.20E — Tranche close.** Prove UI-to-config equivalence, shared seeds,
+      profile separation, retained soak failures and candidate containment through
+      the standard tranche-close gate.
 
 ### Checklist
 
@@ -3307,6 +3424,26 @@ exact deck snapshot, source classification, and every termination-origin test.
 
 **Exclusion:** no multiplayer write path, no feedback prompt.
 
+### Work slices
+
+- [ ] **M08.21A — Versioned live-match envelope.** Define the strict envelope,
+      shared telemetry reuse, software/content/rules provenance, source, format,
+      immutable deck snapshots and hashes, Commander, seat, counts and outcome.
+      Prove round trip, unknown-field and future-version refusal.
+- [ ] **M08.21B — Termination and interruption semantics.** Model explicit
+      concede, leave concession, disconnect timeout, rules victory, server failure
+      and abandoned/unrecordable outcomes as analytics provenance without changing
+      the engine action meaning.
+- [ ] **M08.21C — Retention and artifact contracts.** Define configurable summary,
+      raw-event and replay retention plus exact compatibility behavior; do not add a
+      multiplayer sink or storage implementation.
+- [ ] **M08.21D — Privacy and participant identity.** Make forbidden personal and
+      secret fields absent by schema, use match-local pseudonymous participant IDs
+      only, and prove no cross-session identity claim or hidden-data projection.
+- [ ] **M08.21E — Tranche close.** Revalidate all six origins, exact decks,
+      source classification, privacy absence and version behavior through the
+      standard tranche-close gate. Do not add the write path.
+
 ### Checklist
 
 - [ ] Strict versioned envelope reusing shared telemetry payloads.
@@ -3327,6 +3464,21 @@ outcome stays authoritative even if analytics persistence fails.
 interruption, duplicate completion, configured retention and sink-failure tests.
 
 **Exclusion:** no special surrender snapshot, no dashboard, no feedback prompt.
+
+### Work slices
+
+- [ ] **M08.22A — Injectable failure-contained sink.** Add the authoritative
+      server boundary and failure policy so analytics errors cannot block, change or
+      corrupt gameplay. Keep simulator-grade work out of the live event loop.
+- [ ] **M08.22B — Canonical idempotent persistence.** Write one canonical record
+      and configured retained artifacts per match, with stable duplicate/retry keys
+      and no second source of truth.
+- [ ] **M08.22C — Lifecycle integration.** Cover normal victory, reconnect,
+      disconnect timeout, interruption and server restart, preserving the gameplay
+      outcome even when persistence fails or completion is delivered twice.
+- [ ] **M08.22D — Tranche close.** Revalidate retention, idempotence, restart and
+      failure containment through the standard tranche-close gate. Do not add
+      surrender snapshots or dashboard behavior.
 
 ### Checklist
 
@@ -3354,6 +3506,24 @@ and hidden-artifact authorization tests.
 **Exclusion:** no surrender-reason UI, no causal "card made them quit" label, no
 AI continuation from the state.
 
+### Work slices
+
+- [ ] **M08.23A — Pre-action capture contract.** Define and capture the state
+      immediately before explicit or leave concession, including pending choice,
+      combat and Reaction context, without changing the engine concession.
+- [ ] **M08.23B — Event and turn windows.** Retain the last meaningful event
+      chain, current/previous turn windows, event distances, content identity and
+      deck provenance needed by later exposure-aware analysis.
+- [ ] **M08.23C — Termination integration and idempotence.** Distinguish the two
+      voluntary origins in analytics, exclude timeout/disconnect from voluntary
+      snapshots, and make duplicate completion/retry capture idempotent.
+- [ ] **M08.23D — Hidden-artifact retention and authorization.** Store full-state
+      snapshots only under configured retention as admin-only artifacts and prove
+      public/client/unauthorized paths cannot obtain them.
+- [ ] **M08.23E — Tranche close.** Revalidate pending contexts, windows, timeout
+      exclusion, retention, idempotence and authorization through the standard
+      tranche-close gate. Do not add cause labels, UI or AI continuation.
+
 ### Checklist
 
 - [ ] Pre-action state, pending context and event windows captured.
@@ -3379,6 +3549,25 @@ filter and sparse-data tests.
 
 **Exclusion:** no Player Meta page.
 
+### Work slices
+
+- [ ] **M08.24A — Source-separated match and deck aggregates.** Aggregate
+      Commander selection, exact decks, clusters, matchups, duration and termination
+      by content/version/source while keeping human, mixed and AI evidence distinct.
+- [ ] **M08.24B — Eligibility-aware card evidence.** Aggregate inclusion, pairs,
+      played, held and unusable cards with Commander legality and explicit support;
+      never treat structural ineligibility as non-selection.
+- [ ] **M08.24C — Honest weighting and denominators.** Provide match-weighted and
+      unique-deck-weighted views only, with no player-weighted claim, and preserve
+      sparse, missing and corrupt evidence classifications.
+- [ ] **M08.24D — Surrender state and exposure windows.** Aggregate voluntary
+      surrender by Commander/deck/turn/phase and state, plus exposure-adjusted action
+      chain/turn/round proximity carrying exposure and event-distance counts. Exclude
+      timeout and make correlation semantics structural.
+- [ ] **M08.24E — Tranche close.** Revalidate source separation, eligibility,
+      denominators, version filters, sparse data and surrender proximity through the
+      standard tranche-close gate. Do not create the Player Meta page.
+
 ### Checklist
 
 - [ ] Selection, deck, card, pair, matchup, duration and termination aggregates.
@@ -3400,6 +3589,24 @@ sit side by side only where each denominator and evidence class stays explicit.
 **Acceptance:** accessibility, filters, source labels, denominator display,
 empty, sparse and corrupt states, surrender correlation wording, and aggregate
 drill-down tests.
+
+### Work slices
+
+- [ ] **M08.25A — Player Meta query and filter surface.** Add bounded service and
+      client contracts for content version, date, source, Commander, deck cluster,
+      termination and private test label, retaining evidence class and denominator.
+- [ ] **M08.25B — Choice and outcome views.** Render Commander, deck/cluster,
+      eligible card, pair, matchup, duration and termination views with exact tables,
+      source labels and match/unique-deck weighting controls only.
+- [ ] **M08.25C — Surrender evidence views.** Render turn/phase distributions,
+      state summaries and exposure-adjusted recent-card/event tables using enforced
+      correlation language and visible support.
+- [ ] **M08.25D — States, accessibility and drill-down.** Design empty, sparse,
+      corrupt and unauthorized states; verify keyboard/screen-reader access and link
+      aggregate rows to the exact bounded evidence available at this stage.
+- [ ] **M08.25E — Tranche close.** Revalidate every filter, denominator, source
+      label, state and correlation phrase through the standard tranche-close gate.
+      Do not start the explorers.
 
 ### Checklist
 
@@ -3424,6 +3631,28 @@ load unlimited raw rows into the browser.
 **Acceptance:** cross-navigation, pagination, authorization, hidden information,
 representative-selection determinism, unsupported replay and large-fixture tests.
 
+### Work slices
+
+- [ ] **M08.26A — Shared explorer boundary.** Define bounded pagination,
+      authorization, stable identifiers, source/provenance fields and cross-navigation
+      contracts without loading unlimited raw rows into the browser.
+- [ ] **M08.26B — Deck Explorer.** Present immutable list, Commander, provenance,
+      construction, known revisions, matches, matchup split, cluster and separated AI
+      and human evidence with bounded navigation.
+- [ ] **M08.26C — Card Explorer.** Present eligible inclusion by source and
+      Commander, draw/play/dead-hand evidence, partners/replacements, contributing
+      decks/matches and explicit insufficient-data states.
+- [ ] **M08.26D — Match Explorer.** Add the filterable match table, termination
+      context, event timeline, deck snapshots, selected diagnostics and authorized
+      replay/surrender links, including unsupported-artifact states.
+- [ ] **M08.26E — Representative selection and cross-navigation.** Select closest,
+      upset, shortest, longest, one-sided, pre-adaptation, deterministic ordinary and
+      every abnormal match reproducibly; prove all three explorers cross-navigate
+      without leaking hidden information.
+- [ ] **M08.26F — Tranche close.** Revalidate pagination, authorization, hidden
+      data, deterministic representatives, unsupported replays and large fixtures
+      through the standard tranche-close gate.
+
 ### Checklist
 
 - [ ] Three explorers that cross-navigate.
@@ -3447,6 +3676,28 @@ candidate balance change was tested, and never rewrite historical raw output.
 
 **Acceptance:** compatible, refused and deliberately-different comparison, delta
 math, missing metric, coverage, corrupt record and annotation-immutability tests.
+
+### Work slices
+
+- [ ] **M08.27A — Comparison compatibility gate.** Define compatible versus
+      refused result pairs and the explicit deliberately-different path carrying
+      both hashes, versions and declared change before computing any delta.
+- [ ] **M08.27B — Version deltas.** Compute precon/Commander matchup, inclusion,
+      duration, termination, deck-family and surrender-pattern deltas with exact
+      support and missing-metric behavior.
+- [ ] **M08.27C — Coverage model and page.** Measure the whole card/mechanic
+      vocabulary across eligibility, inclusion, draw, play, activation, trigger,
+      target and observation, preserving reasons for unavailable coverage.
+- [ ] **M08.27D — Data Health model and page.** Surface corrupt/skipped records,
+      failures, abnormal/stalled matches, exclusions, replicate disagreement, seat
+      bias, pilot sensitivity, unsupported mechanics and replay status from recorded
+      evidence.
+- [ ] **M08.27E — Additive annotations.** Record why a candidate change was tested
+      without mutating historical raw output, and link annotations to the compatible
+      or deliberately different comparison they qualify.
+- [ ] **M08.27F — Tranche close.** Revalidate refusal, delta math, missing data,
+      coverage, real defects and annotation immutability through the standard
+      tranche-close gate.
 
 ### Checklist
 
@@ -3477,6 +3728,30 @@ record commit.
 
 **Stop:** report the remaining genuine product decisions. Do not begin card
 expansion, public feedback, matchmaking or automated rebalance work.
+
+### Work slices
+
+- [ ] **M08.28A — Resource priority and process separation.** Enforce and document
+      simulator priority below live multiplayer work on shared machines, without
+      moving simulator CPU into the live event loop.
+- [ ] **M08.28B — Retention, archive and export boundaries.** Bound every retained
+      artifact and export path. Add deletion only if separately confirmed, exactly
+      targeted, recoverable where practical and path-boundary tested; otherwise keep
+      deletion absent.
+- [ ] **M08.28C — Secret and hidden-artifact leak audit.** Prove private snapshots,
+      tokens and secrets stay out of logs, player bundles, unauthenticated endpoints
+      and aggregate-only exports; correct only findings inside M08 ownership.
+- [ ] **M08.28D — End-to-end recovery matrix.** Exercise every primary and
+      advanced test style, partial/resumed work, human ingestion, surrender capture,
+      explorer drill-down and before/after comparison across real boundaries.
+- [ ] **M08.28E — Visual and operator documentation pass.** Inspect representative
+      wide and narrow rendered surfaces, record unavailable visual tooling honestly,
+      and update user-facing run/deployment instructions without duplicating the
+      canonical milestone record.
+- [ ] **M08.28F — Milestone close.** Revalidate every remaining M08 checklist,
+      version decision, exclusion and open decision; regenerate the final audit,
+      run all close gates, obtain final Opus approval, commit the record and confirm
+      a clean tree. Report the next genuine milestone without starting it.
 
 ### Checklist
 
