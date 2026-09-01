@@ -15,16 +15,26 @@ import { Busy, Empty, Failure } from './Feedback.js';
 import {
   PRESET_DEPTHS,
   asBenchmarkChoice,
+  asOpenMetaChoice,
   benchmarkPresets,
+  catalogCommanderIds,
   choiceOf,
   formFingerprint,
   formOf,
   initialForm,
+  initialOpenMetaForm,
+  openMetaChoiceOf,
+  openMetaFormFingerprint,
+  openMetaFormOf,
   type BuilderForm,
   type BuilderPresetId,
+  type OpenMetaForm,
 } from '../lib/builder-form.js';
 import { useAdminSession, useAdminState } from '../state/AdminContext.js';
 import type { AdminFailure } from '../net/transport.js';
+
+/** Which test family the screen is configuring right now. */
+type Family = 'benchmark' | 'open_meta';
 
 /**
  * The first screen in this build that creates something.
@@ -72,7 +82,9 @@ export function BuilderScreen() {
   const connection = state.connection;
 
   const content = state.content.status === 'ready' ? state.content.value : null;
+  const [family, setFamily] = useState<Family>('benchmark');
   const [form, setForm] = useState<BuilderForm>(() => initialForm(content));
+  const [openMeta, setOpenMeta] = useState<OpenMetaForm>(() => initialOpenMetaForm(content));
   const [seeded, setSeeded] = useState(content !== null);
   const [priced, setPriced] = useState<{
     readonly fingerprint: string;
@@ -89,11 +101,18 @@ export function BuilderScreen() {
   useEffect(() => {
     if (seeded || content === null) return;
     setForm(initialForm(content));
+    setOpenMeta(initialOpenMetaForm(content));
     setSeeded(true);
   }, [content, seeded]);
 
-  const fingerprint = formFingerprint(form);
-  const result = choiceOf(form);
+  // Whichever family is on screen owns the fingerprint, the request and the
+  // batch label the estimate, enqueue and save actions below all act on. The
+  // other family's form keeps whatever was on it, unpriced, so switching back
+  // does not lose it.
+  const fingerprint =
+    family === 'benchmark' ? formFingerprint(form) : openMetaFormFingerprint(openMeta);
+  const result = family === 'benchmark' ? choiceOf(form) : openMetaChoiceOf(openMeta);
+  const batchLabel = family === 'benchmark' ? form.batchLabel : openMeta.batchLabel;
   const current = priced !== null && priced.fingerprint === fingerprint ? priced.estimate : null;
 
   const update = (change: Partial<BuilderForm>): void => {
@@ -102,11 +121,26 @@ export function BuilderScreen() {
     setSaved(null);
   };
 
+  const updateOpenMeta = (change: Partial<OpenMetaForm>): void => {
+    setOpenMeta((previous) => ({ ...previous, ...change }));
+    setEnqueued(null);
+    setSaved(null);
+  };
+
+  const selectFamily = (next: Family): void => {
+    setFamily(next);
+    setPriced(null);
+    setEnqueued(null);
+    setSaved(null);
+    setFailure(null);
+  };
+
   if (connection.status !== 'connected') return null;
 
   const presets =
     state.presets.status === 'ready' ? benchmarkPresets(state.presets.value.presets) : [];
   const maxWorkers = connection.capabilities.orchestrator.maxWorkersPerJob;
+  const commanderIds = catalogCommanderIds(content);
 
   const price = async (): Promise<void> => {
     if (!result.ok) return;
@@ -122,7 +156,7 @@ export function BuilderScreen() {
   const enqueue = async (): Promise<void> => {
     if (!result.ok || current === null) return;
     setFailure(null);
-    const answer = await session.enqueue(form.batchLabel.trim(), result.choice);
+    const answer = await session.enqueue(batchLabel.trim(), result.choice);
     if (answer.ok) setEnqueued(answer.value);
     else setFailure(answer.failure);
   };
@@ -138,9 +172,16 @@ export function BuilderScreen() {
   };
 
   const open = (entry: SavedChoiceView): void => {
-    const reopened = formOf(entry.choice, entry.label);
-    if (reopened === null) return;
-    setForm(reopened);
+    const benchmark = formOf(entry.choice, entry.label);
+    if (benchmark !== null) {
+      setFamily('benchmark');
+      setForm(benchmark);
+    } else {
+      const reopened = openMetaFormOf(entry.choice, entry.label);
+      if (reopened === null) return;
+      setFamily('open_meta');
+      setOpenMeta(reopened);
+    }
     setPriced(null);
     setEnqueued(null);
     setSaved(null);
@@ -163,12 +204,31 @@ export function BuilderScreen() {
 
       {content !== null && (
         <>
-          <DepthSection presets={presets} form={form} onChange={update} />
-          <PreconSection content={content} form={form} onChange={update} />
-          <PilotSection content={content} form={form} onChange={update} />
-          <WorkloadSection form={form} onChange={update} maxWorkers={maxWorkers} />
-          <AdvancedSection form={form} onChange={update} />
-          <IdentitySection form={form} onChange={update} />
+          <FamilySection family={family} onChange={selectFamily} />
+
+          {family === 'benchmark' ? (
+            <>
+              <DepthSection presets={presets} form={form} onChange={update} />
+              <PreconSection content={content} form={form} onChange={update} />
+              <PilotSection content={content} form={form} onChange={update} />
+              <WorkloadSection form={form} onChange={update} maxWorkers={maxWorkers} />
+              <AdvancedSection form={form} onChange={update} />
+              <IdentitySection form={form} onChange={update} />
+            </>
+          ) : (
+            <>
+              <CommanderSection
+                commanderIds={commanderIds}
+                form={openMeta}
+                onChange={updateOpenMeta}
+              />
+              <OpenMetaPilotSection content={content} form={openMeta} onChange={updateOpenMeta} />
+              <PopulationSection form={openMeta} onChange={updateOpenMeta} />
+              <AdvancedSearchSection form={openMeta} onChange={updateOpenMeta} />
+              <OpenMetaWorkloadSection form={openMeta} onChange={updateOpenMeta} />
+              <OpenMetaIdentitySection form={openMeta} onChange={updateOpenMeta} />
+            </>
+          )}
 
           <section className="panel" aria-labelledby="builder-estimate">
             <h2 id="builder-estimate">What this schedules</h2>
@@ -236,7 +296,8 @@ export function BuilderScreen() {
           </section>
 
           <SavedSection
-            form={form}
+            presetId={family === 'benchmark' ? form.presetId : 'open_meta'}
+            deckCount={family === 'benchmark' ? form.preconIds.length : null}
             saveLabel={saveLabel}
             onLabel={setSaveLabel}
             onKeep={() => void keep()}
@@ -247,6 +308,58 @@ export function BuilderScreen() {
         </>
       )}
     </div>
+  );
+}
+
+/* --------------------------------------------------------------- family */
+
+function FamilySection({
+  family,
+  onChange,
+}: {
+  readonly family: Family;
+  readonly onChange: (family: Family) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-family">
+      <h2 id="builder-family">Test family</h2>
+      <p className="panel__note">
+        Two ways to schedule work from this screen: a precon benchmark plays named decks against
+        each other, and an Open Meta search lets the search choose its own decks and Commanders.
+      </p>
+      <ul className="builder__choices">
+        <li>
+          <label>
+            <input
+              type="radio"
+              name="builder-family"
+              checked={family === 'benchmark'}
+              onChange={() => {
+                onChange('benchmark');
+              }}
+            />
+            <span className="builder__choice-label">Precon benchmark</span>
+          </label>
+          <p className="builder__choice-note">Named precons, at a fixed depth or a custom one.</p>
+        </li>
+        <li>
+          <label>
+            <input
+              type="radio"
+              name="builder-family"
+              checked={family === 'open_meta'}
+              onChange={() => {
+                onChange('open_meta');
+              }}
+            />
+            <span className="builder__choice-label">Open Meta search</span>
+          </label>
+          <p className="builder__choice-note">
+            An evolutionary search over legal Commanders and cards — discovery, not validation.
+          </p>
+        </li>
+      </ul>
+    </section>
   );
 }
 
@@ -661,6 +774,394 @@ function IdentitySection({
   );
 }
 
+/* -------------------------------------------------------- open meta: commanders */
+
+function CommanderSection({
+  commanderIds,
+  form,
+  onChange,
+}: {
+  readonly commanderIds: readonly string[];
+  readonly form: OpenMetaForm;
+  readonly onChange: (change: Partial<OpenMetaForm>) => void;
+}) {
+  const chosen = new Set(form.commanderIds);
+  return (
+    <section className="panel" aria-labelledby="builder-commanders">
+      <h2 id="builder-commanders">Commanders</h2>
+      <p className="panel__note">
+        Every legal Commander is still &ldquo;open&rdquo;. Scoping the search to a selection asks
+        the same question about a narrower field, rather than a different question.
+      </p>
+      <fieldset className="builder__field">
+        <legend>Which Commanders the search may choose</legend>
+        <label>
+          <input
+            type="radio"
+            name="builder-commander-scope"
+            checked={form.commanderScope === 'all'}
+            onChange={() => {
+              onChange({ commanderScope: 'all' });
+            }}
+          />
+          <span>Every legal Commander</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="builder-commander-scope"
+            checked={form.commanderScope === 'selected'}
+            onChange={() => {
+              onChange({ commanderScope: 'selected' });
+            }}
+          />
+          <span>A selection</span>
+        </label>
+      </fieldset>
+
+      {form.commanderScope === 'selected' &&
+        (commanderIds.length === 0 ? (
+          <Empty>This build has no playable Commander to select from.</Empty>
+        ) : (
+          <ul className="builder__choices">
+            {commanderIds.map((commanderId) => (
+              <li key={commanderId}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={chosen.has(commanderId)}
+                    onChange={(event) => {
+                      const next = new Set(form.commanderIds);
+                      if (event.target.checked) next.add(commanderId);
+                      else next.delete(commanderId);
+                      onChange({
+                        commanderIds: commanderIds.filter((id) => next.has(id)),
+                      });
+                    }}
+                  />
+                  <span className="builder__choice-label">
+                    <code>{commanderId}</code>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        ))}
+    </section>
+  );
+}
+
+/* -------------------------------------------------------- open meta: pilots */
+
+function OpenMetaPilotSection({
+  content,
+  form,
+  onChange,
+}: {
+  readonly content: ContentCatalog;
+  readonly form: OpenMetaForm;
+  readonly onChange: (change: Partial<OpenMetaForm>) => void;
+}) {
+  const chosen = new Set(form.pilotIds);
+  const anyPlayQuality = content.pilots.some(
+    (pilot) => chosen.has(pilot.pilotId) && pilot.playQualityEvidence,
+  );
+  return (
+    <section className="panel" aria-labelledby="builder-open-meta-pilots">
+      <h2 id="builder-open-meta-pilots">Pilots</h2>
+      <p className="panel__note">Every pilot in the selection flies the decks the search finds.</p>
+      <ul className="builder__choices">
+        {content.pilots.map((pilot) => (
+          <li key={pilot.pilotId}>
+            <label>
+              <input
+                type="checkbox"
+                checked={chosen.has(pilot.pilotId)}
+                onChange={(event) => {
+                  const next = new Set(form.pilotIds);
+                  if (event.target.checked) next.add(pilot.pilotId);
+                  else next.delete(pilot.pilotId);
+                  onChange({
+                    pilotIds: content.pilots
+                      .map((entry) => entry.pilotId)
+                      .filter((id) => next.has(id)),
+                  });
+                }}
+              />
+              <span className="builder__choice-label">{pilot.pilotId}</span>
+            </label>
+            <p className="builder__choice-note">
+              Agent class <code>{pilot.agentClass}</code>.{' '}
+              {pilot.playQualityEvidence
+                ? 'Can carry a claim about how well the game was played.'
+                : 'Makes no attempt to play well, so it is engine evidence and never balance evidence.'}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {form.pilotIds.length > 0 && !anyPlayQuality && (
+        <p className="notice notice--warning" role="status">
+          {NO_PLAY_QUALITY_CAVEAT}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* -------------------------------------------------------- open meta: population */
+
+function PopulationSection({
+  form,
+  onChange,
+}: {
+  readonly form: OpenMetaForm;
+  readonly onChange: (change: Partial<OpenMetaForm>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-population">
+      <h2 id="builder-population">Population and seed policy</h2>
+      <label className="builder__field">
+        <span>Population size</span>
+        <input
+          type="number"
+          min={4}
+          max={500}
+          value={form.populationSize}
+          onChange={(event) => {
+            onChange({ populationSize: Number(event.target.value) });
+          }}
+        />
+      </label>
+      <label className="builder__field">
+        <span>Generations</span>
+        <input
+          type="number"
+          min={1}
+          max={500}
+          value={form.generations}
+          onChange={(event) => {
+            onChange({ generations: Number(event.target.value) });
+          }}
+        />
+      </label>
+
+      <fieldset className="builder__field">
+        <legend>Seed policy</legend>
+        <label className="builder__field">
+          <span>Authored deck plan (blank is unconstrained generation)</span>
+          <input
+            type="text"
+            value={form.planId}
+            onChange={(event) => {
+              onChange({ planId: event.target.value });
+            }}
+          />
+        </label>
+        <p className="builder__choice-note">
+          {form.planId.trim() === ''
+            ? 'Unconstrained: generation is not seeded from any authored plan.'
+            : 'Every generated deck is seeded from this plan, which also fixes its Commander.'}
+        </p>
+      </fieldset>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------- open meta: advanced */
+
+function AdvancedSearchSection({
+  form,
+  onChange,
+}: {
+  readonly form: OpenMetaForm;
+  readonly onChange: (change: Partial<OpenMetaForm>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-search-advanced">
+      <h2 id="builder-search-advanced">Advanced search settings</h2>
+      <details>
+        <summary>Elite, mutation and crossover</summary>
+        <label className="builder__field">
+          <span>Elites carried forward each generation</span>
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={form.eliteCount}
+            onChange={(event) => {
+              onChange({ eliteCount: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label className="builder__field">
+          <span>Mutation strength (card swaps per mutation)</span>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={form.mutationStrength}
+            onChange={(event) => {
+              onChange({ mutationStrength: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label className="builder__field">
+          <span>Crossover share</span>
+          <input
+            type="number"
+            min={0}
+            max={1}
+            step={0.05}
+            value={form.crossoverShare}
+            onChange={(event) => {
+              onChange({ crossoverShare: Number(event.target.value) });
+            }}
+          />
+        </label>
+      </details>
+      <details>
+        <summary>Opponents and archive</summary>
+        <label className="builder__field">
+          <span>Opponents sampled per evaluation</span>
+          <input
+            type="number"
+            min={1}
+            max={64}
+            value={form.opponentsPerEvaluation}
+            onChange={(event) => {
+              onChange({ opponentsPerEvaluation: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label className="builder__field">
+          <span>Games per opponent</span>
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={form.gamesPerOpponent}
+            onChange={(event) => {
+              onChange({ gamesPerOpponent: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label className="builder__field">
+          <span>Archive size (hall of fame)</span>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={form.archiveSize}
+            onChange={(event) => {
+              onChange({ archiveSize: Number(event.target.value) });
+            }}
+          />
+        </label>
+      </details>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------- open meta: workload */
+
+function OpenMetaWorkloadSection({
+  form,
+  onChange,
+}: {
+  readonly form: OpenMetaForm;
+  readonly onChange: (change: Partial<OpenMetaForm>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-open-meta-workload">
+      <h2 id="builder-open-meta-workload">Replicates and retention</h2>
+      <label className="builder__field">
+        <span>Independent replicates</span>
+        <input
+          type="number"
+          min={1}
+          max={8}
+          value={form.replicates}
+          onChange={(event) => {
+            onChange({ replicates: Number(event.target.value) });
+          }}
+        />
+      </label>
+      <p className="builder__choice-note">
+        Each replicate is its own evolutionary run, on its own derived seed family within this
+        experiment. This build does not pool them into one number.
+      </p>
+      <label className="builder__field">
+        <span>Keep a replay for one match in</span>
+        <input
+          type="number"
+          min={0}
+          max={100000}
+          value={form.replaySampleRate}
+          onChange={(event) => {
+            onChange({ replaySampleRate: Number(event.target.value) });
+          }}
+        />
+      </label>
+      <p className="builder__choice-note">
+        0 keeps none and 1 keeps all. Abnormal matches are retained whatever this says.
+      </p>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------- open meta: identity */
+
+function OpenMetaIdentitySection({
+  form,
+  onChange,
+}: {
+  readonly form: OpenMetaForm;
+  readonly onChange: (change: Partial<OpenMetaForm>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-open-meta-identity">
+      <h2 id="builder-open-meta-identity">Name and seed</h2>
+      <label className="builder__field">
+        <span>Batch label</span>
+        <input
+          type="text"
+          value={form.batchLabel}
+          onChange={(event) => {
+            onChange({ batchLabel: event.target.value });
+          }}
+        />
+      </label>
+      <label className="builder__field">
+        <span>Experiment name</span>
+        <input
+          type="text"
+          value={form.experimentId}
+          onChange={(event) => {
+            onChange({ experimentId: event.target.value });
+          }}
+        />
+      </label>
+      <p className="builder__choice-note">
+        Lowercase, starting with a letter, hyphens and underscores inside.
+      </p>
+      <label className="builder__field">
+        <span>Seed</span>
+        <input
+          type="text"
+          value={form.seed}
+          onChange={(event) => {
+            onChange({ seed: event.target.value });
+          }}
+        />
+      </label>
+      <p className="builder__choice-note">
+        Everything else is derived from it. The same seed and the same configuration reproduce the
+        same run.
+      </p>
+    </section>
+  );
+}
+
 /* --------------------------------------------------------------- estimate */
 
 function EstimateTables({ estimate }: { readonly estimate: ChoiceEstimate }) {
@@ -775,7 +1276,8 @@ function EnqueuedReport({ result }: { readonly result: EnqueuePresetResult }) {
 /* ------------------------------------------------------- saved configurations */
 
 function SavedSection({
-  form,
+  presetId,
+  deckCount,
   saveLabel,
   onLabel,
   onKeep,
@@ -783,7 +1285,9 @@ function SavedSection({
   saved,
   canSave,
 }: {
-  readonly form: BuilderForm;
+  readonly presetId: string;
+  /** Deck count, for a precon benchmark; `null` for an Open Meta search. */
+  readonly deckCount: number | null;
   readonly saveLabel: string;
   readonly onLabel: (value: string) => void;
   readonly onKeep: () => void;
@@ -798,7 +1302,10 @@ function SavedSection({
   const openable = useMemo(
     () =>
       list.status === 'ready'
-        ? list.value.items.filter((entry) => asBenchmarkChoice(entry.choice) !== null)
+        ? list.value.items.filter(
+            (entry) =>
+              asBenchmarkChoice(entry.choice) !== null || asOpenMetaChoice(entry.choice) !== null,
+          )
         : [],
     [list],
   );
@@ -863,7 +1370,7 @@ function SavedSection({
               <tr>
                 <th scope="col">Name</th>
                 <th scope="col">Saved</th>
-                <th scope="col">Depth</th>
+                <th scope="col">Preset</th>
                 <th scope="col" />
               </tr>
             </thead>
@@ -889,7 +1396,8 @@ function SavedSection({
           </table>
         ))}
       <p className="builder__choice-note">
-        The form on screen is <code>{form.presetId}</code> over {form.preconIds.length} deck(s).
+        The form on screen is <code>{presetId}</code>
+        {deckCount === null ? '' : ` over ${String(deckCount)} deck(s)`}.
       </p>
     </section>
   );

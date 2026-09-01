@@ -39,8 +39,14 @@ import { crossoverDecks, deckDistance, mutateDeck, type PackagePolicy } from './
  *   than a migration, because a v1 checkpoint never recorded where its decks
  *   came from and defaulting them to `unconstrained` would silently relabel a
  *   resumed planned search as an unplanned one.
+ * - 3 (M08.14) — every `GenerationReport` in a checkpoint's `history` carries
+ *   `commanderShares`: each Commander seated at that generation and its share
+ *   of the population. A refusal rather than a migration, for the same reason
+ *   as v2 — a v2 checkpoint never recorded the per-Commander breakdown, and
+ *   defaulting it to empty would silently report "no Commander" for a
+ *   generation that had one.
  */
-export const SEARCH_CHECKPOINT_VERSION = 2;
+export const SEARCH_CHECKPOINT_VERSION = 3;
 
 export const fitnessSchema = z.strictObject({
   deckHash: z.string(),
@@ -62,6 +68,14 @@ export const fitnessSchema = z.strictObject({
 });
 export type Fitness = z.infer<typeof fitnessSchema>;
 
+/** One Commander's share of a generation's population (M08.14). */
+export const commanderShareSchema = z.strictObject({
+  commanderId: z.string(),
+  /** This Commander's decks, over the whole population evaluated at this generation. */
+  share: z.number().min(0).max(1),
+});
+export type CommanderShare = z.infer<typeof commanderShareSchema>;
+
 export const generationReportSchema = z.strictObject({
   generation: z.number().int().min(0),
   evaluated: z.number().int().min(0),
@@ -72,6 +86,14 @@ export const generationReportSchema = z.strictObject({
   /** Diversity, reported whether or not it looks healthy. */
   cardEntropy: z.number(),
   commanderCount: z.number().int().min(0),
+  /**
+   * Every Commander seated at this generation, and the share of the
+   * population it held (M08.14). Sums to 1 for a non-empty population;
+   * empty when `evaluated` is 0. `commanderCount` is this array's length,
+   * kept alongside it rather than derived, for the same reason every other
+   * count on this report is stated rather than implied.
+   */
+  commanderShares: z.array(commanderShareSchema),
   meanPairwiseDistance: z.number(),
   archiveSize: z.number().int().min(0),
   notes: z.array(z.string()),
@@ -532,6 +554,16 @@ function describeGeneration(
     }
   }
   const commanders = new Set(population.map((deck) => deck.commanderId));
+  const commanderCounts = new Map<string, number>();
+  for (const deck of population) {
+    commanderCounts.set(deck.commanderId, (commanderCounts.get(deck.commanderId) ?? 0) + 1);
+  }
+  const commanderShares: CommanderShare[] = [...commanderCounts.entries()]
+    .map(([commanderId, count]) => ({
+      commanderId,
+      share: population.length === 0 ? 0 : round(count / population.length, 4),
+    }))
+    .sort((left, right) => left.commanderId.localeCompare(right.commanderId));
 
   let distanceSum = 0;
   let pairs = 0;
@@ -569,6 +601,7 @@ function describeGeneration(
         : round(fitness.reduce((sum, entry) => sum + entry.score, 0) / fitness.length, 4),
     cardEntropy: round(entropy, 4),
     commanderCount: commanders.size,
+    commanderShares,
     meanPairwiseDistance: pairs === 0 ? 0 : round(distanceSum / pairs, 2),
     archiveSize: archive.length,
     notes,

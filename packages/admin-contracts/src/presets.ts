@@ -510,9 +510,33 @@ export const presetChoiceSchema = z.discriminatedUnion('presetId', [
     presetId: z.literal('open_meta'),
     ...commonChoiceFields,
     pilotIds: pilotSelection,
+    /**
+     * Restrict the search to these Commanders. Empty means every legal one —
+     * still "open" (M08.14): scoping the field is a way to search *within*
+     * the open meta, not a different preset.
+     */
+    commanderIds: z.array(resolvedIdSchema).max(16).default([]),
+    /**
+     * Seed every generated deck from an authored plan (M08.14's "unconstrained
+     * or plan" seed policy). Omitted is unconstrained generation, which is the
+     * default and what "open" meant before this field existed.
+     */
+    planId: resolvedIdSchema.optional(),
     populationSize: z.number().int().min(4).max(500).default(16),
     generations: z.number().int().min(1).max(500).default(5),
+    /** Decks carried forward untouched each generation. */
+    eliteCount: z.number().int().min(1).max(100).default(4),
+    /** Card swaps applied per mutation. */
+    mutationStrength: z.number().int().min(1).max(20).default(3),
+    /** Share of offspring produced by crossover rather than mutation. */
+    crossoverShare: z.number().min(0).max(1).default(0.25),
+    /** Opponents sampled from the archive when evaluating a candidate. */
+    opponentsPerEvaluation: z.number().int().min(1).max(64).default(4),
+    gamesPerOpponent: z.number().int().min(1).max(100).default(2),
+    /** Maximum decks kept in the hall of fame. */
+    archiveSize: z.number().int().min(1).max(500).default(24),
     replicates: z.number().int().min(1).max(8).default(2),
+    retention: preconRetentionSchema.prefault({}),
   }),
   z.strictObject({
     presetId: z.literal('commander_search'),

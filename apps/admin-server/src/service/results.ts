@@ -157,6 +157,76 @@ const calibrationShape = z.object({
   promotionRequires: z.string(),
 });
 
+/**
+ * M08.13/M08.14 fields, read loosely for the same reason `calibration` is: a
+ * run written before `SUMMARY_SCHEMA_VERSION` 9 has no `aggregate.commanders`
+ * at all, so `.default([])` rather than `.nullish()` — an old run reads as
+ * "no Commander evidence" rather than refusing the whole summary, which is
+ * consistent with the M08.12 precedent above (a defect there is refusing a
+ * *field*, never the document).
+ */
+const commanderShape = z.object({
+  commanderId: z.string(),
+  matches: z.number(),
+  winRate: proportionShape,
+  bySeat: z.array(z.object({ seatIndex: z.number(), rate: proportionShape })),
+  byPilot: z.array(z.object({ pilotId: z.string(), rate: proportionShape })),
+  byAgentClass: z.array(
+    z.object({ agentClass: z.string(), pilotIds: z.array(z.string()), rate: proportionShape }),
+  ),
+  turns: z.object({
+    mean: z.number(),
+    median: z.number(),
+    p10: z.number(),
+    p90: z.number(),
+    max: z.number(),
+  }),
+  endReasons: z.record(z.string(), z.number()),
+  decks: z.number(),
+  deckDiversity: z.number(),
+  topDeckFitness: z.number().nullable(),
+  medianDeckFitness: z.number().nullable(),
+  populationSurvivalShare: z.number().nullable(),
+  archiveSurvivalShare: z.number().nullable(),
+});
+
+const commanderMatchupShape = z.object({
+  commanderId: z.string(),
+  opponentCommanderId: z.string(),
+  rate: proportionShape,
+});
+
+/**
+ * `commanderShares` is `.default([])` rather than `.nullish()`: a run written
+ * before `SUMMARY_SCHEMA_VERSION` 10 has a `searchHistory` entry with no such
+ * field, and reading it as "no Commander recorded for this generation" is the
+ * honest reading — there is nothing to backfill, only a forward computation
+ * from a checkpoint an old run never wrote (see `experiment.ts`'s v10 note).
+ */
+const generationReportShape = z.object({
+  generation: z.number(),
+  /**
+   * `searchHistory` concatenates every independent replicate's own generation
+   * sequence one after another (`experiment.ts`'s `SearchHistoryEntry`), so
+   * without this a run's two replicates' generation 0 would read as one
+   * trajectory and their Commander shares would sum to 2, not 1, on what looks
+   * like a single generation. `.nullish()` for a run written before this field
+   * existed — there is nothing to backfill, only a forward computation this
+   * build cannot make for a run it did not itself run.
+   */
+  replicate: z.number().int().min(0).nullish(),
+  evaluated: z.number(),
+  matches: z.number(),
+  abnormalMatches: z.number(),
+  best: z.object({ score: z.number(), winRate: z.number() }).nullable(),
+  meanScore: z.number(),
+  cardEntropy: z.number(),
+  commanderCount: z.number(),
+  commanderShares: z.array(z.object({ commanderId: z.string(), share: z.number() })).default([]),
+  meanPairwiseDistance: z.number(),
+  archiveSize: z.number(),
+});
+
 const summaryFileSchema = z.object({
   schemaVersion: z.number(),
   configHash: z.string(),
@@ -165,8 +235,11 @@ const summaryFileSchema = z.object({
     decks: z.array(deckShape),
     matchups: z.array(matchupShape),
     cards: z.array(cardShape),
+    commanders: z.array(commanderShape).default([]),
+    commanderMatchups: z.array(commanderMatchupShape).default([]),
   }),
   calibration: calibrationShape.nullish(),
+  searchHistory: z.array(generationReportShape).default([]),
 });
 type SummaryFile = z.infer<typeof summaryFileSchema>;
 
@@ -226,7 +299,7 @@ function spreadRateOrInsufficient(key: string, rate: Proportion): ResultRow {
 }
 
 function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
-  const { run, decks, matchups, cards } = summary.aggregate;
+  const { run, decks, matchups, cards, commanders, commanderMatchups } = summary.aggregate;
   switch (table) {
     case 'decks':
       return {
@@ -377,6 +450,99 @@ function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
             matches,
             abnormal: (ABNORMAL_TERMINATIONS as readonly string[]).includes(kind),
           })),
+      };
+
+    case 'commanders':
+      return {
+        columns: [
+          column('commanderId', 'Commander', 'identifier'),
+          column('matches', 'Games', 'count'),
+          interval('winRate', 'Win rate'),
+          column('winRateGames', 'Win-rate games', 'count'),
+          column('decks', 'Distinct decks', 'count'),
+          column('deckDiversity', 'Deck diversity', 'number'),
+          column('topDeckFitness', 'Top deck fitness', 'number'),
+          column('medianDeckFitness', 'Median deck fitness', 'number'),
+          column('populationSurvivalShare', 'Population survival share', 'proportion'),
+          column('archiveSurvivalShare', 'Archive survival share', 'proportion'),
+        ],
+        rows: commanders.map((commander) => ({
+          commanderId: commander.commanderId,
+          matches: commander.matches,
+          ...spreadRate('winRate', commander.winRate),
+          decks: commander.decks,
+          deckDiversity: commander.deckDiversity,
+          topDeckFitness: commander.topDeckFitness,
+          medianDeckFitness: commander.medianDeckFitness,
+          populationSurvivalShare: commander.populationSurvivalShare,
+          archiveSurvivalShare: commander.archiveSurvivalShare,
+        })),
+      };
+
+    case 'commander_matchups':
+      return {
+        columns: [
+          column('commanderId', 'Commander', 'identifier'),
+          column('opponentCommanderId', 'Opponent', 'identifier'),
+          interval('rate', 'Win rate'),
+          column('rateGames', 'Games', 'count'),
+        ],
+        rows: commanderMatchups.map((matchup) => ({
+          commanderId: matchup.commanderId,
+          opponentCommanderId: matchup.opponentCommanderId,
+          ...spreadRate('rate', matchup.rate),
+        })),
+      };
+
+    case 'commander_generations':
+      return {
+        columns: [
+          column('generation', 'Generation', 'count'),
+          // `null` on a run written before `replicate` existed — never `0`,
+          // which would misreport "first of several" (see the field's own
+          // comment on `generationReportShape`).
+          column('replicate', 'Replicate', 'count'),
+          column('commanderId', 'Commander', 'identifier'),
+          column('share', 'Share of population', 'proportion'),
+        ],
+        rows: summary.searchHistory.flatMap((entry) =>
+          entry.commanderShares.map((share) => ({
+            generation: entry.generation,
+            replicate: entry.replicate ?? null,
+            commanderId: share.commanderId,
+            share: share.share,
+          })),
+        ),
+      };
+
+    case 'search_generations':
+      return {
+        columns: [
+          column('generation', 'Generation', 'count'),
+          column('replicate', 'Replicate', 'count'),
+          column('evaluated', 'Decks evaluated', 'count'),
+          column('matches', 'Games', 'count'),
+          column('abnormalMatches', 'Games excluded', 'count'),
+          column('bestScore', 'Best score', 'number'),
+          column('meanScore', 'Mean score', 'number'),
+          column('cardEntropy', 'Card entropy', 'number'),
+          column('commanderCount', 'Distinct Commanders', 'count'),
+          column('meanPairwiseDistance', 'Mean pairwise distance', 'number'),
+          column('archiveSize', 'Archive size', 'count'),
+        ],
+        rows: summary.searchHistory.map((entry) => ({
+          generation: entry.generation,
+          replicate: entry.replicate ?? null,
+          evaluated: entry.evaluated,
+          matches: entry.matches,
+          abnormalMatches: entry.abnormalMatches,
+          bestScore: entry.best?.score ?? null,
+          meanScore: entry.meanScore,
+          cardEntropy: entry.cardEntropy,
+          commanderCount: entry.commanderCount,
+          meanPairwiseDistance: entry.meanPairwiseDistance,
+          archiveSize: entry.archiveSize,
+        })),
       };
   }
 }
@@ -653,6 +819,10 @@ function rowCounts(summary: SummaryFile): { table: ResultTableName; rows: number
     'pilots',
     'agent_classes',
     'terminations',
+    'commanders',
+    'commander_matchups',
+    'commander_generations',
+    'search_generations',
   ];
   return names.map((table) => ({ table, rows: buildTable(table, summary).rows.length }));
 }

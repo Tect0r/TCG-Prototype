@@ -7,11 +7,17 @@ import {
   PRESET_DEPTHS,
   asBenchmarkChoice,
   benchmarkPresets,
+  catalogCommanderIds,
   choiceOf,
   formFingerprint,
   formOf,
   initialForm,
+  initialOpenMetaForm,
+  openMetaChoiceOf,
+  openMetaFormFingerprint,
+  openMetaFormOf,
   type BuilderForm,
+  type OpenMetaForm,
 } from './builder-form.js';
 import { contentCatalogFixture, presetCatalogFixture } from '../test/fake-service.js';
 
@@ -220,5 +226,159 @@ describe('which presets this builder offers', () => {
     for (const id of BUILDER_PRESET_IDS) {
       expect(`${id}: ${PRESET_REGISTRY[id].summary}`).toContain(words[PRESET_DEPTHS[id]] ?? '—');
     }
+  });
+});
+
+/* ------------------------------------------------------------- open meta */
+
+function openMetaForm(overrides: Partial<OpenMetaForm> = {}): OpenMetaForm {
+  return { ...initialOpenMetaForm(CONTENT), ...overrides };
+}
+
+describe('the Commander picker', () => {
+  it('offers every Commander a playable precon names, deduplicated and sorted', () => {
+    expect(catalogCommanderIds(CONTENT)).toEqual([
+      'bastion_marshal',
+      'containment_warden',
+      'goblin_warboss',
+    ]);
+  });
+
+  it('is empty rather than invented when no content has arrived', () => {
+    expect(catalogCommanderIds(null)).toEqual([]);
+  });
+});
+
+describe('the Open Meta form', () => {
+  it('defaults to every legal Commander — still "open"', () => {
+    const initial = initialOpenMetaForm(CONTENT);
+    expect(initial.commanderScope).toBe('all');
+    expect(initial.commanderIds).toEqual([]);
+    const result = openMetaChoiceOf(initial);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.choice.commanderIds).toEqual([]);
+  });
+
+  it('carries a selected Commander scope through to the request, and only then', () => {
+    const scoped = openMetaChoiceOf(
+      openMetaForm({ commanderScope: 'selected', commanderIds: ['goblin_warboss'] }),
+    );
+    expect(scoped.ok).toBe(true);
+    if (scoped.ok) expect(scoped.choice.commanderIds).toEqual(['goblin_warboss']);
+
+    // Selecting a scope with nothing chosen is a form problem beside the control,
+    // not a request the contract has to refuse.
+    const empty = openMetaChoiceOf(openMetaForm({ commanderScope: 'selected', commanderIds: [] }));
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.problems.map((problem) => problem.field)).toContain('commanderIds');
+  });
+
+  it('refuses no pilot at all', () => {
+    const result = openMetaChoiceOf(openMetaForm({ pilotIds: [] }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.problems.map((problem) => problem.field)).toContain('pilotIds');
+  });
+
+  it('carries the budget knobs into the request unchanged', () => {
+    const result = openMetaChoiceOf(
+      openMetaForm({
+        populationSize: 32,
+        generations: 8,
+        eliteCount: 5,
+        mutationStrength: 4,
+        crossoverShare: 0.4,
+        opponentsPerEvaluation: 6,
+        gamesPerOpponent: 3,
+        archiveSize: 40,
+        replicates: 3,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.choice).toMatchObject({
+      populationSize: 32,
+      generations: 8,
+      eliteCount: 5,
+      mutationStrength: 4,
+      crossoverShare: 0.4,
+      opponentsPerEvaluation: 6,
+      gamesPerOpponent: 3,
+      archiveSize: 40,
+      replicates: 3,
+    });
+  });
+
+  it('sends a plan ID only when one is set, so the search stays unconstrained by default', () => {
+    const unconstrained = openMetaChoiceOf(openMetaForm());
+    expect(unconstrained.ok && unconstrained.choice.planId).toBeUndefined();
+    const planned = openMetaChoiceOf(openMetaForm({ planId: 'bastion_core' }));
+    expect(planned.ok && planned.choice.planId).toBe('bastion_core');
+  });
+
+  it('changes fingerprint when a budget knob or the Commander scope changes', () => {
+    const base = openMetaFormFingerprint(openMetaForm());
+    const changes: Partial<OpenMetaForm>[] = [
+      { commanderScope: 'selected', commanderIds: ['goblin_warboss'] },
+      { populationSize: 32 },
+      { generations: 8 },
+      { eliteCount: 6 },
+      { mutationStrength: 5 },
+      { crossoverShare: 0.5 },
+      { opponentsPerEvaluation: 8 },
+      { gamesPerOpponent: 4 },
+      { archiveSize: 40 },
+      { replicates: 4 },
+      { planId: 'bastion_core' },
+      { pilotIds: ['value', 'aggressive'] },
+      { seed: 'another-seed' },
+      { experimentId: 'another-name' },
+    ];
+    for (const change of changes) {
+      expect(
+        `${JSON.stringify(change)}: ${String(openMetaFormFingerprint(openMetaForm(change)) === base)}`,
+      ).toBe(`${JSON.stringify(change)}: false`);
+    }
+  });
+
+  it('does not change fingerprint when only the batch label is renamed', () => {
+    expect(openMetaFormFingerprint(openMetaForm({ batchLabel: 'Renamed' }))).toBe(
+      openMetaFormFingerprint(openMetaForm()),
+    );
+  });
+
+  it('reopens a saved Open Meta choice into the form it was saved from', () => {
+    const original = openMetaForm({
+      commanderScope: 'selected',
+      commanderIds: ['goblin_warboss', 'bastion_marshal'],
+      planId: 'bastion_core',
+      populationSize: 32,
+      generations: 8,
+      eliteCount: 6,
+      mutationStrength: 5,
+      crossoverShare: 0.5,
+      opponentsPerEvaluation: 8,
+      gamesPerOpponent: 4,
+      archiveSize: 40,
+      replicates: 4,
+      replaySampleRate: 0,
+      seed: 'kept-seed',
+      experimentId: 'kept-run',
+    });
+    const result = openMetaChoiceOf(original);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reopened = openMetaFormOf(result.choice, 'Kept');
+    expect(reopened).toEqual({ ...original, batchLabel: 'Kept' });
+    expect(openMetaFormFingerprint(reopened as OpenMetaForm)).toBe(
+      openMetaFormFingerprint(original),
+    );
+  });
+
+  it('declines a choice for a preset this form does not configure', () => {
+    const precon = choiceOf(form());
+    expect(precon.ok).toBe(true);
+    if (!precon.ok) return;
+    expect(openMetaFormOf(precon.choice, 'Kept')).toBeNull();
   });
 });

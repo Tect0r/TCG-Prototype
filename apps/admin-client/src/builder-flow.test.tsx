@@ -456,9 +456,90 @@ describe('what the builder deliberately does not show', () => {
   });
 
   it('offers no builder for any other test style', async () => {
+    // Open Meta arrived with M08.14 and is asserted separately below; the rest
+    // are still absent.
     await openBuilder();
-    for (const label of ['Commander', 'Open Meta', 'Soak', 'Robustness', 'Candidate']) {
+    for (const label of ['Commander Search', 'Engine Soak', 'Robustness', 'Candidate']) {
       expect(within(main()).queryByRole('heading', { name: new RegExp(label, 'i') })).toBeNull();
     }
+  });
+});
+
+/* ------------------------------------------------------------- open meta */
+
+describe('the Open Meta search form (M08.14)', () => {
+  it('switches the screen from the precon benchmark to the search form', async () => {
+    await openBuilder();
+    expect(within(main()).getByRole('heading', { name: 'Decks' })).toBeInTheDocument();
+
+    await userEvent.click(within(main()).getByRole('radio', { name: 'Open Meta search' }));
+
+    expect(within(main()).queryByRole('heading', { name: 'Decks' })).toBeNull();
+    expect(within(main()).getByRole('heading', { name: 'Commanders' })).toBeInTheDocument();
+    expect(
+      within(main()).getByRole('heading', { name: 'Population and seed policy' }),
+    ).toBeInTheDocument();
+  });
+
+  it('defaults to every legal Commander, offering no checklist until scoped', async () => {
+    await openBuilder();
+    await userEvent.click(within(main()).getByRole('radio', { name: 'Open Meta search' }));
+
+    expect(within(main()).getByRole('radio', { name: 'Every legal Commander' })).toBeChecked();
+    expect(within(main()).queryByRole('checkbox', { name: /goblin_warboss/ })).toBeNull();
+
+    await userEvent.click(within(main()).getByRole('radio', { name: 'A selection' }));
+    expect(within(main()).getByRole('checkbox', { name: /goblin_warboss/ })).toBeInTheDocument();
+    expect(within(main()).getByRole('checkbox', { name: /bastion_marshal/ })).toBeInTheDocument();
+  });
+
+  it('withholds the estimate while a Commander scope names nothing', async () => {
+    await openBuilder();
+    await userEvent.click(within(main()).getByRole('radio', { name: 'Open Meta search' }));
+    await userEvent.click(within(main()).getByRole('radio', { name: 'A selection' }));
+
+    await userEvent.click(priceButton());
+    expect(within(main()).getByRole('alert').textContent).toMatch(/at least one Commander/i);
+    expect(enqueueButton()).toBeNull();
+  });
+
+  it('prices and enqueues a search scoped to a Commander selection', async () => {
+    await openBuilder();
+    await userEvent.click(within(main()).getByRole('radio', { name: 'Open Meta search' }));
+    await userEvent.click(within(main()).getByRole('radio', { name: 'A selection' }));
+    await userEvent.click(within(main()).getByRole('checkbox', { name: /goblin_warboss/ }));
+
+    await userEvent.click(priceButton());
+    expect(within(main()).queryByRole('alert')).toBeNull();
+    expect(enqueueButton()).not.toBeNull();
+
+    await userEvent.click(enqueueButton() as HTMLElement);
+    expect(await within(main()).findByText(/Added/)).toBeInTheDocument();
+  });
+
+  it('withdraws a priced estimate when the family is switched, the same rule the form obeys', async () => {
+    await openBuilder();
+    await userEvent.click(priceButton());
+    expect(enqueueButton()).not.toBeNull();
+
+    await userEvent.click(within(main()).getByRole('radio', { name: 'Open Meta search' }));
+    expect(enqueueButton()).toBeNull();
+    expect(within(main()).getByText(/No total yet/)).toBeInTheDocument();
+  });
+
+  it('collapses the advanced search knobs behind a disclosure, expanded by opening it', async () => {
+    await openBuilder();
+    await userEvent.click(within(main()).getByRole('radio', { name: 'Open Meta search' }));
+
+    const summary = within(main()).getByText('Elite, mutation and crossover');
+    const details = summary.closest('details');
+    expect(details).not.toBeNull();
+    expect((details as HTMLDetailsElement).open).toBe(false);
+
+    await userEvent.click(summary);
+    expect((details as HTMLDetailsElement).open).toBe(true);
+    expect(
+      within(main()).getByLabelText('Elites carried forward each generation'),
+    ).toBeInTheDocument();
   });
 });

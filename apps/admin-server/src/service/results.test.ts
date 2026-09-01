@@ -258,6 +258,12 @@ describe('a run summary', () => {
       { table: 'pilots', rows: 1 },
       { table: 'agent_classes', rows: 1 },
       { table: 'terminations', rows: 3 },
+      // A batch run's `searchHistory` and Commander aggregates are empty
+      // (M08.14): these four tables exist for a search run only.
+      { table: 'commanders', rows: 0 },
+      { table: 'commander_matchups', rows: 0 },
+      { table: 'commander_generations', rows: 0 },
+      { table: 'search_generations', rows: 0 },
     ]);
   });
 
@@ -496,6 +502,171 @@ describe('a result table', () => {
       expect(row?.inclusionWinRateLift).toBeNull();
       expect(row?.eligibleDecks).toBe(2);
       expect(row?.inclusionAmongEligibleShare).toBe(1);
+    });
+  });
+
+  describe('the Commander and search-generation tables (M08.14)', () => {
+    const base = summaryDocument().aggregate as Record<string, unknown>;
+
+    function searchSummary(
+      overrides: { readonly searchHistory?: readonly Record<string, unknown>[] } = {},
+    ): Record<string, unknown> {
+      return summaryDocument({
+        schemaVersion: 10,
+        aggregate: {
+          ...base,
+          commanders: [
+            {
+              commanderId: 'cmd_bastion',
+              matches: 15,
+              winRate: rate(0.6, 15),
+              bySeat: [{ seatIndex: 0, rate: rate(0.6, 8) }],
+              byPilot: [{ pilotId: 'aggressive', rate: rate(0.6, 15) }],
+              byAgentClass: [
+                { agentClass: 'heuristic', pilotIds: ['aggressive'], rate: rate(0.6, 15) },
+              ],
+              turns: { mean: 12.5, median: 12, p10: 8, p90: 18, max: 22 },
+              endReasons: { defeat: 15 },
+              decks: 3,
+              deckDiversity: 0.8,
+              topDeckFitness: 1.2,
+              medianDeckFitness: 0.9,
+              populationSurvivalShare: 0.5,
+              archiveSurvivalShare: 0.4,
+            },
+          ],
+          commanderMatchups: [
+            { commanderId: 'cmd_bastion', opponentCommanderId: 'cmd_goblin', rate: rate(0.6, 15) },
+          ],
+        },
+        searchHistory: overrides.searchHistory ?? [
+          {
+            generation: 0,
+            replicate: 0,
+            evaluated: 16,
+            matches: 64,
+            abnormalMatches: 0,
+            best: { score: 1.4, winRate: 0.7 },
+            meanScore: 0.9,
+            cardEntropy: 0.82,
+            commanderCount: 2,
+            commanderShares: [
+              { commanderId: 'cmd_bastion', share: 0.625 },
+              { commanderId: 'cmd_goblin', share: 0.375 },
+            ],
+            meanPairwiseDistance: 5.1,
+            archiveSize: 24,
+          },
+        ],
+      });
+    }
+
+    it('reads the Commander table out of aggregate.commanders', async () => {
+      const jobId = await seedRun({ summary: searchSummary() });
+      const table = unwrap(await reader.readTable(jobId, 'commanders', page));
+      expect(table.rows).toHaveLength(1);
+      expect(table.rows[0]?.commanderId).toBe('cmd_bastion');
+      expect(table.rows[0]?.topDeckFitness).toBe(1.2);
+      expect(table.rows[0]?.medianDeckFitness).toBe(0.9);
+    });
+
+    it('reads the Commander matchup table out of aggregate.commanderMatchups', async () => {
+      const jobId = await seedRun({ summary: searchSummary() });
+      const table = unwrap(await reader.readTable(jobId, 'commander_matchups', page));
+      expect(table.rows).toEqual([
+        expect.objectContaining({ commanderId: 'cmd_bastion', opponentCommanderId: 'cmd_goblin' }),
+      ]);
+    });
+
+    it('flattens searchHistory into one row per generation per Commander', async () => {
+      const jobId = await seedRun({ summary: searchSummary() });
+      const table = unwrap(await reader.readTable(jobId, 'commander_generations', page));
+      expect(table.rows).toEqual([
+        { generation: 0, replicate: 0, commanderId: 'cmd_bastion', share: 0.625 },
+        { generation: 0, replicate: 0, commanderId: 'cmd_goblin', share: 0.375 },
+      ]);
+    });
+
+    it('keeps two replicates distinguishable rather than collapsing their shared generation numbers', async () => {
+      const jobId = await seedRun({
+        summary: searchSummary({
+          searchHistory: [
+            {
+              generation: 0,
+              replicate: 0,
+              evaluated: 16,
+              matches: 64,
+              abnormalMatches: 0,
+              best: { score: 1.4, winRate: 0.7 },
+              meanScore: 0.9,
+              cardEntropy: 0.82,
+              commanderCount: 1,
+              commanderShares: [{ commanderId: 'cmd_bastion', share: 1 }],
+              meanPairwiseDistance: 5.1,
+              archiveSize: 24,
+            },
+            {
+              generation: 0,
+              replicate: 1,
+              evaluated: 16,
+              matches: 64,
+              abnormalMatches: 0,
+              best: { score: 1.1, winRate: 0.6 },
+              meanScore: 0.7,
+              cardEntropy: 0.5,
+              commanderCount: 1,
+              commanderShares: [{ commanderId: 'cmd_goblin', share: 1 }],
+              meanPairwiseDistance: 3.2,
+              archiveSize: 20,
+            },
+          ],
+        }),
+      });
+
+      const generations = unwrap(await reader.readTable(jobId, 'search_generations', page));
+      expect(generations.rows).toEqual([
+        expect.objectContaining({ generation: 0, replicate: 0, cardEntropy: 0.82 }),
+        expect.objectContaining({ generation: 0, replicate: 1, cardEntropy: 0.5 }),
+      ]);
+
+      const shares = unwrap(await reader.readTable(jobId, 'commander_generations', page));
+      expect(shares.rows).toEqual([
+        { generation: 0, replicate: 0, commanderId: 'cmd_bastion', share: 1 },
+        { generation: 0, replicate: 1, commanderId: 'cmd_goblin', share: 1 },
+      ]);
+    });
+
+    it('reads a pre-M08.14-fix run with no `replicate` as `null`, never `0`', async () => {
+      const summary = searchSummary();
+      const [entry] = (summary as { searchHistory: Record<string, unknown>[] }).searchHistory;
+      delete (entry as { replicate?: number }).replicate;
+      const jobId = await seedRun({ summary });
+
+      const generations = unwrap(await reader.readTable(jobId, 'search_generations', page));
+      expect(generations.rows[0]?.replicate).toBeNull();
+      const shares = unwrap(await reader.readTable(jobId, 'commander_generations', page));
+      expect(shares.rows[0]?.replicate).toBeNull();
+    });
+
+    it('reads diversity and convergence per generation from searchHistory', async () => {
+      const jobId = await seedRun({ summary: searchSummary() });
+      const table = unwrap(await reader.readTable(jobId, 'search_generations', page));
+      expect(table.rows).toEqual([
+        expect.objectContaining({
+          generation: 0,
+          cardEntropy: 0.82,
+          meanPairwiseDistance: 5.1,
+          bestScore: 1.4,
+        }),
+      ]);
+    });
+
+    it('reads an old summary with no searchHistory or Commander evidence as empty, not a refusal', async () => {
+      const jobId = await seedRun();
+      const commanders = unwrap(await reader.readTable(jobId, 'commanders', page));
+      const generations = unwrap(await reader.readTable(jobId, 'search_generations', page));
+      expect(commanders.rows).toEqual([]);
+      expect(generations.rows).toEqual([]);
     });
   });
 });

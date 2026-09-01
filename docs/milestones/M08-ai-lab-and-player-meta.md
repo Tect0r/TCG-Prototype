@@ -3131,9 +3131,9 @@ forced-inclusion warning, convergence and report drill-down tests.
 
 ### Checklist
 
-- [ ] Progressive-disclosure search form over existing search config.
-- [ ] Commander share by generation; diversity and convergence.
-- [ ] Forced-inclusion warning beside every selection statistic.
+- [x] Progressive-disclosure search form over existing search config.
+- [x] Commander share by generation; diversity and convergence.
+- [x] Forced-inclusion warning beside every selection statistic.
 
 ## M08.15 — Commander Search and finalist championship
 

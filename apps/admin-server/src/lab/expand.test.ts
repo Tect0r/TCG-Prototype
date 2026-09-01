@@ -298,6 +298,60 @@ describe('what the presets decide for themselves', () => {
     expect(config?.kind === 'search' ? config.generator.commanderIds : ['x']).toEqual([]);
   });
 
+  it('narrows an open search to the Commanders named, and no others (M08.14)', () => {
+    const config = expandPreset({
+      ...CHOICES.open_meta,
+      commanderIds: ['goblin_warboss', 'grave_matriarch'],
+    }).stages[0]?.config;
+    expect(config?.kind === 'search' ? config.generator.commanderIds : ['x']).toEqual([
+      'goblin_warboss',
+      'grave_matriarch',
+    ]);
+  });
+
+  it('refuses an open search scoped to a Commander this format does not publish', () => {
+    expect(() =>
+      expandPreset({ ...CHOICES.open_meta, commanderIds: ['not_a_real_commander'] }),
+    ).toThrow(PresetRefused);
+  });
+
+  it('accepts a plan seed policy naming a plan this format actually publishes (M08.14)', () => {
+    const config = expandPreset({
+      ...CHOICES.open_meta,
+      planId: 'plan_goblin_swarm',
+    }).stages[0]?.config;
+    expect(config?.kind === 'search' ? config.generator.planId : undefined).toBe(
+      'plan_goblin_swarm',
+    );
+  });
+
+  it('refuses a plan seed policy naming a plan this build does not publish, before pricing (M08.14)', () => {
+    expect(() => expandPreset({ ...CHOICES.open_meta, planId: 'plan_does_not_exist' })).toThrow(
+      PresetRefused,
+    );
+  });
+
+  it('refuses a plan whose Commander sits outside a non-empty Commander scope (M08.14)', () => {
+    expect(() =>
+      expandPreset({
+        ...CHOICES.open_meta,
+        planId: 'plan_goblin_swarm',
+        commanderIds: ['grave_matriarch'],
+      }),
+    ).toThrow(PresetRefused);
+  });
+
+  it('accepts a plan whose Commander is inside the Commander scope named (M08.14)', () => {
+    const config = expandPreset({
+      ...CHOICES.open_meta,
+      planId: 'plan_goblin_swarm',
+      commanderIds: ['goblin_warboss', 'grave_matriarch'],
+    }).stages[0]?.config;
+    expect(config?.kind === 'search' ? config.generator.planId : undefined).toBe(
+      'plan_goblin_swarm',
+    );
+  });
+
   it('declares the candidate change and refuses an undeclared difference', () => {
     const config = expandPreset(CHOICES.candidate_comparison).stages[0]?.config;
     if (config?.kind !== 'comparison') throw new Error('expected a comparison');

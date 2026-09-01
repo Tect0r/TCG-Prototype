@@ -132,6 +132,16 @@ export type ResultRow = z.infer<typeof resultRowSchema>;
  * exactly the pooled skill distribution that forbids. *Completed, abnormal,
  * failed, surrendered, timed-out and excluded counts* is a rule too, so
  * `terminations` exists rather than one opaque number for "abnormal".
+ *
+ * Four more arrived with M08.14's Open Meta workflow, and exist for a search
+ * run only. `commanders` and `commander_matchups` are the Commander-level
+ * counterparts of `decks`/`matchups` (`@tcg/simulator`'s `CommanderSummary`
+ * and `CommanderMatchup`, from M08.13). `commander_generations` and
+ * `search_generations` read a search's per-generation history: the first is
+ * one row per generation per Commander — the share of that generation's
+ * population each Commander held — and the second is one row per generation
+ * of the run's own diversity and convergence readings. Neither exists for a
+ * batch, comparison or robustness run, whose `searchHistory` is empty.
  */
 export const RESULT_TABLE_NAMES = [
   'decks',
@@ -141,6 +151,10 @@ export const RESULT_TABLE_NAMES = [
   'pilots',
   'agent_classes',
   'terminations',
+  'commanders',
+  'commander_matchups',
+  'commander_generations',
+  'search_generations',
 ] as const;
 export const resultTableNameSchema = z.enum(RESULT_TABLE_NAMES);
 export type ResultTableName = z.infer<typeof resultTableNameSchema>;

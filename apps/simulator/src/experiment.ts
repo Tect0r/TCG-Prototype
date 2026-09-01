@@ -156,8 +156,36 @@ export const MANIFEST_SCHEMA_VERSION = 8;
  *   lives only in that run's own checkpoints, not in `matches.jsonl` — there is
  *   nothing to backfill from an old summary, only a forward computation from
  *   raw records and (for search runs) the checkpoint the run already wrote.
+ * - 10 (M08.14): a search run's `searchHistory` entries carry `commanderShares`
+ *   — every Commander seated at that generation and its share of the
+ *   population — which is what the Open Meta dashboard's "Commander share by
+ *   generation" view reads. Not migratable from v9: a v9 run's checkpoints
+ *   (`SEARCH_CHECKPOINT_VERSION` 2) never recorded the per-Commander
+ *   breakdown, only the distinct count. Each entry also carries `replicate`:
+ *   `searchHistory` concatenates every independent replicate's own generation
+ *   sequence (`runSearchExperiment`'s replicate loop, and a comparison's own
+ *   baseline/candidate search arms), so without it two replicates' generation 0
+ *   are indistinguishable and their Commander shares would misread as summing
+ *   to 2, not 1, on what looks like a single generation. Every producer tags
+ *   it, so it is never absent in a v10 file this build writes; a reader still
+ *   treats it as optional, the same tolerant-read posture every other field on
+ *   this schema takes toward a document this build did not itself write.
  */
-export const SUMMARY_SCHEMA_VERSION = 9;
+export const SUMMARY_SCHEMA_VERSION = 10;
+
+/**
+ * A `GenerationReport` plus which independent replicate produced it (M08.14).
+ *
+ * `searchHistory` on `FinishInputs`/`summary.json` concatenates every
+ * replicate's own generation sequence one after another; `GenerationReport`
+ * itself carries no replicate identity (a single `runSearch` call, and the
+ * checkpoint it writes, only ever sees its own replicate). Without this field,
+ * two replicates' generation 0 read as one trajectory and their Commander
+ * shares would sum to 2 rather than 1 on what looks like a single generation.
+ */
+export interface SearchHistoryEntry extends GenerationReport {
+  readonly replicate: number;
+}
 
 export interface RunExperimentOptions {
   readonly configPath?: string;
@@ -198,7 +226,7 @@ export interface ExperimentOutcome {
   readonly matchupMatrix: MatchupMatrix | null;
   readonly flags: readonly Flag[];
   readonly comparison: ComparisonReport | null;
-  readonly searchHistory: readonly GenerationReport[];
+  readonly searchHistory: readonly SearchHistoryEntry[];
   readonly referencePopulation: ReferencePopulation | null;
   readonly report: string;
   readonly resumedMatches: number;
@@ -588,7 +616,7 @@ async function runSearchExperiment(
     : null;
   const seeded = seedSource?.decks ?? [];
 
-  const history: GenerationReport[] = [];
+  const history: SearchHistoryEntry[] = [];
   const replicateResults: DisplacementReplicate[] = [];
   const allDecks: SimDeck[] = [];
   const diagnostics: string[] = [];
@@ -655,7 +683,7 @@ async function runSearchExperiment(
       checkpointEvery: config.checkpointEvery,
       ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
       onGeneration: (report: GenerationReport, checkpoint: SearchCheckpoint) => {
-        history.push(report);
+        history.push({ ...report, replicate });
         options.onGeneration?.(report);
         if (report.generation % config.checkpointEvery === 0) {
           writeJson(
@@ -834,7 +862,7 @@ async function runComparisonExperiment(
   let candidateSearch: SimDeck[] | undefined;
   let baselineScores: Map<string, number> | undefined;
   let candidateScores: Map<string, number> | undefined;
-  const searchHistory: GenerationReport[] = [];
+  const searchHistory: SearchHistoryEntry[] = [];
   const baselineReplicates: DisplacementReplicate[] = [];
   const candidateReplicates: DisplacementReplicate[] = [];
 
@@ -884,8 +912,13 @@ async function runComparisonExperiment(
           outputDir: null,
           checkpointEvery: 1,
           ...(options.shouldStop ? { shouldStop: options.shouldStop } : {}),
+          // `replicate` alone does not disambiguate baseline from candidate —
+          // a pre-existing gap this field does not newly introduce, and out of
+          // M08.14's scope: a comparison run never reaches the Open Meta
+          // dashboard views that read `replicate` (`summary.kind` is
+          // `'comparison'`, not `'search'`).
           onGeneration: (report) => {
-            searchHistory.push(report);
+            searchHistory.push({ ...report, replicate });
           },
         });
 
@@ -1136,7 +1169,7 @@ interface FinishInputs {
   readonly precons: readonly ResolvedPrecon[];
   readonly replacements: readonly ReplacementImpact[];
   readonly comparison: ComparisonReport | null;
-  readonly searchHistory: readonly GenerationReport[];
+  readonly searchHistory: readonly SearchHistoryEntry[];
   readonly workers: number;
   readonly elapsedMs: number;
   /** Matches whose runner threw outright and produced no record at all. */

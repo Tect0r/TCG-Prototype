@@ -421,6 +421,176 @@ export function terminationsTableFixture(
   );
 }
 
+/* ------------------------------------------- Open Meta result tables (M08.14) */
+
+export interface CardRowFixture {
+  readonly definitionId: string;
+  readonly decksIncluding: number;
+  readonly eligibleDecks?: number | null;
+  readonly inclusionAmongEligibleShare?: number | null;
+  readonly inclusionWinRateLift?: number | null;
+}
+
+/** A `cards` result table, with only the columns these fixtures exercise. */
+export function cardsTableFixture(jobId: string, rows: readonly CardRowFixture[]): ResultTable {
+  return tableOf(
+    jobId,
+    'cards',
+    [
+      plainColumn('definitionId', 'Card', 'identifier'),
+      plainColumn('decksIncluding', 'Decks including', 'count'),
+      plainColumn('eligibleDecks', 'Eligible decks', 'count'),
+      plainColumn('inclusionAmongEligibleShare', 'Inclusion among eligible', 'proportion'),
+      plainColumn('inclusionWinRateLift', 'Inclusion lift', 'number'),
+    ],
+    rows.map((row) => ({
+      definitionId: row.definitionId,
+      decksIncluding: row.decksIncluding,
+      eligibleDecks: row.eligibleDecks ?? null,
+      inclusionAmongEligibleShare: row.inclusionAmongEligibleShare ?? null,
+      inclusionWinRateLift: row.inclusionWinRateLift ?? null,
+    })),
+  );
+}
+
+export interface CommanderRowFixture {
+  readonly commanderId: string;
+  readonly matches: number;
+  readonly winRate: RateFixture;
+  readonly decks: number;
+  readonly deckDiversity: number;
+  readonly topDeckFitness?: number | null;
+  readonly medianDeckFitness?: number | null;
+}
+
+/** A `commanders` result table, shaped as `apps/admin-server/src/service/results.ts` builds one. */
+export function commandersTableFixture(
+  jobId: string,
+  rows: readonly CommanderRowFixture[],
+): ResultTable {
+  return tableOf(
+    jobId,
+    'commanders',
+    [
+      plainColumn('commanderId', 'Commander', 'identifier'),
+      plainColumn('matches', 'Games', 'count'),
+      ...rateColumns('winRate', 'Win rate', 'Win-rate games'),
+      plainColumn('decks', 'Distinct decks', 'count'),
+      plainColumn('deckDiversity', 'Deck diversity', 'number'),
+      plainColumn('topDeckFitness', 'Top deck fitness', 'number'),
+      plainColumn('medianDeckFitness', 'Median deck fitness', 'number'),
+    ],
+    rows.map((row) => ({
+      commanderId: row.commanderId,
+      matches: row.matches,
+      ...rateRow('winRate', row.winRate),
+      decks: row.decks,
+      deckDiversity: row.deckDiversity,
+      topDeckFitness: row.topDeckFitness ?? null,
+      medianDeckFitness: row.medianDeckFitness ?? null,
+    })),
+  );
+}
+
+export interface CommanderMatchupRowFixture {
+  readonly commanderId: string;
+  readonly opponentCommanderId: string;
+  readonly rate: RateFixture;
+}
+
+/** A `commander_matchups` result table. */
+export function commanderMatchupsTableFixture(
+  jobId: string,
+  rows: readonly CommanderMatchupRowFixture[],
+): ResultTable {
+  return tableOf(
+    jobId,
+    'commander_matchups',
+    [
+      plainColumn('commanderId', 'Commander', 'identifier'),
+      plainColumn('opponentCommanderId', 'Opponent', 'identifier'),
+      ...rateColumns('rate', 'Win rate', 'Games'),
+    ],
+    rows.map((row) => ({
+      commanderId: row.commanderId,
+      opponentCommanderId: row.opponentCommanderId,
+      ...rateRow('rate', row.rate),
+    })),
+  );
+}
+
+export interface CommanderGenerationRowFixture {
+  readonly generation: number;
+  readonly replicate?: number | null;
+  readonly commanderId: string;
+  readonly share: number;
+}
+
+/** A `commander_generations` result table: one row per generation per Commander. */
+export function commanderGenerationsTableFixture(
+  jobId: string,
+  rows: readonly CommanderGenerationRowFixture[],
+): ResultTable {
+  return tableOf(
+    jobId,
+    'commander_generations',
+    [
+      plainColumn('generation', 'Generation', 'count'),
+      plainColumn('replicate', 'Replicate', 'count'),
+      plainColumn('commanderId', 'Commander', 'identifier'),
+      plainColumn('share', 'Share of population', 'proportion'),
+    ],
+    rows.map((row) => ({
+      generation: row.generation,
+      replicate: row.replicate ?? null,
+      commanderId: row.commanderId,
+      share: row.share,
+    })),
+  );
+}
+
+export interface SearchGenerationRowFixture {
+  readonly generation: number;
+  readonly replicate?: number | null;
+  readonly cardEntropy: number;
+  readonly meanPairwiseDistance: number;
+  readonly commanderCount: number;
+  readonly bestScore?: number | null;
+  readonly meanScore?: number;
+  readonly archiveSize?: number;
+}
+
+/** A `search_generations` result table: one row per generation. */
+export function searchGenerationsTableFixture(
+  jobId: string,
+  rows: readonly SearchGenerationRowFixture[],
+): ResultTable {
+  return tableOf(
+    jobId,
+    'search_generations',
+    [
+      plainColumn('generation', 'Generation', 'count'),
+      plainColumn('replicate', 'Replicate', 'count'),
+      plainColumn('cardEntropy', 'Card entropy', 'number'),
+      plainColumn('commanderCount', 'Distinct Commanders', 'count'),
+      plainColumn('meanPairwiseDistance', 'Mean pairwise distance', 'number'),
+      plainColumn('bestScore', 'Best score', 'number'),
+      plainColumn('meanScore', 'Mean score', 'number'),
+      plainColumn('archiveSize', 'Archive size', 'count'),
+    ],
+    rows.map((row) => ({
+      generation: row.generation,
+      replicate: row.replicate ?? null,
+      cardEntropy: row.cardEntropy,
+      commanderCount: row.commanderCount,
+      meanPairwiseDistance: row.meanPairwiseDistance,
+      bestScore: row.bestScore ?? null,
+      meanScore: row.meanScore ?? 0,
+      archiveSize: row.archiveSize ?? 0,
+    })),
+  );
+}
+
 export function capabilitiesFixture(overrides: Partial<Capabilities> = {}): Capabilities {
   return {
     versions: { ...CURRENT_ADMIN_VERSIONS },

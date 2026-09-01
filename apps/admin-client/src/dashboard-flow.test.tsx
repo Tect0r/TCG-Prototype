@@ -4,12 +4,17 @@ import { describe, expect, it } from 'vitest';
 
 import { renderAdmin, stubLayout } from './test/harness.js';
 import {
+  cardsTableFixture,
+  commanderGenerationsTableFixture,
+  commanderMatchupsTableFixture,
+  commandersTableFixture,
   contentCatalogFixture,
   decksTableFixture,
   fakeService,
   matchupsTableFixture,
   pilotsTableFixture,
   resultSummaryFixture,
+  searchGenerationsTableFixture,
   seatsTableFixture,
   terminationsTableFixture,
   type FakeService,
@@ -294,5 +299,261 @@ describe('switching views', () => {
     expect(within(table).getByRole('columnheader', { name: 'matches-r2' })).toBeVisible();
     expect(within(table).getByText(/65\.0%/)).toBeVisible();
     expect(within(table).getByText(/55\.0%/)).toBeVisible();
+  });
+});
+
+/* ------------------------------------------------------- the Open Meta views (M08.14) */
+
+/** Seeds one completed Open Meta search with the four M08.14 result tables filled in. */
+function seedOpenMetaSearch(service: FakeService): { jobId: string; batchId: string } {
+  const seeded = service.lab.seedResult({
+    label: 'Open Meta search',
+    summary: resultSummaryFixture({ kind: 'search' }),
+  });
+  const jobId = seeded.jobId;
+  service.lab.seedTables(jobId, {
+    decks: decksTableFixture(jobId, [GOBLIN, BASTION]),
+    commanders: commandersTableFixture(jobId, [
+      {
+        commanderId: GOBLIN.commanderId,
+        matches: 30,
+        winRate: { point: 0.6, low: 0.42, high: 0.76, total: 30 },
+        decks: 4,
+        deckDiversity: 0.7,
+        topDeckFitness: 1.3,
+        medianDeckFitness: 0.9,
+      },
+      {
+        commanderId: BASTION.commanderId,
+        matches: 30,
+        winRate: { point: 0.4, low: 0.24, high: 0.58, total: 30 },
+        decks: 3,
+        deckDiversity: 0.5,
+        topDeckFitness: 1.0,
+        medianDeckFitness: 0.7,
+      },
+    ]),
+    commander_matchups: commanderMatchupsTableFixture(jobId, [
+      {
+        commanderId: GOBLIN.commanderId,
+        opponentCommanderId: BASTION.commanderId,
+        rate: { point: 0.6, low: 0.42, high: 0.76, total: 30 },
+      },
+    ]),
+    commander_generations: commanderGenerationsTableFixture(jobId, [
+      { generation: 0, replicate: 0, commanderId: GOBLIN.commanderId, share: 0.625 },
+      { generation: 0, replicate: 0, commanderId: BASTION.commanderId, share: 0.375 },
+      { generation: 1, replicate: 0, commanderId: GOBLIN.commanderId, share: 0.75 },
+      { generation: 1, replicate: 0, commanderId: BASTION.commanderId, share: 0.25 },
+    ]),
+    search_generations: searchGenerationsTableFixture(jobId, [
+      {
+        generation: 0,
+        replicate: 0,
+        cardEntropy: 0.82,
+        meanPairwiseDistance: 5.1,
+        commanderCount: 2,
+        bestScore: 1.1,
+      },
+      {
+        generation: 1,
+        replicate: 0,
+        cardEntropy: 0.6,
+        meanPairwiseDistance: 3.4,
+        commanderCount: 2,
+        bestScore: 1.4,
+      },
+    ]),
+    cards: cardsTableFixture(jobId, [
+      {
+        definitionId: 'goblin_scout',
+        decksIncluding: 4,
+        eligibleDecks: 4,
+        inclusionAmongEligibleShare: 1,
+        inclusionWinRateLift: 0.05,
+      },
+    ]),
+  });
+  return seeded;
+}
+
+async function openOpenMetaDashboard(): Promise<{
+  service: FakeService;
+  jobId: string;
+  batchId: string;
+}> {
+  stubLayout('wide');
+  const service = fakeService({ content: contentCatalogFixture() });
+  const seeded = seedOpenMetaSearch(service);
+  renderAdmin({ transport: service.transport });
+  await screen.findByRole('heading', { level: 1, name: 'Overview' });
+  await userEvent.click(screen.getByRole('button', { name: 'Results' }));
+  await screen.findByRole('heading', { level: 1, name: 'Results' });
+  await userEvent.click(await within(main()).findByRole('button', { name: /Open Meta search/ }));
+  await within(main()).findByRole('heading', { level: 3, name: 'Open Meta result dashboard' });
+  return { service, ...seeded };
+}
+
+describe('the Open Meta search views (M08.14)', () => {
+  it('adds the Commander, Diversity and Card inclusion tabs only for a search run', async () => {
+    await openOpenMetaDashboard();
+
+    expect(within(main()).getByRole('button', { name: 'Commanders' })).toBeVisible();
+    expect(within(main()).getByRole('button', { name: 'Diversity' })).toBeVisible();
+    expect(within(main()).getByRole('button', { name: 'Card inclusion' })).toBeVisible();
+  });
+
+  it('does not add the search tabs to a batch run', async () => {
+    await openDashboard((service) => seedBenchmark(service));
+
+    expect(within(main()).queryByRole('button', { name: 'Commanders' })).toBeNull();
+    expect(within(main()).queryByRole('button', { name: 'Diversity' })).toBeNull();
+    expect(within(main()).queryByRole('button', { name: 'Card inclusion' })).toBeNull();
+  });
+
+  it('draws Commander win-rate bars, a Commander matchup heatmap, and top decks, with drill-down', async () => {
+    await openOpenMetaDashboard();
+    await userEvent.click(within(main()).getByRole('button', { name: 'Commanders' }));
+
+    const bars = within(main()).getByRole('table', {
+      name: 'Win rate by Commander, with interval and sample count',
+    });
+    expect(within(bars).getByText(/60\.0% \(42\.0%–76\.0%, n=30\)/)).toBeVisible();
+
+    const heatmap = within(main()).getByRole('table', {
+      name: "Matchup win rate: the row Commander's exact win rate against the column Commander",
+    });
+    expect(within(heatmap).getByRole('button', { name: /60\.0%/ })).toBeVisible();
+
+    // Report drill-down: the Commander row's exact fitness numbers, otherwise
+    // never rendered directly on this screen, reach the reader through this.
+    const row = within(bars).getAllByRole('button', { name: 'Exact row' })[0] as HTMLElement;
+    await userEvent.click(row);
+    const drill = await within(main()).findByRole('region', { name: /Commander row/ });
+    expect(within(drill).getByText('Top deck fitness')).toBeVisible();
+    expect(within(drill).getByText('1.3')).toBeVisible();
+    expect(within(drill).getByText('Median deck fitness')).toBeVisible();
+  });
+
+  it('renders card entropy and mean pairwise distance per generation, with report drill-down', async () => {
+    await openOpenMetaDashboard();
+    await userEvent.click(within(main()).getByRole('button', { name: 'Diversity' }));
+
+    const table = within(main()).getByRole('table', {
+      name: /Card entropy, mean pairwise distance/,
+    });
+    const rows = within(table).getAllByRole('row');
+    const row0 = rows[1] as HTMLElement;
+    const row1 = rows[2] as HTMLElement;
+    expect(within(row0).getByText('0.82')).toBeVisible();
+    expect(within(row0).getByText('5.1')).toBeVisible();
+    expect(within(row1).getByText('0.6')).toBeVisible();
+
+    await userEvent.click(within(row1).getByRole('button', { name: 'Exact row' }));
+    const drill = await within(main()).findByRole('region', { name: /generation 1/ });
+    expect(within(drill).getByText('Card entropy')).toBeVisible();
+  });
+
+  it('keeps two replicates as separate series rather than collapsing shared generation numbers (M08.14)', async () => {
+    stubLayout('wide');
+    const service = fakeService({ content: contentCatalogFixture() });
+    const seeded = service.lab.seedResult({
+      label: 'Open Meta search, two replicates',
+      summary: resultSummaryFixture({ kind: 'search' }),
+    });
+    const jobId = seeded.jobId;
+    service.lab.seedTables(jobId, {
+      decks: decksTableFixture(jobId, [GOBLIN, BASTION]),
+      commanders: commandersTableFixture(jobId, [
+        {
+          commanderId: GOBLIN.commanderId,
+          matches: 30,
+          winRate: { point: 0.6, low: 0.42, high: 0.76, total: 30 },
+          decks: 4,
+          deckDiversity: 0.7,
+        },
+      ]),
+      search_generations: searchGenerationsTableFixture(jobId, [
+        {
+          generation: 0,
+          replicate: 0,
+          cardEntropy: 0.82,
+          meanPairwiseDistance: 5.1,
+          commanderCount: 1,
+        },
+        {
+          generation: 0,
+          replicate: 1,
+          cardEntropy: 0.5,
+          meanPairwiseDistance: 3.2,
+          commanderCount: 1,
+        },
+      ]),
+      commander_generations: commanderGenerationsTableFixture(jobId, [
+        { generation: 0, replicate: 0, commanderId: GOBLIN.commanderId, share: 1 },
+        { generation: 0, replicate: 1, commanderId: BASTION.commanderId, share: 1 },
+      ]),
+    });
+
+    stubLayout('wide');
+    renderAdmin({ transport: service.transport });
+    await screen.findByRole('heading', { level: 1, name: 'Overview' });
+    await userEvent.click(screen.getByRole('button', { name: 'Results' }));
+    await screen.findByRole('heading', { level: 1, name: 'Results' });
+    await userEvent.click(
+      await within(main()).findByRole('button', { name: /Open Meta search, two replicates/ }),
+    );
+    await within(main()).findByRole('heading', { level: 3, name: 'Open Meta result dashboard' });
+    await userEvent.click(within(main()).getByRole('button', { name: 'Diversity' }));
+
+    const generationsTable = within(main()).getByRole('table', {
+      name: /Card entropy, mean pairwise distance/,
+    });
+    const generationRows = within(generationsTable).getAllByRole('row');
+    const genRow0 = generationRows[1] as HTMLElement;
+    const genRow1 = generationRows[2] as HTMLElement;
+    // Both rows say "generation 0" — only the Replicate column (this row's
+    // header cell) tells them apart.
+    expect(within(genRow0).getByRole('rowheader')).toHaveTextContent('0');
+    expect(within(genRow0).getByText('0.82')).toBeVisible();
+    expect(within(genRow1).getByRole('rowheader')).toHaveTextContent('1');
+    expect(within(genRow1).getByText('0.5')).toBeVisible();
+
+    // Each replicate's Commander holds 100% of its own population — never 200%
+    // of one collapsed "generation 0".
+    const sharesTable = within(main()).getByRole('table', {
+      name: /Each Commander's share of the population/,
+    });
+    const shareRows = within(sharesTable).getAllByRole('row').slice(1) as HTMLElement[];
+    expect(shareRows).toHaveLength(2);
+    for (const row of shareRows) {
+      expect(within(row).getByText('100.0%')).toBeVisible();
+    }
+  });
+
+  it('renders Commander share by generation, converging toward the fitter Commander', async () => {
+    await openOpenMetaDashboard();
+    await userEvent.click(within(main()).getByRole('button', { name: 'Diversity' }));
+
+    expect(within(main()).getByText('Commander share by generation')).toBeVisible();
+    expect(within(main()).getByText('62.5%')).toBeVisible();
+    expect(within(main()).getByText('75.0%')).toBeVisible();
+  });
+
+  it('shows the forced-inclusion caveat beside card inclusion, unconditionally', async () => {
+    await openOpenMetaDashboard();
+    await userEvent.click(within(main()).getByRole('button', { name: 'Card inclusion' }));
+
+    expect(within(main()).getByText(/forced-inclusion floor/i)).toBeVisible();
+    expect(within(main()).getByText('goblin_scout')).toBeVisible();
+  });
+
+  it('opens the exact contributing row for a card, including its included/absent sample counts', async () => {
+    await openOpenMetaDashboard();
+    await userEvent.click(within(main()).getByRole('button', { name: 'Card inclusion' }));
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Exact row' }));
+    const drill = await within(main()).findByRole('region', { name: /card row/ });
+    expect(within(drill).getByText('Inclusion lift')).toBeVisible();
   });
 });

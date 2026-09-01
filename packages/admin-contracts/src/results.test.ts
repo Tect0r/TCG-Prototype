@@ -173,6 +173,10 @@ describe('a result table', () => {
       'pilots',
       'agent_classes',
       'terminations',
+      'commanders',
+      'commander_matchups',
+      'commander_generations',
+      'search_generations',
     ]);
     expect(resultTableSchema.safeParse(table({ table: 'replays' })).success).toBe(false);
   });

@@ -29,7 +29,7 @@ checklist in the milestone file, then stop.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-08-31)   | M08.14       |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-01)   | M08.15       |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -214,15 +214,65 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.14 — Open Meta workflow.** Let the AI choose among legal Commanders and
-cards, and show what emerges: all or selected Commanders, unconstrained or plan
-seed policy, population, generations, elite, mutation and crossover, opponents,
-games, archive, replicates, pilots and retention through progressive
-disclosure. Render Commander share over generations, win and matchup views, top
-and median deck results, top decklists, card inclusion, and diversity and
-convergence. The forced-inclusion warning is always beside selection
-statistics. **No per-Commander finalist championship.** Its scope and checklist
-are in [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0814--open-meta-workflow).
+**M08.15 — Commander Search and finalist championship.** Compare equal-budget
+Commander ecosystems on fresh validation games: equal-budget independent
+searches for selected Commanders, mutation and crossover kept Commander-legal
+with locked mode never silently changing Commander, a configurable number of
+sufficiently distinct finalists per Commander with the diversity rule and any
+shortfall recorded, finalists frozen, and a fresh-seed mirrored championship
+stage. Render best and median deck strength, exact lists, within-Commander
+diversity, the opponent-Commander matrix, the seat and pilot split, and final
+validation standing. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0815--commander-search-and-finalist-championship).
+
+**M08.14 gave the Open Meta workflow its progressive-disclosure form and the
+dashboard's three search-only views, no part of which compiled before this
+tranche.** `apps/admin-server/src/lab/expand.ts`'s `openMeta()` now threads
+`commanderIds` (scoping which legal Commanders the search may choose, empty
+still meaning "every legal one"), `planId`, and the elite/mutation/crossover/
+opponents/games/archive/retention knobs into the search preset, each recorded
+as its own `decision`. `packages/admin-contracts/src/presets.ts` carries the
+matching `OpenMetaChoice` fields, and
+`apps/admin-client/src/lib/builder-form.ts`/`BuilderScreen.tsx` render them
+behind a family toggle (benchmark ↔ Open Meta) with the advanced knobs behind a
+collapsed `<details>` disclosure — a Commander scope of nothing withholds the
+estimate rather than pricing an empty search. `apps/admin-server/src/lab/expand.ts` also gained `requirePlan`, refusing an
+unpublished plan or one whose Commander sits outside a non-empty Commander
+scope before anything prices or enqueues — a review finding: the plan was
+otherwise only checked when `runSearchExperiment` itself called `resolvePlan`,
+after the run had already started, and `resolvePlan`/`PlanResolutionError` are
+now re-exported from `@tcg/simulator` for that reuse.
+`apps/simulator/src/experiment.ts` (`SUMMARY_SCHEMA_VERSION` 10) and
+`deck-search/evolve.ts` (`SEARCH_CHECKPOINT_VERSION` 3) now carry
+`commanderShares` — each Commander seated at a generation and its share of the
+population — on every `GenerationReport`, refused rather than migrated for a
+checkpoint written before it existed. Every `GenerationReport` reaching
+`searchHistory` also carries `replicate` (`experiment.ts`'s new
+`SearchHistoryEntry`) — another review finding: `searchHistory` concatenates
+every independent replicate's own generation sequence, and without a
+discriminator two replicates' generation 0 read as one trajectory with
+Commander shares summing to 2, not 1. Four result tables new to
+`packages/admin-contracts/src/results.ts` and
+`apps/admin-server/src/service/results.ts` (`commanders`, `commander_matchups`,
+`commander_generations`, `search_generations`) read this and M08.13's Commander
+aggregates loosely, defaulting to empty (or `null` for `replicate`) for a run
+written before either existed. `ResultDashboard.tsx` adds three tabs for a
+search run only — Commanders (win-rate bars, a Commander matchup heatmap, and
+each Commander's top decks by win rate, with fitness and diversity reaching the
+reader through the same "Exact row" drill-down every other view already uses,
+and a truncation note when the `decks` page read does not cover every deck),
+Diversity (card entropy, mean pairwise distance, best/mean score and archive
+size per generation, and Commander share per generation, both tables ordered
+and keyed by replicate first so two replicates never interleave into one
+misread trajectory), and Card inclusion (the existing eligibility-aware
+inclusion table, now with its own "Exact row" drill-down, and
+`FORCED_INCLUSION_CAVEAT` rendered beside it unconditionally — "always beside
+selection statistics" read literally, since the dashboard does not carry a
+per-card forced-inclusion floor to condition the caveat on).
+`dashboard-flow.test.tsx` exercises all three, the report drill-down, the
+caveat's presence, and the two-replicate case; `expand.test.ts` exercises the
+plan refusals; `search.test.ts` checks `commanderShares` sums to 1 and matches
+`commanderCount` on real search output, not only hand-written fixtures.
 
 **M08.13 added Commander-level evidence beside the deck- and card-level views
 M08.10–M08.12 already had, and traced a fresh-versus-resumed fitness

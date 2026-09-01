@@ -9,11 +9,11 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `e5d86f73b4d27eb6f9111fb1754d694be7649cfb`  |
+| Commit           | `f4a7884fa76eeb82090e598ba5a4adc637440154`  |
 | Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-08-31                                  |
+| Taken on         | 2026-09-01                                  |
 | Node             | v24.15.0                                    |
-| `npm run verify` | passed at this commit                       |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 14      | 253      |
-| admin-server   | 27      | 564      |
+| admin-client   | 14      | 278      |
+| admin-server   | 27      | 577      |
 | packages       | 95      | 2278     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
-| simulator      | 27      | 476      |
+| simulator      | 27      | 477      |
 | web-client     | 20      | 272      |
-| **total**      | **204** | **4257** |
+| **total**      | **204** | **4296** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -79,9 +79,9 @@ Documents a finished run leaves behind. Every move so far has been a refusal rat
 | `MATCH_STREAM_HEADER_VERSION`         | 1     | `matches.header.json`, which decides whether a run may resume. |
 | `REPORT_SCHEMA_VERSION`               | 9     | `report.md`.                                                   |
 | `MANIFEST_SCHEMA_VERSION`             | 8     | `manifest.json`.                                               |
-| `SUMMARY_SCHEMA_VERSION`              | 9     | `summary.json`.                                                |
+| `SUMMARY_SCHEMA_VERSION`              | 10    | `summary.json`.                                                |
 | `MATCHUP_MATRIX_SCHEMA_VERSION`       | 2     | `matchup-matrix.json` and its CSV.                             |
-| `SEARCH_CHECKPOINT_VERSION`           | 2     | A deck-search checkpoint.                                      |
+| `SEARCH_CHECKPOINT_VERSION`           | 3     | A deck-search checkpoint.                                      |
 | `RESOLVED_ENVIRONMENT_SCHEMA_VERSION` | 1     | A frozen environment snapshot.                                 |
 | `REFERENCE_POPULATION_VERSION`        | 1     | A shared reference population.                                 |
 | `CONFIG_SCHEMA_VERSION`               | 1     | An experiment configuration file.                              |

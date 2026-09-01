@@ -179,6 +179,56 @@ export function buildMatchupMatrix(
   };
 }
 
+/**
+ * A `commanders` table plus a `commander_matchups` table, folded into an
+ * ordered square matrix the same way `buildMatchupMatrix` folds `decks` and
+ * `matchups` (M08.14) — same shape, keyed by Commander identity rather than
+ * deck content address, because a search run's Commander-level matchup
+ * evidence has no per-deck axis of its own.
+ */
+export function buildCommanderMatchupMatrix(
+  commandersTable: ResultTable,
+  commanderMatchupsTable: ResultTable,
+  labelForCommander: (commanderId: string) => string = (commanderId) => commanderId,
+): HeatmapMatrix {
+  const commandersByRate = orderedByRate(
+    commandersTable.rows.map((row) => ({
+      key: String(row.commanderId ?? ''),
+      label: labelForCommander(String(row.commanderId ?? '')),
+      rate: readRate(commandersTable, row, 'winRate'),
+    })),
+  );
+  const axes: readonly HeatmapAxis[] = disambiguateLabels(
+    commandersByRate.map((item) => ({ key: item.key, label: item.label })),
+  );
+
+  const cells = new Map<string, RateReading | null>();
+  for (const row of commanderMatchupsTable.rows) {
+    const commanderId = String(row.commanderId ?? '');
+    const opponentCommanderId = String(row.opponentCommanderId ?? '');
+    cells.set(
+      `${commanderId} ${opponentCommanderId}`,
+      readRate(commanderMatchupsTable, row, 'rate'),
+    );
+  }
+
+  return {
+    rows: axes,
+    columns: axes,
+    decksTruncated: isTruncated(commandersTable),
+    matchupsTruncated: isTruncated(commanderMatchupsTable),
+    cellAt: (rowKey, columnKey) => {
+      const found = cells.has(`${rowKey} ${columnKey}`);
+      return {
+        rowKey,
+        columnKey,
+        found,
+        rate: found ? (cells.get(`${rowKey} ${columnKey}`) ?? null) : null,
+      };
+    },
+  };
+}
+
 /* ------------------------------------------------------------- the replicate view */
 
 /**
@@ -223,13 +273,27 @@ export function replicateSiblings(
     });
 }
 
-/** The tables the dashboard reads, kept in one place so a view and its fetch cannot drift. */
+/**
+ * The tables the dashboard reads, kept in one place so a view and its fetch
+ * cannot drift.
+ *
+ * The last four exist for a search run only (M08.14) — `cards`, `commanders`,
+ * `commander_matchups`, `commander_generations` and `search_generations` come
+ * back with zero rows for a batch run and the tabs that read them render
+ * `Empty` rather than being hidden by a kind check here, the same way every
+ * other tab already tolerates a run that recorded nothing for it.
+ */
 export const DASHBOARD_TABLES: readonly ResultTableName[] = [
   'decks',
   'matchups',
   'seats',
   'pilots',
   'terminations',
+  'cards',
+  'commanders',
+  'commander_matchups',
+  'commander_generations',
+  'search_generations',
 ];
 
 /* ----------------------------------------------------------------- formatting */

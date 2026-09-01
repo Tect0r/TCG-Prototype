@@ -17,6 +17,8 @@ import {
   environmentConfigForFormat,
   parseExperimentConfig,
   resolveEnvironment,
+  resolvePlan,
+  PlanResolutionError,
   type Environment,
   type EnvironmentConfig,
   type ExperimentConfig,
@@ -165,6 +167,42 @@ function requireCommanders(environment: Environment, commanderIds: readonly stri
       `commanderIds.${String(index)}`,
       `"${id}" is not a Commander in format "${PRESET_FORMAT_ID}". Available: ` +
         `${[...known].sort().join(', ')}.`,
+    );
+  }
+}
+
+/**
+ * Checks a plan seed policy against the plans this format actually publishes,
+ * and against a non-empty Commander scope, before anything is priced (M08.14).
+ *
+ * `generatorConfigSchema.planId` is a plain string, so a misspelled or
+ * unpublished plan would otherwise parse, price and enqueue, and only fail
+ * once `runSearchExperiment` calls `resolvePlan` itself — after the run has
+ * already started. `resolvePlan` is the simulator's own authority on which
+ * plans exist and which Commander each names, reused rather than duplicated,
+ * the same way `requireCommanders` reuses the environment rather than
+ * maintaining a second Commander list.
+ */
+function requirePlan(
+  environment: Environment,
+  planId: string | undefined,
+  commanderIds: readonly string[],
+): void {
+  if (planId === undefined) return;
+  let plan;
+  try {
+    plan = resolvePlan(planId, environment);
+  } catch (cause) {
+    if (cause instanceof PlanResolutionError) {
+      refuse('generator.planId', scrubRefusal(cause.message));
+    }
+    throw cause;
+  }
+  if (commanderIds.length > 0 && !commanderIds.includes(plan.commanderId)) {
+    refuse(
+      'generator.planId',
+      `Deck plan "${planId}" names Commander "${plan.commanderId}", which is outside the ` +
+        `selected Commander scope (${commanderIds.join(', ')}).`,
     );
   }
 }
@@ -406,6 +444,9 @@ function openMeta(
   environment: EnvironmentConfig,
 ): ExpandedStage[] {
   const base = common(choice, choice.pilotIds);
+  // Scoping `commanderIds` (M08.14) narrows *which* legal Commanders the
+  // search may choose; leaving it empty is still "open" — every legal one.
+  const commanderIds = [...choice.commanderIds];
   return [
     {
       stageId: 'search',
@@ -417,20 +458,43 @@ function openMeta(
           kind: 'search',
           label: PRESET_REGISTRY.open_meta.label,
           environment,
-          // No `commanderIds`: choosing the Commander is what "open" means.
-          generator: {},
+          generator: {
+            commanderIds,
+            ...(choice.planId === undefined ? {} : { planId: choice.planId }),
+          },
           populationSize: choice.populationSize,
           generations: choice.generations,
+          eliteCount: choice.eliteCount,
+          mutationStrength: choice.mutationStrength,
+          crossoverShare: choice.crossoverShare,
+          opponentsPerEvaluation: choice.opponentsPerEvaluation,
+          gamesPerOpponent: choice.gamesPerOpponent,
+          archiveSize: choice.archiveSize,
           replicates: choice.replicates,
+          retention: { replaySampleRate: choice.retention.replaySampleRate },
         },
         'search',
       ),
       decisions: [
         ...base.decisions,
-        decision('generator.commanderIds', [], 'preset'),
+        decision(
+          'generator.commanderIds',
+          commanderIds,
+          commanderIds.length > 0 ? 'chosen' : 'preset',
+        ),
+        ...(choice.planId === undefined
+          ? []
+          : [decision('generator.planId', choice.planId, 'chosen' as const)]),
         decision('populationSize', choice.populationSize, 'chosen'),
         decision('generations', choice.generations, 'chosen'),
+        decision('eliteCount', choice.eliteCount, 'chosen'),
+        decision('mutationStrength', choice.mutationStrength, 'chosen'),
+        decision('crossoverShare', choice.crossoverShare, 'chosen'),
+        decision('opponentsPerEvaluation', choice.opponentsPerEvaluation, 'chosen'),
+        decision('gamesPerOpponent', choice.gamesPerOpponent, 'chosen'),
+        decision('archiveSize', choice.archiveSize, 'chosen'),
         decision('replicates', choice.replicates, 'chosen'),
+        decision('retention.replaySampleRate', choice.retention.replaySampleRate, 'chosen'),
       ],
     },
   ];
@@ -643,6 +707,9 @@ export function expandPreset(input: PresetChoiceInput | unknown): ExpandedPreset
         requireDistinct('preconIds', choice.preconIds, 'Precon');
         return preconBenchmark(choice, environmentConfig);
       case 'open_meta':
+        requireDistinct('commanderIds', choice.commanderIds, 'Commander');
+        requireCommanders(environment, choice.commanderIds);
+        requirePlan(environment, choice.planId, choice.commanderIds);
         return openMeta(choice, environmentConfig);
       case 'commander_search':
         requireDistinct('commanderIds', choice.commanderIds, 'Commander');

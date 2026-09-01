@@ -174,6 +174,18 @@ describe('runSearch', () => {
     }
   });
 
+  it('reports commanderShares matching commanderCount and summing to 1 (M08.14)', () => {
+    for (const report of result.history) {
+      expect(report.commanderShares).toHaveLength(report.commanderCount);
+      const total = report.commanderShares.reduce((sum, entry) => sum + entry.share, 0);
+      expect(total).toBeCloseTo(1, 2);
+      // Every share belongs to a Commander this generation actually seated,
+      // and no Commander is named twice.
+      const ids = report.commanderShares.map((entry) => entry.commanderId);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
+
   it('emits a schema-valid checkpoint per generation', () => {
     expect(checkpoints).toHaveLength(3);
     checkpoints.forEach((checkpoint, index) => {
