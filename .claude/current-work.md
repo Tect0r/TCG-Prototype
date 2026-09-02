@@ -824,3 +824,65 @@ this close:
 Root status row's "Next tranche" column advanced to `M08.20A`; `IMPLEMENTATION_PLAN.md`'s "next bounded task" now names **M08.20A — Candidate
 Patch Comparison**. M08.19 tranche-close record committed and pushed. M08.19
 is complete.
+
+## M08.20A — Candidate Patch Comparison
+
+Widened the `candidate_comparison` admin-lab preset from remove-only candidate
+changes to remove-and-patch: a candidate can now also declare per-card balance
+edits (`cost`/`attack`/`health`) alongside, or instead of, removals.
+
+`packages/admin-contracts/src/presets.ts`: added `candidateCardPatchSchema`
+(`cardId` + optional `cost`/`attack`/`health`, `.refine`d to require at least
+one field); relaxed `candidate_comparison`'s `removeCardIds` from `.min(1)` to
+`.default([])` and added `cardPatches: z.array(candidateCardPatchSchema).max(40).default([])`,
+moving the "must declare *some* change" rule to `expand.ts` (same
+schema-shape-vs-cross-field-refusal split already used for
+`adaptiveSwapBoundSchema`). Updated the registry's `summary`/`limitations` text
+to state the patch surface is exactly three numeric dials, not a structural
+editor. Exported `candidateCardPatchSchema`/`CandidateCardPatch` from
+`packages/admin-contracts/src/index.ts`.
+
+`apps/admin-server/src/lab/expand.ts`: generalized `requirePoolCards` (now
+takes a verb/path so both removals and patches share it) and added
+`requireCandidatePatches`, which in one pool-map pass refuses (a) a patch
+target absent from the pool, (b) a card both removed and patched, and (c) an
+`attack`/`health` edit on a card with no combat stats. That third check exists
+because `resolveEnvironment()` re-validates the patched card against
+`cardDefinitionSchema` and throws a raw non-Zod `Error` on a statted/non-statted
+mismatch (e.g. patching a spell's `attack`) — not part of the original scoped
+plan, found while re-reading `resolveEnvironment()`, and closed the same way
+`requirePoolCards` already turns an analogous raw-Error failure mode into an
+ordinary admin refusal. Since admin-server cannot import `@tcg/card-data`
+(`boundary.test.ts`), the check reads the already-resolved pool card's own
+`attack === undefined` as a structural-boundary-compliant proxy for
+`STATTED_TYPES`. Rewrote `candidateComparison()` to build a `CardPatch[]` for
+the simulator's `EnvironmentConfig.cardPatches`, compute exact declared
+`cardsChanged[].fields` via a new `candidatePatchFields()` helper (so
+`checkDeclaredChanges`'s exact bidirectional field-name match is satisfied),
+and record patch decisions as `"cardId(field+field)"` strings (`PresetValue`
+cannot hold arrays of objects). `expandPreset`'s switch arm now calls
+`requireCandidatePatches` and refuses when both `removeCardIds` and
+`cardPatches` are empty.
+
+Confirmed no new test was needed for "a candidate comparison cannot publish
+live content": read `boundary.test.ts` in full — this invariant already holds
+structurally, by construction, because nothing in `apps/simulator/src/environment.ts`
+writes `cardPatches`/`cardOverrides` into `content/`; this widening adds no new
+write path, so nothing changed for that guarantee.
+
+Focused verification: added patch-target/combat-stat/overlap/duplicate/empty-
+declared-change tests plus a "patch alongside a removal" and "removal and
+patch on different cards" test to `apps/admin-server/src/lab/expand.test.ts`
+(53 tests, all passing); split `packages/admin-contracts/src/presets.test.ts`'s
+empty-candidate-change test to match the relaxed schema and added the new
+`cardPatches` field to its exhaustive-field-list test (34 tests, all passing).
+`npx vitest run packages/admin-contracts apps/admin-server`: 48 files, 1069
+tests, all passing. `npx eslint` on all five changed source/test files: clean.
+`npm run --workspace @tcg/admin-contracts typecheck` and
+`npm run --workspace @tcg/admin-server typecheck`: both clean. Marked M08.20A
+complete in the milestone file with a full evidence note; the M08.20 tranche
+checklist and root status row are untouched, per CLAUDE.md — both move only at
+tranche close.
+
+Next slice: **M08.20B — Pilot Robustness**, per `IMPLEMENTATION_PLAN.md` and
+the M08.20 tranche in `docs/milestones/M08-ai-lab-and-player-meta.md`.

@@ -230,6 +230,7 @@ describe('a choice', () => {
         'archiveSize',
         'blockSize',
         'candidateCount',
+        'cardPatches',
         'commanderIds',
         'commanderPolicy',
         'crossoverShare',
@@ -281,11 +282,23 @@ describe('a choice', () => {
     ).toThrow();
   });
 
-  it('refuses an empty pilot selection and an empty candidate change', () => {
+  it('refuses an empty pilot selection', () => {
     expect(() => presetChoiceSchema.parse({ ...CHOICES.precon_smoke, pilotIds: [] })).toThrow();
+  });
+
+  it('accepts an empty removal list and an empty patch list at the schema level', () => {
+    // "A comparison must declare *some* change" is a business rule about the two
+    // fields together, not a bound on either one — `expand.ts`'s
+    // `requireCandidatePatches`/empty-declared-change refusal enforces it
+    // (`expand.test.ts`), the same split as `adaptiveSwapBoundSchema`'s min/max
+    // check elsewhere in this file.
     expect(() =>
-      presetChoiceSchema.parse({ ...CHOICES.candidate_comparison, removeCardIds: [] }),
-    ).toThrow();
+      presetChoiceSchema.parse({
+        ...CHOICES.candidate_comparison,
+        removeCardIds: [],
+        cardPatches: [],
+      }),
+    ).not.toThrow();
   });
 
   it('refuses an experiment ID that is not the simulator’s authored slug', () => {

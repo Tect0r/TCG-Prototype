@@ -3618,10 +3618,26 @@ profile partition, soak failure retention and labelling tests.
 
 ### Work slices
 
-- [ ] **M08.20A — Candidate Patch Comparison.** Map controls exactly onto the
+- [x] **M08.20A — Candidate Patch Comparison.** Map controls exactly onto the
       existing comparison contract, require the declared change, preserve identical
       reference populations and seed families, and prevent a temporary candidate
       environment from publishing live content.
+      _Evidence (2026-09-02): widened `candidate_comparison`'s choice schema
+      (`packages/admin-contracts/src/presets.ts`) with `candidateCardPatchSchema`
+      (cardId + optional cost/attack/health, at least one required) and a
+      `cardPatches` array alongside the now-optional `removeCardIds`; widened
+      `apps/admin-server/src/lab/expand.ts`'s `candidateComparison()` to build the
+      candidate's `cardPatches` and a matching `declaredChanges.cardsChanged`
+      (exact field names, satisfying the engine's exact-match check), and added
+      `requireCandidatePatches` (pool membership, no removed+patched overlap, no
+      combat-stat edit on a card without combat stats) plus an
+      at-least-one-declared-change refusal in `expandPreset`. "Cannot publish live
+      content" needed no new test: `cardPatches`/`cardOverrides` only ever flow
+      into in-memory `EnvironmentConfig`/job JSON (`apps/simulator/src/
+      environment.ts` has no write path into `content/`), unchanged by this
+      widening. Focused: `expand.test.ts` (53/53) and `presets.test.ts` (34/34,
+      2 pre-existing tests updated for the schema change), typecheck and eslint
+      clean on both packages._
 - [ ] **M08.20B — Pilot Robustness.** Map controls onto the existing robustness
       contract, preserve profile partitions and denominators, and refuse any pooled
       rate whose pilot meaning is unexplained.

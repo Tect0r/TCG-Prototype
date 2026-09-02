@@ -229,7 +229,8 @@ export const PRESET_REGISTRY: Readonly<Record<ExperimentPresetId, ExperimentPres
       label: 'Candidate Patch Comparison',
       summary:
         'The same reference decks, the same seeds and the same seat orders played in two ' +
-        'environments that differ only by the cards the candidate removes.',
+        'environments that differ only by the cards the candidate removes or the balance ' +
+        'dials it edits.',
       status: 'available',
       testStyle: 'candidate_patch_comparison',
       kinds: ['comparison'],
@@ -239,6 +240,9 @@ export const PRESET_REGISTRY: Readonly<Record<ExperimentPresetId, ExperimentPres
           'publish live content.',
         'The declared change is checked against the two resolved pools before any match ' +
           'runs; an undeclared difference stops the run rather than being measured.',
+        'Card patches are three numeric balance dials — cost, attack, health. A structural ' +
+          'or textual edit (abilities, effects, text, ...) needs a real structured editor and ' +
+          'is out of scope here.',
       ],
     },
     pilot_robustness: {
@@ -356,6 +360,40 @@ const commonChoiceFields = {
 
 const preconSelection = z.array(resolvedIdSchema).min(2).max(16);
 const pilotSelection = z.array(resolvedIdSchema).min(1).max(4);
+
+/* -------------------------------------------------- candidate patch editor */
+
+/**
+ * A field-level balance edit to one existing card in the candidate environment.
+ *
+ * Restated from `cardPatchBodySchema` in `@tcg/card-data` (this package cannot
+ * import it; see the header), and restricted to three numeric balance dials —
+ * `cost`, `attack`, `health` — deliberately narrower than the engine's full
+ * `PATCHABLE_CARD_FIELDS` allow-list. Structural and textual fields
+ * (`abilities`, `effects`, `text`, ...) describe what a card *is* rather than
+ * how strong it is, and CLAUDE.md's "structured card data is authoritative"
+ * rule means an edit to one of those needs a real structured editor, not three
+ * loose numbers in a comparison builder. `expand.ts` computes the declared
+ * `cardsChanged[].fields` entry from exactly the fields present here, so this
+ * list and that computation move together if a later tranche adds a dial.
+ *
+ * The bounds restate `baseCardSchema`'s (`packages/card-data/src/schema/
+ * card.ts`), the same restatement discipline as everywhere else in this file:
+ * `applyCardPatch` re-validates the merged card, so a bound that drifted wider
+ * than the engine's is refused there rather than accepted.
+ */
+export const candidateCardPatchSchema = z
+  .strictObject({
+    cardId: resolvedIdSchema,
+    cost: z.number().int().min(0).max(20).nullable().optional(),
+    attack: z.number().int().min(0).max(99).optional(),
+    health: z.number().int().min(1).max(99).optional(),
+  })
+  .refine(
+    (patch) => patch.cost !== undefined || patch.attack !== undefined || patch.health !== undefined,
+    'A card patch must change at least one field.',
+  );
+export type CandidateCardPatch = z.infer<typeof candidateCardPatchSchema>;
 
 /* ------------------------------------------------- adaptive counter search */
 
@@ -603,12 +641,17 @@ export const presetChoiceSchema = z.discriminatedUnion('presetId', [
     /**
      * The candidate change: cards the candidate environment removes from the pool.
      *
-     * One kind of change rather than a patch editor, and a complete one — a ban
-     * list is declarable, checkable against both resolved pools, and reversible.
-     * The wider candidate-patch editor is M08.20's, and it widens this member
-     * rather than being smuggled in as free-form JSON.
+     * No longer the only declarable change — `cardPatches` below is M08.20's
+     * widening of this member. `expand.ts` refuses a choice that declares
+     * neither, since a comparison with no candidate change measures nothing.
      */
-    removeCardIds: z.array(resolvedIdSchema).min(1).max(40),
+    removeCardIds: z.array(resolvedIdSchema).max(40).default([]),
+    /**
+     * The candidate change: field-level balance edits to cards that stay in the
+     * pool. See `candidateCardPatchSchema` for why this is three numeric dials
+     * and not a free-form card editor.
+     */
+    cardPatches: z.array(candidateCardPatchSchema).max(40).default([]),
     gamesPerSeatOrder: z.number().int().min(1).max(200).default(4),
     /** Also run an independent search in both environments (CLAUDE.md §13.12). */
     searchBothEnvironments: z.boolean().default(true),

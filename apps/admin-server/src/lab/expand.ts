@@ -6,6 +6,7 @@ import {
   presetChoiceSchema,
   presetExpansionSchema,
   type AdminError,
+  type CandidateCardPatch,
   type ExperimentPurpose,
   type PresetChoice,
   type PresetChoiceInput,
@@ -19,6 +20,7 @@ import {
   resolveEnvironment,
   resolvePlan,
   PlanResolutionError,
+  type CardPatch,
   type Environment,
   type EnvironmentConfig,
   type ExperimentConfig,
@@ -207,17 +209,81 @@ function requirePlan(
   }
 }
 
-/** Checks that a candidate change removes cards the pool actually contains. */
-function requirePoolCards(environment: Environment, cardIds: readonly string[]): void {
+/** Checks that a candidate change targets cards the pool actually contains. */
+function requirePoolCards(
+  environment: Environment,
+  cardIds: readonly string[],
+  path: string,
+  verb: string,
+): void {
   const pool = new Set(environment.pool.map((card) => card.id));
   for (const [index, id] of cardIds.entries()) {
     if (pool.has(id)) continue;
     refuse(
-      `removeCardIds.${String(index)}`,
-      `"${id}" is not in the playable pool of format "${PRESET_FORMAT_ID}", so removing it ` +
+      `${path}.${String(index)}`,
+      `"${id}" is not in the playable pool of format "${PRESET_FORMAT_ID}", so ${verb} it ` +
         'would declare a change that does not happen.',
     );
   }
+}
+
+/**
+ * Checks a candidate patch list: every target is in the pool once, no card is
+ * named by both a removal and a patch, and a combat-stat edit only lands on a
+ * card that has combat stats.
+ *
+ * The last check stands in for `@tcg/card-data`'s statted-type rule without
+ * importing it — this workspace cannot (`boundary.test.ts`) — by reading the
+ * resolved card itself: a card the pool already carries an `attack` for is a
+ * unit, and one it does not is not. `resolveEnvironment` would otherwise catch
+ * the same mismatch by re-validating the patched card and throwing a raw
+ * `Error`, which is exactly the failure mode `requirePoolCards` exists to turn
+ * into an ordinary admin refusal instead.
+ */
+function requireCandidatePatches(
+  environment: Environment,
+  removeCardIds: readonly string[],
+  patches: readonly CandidateCardPatch[],
+): void {
+  requireDistinct(
+    'cardPatches',
+    patches.map((patch) => patch.cardId),
+    'Card',
+  );
+  const pool = new Map(environment.pool.map((card) => [card.id, card] as const));
+  const removed = new Set(removeCardIds);
+  for (const [index, patch] of patches.entries()) {
+    const card = pool.get(patch.cardId);
+    if (!card) {
+      refuse(
+        `cardPatches.${String(index)}.cardId`,
+        `"${patch.cardId}" is not in the playable pool of format "${PRESET_FORMAT_ID}", so ` +
+          'patching it would declare a change that does not happen.',
+      );
+    }
+    if (removed.has(patch.cardId)) {
+      refuse(
+        `cardPatches.${String(index)}.cardId`,
+        `"${patch.cardId}" is declared both removed and patched. Choose one change for this card.`,
+      );
+    }
+    if ((patch.attack !== undefined || patch.health !== undefined) && card.attack === undefined) {
+      refuse(
+        `cardPatches.${String(index)}`,
+        `"${patch.cardId}" has no attack or health to patch; only a unit's combat stats can be ` +
+          'edited this way.',
+      );
+    }
+  }
+}
+
+/** The exact declared-change field names a candidate patch produces (§ engine's exact-match check). */
+function candidatePatchFields(patch: CandidateCardPatch): string[] {
+  const fields: string[] = [];
+  if (patch.cost !== undefined) fields.push('cost');
+  if (patch.attack !== undefined) fields.push('attack');
+  if (patch.health !== undefined) fields.push('health');
+  return fields;
 }
 
 /* ------------------------------------------------------------- assembling */
@@ -240,7 +306,12 @@ export function presetEnvironmentConfig(): EnvironmentConfig {
 }
 
 function baseEnvironment(
-  overrides: { readonly id?: string; readonly label?: string; readonly banCardIds?: string[] } = {},
+  overrides: {
+    readonly id?: string;
+    readonly label?: string;
+    readonly banCardIds?: string[];
+    readonly cardPatches?: CardPatch[];
+  } = {},
 ): EnvironmentConfig {
   return environmentConfigForFormat(PRESET_FORMAT_ID, {
     label: 'Precon Wave 1: its own card pool, 40-card singleton construction',
@@ -553,15 +624,31 @@ function candidateComparison(
   environment: EnvironmentConfig,
 ): ExpandedStage[] {
   const base = common(choice, choice.pilotIds);
+  const cardPatches: CardPatch[] = choice.cardPatches.map((patch) => ({
+    cardId: patch.cardId,
+    note: '',
+    patch: {
+      ...(patch.cost !== undefined ? { cost: patch.cost } : {}),
+      ...(patch.attack !== undefined ? { attack: patch.attack } : {}),
+      ...(patch.health !== undefined ? { health: patch.health } : {}),
+    },
+  }));
+  const declaredCardsChanged = choice.cardPatches.map((patch) => ({
+    cardId: patch.cardId,
+    fields: candidatePatchFields(patch),
+  }));
   const candidate = baseEnvironment({
     id: 'precon_wave_1_candidate',
-    label: 'Precon Wave 1 with the candidate removals applied',
+    label: 'Precon Wave 1 with the candidate changes applied',
     banCardIds: [...choice.removeCardIds],
+    cardPatches,
   });
   return [
     {
       stageId: 'comparison',
-      label: `Baseline against a candidate that removes ${String(choice.removeCardIds.length)} card(s)`,
+      label:
+        `Baseline against a candidate that removes ${String(choice.removeCardIds.length)} ` +
+        `card(s) and patches ${String(choice.cardPatches.length)} card(s)`,
       purpose: 'exploration',
       config: validated(
         {
@@ -573,7 +660,10 @@ function candidateComparison(
           // The claim is checked against the two resolved pools before a match
           // runs, and an undeclared difference stops the run rather than being
           // measured — which is why `onUndeclared` is left at `reject`.
-          declaredChanges: { cardsRemoved: [...choice.removeCardIds] },
+          declaredChanges: {
+            cardsRemoved: [...choice.removeCardIds],
+            cardsChanged: declaredCardsChanged,
+          },
           referenceDecks: { kind: 'precon', preconIds: [...choice.referencePreconIds] },
           gamesPerPairing: choice.gamesPerSeatOrder,
           mirrorSeats: true,
@@ -583,8 +673,31 @@ function candidateComparison(
       ),
       decisions: [
         ...base.decisions,
-        decision('candidate.banCardIds', [...choice.removeCardIds], 'chosen'),
-        decision('declaredChanges.cardsRemoved', [...choice.removeCardIds], 'preset'),
+        // Defaults are left unrecorded (§ presetDecisionSchema doc comment):
+        // a run using only one of the two candidate-change kinds does not
+        // record a "chosen" decision for the one it left empty.
+        ...(choice.removeCardIds.length > 0
+          ? [
+              decision('candidate.banCardIds', [...choice.removeCardIds], 'chosen'),
+              decision('declaredChanges.cardsRemoved', [...choice.removeCardIds], 'preset'),
+            ]
+          : []),
+        ...(choice.cardPatches.length > 0
+          ? [
+              decision(
+                'candidate.cardPatches',
+                choice.cardPatches.map(
+                  (patch) => `${patch.cardId}(${candidatePatchFields(patch).join('+')})`,
+                ),
+                'chosen',
+              ),
+              decision(
+                'declaredChanges.cardsChanged',
+                declaredCardsChanged.map((entry) => `${entry.cardId}:${entry.fields.join('+')}`),
+                'preset',
+              ),
+            ]
+          : []),
         decision('declaredChanges.onUndeclared', 'reject', 'preset'),
         decision('referenceDecks.preconIds', [...choice.referencePreconIds], 'chosen'),
         decision('gamesPerPairing', choice.gamesPerSeatOrder, 'chosen'),
@@ -723,7 +836,14 @@ export function expandPreset(input: PresetChoiceInput | unknown): ExpandedPreset
       case 'candidate_comparison':
         requireDistinct('referencePreconIds', choice.referencePreconIds, 'Precon');
         requireDistinct('removeCardIds', choice.removeCardIds, 'Card');
-        requirePoolCards(environment, choice.removeCardIds);
+        requirePoolCards(environment, choice.removeCardIds, 'removeCardIds', 'removing');
+        requireCandidatePatches(environment, choice.removeCardIds, choice.cardPatches);
+        if (choice.removeCardIds.length === 0 && choice.cardPatches.length === 0) {
+          refuse(
+            'removeCardIds',
+            'A candidate comparison must declare at least one change: remove a card or patch one.',
+          );
+        }
         return candidateComparison(choice, environmentConfig);
       case 'pilot_robustness':
         requireDistinct('preconIds', choice.preconIds, 'Precon');

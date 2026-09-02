@@ -36,6 +36,11 @@ const PRECONS = [
 const ENVIRONMENT = resolveEnvironment(environmentConfigForFormat(PRESET_FORMAT_ID, {}));
 /** A card that really is in the pool, so a candidate change is a change. */
 const A_POOL_CARD = ENVIRONMENT.pool[0]?.id ?? '';
+/** A unit in the pool, distinct from `A_POOL_CARD`, whose attack/health a patch can edit. */
+const ANOTHER_POOL_CARD =
+  ENVIRONMENT.pool.find((card) => card.attack !== undefined && card.id !== A_POOL_CARD)?.id ?? '';
+/** A pool card with no combat stats, for the patch-target-type refusal. */
+const A_NON_UNIT_POOL_CARD = ENVIRONMENT.pool.find((card) => card.attack === undefined)?.id ?? '';
 
 const CHOICES: Readonly<Record<string, PresetChoiceInput>> = {
   precon_smoke: {
@@ -362,6 +367,37 @@ describe('what the presets decide for themselves', () => {
     expect(config.baseline.banCardIds).toEqual([]);
   });
 
+  it('declares a card patch alongside, or instead of, a removal (M08.20A)', () => {
+    const patchOnlyCard = ANOTHER_POOL_CARD;
+    const config = expandPreset({
+      ...(CHOICES.candidate_comparison as object),
+      removeCardIds: [],
+      cardPatches: [{ cardId: patchOnlyCard, cost: 1 }],
+    }).stages[0]?.config;
+    if (config?.kind !== 'comparison') throw new Error('expected a comparison');
+    expect(config.candidate.banCardIds).toEqual([]);
+    expect(config.candidate.cardPatches).toEqual([
+      { cardId: patchOnlyCard, note: '', patch: { cost: 1 } },
+    ]);
+    expect(config.declaredChanges.cardsRemoved).toEqual([]);
+    expect(config.declaredChanges.cardsChanged).toEqual([
+      { cardId: patchOnlyCard, fields: ['cost'], note: '' },
+    ]);
+  });
+
+  it('declares a removal and a patch together, on different cards', () => {
+    const config = expandPreset({
+      ...(CHOICES.candidate_comparison as object),
+      removeCardIds: [A_POOL_CARD],
+      cardPatches: [{ cardId: ANOTHER_POOL_CARD, attack: 3, health: 4 }],
+    }).stages[0]?.config;
+    if (config?.kind !== 'comparison') throw new Error('expected a comparison');
+    expect(config.declaredChanges.cardsRemoved).toEqual([A_POOL_CARD]);
+    expect(config.declaredChanges.cardsChanged).toEqual([
+      { cardId: ANOTHER_POOL_CARD, fields: ['attack', 'health'], note: '' },
+    ]);
+  });
+
   it('always includes `published` as the robustness reference arm', () => {
     const config = expandPreset(CHOICES.pilot_robustness).stages[0]?.config;
     expect(config?.kind === 'robustness' ? config.profiles : []).toEqual([
@@ -444,6 +480,66 @@ describe('what a preset refuses', () => {
     });
     expect(refused.path).toBe('removeCardIds.0');
     expect(refused.message).toMatch(/declare a change that does not happen/);
+  });
+
+  it('refuses a candidate comparison that declares no change at all (M08.20A)', () => {
+    const refused = refusal({
+      ...(CHOICES.candidate_comparison as object),
+      removeCardIds: [],
+    });
+    expect(refused.message).toMatch(/at least one change/);
+  });
+
+  it('refuses a card patch that targets a card the pool does not contain', () => {
+    const refused = refusal({
+      ...(CHOICES.candidate_comparison as object),
+      removeCardIds: [],
+      cardPatches: [{ cardId: 'not_a_card', cost: 1 }],
+    });
+    expect(refused.path).toBe('cardPatches.0.cardId');
+    expect(refused.message).toMatch(/declare a change that does not happen/);
+  });
+
+  it('refuses a patch that edits combat stats on a card with none', () => {
+    const refused = refusal({
+      ...(CHOICES.candidate_comparison as object),
+      removeCardIds: [],
+      cardPatches: [{ cardId: A_NON_UNIT_POOL_CARD, attack: 1 }],
+    });
+    expect(refused.path).toBe('cardPatches.0');
+    expect(refused.message).toMatch(/only a unit's combat stats/);
+  });
+
+  it('refuses the same card named by both a removal and a patch', () => {
+    const refused = refusal({
+      ...(CHOICES.candidate_comparison as object),
+      removeCardIds: [A_POOL_CARD],
+      cardPatches: [{ cardId: A_POOL_CARD, cost: 1 }],
+    });
+    expect(refused.path).toBe('cardPatches.0.cardId');
+    expect(refused.message).toMatch(/both removed and patched/);
+  });
+
+  it('refuses two patches naming the same card', () => {
+    const refused = refusal({
+      ...(CHOICES.candidate_comparison as object),
+      removeCardIds: [],
+      cardPatches: [
+        { cardId: ANOTHER_POOL_CARD, cost: 1 },
+        { cardId: ANOTHER_POOL_CARD, cost: 2 },
+      ],
+    });
+    expect(refused.path).toBe('cardPatches');
+    expect(refused.message).toMatch(/listed twice/);
+  });
+
+  it('refuses a card patch that changes nothing', () => {
+    const refused = refusal({
+      ...(CHOICES.candidate_comparison as object),
+      removeCardIds: [],
+      cardPatches: [{ cardId: ANOTHER_POOL_CARD }],
+    });
+    expect(refused.code).toBe('admin/schema');
   });
 
   it('refuses a selection that lists the same thing twice', () => {
