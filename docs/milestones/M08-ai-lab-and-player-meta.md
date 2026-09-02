@@ -3505,9 +3505,34 @@ labelling, revision drill-down, cycle fixture and incomplete-run tests.
       and the "no path anywhere in the transport" invariant. `npm run typecheck`
       clean on `@tcg/admin-contracts` and `@tcg/admin-server`; ESLint clean on all
       four new/touched files.
-- [ ] **M08.19C — Series and revision dashboard.** Render cumulative and rolling
+- [x] **M08.19C — Series and revision dashboard.** Render cumulative and rolling
       results, revision timeline, add/remove history, promotion evidence, start/final
       diff and reference-field performance with exact tables beside charts.
+      Verified: wired the `adaptiveRunSummary`/`adaptiveResultTable` HTTP endpoints
+      M08.19B deliberately deferred — `ADMIN_ENDPOINTS`/`adaptiveRunSummaryRequestSchema`/
+      `adaptiveResultTableRequestSchema` in `packages/admin-contracts/src/{service,requests,version}.ts`,
+      handlers in `apps/admin-server/src/service/handlers.ts`, both routed through the
+      existing directory-keyed `readAdaptiveSummary`/`readAdaptiveTable` from M08.19B —
+      no filesystem path travels in the request (ADR 0023 §5); only `experimentId` does.
+      New `apps/admin-client/src/lib/adaptive-view.ts`: `readAdaptiveRate`/`displayColumns`/
+      `formatAdaptiveCell` fold an interval column's low/high/count fields into one
+      rendered cell by the server's own `column`/`interval` key convention;
+      `cumulativeSeriesTally`/`rollingSeriesTally` are pure prefix/window sums over the
+      `series` table's own decided-block cells — never a fabricated confidence interval.
+      New `apps/admin-client/src/components/AdaptiveDashboard.tsx` (`AdaptiveRunPanel`):
+      entered by typing the `experimentId` a directory-keyed run has no `JobId` to be
+      selected by; renders the summary, a tab per dashboard table, the series
+      cumulative/rolling tallies, and exact tables for `revisions`/`deck_diff`, rate bars
+      for `screening_candidates`/`reference_field` — `cycles`/`validation` deferred to
+      M08.19D. Reuses `FactTable`/`Feedback`/`dashboard__*` CSS from the M08.11 precon
+      dashboard; no new CSS. Wired into `ResultsScreen.tsx` behind a "Catalog job" /
+      "Adaptive Counter run" mode toggle, preserving the existing catalog flow unchanged.
+      10 new tests (7 unit in `adaptive-view.test.ts`, 3 integration in
+      `adaptive-flow.test.tsx`, including the invalid-ID-never-reaches-the-network case);
+      all 10 pre-existing `results-flow.test.tsx` tests and 22 `adaptive-results.test.ts`/
+      23 `service.test.ts` server/contract tests still pass. `npm run typecheck` and
+      ESLint clean on every changed/new file in `apps/admin-client`,
+      `apps/admin-server` and `packages/admin-contracts`.
 - [ ] **M08.19D — Validation, cycles and drill-down.** Present frozen validation
       separately, label public versus full information unmistakably, show recurring
       cycles descriptively and link each revision/segment to exact retained evidence.

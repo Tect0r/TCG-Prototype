@@ -6,6 +6,7 @@ import {
   adaptiveRunSummarySchema,
   adminError,
   refuseForeignVersion,
+  type AdaptiveExperimentId,
   type AdaptiveResultTable,
   type AdaptiveResultTableName,
   type AdaptiveRunSummary,
@@ -22,6 +23,7 @@ import {
 } from '@tcg/simulator';
 
 import { readDocumentText } from '../catalog/files.js';
+import { resolveResultLocation, type ResolvedCatalogRoots } from '../catalog/roots.js';
 import { column, decodeRowCursor, encodeRowCursor, interval, spreadRate, type Proportion } from './results.js';
 import type { ResultColumn, ResultRow } from '@tcg/admin-contracts';
 
@@ -157,6 +159,65 @@ export async function readAdaptiveTable(
   const validated = adaptiveResultTableSchema.safeParse(value);
   if (!validated.success) return err([builtBadly(table)]);
   return ok(validated.data);
+}
+
+/* ---------------------------------------------------------- the HTTP reader */
+
+export interface AdaptiveResultReaderOptions {
+  readonly roots: ResolvedCatalogRoots;
+  readonly resultRootId: string;
+}
+
+/**
+ * Turns an `experimentId` into a run directory and reads it, for the two
+ * addresses M08.19C adds (`adaptive-summary`, `adaptive-result-table`).
+ *
+ * `readAdaptiveSummary`/`readAdaptiveTable` above already take an opened
+ * directory and know nothing about HTTP; this is the thin layer that gets
+ * them one exactly as cautiously as `ResultReader` does for a catalog job
+ * (ADR 0023 §5) — except there is no `CatalogStore` entry to read a directory
+ * out of, because a directory-keyed run has no `JobId` (`adaptive-results.ts`'s
+ * own note on why). The owner's resolution: an Adaptive Counter run's
+ * directory *is* its `experimentId`, one level under the server's configured
+ * default result root — the same root catalog jobs already write under. An
+ * operator who wants a run to show up here points the adaptive CLI's own
+ * `output` at a directory named after the experiment ID; nothing here
+ * invents, stores or widens that beyond the one root `resultRootId` already
+ * names.
+ */
+export class AdaptiveResultReader {
+  readonly #roots: ResolvedCatalogRoots;
+  readonly #resultRootId: string;
+
+  constructor(options: AdaptiveResultReaderOptions) {
+    this.#roots = options.roots;
+    this.#resultRootId = options.resultRootId;
+  }
+
+  async readSummary(
+    experimentId: AdaptiveExperimentId,
+  ): Promise<Result<AdaptiveRunSummary, readonly AdminError[]>> {
+    const directory = await this.#resolve(experimentId);
+    if (isErr(directory)) return directory;
+    return readAdaptiveSummary(directory.value);
+  }
+
+  async readTable(
+    experimentId: AdaptiveExperimentId,
+    table: AdaptiveResultTableName,
+    page: PageRequest,
+  ): Promise<Result<AdaptiveResultTable, readonly AdminError[]>> {
+    const directory = await this.#resolve(experimentId);
+    if (isErr(directory)) return directory;
+    return readAdaptiveTable(directory.value, table, page);
+  }
+
+  async #resolve(experimentId: AdaptiveExperimentId): Promise<Result<string, readonly AdminError[]>> {
+    return resolveResultLocation(this.#roots, {
+      rootId: this.#resultRootId,
+      directory: experimentId,
+    });
+  }
 }
 
 /**

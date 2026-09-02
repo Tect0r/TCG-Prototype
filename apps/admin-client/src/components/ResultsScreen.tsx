@@ -33,6 +33,7 @@ import type { AdminFailure } from '../net/transport.js';
 import { Busy, Empty, Failure } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
 import { ResultDashboard } from './ResultDashboard.js';
+import { AdaptiveRunPanel } from './AdaptiveDashboard.js';
 
 /**
  * The result catalog: every job this catalog has ever created, completed or
@@ -83,6 +84,7 @@ export function ResultsScreen() {
   const [listFailure, setListFailure] = useState<AdminFailure | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<JobId | null>(null);
+  const [mode, setMode] = useState<'catalog' | 'adaptive'>('catalog');
 
   const search = useCallback(
     async (next: ResultsFilterState): Promise<void> => {
@@ -130,95 +132,124 @@ export function ResultsScreen() {
 
   return (
     <div className="results">
-      <FilterPanel
-        content={content}
-        filter={filter}
-        onChange={setFilter}
-        onApply={() => void search(filter)}
-        onClear={() => {
-          setFilter(EMPTY_RESULTS_FILTER);
-          void search(EMPTY_RESULTS_FILTER);
-        }}
-      />
-
-      <section className="panel" aria-labelledby="results-list">
-        <h2 id="results-list">
-          {resultsFilterIsEmpty(applied) ? 'Every job in this catalog' : 'Matching jobs'}
-        </h2>
-        {total !== null && (
-          <p className="panel__note">
-            {total} {total === 1 ? 'job matches' : 'jobs match'} this filter.
-          </p>
-        )}
-
-        {listFailure !== null && (
-          <Failure
-            title="This listing could not be read"
-            failure={listFailure}
-            onRetry={() => void search(applied)}
-          />
-        )}
-        {items === null && listFailure === null && <Busy label="Asking the catalog…" />}
-        {items !== null && items.length === 0 && (
-          <Empty>No job in this catalog matches this filter.</Empty>
-        )}
-        {items !== null && items.length > 0 && (
-          <ul className="results__rows">
-            {items.map((job) => (
-              <li key={job.jobId}>
-                <button
-                  type="button"
-                  className={job.jobId === selected ? 'is-current' : ''}
-                  aria-current={job.jobId === selected ? 'true' : undefined}
-                  onClick={() => {
-                    setSelected(job.jobId);
-                  }}
-                >
-                  <span className="results__row-label">{job.label}</span>
-                  <span className="queue__badge" data-status={job.status}>
-                    {JOB_STATUS_WORDING[job.status].label}
-                  </span>
-                  <span className="results__row-note">
-                    {EXPERIMENT_KIND_LABELS[job.spec.kind]} ·{' '}
-                    {SOURCE_CLASS_LABELS[job.sourceClasses[0] ?? 'ai']}
-                    {job.sourceClasses.length > 1
-                      ? ` +${String(job.sourceClasses.length - 1)}`
-                      : ''}{' '}
-                    · created {job.timestamps.createdAt}
-                    {job.annotations.baseline ? ' · baseline' : ''}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {cursor !== null && (
-          <p className="builder__actions">
-            <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>
-              {loadingMore ? 'Reading more…' : 'Show more'}
-            </button>
-          </p>
-        )}
-      </section>
-
-      {selected !== null && (
-        <ResultDetail
-          key={selected}
-          job={items?.find((job) => job.jobId === selected) ?? null}
-          jobId={selected}
-          preconNameByCommander={
-            content
-              ? Object.fromEntries(
-                  content.precons.map((precon) => [precon.commanderId, precon.name]),
-                )
-              : {}
-          }
-          onAnnotated={(updated) => {
-            setItems(
-              (held) => held?.map((job) => (job.jobId === updated.jobId ? updated : job)) ?? held,
-            );
+      <div className="dashboard__tabs" role="group" aria-label="Results source">
+        <button
+          type="button"
+          aria-pressed={mode === 'catalog'}
+          className={mode === 'catalog' ? 'is-current' : ''}
+          onClick={() => {
+            setMode('catalog');
           }}
-        />
+        >
+          Catalog job
+        </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'adaptive'}
+          className={mode === 'adaptive' ? 'is-current' : ''}
+          onClick={() => {
+            setMode('adaptive');
+          }}
+        >
+          Adaptive Counter run
+        </button>
+      </div>
+
+      {mode === 'adaptive' && <AdaptiveRunPanel />}
+      {mode === 'catalog' && (
+        <>
+          <FilterPanel
+            content={content}
+            filter={filter}
+            onChange={setFilter}
+            onApply={() => void search(filter)}
+            onClear={() => {
+              setFilter(EMPTY_RESULTS_FILTER);
+              void search(EMPTY_RESULTS_FILTER);
+            }}
+          />
+
+          <section className="panel" aria-labelledby="results-list">
+            <h2 id="results-list">
+              {resultsFilterIsEmpty(applied) ? 'Every job in this catalog' : 'Matching jobs'}
+            </h2>
+            {total !== null && (
+              <p className="panel__note">
+                {total} {total === 1 ? 'job matches' : 'jobs match'} this filter.
+              </p>
+            )}
+
+            {listFailure !== null && (
+              <Failure
+                title="This listing could not be read"
+                failure={listFailure}
+                onRetry={() => void search(applied)}
+              />
+            )}
+            {items === null && listFailure === null && <Busy label="Asking the catalog…" />}
+            {items !== null && items.length === 0 && (
+              <Empty>No job in this catalog matches this filter.</Empty>
+            )}
+            {items !== null && items.length > 0 && (
+              <ul className="results__rows">
+                {items.map((job) => (
+                  <li key={job.jobId}>
+                    <button
+                      type="button"
+                      className={job.jobId === selected ? 'is-current' : ''}
+                      aria-current={job.jobId === selected ? 'true' : undefined}
+                      onClick={() => {
+                        setSelected(job.jobId);
+                      }}
+                    >
+                      <span className="results__row-label">{job.label}</span>
+                      <span className="queue__badge" data-status={job.status}>
+                        {JOB_STATUS_WORDING[job.status].label}
+                      </span>
+                      <span className="results__row-note">
+                        {EXPERIMENT_KIND_LABELS[job.spec.kind]} ·{' '}
+                        {SOURCE_CLASS_LABELS[job.sourceClasses[0] ?? 'ai']}
+                        {job.sourceClasses.length > 1
+                          ? ` +${String(job.sourceClasses.length - 1)}`
+                          : ''}{' '}
+                        · created {job.timestamps.createdAt}
+                        {job.annotations.baseline ? ' · baseline' : ''}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {cursor !== null && (
+              <p className="builder__actions">
+                <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>
+                  {loadingMore ? 'Reading more…' : 'Show more'}
+                </button>
+              </p>
+            )}
+          </section>
+
+          {selected !== null && (
+            <ResultDetail
+              key={selected}
+              job={items?.find((job) => job.jobId === selected) ?? null}
+              jobId={selected}
+              preconNameByCommander={
+                content
+                  ? Object.fromEntries(
+                      content.precons.map((precon) => [precon.commanderId, precon.name]),
+                    )
+                  : {}
+              }
+              onAnnotated={(updated) => {
+                setItems(
+                  (held) =>
+                    held?.map((job) => (job.jobId === updated.jobId ? updated : job)) ?? held,
+                );
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );

@@ -15,6 +15,8 @@ import {
   NO_ANNOTATIONS,
   NO_PROGRESS,
   adminError,
+  adaptiveResultTableSchema,
+  adaptiveRunSummarySchema,
   catalogFilterSchema,
   catalogJobViewSchema,
   resultArtifactListingSchema,
@@ -22,6 +24,10 @@ import {
   resultSummarySchema,
   resultTableSchema,
   suggestedArtifactFilename,
+  type AdaptiveExperimentId,
+  type AdaptiveResultTable,
+  type AdaptiveResultTableName,
+  type AdaptiveRunSummary,
   type AdminEndpointName,
   type AdminErrorCode,
   type Annotations,
@@ -144,6 +150,20 @@ export interface FakeLab {
    * `jobId` argument — which only exists once `seedResult` has minted it.
    */
   seedTables(jobId: string, tables: Readonly<Partial<Record<ResultTableName, ResultTable>>>): void;
+  /**
+   * Seeds one directory-keyed Adaptive Counter run (M08.19C), by the
+   * `experimentId` a caller reads it back by — there is no job or batch behind
+   * it, mirroring `AdaptiveResultReader`'s own job-free resolution.
+   */
+  seedAdaptiveRun(experimentId: string, options?: SeedAdaptiveRunOptions): void;
+}
+
+export interface SeedAdaptiveRunOptions {
+  /** What `adaptiveRunSummary` answers for this run — a reading, or a named refusal. */
+  readonly summary?:
+    AdaptiveRunSummary | { readonly refuse: AdminErrorCode; readonly message?: string };
+  /** What `adaptiveResultTable` answers for this run, per table name. Unseeded tables answer empty. */
+  readonly tables?: Readonly<Partial<Record<AdaptiveResultTableName, AdaptiveResultTable>>>;
 }
 
 export interface SeedResultOptions {
@@ -236,6 +256,55 @@ export function resultSummaryFixture(overrides: Partial<ResultSummary> = {}): Re
     ],
     limitations: ['A limitation the fake service publishes with every benchmark.'],
     ...overrides,
+  });
+}
+
+/* -------------------------------------------------------- adaptive results (M08.19) */
+
+/** A complete, readable Adaptive Counter run summary, for a fixture with nothing wrong with it. */
+export function adaptiveRunSummaryFixture(
+  overrides: Partial<AdaptiveRunSummary> = {},
+): AdaptiveRunSummary {
+  return adaptiveRunSummarySchema.parse({
+    experimentId: 'goblin_counter',
+    configHash: 'abcdef0123456789',
+    source: { document: 'adaptive-result.json', schemaVersion: 1 },
+    readings: [{ key: 'blocks', label: 'Blocks decided', value: 4, kind: 'count' }],
+    tables: [
+      { table: 'series', rows: 4 },
+      { table: 'revisions', rows: 2 },
+      { table: 'screening_candidates', rows: 2 },
+      { table: 'deck_diff', rows: 2 },
+      { table: 'cycles', rows: 0 },
+      { table: 'reference_field', rows: 0 },
+      { table: 'validation', rows: 0 },
+    ],
+    limitations: ['A limitation the fake service publishes with every adaptive run.'],
+    ...overrides,
+  });
+}
+
+/** One page of one Adaptive Counter result table, shaped exactly as `adaptiveResultTableSchema` requires. */
+export function adaptiveResultTableFixture(
+  experimentId: AdaptiveExperimentId,
+  table: AdaptiveResultTableName,
+  columns: readonly ResultColumn[],
+  rows: readonly ResultRow[],
+  options: TableFixtureOptions = {},
+): AdaptiveResultTable {
+  const truncated = options.truncated ?? false;
+  return adaptiveResultTableSchema.parse({
+    experimentId,
+    table,
+    source: { document: 'adaptive-result.json', schemaVersion: 1 },
+    columns,
+    rows,
+    page: {
+      returned: rows.length,
+      limit: PAGE_SIZE_DEFAULT,
+      nextCursor: truncated ? 'more' : null,
+      total: truncated ? rows.length + 1 : rows.length,
+    },
   });
 }
 
@@ -698,6 +767,15 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
   const jobArtifacts = new Map<string, Readonly<Partial<Record<ResultArtifactName, string>>>>();
   /** What `resultTable` answers for a job, per table name (M08.11). Unseeded tables answer empty. */
   const jobTables = new Map<string, Readonly<Partial<Record<ResultTableName, ResultTable>>>>();
+  /** Directory-keyed Adaptive Counter runs (M08.19), by `experimentId` rather than a job. */
+  const adaptiveRuns = new Map<
+    string,
+    {
+      readonly summary:
+        AdaptiveRunSummary | { readonly refuse: AdminErrorCode; readonly message?: string };
+      readonly tables: Readonly<Partial<Record<AdaptiveResultTableName, AdaptiveResultTable>>>;
+    }
+  >();
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -902,6 +980,12 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     },
     seedTables(jobId, tables) {
       jobTables.set(jobId, { ...(jobTables.get(jobId) ?? {}), ...tables });
+    },
+    seedAdaptiveRun(experimentId, options = {}) {
+      adaptiveRuns.set(experimentId, {
+        summary: options.summary ?? adaptiveRunSummaryFixture({ experimentId }),
+        tables: options.tables ?? {},
+      });
     },
   };
 
@@ -1268,6 +1352,38 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       return answer(next);
     }
 
+    if (name === 'adaptiveRunSummary') {
+      const experimentId = String(payload.experimentId ?? '');
+      const run = adaptiveRuns.get(experimentId);
+      if (!run) {
+        return refusal(
+          'admin/no_result',
+          404,
+          'This experiment has produced no adaptive result yet, so there is nothing to read.',
+        );
+      }
+      if ('refuse' in run.summary) return refusal(run.summary.refuse, 409, run.summary.message);
+      return answer(run.summary);
+    }
+
+    if (name === 'adaptiveResultTable') {
+      const experimentId = String(payload.experimentId ?? '');
+      const run = adaptiveRuns.get(experimentId);
+      if (!run) {
+        return refusal(
+          'admin/no_result',
+          404,
+          'This experiment has produced no adaptive result yet, so it has no table to read.',
+        );
+      }
+      const table = payload.table as AdaptiveResultTableName;
+      const seeded = run.tables[table];
+      return answer(
+        seeded ??
+          adaptiveResultTableFixture(experimentId, table, [plainColumn('key', 'Key', 'text')], []),
+      );
+    }
+
     return refusal('admin/unknown_endpoint', 404);
   };
 
@@ -1385,9 +1501,10 @@ function staleIn(choice: PresetChoice | undefined, withdrawn: readonly string[])
  * tested on is that the number it was given is the number it shows, and that it
  * refuses to enqueue until it has one for the configuration on screen.
  */
-function estimateFor(
-  choice: PresetChoice | undefined,
-): { expansion: PresetExpansion; estimate: MatchCountEstimate } {
+function estimateFor(choice: PresetChoice | undefined): {
+  expansion: PresetExpansion;
+  estimate: MatchCountEstimate;
+} {
   const decks = choice !== undefined && 'preconIds' in choice ? choice.preconIds.length : 0;
   const pilots = choice !== undefined && 'pilotIds' in choice ? choice.pilotIds.length : 1;
   const settings = choice !== undefined && 'settings' in choice ? choice.settings : undefined;

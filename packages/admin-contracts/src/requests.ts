@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { adaptiveExperimentIdSchema, adaptiveResultTableNameSchema } from './adaptive-results.js';
 import { resultArtifactNameSchema } from './artifacts.js';
 import { adminErrorSchema } from './errors.js';
 import { catalogFilterSchema } from './filters.js';
@@ -415,6 +416,32 @@ export const resultArtifactRequestSchema = z.strictObject({
 export type ResultArtifactRequest = z.infer<typeof resultArtifactRequestSchema>;
 
 /**
+ * Which directory-keyed Adaptive Counter run to read (M08.19C).
+ *
+ * Named the same way `jobRefSchema` names a catalog run — one identifying field,
+ * nothing shaped like a location. The server combines `experimentId` with its own
+ * configured result root exactly as `resolveResultLocation` does for every other
+ * result (ADR 0023 §5): the caller never says where on disk the run lives.
+ */
+export const adaptiveRunRefSchema = z.strictObject({ experimentId: adaptiveExperimentIdSchema });
+export type AdaptiveRunRef = z.infer<typeof adaptiveRunRefSchema>;
+
+/**
+ * One page of one Adaptive Counter run's result table (M08.19C).
+ *
+ * `resultTableRequestSchema` restated for a directory-keyed run instead of a
+ * catalog job: `table` is named from `adaptiveResultTableNameSchema`'s closed
+ * list, and there is nowhere in this shape to put a location either.
+ */
+export const adaptiveResultTableRequestSchema = z.strictObject({
+  experimentId: adaptiveExperimentIdSchema,
+  table: adaptiveResultTableNameSchema,
+  page: pageRequestSchema.prefault({}),
+});
+export type AdaptiveResultTableRequest = z.infer<typeof adaptiveResultTableRequestSchema>;
+export type AdaptiveResultTableRequestInput = z.input<typeof adaptiveResultTableRequestSchema>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -439,6 +466,8 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   saveChoice: saveChoiceRequestSchema,
   resultTable: resultTableRequestSchema,
   resultArtifact: resultArtifactRequestSchema,
+  adaptiveRunRef: adaptiveRunRefSchema,
+  adaptiveResultTable: adaptiveResultTableRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;

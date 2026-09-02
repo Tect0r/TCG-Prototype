@@ -40,6 +40,7 @@ import { estimateAdaptiveChoice } from '../lab/adaptive-choice.js';
 import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js';
 import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
+import { AdaptiveResultReader } from './adaptive-results.js';
 import { ArtifactReader } from './artifacts.js';
 import type { AdminServiceConfig } from './config.js';
 import { ResultReader } from './results.js';
@@ -83,6 +84,7 @@ export class AdminService {
   readonly #store: CatalogStore;
   readonly #queue: JobQueue;
   readonly #results: ResultReader;
+  readonly #adaptive: AdaptiveResultReader;
   readonly #artifacts: ArtifactReader;
   readonly #championships: ChampionshipScheduler;
   readonly #startedAt: string;
@@ -92,6 +94,10 @@ export class AdminService {
     this.#store = options.store;
     this.#queue = options.queue;
     this.#results = new ResultReader({ store: options.store, roots: options.config.roots });
+    this.#adaptive = new AdaptiveResultReader({
+      roots: options.config.roots,
+      resultRootId: options.config.resultRootId,
+    });
     this.#artifacts = new ArtifactReader({ store: options.store, roots: options.config.roots });
     this.#championships = new ChampionshipScheduler({
       store: options.store,
@@ -147,6 +153,9 @@ export class AdminService {
       resultSummary: (payload) => this.#results.readSummary(payload.jobId),
       resultTable: (payload) => this.#results.readTable(payload.jobId, payload.table, payload.page),
       resultArtifacts: (payload) => this.#artifacts.list(payload.jobId),
+      adaptiveRunSummary: (payload) => this.#adaptive.readSummary(payload.experimentId),
+      adaptiveResultTable: (payload) =>
+        this.#adaptive.readTable(payload.experimentId, payload.table, payload.page),
       resultArtifact: (payload) => this.#artifacts.read(payload.jobId, payload.artifact),
     };
   }

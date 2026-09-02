@@ -1,12 +1,13 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { pageRequestSchema } from '@tcg/admin-contracts';
+import { adaptiveExperimentIdSchema, pageRequestSchema } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
 
-import { readAdaptiveSummary, readAdaptiveTable } from './adaptive-results.js';
+import { resolveCatalogRoots } from '../catalog/roots.js';
+import { AdaptiveResultReader, readAdaptiveSummary, readAdaptiveTable } from './adaptive-results.js';
 
 /**
  * Reading a directory-keyed Adaptive Counter run (M08.19B), from the run's
@@ -420,5 +421,42 @@ describe('an adaptive result table', () => {
   it('refuses a table read for a run with no readable result', async () => {
     const refused = await readAdaptiveTable(directory, 'series', page);
     expect(isErr(refused) && refused.error[0]?.code).toBe('admin/no_result');
+  });
+});
+
+describe('AdaptiveResultReader (M08.19C)', () => {
+  it("resolves an experiment's directory as its own id under the configured result root", async () => {
+    const experimentId = adaptiveExperimentIdSchema.parse('goblin_counter');
+    const runDirectory = join(directory, experimentId);
+    await mkdir(runDirectory);
+    await writeFile(join(runDirectory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+
+    const roots = unwrap(resolveCatalogRoots({ catalogRoot: join(directory, 'catalog'), resultRoots: { default: directory } }));
+    const reader = new AdaptiveResultReader({ roots, resultRootId: 'default' });
+
+    const summary = unwrap(await reader.readSummary(experimentId));
+    expect(summary.experimentId).toBe('goblin_counter');
+
+    const table = unwrap(await reader.readTable(experimentId, 'revisions', page));
+    expect(table.experimentId).toBe('goblin_counter');
+    expect(table.rows.length).toBeGreaterThan(0);
+  });
+
+  it('refuses an experiment id with no directory of its own name, the same way a missing job directory refuses', async () => {
+    const experimentId = adaptiveExperimentIdSchema.parse('nothing_here');
+    const roots = unwrap(resolveCatalogRoots({ catalogRoot: join(directory, 'catalog'), resultRoots: { default: directory } }));
+    const reader = new AdaptiveResultReader({ roots, resultRootId: 'default' });
+
+    const refused = await reader.readSummary(experimentId);
+    expect(isErr(refused) && refused.error[0]?.code).toBe('admin/no_result');
+  });
+
+  it('refuses a resultRootId that is not configured, rather than guessing another root', async () => {
+    const experimentId = adaptiveExperimentIdSchema.parse('goblin_counter');
+    const roots = unwrap(resolveCatalogRoots({ catalogRoot: join(directory, 'catalog'), resultRoots: { default: directory } }));
+    const reader = new AdaptiveResultReader({ roots, resultRootId: 'unconfigured' });
+
+    const refused = await reader.readSummary(experimentId);
+    expect(isErr(refused) && refused.error[0]?.code).toBe('admin/unsafe_result_reference');
   });
 });

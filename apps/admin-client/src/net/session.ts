@@ -1,5 +1,9 @@
 import { PAGE_SIZE_DEFAULT, catalogFilterSchema, pageRequestSchema } from '@tcg/admin-contracts';
 import type {
+  AdaptiveExperimentId,
+  AdaptiveResultTable,
+  AdaptiveResultTableName,
+  AdaptiveRunSummary,
   AdminEndpointName,
   AdminRequestOf,
   AdminResponseOf,
@@ -465,6 +469,36 @@ export class AdminSession {
     artifact: ResultArtifactName,
   ): Promise<AdminOutcome<ResultArtifact>> {
     return this.#call('resultArtifact', { jobId, artifact });
+  }
+
+  /* ------------------------------------------------ the adaptive result reader (M08.19C) */
+
+  /**
+   * A directory-keyed Adaptive Counter run's headline reading, or the one
+   * refusal that says why there is none.
+   *
+   * Mirrors `resultSummary` exactly, for a run that has no `JobId` to be read
+   * by yet: `adaptive-summary` takes only `experimentId`, and the server
+   * resolves its directory itself (`AdaptiveResultReader`, ADR 0023 §5) — this
+   * client never learns or sends a path.
+   */
+  async adaptiveRunSummary(
+    experimentId: AdaptiveExperimentId,
+  ): Promise<AdminOutcome<AdaptiveRunSummary>> {
+    return this.#call('adaptiveRunSummary', { experimentId });
+  }
+
+  /** One page of one Adaptive Counter run's result table — mirrors `resultTable`. */
+  async adaptiveResultTable(
+    experimentId: AdaptiveExperimentId,
+    table: AdaptiveResultTableName,
+    page?: PageRequestInput,
+  ): Promise<AdminOutcome<AdaptiveResultTable>> {
+    return this.#call('adaptiveResultTable', {
+      experimentId,
+      table,
+      page: pageRequestSchema.parse(page ?? {}),
+    });
   }
 
   /**

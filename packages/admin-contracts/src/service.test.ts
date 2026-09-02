@@ -58,8 +58,10 @@ describe('the endpoint registry', () => {
     // duplicated, and a draft has to be released before anything runs. Plus
     // M08.10's two: a run's canonical documents can be listed, and one of them
     // can be downloaded unchanged. Plus M08.15's one: a finished Commander
-    // Search can be turned into a scheduled finalist championship.
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(23);
+    // Search can be turned into a scheduled finalist championship. Plus
+    // M08.19C's two: a directory-keyed Adaptive Counter run's headline reading
+    // and one of its result tables can be read without a catalog job.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(25);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);

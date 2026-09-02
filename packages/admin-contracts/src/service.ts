@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { adaptiveResultTableSchema, adaptiveRunSummarySchema } from './adaptive-results.js';
 import { resultArtifactListingSchema, resultArtifactSchema } from './artifacts.js';
 import {
   catalogBatchViewSchema,
@@ -20,6 +21,8 @@ import {
   presetExpansionSchema,
 } from './presets.js';
 import {
+  adaptiveResultTableRequestSchema,
+  adaptiveRunRefSchema,
   batchPageSchema,
   batchRefSchema,
   createBatchRequestSchema,
@@ -481,6 +484,18 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'result-artifact',
     request: resultArtifactRequestSchema,
     response: resultArtifactSchema,
+    mutates: false,
+  }),
+  adaptiveRunSummary: endpoint({
+    route: 'adaptive-summary',
+    request: adaptiveRunRefSchema,
+    response: adaptiveRunSummarySchema,
+    mutates: false,
+  }),
+  adaptiveResultTable: endpoint({
+    route: 'adaptive-result-table',
+    request: adaptiveResultTableRequestSchema,
+    response: adaptiveResultTableSchema,
     mutates: false,
   }),
 });

@@ -633,3 +633,53 @@ refinements, the closed table-name and document-name lists, and the summary's
 missing-`jobId`/missing-calibration drift guards. `npm run typecheck` clean
 on both `@tcg/admin-contracts` and `@tcg/admin-server`; `eslint` reports no
 issues on the four new files.
+
+M08.19C is implemented: the series and revision dashboard. Since M08.19B
+deliberately shipped no HTTP endpoint, this slice's first job was wiring
+`adaptiveRunSummary`/`adaptiveResultTable` through the admin contract and
+server the same way every other endpoint reaches `AdminSession` — new
+addresses in `ADMIN_ENDPOINTS` (`packages/admin-contracts/src/service.ts`),
+`adaptiveRunSummaryRequestSchema`/`adaptiveResultTableRequestSchema`
+(`requests.ts`, carrying only `experimentId` — no filesystem path travels in
+the request, per ADR 0023 §5), a `version.ts` bump for the new addresses, and
+two handlers in `apps/admin-server/src/service/handlers.ts` that route
+straight to M08.19B's existing `readAdaptiveSummary`/`readAdaptiveTable`.
+`AdminSession` (`apps/admin-client/src/net/session.ts`) gained the matching
+`adaptiveRunSummary`/`adaptiveResultTable` methods.
+
+New `apps/admin-client/src/lib/adaptive-view.ts`: `readAdaptiveRate`/
+`displayColumns`/`formatAdaptiveCell` fold an interval column's low/high/count
+fields into one rendered cell by the server's own `column`/`interval` key
+naming convention (`adaptive-results.ts`'s `buildAdaptiveTable`);
+`cumulativeSeriesTally`/`rollingSeriesTally` (window size 10) are pure
+prefix/window sums over the `series` table's own already-reported
+`decisionKind`/`decisionLoser` cells — never a fabricated statistical
+confidence interval, per this repository's design principle for client-derived
+series views. New `apps/admin-client/src/components/AdaptiveDashboard.tsx`
+(`AdaptiveRunPanel`): entered by typing the `experimentId` a directory-keyed
+run has no `JobId` to be selected by (mirroring `AdaptiveResultReader`'s own
+job-free resolution); renders the run summary via `FactTable`, then a tab per
+`series`/`revisions`/`screening_candidates`/`deck_diff`/`reference_field` —
+`series` shows both tallies plus its exact rows, `screening_candidates`/
+`reference_field` show a promotion-score/standing rate summary plus exact
+rows, `revisions`/`deck_diff` are exact-table-only since every cell in them is
+categorical. `cycles`/`validation` render "Shown in a later slice." —
+M08.19D's job. Reuses `Busy`/`Empty`/`Failure`, `FactTable`, and the existing
+`dashboard__*`/`builder__field` CSS classes verbatim; no new CSS. Wired into
+`ResultsScreen.tsx` behind a "Catalog job" / "Adaptive Counter run" mode
+toggle that leaves the pre-existing catalog flow structurally unchanged.
+
+Verified: 7 new unit tests in `adaptive-view.test.ts` (interval-cell reading,
+column folding, cell formatting including the null-vs-"Not measured" case, and
+both tallies including the trailing-window-only case). 3 new integration tests
+in `adaptive-flow.test.tsx` — an invalid experiment ID is refused locally with
+no request ever reaching the transport, an unseeded experiment ID reports
+honestly that it produced no adaptive result yet, and a seeded run renders its
+summary, its series cumulative tally's exact final-row counts, and a second
+table after switching tabs. All 10 pre-existing `results-flow.test.tsx` tests
+still pass unmodified (no regression to the catalog path), and the full
+`admin-client` suite (295 tests) passes. Server-side: 22
+`adaptive-results.test.ts` and 23 `admin-contracts/service.test.ts` tests
+pass. `npm run typecheck` and `eslint` clean on every changed/new file across
+`admin-client`, `admin-server` and `admin-contracts`; `prettier --write`
+applied to the same files with no behavior change.

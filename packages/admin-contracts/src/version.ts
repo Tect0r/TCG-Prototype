@@ -178,8 +178,23 @@ import { adminError, type AdminError } from './errors.js';
  *   not reach the one address that turns them into the comparison the preset
  *   named in advance — its own `deferredStages` entry would stay deferred
  *   forever. That is what a contract version is for saying.
+ * - 8 (M08.19C) — the language acquired a **directory-keyed Adaptive Counter
+ *   run**. Two addresses were added, `adaptive-summary` and
+ *   `adaptive-result-table`, so that an Adaptive Counter run's evidence
+ *   (`adaptive-results.ts`, M08.19B) can be shown the way every other run's
+ *   already is, even though it has no `CatalogStore` job and no `JobId` to key
+ *   one by. Both requests name an `experimentId` and nothing shaped like a
+ *   location; the server resolves it against its own configured result root
+ *   exactly as `resolveResultLocation` does for every other result (ADR 0023
+ *   §5).
+ *
+ *   A build speaking 7 could enqueue and watch every catalog job this
+ *   language knows, and could not reach either new address, so an Adaptive
+ *   Counter run's series, revisions, screening, deck diff or reference-field
+ *   evidence would stay unreadable no matter how many times its result
+ *   document was regenerated. That is what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 7;
+export const ADMIN_CONTRACT_VERSION = 8;
 
 /**
  * The version stamped into a persisted catalog document.
