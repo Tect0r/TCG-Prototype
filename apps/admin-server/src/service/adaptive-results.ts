@@ -24,7 +24,14 @@ import {
 
 import { readDocumentText } from '../catalog/files.js';
 import { resolveResultLocation, type ResolvedCatalogRoots } from '../catalog/roots.js';
-import { column, decodeRowCursor, encodeRowCursor, interval, spreadRate, type Proportion } from './results.js';
+import {
+  column,
+  decodeRowCursor,
+  encodeRowCursor,
+  interval,
+  spreadRate,
+  type Proportion,
+} from './results.js';
 import type { ResultColumn, ResultRow } from '@tcg/admin-contracts';
 
 /**
@@ -102,14 +109,24 @@ export async function readAdaptiveSummary(
       reading('seriesTies', 'Series — ties', tally.ties, 'count'),
       reading('seriesNoDecisions', 'Series — no-decision blocks', tally.noDecisions, 'count'),
       reading('blocksDecided', 'Blocks decided', result.series.length, 'count'),
-      reading('generationsScreened', 'Generations screened', result.screeningRounds.length, 'count'),
+      reading(
+        'generationsScreened',
+        'Generations screened',
+        result.screeningRounds.length,
+        'count',
+      ),
       reading(
         'incumbentRevisions',
         'Incumbent lineage length',
         result.lineages.incumbent.length,
         'count',
       ),
-      reading('opponentRevisions', 'Opponent lineage length', result.lineages.opponent.length, 'count'),
+      reading(
+        'opponentRevisions',
+        'Opponent lineage length',
+        result.lineages.opponent.length,
+        'count',
+      ),
       reading('repeatedStates', 'Repeated deck-hash pairs', result.cycles.length, 'count'),
     ],
     tables: ADAPTIVE_RESULT_TABLE_NAMES.map((table) => ({
@@ -213,7 +230,9 @@ export class AdaptiveResultReader {
     return readAdaptiveTable(directory.value, table, page);
   }
 
-  async #resolve(experimentId: AdaptiveExperimentId): Promise<Result<string, readonly AdminError[]>> {
+  async #resolve(
+    experimentId: AdaptiveExperimentId,
+  ): Promise<Result<string, readonly AdminError[]>> {
     return resolveResultLocation(this.#roots, {
       rootId: this.#resultRootId,
       directory: experimentId,
@@ -434,7 +453,8 @@ function buildAdaptiveTable(table: AdaptiveResultTableName, result: AdaptiveResu
             fieldTallyNoResult: candidate.fieldTally?.noResult ?? null,
             ...spreadRate('score', candidate.score as Proportion),
             decisionKind: round.decision.kind,
-            decisionRevisionId: round.decision.kind === 'promoted' ? round.decision.revisionId : null,
+            decisionRevisionId:
+              round.decision.kind === 'promoted' ? round.decision.revisionId : null,
             decisionReason: round.decision.kind === 'retained' ? round.decision.reason : null,
           })),
         ),
@@ -458,7 +478,10 @@ function buildAdaptiveTable(table: AdaptiveResultTableName, result: AdaptiveResu
             finalRevisionId: diff.finalRevisionId,
             swapCount: diff.swaps.length,
             commanderChanged: diff.commanderChanged,
-            swaps: diff.swaps.map((swap) => `${swap.cardOut}→${swap.cardIn}`).join(', ').slice(0, 200),
+            swaps: diff.swaps
+              .map((swap) => `${swap.cardOut}→${swap.cardIn}`)
+              .join(', ')
+              .slice(0, 200),
           };
         }),
       };

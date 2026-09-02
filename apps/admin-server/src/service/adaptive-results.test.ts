@@ -7,7 +7,11 @@ import { adaptiveExperimentIdSchema, pageRequestSchema } from '@tcg/admin-contra
 import { isErr, unwrap } from '@tcg/shared';
 
 import { resolveCatalogRoots } from '../catalog/roots.js';
-import { AdaptiveResultReader, readAdaptiveSummary, readAdaptiveTable } from './adaptive-results.js';
+import {
+  AdaptiveResultReader,
+  readAdaptiveSummary,
+  readAdaptiveTable,
+} from './adaptive-results.js';
 
 /**
  * Reading a directory-keyed Adaptive Counter run (M08.19B), from the run's
@@ -68,7 +72,14 @@ function screeningTally(
 }
 
 function proportion(point: number, total: number): Record<string, unknown> {
-  return { point, low: Math.max(0, point - 0.1), high: Math.min(1, point + 0.1), successes: Math.round(point * total), total, margin: 0.1 };
+  return {
+    point,
+    low: Math.max(0, point - 0.1),
+    high: Math.min(1, point + 0.1),
+    successes: Math.round(point * total),
+    total,
+    margin: 0.1,
+  };
 }
 
 function resultDocument(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -171,7 +182,10 @@ function checkpointDocument(overrides: Record<string, unknown> = {}): Record<str
     configHash: 'abcdef0123456789',
     lineages: {
       incumbent: { activeRevisionId: 'rev_root_incumbent', revisions: [incumbentRoot] },
-      opponent: { activeRevisionId: 'rev_opponent_swap_1', revisions: [opponentRoot, opponentSwap] },
+      opponent: {
+        activeRevisionId: 'rev_opponent_swap_1',
+        revisions: [opponentRoot, opponentSwap],
+      },
     },
     gamesSpent: 8,
     referenceField: [],
@@ -185,7 +199,11 @@ function checkpointDocument(overrides: Record<string, unknown> = {}): Record<str
 
 describe('an adaptive run summary', () => {
   it('is read out of the run’s own result document', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const summary = unwrap(await readAdaptiveSummary(directory));
 
     expect(summary.experimentId).toBe('goblin_counter');
@@ -195,7 +213,11 @@ describe('an adaptive run summary', () => {
   });
 
   it('reports readings read straight off the payload, never recomputed', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const summary = unwrap(await readAdaptiveSummary(directory));
     const readings = new Map(summary.readings.map((entry) => [entry.key, entry.value]));
 
@@ -209,7 +231,11 @@ describe('an adaptive run summary', () => {
   });
 
   it('says how many rows each table has', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const summary = unwrap(await readAdaptiveSummary(directory));
     expect(summary.tables).toEqual([
       { table: 'series', rows: 1 },
@@ -223,7 +249,11 @@ describe('an adaptive run summary', () => {
   });
 
   it('carries fixed limitations that name no calibration or evidence-claim standing', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const summary = unwrap(await readAdaptiveSummary(directory));
     expect(summary.limitations.length).toBeGreaterThan(0);
     expect(summary.limitations.join(' ')).toContain('no calibration standing');
@@ -291,7 +321,11 @@ describe('what an adaptive summary refuses', () => {
 
 describe('an adaptive result table', () => {
   it('declares its columns and carries only cells that belong to one', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const table = unwrap(await readAdaptiveTable(directory, 'screening_candidates', page));
     const keys = new Set(
       table.columns.flatMap((column) => [
@@ -305,7 +339,11 @@ describe('an adaptive result table', () => {
   });
 
   it('keeps the two lineages in one revisions table, distinguished by side', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const table = unwrap(await readAdaptiveTable(directory, 'revisions', page));
     expect(table.rows).toHaveLength(3);
     expect(table.rows.filter((row) => row.side === 'incumbent')).toHaveLength(1);
@@ -313,7 +351,11 @@ describe('an adaptive result table', () => {
   });
 
   it('reads a null fieldTally as null cells, never a fabricated zero', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const table = unwrap(await readAdaptiveTable(directory, 'screening_candidates', page));
     expect(table.rows[0]?.fieldTallyCandidateWins).toBeNull();
     expect(table.rows[0]?.fieldTallyOpponentWins).toBeNull();
@@ -321,7 +363,11 @@ describe('an adaptive result table', () => {
   });
 
   it('reads reference_field as zero rows, never a null-filled row, when the run recorded none', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const table = unwrap(await readAdaptiveTable(directory, 'reference_field', page));
     expect(table.rows).toEqual([]);
   });
@@ -401,7 +447,11 @@ describe('an adaptive result table', () => {
   });
 
   it('pages, and stops when it is exhausted', async () => {
-    await writeFile(join(directory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(directory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
     const first = unwrap(
       await readAdaptiveTable(directory, 'revisions', pageRequestSchema.parse({ limit: 1 })),
     );
@@ -431,9 +481,18 @@ describe('AdaptiveResultReader (M08.19C)', () => {
     const experimentId = adaptiveExperimentIdSchema.parse('goblin_counter');
     const runDirectory = join(directory, experimentId);
     await mkdir(runDirectory);
-    await writeFile(join(runDirectory, 'adaptive-result.json'), JSON.stringify(resultDocument()), 'utf8');
+    await writeFile(
+      join(runDirectory, 'adaptive-result.json'),
+      JSON.stringify(resultDocument()),
+      'utf8',
+    );
 
-    const roots = unwrap(resolveCatalogRoots({ catalogRoot: join(directory, 'catalog'), resultRoots: { default: directory } }));
+    const roots = unwrap(
+      resolveCatalogRoots({
+        catalogRoot: join(directory, 'catalog'),
+        resultRoots: { default: directory },
+      }),
+    );
     const reader = new AdaptiveResultReader({ roots, resultRootId: 'default' });
 
     const summary = unwrap(await reader.readSummary(experimentId));
@@ -446,7 +505,12 @@ describe('AdaptiveResultReader (M08.19C)', () => {
 
   it('refuses an experiment id with no directory of its own name, the same way a missing job directory refuses', async () => {
     const experimentId = adaptiveExperimentIdSchema.parse('nothing_here');
-    const roots = unwrap(resolveCatalogRoots({ catalogRoot: join(directory, 'catalog'), resultRoots: { default: directory } }));
+    const roots = unwrap(
+      resolveCatalogRoots({
+        catalogRoot: join(directory, 'catalog'),
+        resultRoots: { default: directory },
+      }),
+    );
     const reader = new AdaptiveResultReader({ roots, resultRootId: 'default' });
 
     const refused = await reader.readSummary(experimentId);
@@ -455,7 +519,12 @@ describe('AdaptiveResultReader (M08.19C)', () => {
 
   it('refuses a resultRootId that is not configured, rather than guessing another root', async () => {
     const experimentId = adaptiveExperimentIdSchema.parse('goblin_counter');
-    const roots = unwrap(resolveCatalogRoots({ catalogRoot: join(directory, 'catalog'), resultRoots: { default: directory } }));
+    const roots = unwrap(
+      resolveCatalogRoots({
+        catalogRoot: join(directory, 'catalog'),
+        resultRoots: { default: directory },
+      }),
+    );
     const reader = new AdaptiveResultReader({ roots, resultRootId: 'unconfigured' });
 
     const refused = await reader.readSummary(experimentId);

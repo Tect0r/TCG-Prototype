@@ -19,7 +19,12 @@ import {
 } from '@tcg/simulator';
 import { z } from 'zod';
 
-import { PresetRefused, presetEnvironment, presetEnvironmentConfig, scrubRefusal } from './expand.js';
+import {
+  PresetRefused,
+  presetEnvironment,
+  presetEnvironmentConfig,
+  scrubRefusal,
+} from './expand.js';
 
 /**
  * Validating and estimating an `adaptive_counter` choice, on its own door.
@@ -50,7 +55,8 @@ function refuse(path: string, message: string): never {
 function requireDistinct(path: string, values: readonly string[], noun: string): void {
   const seen = new Set<string>();
   for (const value of values) {
-    if (seen.has(value)) refuse(path, `${noun} "${value}" is listed twice, and a selection is a set.`);
+    if (seen.has(value))
+      refuse(path, `${noun} "${value}" is listed twice, and a selection is a set.`);
     seen.add(value);
   }
 }

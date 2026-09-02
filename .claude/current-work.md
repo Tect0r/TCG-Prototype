@@ -617,7 +617,7 @@ refusal, and any failure reading it (missing, unreadable, foreign version,
 schema-invalid) collapses to `null` context rather than misleading context. A
 candidate's `null` `fieldTally` (not-measured) maps to `null` cells, never a
 fabricated zero; `reference_field`/`validation` are 0-or-1-row tables — row
-*absence*, never a null-filled row, when that evidence was not produced.
+_absence_, never a null-filled row, when that evidence was not produced.
 
 Verified: 19 new tests in `adaptive-results.test.ts` (admin-server) — summary
 projection and readings read straight off the payload, per-table row counts,
@@ -757,3 +757,70 @@ Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
 `tcg-reviewer` are deferred to M08.19E, per this milestone's work-slice split.
 Root status row's "Next tranche" column and the M08.19 acceptance checklist
 are left untouched — both move only at tranche close.
+
+M08.19E is done pending review: revalidated the combined M08.19 tranche diff
+(`e96e0f5^..071fae1` — `presets.ts`/`estimate.ts`/`service.ts`/`requests.ts`/
+`version.ts`/`adaptive-results.ts` in `admin-contracts`; `adaptive-choice.ts`,
+`expand.ts`, `adaptive-results.ts`, `handlers.ts`, `results.ts` in
+`admin-server`; `adaptive-view.ts`, `AdaptiveDashboard.tsx`, `BuilderScreen.tsx`,
+`ResultsScreen.tsx`, `session.ts`, `fake-service.ts` in `admin-client`;
+`report.ts`/`envelopes.ts`/`version.ts` in `simulator`; plus their tests)
+against this milestone's acceptance list — configuration restoration, workload,
+public/full-information labelling, revision drill-down and incomplete-run
+refusal all present with existing focused tests.
+
+Found and closed one real gap during revalidation: no test anywhere in the
+tranche exercised the `cycles` table with an actual repeated deck-hash row —
+every seeded fixture in `admin-client`, `admin-server` and `admin-contracts`
+used `cycles: rows: 0`, so the milestone's own **Acceptance** line ("cycle
+fixture ... tests") was unmet at the layers M08.19 actually added. The pure
+`detectAdaptiveCycles` computation already had a real repeat fixture from
+M08.18D (`report.test.ts`), but nothing proved the M08.19D `CyclesView`
+rendering/drill-down path against non-empty data. Added one integration test
+in `apps/admin-client/src/adaptive-flow.test.tsx` that seeds a one-row
+`cycles` table (`block: 3`, `repeatsBlock: 1`) and asserts `CyclesView` renders
+it descriptively (matches "never an automatic verdict") rather than as a
+health verdict, and that its "Exact row" button opens the drill panel titled
+"Block 3 repeats block 1 — exact row". `admin-client` suite now 299/299 (was
+298).
+
+`npm run format:check` flagged 10 pre-existing unformatted files spanning the
+whole tranche (`AdaptiveDashboard.tsx`, `BuilderScreen.tsx`,
+`adaptive-choice.ts`/`.test.ts`, `admin-server`'s and `admin-contracts`'
+`adaptive-results.ts`/`.test.ts`, `apps/simulator/src/adaptive/report.ts`,
+`.claude/current-work.md`) — a real gate failure, not introduced by this run.
+Ran `prettier --write` on exactly those 10 files; inspected every diff and
+confirmed reflow/quote-normalization only, no behavior change. `npm run
+check:consistency`, `npm run audit:check` (after regenerating
+`docs/status-audit.md`, which had drifted to describe an older commit) and
+`npm run verify` all pass clean (224 test files, 4573 tests, typecheck, lint,
+format, content validation, build). Marked M08.19E and the M08.19 acceptance
+checklist complete in the milestone file. Root status row's "Next tranche"
+column left at `M08.19A` rather than advanced to a not-yet-named M08.20/next
+slice, per CLAUDE.md: the tranche is not marked complete and its successor is
+not named until `tcg-reviewer` returns `VERDICT: APPROVE`. (M08.19's own
+"next action" — the deferred `enqueueAdaptive`/job-runner wiring gap recorded
+in `IMPLEMENTATION_PLAN.md` — remains open and unscoped; this close does not
+touch it.)
+
+`tcg-reviewer` reviewed the full tranche commit range (`e96e0f5^..071fae1`)
+plus the uncommitted close-record diff, independently re-verified the
+"formatting-only" claim on all 10 prettier-reformatted files by reading every
+hunk, and confirmed the new cycles-fixture test actually closes the gap it
+claims to close. Returned **`VERDICT: APPROVE`**, with two non-blocking LOW
+findings to keep in mind next time these files are touched, not required for
+this close:
+- `apps/admin-client/src/components/AdaptiveDashboard.tsx:405` (`SeriesView`):
+  the "Cumulative — every decided block so far" heading can mislead when the
+  series table is truncated to one page (a small `blockSize` against a large
+  budget can decide more blocks than `PAGE_SIZE_MAX`); the truncation note
+  above it mitigates but doesn't fully cover this.
+- `apps/admin-server/src/service/adaptive-results.ts:454,522,549`
+  (`buildAdaptiveTable`): three call sites use `spreadRate` rather than the
+  null-vs-zero-safe `spreadRateOrInsufficient` `results.ts` documents for
+  exactly this reason; no reachable zero-game score exists today, but the
+  safe helper should be used at the source next time this file changes.
+
+Root status row's "Next tranche" column advanced to `M08.20A`; `IMPLEMENTATION_PLAN.md`'s "next bounded task" now names **M08.20A — Candidate
+Patch Comparison**. M08.19 tranche-close record committed and pushed. M08.19
+is complete.

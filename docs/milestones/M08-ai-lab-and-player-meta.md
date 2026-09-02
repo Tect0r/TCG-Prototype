@@ -3560,15 +3560,45 @@ labelling, revision drill-down, cycle fixture and incomplete-run tests.
       (10 new in `adaptive-view.test.ts`). `npm run typecheck` clean in
       `apps/simulator`, `packages/admin-contracts`, `apps/admin-server`,
       `apps/admin-client`.
-- [ ] **M08.19E — Tranche close.** Revalidate restoration, workload, labels,
+- [x] **M08.19E — Tranche close.** Revalidate restoration, workload, labels,
       incomplete states and drill-down through the standard tranche-close gate. Do
       not begin advanced templates.
+      Verified: revalidated the combined M08.19A-D diff (`e96e0f5^..071fae1`)
+      against this milestone's acceptance list — restoration, workload, public
+      and full-information labelling, revision drill-down, incomplete-run
+      refusal all present with existing focused tests. Found and closed one
+      real gap: no test anywhere in the tranche (`admin-client`, `admin-server`,
+      `admin-contracts`) exercised the `cycles` table with an actual repeated
+      deck-hash row — every fixture used `cycles: rows: 0`, so the acceptance
+      line's own "cycle fixture" tests were unmet at the dashboard layer (the
+      simulator's `detectAdaptiveCycles` fixture from M08.18D covers the pure
+      computation, but not the admin-client rendering/drill-down path added in
+      M08.19D). Added one integration test in `adaptive-flow.test.tsx` seeding
+      a one-row `cycles` table and asserting the `CyclesView` renders it
+      descriptively (never a healthy/stuck/converged verdict) and that its
+      "Exact row" button opens the correct drill panel. `npm run format:check`
+      flagged 10 pre-existing unformatted files across the tranche
+      (`AdaptiveDashboard.tsx`, `BuilderScreen.tsx`, `adaptive-choice.ts`/
+      `.test.ts`, `adaptive-results.ts`/`.test.ts` in both `admin-server` and
+      `admin-contracts`, `report.ts`, `.claude/current-work.md`) — a real gate
+      failure, not caused by this run; ran `prettier --write` on exactly those
+      10 files, confirmed by diff inspection to be reflow/quote-normalization
+      only, no behavior change. `npm run check:consistency`, `npm run
+      audit:check` (after regenerating `docs/status-audit.md`) and `npm run
+      verify` all pass clean (224 test files, 4573 tests, typecheck, lint,
+      format, content validation, build). `admin-client` suite 299/299 (was
+      298, +1 new cycle-fixture test). `tcg-reviewer` returned `VERDICT:
+      APPROVE` with two non-blocking LOW findings (a `SeriesView` cumulative
+      heading that can mislead under pagination truncation, and three
+      `buildAdaptiveTable` call sites using `spreadRate` instead of the
+      null-safe `spreadRateOrInsufficient`); see `IMPLEMENTATION_PLAN.md` and
+      `.claude/current-work.md` for exact file:line references.
 
 ### Checklist
 
-- [ ] Full adaptive configuration through controls.
-- [ ] Series versus frozen strength explained in form and report.
-- [ ] Revision timeline linking to exact matches and replays.
+- [x] Full adaptive configuration through controls.
+- [x] Series versus frozen strength explained in form and report.
+- [x] Revision timeline linking to exact matches and replays.
 
 ## M08.20 — Advanced test templates
 

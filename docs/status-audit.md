@@ -9,9 +9,9 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `befe590026ae22775ac9fa976755580ab35e41d3`  |
+| Commit           | `071fae1a67ec7ebb262909fa139b529eae92ac58`  |
 | Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-09-01                                  |
+| Taken on         | 2026-09-02                                  |
 | Node             | v24.15.0                                    |
 | `npm run verify` | not run for this audit                      |
 
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 14      | 285      |
-| admin-server   | 30      | 595      |
-| packages       | 95      | 2280     |
+| admin-client   | 16      | 299      |
+| admin-server   | 32      | 631      |
+| packages       | 96      | 2292     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
-| simulator      | 27      | 477      |
+| simulator      | 39      | 665      |
 | web-client     | 20      | 272      |
-| **total**      | **207** | **4323** |
+| **total**      | **224** | **4573** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -106,7 +106,7 @@ The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contr
 
 | Constant                   | Value | Pins                                                                                                                                   |
 | -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_CONTRACT_VERSION`   | 7     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `ADMIN_CONTRACT_VERSION`   | 8     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
 | `CATALOG_DOCUMENT_VERSION` | 4     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments

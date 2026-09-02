@@ -75,9 +75,9 @@ describe('estimateAdaptiveChoice', () => {
   });
 
   it('refuses a precon this content does not publish, naming the field', () => {
-    expect(() => estimateAdaptiveChoice(choice({ startingPreconIds: ['precon_not_real'] }))).toThrow(
-      PresetRefused,
-    );
+    expect(() =>
+      estimateAdaptiveChoice(choice({ startingPreconIds: ['precon_not_real'] })),
+    ).toThrow(PresetRefused);
   });
 
   it('refuses a duplicated starting precon, because a selection is a set', () => {
@@ -102,7 +102,9 @@ describe('estimateAdaptiveChoice', () => {
 
   it('refuses a Commander selection when the policy never reads one', () => {
     expect(() =>
-      estimateAdaptiveChoice(choice({ commanderPolicy: 'locked', selectedCommanderIds: [A_COMMANDER] })),
+      estimateAdaptiveChoice(
+        choice({ commanderPolicy: 'locked', selectedCommanderIds: [A_COMMANDER] }),
+      ),
     ).toThrow(PresetRefused);
   });
 

@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-02)   | M08.19A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-02)   | M08.20A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,12 +223,55 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.19E — Tranche close.** Revalidate restoration, workload, labels,
-incomplete states and drill-down through the standard tranche-close gate
-(`check:consistency`, `audit:check`, `verify`, then `tcg-reviewer` over the
-whole M08.19 commit range). Do not begin advanced templates. Its scope and
-checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0819--adaptive-counter-builder-and-dashboard).
+**M08.20A — Candidate Patch Comparison.** Map controls exactly onto the
+existing baseline/candidate comparison contract, require the declared change,
+and preserve identical reference population and seeds between baseline and
+candidate. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0820--advanced-test-templates).
+This is unrelated to the still-unscoped adaptive enqueue/execution gap below —
+M08.20 exposes already-existing comparison/robustness/soak contracts and does
+not touch `AdaptiveConfig` or the job runner.
+
+**M08.19 closed 2026-09-02** (`tcg-reviewer` `VERDICT: APPROVE`, no blocking
+findings): configurable Adaptive Counter builder, directory-keyed result
+read model, series/revision dashboard, and validation/cycles/drill-down all
+implemented and gated. M08.19E's own revalidation pass found and closed one
+real gap before requesting review — every fixture across the whole tranche
+(`admin-client`, `admin-server`, `admin-contracts`) exercised the `cycles`
+table only with zero rows, so the milestone's own "cycle fixture" acceptance
+line was unmet at the dashboard layer; added one integration test in
+`adaptive-flow.test.tsx` seeding a real repeated-cycle row and asserting
+`CyclesView` renders it descriptively and drills to the correct exact row.
+The reviewer independently re-verified the "formatting-only" claim on 10
+prettier-reformatted files by reading every hunk, and returned two
+non-blocking LOW findings to keep in mind for the next tranche that touches
+this code:
+- `apps/admin-client/src/components/AdaptiveDashboard.tsx:405` (`SeriesView`):
+  the "Cumulative — every decided block so far" heading can mislead when the
+  series table is truncated to one page (a small `blockSize` against a large
+  budget can decide more blocks than `PAGE_SIZE_MAX`) — the truncation note
+  above it mitigates but doesn't fully cover this. Reword the heading when
+  `isAdaptiveTruncated` is true, next time this file is touched.
+- `apps/admin-server/src/service/adaptive-results.ts:454,522,549`
+  (`buildAdaptiveTable`): three call sites use `spreadRate` rather than the
+  null-vs-zero-safe `spreadRateOrInsufficient` `results.ts` documents for
+  exactly this reason; no reachable zero-game score exists today (client-side
+  `formatRate` also short-circuits `total === 0`), but switch to the safe
+  helper next time this file is touched to close the gap at the source.
+Full record in `docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.19E
+checkbox and `.claude/current-work.md`.
+
+**Still open, unrelated to M08.20:** the M08.19A-deferred adaptive
+enqueue/execution slice — a dedicated `enqueueAdaptive` mutating address and
+`JobOrigin` member, `jobSpecSchema`/`experimentKindSchema` widened to a union,
+a `CatalogStore` method, and a job-runner branch calling
+`runAdaptiveExperiment` — remains unscoped and un-numbered. It must be scoped
+and inserted as its own tranche before any session relies on an Adaptive
+Counter run actually being enqueued and executed through the admin UI; until
+then, `enqueuePreset`/`expandPreset` continue to refuse `adaptive_counter`
+unconditionally and the dashboard only ever reads pre-existing
+`adaptive-result.json` fixtures/output, never a document this repository's own
+code produced end to end.
 
 **M08.19D closed 2026-09-02 on validation, cycles and drill-down.** Threaded
 `informationPolicy` end to end (simulator report → admin-contracts summary →

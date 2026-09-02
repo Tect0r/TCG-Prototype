@@ -65,7 +65,10 @@ export const adaptiveExperimentIdSchema = z
   .string()
   .min(1)
   .max(MAX_ADAPTIVE_EXPERIMENT_ID)
-  .regex(/^[a-z][a-z0-9_-]*$/, 'An Adaptive Counter experiment ID is lowercase and hyphen/underscore safe.');
+  .regex(
+    /^[a-z][a-z0-9_-]*$/,
+    'An Adaptive Counter experiment ID is lowercase and hyphen/underscore safe.',
+  );
 export type AdaptiveExperimentId = z.infer<typeof adaptiveExperimentIdSchema>;
 
 /* --------------------------------------------------------------- the tables */
@@ -104,7 +107,10 @@ export type AdaptiveResultTableName = z.infer<typeof adaptiveResultTableNameSche
  * `resultSourceSchema` in `./results.ts` is: the directory it lives in is
  * resolved from configuration and stays inside the process.
  */
-export const ADAPTIVE_RESULT_DOCUMENTS = ['adaptive-checkpoint.json', 'adaptive-result.json'] as const;
+export const ADAPTIVE_RESULT_DOCUMENTS = [
+  'adaptive-checkpoint.json',
+  'adaptive-result.json',
+] as const;
 export const adaptiveResultSourceSchema = z.strictObject({
   document: z.enum(ADAPTIVE_RESULT_DOCUMENTS),
   schemaVersion: z.number().int().min(1),
@@ -133,7 +139,8 @@ export const adaptiveResultTableSchema = z
     'An adaptive result table must report the number of rows it carries.',
   )
   .refine(
-    (value) => value.rows.every((row) => Object.keys(row).every((key) => hasAdaptiveColumn(value, key))),
+    (value) =>
+      value.rows.every((row) => Object.keys(row).every((key) => hasAdaptiveColumn(value, key))),
     'Every cell in an adaptive result table belongs to a declared column.',
   );
 export type AdaptiveResultTable = z.infer<typeof adaptiveResultTableSchema>;

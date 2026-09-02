@@ -211,9 +211,10 @@ export function AdaptiveRunPanel() {
               </div>
               <FactTable caption={drill.title} facts={drill.facts} />
               <p className="panel__note">
-                This is the exact row a bar or cell summarizes — not a further aggregate. Opening one
-                contributing match or its replay is not available from this screen: that needs a
-                listing over the run's match records, which is M08.26&apos;s Match Explorer to build.
+                This is the exact row a bar or cell summarizes — not a further aggregate. Opening
+                one contributing match or its replay is not available from this screen: that needs a
+                listing over the run's match records, which is M08.26&apos;s Match Explorer to
+                build.
               </p>
             </div>
           )}

@@ -24,7 +24,9 @@ function summary(overrides: Record<string, unknown> = {}): unknown {
     configHash: 'abcdef0123456789',
     source: { document: 'adaptive-result.json', schemaVersion: 3 },
     informationPolicy: 'public_observation',
-    readings: [{ key: 'seriesIncumbentWins', label: 'Series — incumbent side', value: 1, kind: 'count' }],
+    readings: [
+      { key: 'seriesIncumbentWins', label: 'Series — incumbent side', value: 1, kind: 'count' },
+    ],
     tables: [{ table: 'series', rows: 1 }],
     limitations: ['This reading carries no calibration standing.'],
     ...overrides,
@@ -56,9 +58,9 @@ describe('an adaptive experiment ID', () => {
     expect(adaptiveExperimentIdSchema.parse('goblin_counter-v2')).toBe('goblin_counter-v2');
     expect(adaptiveExperimentIdSchema.safeParse('Goblin_Counter').success).toBe(false);
     expect(adaptiveExperimentIdSchema.safeParse('9start_with_digit').success).toBe(false);
-    expect(adaptiveExperimentIdSchema.safeParse('a'.repeat(MAX_ADAPTIVE_EXPERIMENT_ID + 1)).success).toBe(
-      false,
-    );
+    expect(
+      adaptiveExperimentIdSchema.safeParse('a'.repeat(MAX_ADAPTIVE_EXPERIMENT_ID + 1)).success,
+    ).toBe(false);
   });
 });
 
@@ -120,7 +122,10 @@ describe('an adaptive result table', () => {
   });
 
   it('reads only the two documents an adaptive run actually writes', () => {
-    expect([...ADAPTIVE_RESULT_DOCUMENTS]).toEqual(['adaptive-checkpoint.json', 'adaptive-result.json']);
+    expect([...ADAPTIVE_RESULT_DOCUMENTS]).toEqual([
+      'adaptive-checkpoint.json',
+      'adaptive-result.json',
+    ]);
     expect(
       adaptiveResultTableSchema.safeParse(
         table({ source: { document: 'summary.json', schemaVersion: 1 } }),

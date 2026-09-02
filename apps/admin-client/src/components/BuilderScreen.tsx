@@ -277,24 +277,22 @@ export function BuilderScreen() {
                 Enqueueing is offered once this build has told you exactly how many matches the
                 configuration schedules.
               </Empty>
+            ) : !('totalMatches' in current.estimate) || !('stages' in current.expansion) ? (
+              <Empty>This preset does not enqueue a match schedule yet.</Empty>
             ) : (
-              !('totalMatches' in current.estimate) || !('stages' in current.expansion) ? (
-                <Empty>This preset does not enqueue a match schedule yet.</Empty>
-              ) : (
-                <>
-                  <p className="builder__summary">
-                    {BASIS_WORDING[current.estimate.basis]}{' '}
-                    <strong>{current.estimate.totalMatches.toLocaleString('en')}</strong> matches, in{' '}
-                    {current.expansion.stages.length}{' '}
-                    {current.expansion.stages.length === 1 ? 'job' : 'jobs'}.
-                  </p>
-                  <p className="builder__actions">
-                    <button type="button" disabled={state.busy} onClick={() => void enqueue()}>
-                      Enqueue this test batch
-                    </button>
-                  </p>
-                </>
-              )
+              <>
+                <p className="builder__summary">
+                  {BASIS_WORDING[current.estimate.basis]}{' '}
+                  <strong>{current.estimate.totalMatches.toLocaleString('en')}</strong> matches, in{' '}
+                  {current.expansion.stages.length}{' '}
+                  {current.expansion.stages.length === 1 ? 'job' : 'jobs'}.
+                </p>
+                <p className="builder__actions">
+                  <button type="button" disabled={state.busy} onClick={() => void enqueue()}>
+                    Enqueue this test batch
+                  </button>
+                </p>
+              </>
             )}
             {enqueued !== null && <EnqueuedReport result={enqueued} />}
           </section>
@@ -1171,7 +1169,9 @@ function OpenMetaIdentitySection({
 function EstimateTables({ estimate }: { readonly estimate: ChoiceEstimate }) {
   if (!('totalMatches' in estimate.estimate) || !('stages' in estimate.expansion)) {
     return (
-      <Empty>This preset does not schedule matches the same way; there is no stage table for it yet.</Empty>
+      <Empty>
+        This preset does not schedule matches the same way; there is no stage table for it yet.
+      </Empty>
     );
   }
   return (

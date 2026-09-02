@@ -395,9 +395,9 @@ function shortId(id: string): string {
  */
 export function informationPolicyLabel(policy: AdaptiveInformationPolicy): string {
   return policy === 'analysis_full_deck'
-    ? '**Full-information analysis.** Every pilot in this run saw its opponent\'s exact decklist. ' +
-        'This is not evidence of how these decks would play under a normal match\'s hidden information.'
-    : '**Public observation.** Every pilot in this run saw only what a normal match\'s observation ' +
+    ? "**Full-information analysis.** Every pilot in this run saw its opponent's exact decklist. " +
+        "This is not evidence of how these decks would play under a normal match's hidden information."
+    : "**Public observation.** Every pilot in this run saw only what a normal match's observation " +
         'boundary allows.';
 }
 

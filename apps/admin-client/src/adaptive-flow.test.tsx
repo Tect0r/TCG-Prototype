@@ -101,6 +101,24 @@ const REVISIONS_ROWS: readonly ResultRow[] = [
   },
 ];
 
+const CYCLES_COLUMNS: readonly ResultColumn[] = [
+  plain('block', 'Block', 'count'),
+  plain('generation', 'Generation', 'count'),
+  plain('repeatsBlock', 'Repeats block', 'count'),
+  plain('incumbentDeckHash', 'Incumbent deck', 'identifier'),
+  plain('opponentDeckHash', 'Opponent deck', 'identifier'),
+];
+
+const CYCLES_ROWS: readonly ResultRow[] = [
+  {
+    block: 3,
+    generation: 2,
+    repeatsBlock: 1,
+    incumbentDeckHash: 'deck_i2',
+    opponentDeckHash: 'deck_o1',
+  },
+];
+
 async function openAdaptive() {
   stubLayout('wide');
   const service = fakeService({ content: contentCatalogFixture() });
@@ -167,5 +185,42 @@ describe('opening an Adaptive Counter run', () => {
 
     await userEvent.click(within(main()).getByRole('button', { name: 'Revisions' }));
     expect(await within(main()).findByText('goblin_warboss')).toBeVisible();
+  });
+
+  it('renders a recorded cycle descriptively, never as a healthy/stuck/converged verdict, and drills to its exact row', async () => {
+    const { service } = await openAdaptive();
+    service.lab.seedAdaptiveRun('goblin_counter', {
+      summary: adaptiveRunSummaryFixture({
+        experimentId: 'goblin_counter',
+        tables: [
+          { table: 'series', rows: 4 },
+          { table: 'revisions', rows: 2 },
+          { table: 'screening_candidates', rows: 2 },
+          { table: 'deck_diff', rows: 2 },
+          { table: 'cycles', rows: 1 },
+          { table: 'reference_field', rows: 0 },
+          { table: 'validation', rows: 0 },
+        ],
+      }),
+      tables: {
+        series: adaptiveResultTableFixture('goblin_counter', 'series', SERIES_COLUMNS, SERIES_ROWS),
+        cycles: adaptiveResultTableFixture('goblin_counter', 'cycles', CYCLES_COLUMNS, CYCLES_ROWS),
+      },
+    });
+
+    await userEvent.type(within(main()).getByLabelText('Experiment ID'), 'goblin_counter');
+    await userEvent.click(within(main()).getByRole('button', { name: 'Open' }));
+    await screen.findByText('goblin_counter', { exact: false });
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Cycles' }));
+    expect(await within(main()).findByText(/never an automatic verdict/i)).toBeVisible();
+    expect(within(main()).getByText('deck_i2', { exact: false })).toBeVisible();
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Exact row' }));
+    expect(
+      await within(main()).findByRole('region', { name: 'Block 3 repeats block 1 — exact row' }),
+    ).toBeVisible();
+
+    expect(service.requests.some((request) => request.path.includes('adaptive'))).toBe(true);
   });
 });
