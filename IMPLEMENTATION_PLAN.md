@@ -223,14 +223,23 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.20A — Candidate Patch Comparison.** Map controls exactly onto the
-existing baseline/candidate comparison contract, require the declared change,
-and preserve identical reference population and seeds between baseline and
-candidate. Its scope and checklist are in
+**M08.20C — Engine Soak and advanced card analysis.** Map Engine Soak to a
+bounded batch/random-legal termination configuration that retains failures and
+reports engine health rather than balance; expose replacement and insertion
+only if their current contracts still pass revalidation. Its scope and
+checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0820--advanced-test-templates).
 This is unrelated to the still-unscoped adaptive enqueue/execution gap below —
 M08.20 exposes already-existing comparison/robustness/soak contracts and does
 not touch `AdaptiveConfig` or the job runner.
+
+**M08.20A closed 2026-09-02** (Candidate Patch Comparison — widened the
+`candidate_comparison` preset from remove-only to remove-and-patch, per its
+milestone-file evidence note). **M08.20B closed 2026-09-02** (Pilot
+Robustness — re-checked against current code and found already complete: the
+`pilot_robustness` preset, its `expand.ts` mapping and its workload estimate
+were built at M08.3, long before M08.20 was scoped; no source change, only
+re-verification, per its milestone-file evidence note).
 
 **M08.19 closed 2026-09-02** (`tcg-reviewer` `VERDICT: APPROVE`, no blocking
 findings): configurable Adaptive Counter builder, directory-keyed result

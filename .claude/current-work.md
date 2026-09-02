@@ -886,3 +886,37 @@ tranche close.
 
 Next slice: **M08.20B — Pilot Robustness**, per `IMPLEMENTATION_PLAN.md` and
 the M08.20 tranche in `docs/milestones/M08-ai-lab-and-player-meta.md`.
+
+M08.20B is verified complete, with no source change. Re-checked the slice's
+scope ("map controls onto the existing robustness contract, preserve profile
+partitions and denominators, refuse any pooled rate whose pilot meaning is
+unexplained") against current code before implementing anything, per CLAUDE.md
+step 3. Found the `pilot_robustness` preset — its `presetChoiceSchema` member,
+`PRESET_REGISTRY` entry (`status: 'available'`), `expand.ts`'s
+`pilotRobustness()` mapping (always includes `published` as the reference arm,
+deduplicates it when already chosen), and `estimate.ts`'s `robustness` case
+(prices every profile as its own schedule repeat, `repeats: profiles.length`,
+never a pooled total) — already fully built, at M08.3 (`c6bcadf`), long before
+M08.20 was numbered; confirmed with `git log -S`. The underlying
+`analyzeRobustness` (`apps/simulator/src/analysis/robustness.ts`,
+PHASE4_HARDENING §10.3) already reports every profile as its own arm by
+construction and never pools them. Unlike M08.20A (which found and closed a
+real gap — card patches), no gap exists here to close.
+
+Focused re-verification: `apps/admin-server/src/lab/expand.test.ts` (53/53,
+includes the `published`-reference-arm and no-duplicate tests),
+`apps/admin-server/src/lab/estimate.test.ts` (34/34, includes "agrees on a
+robustness run, once per profile including the reference arm"),
+`packages/admin-contracts/src/presets.test.ts` (34/34),
+`apps/simulator/src/hardening-analysis.test.ts` (33/33),
+`apps/simulator/src/hardening-experiment.test.ts` (26/26, includes "runs every
+profile on the same seeds and reports them separately" and "is reproducible")
+— 180 tests total, all passing. `npm run --workspace @tcg/admin-contracts
+typecheck`, `--workspace @tcg/admin-server typecheck` and `--workspace
+@tcg/simulator typecheck` all clean. Marked M08.20B complete in the milestone
+file with this evidence note; the M08.20 tranche checklist and root status row
+are untouched, per CLAUDE.md — both move only at tranche close.
+
+Next slice: **M08.20C — Engine Soak and advanced card analysis**, per
+`IMPLEMENTATION_PLAN.md` and the M08.20 tranche in
+`docs/milestones/M08-ai-lab-and-player-meta.md`.

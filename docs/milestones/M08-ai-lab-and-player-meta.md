@@ -3638,9 +3638,31 @@ profile partition, soak failure retention and labelling tests.
       widening. Focused: `expand.test.ts` (53/53) and `presets.test.ts` (34/34,
       2 pre-existing tests updated for the schema change), typecheck and eslint
       clean on both packages._
-- [ ] **M08.20B — Pilot Robustness.** Map controls onto the existing robustness
+- [x] **M08.20B — Pilot Robustness.** Map controls onto the existing robustness
       contract, preserve profile partitions and denominators, and refuse any pooled
       rate whose pilot meaning is unexplained.
+      _Evidence (2026-09-02): re-checked against current code before writing anything
+      and found this slice already complete — the `pilot_robustness` preset (status
+      `available`, full `presetChoiceSchema` member with `preconIds`/`pilotIds`/
+      `profileIds`/`gamesPerSeatOrder`) and its `expand.ts` mapping
+      (`pilotRobustness()`, always including `published` as the reference arm and
+      deduplicating it when already chosen) were built at M08.3
+      (`c6bcadf`), long before M08.20 was scoped — confirmed via
+      `git log -S"pilot_robustness: {"` / `-S"function pilotRobustness"`. Simulator-side
+      `analyzeRobustness` (`apps/simulator/src/analysis/robustness.ts`, PHASE4_HARDENING
+      §10.3) already reports every profile as its own arm and never pools them into one
+      rate, by construction. `estimate.ts`'s `robustness` case already prices every
+      profile as its own schedule repeat (`repeats: profiles.length`) rather than a
+      pooled total. No gap found to close, unlike M08.20A's card-patch widening.
+      Focused re-verification: `expand.test.ts` (53/53, includes the `published`-arm
+      and no-duplicate-`published` tests), `estimate.test.ts` (34/34, includes
+      "agrees on a robustness run, once per profile including the reference arm"),
+      `presets.test.ts` (34/34), `hardening-analysis.test.ts` (33/33),
+      `hardening-experiment.test.ts` (26/26, includes "runs every profile on the same
+      seeds and reports them separately" and "is reproducible") — 180 tests total,
+      all passing. `npm run --workspace @tcg/admin-contracts typecheck`,
+      `--workspace @tcg/admin-server typecheck` and `--workspace @tcg/simulator
+      typecheck` all clean. No source file changed._
 - [ ] **M08.20C — Engine Soak and advanced card analysis.** Map Engine Soak to a
       bounded batch/random-legal termination configuration that retains failures and
       reports engine health rather than balance. Expose replacement and insertion
