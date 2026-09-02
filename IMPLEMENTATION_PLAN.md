@@ -229,6 +229,63 @@ counter-focus, reference-field and final-validation controls. Restore every
 value and show workload before enqueueing. Its scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0819--adaptive-counter-builder-and-dashboard).
 
+**M08.19A is blocked on an unresolved architecture question, recorded here
+2026-09-02 rather than guessed at.** The whole admin preset pipeline —
+`presetChoiceSchema` (`packages/admin-contracts/src/presets.ts`), `saveChoice`/
+`listSavedChoices` (restoration), `estimateChoice` (workload) and
+`enqueuePreset` — is built around `expandPreset`
+(`apps/admin-server/src/lab/expand.ts`), whose `switch (choice.presetId)` is
+exhaustive over the 8 available members and whose every branch returns
+`ExpandedStage[]` carrying a real `ExperimentConfig` (validated by
+`parseExperimentConfig`, the simulator's batch/search/comparison/robustness
+schema). `saveChoice` calls this same `expandPreset` before it will persist a
+choice at all ("The expansion happens before the write, deliberately"), so
+restoration is not separable from expansion. `estimateChoice` returns
+`matchCountEstimateSchema` (`packages/admin-contracts/src/estimate.ts`), built
+from `buildSchedule` counts, `gamesPerSeatOrder` and `pilotTuples` — a shape
+with no honest reading for an adaptive run's budget/block framing
+(`planAdaptiveBudget` in `apps/simulator/src/adaptive/block.ts` answers "how
+many whole blocks does `totalLearningBudget` afford," not a match count).
+`enqueuePreset` writes `stage.config` straight into `CatalogStore.createJob`,
+whose `config` parameter and `jobSpecSchema.kind`
+(`packages/admin-contracts/src/catalog.ts`) are typed on `ExperimentConfig`/
+`experimentKindSchema` (5 closed members: batch/search/comparison/replacement/
+robustness) — `AdaptiveConfig` is a deliberately separate, incompatible schema
+(M08.16), executed by `runAdaptiveExperiment`/`runAdaptiveFinalValidation`
+(`apps/simulator/src/adaptive/run.ts`), never by `runExperiment`/`runBatch`
+against an `ExperimentConfig`.
+
+Adding `adaptive_counter` to `presetChoiceSchema` is therefore not a
+self-contained contract addition: it forces a decision on how (or whether) an
+`AdaptiveConfig` run is represented as, or alongside, an `ExperimentConfig`-
+shaped catalog job — a choice with consequences for `expand.ts`, `catalog.ts`
+(`CATALOG_DOCUMENT_VERSION`), the job-runner's execution dispatch
+(`apps/admin-server/src/run/job-runner.ts`, currently calls only
+`runExperiment`) and `estimateChoice`'s response shape, not for
+`presets.ts` alone. The `commander_championship` precedent (M08.15) — a
+dedicated new mutating address (`scheduleChampionship`) with its own
+`JobOrigin` member, rather than forcing a structurally different job through
+`enqueuePreset` — is the closest existing pattern and the leading candidate,
+but choosing it (a parallel `enqueueAdaptive` address, its own `JobOrigin`
+kind, its own store method, its own job-runner branch calling
+`runAdaptiveExperiment`) versus widening `ExperimentConfig`/`experimentKindSchema`
+itself is a decision for a human or a dedicated design pass, not something to
+settle silently inside a "builder contracts and restoration" slice per
+CLAUDE.md's engineering invariants. No source was changed investigating this;
+the working tree is clean.
+
+**Next action:** before restarting M08.19A, settle how an adaptive run becomes
+a queued, executable job — specifically, whether it gets a dedicated mutating
+address and `JobOrigin` kind (mirroring `scheduleChampionship`) or widens the
+existing `ExperimentConfig`/`experimentKindSchema`/`enqueuePreset` path. Once
+settled, `presetChoiceSchema`, `estimateChoice`'s response and `expandPreset`'s
+switch can be extended consistently with it. Everything else M08.19A names —
+the full `AdaptiveConfig` field surface as controls, restoration via the
+generic `saveChoice`/`listSavedChoices` mechanism once `adaptive_counter` is a
+real choice-union member, and a workload readout via `planAdaptiveBudget` — is
+unblocked and was scoped during this investigation; only the enqueue-path
+decision above stands in front of writing code.
+
 M08.17 closed on 2026-09-02 (`tcg-reviewer` `VERDICT: APPROVE` on recheck after
 one fixed HIGH finding — a vacuous moving-opponent staleness check for a
 candidate screened with zero opponent games; three low-severity non-blocking

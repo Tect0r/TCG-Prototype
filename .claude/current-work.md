@@ -495,3 +495,27 @@ scheduled.matches.length` instead, next time this file is touched.
   updated to the post-fix count and reflowed.
 
 M08.18 tranche-close record committed and pushed. M08.18 is complete.
+
+M08.19A was not started. Recon plus direct reading of
+`packages/admin-contracts/src/{presets,estimate,catalog}.ts` and
+`apps/admin-server/src/lab/expand.ts` established that the entire admin preset
+pipeline (`presetChoiceSchema` → `saveChoice`/`estimateChoice`/`enqueuePreset`,
+all routed through `expandPreset`'s exhaustive switch) is structurally coupled
+to `ExperimentConfig` and the simulator's `runExperiment`/`runBatch`
+batch/search/comparison/robustness execution model — while `AdaptiveConfig`
+(M08.16) is a deliberately separate schema executed only by
+`runAdaptiveExperiment`/`runAdaptiveFinalValidation`. Adding `adaptive_counter`
+to `presetChoiceSchema` therefore cannot be a self-contained contract change:
+it forces an unresolved decision on how an adaptive run becomes a queued,
+executable job (a dedicated `enqueueAdaptive` address and `JobOrigin` kind,
+mirroring M08.15's `scheduleChampionship` precedent, versus widening
+`ExperimentConfig`/`experimentKindSchema`/the job-runner's dispatch). Per
+CLAUDE.md's "do not silently invent unresolved rules," this is recorded as the
+blocking question in `IMPLEMENTATION_PLAN.md`'s "The next bounded task"
+section rather than guessed at. No source files were changed; only
+`IMPLEMENTATION_PLAN.md` and this file were edited. The full field-surface
+scoping for the controls contract, and confirmation that restoration
+(`saveChoice`/`listSavedChoices`) and a `planAdaptiveBudget`-based workload
+readout are otherwise unblocked once the enqueue-path decision is made, are
+recorded in that same note so the next session does not have to re-derive
+them.
