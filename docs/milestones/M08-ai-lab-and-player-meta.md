@@ -3663,10 +3663,70 @@ profile partition, soak failure retention and labelling tests.
       all passing. `npm run --workspace @tcg/admin-contracts typecheck`,
       `--workspace @tcg/admin-server typecheck` and `--workspace @tcg/simulator
       typecheck` all clean. No source file changed._
-- [ ] **M08.20C — Engine Soak and advanced card analysis.** Map Engine Soak to a
+- [x] **M08.20C — Engine Soak and advanced card analysis.** Map Engine Soak to a
       bounded batch/random-legal termination configuration that retains failures and
       reports engine health rather than balance. Expose replacement and insertion
       only if their current contracts still pass revalidation.
+      _Evidence (2026-09-02): two parts, one verified complete and one closing a real
+      gap._
+      _Engine Soak — already complete, built at M08.3 (`c6bcadf`), same commit as
+      M08.20B's Pilot Robustness: the `engine_soak` preset is pinned to
+      `SOAK_PILOT_ID = 'random_legal'` with `SOAK_TURN_LIMIT = 150` and
+      `failFast: false` (`apps/admin-server/src/lab/expand.ts`'s `engineSoak()`), so a
+      soak neither stops at the first failure nor bounds a stall past two and a half
+      minutes of turns. Abnormal-match replay retention
+      (`ABNORMAL_TERMINATIONS`/`isAbnormal()`, `apps/simulator/src/telemetry/
+      schema.ts`) is structural and unconditional regardless of the run's retention
+      config, and `applySupportLimits` (`apps/simulator/src/analysis/flags.ts`)
+      downgrades every balance-level flag to `insufficient_data` whenever a run used
+      only legality-only pilots — which every soak run does, by construction, since
+      the preset leaves no pilot knob. The reporter's existing "Abnormal matches
+      (observation)" section (`apps/simulator/src/reporting/report.ts`) already
+      surfaces crashes, stalls, illegal choices and limit trips for any batch-kind
+      run including a soak. No source change needed; confirmed by reading the code
+      paths above rather than reimplementing anything._
+      _Card Replacement — a genuine gap, closed. `EXPERIMENT_KINDS` already includes
+      `'replacement'` and the simulator already runs it end-to-end
+      (`replacementConfigSchema`, `runReplacementExperiment` in
+      `apps/simulator/src/experiment.ts`, `estimateConfig`'s existing `case
+      'replacement':` in `apps/admin-server/src/lab/estimate.ts` using `basis:
+      'at_least'` since variant count is a floor), but no preset mapped any choice
+      onto it. Revalidated the underlying contract first:
+      `insertion.test.ts`/`experiment.test.ts` (39/39) passed unchanged before any
+      new code was written, satisfying "only if their current contracts still pass
+      revalidation." Added a ninth preset, `card_replacement`
+      (`packages/admin-contracts/src/presets.ts`): registry entry (`kinds:
+      ['replacement']`, limitations covering the controlled-substitution scope, the
+      unavailable counter-target breadth, and the variant-count floor), and a choice
+      schema member with `baseDeckPreconIds` (`min(1)` — a substitution needs a
+      substrate, not a comparison pair), `opponentPreconIds` (reusing
+      `preconSelection`'s `min(2)`), `subjectCardId`, `candidateCardIds`, `copies`,
+      `includeInsertion`, `insertionCopies` and `insertionRemoveCardIds` — mirroring
+      `replacementConfigSchema`'s own fields and defaults exactly, deliberately
+      excluding `counterTargetDeckIds` (PHASE4_HARDENING §10.2) as a stated
+      limitation rather than a bounded slice's scope creep. Added
+      `apps/admin-server/src/lab/expand.ts`'s `cardReplacement()` builder (one stage,
+      since `runReplacementExperiment` already builds every removal and insertion
+      variant inside one `kind: 'replacement'` configuration), a singular
+      `requirePoolCard` helper (kept separate from the existing plural
+      `requirePoolCards` so a scalar field's refusal path reads `subjectCardId`, not
+      a misleading `subjectCardId.0`), and wired `case 'card_replacement':` into
+      `expandPreset` with distinct-list checks, pool-membership checks and a
+      self-comparison refusal (a card cannot be its own candidate).
+      `job-runner.ts` needed no change: it calls `runExperiment` generically with no
+      kind switch, confirmed by reading it. Focused: `presets.test.ts` (34/34,
+      widened `CHOICES`/the exhaustive knob list/the available-count assertion/a
+      defaults spot-check for the new preset), `expand.test.ts` (62/62, was 53 —
+      widened `CHOICES`/`SNAPSHOT` (probed the real estimate once via a throwaway
+      test file, 128 matches at `at_least`, then deleted it) and added 8 new tests:
+      the built config's fields, `includeInsertion: false`, an explicit
+      candidate/insertion budget, and five refusal cases) — 96 tests total across
+      the two files, all passing. `insertion.test.ts`/`experiment.test.ts` re-run
+      clean (39/39).
+      `npm run --workspace @tcg/admin-contracts typecheck` and `--workspace
+      @tcg/admin-server typecheck` both clean; `eslint` clean on all four changed
+      files. Neither `IMPLEMENTATION_PLAN.md`'s status row nor this milestone's
+      tranche Checklist moved — both wait for M08.20E._
 - [ ] **M08.20D — Template UI and restoration.** Integrate the three templates
       through progressive controls, exact workload, configuration restoration and
       truthful result labels without adding a new execution engine.

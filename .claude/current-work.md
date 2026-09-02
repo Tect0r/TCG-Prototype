@@ -920,3 +920,70 @@ are untouched, per CLAUDE.md — both move only at tranche close.
 Next slice: **M08.20C — Engine Soak and advanced card analysis**, per
 `IMPLEMENTATION_PLAN.md` and the M08.20 tranche in
 `docs/milestones/M08-ai-lab-and-player-meta.md`.
+
+M08.20C had two parts. Engine Soak is verified complete, with no source
+change — same pattern as M08.20B. Re-checked the slice's scope ("bounded
+batch/random-legal termination configuration that retains failures and
+reports engine health rather than balance") against current code first. Found
+the `engine_soak` preset already pinned to `SOAK_PILOT_ID = 'random_legal'`
+with `SOAK_TURN_LIMIT = 150` and `failFast: false`
+(`apps/admin-server/src/lab/expand.ts`'s `engineSoak()`, built at M08.3,
+`c6bcadf`, the same commit as Pilot Robustness); abnormal-match replay
+retention (`ABNORMAL_TERMINATIONS`/`isAbnormal()` in
+`apps/simulator/src/telemetry/schema.ts`) is structural and unconditional;
+`applySupportLimits` (`apps/simulator/src/analysis/flags.ts`) downgrades
+every balance-level flag to `insufficient_data` whenever a run used only
+legality-only pilots, which every soak run does by construction; and the
+reporter's existing "Abnormal matches (observation)" section
+(`apps/simulator/src/reporting/report.ts`) already surfaces crashes, stalls,
+illegal choices and limit trips for any batch-kind run. No gap to close.
+
+Card Replacement was a genuine gap: `EXPERIMENT_KINDS` already includes
+`'replacement'` and the simulator already runs it end-to-end
+(`replacementConfigSchema`, `runReplacementExperiment`, and
+`estimate.ts`'s existing `case 'replacement':` at `basis: 'at_least'`), but no
+admin-lab preset mapped any choice onto it. Revalidated the underlying
+contract first, per the slice's own wording ("expose ... only if their
+current contracts still pass revalidation"): `npx vitest run
+apps/simulator/src/insertion.test.ts apps/simulator/src/experiment.test.ts`
+passed 39/39 unchanged before any new code was written.
+
+Added a ninth preset, `card_replacement`
+(`packages/admin-contracts/src/presets.ts`): `EXPERIMENT_PRESET_IDS`,
+`PRESET_TEST_STYLES`, a `PRESET_REGISTRY` entry (`kinds: ['replacement']`,
+limitations covering the controlled-substitution scope, the unavailable
+counter-target breadth (PHASE4_HARDENING §10.2, deliberately out of this
+bounded slice), and the variant-count floor), and a choice-schema member
+mirroring `replacementConfigSchema`'s own fields/defaults
+(`baseDeckPreconIds` at `min(1)` — a substitution needs a substrate, not a
+comparison pair — `opponentPreconIds` reusing `preconSelection`'s `min(2)`,
+`subjectCardId`, `candidateCardIds`, `copies`, `includeInsertion`,
+`insertionCopies`, `insertionRemoveCardIds`). Added
+`apps/admin-server/src/lab/expand.ts`'s `cardReplacement()` builder — one
+stage, since `runReplacementExperiment` already builds every removal and
+insertion variant inside one `kind: 'replacement'` configuration — a singular
+`requirePoolCard` helper (kept separate from the existing plural
+`requirePoolCards` so a scalar field refuses at `subjectCardId`, not a
+misleading `subjectCardId.0`), and wired `case 'card_replacement':` into
+`expandPreset` with distinct-list checks, pool-membership checks and a
+self-comparison refusal. Confirmed `job-runner.ts` calls `runExperiment`
+generically with no kind switch, so the new stage needed no runner change.
+
+Focused verification: `packages/admin-contracts/src/presets.test.ts` (34/34
+— widened `CHOICES`, the exhaustive knob-name list, the available-preset-
+count assertion, and a defaults spot-check), `apps/admin-server/src/lab/
+expand.test.ts` (62/62, was 53 — widened `CHOICES`/`SNAPSHOT`, probing the
+real estimate once via a throwaway test file (128 matches at `at_least`)
+then deleting it, plus 8 new tests: the built config's fields,
+`includeInsertion: false`, an explicit candidate/insertion budget, and five
+refusal cases) — 96 tests total, all passing.
+`insertion.test.ts`/`experiment.test.ts` re-run clean (39/39). `npm run
+--workspace @tcg/admin-contracts typecheck` and `--workspace @tcg/admin-server
+typecheck`: both clean. `npx eslint` on all four changed files: clean. Marked
+M08.20C complete in the milestone file with this evidence note; the M08.20
+tranche checklist and root status row are untouched, per CLAUDE.md — both
+move only at tranche close.
+
+Next slice: **M08.20D — Template UI and restoration**, per
+`IMPLEMENTATION_PLAN.md` and the M08.20 tranche in
+`docs/milestones/M08-ai-lab-and-player-meta.md`.

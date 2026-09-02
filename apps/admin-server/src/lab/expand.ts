@@ -228,6 +228,22 @@ function requirePoolCards(
 }
 
 /**
+ * Checks one scalar candidate-change field against the pool the same way
+ * `requirePoolCards` checks an array — kept separate rather than wrapped as a
+ * one-element array so the refusal's field path is `subjectCardId`, not a
+ * misleadingly indexed `subjectCardId.0`.
+ */
+function requirePoolCard(environment: Environment, cardId: string, path: string, verb: string): void {
+  const pool = new Set(environment.pool.map((card) => card.id));
+  if (pool.has(cardId)) return;
+  refuse(
+    path,
+    `"${cardId}" is not in the playable pool of format "${PRESET_FORMAT_ID}", so ${verb} it ` +
+      'would declare a change that does not happen.',
+  );
+}
+
+/**
  * Checks a candidate patch list: every target is in the pool once, no card is
  * named by both a removal and a patch, and a combat-stat edit only lands on a
  * card that has combat stats.
@@ -785,6 +801,75 @@ function engineSoak(
   ];
 }
 
+/**
+ * Card Replacement (CLAUDE.md §13.10): the subject swapped for one or more
+ * candidates across the base decks, and — unless turned off — inserted into
+ * base decks that do not run it, against a fixed opponent field.
+ *
+ * One stage, not two: `runReplacementExperiment` already builds a removal
+ * variant per candidate per base deck and an insertion variant per base deck
+ * that lacks the subject, all inside one `kind: 'replacement'` configuration,
+ * the same way `runExperiment`'s dispatcher already confirmed (M08.20C). A
+ * second stage here would just be the same configuration run twice.
+ */
+function cardReplacement(
+  choice: Extract<PresetChoice, { presetId: 'card_replacement' }>,
+  environment: EnvironmentConfig,
+): ExpandedStage[] {
+  const base = common(choice, choice.pilotIds);
+  return [
+    {
+      stageId: 'replacement',
+      label:
+        `${String(choice.baseDeckPreconIds.length)} base deck(s), subject "${choice.subjectCardId}" ` +
+        (choice.candidateCardIds.length > 0
+          ? `against ${String(choice.candidateCardIds.length)} named candidate(s)`
+          : 'against automatically comparable candidates'),
+      purpose: 'exploration',
+      config: validated(
+        {
+          ...base.fields,
+          kind: 'replacement',
+          label: PRESET_REGISTRY.card_replacement.label,
+          environment,
+          baseDecks: { kind: 'precon', preconIds: [...choice.baseDeckPreconIds] },
+          opponentDecks: { kind: 'precon', preconIds: [...choice.opponentPreconIds] },
+          subjectCardId: choice.subjectCardId,
+          candidateCardIds: [...choice.candidateCardIds],
+          copies: choice.copies,
+          gamesPerPairing: choice.gamesPerSeatOrder,
+          mirrorSeats: true,
+          includeInsertion: choice.includeInsertion,
+          insertionCopies: choice.insertionCopies,
+          insertionRemoveCardIds: [...choice.insertionRemoveCardIds],
+        },
+        'replacement',
+      ),
+      decisions: [
+        ...base.decisions,
+        decision('baseDecks.preconIds', [...choice.baseDeckPreconIds], 'chosen'),
+        decision('opponentDecks.preconIds', [...choice.opponentPreconIds], 'chosen'),
+        decision('subjectCardId', choice.subjectCardId, 'chosen'),
+        decision(
+          'candidateCardIds',
+          [...choice.candidateCardIds],
+          choice.candidateCardIds.length > 0 ? 'chosen' : 'preset',
+        ),
+        decision('copies', choice.copies, 'chosen'),
+        decision('gamesPerPairing', choice.gamesPerSeatOrder, 'chosen'),
+        decision('mirrorSeats', true, 'preset'),
+        decision('includeInsertion', choice.includeInsertion, 'chosen'),
+        decision('insertionCopies', choice.insertionCopies, 'chosen'),
+        decision(
+          'insertionRemoveCardIds',
+          [...choice.insertionRemoveCardIds],
+          choice.insertionRemoveCardIds.length > 0 ? 'chosen' : 'preset',
+        ),
+      ],
+    },
+  ];
+}
+
 /** Limitations a *choice* creates, on top of the ones its preset publishes. */
 function choiceLimitations(choice: PresetChoice): string[] {
   switch (choice.presetId) {
@@ -851,6 +936,27 @@ export function expandPreset(input: PresetChoiceInput | unknown): ExpandedPreset
       case 'engine_soak':
         requireDistinct('preconIds', choice.preconIds, 'Precon');
         return engineSoak(choice, environmentConfig);
+      case 'card_replacement':
+        requireDistinct('baseDeckPreconIds', choice.baseDeckPreconIds, 'Precon');
+        requireDistinct('opponentPreconIds', choice.opponentPreconIds, 'Precon');
+        requireDistinct('candidateCardIds', choice.candidateCardIds, 'Card');
+        requireDistinct('insertionRemoveCardIds', choice.insertionRemoveCardIds, 'Card');
+        requirePoolCard(environment, choice.subjectCardId, 'subjectCardId', 'replacing');
+        requirePoolCards(environment, choice.candidateCardIds, 'candidateCardIds', 'naming');
+        requirePoolCards(
+          environment,
+          choice.insertionRemoveCardIds,
+          'insertionRemoveCardIds',
+          'naming',
+        );
+        if (choice.candidateCardIds.includes(choice.subjectCardId)) {
+          refuse(
+            'candidateCardIds',
+            `"${choice.subjectCardId}" is both the subject and a candidate. A card cannot be ` +
+              'compared against itself.',
+          );
+        }
+        return cardReplacement(choice, environmentConfig);
       case 'adaptive_counter':
         // Reserved (M08.19A): `adaptive_choice.ts` validates and estimates
         // this preset on its own, separate path — see its own header for

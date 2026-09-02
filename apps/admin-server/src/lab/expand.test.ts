@@ -99,6 +99,15 @@ const CHOICES: Readonly<Record<string, PresetChoiceInput>> = {
     seed: 'preset-2026-08',
     preconIds: PRECONS,
   },
+  card_replacement: {
+    presetId: 'card_replacement',
+    experimentId: 'card-replacement',
+    seed: 'preset-2026-08',
+    baseDeckPreconIds: PRECONS,
+    opponentPreconIds: PRECONS,
+    pilotIds: ['value'],
+    subjectCardId: A_POOL_CARD,
+  },
 };
 
 /**
@@ -178,10 +187,18 @@ const SNAPSHOT: readonly {
     floors: 4,
     deferred: [],
   },
+  {
+    presetId: 'card_replacement',
+    total: 128,
+    basis: 'at_least',
+    stages: ['replacement=128(at_least)'],
+    floors: 4,
+    deferred: [],
+  },
 ];
 
 describe('every available preset expands', () => {
-  it('covers all eight, so the snapshot below cannot silently miss one', () => {
+  it('covers all nine, so the snapshot below cannot silently miss one', () => {
     expect(SNAPSHOT.map((row) => row.presetId).sort()).toEqual([...AVAILABLE_PRESET_IDS].sort());
     expect(Object.keys(CHOICES).sort()).toEqual([...AVAILABLE_PRESET_IDS].sort());
   });
@@ -398,6 +415,46 @@ describe('what the presets decide for themselves', () => {
     ]);
   });
 
+  it('builds one replacement stage carrying the base field, the opponent field and the subject (M08.20C)', () => {
+    const config = expandPreset(CHOICES.card_replacement).stages[0]?.config;
+    if (config?.kind !== 'replacement') throw new Error('expected a replacement');
+    expect(config.baseDecks).toEqual({ kind: 'precon', preconIds: PRECONS });
+    expect(config.opponentDecks).toEqual({ kind: 'precon', preconIds: PRECONS });
+    expect(config.subjectCardId).toBe(A_POOL_CARD);
+    // Undeclared candidates and an unset insertion budget are the simulator's
+    // own documented defaults (CLAUDE.md §13.10), left unrecorded rather than
+    // reproduced here a second time.
+    expect(config.candidateCardIds).toEqual([]);
+    expect(config.copies).toBe('all');
+    expect(config.includeInsertion).toBe(true);
+    expect(config.insertionCopies).toBe(1);
+    expect(config.insertionRemoveCardIds).toEqual([]);
+    expect(config.mirrorSeats).toBe(true);
+  });
+
+  it('turns off insertion when the choice says so', () => {
+    const config = expandPreset({
+      ...(CHOICES.card_replacement as object),
+      includeInsertion: false,
+    }).stages[0]?.config;
+    expect(config?.kind === 'replacement' ? config.includeInsertion : true).toBe(false);
+  });
+
+  it('carries a named candidate list and an explicit insertion budget through unchanged', () => {
+    const config = expandPreset({
+      ...(CHOICES.card_replacement as object),
+      candidateCardIds: [ANOTHER_POOL_CARD],
+      copies: 2,
+      insertionCopies: 2,
+      insertionRemoveCardIds: [ANOTHER_POOL_CARD],
+    }).stages[0]?.config;
+    if (config?.kind !== 'replacement') throw new Error('expected a replacement');
+    expect(config.candidateCardIds).toEqual([ANOTHER_POOL_CARD]);
+    expect(config.copies).toBe(2);
+    expect(config.insertionCopies).toBe(2);
+    expect(config.insertionRemoveCardIds).toEqual([ANOTHER_POOL_CARD]);
+  });
+
   it('always includes `published` as the robustness reference arm', () => {
     const config = expandPreset(CHOICES.pilot_robustness).stages[0]?.config;
     expect(config?.kind === 'robustness' ? config.profiles : []).toEqual([
@@ -540,6 +597,54 @@ describe('what a preset refuses', () => {
       cardPatches: [{ cardId: ANOTHER_POOL_CARD }],
     });
     expect(refused.code).toBe('admin/schema');
+  });
+
+  it('refuses a replacement subject the pool does not contain', () => {
+    const refused = refusal({ ...(CHOICES.card_replacement as object), subjectCardId: 'not_a_card' });
+    expect(refused.path).toBe('subjectCardId');
+    expect(refused.message).toMatch(/declare a change that does not happen/);
+  });
+
+  it('refuses a named candidate the pool does not contain', () => {
+    const refused = refusal({
+      ...(CHOICES.card_replacement as object),
+      candidateCardIds: ['not_a_card'],
+    });
+    expect(refused.path).toBe('candidateCardIds.0');
+    expect(refused.message).toMatch(/declare a change that does not happen/);
+  });
+
+  it('refuses a named insertion-payer the pool does not contain', () => {
+    const refused = refusal({
+      ...(CHOICES.card_replacement as object),
+      insertionRemoveCardIds: ['not_a_card'],
+    });
+    expect(refused.path).toBe('insertionRemoveCardIds.0');
+    expect(refused.message).toMatch(/declare a change that does not happen/);
+  });
+
+  it('refuses a candidate list that names the subject, since a card cannot be compared against itself', () => {
+    const refused = refusal({
+      ...(CHOICES.card_replacement as object),
+      candidateCardIds: [A_POOL_CARD],
+    });
+    expect(refused.path).toBe('candidateCardIds');
+    expect(refused.message).toMatch(/subject and a candidate/);
+  });
+
+  it('refuses a replacement selection that lists the same precon or card twice', () => {
+    expect(
+      refusal({
+        ...(CHOICES.card_replacement as object),
+        baseDeckPreconIds: ['precon_goblin_swarm', 'precon_goblin_swarm'],
+      }).path,
+    ).toBe('baseDeckPreconIds');
+    expect(
+      refusal({
+        ...(CHOICES.card_replacement as object),
+        candidateCardIds: [ANOTHER_POOL_CARD, ANOTHER_POOL_CARD],
+      }).path,
+    ).toBe('candidateCardIds');
   });
 
   it('refuses a selection that lists the same thing twice', () => {

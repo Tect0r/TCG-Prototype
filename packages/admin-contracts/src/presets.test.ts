@@ -85,6 +85,15 @@ const CHOICES: Readonly<
     seed: 'soak-2026-08',
     preconIds: ['precon_goblin_swarm', 'precon_grave_sacrifice'],
   },
+  card_replacement: {
+    presetId: 'card_replacement',
+    experimentId: 'card-replacement',
+    seed: 'replacement-2026-08',
+    baseDeckPreconIds: ['precon_goblin_swarm'],
+    opponentPreconIds: ['precon_goblin_swarm', 'precon_grave_sacrifice'],
+    pilotIds: ['value'],
+    subjectCardId: 'some_card',
+  },
 };
 
 describe('the registry', () => {
@@ -95,11 +104,12 @@ describe('the registry', () => {
     }
   });
 
-  it('names eight available presets and one reserved type', () => {
-    // The milestone's prose enumerates eight expansions and its checklist line
-    // says seven; the enumeration is the authority, because each of the eight
-    // names a distinct expansion and the count named none of them.
-    expect(AVAILABLE_PRESET_IDS).toHaveLength(8);
+  it('names nine available presets and one reserved type', () => {
+    // The milestone's prose enumerates eight original expansions and its
+    // checklist line says seven; the enumeration is the authority, because each
+    // one names a distinct expansion and the count named none of them. M08.20C
+    // added the ninth, Card Replacement.
+    expect(AVAILABLE_PRESET_IDS).toHaveLength(9);
     const reserved = EXPERIMENT_PRESET_IDS.filter(
       (id) => PRESET_REGISTRY[id].status === 'reserved',
     );
@@ -228,11 +238,14 @@ describe('a choice', () => {
     expect([...fields].sort()).toEqual(
       [
         'archiveSize',
+        'baseDeckPreconIds',
         'blockSize',
+        'candidateCardIds',
         'candidateCount',
         'cardPatches',
         'commanderIds',
         'commanderPolicy',
+        'copies',
         'crossoverShare',
         'eliteCount',
         'experimentId',
@@ -240,9 +253,13 @@ describe('a choice', () => {
         'gamesPerOpponent',
         'gamesPerSeatOrder',
         'generations',
+        'includeInsertion',
         'informationPolicy',
+        'insertionCopies',
+        'insertionRemoveCardIds',
         'mirrorSeats',
         'mutationStrength',
+        'opponentPreconIds',
         'opponentsPerEvaluation',
         'pilotIds',
         'planId',
@@ -260,6 +277,7 @@ describe('a choice', () => {
         'searchBothEnvironments',
         'seed',
         'startingPreconIds',
+        'subjectCardId',
         'swapBound',
         'totalLearningBudget',
         'profileIds',
@@ -274,6 +292,15 @@ describe('a choice', () => {
     expect(comparison).toMatchObject({ gamesPerSeatOrder: 4, searchBothEnvironments: true });
     const soak = presetChoiceSchema.parse(CHOICES.engine_soak);
     expect(soak).toMatchObject({ gamesPerSeatOrder: 25 });
+    const replacement = presetChoiceSchema.parse(CHOICES.card_replacement);
+    expect(replacement).toMatchObject({
+      candidateCardIds: [],
+      copies: 'all',
+      gamesPerSeatOrder: 4,
+      includeInsertion: true,
+      insertionCopies: 1,
+      insertionRemoveCardIds: [],
+    });
   });
 
   it('refuses a one-deck benchmark, because a two-seat table needs two decks', () => {

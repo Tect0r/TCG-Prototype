@@ -57,11 +57,13 @@ import {
 /**
  * Every preset this build knows, available and reserved alike.
  *
- * Eight are available and one is reserved. The milestone's prose names the eight
- * — Precon Smoke, Standard and Deep, Open Meta, Commander Search, Candidate
- * Comparison, Pilot Robustness and Engine Soak — while its checklist line counts
- * seven; the enumeration is the authority, because each of the eight names a
- * distinct expansion and the count named none of them.
+ * Nine are available and one is reserved. The milestone's prose names the
+ * original eight — Precon Smoke, Standard and Deep, Open Meta, Commander
+ * Search, Candidate Comparison, Pilot Robustness and Engine Soak — while its
+ * checklist line counts seven; the enumeration is the authority, because each
+ * one names a distinct expansion and the count named none of them. M08.20C
+ * adds the ninth, Card Replacement, exposing the simulator's `replacement` kind
+ * (CLAUDE.md §13.10) the same way `candidate_comparison` exposes `comparison`.
  *
  * `adaptive_counter` is listed and cannot be expanded. M08.3's exclusion is that
  * Adaptive Counter Search stays a *reserved type only* and its algorithm is
@@ -78,6 +80,7 @@ export const EXPERIMENT_PRESET_IDS = [
   'candidate_comparison',
   'pilot_robustness',
   'engine_soak',
+  'card_replacement',
   'adaptive_counter',
 ] as const;
 export const experimentPresetIdSchema = z.enum(EXPERIMENT_PRESET_IDS);
@@ -100,6 +103,7 @@ export const PRESET_TEST_STYLES = [
   'candidate_patch_comparison',
   'pilot_robustness',
   'engine_soak',
+  'card_replacement',
 ] as const;
 export const presetTestStyleSchema = z.enum(PRESET_TEST_STYLES);
 export type PresetTestStyle = z.infer<typeof presetTestStyleSchema>;
@@ -276,6 +280,28 @@ export const PRESET_REGISTRY: Readonly<Record<ExperimentPresetId, ExperimentPres
           'rate from a soak run means nothing at all.',
       ],
     },
+    card_replacement: {
+      id: 'card_replacement',
+      label: 'Card Replacement',
+      summary:
+        'The same base decks played with a subject card swapped for one or more candidates, ' +
+        'and — unless turned off — inserted into decks that do not run it at all, against a ' +
+        'fixed opponent field on identical seeds.',
+      status: 'available',
+      testStyle: 'card_replacement',
+      kinds: ['replacement'],
+      sourceClasses: ['ai', 'precon'],
+      limitations: [
+        'A controlled substitution, not a structural or textual edit. Only the named copies ' +
+          'change; abilities, effects and text stay exactly as printed.',
+        'Counter-breadth evidence (PHASE4_HARDENING §10.2) is not available through this ' +
+          'preset: every candidate is measured against the whole opponent field, never a named ' +
+          'target subset.',
+        'Variant count is a floor, not a fixed number: a base deck that cannot host a candidate ' +
+          '(colour legality, copy limits) builds fewer variants than requested rather than ' +
+          'failing the run.',
+      ],
+    },
     adaptive_counter: {
       id: 'adaptive_counter',
       label: 'Adaptive Counter Search',
@@ -308,8 +334,8 @@ export const AVAILABLE_PRESET_IDS: readonly ExperimentPresetId[] = EXPERIMENT_PR
  * registry to a client, and a response the service does not validate on its way
  * out is a response whose shape is decided by whatever the handler happened to
  * build. It is derived from the same enums the interface's members are, and
- * `presets.test.ts` parses all eight entries through it, so the two cannot
- * describe different things without a test failing.
+ * `presets.test.ts` parses every entry through it, so the two cannot describe
+ * different things without a test failing.
  *
  * `limitations` and `kinds` are required to be non-empty for an **available**
  * preset only: a preset a person can start must say what its results may never be
@@ -670,6 +696,44 @@ export const presetChoiceSchema = z.discriminatedUnion('presetId', [
     ...commonChoiceFields,
     preconIds: preconSelection,
     gamesPerSeatOrder: z.number().int().min(1).max(500).default(25),
+  }),
+  z.strictObject({
+    presetId: z.literal('card_replacement'),
+    ...commonChoiceFields,
+    /**
+     * Decks the substitution is applied to. `min(1)`, not `preconSelection`'s
+     * `min(2)`: a substitution needs a substrate, not a pair to compare — the
+     * comparison this preset makes is per deck, base arm against variant arm.
+     */
+    baseDeckPreconIds: z.array(resolvedIdSchema).min(1).max(16),
+    /** The opponent field every variant is measured against. */
+    opponentPreconIds: preconSelection,
+    pilotIds: pilotSelection,
+    /** The card taken out of the base decks. */
+    subjectCardId: resolvedIdSchema,
+    /**
+     * Candidate replacements. Empty means the simulator picks comparable cards
+     * automatically by cost, type, role, tags, colour legality and power class
+     * (CLAUDE.md §13.10).
+     */
+    candidateCardIds: z.array(resolvedIdSchema).max(40).default([]),
+    /** Copies swapped out per variant; `all` removes the card entirely. */
+    copies: z.union([z.number().int().min(1).max(4), z.literal('all')]).default('all'),
+    gamesPerSeatOrder: z.number().int().min(1).max(200).default(4),
+    /**
+     * Also insert the subject into base decks that do not run it (CLAUDE.md
+     * §13.10) — the only controlled experiment available for a brand-new card
+     * or a build-around no existing deck runs.
+     */
+    includeInsertion: z.boolean().default(true),
+    /** Copies inserted per insertion variant; `all` fills to the copy limit. */
+    insertionCopies: z.union([z.number().int().min(1).max(4), z.literal('all')]).default(1),
+    /**
+     * Cards that must pay for an insertion, in priority order. Empty means the
+     * builder ranks the base deck's own cards by comparability to the inserted
+     * card and cuts round-robin down that ranking.
+     */
+    insertionRemoveCardIds: z.array(resolvedIdSchema).max(40).default([]),
   }),
   z.strictObject({
     presetId: z.literal('adaptive_counter'),
