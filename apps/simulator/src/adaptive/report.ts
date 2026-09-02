@@ -8,6 +8,7 @@ import {
   type AdaptiveBlockSide,
 } from './block.js';
 import { adaptiveObjectiveSchema, adaptiveScreeningTallySchema } from './evaluate.js';
+import { adaptiveInformationPolicySchema, type AdaptiveInformationPolicy } from './config.js';
 import {
   adaptiveSeriesTallySchema,
   tallyAdaptiveSeries,
@@ -54,6 +55,11 @@ import type { AdaptiveFrozenDecks, AdaptiveValidationOutcome } from './validate.
  * `AdaptiveResultPayload` — nothing in it computes anything the payload does
  * not already carry, matching `../reporting/report.ts`'s own "JSON is
  * authoritative; Markdown is a view of it" split.
+ *
+ * `informationPolicy` (M08.19D) is carried through from `AdaptiveConfig` onto
+ * the payload itself, and `informationPolicyLabel` is the one wording this
+ * app uses to state it unmistakably — every reader of this evidence, Markdown
+ * or dashboard, uses the same words rather than inventing its own.
  */
 
 /** One decided block, durable enough to reconstruct series score and cycle detection without replaying matches. */
@@ -278,6 +284,18 @@ export const adaptiveValidationSummarySchema = z.strictObject({
 export type AdaptiveValidationSummary = z.infer<typeof adaptiveValidationSummarySchema>;
 
 export const adaptiveResultPayloadSchema = z.strictObject({
+  /**
+   * The run's `AdaptiveConfig.informationPolicy` (M08.19D), carried through
+   * unchanged so a reader of this evidence can tell `public_observation` play
+   * apart from `analysis_full_deck` play without re-deriving it from
+   * `configHash`. CLAUDE.md's "analysis-mode information never leaks into
+   * normal matches" is a rule about what a bot sees mid-match; this field is
+   * the corresponding rule for a human reading the result afterward — every
+   * screen this run's evidence reaches must label which policy produced it,
+   * unmistakably, rather than let `analysis_full_deck` evidence pass for a
+   * fair blind-deck result.
+   */
+  informationPolicy: adaptiveInformationPolicySchema,
   /** Every revision either lineage ever held, root first, in generation order — the full revision history. */
   lineages: adaptiveResultLineagesSchema,
   seriesTally: adaptiveSeriesTallySchema,
@@ -295,6 +313,8 @@ export const adaptiveResultPayloadSchema = z.strictObject({
 export type AdaptiveResultPayload = z.infer<typeof adaptiveResultPayloadSchema>;
 
 export interface BuildAdaptiveResultInput {
+  /** `AdaptiveConfig.informationPolicy` for the run this checkpoint belongs to — carried through unchanged, never inferred from `configHash`. */
+  readonly informationPolicy: AdaptiveInformationPolicy;
   readonly checkpoint: AdaptiveCheckpoint;
   /** Every block this run decided, in series order — accumulated by the caller as `./run.ts` decides each one. */
   readonly series: readonly AdaptiveSeriesRecord[];
@@ -318,8 +338,9 @@ export interface BuildAdaptiveResultInput {
  * above derive them from the checkpoint and `screeningRounds`.
  */
 export function buildAdaptiveResult(input: BuildAdaptiveResultInput): AdaptiveResultPayload {
-  const { checkpoint, series, screeningRounds, validation } = input;
+  const { checkpoint, series, screeningRounds, validation, informationPolicy } = input;
   return adaptiveResultPayloadSchema.parse({
+    informationPolicy,
     lineages: {
       incumbent: checkpoint.lineages.incumbent.revisions,
       opponent: checkpoint.lineages.opponent.revisions,
@@ -364,6 +385,20 @@ function wilson(estimate: ProportionEstimate): string {
 
 function shortId(id: string): string {
   return id.length <= 16 ? id : `${id.slice(0, 16)}…`;
+}
+
+/**
+ * The one-line, unmistakable label every render of this report leads with
+ * (M08.19D): which information policy produced every game this evidence
+ * summarizes, worded so `analysis_full_deck` cannot be mistaken for a fair
+ * blind-deck result.
+ */
+export function informationPolicyLabel(policy: AdaptiveInformationPolicy): string {
+  return policy === 'analysis_full_deck'
+    ? '**Full-information analysis.** Every pilot in this run saw its opponent\'s exact decklist. ' +
+        'This is not evidence of how these decks would play under a normal match\'s hidden information.'
+    : '**Public observation.** Every pilot in this run saw only what a normal match\'s observation ' +
+        'boundary allows.';
 }
 
 function section(lines: string[], block: readonly string[]): void {
@@ -531,6 +566,8 @@ export function renderAdaptiveReport(result: AdaptiveReportInput): string {
     `# Adaptive Counter report — ${result.experimentId}`,
     '',
     `configHash: \`${result.configHash}\``,
+    '',
+    informationPolicyLabel(result.informationPolicy),
     '',
   ];
   section(lines, seriesSection(result));

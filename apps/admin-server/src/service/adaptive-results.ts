@@ -95,6 +95,7 @@ export async function readAdaptiveSummary(
     experimentId: result.experimentId,
     configHash: result.configHash,
     source: { document: RESULT_DOCUMENT, schemaVersion: result.schemaVersion },
+    informationPolicy: result.informationPolicy,
     readings: [
       reading('seriesIncumbentWins', 'Series — incumbent side', tally.incumbentWins, 'count'),
       reading('seriesOpponentWins', 'Series — opponent side', tally.opponentWins, 'count'),

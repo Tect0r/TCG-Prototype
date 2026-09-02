@@ -683,3 +683,77 @@ still pass unmodified (no regression to the catalog path), and the full
 pass. `npm run typecheck` and `eslint` clean on every changed/new file across
 `admin-client`, `admin-server` and `admin-contracts`; `prettier --write`
 applied to the same files with no behavior change.
+
+M08.19D is implemented: validation, cycles and drill-down, closing the two
+placeholders M08.19C's `TableView` left ("Shown in a later slice.") and adding
+the public-versus-full-information label CLAUDE.md's bot-observation-boundary
+invariant requires once analysis-mode evidence becomes human-readable.
+
+`informationPolicy: AdaptiveInformationPolicy` now travels the whole pipeline
+rather than stopping at the config: `apps/simulator/src/adaptive/report.ts`'s
+`adaptiveResultPayloadSchema`/`BuildAdaptiveResultInput`/`buildAdaptiveResult`
+carry it, and a new exported `informationPolicyLabel()` renders it into
+`renderAdaptiveReport()`'s Markdown right after `configHash` — the
+`analysis_full_deck` wording states plainly that the run is not evidence of
+hidden-information play. `ADAPTIVE_RESULT_SCHEMA_VERSION` bumped 2→3
+(`version.ts`) for this additive field, the same precedent every earlier
+`ADAPTIVE_*` widening in this milestone set.
+`packages/admin-contracts/src/adaptive-results.ts`'s `adaptiveRunSummarySchema`
+gained the field, reusing `presets.ts`'s already-restated
+`adaptiveInformationPolicySchema` (ADR 0001 — ADR 0001 pattern was already in
+place from an earlier milestone, no new restatement needed).
+`apps/admin-server/src/service/adaptive-results.ts`'s `readAdaptiveSummary()`
+forwards `result.informationPolicy` straight through, no server computation.
+`AdaptiveDashboard.tsx` renders it as a new always-visible
+`.dashboard__policy` banner (`informationPolicyBanner()`, `styles.css`) —
+deliberately not `.dashboard__truncation`'s warning styling, since this banner
+is informational at every policy value, not only a degraded one.
+
+`ValidationView` and `CyclesView` replace the two placeholders.
+`ValidationView` states explicitly that the frozen fresh-seed standing is a
+separate controlled comparison, kept apart from `seriesTally` rather than
+folded into it — the "series wins versus screening evidence" split
+`promote.ts`/`report.ts` already enforce in data, now stated in the view too.
+`CyclesView` reports `detectAdaptiveCycles`' repeats descriptively only, with
+an explicit note that this is never a verdict that the meta is healthy, stuck
+or converged (CLAUDE.md: automated signals are evidence for review, not an
+automatic verdict) — mirroring `report.ts`'s own doc comment for the same
+function.
+
+Drill-down: new `AdaptiveDrillTarget`/`adaptiveRowDrillTarget()`
+(`apps/admin-client/src/lib/adaptive-view.ts`) mirrors `ResultDashboard.tsx`'s
+existing `rowDrillTarget` pattern for this sibling table shape — an interval
+column folds into one rendered rate fact via `formatRate`, a null cell reads
+as "Not measured," never the literal word "null." Every adaptive table
+(`SeriesView`/`ScreeningView`/`ReferenceFieldView`/`PlainTableView`/
+`CyclesView`/`ValidationView`) now renders a trailing "Exact row" button
+(`ExactTable`'s new `onDrill` prop) that opens a `FactTable` panel reusing
+`ResultDashboard.tsx`'s exact `dashboard__drill`/`dashboard__drill-head` CSS
+and its M08.26 Match Explorer disclaimer — drill-down reaches the exact row a
+revision or a segment was drawn from, never a match or a replay, the same
+boundary the M08.11 precon dashboard already draws. `ADAPTIVE_DASHBOARD_TABLES`
+now lists all seven tables (`cycles`/`validation` added).
+
+Verified: simulator 25 tests (`report.test.ts` 14 + `envelopes.test.ts` 11,
+including the new `informationPolicy` round-trip and future/older-version
+refusal at schemaVersion 4/2) pass, `apps/simulator` typechecks clean.
+admin-contracts 12 tests (`adaptive-results.test.ts`, including a new refusal
+for an unrecognized information policy) pass, typechecks clean. admin-server
+22 tests (`adaptive-results.test.ts`) pass, typechecks clean. admin-client:
+fixed a fixture gap this slice's schema widening exposed
+(`fake-service.ts`'s `adaptiveRunSummaryFixture()` was missing the now-required
+`informationPolicy` field, since `adaptiveRunSummarySchema` is a
+`z.strictObject` with no default for it — the only other caller of that
+fixture is `adaptive-flow.test.tsx`, already covered by the same fix); full
+`admin-client` suite passes at 298/298 tests across 16 files (10 new in
+`adaptive-view.test.ts` — `ADAPTIVE_DASHBOARD_TABLES` naming and
+`adaptiveRowDrillTarget` interval-folding/null-cell coverage — plus 3 existing
+`adaptive-flow.test.tsx` integration tests, unchanged in count but exercising
+the new banner/drill-down/validation/cycles rendering). `npm run typecheck`
+clean across `apps/simulator`, `packages/admin-contracts`, `apps/admin-server`,
+`apps/admin-client`.
+
+Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
+`tcg-reviewer` are deferred to M08.19E, per this milestone's work-slice split.
+Root status row's "Next tranche" column and the M08.19 acceptance checklist
+are left untouched — both move only at tranche close.

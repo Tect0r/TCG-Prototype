@@ -22,7 +22,8 @@ function summary(overrides: Record<string, unknown> = {}): unknown {
   return {
     experimentId: 'goblin-counter',
     configHash: 'abcdef0123456789',
-    source: { document: 'adaptive-result.json', schemaVersion: 2 },
+    source: { document: 'adaptive-result.json', schemaVersion: 3 },
+    informationPolicy: 'public_observation',
     readings: [{ key: 'seriesIncumbentWins', label: 'Series — incumbent side', value: 1, kind: 'count' }],
     tables: [{ table: 'series', rows: 1 }],
     limitations: ['This reading carries no calibration standing.'],
@@ -133,6 +134,13 @@ describe('an adaptive run summary', () => {
     const parsed = adaptiveRunSummarySchema.parse(summary());
     expect(parsed.configHash).toBe('abcdef0123456789');
     expect(parsed.readings[0]?.key).toBe('seriesIncumbentWins');
+    expect(parsed.informationPolicy).toBe('public_observation');
+  });
+
+  it('refuses an information policy this build does not recognize', () => {
+    expect(
+      adaptiveRunSummarySchema.safeParse(summary({ informationPolicy: 'omniscient' })).success,
+    ).toBe(false);
   });
 
   it('has nowhere to put a location, a job ID or a calibration standing at all', () => {

@@ -872,6 +872,14 @@ fieldset.builder__field legend {
   color: var(--warning);
 }
 
+.dashboard__policy {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-weight: 600;
+}
+
 .dashboard__heatmap-wrap {
   overflow-x: auto;
 }

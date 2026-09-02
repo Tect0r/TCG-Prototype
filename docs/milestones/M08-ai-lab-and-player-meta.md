@@ -3533,9 +3533,33 @@ labelling, revision drill-down, cycle fixture and incomplete-run tests.
       23 `service.test.ts` server/contract tests still pass. `npm run typecheck` and
       ESLint clean on every changed/new file in `apps/admin-client`,
       `apps/admin-server` and `packages/admin-contracts`.
-- [ ] **M08.19D — Validation, cycles and drill-down.** Present frozen validation
+- [x] **M08.19D — Validation, cycles and drill-down.** Present frozen validation
       separately, label public versus full information unmistakably, show recurring
       cycles descriptively and link each revision/segment to exact retained evidence.
+      Verified: `informationPolicy: AdaptiveInformationPolicy` threaded end to end —
+      `apps/simulator/src/adaptive/report.ts`'s `adaptiveResultPayloadSchema`/
+      `BuildAdaptiveResultInput`/`buildAdaptiveResult` plus new
+      `informationPolicyLabel()`; `ADAPTIVE_RESULT_SCHEMA_VERSION` 2→3
+      (`version.ts`); `packages/admin-contracts/src/adaptive-results.ts`'s
+      `adaptiveRunSummarySchema` restates `adaptiveInformationPolicySchema`
+      (ADR 0001); `apps/admin-server/src/service/adaptive-results.ts`'s
+      `readAdaptiveSummary()` forwards it; `AdaptiveDashboard.tsx` renders it as a
+      `.dashboard__policy` banner via `informationPolicyBanner()`. Frozen validation
+      kept apart from `seriesTally` — `ValidationView` states explicitly that it is a
+      separate controlled comparison, never folded in. `CyclesView` reports recurring
+      cycles descriptively only, with an explicit "never a verdict that the meta is
+      healthy, stuck or converged" note (CLAUDE.md: automated signals are evidence for
+      review, not a verdict). Drill-down: new `AdaptiveDrillTarget`/
+      `adaptiveRowDrillTarget()` (`apps/admin-client/src/lib/adaptive-view.ts`) mirrors
+      `ResultDashboard.tsx`'s `rowDrillTarget` — every adaptive table's "Exact row"
+      button opens a `FactTable` panel with the same M08.26 Match Explorer disclaimer.
+      `ADAPTIVE_DASHBOARD_TABLES` now lists all seven tables (added `cycles`,
+      `validation`). Tests: simulator 25 (`report.test.ts` + `envelopes.test.ts`),
+      admin-contracts 12 (`adaptive-results.test.ts`), admin-server 22
+      (`adaptive-results.test.ts`), admin-client full suite 298/298 across 16 files
+      (10 new in `adaptive-view.test.ts`). `npm run typecheck` clean in
+      `apps/simulator`, `packages/admin-contracts`, `apps/admin-server`,
+      `apps/admin-client`.
 - [ ] **M08.19E — Tranche close.** Revalidate restoration, workload, labels,
       incomplete states and drill-down through the standard tranche-close gate. Do
       not begin advanced templates.

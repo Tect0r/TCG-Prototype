@@ -513,6 +513,7 @@ export {
   buildAdaptiveScreeningRound,
   detectAdaptiveCycles,
   finalAdaptiveDeckDiff,
+  informationPolicyLabel,
   makeAdaptiveSeriesRecord,
   renderAdaptiveReport,
   summarizeAdaptiveReferenceField,

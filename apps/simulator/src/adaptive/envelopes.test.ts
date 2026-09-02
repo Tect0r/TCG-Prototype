@@ -17,9 +17,10 @@ import { buildAdaptiveResult, type AdaptiveResultPayload } from './report.js';
 
 /**
  * M08.16A: the envelopes' shared identity fields and version refusal.
- * `result` stayed empty at schemaVersion 1 through M08.16A-M08.18A and moved
- * to schemaVersion 2 in M08.18D when it grew the canonical report payload
- * defined in `./report.ts`. `raw` moved to schemaVersion 2 in M08.16C when it
+ * `result` stayed empty at schemaVersion 1 through M08.16A-M08.18A, moved to
+ * schemaVersion 2 in M08.18D when it grew the canonical report payload
+ * defined in `./report.ts`, and moved to schemaVersion 3 in M08.19D when it
+ * grew `informationPolicy`. `raw` moved to schemaVersion 2 in M08.16C when it
  * grew a `generations` field and to schemaVersion 3 in M08.18D when it grew
  * `series` and `screeningRounds`. `checkpoint` moved to schemaVersion 2 in
  * M08.18A when it grew real resumable state, so it is checked on its own in
@@ -76,24 +77,31 @@ function validResultPayload(): AdaptiveResultPayload {
     nextBlock: 1,
     nextSeedPath: adaptiveRevisionSeedPath('envelope-fixture-seed-next', EXPERIMENT_ID, 1, 1),
   };
-  return buildAdaptiveResult({ checkpoint, series: [], screeningRounds: [], validation: null });
+  return buildAdaptiveResult({
+    checkpoint,
+    series: [],
+    screeningRounds: [],
+    validation: null,
+    informationPolicy: 'public_observation',
+  });
 }
 
 describe('result envelope', () => {
-  it('accepts its full payload at schemaVersion 2', () => {
+  it('accepts its full payload at schemaVersion 3', () => {
     const parsed = parseAdaptiveResult({
-      schemaVersion: 2,
+      schemaVersion: 3,
       ...identity(),
       ...validResultPayload(),
     });
     expect(parsed.cycles).toEqual([]);
     expect(parsed.validation).toBeNull();
+    expect(parsed.informationPolicy).toBe('public_observation');
   });
 
   it('refuses an unrecognized field', () => {
     expect(() =>
       adaptiveResultSchema.parse({
-        schemaVersion: 2,
+        schemaVersion: 3,
         ...identity(),
         ...validResultPayload(),
         stray: true,
@@ -103,17 +111,17 @@ describe('result envelope', () => {
 
   it('refuses a missing experimentId or configHash', () => {
     expect(() =>
-      adaptiveResultSchema.parse({ schemaVersion: 2, configHash: 'x', ...validResultPayload() }),
+      adaptiveResultSchema.parse({ schemaVersion: 3, configHash: 'x', ...validResultPayload() }),
     ).toThrow(ZodError);
     expect(() =>
-      adaptiveResultSchema.parse({ schemaVersion: 2, experimentId: 'x', ...validResultPayload() }),
+      adaptiveResultSchema.parse({ schemaVersion: 3, experimentId: 'x', ...validResultPayload() }),
     ).toThrow(ZodError);
   });
 
   it('refuses an experimentId outside the lowercase slug alphabet', () => {
     expect(() =>
       adaptiveResultSchema.parse({
-        schemaVersion: 2,
+        schemaVersion: 3,
         experimentId: 'Not Valid',
         configHash: 'x',
         ...validResultPayload(),
@@ -122,11 +130,11 @@ describe('result envelope', () => {
   });
 
   it('refuses a future schemaVersion with the readable message, not a shape error', () => {
-    expect(() => parseAdaptiveResult({ schemaVersion: 3, ...identity() })).toThrow(/newer build/);
+    expect(() => parseAdaptiveResult({ schemaVersion: 4, ...identity() })).toThrow(/newer build/);
   });
 
-  it('refuses a schemaVersion 1 record as an older build predating the canonical report payload', () => {
-    expect(() => parseAdaptiveResult({ schemaVersion: 1, ...identity() })).toThrow(/older build/);
+  it('refuses a schemaVersion 2 record as an older build predating information-policy labelling', () => {
+    expect(() => parseAdaptiveResult({ schemaVersion: 2, ...identity() })).toThrow(/older build/);
   });
 
   it('refuses a missing schemaVersion with the readable message', () => {

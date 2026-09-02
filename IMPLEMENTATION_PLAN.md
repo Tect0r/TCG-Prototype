@@ -223,11 +223,32 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.19C — Series and revision dashboard.** Render cumulative and rolling
-results, revision timeline, add/remove history, promotion evidence, start/final
-diff and reference-field performance with exact tables beside charts. Its scope
-and checklist are in
+**M08.19E — Tranche close.** Revalidate restoration, workload, labels,
+incomplete states and drill-down through the standard tranche-close gate
+(`check:consistency`, `audit:check`, `verify`, then `tcg-reviewer` over the
+whole M08.19 commit range). Do not begin advanced templates. Its scope and
+checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0819--adaptive-counter-builder-and-dashboard).
+
+**M08.19D closed 2026-09-02 on validation, cycles and drill-down.** Threaded
+`informationPolicy` end to end (simulator report → admin-contracts summary →
+admin-server → a new `.dashboard__policy` banner), replaced `AdaptiveDashboard`'s
+two "Shown in a later slice" placeholders with `ValidationView` (states the
+frozen fresh-seed standing is a separate controlled comparison, kept apart from
+`seriesTally`) and `CyclesView` (reports repeats descriptively, never a
+healthy/stuck/converged verdict), and gave every adaptive table an "Exact row"
+drill-down (`adaptiveRowDrillTarget`) mirroring `ResultDashboard.tsx`'s
+existing pattern. `ADAPTIVE_RESULT_SCHEMA_VERSION` bumped 2→3. Full record in
+`docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.19D checkbox and
+`.claude/current-work.md`.
+
+**M08.19C closed 2026-09-02 on the series and revision dashboard.** Wired
+`adaptiveRunSummary`/`adaptiveResultTable` through the admin contract and
+server as new `ADMIN_ENDPOINTS` addresses, then rendered them in a new
+`AdaptiveDashboard.tsx` entered by typing an `experimentId` directly (no
+`JobId` to select by, per M08.19B's directory-keyed reader). Full record in
+`docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.19C checkbox and
+`.claude/current-work.md`.
 
 **M08.19B closed 2026-09-02 on the directory-keyed read model, not an HTTP
 endpoint.** Per the user's `AskUserQuestion` answer ("Directory-keyed reader,

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { looksLikeFilesystemPath } from './errors.js';
 import { contentHashSchema } from './identity.js';
 import { pageInfoSchema, PAGE_SIZE_MAX } from './pagination.js';
+import { adaptiveInformationPolicySchema } from './presets.js';
 import {
   MAX_RESULT_COLUMNS,
   MAX_RESULT_READINGS,
@@ -166,6 +167,13 @@ export const adaptiveRunSummarySchema = z.strictObject({
   experimentId: adaptiveExperimentIdSchema,
   configHash: contentHashSchema,
   source: adaptiveResultSourceSchema,
+  /**
+   * The run's `AdaptiveConfig.informationPolicy` (M08.19D), carried through
+   * unchanged from `AdaptiveResultPayload.informationPolicy` so a dashboard
+   * can label `public_observation` versus `analysis_full_deck` evidence
+   * unmistakably without re-deriving it from `configHash`.
+   */
+  informationPolicy: adaptiveInformationPolicySchema,
   readings: z.array(resultReadingSchema).max(MAX_RESULT_READINGS),
   /** Which tables have rows to fetch, and how many. Saves a client seven empty requests. */
   tables: z

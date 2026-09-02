@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ResultColumn, ResultRow } from '@tcg/admin-contracts';
+import type { AdaptiveResultTable, ResultColumn, ResultRow } from '@tcg/admin-contracts';
 
 import {
+  ADAPTIVE_DASHBOARD_TABLES,
+  adaptiveRowDrillTarget,
   cumulativeSeriesTally,
   displayColumns,
   formatAdaptiveCell,
@@ -83,6 +85,59 @@ describe('formatAdaptiveCell', () => {
     expect(formatAdaptiveCell({ columns: SCORE_COLUMNS }, row, REVISION_ID_COLUMN)).toBe(
       'Not measured',
     );
+  });
+});
+
+describe('ADAPTIVE_DASHBOARD_TABLES', () => {
+  it('names all seven tables the summary can report rows for, cycles and validation included', () => {
+    expect([...ADAPTIVE_DASHBOARD_TABLES]).toEqual([
+      'series',
+      'revisions',
+      'screening_candidates',
+      'deck_diff',
+      'cycles',
+      'reference_field',
+      'validation',
+    ]);
+  });
+});
+
+describe('adaptiveRowDrillTarget', () => {
+  it('reaches every displayed column of the exact row, an interval folded into one rate fact', () => {
+    const table: AdaptiveResultTable = {
+      experimentId: 'goblin-counter',
+      table: 'screening_candidates',
+      source: { document: 'adaptive-result.json', schemaVersion: 3 },
+      columns: [...SCORE_COLUMNS],
+      rows: [],
+      page: { returned: 0, limit: 50, nextCursor: null, total: 0 },
+    };
+    const row: ResultRow = {
+      score: 0.6,
+      scoreLow: 0.5,
+      scoreHigh: 0.7,
+      scoreGames: 40,
+      revisionId: 'rev_1',
+    };
+    const target = adaptiveRowDrillTarget(table, row, 'rev_1 — exact row');
+    expect(target.title).toBe('rev_1 — exact row');
+    expect(target.facts).toEqual([
+      { label: 'Promotion score', value: expect.stringMatching(/%/) },
+      { label: 'Candidate revision', value: 'rev_1' },
+    ]);
+  });
+
+  it('reads a null cell as "Not measured", never the literal word "null"', () => {
+    const table: AdaptiveResultTable = {
+      experimentId: 'goblin-counter',
+      table: 'revisions',
+      source: { document: 'adaptive-result.json', schemaVersion: 3 },
+      columns: [REVISION_ID_COLUMN],
+      rows: [],
+      page: { returned: 0, limit: 50, nextCursor: null, total: 0 },
+    };
+    const target = adaptiveRowDrillTarget(table, { revisionId: null }, 'exact row');
+    expect(target.facts).toEqual([{ label: 'Candidate revision', value: 'Not measured' }]);
   });
 });
 

@@ -8,6 +8,19 @@ import type {
 import { formatRate, type RateReading } from './dashboard-view.js';
 
 /**
+ * A row's exact facts, ready to hand a `FactTable` (M08.19D). Shaped like
+ * `components/FactTable.tsx`'s own `Fact` — `label`/`value` strings, no
+ * optional `note` — rather than importing that type here: this module stays
+ * beneath every component the way `dashboard-view.ts` already does, and a
+ * plain string is a valid `ReactNode` so the component layer accepts this
+ * shape without a cast.
+ */
+export interface AdaptiveDrillTarget {
+  readonly title: string;
+  readonly facts: readonly { readonly label: string; readonly value: string }[];
+}
+
+/**
  * Reading an `AdaptiveResultTable`'s rows into what M08.19C's dashboard draws,
  * mirroring `dashboard-view.ts` exactly for a table that has no `jobId`
  * (M08.19B's own note on why `AdaptiveResultTable` is a sibling shape rather
@@ -22,6 +35,13 @@ import { formatRate, type RateReading } from './dashboard-view.js';
  * `series` table's own already-decided `decisionKind`/`decisionLoser` cells —
  * never a confidence interval, a trend line or a "converging" verdict the
  * simulator itself never computed.
+ *
+ * `adaptiveRowDrillTarget` (M08.19D) is the drill-down every adaptive table
+ * shares: it reaches the exact row a revision or a segment was drawn from,
+ * never a match or a replay — the same boundary `ResultDashboard.tsx`'s own
+ * `rowDrillTarget` draws, for the reason its doc comment gives: individual
+ * matches and replays are a directory listing this app deliberately does not
+ * serve yet (M08.26's Match Explorer).
  */
 
 /** Reads an interval reading out of an adaptive table row, by the column's own declared bounds. */
@@ -77,6 +97,29 @@ export function displayColumns(table: {
     }
   }
   return table.columns.filter((column) => !consumed.has(column.key));
+}
+
+/**
+ * Every displayed column of one row, as exact facts (M08.19D) — this table's
+ * link from a revision or a segment to the exact retained evidence it was
+ * drawn from. Mirrors `ResultDashboard.tsx`'s own `rowDrillTarget` for this
+ * sibling table shape: an interval reads through `formatRate`, so a drilled
+ * fact never duplicates the bound/count cells `displayColumns` already
+ * folded away.
+ */
+export function adaptiveRowDrillTarget(
+  table: AdaptiveResultTable,
+  row: ResultRow,
+  title: string,
+): AdaptiveDrillTarget {
+  const facts = displayColumns(table).map((column) => {
+    if (column.kind === 'interval') {
+      return { label: column.label, value: formatRate(readAdaptiveRate(table, row, column.key)) };
+    }
+    const value = row[column.key];
+    return { label: column.label, value: value === null ? 'Not measured' : String(value) };
+  });
+  return { title, facts };
 }
 
 /* ------------------------------------------------------------------ the series tallies */
@@ -161,11 +204,13 @@ export function rollingSeriesTally(
   });
 }
 
-/** The five tables M08.19C shows. `cycles` and `validation` are M08.19D's. */
+/** All seven tables `ADAPTIVE_RESULT_TABLE_NAMES` names. `cycles` and `validation` are M08.19D's. */
 export const ADAPTIVE_DASHBOARD_TABLES: readonly AdaptiveResultTableName[] = [
   'series',
   'revisions',
   'screening_candidates',
   'deck_diff',
+  'cycles',
   'reference_field',
+  'validation',
 ];

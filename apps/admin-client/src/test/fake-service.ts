@@ -269,6 +269,7 @@ export function adaptiveRunSummaryFixture(
     experimentId: 'goblin_counter',
     configHash: 'abcdef0123456789',
     source: { document: 'adaptive-result.json', schemaVersion: 1 },
+    informationPolicy: 'public_observation',
     readings: [{ key: 'blocks', label: 'Blocks decided', value: 4, kind: 'count' }],
     tables: [
       { table: 'series', rows: 4 },

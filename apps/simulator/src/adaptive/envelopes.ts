@@ -38,9 +38,10 @@ import {
  * SCHEMA_VERSION` 2; M08.18D widens the raw stream again with series and
  * screening-round records (`ADAPTIVE_RAW_SCHEMA_VERSION` 3) and widens
  * `result` from its empty stub to the canonical report payload defined in
- * `./report.ts` (`ADAPTIVE_RESULT_SCHEMA_VERSION` 2) — each an additive
- * widening in the same style `MANIFEST_SCHEMA_VERSION`'s and `SEARCH_
- * CHECKPOINT_VERSION`'s histories already record.
+ * `./report.ts` (`ADAPTIVE_RESULT_SCHEMA_VERSION` 2); M08.19D widens `result`
+ * again with `informationPolicy` (`ADAPTIVE_RESULT_SCHEMA_VERSION` 3) — each
+ * an additive widening in the same style `MANIFEST_SCHEMA_VERSION`'s and
+ * `SEARCH_CHECKPOINT_VERSION`'s histories already record.
  */
 
 const adaptiveDocumentIdentity = {

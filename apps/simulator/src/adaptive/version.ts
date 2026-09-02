@@ -34,8 +34,12 @@ export const ADAPTIVE_CONFIG_SCHEMA_VERSION = 1;
 export const ADAPTIVE_RAW_SCHEMA_VERSION = 3;
 /** 2: M08.18A widens the checkpoint from an empty identity stub to real resumable state. */
 export const ADAPTIVE_CHECKPOINT_SCHEMA_VERSION = 2;
-/** 2: M08.18D widens the result from an empty identity stub to the canonical adaptive report payload. */
-export const ADAPTIVE_RESULT_SCHEMA_VERSION = 2;
+/**
+ * 2: M08.18D widens the result from an empty identity stub to the canonical adaptive report payload.
+ * 3: M08.19D additively widens the result with `informationPolicy`, so a dashboard can label
+ *    public-observation versus full-information evidence without re-deriving it from `configHash`.
+ */
+export const ADAPTIVE_RESULT_SCHEMA_VERSION = 3;
 
 export const CURRENT_ADAPTIVE_VERSIONS = Object.freeze({
   config: ADAPTIVE_CONFIG_SCHEMA_VERSION,

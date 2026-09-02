@@ -89,9 +89,10 @@ function resultDocument(overrides: Record<string, unknown> = {}): Record<string,
   });
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     experimentId: 'goblin_counter',
     configHash: 'abcdef0123456789',
+    informationPolicy: 'public_observation',
     lineages: {
       incumbent: [incumbentRoot],
       opponent: [opponentRoot, opponentSwap],
@@ -189,7 +190,8 @@ describe('an adaptive run summary', () => {
 
     expect(summary.experimentId).toBe('goblin_counter');
     expect(summary.configHash).toBe('abcdef0123456789');
-    expect(summary.source).toEqual({ document: 'adaptive-result.json', schemaVersion: 2 });
+    expect(summary.source).toEqual({ document: 'adaptive-result.json', schemaVersion: 3 });
+    expect(summary.informationPolicy).toBe('public_observation');
   });
 
   it('reports readings read straight off the payload, never recomputed', async () => {

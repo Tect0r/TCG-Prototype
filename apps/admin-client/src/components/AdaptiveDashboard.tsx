@@ -13,12 +13,14 @@ import {
 import {
   ADAPTIVE_DASHBOARD_TABLES,
   ADAPTIVE_ROLLING_WINDOW,
+  adaptiveRowDrillTarget,
   adaptiveTruncationNote,
   cumulativeSeriesTally,
   displayColumns,
   formatAdaptiveCell,
   readAdaptiveRate,
   rollingSeriesTally,
+  type AdaptiveDrillTarget,
   type SeriesTallyPoint,
 } from '../lib/adaptive-view.js';
 import { formatRate } from '../lib/dashboard-view.js';
@@ -47,6 +49,26 @@ import { FactTable, type Fact } from './FactTable.js';
  * confidence interval. Screening candidates and the reference-field standing
  * *are* the simulator's own measured proportions, so those two get the same
  * `RateBars`-shaped rendering `ResultDashboard.tsx` already uses for one.
+ *
+ * M08.19D adds three things this screen was still missing:
+ *
+ * - `SummaryFacts` leads with `summary.informationPolicy`, worded exactly as
+ *   unmistakably as `apps/simulator/src/adaptive/report.ts`'s own
+ *   `informationPolicyLabel` states it in the Markdown report, so a reader
+ *   here and a reader of that file's rendered report never see two different
+ *   claims about the same run.
+ * - `cycles` and `validation` — shown as `Empty` placeholders through
+ *   M08.19C — now render: `cycles` as the plain descriptive table CLAUDE.md's
+ *   "evidence for review, never a verdict" rule requires (no "healthy",
+ *   "stuck" or "converged" language anywhere near it), and `validation` as
+ *   its own controlled-comparison table, kept visually and structurally apart
+ *   from `seriesTally`'s screening evidence exactly as `promote.ts` and
+ *   `report.ts` keep them apart in the data itself.
+ * - Every exact table gets a drill-down, reusing `adaptiveRowDrillTarget` the
+ *   way `ResultDashboard.tsx` reuses its own `rowDrillTarget`: a row's button
+ *   opens the exact facts it was drawn from, with the same fixed disclaimer
+ *   that an individual match or replay is not browsable from this screen yet
+ *   (M08.26's Match Explorer).
  */
 
 type TableOutcome = AdminOutcome<AdaptiveResultTable>;
@@ -69,6 +91,7 @@ export function AdaptiveRunPanel() {
   const [summary, setSummary] = useState<AdminOutcome<AdaptiveRunSummary> | null>(null);
   const [view, setView] = useState<AdaptiveResultTableName>('series');
   const [tables, setTables] = useState<Partial<Record<AdaptiveResultTableName, TableOutcome>>>({});
+  const [drill, setDrill] = useState<AdaptiveDrillTarget | null>(null);
 
   const open = useCallback(
     (id: AdaptiveExperimentId) => {
@@ -76,6 +99,7 @@ export function AdaptiveRunPanel() {
       setSummary(null);
       setTables({});
       setView('series');
+      setDrill(null);
       void session.adaptiveRunSummary(id).then(setSummary);
     },
     [session],
@@ -162,6 +186,7 @@ export function AdaptiveRunPanel() {
                 className={view === table ? 'is-current' : ''}
                 onClick={() => {
                   setView(table);
+                  setDrill(null);
                 }}
               >
                 {TAB_LABELS[table]}
@@ -169,11 +194,47 @@ export function AdaptiveRunPanel() {
             ))}
           </div>
 
-          <TableView table={view} outcome={tables[view]} />
+          <TableView table={view} outcome={tables[view]} onDrill={setDrill} />
+
+          {drill !== null && (
+            <div className="dashboard__drill" role="region" aria-label={drill.title}>
+              <div className="dashboard__drill-head">
+                <h4>{drill.title}</h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrill(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <FactTable caption={drill.title} facts={drill.facts} />
+              <p className="panel__note">
+                This is the exact row a bar or cell summarizes — not a further aggregate. Opening one
+                contributing match or its replay is not available from this screen: that needs a
+                listing over the run's match records, which is M08.26&apos;s Match Explorer to build.
+              </p>
+            </div>
+          )}
         </>
       )}
     </section>
   );
+}
+
+/**
+ * The one-line, unmistakable label this screen leads with (M08.19D), worded
+ * identically to `apps/simulator/src/adaptive/report.ts`'s own
+ * `informationPolicyLabel` so the Markdown report and this dashboard never
+ * disagree about which policy produced a run's evidence.
+ */
+function informationPolicyBanner(policy: AdaptiveRunSummary['informationPolicy']): string {
+  return policy === 'analysis_full_deck'
+    ? "Full-information analysis. Every pilot in this run saw its opponent's exact decklist. This " +
+        "is not evidence of how these decks would play under a normal match's hidden information."
+    : "Public observation. Every pilot in this run saw only what a normal match's observation " +
+        'boundary allows.';
 }
 
 function SummaryFacts({ summary }: { readonly summary: AdaptiveRunSummary }) {
@@ -188,6 +249,9 @@ function SummaryFacts({ summary }: { readonly summary: AdaptiveRunSummary }) {
   ];
   return (
     <>
+      <p className="dashboard__policy" role="note">
+        {informationPolicyBanner(summary.informationPolicy)}
+      </p>
       <FactTable caption="What this run has produced so far" facts={facts} />
       {summary.limitations.length > 0 && (
         <>
@@ -205,7 +269,37 @@ function SummaryFacts({ summary }: { readonly summary: AdaptiveRunSummary }) {
 
 /* ----------------------------------------------------------------- exact tables */
 
-function ExactTable({ table }: { readonly table: AdaptiveResultTable }) {
+/**
+ * The title a row's drill-down opens under (M08.19D) — names the revision or
+ * segment the row is, per table shape, the same way each `ResultDashboard.tsx`
+ * call site names its own `rowDrillTarget` title.
+ */
+function exactRowTitle(table: AdaptiveResultTable, row: ResultRow): string {
+  switch (table.table) {
+    case 'series':
+      return `Block ${String(row.block)} (gen ${String(row.generation)}) — exact row`;
+    case 'revisions':
+      return `${String(row.side)} revision ${String(row.revisionId)} — exact row`;
+    case 'screening_candidates':
+      return `Gen ${String(row.generation)}, block ${String(row.block)} — ${String(row.revisionId)} — exact row`;
+    case 'deck_diff':
+      return `${String(row.side)} lineage — exact row`;
+    case 'cycles':
+      return `Block ${String(row.block)} repeats block ${String(row.repeatsBlock)} — exact row`;
+    case 'reference_field':
+      return 'Reference-field standing — exact row';
+    case 'validation':
+      return 'Frozen validation — exact row';
+  }
+}
+
+function ExactTable({
+  table,
+  onDrill,
+}: {
+  readonly table: AdaptiveResultTable;
+  readonly onDrill: (target: AdaptiveDrillTarget) => void;
+}) {
   const columns = displayColumns(table);
   return (
     <div className="dashboard__heatmap-wrap">
@@ -218,6 +312,7 @@ function ExactTable({ table }: { readonly table: AdaptiveResultTable }) {
                 {column.label}
               </th>
             ))}
+            <th scope="col"> </th>
           </tr>
         </thead>
         <tbody>
@@ -226,6 +321,16 @@ function ExactTable({ table }: { readonly table: AdaptiveResultTable }) {
               {columns.map((column) => (
                 <td key={column.key}>{formatAdaptiveCell(table, row, column)}</td>
               ))}
+              <td>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDrill(adaptiveRowDrillTarget(table, row, exactRowTitle(table, row)));
+                  }}
+                >
+                  Exact row
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -276,7 +381,13 @@ function SeriesTallyTable({
   );
 }
 
-function SeriesView({ outcome }: { readonly outcome: TableOutcome | undefined }) {
+function SeriesView({
+  outcome,
+  onDrill,
+}: {
+  readonly outcome: TableOutcome | undefined;
+  readonly onDrill: (target: AdaptiveDrillTarget) => void;
+}) {
   if (outcome === undefined) return <Busy label="Reading the series table…" />;
   if (!outcome.ok)
     return <Failure title="The series table could not be read" failure={outcome.failure} />;
@@ -301,14 +412,20 @@ function SeriesView({ outcome }: { readonly outcome: TableOutcome | undefined })
         points={rollingSeriesTally(outcome.value.rows)}
       />
       <h4>Exact rows</h4>
-      <ExactTable table={outcome.value} />
+      <ExactTable table={outcome.value} onDrill={onDrill} />
     </div>
   );
 }
 
 /* --------------------------------------------------------------------- screening */
 
-function ScreeningView({ outcome }: { readonly outcome: TableOutcome | undefined }) {
+function ScreeningView({
+  outcome,
+  onDrill,
+}: {
+  readonly outcome: TableOutcome | undefined;
+  readonly onDrill: (target: AdaptiveDrillTarget) => void;
+}) {
   if (outcome === undefined) return <Busy label="Reading the screening-candidates table…" />;
   if (!outcome.ok) {
     return (
@@ -344,14 +461,20 @@ function ScreeningView({ outcome }: { readonly outcome: TableOutcome | undefined
         </tbody>
       </table>
       <h4>Exact rows</h4>
-      <ExactTable table={outcome.value} />
+      <ExactTable table={outcome.value} onDrill={onDrill} />
     </div>
   );
 }
 
 /* ---------------------------------------------------------------- reference field */
 
-function ReferenceFieldView({ outcome }: { readonly outcome: TableOutcome | undefined }) {
+function ReferenceFieldView({
+  outcome,
+  onDrill,
+}: {
+  readonly outcome: TableOutcome | undefined;
+  readonly onDrill: (target: AdaptiveDrillTarget) => void;
+}) {
   if (outcome === undefined) return <Busy label="Reading the reference-field table…" />;
   if (!outcome.ok) {
     return (
@@ -382,7 +505,89 @@ function ReferenceFieldView({ outcome }: { readonly outcome: TableOutcome | unde
         </tbody>
       </table>
       <h4>Exact row</h4>
-      <ExactTable table={outcome.value} />
+      <ExactTable table={outcome.value} onDrill={onDrill} />
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------- cycles */
+
+function CyclesView({
+  outcome,
+  onDrill,
+}: {
+  readonly outcome: TableOutcome | undefined;
+  readonly onDrill: (target: AdaptiveDrillTarget) => void;
+}) {
+  if (outcome === undefined) return <Busy label="Reading the cycles table…" />;
+  if (!outcome.ok)
+    return <Failure title="The cycles table could not be read" failure={outcome.failure} />;
+  if (outcome.value.rows.length === 0) {
+    return (
+      <Empty>
+        This run has recorded no repeated deck-hash pair. Its absence is descriptive only, never a
+        verdict that the meta is healthy, stuck or converged.
+      </Empty>
+    );
+  }
+  const note = adaptiveTruncationNote(outcome.value, 'repeated states');
+  return (
+    <div className="dashboard__view">
+      <p className="panel__note">
+        A repeated deck-hash pair is descriptive observation only — evidence for review, never an
+        automatic verdict that the meta is healthy, stuck or converged.
+      </p>
+      {note !== null && (
+        <p className="dashboard__truncation" role="note">
+          {note}
+        </p>
+      )}
+      <ExactTable table={outcome.value} onDrill={onDrill} />
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------- validation */
+
+function ValidationView({
+  outcome,
+  onDrill,
+}: {
+  readonly outcome: TableOutcome | undefined;
+  readonly onDrill: (target: AdaptiveDrillTarget) => void;
+}) {
+  if (outcome === undefined) return <Busy label="Reading the validation table…" />;
+  if (!outcome.ok)
+    return <Failure title="The validation table could not be read" failure={outcome.failure} />;
+  if (outcome.value.rows.length === 0) {
+    return (
+      <Empty>
+        The frozen validation stage has not been run for this experiment yet. This is separate from
+        the series score above: screening evidence is never folded into a validation standing.
+      </Empty>
+    );
+  }
+  const row = outcome.value.rows[0] as ResultRow;
+  return (
+    <div className="dashboard__view">
+      <p className="panel__note">
+        A controlled comparison between the two frozen final decks, on fresh seeds never used during
+        screening — kept apart from <code>seriesTally</code> above rather than folded into it.
+      </p>
+      <h4>Frozen validation standing</h4>
+      <table className="dashboard__bars">
+        <caption className="visually-hidden">
+          Frozen validation standing, with interval and sample count
+        </caption>
+        <tbody>
+          <tr>
+            <th scope="row">Standing</th>
+            <td>{formatRate(readAdaptiveRate(outcome.value, row, 'standing'))}</td>
+          </tr>
+        </tbody>
+      </table>
+      <h4>Exact row</h4>
+      <ExactTable table={outcome.value} onDrill={onDrill} />
     </div>
   );
 }
@@ -393,10 +598,12 @@ function PlainTableView({
   outcome,
   emptyMessage,
   noun,
+  onDrill,
 }: {
   readonly outcome: TableOutcome | undefined;
   readonly emptyMessage: string;
   readonly noun: string;
+  readonly onDrill: (target: AdaptiveDrillTarget) => void;
 }) {
   if (outcome === undefined) return <Busy label="Reading this table…" />;
   if (!outcome.ok)
@@ -410,7 +617,7 @@ function PlainTableView({
           {note}
         </p>
       )}
-      <ExactTable table={outcome.value} />
+      <ExactTable table={outcome.value} onDrill={onDrill} />
     </div>
   );
 }
@@ -420,35 +627,40 @@ function PlainTableView({
 function TableView({
   table,
   outcome,
+  onDrill,
 }: {
   readonly table: AdaptiveResultTableName;
   readonly outcome: TableOutcome | undefined;
+  readonly onDrill: (target: AdaptiveDrillTarget) => void;
 }) {
   switch (table) {
     case 'series':
-      return <SeriesView outcome={outcome} />;
+      return <SeriesView outcome={outcome} onDrill={onDrill} />;
     case 'revisions':
       return (
         <PlainTableView
           outcome={outcome}
           emptyMessage="This run has recorded no revision yet."
           noun="revisions"
+          onDrill={onDrill}
         />
       );
     case 'screening_candidates':
-      return <ScreeningView outcome={outcome} />;
+      return <ScreeningView outcome={outcome} onDrill={onDrill} />;
     case 'deck_diff':
       return (
         <PlainTableView
           outcome={outcome}
           emptyMessage="This run has recorded no deck diff yet."
           noun="lineages"
+          onDrill={onDrill}
         />
       );
-    case 'reference_field':
-      return <ReferenceFieldView outcome={outcome} />;
     case 'cycles':
+      return <CyclesView outcome={outcome} onDrill={onDrill} />;
+    case 'reference_field':
+      return <ReferenceFieldView outcome={outcome} onDrill={onDrill} />;
     case 'validation':
-      return <Empty>Shown in a later slice.</Empty>;
+      return <ValidationView outcome={outcome} onDrill={onDrill} />;
   }
 }

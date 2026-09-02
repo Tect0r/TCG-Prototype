@@ -352,6 +352,7 @@ describe('buildAdaptiveResult and renderAdaptiveReport', () => {
       series,
       screeningRounds: [],
       validation: null,
+      informationPolicy: 'public_observation',
     });
 
     expect(result.seriesTally).toEqual({
@@ -377,6 +378,7 @@ describe('buildAdaptiveResult and renderAdaptiveReport', () => {
     expect(markdown).toContain('descriptive observation only');
     expect(markdown).toContain('never a verdict that the meta is healthy, stuck or converged');
     expect(markdown).toContain('The frozen validation stage has not been run');
+    expect(markdown).toContain('**Public observation.**');
   });
 
   it('folds a frozen validation outcome into its own section, never into seriesTally', () => {
@@ -397,6 +399,7 @@ describe('buildAdaptiveResult and renderAdaptiveReport', () => {
         outcome,
         standing: proportion(outcome.incumbentWins, outcome.incumbentWins + outcome.opponentWins),
       },
+      informationPolicy: 'public_observation',
     });
 
     expect(result.seriesTally).toEqual({
