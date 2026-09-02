@@ -442,6 +442,7 @@ export {
   adaptiveGeneratedConstructionKindSchema,
   adaptiveGenerationRecordSchema,
   adaptiveRejectedCandidateSchema,
+  diffSwaps,
   generateAdaptiveCandidates,
   type AdaptiveGeneratedConstructionKind,
   type AdaptiveGenerationRecord,
@@ -451,7 +452,9 @@ export {
 
 export {
   ADAPTIVE_BLOCK_SIDES,
+  adaptiveBlockDecisionSchema,
   adaptiveBlockGameCount,
+  adaptiveBlockSideSchema,
   decideAdaptiveBlock,
   planAdaptiveBudget,
   scheduleAdaptiveBlock,
@@ -469,6 +472,8 @@ export {
   ADAPTIVE_OBJECTIVES,
   ADAPTIVE_SCREENING_OPPONENT_KINDS,
   adaptiveObjectiveOf,
+  adaptiveObjectiveSchema,
+  adaptiveScreeningTallySchema,
   scheduleAdaptiveCandidateScreening,
   tallyAdaptiveScreening,
   type AdaptiveCandidateScreening,
@@ -483,6 +488,7 @@ export {
 
 export {
   adaptivePromotionScore,
+  adaptiveSeriesTallySchema,
   decideAdaptivePromotion,
   tallyAdaptiveSeries,
   type AdaptiveCandidateEvidence,
@@ -493,8 +499,41 @@ export {
 } from './adaptive/promote.js';
 
 export {
+  adaptiveCandidateResultSchema,
+  adaptiveCycleObservationSchema,
+  adaptiveDeckDiffSchema,
+  adaptiveReferenceFieldStandingSchema,
+  adaptiveResultLineagesSchema,
+  adaptiveResultPayloadSchema,
+  adaptiveScreeningDecisionSchema,
+  adaptiveScreeningRoundSchema,
+  adaptiveSeriesRecordSchema,
+  adaptiveValidationSummarySchema,
+  buildAdaptiveResult,
+  buildAdaptiveScreeningRound,
+  detectAdaptiveCycles,
+  finalAdaptiveDeckDiff,
+  makeAdaptiveSeriesRecord,
+  renderAdaptiveReport,
+  summarizeAdaptiveReferenceField,
+  type AdaptiveCandidateResult,
+  type AdaptiveCycleObservation,
+  type AdaptiveDeckDiff,
+  type AdaptiveReferenceFieldStanding,
+  type AdaptiveReportInput,
+  type AdaptiveResultPayload,
+  type AdaptiveScreeningDecision,
+  type AdaptiveScreeningRound,
+  type AdaptiveSeriesRecord,
+  type AdaptiveValidationSummary,
+  type BuildAdaptiveResultInput,
+  type BuildAdaptiveScreeningRoundInput,
+} from './adaptive/report.js';
+
+export {
   runAdaptiveExperiment,
   runAdaptiveFinalValidation,
+  type AdaptiveRawEvent,
   type AdaptiveValidationRun,
   type RunAdaptiveExperimentOptions,
 } from './adaptive/run.js';

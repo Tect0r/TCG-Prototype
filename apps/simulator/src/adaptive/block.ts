@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { PilotSpec } from '@tcg/bot-interface';
 import type { Environment } from '../environment.js';
 import { buildSchedule, type ScheduleDeck, type ScheduledMatch } from '../schedule.js';
@@ -21,6 +22,7 @@ import { adaptiveRevisionSeedPath } from './revision.js';
  */
 
 export const ADAPTIVE_BLOCK_SIDES = ['incumbent', 'opponent'] as const;
+export const adaptiveBlockSideSchema = z.enum(ADAPTIVE_BLOCK_SIDES);
 export type AdaptiveBlockSide = (typeof ADAPTIVE_BLOCK_SIDES)[number];
 
 /** A completed block's win tally. `noResult` covers abnormal terminations and the like. */
@@ -34,6 +36,13 @@ export type AdaptiveBlockDecision =
   | { readonly kind: 'win'; readonly loser: AdaptiveBlockSide }
   | { readonly kind: 'tie' }
   | { readonly kind: 'no_decision'; readonly reason: string };
+
+/** Mirrors `AdaptiveBlockDecision` for persistence (M08.18D): the raw/result reports need it on disk, this file only ever needs it in memory. */
+export const adaptiveBlockDecisionSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('win'), loser: adaptiveBlockSideSchema }),
+  z.strictObject({ kind: z.literal('tie') }),
+  z.strictObject({ kind: z.literal('no_decision'), reason: z.string().min(1) }),
+]);
 
 /**
  * Deterministic block-level decision: whichever side has fewer wins among the

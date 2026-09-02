@@ -31,8 +31,12 @@ import {
   type AdaptiveScreeningMatch,
   type AdaptiveScreeningResult,
 } from './evaluate.js';
-import { generateAdaptiveCandidates } from './generate.js';
-import { decideAdaptivePromotion, type AdaptiveCandidateEvidence } from './promote.js';
+import { generateAdaptiveCandidates, type AdaptiveGenerationRecord } from './generate.js';
+import {
+  adaptivePromotionScore,
+  decideAdaptivePromotion,
+  type AdaptiveCandidateEvidence,
+} from './promote.js';
 import { adaptiveRevisionSeedPath, type AdaptiveRevision } from './revision.js';
 import {
   adaptiveValidationStanding,
@@ -42,6 +46,12 @@ import {
   type AdaptiveFrozenDecks,
   type AdaptiveValidationOutcome,
 } from './validate.js';
+import {
+  buildAdaptiveScreeningRound,
+  makeAdaptiveSeriesRecord,
+  type AdaptiveScreeningRound,
+  type AdaptiveSeriesRecord,
+} from './report.js';
 import type { ProportionEstimate } from '../analysis/stats.js';
 
 /**
@@ -80,6 +90,21 @@ import type { ProportionEstimate } from '../analysis/stats.js';
  * already-committed matches before fresh work resumes.
  */
 
+/**
+ * One raw-stream event as it is produced (M08.18D): a decided block's series
+ * record, a generated-and-pending generation's own record, or a decided
+ * generation's whole screening round. Firing order within a run always
+ * matches the order these are decided — `series` for every decided block,
+ * `generation` only for the ones whose decisive loss produced candidates,
+ * `screeningRound` once that generation is itself decided — so a caller that
+ * simply appends every event it receives reconstructs the same order
+ * `./envelopes.ts`'s `adaptiveRawRecordSchema` arrays are meant to hold.
+ */
+export type AdaptiveRawEvent =
+  | { readonly kind: 'series'; readonly record: AdaptiveSeriesRecord }
+  | { readonly kind: 'generation'; readonly record: AdaptiveGenerationRecord }
+  | { readonly kind: 'screeningRound'; readonly record: AdaptiveScreeningRound };
+
 export interface RunAdaptiveExperimentOptions {
   readonly environment: Environment;
   readonly config: AdaptiveConfig;
@@ -93,6 +118,18 @@ export interface RunAdaptiveExperimentOptions {
   readonly checkpoint: AdaptiveCheckpoint;
   readonly shouldStop?: StopSignal;
   readonly softwareCommit?: string | null;
+  /**
+   * Notified with every raw-stream event this run produces (M08.18D), leaving
+   * `runAdaptiveExperiment`'s own return type — the final `AdaptiveCheckpoint`
+   * — unchanged. A caller accumulating a raw record or building a canonical
+   * report (`./report.ts`) collects events here rather than the checkpoint
+   * carrying them; the checkpoint stays exactly what `./checkpoint.ts` already
+   * documents it as: state, not evidence. On a resumed run, fires only for the
+   * phases this call actually decides — a phase a prior, already-committed
+   * checkpoint already advanced past is never replayed at all, so it never
+   * fires here a second time.
+   */
+  readonly onRawEvent?: (event: AdaptiveRawEvent) => void;
 }
 
 /** Which fixed lineage slot generated `checkpoint.pendingGeneration`, derived rather than stored. */
@@ -247,6 +284,16 @@ async function playBlock(
   const decision = decideAdaptiveBlock(
     deriveBlockOutcome(records, incumbentRevision.deck.hash, opponentRevision.deck.hash),
   );
+  options.onRawEvent?.({
+    kind: 'series',
+    record: makeAdaptiveSeriesRecord({
+      generation: incumbentRevision.generation,
+      block: checkpoint.nextBlock,
+      incumbent: incumbentRevision,
+      opponent: opponentRevision,
+      decision,
+    }),
+  });
   const gamesSpent = checkpoint.gamesSpent + records.length;
 
   if (decision.kind !== 'win') {
@@ -274,6 +321,7 @@ async function playBlock(
     block: checkpoint.nextBlock,
     rebuild,
   });
+  options.onRawEvent?.({ kind: 'generation', record: generationRecord });
 
   return {
     scheduled: true,
@@ -408,6 +456,18 @@ async function processGeneration(
         `decision (${decision.reason})`,
     );
   }
+  options.onRawEvent?.({
+    kind: 'screeningRound',
+    record: buildAdaptiveScreeningRound({
+      generation: generation.generation,
+      block: checkpoint.nextBlock,
+      loserSide,
+      opponentRevisionId: opponentRevision.revisionId,
+      evidence,
+      score: adaptivePromotionScore,
+      decision,
+    }),
+  });
 
   const updatedLineage: AdaptiveCheckpointLineage =
     decision.kind === 'promoted'

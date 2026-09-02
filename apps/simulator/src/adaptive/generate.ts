@@ -87,7 +87,7 @@ export interface GenerateAdaptiveCandidatesInput {
  * revision's `swaps` field is a fact about the resulting deck, not about the
  * path a search took to reach it.
  */
-function diffSwaps(before: SimDeck, after: SimDeck): AdaptiveCardSwap[] {
+export function diffSwaps(before: SimDeck, after: SimDeck): AdaptiveCardSwap[] {
   const delta = new Map<CardId, number>();
   for (const entry of before.cards) {
     delta.set(entry.cardId, (delta.get(entry.cardId) ?? 0) + entry.quantity);

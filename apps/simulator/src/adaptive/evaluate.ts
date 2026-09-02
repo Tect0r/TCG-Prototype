@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { PilotSpec } from '@tcg/bot-interface';
 import type { Environment } from '../environment.js';
 import { buildSchedule, type ScheduleDeck, type ScheduledMatch } from '../schedule.js';
@@ -33,6 +34,7 @@ import type { AdaptiveRevision } from './revision.js';
  */
 
 export const ADAPTIVE_OBJECTIVES = ['meta_aware', 'pure_counter'] as const;
+export const adaptiveObjectiveSchema = z.enum(ADAPTIVE_OBJECTIVES);
 export type AdaptiveObjective = (typeof ADAPTIVE_OBJECTIVES)[number];
 
 /**
@@ -214,6 +216,13 @@ export interface AdaptiveScreeningTally {
   readonly opponentWins: number;
   readonly noResult: number;
 }
+
+/** Mirrors `AdaptiveScreeningTally` for persistence (M08.18D). */
+export const adaptiveScreeningTallySchema = z.strictObject({
+  candidateWins: z.number().int().min(0),
+  opponentWins: z.number().int().min(0),
+  noResult: z.number().int().min(0),
+});
 
 function tallyGroup(
   matches: readonly AdaptiveScreeningMatch[],

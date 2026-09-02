@@ -331,6 +331,51 @@ no issues on the changed files. Tranche-close gates (`check:consistency`,
 `audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.18E, per this
 milestone's work-slice split.
 
-Current unit: **M08.18D**
+M08.18D is implemented: canonical adaptive reports, in the new
+`apps/simulator/src/adaptive/report.ts`, wired into `run.ts`'s raw stream,
+`envelopes.ts`'s result envelope, and the simulator's barrel export.
+`report.ts` is a leaf: it imports from `checkpoint.ts`, `block.ts`,
+`evaluate.ts`, `promote.ts`, `revision.ts`, `generate.ts` and `../analysis/*`,
+never from `envelopes.ts` or `run.ts` — those two import from it instead,
+avoiding a cycle. `makeAdaptiveSeriesRecord` and `buildAdaptiveScreeningRound`
+flatten one decided block and one decided generation's screening into durable
+records; `run.ts` gained an `onRawEvent` callback (`AdaptiveRawEvent`, kinds
+`series`/`generation`/`screeningRound`) fired only for phases a call actually
+decides, never replayed for phases a prior checkpoint already advanced past.
+`detectAdaptiveCycles` names blocks whose active `(incumbentDeckHash,
+opponentDeckHash)` pair repeats an earlier block's, in series order — a flat,
+ordered observation list, never a "healthy/stuck/converged" verdict, per
+CLAUDE.md's "automated ... signals are evidence for review, never an automatic
+balance verdict." `summarizeAdaptiveReferenceField` pools every screening
+round's `fieldTally` into one Wilson-interval standing, returning `null` (not
+zero) when no round ever scheduled a reference-field game.
+`finalAdaptiveDeckDiff` diffs a lineage's root revision against its
+`activeAdaptiveRevisionOf` using `generate.ts`'s own `diffSwaps`.
+`buildAdaptiveResult` composes `AdaptiveResultPayload` — `lineages`,
+`seriesTally`, `series`, `screeningRounds`, `referenceField`, `finalDeckDiff`,
+`cycles`, `validation` — keeping series score and frozen-validation standing on
+separate fields exactly as `promote.ts`'s "series wins versus screening
+evidence" split requires; `validation` stays `null` until
+`runAdaptiveFinalValidation` has run. `renderAdaptiveReport` is a pure Markdown
+view of an already-built payload, computing nothing itself.
+`ADAPTIVE_RAW_SCHEMA_VERSION` bumped 2→3 (`series`/`screeningRounds` added,
+both defaulting to empty) and `ADAPTIVE_RESULT_SCHEMA_VERSION` bumped 1→2 (the
+result envelope widened from an empty identity stub to the full report
+payload); a schemaVersion-2 raw record or schemaVersion-1 result is now
+refused as an older build, per the same additive-widening precedent
+`ADAPTIVE_CHECKPOINT_SCHEMA_VERSION` set at M08.18A. 32 focused tests in the
+new `apps/simulator/src/adaptive/report.test.ts` (series-record construction,
+cycle detection with and without repeats, screening-round flattening for both
+promoted and retained decisions, reference-field pooling and its null case,
+final deck diff with and without a commander change, and full result
+composition/rendering with and without a frozen validation outcome) pass,
+alongside updated coverage in `envelopes.test.ts` for the new raw/result
+schema versions and the now non-empty result payload. The full
+`apps/simulator/src/adaptive` suite (187 tests, up from 175) passes, and
+`apps/simulator` typechecks clean. Tranche-close gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.18E, per this
+milestone's work-slice split.
+
+Current unit: **M08.18E**
 ([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0818--adaptive-checkpointing-final-validation-and-raw-report)).
 Not started.

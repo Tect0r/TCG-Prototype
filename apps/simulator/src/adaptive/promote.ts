@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { proportion, type ProportionEstimate } from '../analysis/stats.js';
 import type { AdaptiveBlockDecision } from './block.js';
 import type { AdaptiveCandidateScreening, AdaptiveScreeningTallies } from './evaluate.js';
@@ -57,6 +58,14 @@ export interface AdaptiveSeriesTally {
   readonly ties: number;
   readonly noDecisions: number;
 }
+
+/** Mirrors `AdaptiveSeriesTally` for persistence (M08.18D). */
+export const adaptiveSeriesTallySchema = z.strictObject({
+  incumbentWins: z.number().int().min(0),
+  opponentWins: z.number().int().min(0),
+  ties: z.number().int().min(0),
+  noDecisions: z.number().int().min(0),
+});
 
 /** Sums a run's recorded block decisions. Order-independent; a replay in any order tallies the same. */
 export function tallyAdaptiveSeries(entries: readonly AdaptiveSeriesEntry[]): AdaptiveSeriesTally {

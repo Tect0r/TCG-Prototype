@@ -3383,10 +3383,26 @@ schema regeneration tests.
       same-checkpoint rerun proving no game is replayed); full
       `apps/simulator/src/adaptive` suite (175 tests, up from 159) and
       `apps/simulator` typecheck pass.
-- [ ] **M08.18D — Canonical adaptive reports.** Produce machine-readable and
+- [x] **M08.18D — Canonical adaptive reports.** Produce machine-readable and
       Markdown evidence for series, screenings, revisions, final diff, reference
       field and validation. Detect repeated states and cycles descriptively and
       regenerate schemas intentionally.
+      Verified: new `apps/simulator/src/adaptive/report.ts`
+      (`makeAdaptiveSeriesRecord`, `buildAdaptiveScreeningRound`,
+      `detectAdaptiveCycles`, `summarizeAdaptiveReferenceField`,
+      `finalAdaptiveDeckDiff`, `buildAdaptiveResult`, `renderAdaptiveReport`),
+      wired into `run.ts`'s new `onRawEvent` callback and `envelopes.ts`'s
+      result envelope, all exported from `apps/simulator/src/index.ts`.
+      `report.ts` stays a leaf (never imports `envelopes.ts`/`run.ts`); series
+      score and frozen-validation standing stay on separate payload fields;
+      cycle detection returns a flat, ordered observation list with no
+      healthy/stuck/converged verdict language of its own.
+      `ADAPTIVE_RAW_SCHEMA_VERSION` 2→3 and `ADAPTIVE_RESULT_SCHEMA_VERSION`
+      1→2, each an additive widening refusing an older-build document by its
+      readable message. 32 focused tests in the new `report.test.ts` plus
+      updated `envelopes.test.ts` coverage for both version bumps; full
+      `apps/simulator/src/adaptive` suite (187 tests, up from 175) and
+      `apps/simulator` typecheck pass.
 - [ ] **M08.18E — Tranche close.** Revalidate checkpoint/resume, fresh seeds,
       frozen lists, report separation, cycle fixtures and compatibility through the
       standard tranche-close gate. Do not add admin UI.

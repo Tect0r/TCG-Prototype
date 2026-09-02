@@ -7,6 +7,11 @@ import {
   type AdaptiveCheckpoint,
 } from './checkpoint.js';
 import {
+  adaptiveResultPayloadSchema,
+  adaptiveScreeningRoundSchema,
+  adaptiveSeriesRecordSchema,
+} from './report.js';
+import {
   ADAPTIVE_RAW_SCHEMA_VERSION,
   ADAPTIVE_RESULT_SCHEMA_VERSION,
   parseAdaptiveDocument,
@@ -30,10 +35,12 @@ import {
  * and rejected candidates to the raw stream, landing on `ADAPTIVE_RAW_SCHEMA_
  * VERSION` 2; M08.18A widens the checkpoint from the same empty stub to real
  * resumable state (`./checkpoint.ts`), landing on `ADAPTIVE_CHECKPOINT_
- * SCHEMA_VERSION` 2 — each an additive widening in the same style `MANIFEST_
- * SCHEMA_VERSION`'s and `SEARCH_CHECKPOINT_VERSION`'s histories already
- * record. `result` stays empty and at version 1 until a later slice defines
- * what it reports.
+ * SCHEMA_VERSION` 2; M08.18D widens the raw stream again with series and
+ * screening-round records (`ADAPTIVE_RAW_SCHEMA_VERSION` 3) and widens
+ * `result` from its empty stub to the canonical report payload defined in
+ * `./report.ts` (`ADAPTIVE_RESULT_SCHEMA_VERSION` 2) — each an additive
+ * widening in the same style `MANIFEST_SCHEMA_VERSION`'s and `SEARCH_
+ * CHECKPOINT_VERSION`'s histories already record.
  */
 
 const adaptiveDocumentIdentity = {
@@ -46,15 +53,21 @@ export const adaptiveRawRecordSchema = z.strictObject({
   ...adaptiveDocumentIdentity,
   /** One entry per candidate-generation event (M08.16C), append-only. */
   generations: z.array(adaptiveGenerationRecordSchema).default([]),
+  /** One entry per decided block (M08.18D), append-only. */
+  series: z.array(adaptiveSeriesRecordSchema).default([]),
+  /** One entry per decided generation's whole screening (M08.18D), append-only. */
+  screeningRounds: z.array(adaptiveScreeningRoundSchema).default([]),
 });
 export type AdaptiveRawRecord = z.infer<typeof adaptiveRawRecordSchema>;
 
 /** The checkpoint envelope itself is defined in `./checkpoint.ts` (M08.18A) and re-exported here for the sibling raw/result envelopes it shares identity with. */
 export { adaptiveCheckpointSchema, parseAdaptiveCheckpoint, type AdaptiveCheckpoint };
 
+/** The result payload itself is defined in `./report.ts` (M08.18D) and spread here beside this envelope's shared identity fields. */
 export const adaptiveResultSchema = z.strictObject({
   schemaVersion: z.literal(ADAPTIVE_RESULT_SCHEMA_VERSION),
   ...adaptiveDocumentIdentity,
+  ...adaptiveResultPayloadSchema.shape,
 });
 export type AdaptiveResult = z.infer<typeof adaptiveResultSchema>;
 
