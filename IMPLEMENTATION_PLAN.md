@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-01)   | M08.18A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-02)   | M08.19A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,21 +223,31 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.17A — Mirrored block scheduler and budget.** Make the mirrored evaluation
-block the decision unit, define deterministic tie/no-decision behavior and
-schedule only whole work that fits the declared learning budget. Record an
-explained final shortfall instead of silently overspending. Its scope and
-checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0817--adaptive-evaluation-and-promotion-loop).
+**M08.19A — Builder contracts and restoration.** Expose starting decks,
+Commander/information/adaptation policy, budget, block, candidate, swap,
+counter-focus, reference-field and final-validation controls. Restore every
+value and show workload before enqueueing. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0819--adaptive-counter-builder-and-dashboard).
 
-M08.16 closed on 2026-09-01 (`tcg-reviewer` `VERDICT: APPROVE`, two low-severity
-non-blocking notes recorded in `.claude/current-work.md` for M08.17/M08.18 to
-mind): a reproducible Adaptive Counter config, immutable revision lineage and
-deterministic legal candidate generation exist, with no evaluation, promotion
-or card-definition mutation yet. M08.17 spends that lineage against a mirrored
-evaluation block — run exactly one named slice per session, stop after its
-focused checks and checkpoint commit, and never combine slices merely because
-they share a tranche.
+M08.17 closed on 2026-09-02 (`tcg-reviewer` `VERDICT: APPROVE` on recheck after
+one fixed HIGH finding — a vacuous moving-opponent staleness check for a
+candidate screened with zero opponent games; three low-severity non-blocking
+notes recorded in `.claude/current-work.md`): deterministic block decisions,
+candidate/reference-field evaluation and promotion/rollback/staleness refusal
+exist, spending the M08.16 lineage without yet an orchestrating loop.
+
+M08.18 closed on 2026-09-02 (`tcg-reviewer` `VERDICT: APPROVE` on recheck after
+one fixed HIGH finding — resumed runs could re-emit a `series`/`generation`/
+`screeningRound` raw record for a phase an earlier, interrupted attempt had
+already decided; two low-severity non-blocking notes recorded in
+`.claude/current-work.md` for the next tranche that touches `run.ts`/
+`run-batch.ts`): the M08.17 loop is now resumable end to end — checkpoint
+persistence, replay-free resume, frozen fresh-seed final validation and a
+canonical adaptive report (series, screenings, deck diff, cycle detection) —
+with no builder UI or dashboard yet. M08.19 gives that engine a configurable
+builder and a read-only dashboard; run exactly one named slice per session,
+stop after its focused checks and checkpoint commit, and never combine slices
+merely because they share a tranche.
 
 **M08.15 gave a completed Commander Search a way to become a comparison —
 `schedule-championship`, a ninth mutating address, not a continuation

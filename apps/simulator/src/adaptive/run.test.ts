@@ -10,7 +10,7 @@ import {
   type AdaptiveRevision,
 } from './revision.js';
 import type { AdaptiveCheckpoint } from './checkpoint.js';
-import { runAdaptiveExperiment, runAdaptiveFinalValidation } from './run.js';
+import { runAdaptiveExperiment, runAdaptiveFinalValidation, type AdaptiveRawEvent } from './run.js';
 
 /**
  * M08.18B: resumable orchestration.
@@ -282,6 +282,52 @@ describe('runAdaptiveExperiment', () => {
     const resumedRecords = resumedStore.all();
     expect(resumedRecords).toHaveLength(6);
     expect(new Set(resumedRecords.map((record) => record.matchId)).size).toBe(6);
+  });
+
+  it('never re-emits onRawEvent for a phase an earlier, interrupted attempt already decided', async () => {
+    const resumedStore = newStore();
+    const startCheckpoint = freshCheckpoint();
+    const firstEvents: AdaptiveRawEvent[] = [];
+    // Stops after block 0's 2 games plus the first screening game — block 0
+    // (and its generation record) are fully decided and emitted before the
+    // interruption; the generation's screening round is not.
+    const firstAttempt = runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: resumedStore,
+      checkpoint: startCheckpoint,
+      shouldStop: stopAfter(3),
+      onRawEvent: (event) => firstEvents.push(event),
+    });
+    await expect(firstAttempt).rejects.toThrow(ExperimentStopped);
+    expect(firstEvents.map((event) => event.kind)).toEqual(['series', 'generation']);
+
+    const resumedEvents: AdaptiveRawEvent[] = [];
+    const resumed = await runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: resumedStore,
+      checkpoint: startCheckpoint,
+      onRawEvent: (event) => resumedEvents.push(event),
+    });
+
+    expect(resumed.nextBlock).toBe(1);
+    // Block 0's `series` and `generation` events were already emitted by the
+    // first, interrupted attempt — retrying with the original checkpoint
+    // replays that phase (it is fully committed in the sink) but must not
+    // fire them again. Only the screening round, never decided before the
+    // interruption, fires on this attempt.
+    expect(resumedEvents.map((event) => event.kind)).toEqual(['screeningRound']);
   });
 
   it('stops without spending a game once the budget no longer affords the next block', async () => {

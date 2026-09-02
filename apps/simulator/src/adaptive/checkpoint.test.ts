@@ -65,9 +65,11 @@ function child(parent: AdaptiveRevision, opponentRevisionId: string): AdaptiveRe
   });
 }
 
-function baseCheckpoint(
-  overrides: Partial<AdaptiveCheckpoint> = {},
-): { checkpoint: AdaptiveCheckpoint; incumbentRoot: AdaptiveRevision; opponentRoot: AdaptiveRevision } {
+function baseCheckpoint(overrides: Partial<AdaptiveCheckpoint> = {}): {
+  checkpoint: AdaptiveCheckpoint;
+  incumbentRoot: AdaptiveRevision;
+  opponentRoot: AdaptiveRevision;
+} {
   const incumbentRoot = root('my-adaptive-run', 'prototype_commander_blue');
   const opponentRoot = root('my-adaptive-run', 'prototype_commander_red');
   const checkpoint: AdaptiveCheckpoint = {
@@ -159,9 +161,7 @@ describe('adaptiveCheckpointSchema: strict surface', () => {
 
   it('refuses an unrecognized top-level field', () => {
     const { checkpoint } = baseCheckpoint();
-    expect(() => adaptiveCheckpointSchema.parse({ ...checkpoint, stray: true })).toThrow(
-      ZodError,
-    );
+    expect(() => adaptiveCheckpointSchema.parse({ ...checkpoint, stray: true })).toThrow(ZodError);
   });
 
   it('refuses an unrecognized field inside a lineage side', () => {
@@ -169,7 +169,10 @@ describe('adaptiveCheckpointSchema: strict surface', () => {
     expect(() =>
       adaptiveCheckpointSchema.parse({
         ...checkpoint,
-        lineages: { ...checkpoint.lineages, incumbent: { ...checkpoint.lineages.incumbent, stray: true } },
+        lineages: {
+          ...checkpoint.lineages,
+          incumbent: { ...checkpoint.lineages.incumbent, stray: true },
+        },
       }),
     ).toThrow(ZodError);
   });
@@ -214,9 +217,9 @@ describe('adaptiveCheckpointSchema: pending generation and partial-block state',
       ...pendingGenerationFor(incumbentRoot, opponentRoot),
       opponentRevisionId: 'rev_someone_else',
     };
-    expect(() =>
-      adaptiveCheckpointSchema.parse({ ...checkpoint, pendingGeneration }),
-    ).toThrow(/two currently active revisions/);
+    expect(() => adaptiveCheckpointSchema.parse({ ...checkpoint, pendingGeneration })).toThrow(
+      /two currently active revisions/,
+    );
   });
 
   it('accepts pendingGeneration when the opponent side is the one that generated candidates', () => {

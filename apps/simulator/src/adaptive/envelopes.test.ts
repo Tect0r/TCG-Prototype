@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import { makeDeck } from '@tcg/deck-generator';
-import { adaptiveRawRecordSchema, adaptiveResultSchema, parseAdaptiveRawRecord, parseAdaptiveResult } from './envelopes.js';
+import {
+  adaptiveRawRecordSchema,
+  adaptiveResultSchema,
+  parseAdaptiveRawRecord,
+  parseAdaptiveResult,
+} from './envelopes.js';
 import type { AdaptiveCheckpoint, AdaptiveCheckpointLineage } from './checkpoint.js';
-import { adaptiveRevisionSeedPath, makeAdaptiveRevision, type AdaptiveRevision } from './revision.js';
+import {
+  adaptiveRevisionSeedPath,
+  makeAdaptiveRevision,
+  type AdaptiveRevision,
+} from './revision.js';
 import { buildAdaptiveResult, type AdaptiveResultPayload } from './report.js';
 
 /**
@@ -72,14 +81,23 @@ function validResultPayload(): AdaptiveResultPayload {
 
 describe('result envelope', () => {
   it('accepts its full payload at schemaVersion 2', () => {
-    const parsed = parseAdaptiveResult({ schemaVersion: 2, ...identity(), ...validResultPayload() });
+    const parsed = parseAdaptiveResult({
+      schemaVersion: 2,
+      ...identity(),
+      ...validResultPayload(),
+    });
     expect(parsed.cycles).toEqual([]);
     expect(parsed.validation).toBeNull();
   });
 
   it('refuses an unrecognized field', () => {
     expect(() =>
-      adaptiveResultSchema.parse({ schemaVersion: 2, ...identity(), ...validResultPayload(), stray: true }),
+      adaptiveResultSchema.parse({
+        schemaVersion: 2,
+        ...identity(),
+        ...validResultPayload(),
+        stray: true,
+      }),
     ).toThrow(ZodError);
   });
 

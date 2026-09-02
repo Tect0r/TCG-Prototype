@@ -376,6 +376,122 @@ schema versions and the now non-empty result payload. The full
 `audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.18E, per this
 milestone's work-slice split.
 
-Current unit: **M08.18E**
-([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0818--adaptive-checkpointing-final-validation-and-raw-report)).
-Not started.
+M08.18E is done pending review: revalidated the combined M08.18 tranche diff
+(`checkpoint.ts`, `run.ts`, `validate.ts`, `report.ts`, `envelopes.ts` and
+their tests, plus the `apps/simulator` barrel export) against this milestone's
+acceptance list — checkpoint/resume equivalence, partial-block state, lineage,
+fresh-seed frozen validation, series-versus-validation separation and
+descriptive (non-verdict) cycle detection all present. `npm run format:check`
+flagged 6 adaptive files as unformatted (`checkpoint.ts`/`.test.ts`,
+`envelopes.test.ts`, `report.ts`/`.test.ts`, `validate.test.ts`) — a real gate
+failure, not pre-existing; ran `prettier --write` on exactly those 6 files, no
+behavior change. `npm run check:consistency`, `npm run audit:check` and
+`npm run verify` all pass clean (219 test files, 4510 tests, typecheck, lint,
+format, content validation, build). Marked M08.18E and the M08.18 checklist
+complete in the milestone file. Root status row's "Next tranche" column left
+at `M08.18A` rather than advanced to `M08.19A`, per CLAUDE.md: the tranche is
+not marked complete and its successor is not named until `tcg-reviewer`
+returns `VERDICT: APPROVE`.
+
+`tcg-reviewer` returned **`VERDICT: CHANGES REQUIRED`** over the M08.18 commit
+range (`80a4622..HEAD`) plus the close-record diff, with one HIGH blocking
+finding: `runAdaptiveExperiment` (`apps/simulator/src/adaptive/run.ts`) fired
+`onRawEvent` unconditionally in `playBlock`/`processGeneration`, but the file's
+own resume contract requires a caller to retry an interrupted attempt with the
+_same, unadvanced_ checkpoint — so a block or generation already fully decided
+and emitted by an earlier, interrupted attempt gets recomputed and re-emitted
+a second time on resume whenever the interruption actually fell in a _later_
+phase. That duplicates `series`/`generation`/`screeningRound` raw records,
+double-counting `tallyAdaptiveSeries`, `summarizeAdaptiveReferenceField` and
+fabricating a spurious `detectAdaptiveCycles` repeat purely from an
+interruption — the exact "replay" the checklist item "Checkpoint and resume
+without replaying" forbids, just in the raw-evidence stream rather than the
+checkpoint or the match store.
+
+Fixed: `playBlock` and `processGeneration` now gate every `onRawEvent` call on
+whether this call actually ran a fresh match for that phase
+(`outcome.records.length > 0`, i.e. `runBatch`'s own per-call fresh-match
+count — nonzero exactly when at least one of the phase's matches was not
+already committed to the sink before this call). A phase whose entire
+schedule was already committed by an earlier attempt is still recomputed
+deterministically (so the loop can advance past it to reach a later
+interrupted phase) but never re-emits its event; `runCandidateScreening` was
+widened to return its own per-call fresh count so `processGeneration` can OR
+across every candidate's screening groups before deciding whether the whole
+round's `screeningRound` event is new. Tightened the `onRawEvent` docstring to
+state this precisely instead of the reviewer-disproven "never replayed at
+all" claim. Added a regression test in `run.test.ts` ("never re-emits
+onRawEvent for a phase an earlier, interrupted attempt already decided")
+attaching `onRawEvent` across an interrupted-then-resumed run and asserting
+the first attempt emits exactly `series`+`generation` while the resumed
+attempt emits only the not-yet-decided `screeningRound` — no duplicate kinds
+in the combined stream. The full `apps/simulator/src/adaptive` suite (188
+tests, was 187) and `apps/simulator` typecheck pass; `eslint` reports no
+issues on `run.ts`/`run.test.ts`.
+
+The review's two MEDIUM and one LOW findings are non-blocking and recorded
+here for the tranches that touch this code next, unfixed in this close per
+CLAUDE.md's two-cycle/no-scope-widening rule:
+
+- `checkpoint.nextGeneration`/`nextSeedPath` go stale after a tie/no-decision
+  block and after a decided generation (both leave them at their pre-phase
+  values). Investigated why: `generateAdaptiveCandidates` always derives its
+  own `generation` as `loserRevision.generation + 1` — a per-lineage-side
+  counter, never read from `checkpoint.nextGeneration` — so the two lineages'
+  generation counts can diverge once one side loses more often than the
+  other, and "the generation the next call should produce" has no single
+  well-defined value at a clean block boundary until the next block's loser
+  is known. No production code reads either field today (confirmed by
+  search), so this is a misleading durable record, not a live corruption or
+  seed collision. Needs an owner decision next time this file is touched:
+  either accept the fields can only be exact while `pendingGeneration` is
+  set and document that, or drop them from the schema (a version bump) since
+  nothing consumes them.
+- `runAdaptiveExperiment`/`runAdaptiveFinalValidation` never check that the
+  handed-in checkpoint's `experimentId` matches `options.config.id`, nor call
+  the tranche's own `assertValidAdaptiveCheckpoint` against
+  `config.commanderPolicy` — an operator resuming one run's checkpoint against
+  a mismatched or edited config proceeds silently. Add both checks the next
+  time this file is touched.
+- `deriveBlockOutcome`/`tallyAdaptiveValidation` silently misattribute every
+  decisive game to the incumbent if the two active decks ever share a
+  `deckHash` (e.g. a generation-0 mirror under `commanderPolicy: 'locked'`);
+  add a same-hash refusal the next time this file is touched.
+
+Re-ran `npm run check:consistency`, `npm run audit:check` and `npm run
+verify` after the fix: all pass clean (219 test files, 4511 tests, typecheck,
+lint, format, content validation, build).
+
+`tcg-reviewer`'s bounded recheck confirmed the `freshlyPlayed`/`freshCount`
+gate closes the HIGH finding — verified by inspection that `runBatch` only
+ever populates `records` with matches not already committed to the sink, that
+a `runBatch` committing every scheduled match cannot itself throw
+`ExperimentStopped` (the sequential-mode stop check runs before dispatch, and
+the worker-pool's `noMoreWork()` short-circuits ahead of `shouldStop` once
+`nextJob >= jobs.length`), and that `processGeneration`'s OR-across-candidates
+has no partial-freshness hazard since the flag is only read after every
+candidate has screened. Confirmed the regression test exercises the
+previously-vacuous path (fails under the pre-fix code) and that the six
+formatting-only files are byte-identical aside from prettier reflow/quote
+normalization. Returned **`VERDICT: APPROVE`**, with three non-blocking LOW
+findings for the next tranche that touches `run.ts`/`run-batch.ts`:
+
+- `freshlyPlayed`/`freshCount` conflate "every match already committed" with
+  "every fresh match failed outright" — under `failFast: false`, a resumed
+  attempt whose remaining pending matches all throw yields
+  `outcome.records.length === 0` and silently skips emitting a decided
+  phase's raw record (an undercount, not a duplicate). Narrow: requires
+  runner exceptions, and `gamesSpent` accounting is already degraded in that
+  case from M08.18B. Fix by gating on `outcome.skippedByResume <
+scheduled.matches.length` instead, next time this file is touched.
+- `apps/simulator/src/run-batch.ts`'s `BatchOutcome.records` docstring says
+  "Every record produced _or resumed_ for this batch," which the
+  implementation contradicts (resumed matches go to `skippedByResume`, not
+  `records`) — harmless when only `recordsForSchedule` relied on it, now
+  load-bearing for the `onRawEvent` gate's correctness. Fix the one-line
+  comment next time this file is touched.
+- (Already corrected in this close, not deferred:) the M08.18E milestone note
+  had recorded the pre-fix gate's stale test count and a broken line-wrap;
+  updated to the post-fix count and reflowed.
+
+M08.18 tranche-close record committed and pushed. M08.18 is complete.

@@ -14,9 +14,17 @@ import {
   type AdaptiveCandidateEvidence,
   type AdaptivePromotionDecision,
 } from './promote.js';
-import { adaptiveCardSwapSchema, adaptiveRevisionSchema, type AdaptiveRevision } from './revision.js';
+import {
+  adaptiveCardSwapSchema,
+  adaptiveRevisionSchema,
+  type AdaptiveRevision,
+} from './revision.js';
 import { diffSwaps } from './generate.js';
-import { activeAdaptiveRevisionOf, type AdaptiveCheckpoint, type AdaptiveCheckpointLineage } from './checkpoint.js';
+import {
+  activeAdaptiveRevisionOf,
+  type AdaptiveCheckpoint,
+  type AdaptiveCheckpointLineage,
+} from './checkpoint.js';
 import type { AdaptiveFrozenDecks, AdaptiveValidationOutcome } from './validate.js';
 
 /**
@@ -366,7 +374,12 @@ function section(lines: string[], block: readonly string[]): void {
 
 function seriesSection(result: AdaptiveReportInput): string[] {
   const tally = result.seriesTally;
-  const lines = ['## Series score', '', 'Cumulative decisive-block wins, series order. *Observation.*', ''];
+  const lines = [
+    '## Series score',
+    '',
+    'Cumulative decisive-block wins, series order. *Observation.*',
+    '',
+  ];
   lines.push(
     `- incumbent side: ${String(tally.incumbentWins)}`,
     `- opponent side: ${String(tally.opponentWins)}`,
@@ -379,7 +392,12 @@ function seriesSection(result: AdaptiveReportInput): string[] {
 function revisionHistorySection(result: AdaptiveReportInput): string[] {
   const lines = ['## Revision history', ''];
   for (const side of ['incumbent', 'opponent'] as const) {
-    lines.push(`### ${side}`, '', '| generation | block | construction | swaps | revision |', '| --- | --- | --- | --- | --- |');
+    lines.push(
+      `### ${side}`,
+      '',
+      '| generation | block | construction | swaps | revision |',
+      '| --- | --- | --- | --- | --- |',
+    );
     for (const revision of result.lineages[side]) {
       lines.push(
         `| ${String(revision.generation)} | ${String(revision.block)} | ${revision.construction} | ` +
@@ -423,7 +441,12 @@ function screeningSection(result: AdaptiveReportInput): string[] {
 }
 
 function deckDiffSection(result: AdaptiveReportInput): string[] {
-  const lines = ['## Final deck diff', '', 'Root revision versus the currently active revision. *Observation.*', ''];
+  const lines = [
+    '## Final deck diff',
+    '',
+    'Root revision versus the currently active revision. *Observation.*',
+    '',
+  ];
   for (const side of ['incumbent', 'opponent'] as const) {
     const diff = result.finalDeckDiff[side];
     lines.push(`### ${side}`, '');
@@ -479,17 +502,19 @@ function cyclesSection(result: AdaptiveReportInput): string[] {
   const lines = [
     '## Repeated states',
     '',
-    'Blocks whose two active decks exactly repeat an earlier block\'s, named in series order. This is a ' +
+    "Blocks whose two active decks exactly repeat an earlier block's, named in series order. This is a " +
       'descriptive observation only — it is never a verdict that the meta is healthy, stuck or converged.',
     '',
   ];
   if (result.cycles.length === 0) {
-    lines.push('No block repeated an earlier block\'s deck pair.', '');
+    lines.push("No block repeated an earlier block's deck pair.", '');
     return lines;
   }
   lines.push('| block | repeats block | generation |', '| --- | --- | --- |');
   for (const cycle of result.cycles) {
-    lines.push(`| ${String(cycle.block)} | ${String(cycle.repeatsBlock)} | ${String(cycle.generation)} |`);
+    lines.push(
+      `| ${String(cycle.block)} | ${String(cycle.repeatsBlock)} | ${String(cycle.generation)} |`,
+    );
   }
   lines.push('');
   return lines;

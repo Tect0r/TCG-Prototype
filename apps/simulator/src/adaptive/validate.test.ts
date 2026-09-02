@@ -3,11 +3,12 @@ import { makeDeck, type SimDeck } from '@tcg/deck-generator';
 import { tinyEnvironment, VALUE_PILOT, AGGRESSIVE_PILOT } from '../test-fixtures.js';
 import type { AdaptiveConfig } from './config.js';
 import type { AdaptiveCheckpoint } from './checkpoint.js';
+import { adaptiveGenerationRecordSchema, type AdaptiveGenerationRecord } from './generate.js';
 import {
-  adaptiveGenerationRecordSchema,
-  type AdaptiveGenerationRecord,
-} from './generate.js';
-import { adaptiveRevisionSeedPath, makeAdaptiveRevision, type AdaptiveRevision } from './revision.js';
+  adaptiveRevisionSeedPath,
+  makeAdaptiveRevision,
+  type AdaptiveRevision,
+} from './revision.js';
 import {
   adaptiveValidationSeedPath,
   adaptiveValidationStanding,
@@ -147,7 +148,7 @@ function baseScheduleInput(
 }
 
 describe('freezeAdaptiveFinalDecks', () => {
-  it('freezes each lineage\'s currently active revision and deck', () => {
+  it("freezes each lineage's currently active revision and deck", () => {
     const checkpoint = baseCheckpoint();
     const frozen = freezeAdaptiveFinalDecks(checkpoint);
     expect(frozen.incumbent.revisionId).toBe(checkpoint.lineages.incumbent.activeRevisionId);
@@ -263,7 +264,7 @@ describe('tallyAdaptiveValidation', () => {
 });
 
 describe('adaptiveValidationStanding', () => {
-  it('is the incumbent\'s win rate over decisive games, noResult excluded', () => {
+  it("is the incumbent's win rate over decisive games, noResult excluded", () => {
     const standing = adaptiveValidationStanding({
       incumbentWins: 15,
       opponentWins: 5,

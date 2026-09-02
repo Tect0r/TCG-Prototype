@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { simDeckSchema } from '@tcg/deck-generator';
 import { adaptiveExperimentIdSchema, type AdaptiveCommanderPolicy } from './config.js';
 import { adaptiveGenerationRecordSchema } from './generate.js';
-import { adaptiveRevisionSchema, assertAdaptiveLineage, type AdaptiveRevision } from './revision.js';
+import {
+  adaptiveRevisionSchema,
+  assertAdaptiveLineage,
+  type AdaptiveRevision,
+} from './revision.js';
 import { ADAPTIVE_BLOCK_SIDES } from './block.js';
 import { ADAPTIVE_CHECKPOINT_SCHEMA_VERSION, parseAdaptiveDocument } from './version.js';
 
@@ -104,7 +108,7 @@ export const adaptiveCheckpointSchema = z
         checkpoint.pendingGeneration.block === checkpoint.nextBlock),
     {
       message:
-        '`pendingGeneration`, when present, must belong to this checkpoint\'s own ' +
+        "`pendingGeneration`, when present, must belong to this checkpoint's own " +
         '`nextGeneration`/`nextBlock`.',
       path: ['pendingGeneration'],
     },
@@ -122,7 +126,7 @@ export const adaptiveCheckpointSchema = z
     },
     {
       message:
-        '`pendingGeneration` must be generated between this checkpoint\'s two currently active ' +
+        "`pendingGeneration` must be generated between this checkpoint's two currently active " +
         'revisions.',
       path: ['pendingGeneration'],
     },

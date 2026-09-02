@@ -124,10 +124,12 @@ export interface RunAdaptiveExperimentOptions {
    * — unchanged. A caller accumulating a raw record or building a canonical
    * report (`./report.ts`) collects events here rather than the checkpoint
    * carrying them; the checkpoint stays exactly what `./checkpoint.ts` already
-   * documents it as: state, not evidence. On a resumed run, fires only for the
-   * phases this call actually decides — a phase a prior, already-committed
-   * checkpoint already advanced past is never replayed at all, so it never
-   * fires here a second time.
+   * documents it as: state, not evidence. Fires at most once per decided phase
+   * across a run's whole resume history: a phase whose entire schedule was
+   * already committed to the sink before this call is recomputed
+   * deterministically (so the loop can still advance past it) but never
+   * re-emitted here, even though a retried attempt always replays every phase
+   * from the caller's original checkpoint.
    */
   readonly onRawEvent?: (event: AdaptiveRawEvent) => void;
 }
@@ -281,19 +283,29 @@ async function playBlock(
     schedule: scheduled.matches,
   });
   const records = recordsForSchedule(options.sink, outcome, scheduled.matches);
+  // A resumed attempt always replays this phase from the caller's original
+  // checkpoint (see the file-level doc comment). `outcome.records` only ever
+  // holds matches freshly run *this* call, so it is empty exactly when every
+  // one of this block's matches was already committed by an earlier,
+  // interrupted attempt — meaning this phase already decided and emitted its
+  // raw event then. Gating on it keeps `onRawEvent` firing at most once per
+  // decided phase even though the surrounding decision is still recomputed.
+  const freshlyPlayed = outcome.records.length > 0;
   const decision = decideAdaptiveBlock(
     deriveBlockOutcome(records, incumbentRevision.deck.hash, opponentRevision.deck.hash),
   );
-  options.onRawEvent?.({
-    kind: 'series',
-    record: makeAdaptiveSeriesRecord({
-      generation: incumbentRevision.generation,
-      block: checkpoint.nextBlock,
-      incumbent: incumbentRevision,
-      opponent: opponentRevision,
-      decision,
-    }),
-  });
+  if (freshlyPlayed) {
+    options.onRawEvent?.({
+      kind: 'series',
+      record: makeAdaptiveSeriesRecord({
+        generation: incumbentRevision.generation,
+        block: checkpoint.nextBlock,
+        incumbent: incumbentRevision,
+        opponent: opponentRevision,
+        decision,
+      }),
+    });
+  }
   const gamesSpent = checkpoint.gamesSpent + records.length;
 
   if (decision.kind !== 'win') {
@@ -321,7 +333,9 @@ async function playBlock(
     block: checkpoint.nextBlock,
     rebuild,
   });
-  options.onRawEvent?.({ kind: 'generation', record: generationRecord });
+  if (freshlyPlayed) {
+    options.onRawEvent?.({ kind: 'generation', record: generationRecord });
+  }
 
   return {
     scheduled: true,
@@ -340,6 +354,12 @@ async function playBlock(
   };
 }
 
+interface CandidateScreeningResult {
+  readonly results: AdaptiveScreeningResult[];
+  /** Fresh matches actually run this call, across every opponent-deck group. */
+  readonly freshCount: number;
+}
+
 /** One candidate's screening games, run grouped by opponent deck so each `runBatch` call has a fixed deck pair. */
 async function runCandidateScreening(
   options: RunAdaptiveExperimentOptions,
@@ -347,7 +367,7 @@ async function runCandidateScreening(
   candidate: AdaptiveRevision,
   screening: AdaptiveCandidateScreening,
   currentOpponentDeck: { readonly hash: string },
-): Promise<AdaptiveScreeningResult[]> {
+): Promise<CandidateScreeningResult> {
   const deckByHash = new Map<string, AdaptiveRevision['deck']>();
   deckByHash.set(
     currentOpponentDeck.hash,
@@ -365,6 +385,7 @@ async function runCandidateScreening(
   }
 
   const results: AdaptiveScreeningResult[] = [];
+  let freshCount = 0;
   for (const [hash, entries] of groups) {
     const opponentDeck = deckByHash.get(hash);
     if (!opponentDeck) {
@@ -382,11 +403,12 @@ async function runCandidateScreening(
       decks: [candidate.deck, opponentDeck],
       schedule: matches,
     });
+    freshCount += outcome.records.length;
     for (const record of recordsForSchedule(options.sink, outcome, matches)) {
       results.push({ matchId: record.matchId, winnerDeckHash: winnerDeckHashOf(record) });
     }
   }
-  return results;
+  return { results, freshCount };
 }
 
 /**
@@ -429,14 +451,20 @@ async function processGeneration(
   if (totalGames > gamesRemaining) return { checkpoint, scheduled: false };
 
   const evidence: AdaptiveCandidateEvidence[] = [];
+  // Mirrors `playBlock`'s `freshlyPlayed` gate: a resumed attempt replays this
+  // whole generation from the caller's original checkpoint, so `onRawEvent`
+  // must not re-fire once every one of its screening games was already
+  // committed by an earlier, interrupted attempt.
+  let freshlyPlayed = false;
   for (const plan of plans) {
-    const results = await runCandidateScreening(
+    const { results, freshCount } = await runCandidateScreening(
       options,
       checkpoint,
       plan.candidate,
       plan.screening,
       opponentRevision.deck,
     );
+    if (freshCount > 0) freshlyPlayed = true;
     evidence.push({
       candidate: plan.candidate,
       screening: plan.screening,
@@ -456,18 +484,20 @@ async function processGeneration(
         `decision (${decision.reason})`,
     );
   }
-  options.onRawEvent?.({
-    kind: 'screeningRound',
-    record: buildAdaptiveScreeningRound({
-      generation: generation.generation,
-      block: checkpoint.nextBlock,
-      loserSide,
-      opponentRevisionId: opponentRevision.revisionId,
-      evidence,
-      score: adaptivePromotionScore,
-      decision,
-    }),
-  });
+  if (freshlyPlayed) {
+    options.onRawEvent?.({
+      kind: 'screeningRound',
+      record: buildAdaptiveScreeningRound({
+        generation: generation.generation,
+        block: checkpoint.nextBlock,
+        loserSide,
+        opponentRevisionId: opponentRevision.revisionId,
+        evidence,
+        score: adaptivePromotionScore,
+        decision,
+      }),
+    });
+  }
 
   const updatedLineage: AdaptiveCheckpointLineage =
     decision.kind === 'promoted'

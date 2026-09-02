@@ -3403,16 +3403,26 @@ schema regeneration tests.
       updated `envelopes.test.ts` coverage for both version bumps; full
       `apps/simulator/src/adaptive` suite (187 tests, up from 175) and
       `apps/simulator` typecheck pass.
-- [ ] **M08.18E — Tranche close.** Revalidate checkpoint/resume, fresh seeds,
+- [x] **M08.18E — Tranche close.** Revalidate checkpoint/resume, fresh seeds,
       frozen lists, report separation, cycle fixtures and compatibility through the
       standard tranche-close gate. Do not add admin UI.
+      Verified: revalidated the combined M08.18 diff (`checkpoint.ts`,
+      `run.ts`, `validate.ts`, `report.ts`, `envelopes.ts` and their tests,
+      plus the `apps/simulator` barrel export) against this milestone's
+      acceptance list. `npm run format:check` flagged 6 adaptive files
+      unformatted; ran `prettier --write` on exactly those, no behavior
+      change. `tcg-reviewer` found one HIGH finding (duplicate `onRawEvent`
+      emission on resume), fixed in `run.ts`/`run.test.ts`; recheck returned
+      `VERDICT: APPROVE`. `npm run check:consistency`, `npm run audit:check`
+      and `npm run verify` all pass clean (219 test files, 4511 tests,
+      typecheck, lint, format, content validation, build).
 
 ### Checklist
 
-- [ ] Checkpoint and resume without replaying or double-spending a seed.
-- [ ] Frozen final decks, fresh-seed mirrored validation.
-- [ ] Series score and validation standing reported separately.
-- [ ] Cycles described, not interpreted.
+- [x] Checkpoint and resume without replaying or double-spending a seed.
+- [x] Frozen final decks, fresh-seed mirrored validation.
+- [x] Series score and validation standing reported separately.
+- [x] Cycles described, not interpreted.
 
 ## M08.19 — Adaptive Counter builder and dashboard
 

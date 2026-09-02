@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { makeDeck, type SimDeck } from '@tcg/deck-generator';
 import { proportion } from '../analysis/stats.js';
 import type { AdaptiveCheckpoint, AdaptiveCheckpointLineage } from './checkpoint.js';
-import { adaptiveRevisionSeedPath, makeAdaptiveRevision, type AdaptiveRevision } from './revision.js';
-import type { AdaptiveCandidateScreening, AdaptiveObjective, AdaptiveScreeningTally } from './evaluate.js';
+import {
+  adaptiveRevisionSeedPath,
+  makeAdaptiveRevision,
+  type AdaptiveRevision,
+} from './revision.js';
+import type {
+  AdaptiveCandidateScreening,
+  AdaptiveObjective,
+  AdaptiveScreeningTally,
+} from './evaluate.js';
 import type { AdaptiveCandidateEvidence } from './promote.js';
 import {
   buildAdaptiveResult,
@@ -141,11 +149,7 @@ describe('detectAdaptiveCycles', () => {
         decision: { kind: 'tie' },
       });
 
-    const series = [
-      seriesEntry(0, 0, a, b),
-      seriesEntry(1, 1, a, c),
-      seriesEntry(2, 2, a, b),
-    ];
+    const series = [seriesEntry(0, 0, a, b), seriesEntry(1, 1, a, c), seriesEntry(2, 2, a, b)];
 
     const cycles = detectAdaptiveCycles(series);
     expect(cycles).toEqual([
@@ -233,7 +237,9 @@ describe('buildAdaptiveScreeningRound', () => {
 });
 
 describe('summarizeAdaptiveReferenceField', () => {
-  function roundWith(fieldTallies: readonly (AdaptiveScreeningTally | null)[]): AdaptiveScreeningRound {
+  function roundWith(
+    fieldTallies: readonly (AdaptiveScreeningTally | null)[],
+  ): AdaptiveScreeningRound {
     return {
       generation: 1,
       block: 0,
