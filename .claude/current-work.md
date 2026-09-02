@@ -569,3 +569,67 @@ admin-contracts tests pass). `admin-server` focused suite (172) and
 `admin-client` suite (285) pass. `typecheck` clean across all four touched
 workspaces (`admin-contracts`, `admin-server`, `admin-client`, `simulator`).
 ESLint clean on every touched file.
+
+M08.19B is implemented: the directory-keyed adaptive result read model,
+serving M08.18's canonical `adaptive-result.json`/`adaptive-checkpoint.json`
+straight through to bounded tables and a summary, without recomputing any
+simulator meaning. Scope chosen by the owner via `AskUserQuestion`
+("Directory-keyed reader, no Job (Recommended)"): `EXPERIMENT_KINDS` has no
+`'adaptive'` member yet (M08.19A deferred all execution wiring), so there is
+no `JobId` to key a `results.ts`-style reader by; this reader takes a resolved
+run directory directly and serves no HTTP endpoint yet — wiring a directory to
+a job address is still the same deferred, unscoped "next action" M08.19A
+named, not this slice's job.
+
+New `packages/admin-contracts/src/adaptive-results.ts` (re-exported from
+`index.ts`): `adaptiveExperimentIdSchema` restates `@tcg/simulator`'s own
+bound and regex (40 chars, `^[a-z][a-z0-9_-]*$`) rather than importing it
+(ADR 0001, mirroring `EXPERIMENT_KINDS`'s existing precedent) — caught and
+fixed a self-introduced drift where an earlier draft of this restatement had
+only the length bound (200, wrongly documented as matching the simulator)
+with no regex at all, which would have let a malformed ID pass the outgoing
+"publish exactly" validation this file exists to enforce.
+`ADAPTIVE_RESULT_TABLE_NAMES` names the 7 tables this build serves (`series`,
+`revisions`, `screening_candidates`, `deck_diff`, `cycles`, `reference_field`,
+`validation`) — one per evidence stream `AdaptiveResultPayload`
+(`apps/simulator/src/adaptive/report.ts`) keeps separate; `revisions` and
+`deck_diff` fold both lineages into one table each via a `side` column rather
+than two identically-shaped tables. `adaptiveResultTableSchema` and
+`adaptiveRunSummarySchema` mirror `results.ts`'s sibling shapes (bounded
+columns/rows/page, the same two refinements) but are deliberately thinner: no
+`jobId` (nothing to key one by yet) and no `evidenceStanding`/`calibration`
+(an adaptive run writes no calibration standing, so the field would have
+nowhere honest to read from) — a summary asserts it carries neither via a
+drift-guard test.
+
+New `apps/admin-server/src/service/adaptive-results.ts`
+(`readAdaptiveSummary`, `readAdaptiveTable`): reads `adaptive-result.json`
+loosely (unknown-field-stripping `adaptiveResultSchema`), checks
+`refuseForeignVersion` before `.safeParse()` exactly as
+`catalog/job-config.ts`'s `readJobConfig` does, and re-validates every
+outgoing summary/table against the admin-contracts strict schema before it
+leaves. Checkpoint-is-state-not-evidence (per `checkpoint.ts`'s own doc
+comment): a completed run's summary and tables are built only from
+`AdaptiveResultPayload`, never from `adaptive-checkpoint.json`; the checkpoint
+is opened only as best-effort diagnostic context
+(`gamesSpent`/`pendingGeneration`/lineage lengths) on an `admin/no_result`
+refusal, and any failure reading it (missing, unreadable, foreign version,
+schema-invalid) collapses to `null` context rather than misleading context. A
+candidate's `null` `fieldTally` (not-measured) maps to `null` cells, never a
+fabricated zero; `reference_field`/`validation` are 0-or-1-row tables — row
+*absence*, never a null-filled row, when that evidence was not produced.
+
+Verified: 19 new tests in `adaptive-results.test.ts` (admin-server) — summary
+projection and readings read straight off the payload, per-table row counts,
+fixed limitations; refusals for no documents, a checkpoint-only incomplete
+run (asserting the four context keys), unreadable JSON, an unsupported
+schema version, a schema-invalid document, and a bad checkpoint never
+standing in as context for a bad result; table column/cell-membership
+invariant, two-lineage `side` splitting, null-`fieldTally` cells, the
+0-row/1-row `reference_field` and `validation` cases, no-decision block
+rendering, and pagination. 11 new tests in `adaptive-results.test.ts`
+(admin-contracts) — experiment-ID bound/regex, table round-trip and its two
+refinements, the closed table-name and document-name lists, and the summary's
+missing-`jobId`/missing-calibration drift guards. `npm run typecheck` clean
+on both `@tcg/admin-contracts` and `@tcg/admin-server`; `eslint` reports no
+issues on the four new files.

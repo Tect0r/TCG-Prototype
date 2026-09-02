@@ -3468,10 +3468,43 @@ labelling, revision drill-down, cycle fixture and incomplete-run tests.
       `admin-contracts`/`admin-server`/`admin-client`/`simulator` typecheck all
       pass. `BuilderScreen.tsx`/`fake-service.ts` updated only for the widened
       `ChoiceEstimate` union type; no new adaptive UI.
-- [ ] **M08.19B — Adaptive result read model.** Serve the bounded tables and
+- [x] **M08.19B — Adaptive result read model.** Serve the bounded tables and
       provenance the dashboard needs from canonical M08.18 output, including
       incomplete-run and unsupported-version states, without recomputing simulator
       meaning in the admin layer.
+      Verified: directory-keyed rather than job-keyed, per the owner's
+      `AskUserQuestion` answer ("Directory-keyed reader, no Job") — `EXPERIMENT_KINDS`
+      still has no `'adaptive'` member (enqueue/execution wiring stays the deferred,
+      unscoped "next action" M08.19A named), so there is no `JobId` to key a
+      `results.ts`-style reader by. New `packages/admin-contracts/src/adaptive-results.ts`
+      (re-exported from `index.ts`): `adaptiveExperimentIdSchema` restates the
+      simulator's own bound/regex rather than importing it (ADR 0001);
+      `ADAPTIVE_RESULT_TABLE_NAMES` names the 7 tables served (`series`, `revisions`,
+      `screening_candidates`, `deck_diff`, `cycles`, `reference_field`, `validation`);
+      `adaptiveResultTableSchema`/`adaptiveRunSummarySchema` mirror `results.ts`'s
+      shapes but omit `jobId` and `evidenceStanding`/`calibration`, which an
+      adaptive run has no way to produce yet. New
+      `apps/admin-server/src/service/adaptive-results.ts`
+      (`readAdaptiveSummary`/`readAdaptiveTable`): reads `adaptive-result.json`
+      loosely, checks `refuseForeignVersion` before `.safeParse()` exactly as
+      `catalog/job-config.ts` does, and re-validates every outgoing summary/table
+      strictly before it leaves. Checkpoint-is-state-not-evidence: a completed
+      run's tables/summary are built only from `AdaptiveResultPayload`, never from
+      `adaptive-checkpoint.json`; the checkpoint is opened only as best-effort
+      diagnostic context on an `admin/no_result` refusal, collapsing to `null`
+      context on any failure reading it. Null-vs-zero discipline: a candidate's
+      unmeasured `fieldTally` maps to `null` cells, never a fabricated zero;
+      `reference_field`/`validation` are 0-or-1-row tables (row absence, never a
+      null-filled row) when that evidence was not produced. No HTTP endpoint yet —
+      wiring a directory to a job address is still the same deferred slice.
+      19 new tests in `apps/admin-server/src/service/adaptive-results.test.ts`, 11
+      new tests in `packages/admin-contracts/src/adaptive-results.test.ts` (30
+      total): complete-run projection, incomplete-run refusal with checkpoint
+      context, unsupported-version refusal (both documents), malformed/missing-field
+      refusal, null-vs-zero cells, series/validation table separation, pagination,
+      and the "no path anywhere in the transport" invariant. `npm run typecheck`
+      clean on `@tcg/admin-contracts` and `@tcg/admin-server`; ESLint clean on all
+      four new/touched files.
 - [ ] **M08.19C — Series and revision dashboard.** Render cumulative and rolling
       results, revision timeline, add/remove history, promotion evidence, start/final
       diff and reference-field performance with exact tables beside charts.

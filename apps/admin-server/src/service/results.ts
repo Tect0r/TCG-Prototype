@@ -65,14 +65,14 @@ import { readRunIdentity } from '../run/manifest.js';
 
 /* ------------------------------------------------------- the documents read */
 
-const proportionShape = z.object({
+export const proportionShape = z.object({
   point: z.number(),
   low: z.number(),
   high: z.number(),
   successes: z.number(),
   total: z.number(),
 });
-type Proportion = z.infer<typeof proportionShape>;
+export type Proportion = z.infer<typeof proportionShape>;
 
 const runShape = z.object({
   matches: z.number(),
@@ -266,17 +266,17 @@ interface BuiltTable {
   readonly rows: readonly ResultRow[];
 }
 
-const column = (
+export const column = (
   key: string,
   label: string,
   kind: ResultColumn['kind'],
   bounds: ResultColumn['bounds'] = null,
 ): ResultColumn => ({ key, label, kind, bounds });
 
-const interval = (key: string, label: string): ResultColumn =>
+export const interval = (key: string, label: string): ResultColumn =>
   column(key, label, 'interval', { low: `${key}Low`, high: `${key}High` });
 
-function spreadRate(key: string, rate: Proportion): ResultRow {
+export function spreadRate(key: string, rate: Proportion): ResultRow {
   return {
     [key]: rate.point,
     [`${key}Low`]: rate.low,

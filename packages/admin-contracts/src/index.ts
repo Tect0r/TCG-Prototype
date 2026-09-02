@@ -419,6 +419,22 @@ export {
 } from './results.js';
 
 export {
+  ADAPTIVE_RESULT_DOCUMENTS,
+  ADAPTIVE_RESULT_TABLE_NAMES,
+  MAX_ADAPTIVE_EXPERIMENT_ID,
+  adaptiveExperimentIdSchema,
+  adaptiveResultSourceSchema,
+  adaptiveResultTableNameSchema,
+  adaptiveResultTableSchema,
+  adaptiveRunSummarySchema,
+  type AdaptiveExperimentId,
+  type AdaptiveResultSource,
+  type AdaptiveResultTable,
+  type AdaptiveResultTableName,
+  type AdaptiveRunSummary,
+} from './adaptive-results.js';
+
+export {
   ADMIN_API_ROOT,
   ADMIN_API_VERSION_SEGMENT,
   ADMIN_ENDPOINTS,

@@ -223,11 +223,22 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.19B — Adaptive result read model.** Serve the bounded tables and
-provenance the dashboard needs from canonical M08.18 output, including
-incomplete-run and unsupported-version states, without recomputing simulator
-meaning in the admin layer. Its scope and checklist are in
+**M08.19C — Series and revision dashboard.** Render cumulative and rolling
+results, revision timeline, add/remove history, promotion evidence, start/final
+diff and reference-field performance with exact tables beside charts. Its scope
+and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0819--adaptive-counter-builder-and-dashboard).
+
+**M08.19B closed 2026-09-02 on the directory-keyed read model, not an HTTP
+endpoint.** Per the user's `AskUserQuestion` answer ("Directory-keyed reader,
+no Job"), `apps/admin-server/src/service/adaptive-results.ts` reads a resolved
+run directory's canonical `adaptive-result.json`/`adaptive-checkpoint.json`
+straight into bounded tables and a summary — no `JobId`, since
+`EXPERIMENT_KINDS` still has no `'adaptive'` member and the enqueue/execution
+gap below remains open. Wiring this reader to an HTTP address is left to
+M08.19C, which is the first slice that actually needs one. Full record in
+`docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.19B checkbox and
+`.claude/current-work.md`.
 
 **M08.19A closed 2026-09-02 on contracts, restoration and workload — not
 execution.** The user resolved the two open architecture questions the prior
@@ -262,10 +273,10 @@ per the user's "Dedicated address" answer), `jobSpecSchema`/
 `CATALOG_DOCUMENT_VERSION` bump), a `CatalogStore` method to create it, and a
 job-runner branch calling `runAdaptiveExperiment` — is not yet named as its
 own numbered slice in the M08.19 work-slice list and should be scoped and
-inserted (e.g. before M08.19B, since the dashboard slices read finished runs
-and do not themselves require it) before a session picks it up. Until then,
-M08.19B (read model) and the later dashboard/close slices proceed against the
-canonical M08.18 report output directly, independent of this gap.
+inserted (e.g. before M08.19C, since M08.19C reads finished runs by directory
+and does not itself require it) before a session picks it up. Until then,
+M08.19C and the later dashboard/close slices proceed against the canonical
+M08.18 report output directly, independent of this gap.
 
 M08.17 closed on 2026-09-02 (`tcg-reviewer` `VERDICT: APPROVE` on recheck after
 one fixed HIGH finding — a vacuous moving-opponent staleness check for a
