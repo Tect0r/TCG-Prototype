@@ -357,6 +357,52 @@ const commonChoiceFields = {
 const preconSelection = z.array(resolvedIdSchema).min(2).max(16);
 const pilotSelection = z.array(resolvedIdSchema).min(1).max(4);
 
+/* ------------------------------------------------- adaptive counter search */
+
+/**
+ * Restated from `AdaptiveCommanderPolicy` in `apps/simulator/src/adaptive/
+ * config.ts` (this package cannot import the simulator; see the header). The
+ * expansion re-validates every value through `parseAdaptiveConfig`, so a
+ * restatement that drifted narrower only refuses a run the simulator would
+ * accept, and one that drifted wider is refused there instead of here.
+ */
+export const ADAPTIVE_COMMANDER_POLICIES = ['locked', 'selected', 'open'] as const;
+export const adaptiveCommanderPolicySchema = z.enum(ADAPTIVE_COMMANDER_POLICIES);
+export type AdaptiveCommanderPolicy = z.infer<typeof adaptiveCommanderPolicySchema>;
+
+/** Restated from `AdaptiveInformationPolicy`, same file. */
+export const ADAPTIVE_INFORMATION_POLICIES = ['public_observation', 'analysis_full_deck'] as const;
+export const adaptiveInformationPolicySchema = z.enum(ADAPTIVE_INFORMATION_POLICIES);
+export type AdaptiveInformationPolicy = z.infer<typeof adaptiveInformationPolicySchema>;
+
+/** Restated from `adaptiveSwapBoundSchema`, same file. */
+export const adaptiveSwapBoundSchema = z
+  .strictObject({
+    minCards: z.number().int().min(1).max(40),
+    maxCards: z.number().int().min(1).max(40),
+  })
+  .refine((bound) => bound.minCards <= bound.maxCards, {
+    message: '`minCards` cannot exceed `maxCards`.',
+    path: ['minCards'],
+  });
+export type AdaptiveSwapBound = z.infer<typeof adaptiveSwapBoundSchema>;
+
+export const DEFAULT_ADAPTIVE_SWAP_BOUND: AdaptiveSwapBound = { minCards: 1, maxCards: 5 };
+
+/** Restated from `adaptiveRebuildTriggerSchema`, same file. */
+export const adaptiveRebuildTriggerSchema = z
+  .strictObject({
+    afterConsecutiveLosses: z.number().int().min(1).max(50).optional(),
+    everyBlocks: z.number().int().min(1).max(1000).optional(),
+  })
+  .refine(
+    (trigger) => trigger.afterConsecutiveLosses !== undefined || trigger.everyBlocks !== undefined,
+    'A rebuild trigger must name at least one condition.',
+  );
+export type AdaptiveRebuildTrigger = z.infer<typeof adaptiveRebuildTriggerSchema>;
+
+const startingDeckSelection = z.array(resolvedIdSchema).min(1).max(16);
+
 /* ------------------------------------------- the precon-benchmark settings */
 
 /**
@@ -582,6 +628,36 @@ export const presetChoiceSchema = z.discriminatedUnion('presetId', [
     preconIds: preconSelection,
     gamesPerSeatOrder: z.number().int().min(1).max(500).default(25),
   }),
+  z.strictObject({
+    presetId: z.literal('adaptive_counter'),
+    ...commonChoiceFields,
+    /**
+     * Where both co-evolving lineages' generation-0 root comes from,
+     * resolved by the server exactly like `deckSourceSchema`'s `precon`
+     * variant. `AdaptiveConfig.startingDecks` is one deck source shared by
+     * both sides, so this is `min(1)`, not `preconSelection`'s `min(2)` —
+     * a benchmark needs decks to compare, an adaptive run needs one root.
+     */
+    startingPreconIds: startingDeckSelection,
+    commanderPolicy: adaptiveCommanderPolicySchema.default('locked'),
+    /** Which Commander(s) this run is focused on countering. Required only when `commanderPolicy` is `selected`. */
+    selectedCommanderIds: z.array(resolvedIdSchema).max(64).default([]),
+    informationPolicy: adaptiveInformationPolicySchema.default('public_observation'),
+    /** When a lineage discards its history and rebuilds from the starting root instead of swapping forward. */
+    rebuildTrigger: adaptiveRebuildTriggerSchema.nullable().default(null),
+    /** Total games this run may spend across every evaluation block. */
+    totalLearningBudget: z.number().int().min(1).max(1_000_000),
+    /** Games per pairing in one mirrored evaluation block. */
+    blockSize: z.number().int().min(1).max(10_000),
+    mirrorSeats: z.boolean().default(true),
+    /** Candidate revisions generated per adaptation. */
+    candidateCount: z.number().int().min(1).max(64),
+    swapBound: adaptiveSwapBoundSchema.default(DEFAULT_ADAPTIVE_SWAP_BOUND),
+    /** Share (0-1) of evaluation opponents drawn from the reference field rather than the current opponent. */
+    referenceFieldShare: z.number().min(0).max(1).default(0),
+    /** Games played per pairing in the frozen fresh-seed final validation stage. */
+    finalValidationGames: z.number().int().min(1).max(100_000),
+  }),
 ]);
 export type PresetChoice = z.infer<typeof presetChoiceSchema>;
 export type PresetChoiceInput = z.input<typeof presetChoiceSchema>;
@@ -681,3 +757,22 @@ export const presetExpansionSchema = z
     'Stage IDs are unique within one expansion.',
   );
 export type PresetExpansion = z.infer<typeof presetExpansionSchema>;
+
+/**
+ * What an `adaptive_counter` choice validated to, without a stage plan.
+ *
+ * `presetExpansionSchema` is stage-shaped — `stages: min(1)` of
+ * `experimentKindSchema`-typed work `expandPreset` turns into jobs — and
+ * `adaptive_counter` is reserved: `PRESET_REGISTRY.adaptive_counter`'s own
+ * `limitations` say a request to expand it is refused rather than
+ * approximated with a search, so it can never produce a stage. This is the
+ * separate, smaller shape a choice that only validates and estimates
+ * produces, until a later tranche gives it a real scheduler.
+ */
+export const adaptiveExpansionSchema = z.strictObject({
+  presetId: z.literal('adaptive_counter'),
+  testStyle: presetTestStyleSchema,
+  sourceClasses: sourceClassesSchema,
+  limitations: z.array(z.string().min(1).max(400)).max(32).default([]),
+});
+export type AdaptiveExpansion = z.infer<typeof adaptiveExpansionSchema>;

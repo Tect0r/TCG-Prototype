@@ -138,9 +138,13 @@ describe('the estimate endpoint', () => {
     if (isErr(answer)) throw new Error(answer.error.map((problem) => problem.message).join('; '));
 
     valid('estimateChoice', answer.value);
-    expect(answer.value.estimate.basis).toBe('exact');
-    expect(answer.value.estimate.totalMatches).toBeGreaterThan(0);
-    expect(answer.value.expansion.stages).toHaveLength(1);
+    const { estimate, expansion } = answer.value;
+    if (!('totalMatches' in estimate) || !('stages' in expansion)) {
+      throw new Error('expected a staged preset estimate, not an adaptive one');
+    }
+    expect(estimate.basis).toBe('exact');
+    expect(estimate.totalMatches).toBeGreaterThan(0);
+    expect(expansion.stages).toHaveLength(1);
 
     // Nothing was created: the catalog is still empty of batches.
     const batches = await service.handle('listBatches', { page: { limit: 50, cursor: null } });
@@ -212,6 +216,89 @@ describe('the estimate endpoint', () => {
       choice: choice({ preconIds: ['precon_goblin_swarm'] }),
     });
     expect(isErr(answer)).toBe(true);
+  });
+});
+
+/* --------------------------------------------------- adaptive_counter (M08.19A) */
+
+function adaptiveChoice(overrides: Record<string, unknown> = {}): PresetChoice {
+  return {
+    presetId: 'adaptive_counter',
+    experimentId: 'adaptive-search',
+    seed: 'adaptive-seed',
+    startingPreconIds: ['precon_goblin_swarm'],
+    totalLearningBudget: 100,
+    blockSize: 10,
+    candidateCount: 4,
+    finalValidationGames: 20,
+    ...overrides,
+  } as unknown as PresetChoice;
+}
+
+describe('adaptive_counter, on its own narrower door', () => {
+  it('answers a workload, not a match-count schedule, and shows it before enqueueing', async () => {
+    const service = await makeService();
+    const answer = await service.handle('estimateChoice', { choice: adaptiveChoice() });
+    if (isErr(answer)) throw new Error(answer.error.map((problem) => problem.message).join('; '));
+
+    valid('estimateChoice', answer.value);
+    const { estimate, expansion } = answer.value;
+    if ('totalMatches' in estimate || 'stages' in expansion) {
+      throw new Error('expected an adaptive workload estimate, not a staged preset one');
+    }
+    expect(estimate).toMatchObject({
+      gamesPerBlock: 20,
+      blocksScheduled: 5,
+      gamesScheduled: 100,
+      gamesUnspent: 0,
+      finalValidationGames: 20,
+    });
+  });
+
+  it('restores every control through a save and reopen, unchanged', async () => {
+    const service = await makeService();
+    const full = adaptiveChoice({
+      commanderPolicy: 'selected',
+      selectedCommanderIds: ['goblin_warboss'],
+      informationPolicy: 'analysis_full_deck',
+      mirrorSeats: false,
+      blockSize: 5,
+      swapBound: { minCards: 2, maxCards: 3 },
+      referenceFieldShare: 0.25,
+      rebuildTrigger: { afterConsecutiveLosses: 3 },
+    });
+    const saved = await service.handle('saveChoice', { label: 'Adaptive draft', choice: full });
+    if (isErr(saved)) throw new Error('saveChoice refused');
+    valid('saveChoice', saved.value);
+
+    const listed = await service.handle('listSavedChoices', {});
+    if (isErr(listed)) throw new Error('listSavedChoices refused');
+    expect(listed.value.items[0]?.choice).toEqual(full);
+  });
+
+  it('is refused as an unsupported preset when the choice cannot validate', async () => {
+    const service = await makeService();
+    const answer = await service.handle('estimateChoice', {
+      choice: adaptiveChoice({ startingPreconIds: ['precon_not_real'] }),
+    });
+    expect(isErr(answer)).toBe(true);
+    if (!isErr(answer)) return;
+    expect(answer.error[0]?.code).toBe('admin/schema');
+  });
+
+  it('still refuses to enqueue, because scheduling an adaptive run is not in this build', async () => {
+    const service = await makeService();
+    const batch = await service.handle('createBatch', {
+      label: 'Adaptive attempt',
+      annotations: { tags: [], note: '', baseline: false },
+    });
+    if (isErr(batch)) throw new Error('createBatch refused');
+
+    const enqueued = await service.handle('enqueuePreset', {
+      batchId: batch.value.batchId,
+      choice: adaptiveChoice(),
+    });
+    expect(isErr(enqueued)).toBe(true);
   });
 });
 

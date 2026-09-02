@@ -731,6 +731,18 @@ export function expandPreset(input: PresetChoiceInput | unknown): ExpandedPreset
       case 'engine_soak':
         requireDistinct('preconIds', choice.preconIds, 'Precon');
         return engineSoak(choice, environmentConfig);
+      case 'adaptive_counter':
+        // Reserved (M08.19A): `adaptive_choice.ts` validates and estimates
+        // this preset on its own, separate path — see its own header for
+        // why. This function stays the single door onto
+        // `experimentConfigSchema`, so it refuses here exactly as
+        // `PRESET_REGISTRY.adaptive_counter.limitations` already promises,
+        // rather than growing a stage kind nothing downstream can run.
+        return refuse(
+          'presetId',
+          definition.limitations[0] ??
+            'adaptive_counter is reserved and cannot be expanded into stages.',
+        );
       default: {
         const never: never = choice;
         throw new PresetRefused([

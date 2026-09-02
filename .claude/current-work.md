@@ -496,26 +496,76 @@ scheduled.matches.length` instead, next time this file is touched.
 
 M08.18 tranche-close record committed and pushed. M08.18 is complete.
 
-M08.19A was not started. Recon plus direct reading of
-`packages/admin-contracts/src/{presets,estimate,catalog}.ts` and
-`apps/admin-server/src/lab/expand.ts` established that the entire admin preset
-pipeline (`presetChoiceSchema` → `saveChoice`/`estimateChoice`/`enqueuePreset`,
-all routed through `expandPreset`'s exhaustive switch) is structurally coupled
-to `ExperimentConfig` and the simulator's `runExperiment`/`runBatch`
-batch/search/comparison/robustness execution model — while `AdaptiveConfig`
-(M08.16) is a deliberately separate schema executed only by
-`runAdaptiveExperiment`/`runAdaptiveFinalValidation`. Adding `adaptive_counter`
-to `presetChoiceSchema` therefore cannot be a self-contained contract change:
-it forces an unresolved decision on how an adaptive run becomes a queued,
-executable job (a dedicated `enqueueAdaptive` address and `JobOrigin` kind,
-mirroring M08.15's `scheduleChampionship` precedent, versus widening
-`ExperimentConfig`/`experimentKindSchema`/the job-runner's dispatch). Per
-CLAUDE.md's "do not silently invent unresolved rules," this is recorded as the
-blocking question in `IMPLEMENTATION_PLAN.md`'s "The next bounded task"
-section rather than guessed at. No source files were changed; only
-`IMPLEMENTATION_PLAN.md` and this file were edited. The full field-surface
-scoping for the controls contract, and confirmation that restoration
-(`saveChoice`/`listSavedChoices`) and a `planAdaptiveBudget`-based workload
-readout are otherwise unblocked once the enqueue-path decision is made, are
-recorded in that same note so the next session does not have to re-derive
-them.
+M08.19A closed 2026-09-02. The prior blocking question (how an adaptive run
+becomes a queued, executable job) was answered by the owner across two
+`AskUserQuestion` rounds: a dedicated mutating address/`JobOrigin` member
+(mirroring `scheduleChampionship`), and a `jobSpecSchema` widened to a union
+rather than a parallel store. With the architecture settled, this slice made
+its own further, narrower scope call: implement contracts, restoration and
+workload only, and defer everything execution-shaped (`enqueueAdaptive`,
+`CatalogStore`/`Job` persistence, the `jobSpecSchema`/`experimentKindSchema`
+union widening, job-runner dispatch) to a not-yet-named later slice — because
+`ExperimentRunner.run()`/the job-runner are deeply coupled to
+`ExperimentConfig`'s match-count/schedule model, and M08.19's own
+**Acceptance** line never requires execution wiring for the builder slice.
+This deferral is recorded as "the next action" (distinct from the literal
+next work slice, M08.19B, which does not depend on it) in
+`IMPLEMENTATION_PLAN.md`'s "The next bounded task" section.
+
+Changed: `packages/admin-contracts/src/presets.ts` (9th `presetChoiceSchema`
+member `adaptive_counter` — `ADAPTIVE_COMMANDER_POLICIES`,
+`ADAPTIVE_INFORMATION_POLICIES`, `adaptiveSwapBoundSchema`,
+`adaptiveRebuildTriggerSchema`, `startingDeckSelection`, and the full 12-field
+control surface mapped onto `AdaptiveConfig`: starting decks, Commander/
+information/adaptation policy, budget, block, candidate, swap, counter-focus,
+reference-field and final-validation), `adaptiveExpansionSchema`; `estimate.ts`
+(`adaptiveWorkloadEstimateSchema`, refined so `shortfallReason` is non-empty
+exactly when `gamesUnspent !== 0`); `service.ts` (`choiceEstimateSchema`
+widened to `z.union([presetExpansionSchema, adaptiveExpansionSchema])` /
+`z.union([matchCountEstimateSchema, adaptiveWorkloadEstimateSchema])` —
+`enqueuePresetResultSchema` deliberately left on the unwidened shape since
+`enqueuePreset` still refuses adaptive); `index.ts` re-exports.
+`apps/admin-server/src/lab/expand.ts` gained exactly one refusing
+`case 'adaptive_counter':` in `expandPreset`'s exhaustive switch, quoting the
+preset registry's own `limitations[0]`. New
+`apps/admin-server/src/lab/adaptive-choice.ts` (`estimateAdaptiveChoice`,
+`AdaptiveChoiceEstimate`) is the parallel door: safe-parses the choice,
+requires distinct starting precons and distinct/known selected Commanders,
+resolves the starting deck for real via `resolveDeckSource` (catches a bad
+precon ID before it ever reaches `AdaptiveConfig`), builds and parses a real
+`AdaptiveConfig` via `parseAdaptiveConfig`, then prices it with
+`planAdaptiveBudget`; reuses `expand.ts`'s `PresetRefused`, `presetEnvironment`,
+`presetEnvironmentConfig`, `scrubRefusal` rather than duplicating them.
+`apps/admin-server/src/service/handlers.ts` branches `#estimateChoice` and
+`#saveChoice` to a new `estimateAdaptiveOrRefuse` wrapper when
+`choice.presetId === 'adaptive_counter'`; `#enqueuePreset` is deliberately
+unbranched and keeps refusing. `apps/admin-client/src/components/
+BuilderScreen.tsx` and `apps/admin-client/src/test/fake-service.ts` updated
+only for the widened `ChoiceEstimate` union type (narrowing guards / a
+precise non-union return-type annotation) — no new adaptive UI, since the
+client's own preset picker never offers a `status: 'reserved'` preset.
+
+Version decision: no `ADMIN_CONTRACT_VERSION` or `SAVED_CHOICE_VERSION` bump.
+`version.ts`'s own version-4 doc comment treats additive `presetChoiceSchema`
+widening as not requiring a bump by itself (only new endpoint addresses did),
+and `git log -S` confirms `SAVED_CHOICE_VERSION` has never moved despite many
+earlier additive preset-field widenings. This slice adds zero new endpoint
+addresses (reuses `estimateChoice`/`saveChoice`; `enqueuePreset` still refuses
+adaptive unconditionally, so no new capability is end-to-end reachable yet),
+and no `Job`/catalog document persistence changed, so `CATALOG_DOCUMENT_VERSION`
+does not apply either.
+
+Verified: 10 new tests in `adaptive-choice.test.ts` (validates into a real
+`AdaptiveConfig` and prices it; shortfall reporting; every control carried
+through unchanged; refusals for an unknown precon, a duplicated precon, an
+unknown Commander, min>max swap bound, a Commander named under a policy that
+never reads one, a mismatched `presetId`, and that no refusal message names a
+filesystem path). 4 new tests in `builder-endpoints.test.ts` (20 total in that
+file): the workload/expansion shape returned before enqueueing, full
+restoration of every control through save-and-reopen, refusal on an invalid
+choice, and that `enqueuePreset` still refuses adaptive. `presets.test.ts`'s
+field-name drift guard updated to include the 12 new fields (417
+admin-contracts tests pass). `admin-server` focused suite (172) and
+`admin-client` suite (285) pass. `typecheck` clean across all four touched
+workspaces (`admin-contracts`, `admin-server`, `admin-client`, `simulator`).
+ESLint clean on every touched file.

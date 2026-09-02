@@ -8,13 +8,17 @@ import {
   resultRootIdSchema,
 } from './catalog.js';
 import { contentCatalogSchema } from './content.js';
-import { matchCountEstimateSchema } from './estimate.js';
+import { adaptiveWorkloadEstimateSchema, matchCountEstimateSchema } from './estimate.js';
 import { jobEventSchema } from './events.js';
 import { MAX_FILTER_VALUES } from './filters.js';
 import { batchIdSchema, jobIdSchema, timestampSchema } from './identity.js';
 import { jobStatusSchema, progressSchema } from './lifecycle.js';
 import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from './pagination.js';
-import { experimentPresetDefinitionSchema, presetExpansionSchema } from './presets.js';
+import {
+  adaptiveExpansionSchema,
+  experimentPresetDefinitionSchema,
+  presetExpansionSchema,
+} from './presets.js';
 import {
   batchPageSchema,
   batchRefSchema,
@@ -290,10 +294,17 @@ export type EnqueuePresetResult = z.infer<typeof enqueuePresetResultSchema>;
  * visible before enqueue as well as the total: a choice of four replicates is
  * four jobs, and an administrator seeing one number and receiving four queue
  * entries has been surprised by their own form.
+ *
+ * `adaptive_counter` widens both members rather than getting a second
+ * response shape: it is still one choice answered by one call, and a client
+ * already reading `expansion.limitations`/`estimate.limitations` reads them
+ * the same way whichever preset produced them. See `adaptiveExpansionSchema`
+ * and `adaptiveWorkloadEstimateSchema` for why the adaptive halves are
+ * differently shaped from the staged ones.
  */
 export const choiceEstimateSchema = z.strictObject({
-  expansion: presetExpansionSchema,
-  estimate: matchCountEstimateSchema,
+  expansion: z.union([presetExpansionSchema, adaptiveExpansionSchema]),
+  estimate: z.union([matchCountEstimateSchema, adaptiveWorkloadEstimateSchema]),
 });
 export type ChoiceEstimate = z.infer<typeof choiceEstimateSchema>;
 

@@ -28,7 +28,8 @@ import {
   type Capabilities,
   type CatalogBatchView,
   type CatalogFilter,
-  type ChoiceEstimate,
+  type MatchCountEstimate,
+  type PresetExpansion,
   type BatchDetail,
   type CatalogJobView,
   type ContentCatalog,
@@ -1384,7 +1385,9 @@ function staleIn(choice: PresetChoice | undefined, withdrawn: readonly string[])
  * tested on is that the number it was given is the number it shows, and that it
  * refuses to enqueue until it has one for the configuration on screen.
  */
-function estimateFor(choice: PresetChoice | undefined): ChoiceEstimate {
+function estimateFor(
+  choice: PresetChoice | undefined,
+): { expansion: PresetExpansion; estimate: MatchCountEstimate } {
   const decks = choice !== undefined && 'preconIds' in choice ? choice.preconIds.length : 0;
   const pilots = choice !== undefined && 'pilotIds' in choice ? choice.pilotIds.length : 1;
   const settings = choice !== undefined && 'settings' in choice ? choice.settings : undefined;

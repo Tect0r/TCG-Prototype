@@ -239,3 +239,37 @@ export const matchCountEstimateSchema = z
     'The total’s basis has to be the combination of its stages’ bases.',
   );
 export type MatchCountEstimate = z.infer<typeof matchCountEstimateSchema>;
+
+/**
+ * What an `adaptive_counter` choice would spend, said in `AdaptiveBudgetPlan`'s
+ * own terms rather than `matchCountEstimateSchema`'s.
+ *
+ * An adaptive run has no stage list to count a schedule from — its games are
+ * spent block by block as evaluation decides each one, not scheduled up
+ * front — so `totalMatches`/`stages`/`forcedInclusion` do not apply. What is
+ * knowable before anything runs is `planAdaptiveBudget`'s own answer: how
+ * many whole blocks the declared `totalLearningBudget` affords, and the
+ * explained leftover when it does not divide evenly. This is that answer's
+ * transport, plus the separately-budgeted final validation stage the
+ * milestone asks a builder to show workload for.
+ */
+export const adaptiveWorkloadEstimateSchema = z
+  .strictObject({
+    /** Games one mirrored evaluation block spends: `blockSize x (mirrorSeats ? 2 : 1)`. */
+    gamesPerBlock: z.number().int().min(0).max(1_000_000),
+    /** Whole blocks `totalLearningBudget` affords. */
+    blocksScheduled: z.number().int().min(0).max(1_000_000),
+    gamesScheduled: z.number().int().min(0).max(1_000_000_000),
+    /** Games left over when the budget does not divide evenly into whole blocks. */
+    gamesUnspent: z.number().int().min(0).max(1_000_000),
+    /** Why `gamesUnspent` is nonzero. Empty when the budget divides evenly. */
+    shortfallReason: z.string().max(600).default(''),
+    /** Games per pairing in the frozen fresh-seed final validation stage, reported separately from the learning budget above. */
+    finalValidationGames: z.number().int().min(1).max(100_000),
+    limitations: z.array(z.string().min(1).max(400)).max(32).default([]),
+  })
+  .refine(
+    (estimate) => (estimate.gamesUnspent === 0) === (estimate.shortfallReason.length === 0),
+    '`shortfallReason` is required exactly when `gamesUnspent` is nonzero.',
+  );
+export type AdaptiveWorkloadEstimate = z.infer<typeof adaptiveWorkloadEstimateSchema>;

@@ -36,6 +36,7 @@ import type { CatalogResult, CatalogStore } from '../catalog/store.js';
 import { ChampionshipScheduler } from '../lab/championship.js';
 import { readContentCatalog } from '../lab/content.js';
 import { duplicateConfig } from '../lab/duplicate.js';
+import { estimateAdaptiveChoice } from '../lab/adaptive-choice.js';
 import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js';
 import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
@@ -229,6 +230,7 @@ export class AdminService {
   async #estimateChoice(
     choice: AdminRequestOf<'estimateChoice'>['choice'],
   ): Promise<CatalogResult<ChoiceEstimate>> {
+    if (choice.presetId === 'adaptive_counter') return estimateAdaptiveOrRefuse(choice);
     const expanded = expandOrRefuse(choice);
     if (isErr(expanded)) return expanded;
     return ok({ expansion: expanded.value.expansion, estimate: expanded.value.estimate });
@@ -333,7 +335,10 @@ export class AdminService {
   async #saveChoice(
     payload: AdminRequestOf<'saveChoice'>,
   ): Promise<CatalogResult<SavedChoiceView>> {
-    const expanded = expandOrRefuse(payload.choice);
+    const expanded =
+      payload.choice.presetId === 'adaptive_counter'
+        ? estimateAdaptiveOrRefuse(payload.choice)
+        : expandOrRefuse(payload.choice);
     if (isErr(expanded)) return expanded;
 
     const created = await this.#store.createSavedChoice({
@@ -609,6 +614,31 @@ function expandOrRefuse(choice: unknown): CatalogResult<PresetEstimate> {
     // sentence is the authoritative one and is reused, with anything path-shaped
     // taken out first (ADR 0023 §5). Answering 500 would tell an operator the
     // lab is broken when their form is.
+    return err([
+      adminError(
+        'admin/schema',
+        scrubRefusal(
+          `This preset choice could not be expanded: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+        { path: 'choice' },
+      ),
+    ]);
+  }
+}
+
+/**
+ * The adaptive counterpart to `expandOrRefuse`, over `estimateAdaptiveChoice`
+ * rather than `estimatePreset` — see `../lab/adaptive-choice.ts`'s header for
+ * why `adaptive_counter` needs its own door. Used by `#estimateChoice` and
+ * `#saveChoice` only: `#enqueuePreset` still goes through `expandOrRefuse`,
+ * which refuses `adaptive_counter` outright, because this build cannot
+ * schedule one yet.
+ */
+function estimateAdaptiveOrRefuse(choice: unknown): CatalogResult<ChoiceEstimate> {
+  try {
+    return ok(estimateAdaptiveChoice(choice));
+  } catch (cause) {
+    if (cause instanceof PresetRefused) return err(cause.errors);
     return err([
       adminError(
         'admin/schema',

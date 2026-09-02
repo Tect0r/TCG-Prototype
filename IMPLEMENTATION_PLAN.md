@@ -223,68 +223,49 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.19A — Builder contracts and restoration.** Expose starting decks,
-Commander/information/adaptation policy, budget, block, candidate, swap,
-counter-focus, reference-field and final-validation controls. Restore every
-value and show workload before enqueueing. Its scope and checklist are in
+**M08.19B — Adaptive result read model.** Serve the bounded tables and
+provenance the dashboard needs from canonical M08.18 output, including
+incomplete-run and unsupported-version states, without recomputing simulator
+meaning in the admin layer. Its scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0819--adaptive-counter-builder-and-dashboard).
 
-**M08.19A is blocked on an unresolved architecture question, recorded here
-2026-09-02 rather than guessed at.** The whole admin preset pipeline —
-`presetChoiceSchema` (`packages/admin-contracts/src/presets.ts`), `saveChoice`/
-`listSavedChoices` (restoration), `estimateChoice` (workload) and
-`enqueuePreset` — is built around `expandPreset`
-(`apps/admin-server/src/lab/expand.ts`), whose `switch (choice.presetId)` is
-exhaustive over the 8 available members and whose every branch returns
-`ExpandedStage[]` carrying a real `ExperimentConfig` (validated by
-`parseExperimentConfig`, the simulator's batch/search/comparison/robustness
-schema). `saveChoice` calls this same `expandPreset` before it will persist a
-choice at all ("The expansion happens before the write, deliberately"), so
-restoration is not separable from expansion. `estimateChoice` returns
-`matchCountEstimateSchema` (`packages/admin-contracts/src/estimate.ts`), built
-from `buildSchedule` counts, `gamesPerSeatOrder` and `pilotTuples` — a shape
-with no honest reading for an adaptive run's budget/block framing
-(`planAdaptiveBudget` in `apps/simulator/src/adaptive/block.ts` answers "how
-many whole blocks does `totalLearningBudget` afford," not a match count).
-`enqueuePreset` writes `stage.config` straight into `CatalogStore.createJob`,
-whose `config` parameter and `jobSpecSchema.kind`
-(`packages/admin-contracts/src/catalog.ts`) are typed on `ExperimentConfig`/
-`experimentKindSchema` (5 closed members: batch/search/comparison/replacement/
-robustness) — `AdaptiveConfig` is a deliberately separate, incompatible schema
-(M08.16), executed by `runAdaptiveExperiment`/`runAdaptiveFinalValidation`
-(`apps/simulator/src/adaptive/run.ts`), never by `runExperiment`/`runBatch`
-against an `ExperimentConfig`.
+**M08.19A closed 2026-09-02 on contracts, restoration and workload — not
+execution.** The user resolved the two open architecture questions the prior
+blocking note recorded ("Dedicated address" for how an adaptive run becomes a
+queued job; "Widen spec to a union" for how `Job` storage should carry it).
+With both answered, this slice made a further, narrower scope call of its own:
+implement only `presetChoiceSchema`'s 9th member (the full `AdaptiveConfig`
+field surface as controls), `estimateChoice`'s adaptive workload readout via
+`planAdaptiveBudget`, and restoration through the existing generic
+`saveChoice`/`listSavedChoices` mechanism — and defer `enqueueAdaptive`,
+`CatalogStore`/`Job` persistence changes, the `jobSpecSchema`/
+`experimentKindSchema` union widening the two answered questions call for, and
+job-runner dispatch to their own bounded slice. Reason: `ExperimentRunner.run()`
+and the job-runner's dispatch are deeply coupled to `ExperimentConfig`'s
+match-count/schedule model, that coupling is unrelated to exposing and
+restoring controls, and M08.19's own **Acceptance** line ("configuration
+restoration, workload, public and full-information labelling, revision
+drill-down, cycle fixture and incomplete-run tests") never requires execution
+wiring for the builder slice. `expandPreset` and `#enqueuePreset` therefore
+still unconditionally refuse `adaptive_counter`; only `estimateChoice` and
+`saveChoice` route it, through a new, deliberately parallel
+`estimateAdaptiveChoice` (`apps/admin-server/src/lab/adaptive-choice.ts`) that
+never touches `expandPreset`'s `ExperimentConfig`-shaped switch. Full record in
+`docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.19A checkbox and
+`.claude/current-work.md`.
 
-Adding `adaptive_counter` to `presetChoiceSchema` is therefore not a
-self-contained contract addition: it forces a decision on how (or whether) an
-`AdaptiveConfig` run is represented as, or alongside, an `ExperimentConfig`-
-shaped catalog job — a choice with consequences for `expand.ts`, `catalog.ts`
-(`CATALOG_DOCUMENT_VERSION`), the job-runner's execution dispatch
-(`apps/admin-server/src/run/job-runner.ts`, currently calls only
-`runExperiment`) and `estimateChoice`'s response shape, not for
-`presets.ts` alone. The `commander_championship` precedent (M08.15) — a
-dedicated new mutating address (`scheduleChampionship`) with its own
-`JobOrigin` member, rather than forcing a structurally different job through
-`enqueuePreset` — is the closest existing pattern and the leading candidate,
-but choosing it (a parallel `enqueueAdaptive` address, its own `JobOrigin`
-kind, its own store method, its own job-runner branch calling
-`runAdaptiveExperiment`) versus widening `ExperimentConfig`/`experimentKindSchema`
-itself is a decision for a human or a dedicated design pass, not something to
-settle silently inside a "builder contracts and restoration" slice per
-CLAUDE.md's engineering invariants. No source was changed investigating this;
-the working tree is clean.
-
-**Next action:** before restarting M08.19A, settle how an adaptive run becomes
-a queued, executable job — specifically, whether it gets a dedicated mutating
-address and `JobOrigin` kind (mirroring `scheduleChampionship`) or widens the
-existing `ExperimentConfig`/`experimentKindSchema`/`enqueuePreset` path. Once
-settled, `presetChoiceSchema`, `estimateChoice`'s response and `expandPreset`'s
-switch can be extended consistently with it. Everything else M08.19A names —
-the full `AdaptiveConfig` field surface as controls, restoration via the
-generic `saveChoice`/`listSavedChoices` mechanism once `adaptive_counter` is a
-real choice-union member, and a workload readout via `planAdaptiveBudget` — is
-unblocked and was scoped during this investigation; only the enqueue-path
-decision above stands in front of writing code.
+**Next action:** the enqueue/execution slice — a dedicated `enqueueAdaptive`
+mutating address and `JobOrigin` member (mirroring `scheduleChampionship`,
+per the user's "Dedicated address" answer), `jobSpecSchema`/
+`experimentKindSchema` widened to a union of `ExperimentConfig` and
+`AdaptiveConfig` (per the user's "Widen spec to a union" answer,
+`CATALOG_DOCUMENT_VERSION` bump), a `CatalogStore` method to create it, and a
+job-runner branch calling `runAdaptiveExperiment` — is not yet named as its
+own numbered slice in the M08.19 work-slice list and should be scoped and
+inserted (e.g. before M08.19B, since the dashboard slices read finished runs
+and do not themselves require it) before a session picks it up. Until then,
+M08.19B (read model) and the later dashboard/close slices proceed against the
+canonical M08.18 report output directly, independent of this gap.
 
 M08.17 closed on 2026-09-02 (`tcg-reviewer` `VERDICT: APPROVE` on recheck after
 one fixed HIGH finding — a vacuous moving-opponent staleness check for a

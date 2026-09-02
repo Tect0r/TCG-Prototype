@@ -3441,10 +3441,33 @@ labelling, revision drill-down, cycle fixture and incomplete-run tests.
 
 ### Work slices
 
-- [ ] **M08.19A — Builder contracts and restoration.** Expose starting decks,
+- [x] **M08.19A — Builder contracts and restoration.** Expose starting decks,
       Commander/information/adaptation policy, budget, block, candidate, swap,
       counter-focus, reference-field and final-validation controls. Restore every
       value and show workload before enqueueing.
+      Verified: `packages/admin-contracts/src/presets.ts` (9th `presetChoiceSchema`
+      member for `adaptive_counter`, its full 12-field control surface),
+      `estimate.ts` (`adaptiveWorkloadEstimateSchema`) and `service.ts`
+      (`choiceEstimateSchema` widened to a union) give the wire contract;
+      `apps/admin-server/src/lab/adaptive-choice.ts` (`estimateAdaptiveChoice`)
+      validates a choice into a real `AdaptiveConfig` via `parseAdaptiveConfig`
+      and prices it with the simulator's own `planAdaptiveBudget`, reusing
+      `expand.ts`'s `PresetRefused`/`presetEnvironment`/`scrubRefusal`; wired into
+      `#estimateChoice`/`#saveChoice` in `service/handlers.ts`, so restoration
+      (`saveChoice`/`listSavedChoices`) and the workload readout both work through
+      the existing generic mechanism. `#enqueuePreset` and `expandPreset` still
+      unconditionally refuse `adaptive_counter` — scheduling an executable job is
+      deliberately out of this slice's scope (see "The next bounded task" in
+      `IMPLEMENTATION_PLAN.md`). No `ADMIN_CONTRACT_VERSION`/`SAVED_CHOICE_VERSION`
+      bump: both widenings are additive, no new endpoint address was added, and
+      `enqueuePreset` still refuses adaptive end to end, matching this file's own
+      version-4 precedent. 10 new tests in `adaptive-choice.test.ts`, 4 new tests
+      in `builder-endpoints.test.ts` (20 total), the `presets.test.ts` field-name
+      drift guard updated for the 12 new fields (417 admin-contracts tests pass);
+      `admin-server` (172), `admin-client` (285) focused suites and
+      `admin-contracts`/`admin-server`/`admin-client`/`simulator` typecheck all
+      pass. `BuilderScreen.tsx`/`fake-service.ts` updated only for the widened
+      `ChoiceEstimate` union type; no new adaptive UI.
 - [ ] **M08.19B — Adaptive result read model.** Serve the bounded tables and
       provenance the dashboard needs from canonical M08.18 output, including
       incomplete-run and unsupported-version states, without recomputing simulator
