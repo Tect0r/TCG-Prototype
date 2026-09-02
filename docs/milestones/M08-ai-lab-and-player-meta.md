@@ -3367,9 +3367,22 @@ schema regeneration tests.
       deterministic power-differential deck to force a decisive outcome; full
       `apps/simulator/src/adaptive` suite (159 tests) and `apps/simulator`
       typecheck pass.
-- [ ] **M08.18C — Frozen fresh-seed validation.** Freeze final deck lists and run
+- [x] **M08.18C — Frozen fresh-seed validation.** Freeze final deck lists and run
       a separate mirrored validation stage on fresh seed families, with no learned
       series result leaking into the validation standing.
+      Verified: `apps/simulator/src/adaptive/validate.ts`
+      (`freezeAdaptiveFinalDecks`, `adaptiveValidationSeedPath`,
+      `scheduleAdaptiveValidation`, `tallyAdaptiveValidation`,
+      `adaptiveValidationStanding`) plus `runAdaptiveFinalValidation` in
+      `run.ts`, both exported from `apps/simulator/src/index.ts`; freezing reads
+      only checkpoint lineages and refuses an undecided `pendingGeneration`, and
+      the validation seed path is a distinct branch of the same derivation tree
+      `adaptiveRevisionSeedPath` uses, so it shares no seed with any block or
+      screening. 14 focused tests in the new `validate.test.ts` plus 2 new
+      real-match tests in `run.test.ts` (end-to-end validation run, and a
+      same-checkpoint rerun proving no game is replayed); full
+      `apps/simulator/src/adaptive` suite (175 tests, up from 159) and
+      `apps/simulator` typecheck pass.
 - [ ] **M08.18D — Canonical adaptive reports.** Produce machine-readable and
       Markdown evidence for series, screenings, revisions, final diff, reference
       field and validation. Detect repeated states and cycles descriptively and

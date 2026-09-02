@@ -416,6 +416,7 @@ export {
 } from './adaptive/envelopes.js';
 
 export {
+  activeAdaptiveRevisionOf,
   adaptiveCheckpointLineageSchema,
   assertValidAdaptiveCheckpoint,
   type AdaptiveCheckpointLineage,
@@ -491,4 +492,22 @@ export {
   type DecideAdaptivePromotionInput,
 } from './adaptive/promote.js';
 
-export { runAdaptiveExperiment, type RunAdaptiveExperimentOptions } from './adaptive/run.js';
+export {
+  runAdaptiveExperiment,
+  runAdaptiveFinalValidation,
+  type AdaptiveValidationRun,
+  type RunAdaptiveExperimentOptions,
+} from './adaptive/run.js';
+
+export {
+  adaptiveValidationSeedPath,
+  adaptiveValidationStanding,
+  freezeAdaptiveFinalDecks,
+  scheduleAdaptiveValidation,
+  tallyAdaptiveValidation,
+  type AdaptiveFrozenDecks,
+  type AdaptiveFrozenRevision,
+  type AdaptiveValidationOutcome,
+  type AdaptiveValidationResult,
+  type AdaptiveValidationScheduleInput,
+} from './adaptive/validate.js';

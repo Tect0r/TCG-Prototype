@@ -12,7 +12,11 @@ import type { MatchRecord } from '../telemetry/schema.js';
 import type { ScheduledMatch } from '../schedule.js';
 import type { StopSignal } from '../stop.js';
 import type { AdaptiveConfig, AdaptiveRebuildTrigger } from './config.js';
-import type { AdaptiveCheckpoint, AdaptiveCheckpointLineage } from './checkpoint.js';
+import {
+  activeAdaptiveRevisionOf,
+  type AdaptiveCheckpoint,
+  type AdaptiveCheckpointLineage,
+} from './checkpoint.js';
 import {
   ADAPTIVE_BLOCK_SIDES,
   decideAdaptiveBlock,
@@ -30,6 +34,15 @@ import {
 import { generateAdaptiveCandidates } from './generate.js';
 import { decideAdaptivePromotion, type AdaptiveCandidateEvidence } from './promote.js';
 import { adaptiveRevisionSeedPath, type AdaptiveRevision } from './revision.js';
+import {
+  adaptiveValidationStanding,
+  freezeAdaptiveFinalDecks,
+  scheduleAdaptiveValidation,
+  tallyAdaptiveValidation,
+  type AdaptiveFrozenDecks,
+  type AdaptiveValidationOutcome,
+} from './validate.js';
+import type { ProportionEstimate } from '../analysis/stats.js';
 
 /**
  * Resumable Adaptive Counter orchestrator (M08.18B).
@@ -80,19 +93,6 @@ export interface RunAdaptiveExperimentOptions {
   readonly checkpoint: AdaptiveCheckpoint;
   readonly shouldStop?: StopSignal;
   readonly softwareCommit?: string | null;
-}
-
-function activeRevisionOf(lineage: AdaptiveCheckpointLineage): AdaptiveRevision {
-  const revision = lineage.revisions.find(
-    (candidate) => candidate.revisionId === lineage.activeRevisionId,
-  );
-  if (revision === undefined) {
-    throw new Error(
-      `checkpoint invariant violated: active revision ${lineage.activeRevisionId} is not present ` +
-        "in its own lineage's revisions.",
-    );
-  }
-  return revision;
 }
 
 /** Which fixed lineage slot generated `checkpoint.pendingGeneration`, derived rather than stored. */
@@ -221,8 +221,8 @@ async function playBlock(
   options: RunAdaptiveExperimentOptions,
   checkpoint: AdaptiveCheckpoint,
 ): Promise<PhaseResult> {
-  const incumbentRevision = activeRevisionOf(checkpoint.lineages.incumbent);
-  const opponentRevision = activeRevisionOf(checkpoint.lineages.opponent);
+  const incumbentRevision = activeAdaptiveRevisionOf(checkpoint.lineages.incumbent);
+  const opponentRevision = activeAdaptiveRevisionOf(checkpoint.lineages.opponent);
   const gamesRemaining = options.config.totalLearningBudget - checkpoint.gamesSpent;
 
   const scheduled = scheduleAdaptiveBlock({
@@ -258,8 +258,8 @@ async function playBlock(
 
   const loserSide = decision.loser;
   const winnerSide: AdaptiveBlockSide = loserSide === 'incumbent' ? 'opponent' : 'incumbent';
-  const loserRevision = activeRevisionOf(checkpoint.lineages[loserSide]);
-  const winnerRevision = activeRevisionOf(checkpoint.lineages[winnerSide]);
+  const loserRevision = activeAdaptiveRevisionOf(checkpoint.lineages[loserSide]);
+  const winnerRevision = activeAdaptiveRevisionOf(checkpoint.lineages[winnerSide]);
   const rebuild = shouldRebuildAdaptiveLineage(
     options.config.rebuildTrigger,
     checkpoint.lineages[loserSide],
@@ -303,7 +303,7 @@ async function runCandidateScreening(
   const deckByHash = new Map<string, AdaptiveRevision['deck']>();
   deckByHash.set(
     currentOpponentDeck.hash,
-    activeRevisionOf(
+    activeAdaptiveRevisionOf(
       checkpoint.lineages[loserSideOf(checkpoint) === 'incumbent' ? 'opponent' : 'incumbent'],
     ).deck,
   );
@@ -359,7 +359,7 @@ async function processGeneration(
   }
   const loserSide = loserSideOf(checkpoint);
   const winnerSide: AdaptiveBlockSide = loserSide === 'incumbent' ? 'opponent' : 'incumbent';
-  const opponentRevision = activeRevisionOf(checkpoint.lineages[winnerSide]);
+  const opponentRevision = activeAdaptiveRevisionOf(checkpoint.lineages[winnerSide]);
 
   const plans = generation.candidates.map((candidate) => ({
     candidate,
@@ -396,7 +396,7 @@ async function processGeneration(
     });
   }
 
-  const loserRevision = activeRevisionOf(checkpoint.lineages[loserSide]);
+  const loserRevision = activeAdaptiveRevisionOf(checkpoint.lineages[loserSide]);
   const decision = decideAdaptivePromotion({
     incumbent: loserRevision,
     opponentRevision,
@@ -448,4 +448,60 @@ export async function runAdaptiveExperiment(
     if (!step.scheduled) return step.checkpoint;
     checkpoint = step.checkpoint;
   }
+}
+
+export interface AdaptiveValidationRun {
+  readonly decks: AdaptiveFrozenDecks;
+  readonly outcome: AdaptiveValidationOutcome;
+  readonly standing: ProportionEstimate;
+}
+
+/**
+ * Plays the frozen fresh-seed validation stage (`./validate.ts`, M08.18C) for
+ * `options.checkpoint`'s two currently active revisions, and tallies it
+ * separately from anything the learning series decided — this function reads
+ * only the checkpoint's active revisions (via `freezeAdaptiveFinalDecks`),
+ * never `gamesSpent` or a block/screening tally, so a learned series result
+ * can never leak into the validation standing it returns.
+ *
+ * A deliberately separate entry point from `runAdaptiveExperiment` rather than
+ * a phase folded into its loop: that loop's only job is spending
+ * `totalLearningBudget` on the learning series, and calling this only makes
+ * sense once a caller has decided the series is done (or has stopped for its
+ * own reasons) and wants to know the resulting decks' fresh-seed standing.
+ * Throws the same way `freezeAdaptiveFinalDecks` does if the checkpoint handed
+ * in still has an undecided `pendingGeneration`.
+ *
+ * Never mutates or advances a checkpoint — the validation stage decides
+ * nothing about promotion or lineage, so there is nothing here for a
+ * checkpoint to record. Safe to call more than once against the same
+ * checkpoint and sink: `runBatch`'s own identity-based resume skips whatever
+ * this stage already committed, the same way every learning-series phase
+ * above does.
+ */
+export async function runAdaptiveFinalValidation(
+  options: RunAdaptiveExperimentOptions,
+): Promise<AdaptiveValidationRun> {
+  const checkpoint = options.checkpoint;
+  const decks = freezeAdaptiveFinalDecks(checkpoint);
+  const matches = scheduleAdaptiveValidation({
+    environment: options.environment,
+    config: options.config,
+    decks,
+    pilots: options.pilots,
+  });
+
+  const batchOutcome = await runBatch({
+    ...batchOptionsBase(options, checkpoint),
+    experimentId: `${options.config.id}:validation`,
+    decks: [decks.incumbent.deck, decks.opponent.deck],
+    schedule: matches,
+  });
+  const records = recordsForSchedule(options.sink, batchOutcome, matches);
+  const results = records.map((record) => ({
+    matchId: record.matchId,
+    winnerDeckHash: winnerDeckHashOf(record),
+  }));
+  const outcome = tallyAdaptiveValidation(decks, results);
+  return { decks, outcome, standing: adaptiveValidationStanding(outcome) };
 }

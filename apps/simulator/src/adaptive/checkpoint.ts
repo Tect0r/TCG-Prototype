@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { simDeckSchema } from '@tcg/deck-generator';
 import { adaptiveExperimentIdSchema, type AdaptiveCommanderPolicy } from './config.js';
 import { adaptiveGenerationRecordSchema } from './generate.js';
-import { adaptiveRevisionSchema, assertAdaptiveLineage } from './revision.js';
+import { adaptiveRevisionSchema, assertAdaptiveLineage, type AdaptiveRevision } from './revision.js';
 import { ADAPTIVE_BLOCK_SIDES } from './block.js';
 import { ADAPTIVE_CHECKPOINT_SCHEMA_VERSION, parseAdaptiveDocument } from './version.js';
 
@@ -150,4 +150,23 @@ export function assertValidAdaptiveCheckpoint(
   for (const side of ADAPTIVE_BLOCK_SIDES) {
     assertAdaptiveLineage(commanderPolicy, checkpoint.lineages[side].revisions);
   }
+}
+
+/**
+ * The revision a lineage's `activeRevisionId` names, from its own checkpointed
+ * `revisions`. The schema's own refinement above already guarantees this
+ * exists for anything that parsed, so this only ever throws against a
+ * hand-built object that skipped `adaptiveCheckpointLineageSchema`.
+ */
+export function activeAdaptiveRevisionOf(lineage: AdaptiveCheckpointLineage): AdaptiveRevision {
+  const revision = lineage.revisions.find(
+    (candidate) => candidate.revisionId === lineage.activeRevisionId,
+  );
+  if (revision === undefined) {
+    throw new Error(
+      `checkpoint invariant violated: active revision ${lineage.activeRevisionId} is not present ` +
+        "in its own lineage's revisions.",
+    );
+  }
+  return revision;
 }

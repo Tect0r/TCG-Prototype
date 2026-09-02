@@ -286,6 +286,51 @@ tests, up from 155) passes, and `apps/simulator` typechecks clean.
 Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
 `tcg-reviewer` are deferred to M08.18E, per this milestone's work-slice split.
 
-Current unit: **M08.18C**
+M08.18C is implemented: frozen fresh-seed final validation, in
+`apps/simulator/src/adaptive/validate.ts` (`freezeAdaptiveFinalDecks`,
+`adaptiveValidationSeedPath`, `scheduleAdaptiveValidation`,
+`tallyAdaptiveValidation`, `adaptiveValidationStanding`) plus
+`runAdaptiveFinalValidation` in `apps/simulator/src/adaptive/run.ts`, wired
+into the simulator's barrel export. `freezeAdaptiveFinalDecks` reads only
+`checkpoint.lineages` — never `gamesSpent`, block or screening evidence — and
+refuses a checkpoint with an undecided `pendingGeneration`, since a deck that
+could still be replaced next block is not yet final.
+`adaptiveValidationSeedPath` derives one more branch
+(`|adaptive:<id>|validation`) of the same deterministic seed tree
+`./revision.ts`'s `adaptiveRevisionSeedPath` derives every block/generation
+seed from, so the validation stage's shuffles never repeat one either lineage
+already played on its way here. `scheduleAdaptiveValidation` schedules
+`finalValidationGames` per seat orientation between the two frozen decks
+(mirrored under the run's own `mirrorSeats`), reusing `../schedule.ts`'s
+`buildSchedule` the same way `./block.ts`/`./evaluate.ts` do — schedule and
+tally only, no `runBatch` call, consistent with those files' role split.
+`runAdaptiveFinalValidation` (`run.ts`) is the one file that actually plays
+the frozen matches, as a deliberately separate entry point from
+`runAdaptiveExperiment`'s loop (whose contract stays "spend
+`totalLearningBudget` on the learning series" only); it reuses `run.ts`'s
+existing `runBatch`/sink-reconciliation helpers, never mutates the
+checkpoint, and is resume-safe through `runBatch`'s own match-identity skip.
+The previously duplicated `activeRevisionOf` helper was promoted out of
+`run.ts` into a shared, exported `activeAdaptiveRevisionOf` in
+`checkpoint.ts` — the natural owner of the invariant it relies on, which the
+lineage schema's own refinement already guarantees. `envelopes.ts`'s
+`adaptiveResultSchema` is untouched, per its own doc comment reserving that
+widening for a later slice (M08.18D, reporting). 14 focused tests in the new
+`apps/simulator/src/adaptive/validate.test.ts` (freeze happy-path and
+`pendingGeneration` refusal, seed-path determinism and non-collision against
+representative block/generation paths, mirrored/unmirrored/pilot-scaled
+schedule sizing and determinism, seed-path-prefix isolation, tally and
+Wilson-interval standing) plus 2 new tests in
+`apps/simulator/src/adaptive/run.test.ts` (an end-to-end real-match run
+against a deterministic dominant-deck pairing, tallied only from the
+validation stage's own records under a `:validation`-suffixed
+`experimentId`; and a same-checkpoint-and-store rerun proving no game is
+replayed) all pass. The full `apps/simulator/src/adaptive` suite (175 tests,
+up from 159) passes, `apps/simulator` typechecks clean, and `eslint` reports
+no issues on the changed files. Tranche-close gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.18E, per this
+milestone's work-slice split.
+
+Current unit: **M08.18D**
 ([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0818--adaptive-checkpointing-final-validation-and-raw-report)).
 Not started.

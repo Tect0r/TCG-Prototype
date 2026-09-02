@@ -10,7 +10,7 @@ import {
   type AdaptiveRevision,
 } from './revision.js';
 import type { AdaptiveCheckpoint } from './checkpoint.js';
-import { runAdaptiveExperiment } from './run.js';
+import { runAdaptiveExperiment, runAdaptiveFinalValidation } from './run.js';
 
 /**
  * M08.18B: resumable orchestration.
@@ -301,5 +301,55 @@ describe('runAdaptiveExperiment', () => {
     expect(result.gamesSpent).toBe(0);
     expect(result.nextBlock).toBe(0);
     expect(store.all()).toHaveLength(0);
+  });
+});
+
+describe('runAdaptiveFinalValidation', () => {
+  it('plays the frozen root decks on the validation seed family and tallies only that stage', async () => {
+    const store = newStore();
+    const validation = await runAdaptiveFinalValidation({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: store,
+      checkpoint: freshCheckpoint(),
+    });
+
+    // finalValidationGames: 1, mirrorSeats: true -> 2 games, both won by the
+    // same dominant-deck side the learning series itself decided block 0 with.
+    expect(validation.outcome.incumbentWins + validation.outcome.opponentWins).toBe(2);
+    expect(validation.outcome.opponentWins).toBe(2);
+    expect(validation.standing.total).toBe(2);
+    const records = store.all();
+    expect(records).toHaveLength(2);
+    expect(records.every((record) => record.experimentId === `${EXPERIMENT_ID}:validation`)).toBe(
+      true,
+    );
+  });
+
+  it('never replays a validation game already recorded for the same checkpoint and store', async () => {
+    const store = newStore();
+    const checkpoint = freshCheckpoint();
+    const options = {
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch' as const,
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: store,
+      checkpoint,
+    };
+
+    const first = await runAdaptiveFinalValidation(options);
+    const second = await runAdaptiveFinalValidation(options);
+
+    expect(second).toEqual(first);
+    expect(store.all()).toHaveLength(2);
   });
 });
