@@ -3356,9 +3356,17 @@ schema regeneration tests.
       `ADAPTIVE_CHECKPOINT_SCHEMA_VERSION` 1→2; 26 focused tests plus updated
       `envelopes.test.ts`, full `apps/simulator/src/adaptive` suite (155 tests)
       and `apps/simulator` typecheck pass.
-- [ ] **M08.18B — Resume equivalence.** Resume without replaying a recorded
+- [x] **M08.18B — Resume equivalence.** Resume without replaying a recorded
       match, changing lineage or spending a seed twice. Prove uninterrupted and
       resumed equivalence, including interruption inside a block.
+      Verified: `apps/simulator/src/adaptive/run.ts` (`runAdaptiveExperiment`),
+      exported from `apps/simulator/src/index.ts`; 4 focused tests in
+      `run.test.ts` proving uninterrupted vs. resumed equivalence (mid-block and
+      mid-generation-screening interruption, via `ExperimentStopped`) and a
+      budget-exhausted no-op stop, using real (non-mocked) matches with a
+      deterministic power-differential deck to force a decisive outcome; full
+      `apps/simulator/src/adaptive` suite (159 tests) and `apps/simulator`
+      typecheck pass.
 - [ ] **M08.18C — Frozen fresh-seed validation.** Freeze final deck lists and run
       a separate mirrored validation stage on fresh seed families, with no learned
       series result leaking into the validation standing.

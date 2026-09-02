@@ -490,3 +490,5 @@ export {
   type AdaptiveSeriesTally,
   type DecideAdaptivePromotionInput,
 } from './adaptive/promote.js';
+
+export { runAdaptiveExperiment, type RunAdaptiveExperimentOptions } from './adaptive/run.js';

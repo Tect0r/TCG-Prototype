@@ -255,6 +255,37 @@ tests) passes, and `apps/simulator` typechecks clean. Tranche-close gates
 (`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are deferred
 to M08.18E, per this milestone's work-slice split.
 
-Current unit: **M08.18B**
+M08.18B is implemented: resumable orchestration, in
+`apps/simulator/src/adaptive/run.ts` (`runAdaptiveExperiment`), wired into the
+simulator's barrel export. It drives the earlier adaptive files
+(`./block.ts`'s `scheduleAdaptiveBlock`/`decideAdaptiveBlock`,
+`./generate.ts`'s `generateAdaptiveCandidates`, `./evaluate.ts`'s
+`scheduleAdaptiveCandidateScreening`/`tallyAdaptiveScreening`, `./promote.ts`'s
+`decideAdaptivePromotion`) through real matches via `../run-batch.ts`'s
+`runBatch`, against a checkpoint (M08.18A) and a `MatchStore` sink. The
+checkpoint only advances once a whole phase is completely settled — one
+block's decision, or one generation's full screening-and-promotion — so a
+phase interrupted mid-way by `../stop.ts`'s `ExperimentStopped` leaves the
+checkpoint exactly as handed in; retrying with that same checkpoint object
+against the same persistent `MatchStore` reproduces the identical schedule
+(via `../schedule.ts`'s deterministic `matchId` derivation) and never spends a
+seed twice, replays a committed match, or mutates lineage out of order. 4
+focused tests in the new `apps/simulator/src/adaptive/run.test.ts` prove this
+with real (non-mocked) matches — no mocked engine calls — using a
+deterministic power-differential deck pairing
+(`fixture_dominant_unit`, a 1-cost 9/9 rush, versus a plain deck) to force a
+fully reproducible decisive block outcome rather than relying on statistical
+win-rate thresholds: one test drives a full block-generate-screen-promote
+cycle to a clean budget-exhausted stop; two prove uninterrupted and resumed
+runs reach the exact same final checkpoint (`toEqual`) with no duplicate or
+missing match records, for interruption both mid-block and
+mid-generation-screening (via a `shouldStop` signal that trips after a fixed
+job count); one proves a run stops without spending a game once the budget no
+longer affords the next block. Full `apps/simulator/src/adaptive` suite (159
+tests, up from 155) passes, and `apps/simulator` typechecks clean.
+Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
+`tcg-reviewer` are deferred to M08.18E, per this milestone's work-slice split.
+
+Current unit: **M08.18C**
 ([scope](../docs/milestones/M08-ai-lab-and-player-meta.md#m0818--adaptive-checkpointing-final-validation-and-raw-report)).
 Not started.
