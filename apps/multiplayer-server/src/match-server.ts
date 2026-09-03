@@ -59,6 +59,7 @@ import {
   type BotSubmitResult,
 } from './bot-runner.js';
 import { buildBotMatchSummary, type BotSummarySink } from './bot-match-summary.js';
+import type { LiveMatchRecord, LiveMatchSink } from './live-match-sink.js';
 import {
   botSeatsOf,
   canStart,
@@ -163,6 +164,16 @@ export interface MatchServerOptions {
    * build keeps no summaries — see `NO_DURABLE_SUMMARY_STORE`.
    */
   readonly summarySink?: BotSummarySink;
+  /**
+   * Where a finished match's canonical live-match record goes (M08.22A).
+   *
+   * The general-purpose sibling of `summarySink`: an optional collaborator,
+   * called once per match, of every source — not only matches with a bot seat.
+   * Absent by default, and this slice builds no record and calls this option
+   * from nowhere yet; it exists so the failure-containment boundary below can
+   * be proven before M08.22B gives it a real caller.
+   */
+  readonly liveMatchSink?: LiveMatchSink;
 }
 
 /**
@@ -194,6 +205,8 @@ export class MatchServer {
   readonly #botPilotFor: ((seat: BotRunnerSeat) => BotPolicy) | undefined;
   readonly #summarySink: BotSummarySink | undefined;
   readonly #summarySinkFailures: string[] = [];
+  readonly #liveMatchSink: LiveMatchSink | undefined;
+  readonly #liveMatchSinkFailures: string[] = [];
 
   readonly #lobbies = new Map<string, Lobby>();
   readonly #connections = new Map<string, ServerConnection>();
@@ -215,6 +228,7 @@ export class MatchServer {
     this.#botDecisionLimit = options.botDecisionLimit;
     this.#botPilotFor = options.botPilotFor;
     this.#summarySink = options.summarySink;
+    this.#liveMatchSink = options.liveMatchSink;
     this.#seedFor =
       options.seedFor ?? ((inviteCode) => `${inviteCode}-${this.#now()}-${this.#random()}`);
   }
@@ -1384,6 +1398,42 @@ export class MatchServer {
    */
   get summarySinkFailures(): readonly string[] {
     return [...this.#summarySinkFailures];
+  }
+
+  /**
+   * Hands a completed match's canonical record to whatever is downstream
+   * (M08.22A).
+   *
+   * The general-purpose sibling of `ingestSummary`: same guard, same shape of
+   * failure containment, a different record and a different sink, because
+   * `BotSummarySink` stays scoped to bot pacing (M09.17) and never grows a
+   * second meaning. Public, and called from nowhere inside this class yet —
+   * building the canonical `LiveMatchRecord` from a finished match is
+   * M08.22B's job and the lifecycle that calls into it is M08.22C's; this
+   * method is the boundary and the failure policy those slices call into,
+   * proven here by a unit test rather than a live call site.
+   */
+  ingestLiveMatch(record: LiveMatchRecord): void {
+    const sink = this.#liveMatchSink;
+    if (!sink) return;
+    try {
+      sink.receive(record);
+    } catch (error) {
+      this.#liveMatchSinkFailures.push(
+        `${sink.sinkId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Ingestion failures, for a test and for a diagnostic — never for a player.
+   *
+   * In the shape `summarySinkFailures` already established: the server keeps
+   * the fact that a sink refused a record, and nothing about the match
+   * changes because of it.
+   */
+  get liveMatchSinkFailures(): readonly string[] {
+    return [...this.#liveMatchSinkFailures];
   }
 
   /** Tells every *other* seat that one seat's connection changed. */

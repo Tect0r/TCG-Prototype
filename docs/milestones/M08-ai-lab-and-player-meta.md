@@ -3945,9 +3945,22 @@ interruption, duplicate completion, configured retention and sink-failure tests.
 
 ### Work slices
 
-- [ ] **M08.22A — Injectable failure-contained sink.** Add the authoritative
+- [x] **M08.22A — Injectable failure-contained sink.** Add the authoritative
       server boundary and failure policy so analytics errors cannot block, change or
       corrupt gameplay. Keep simulator-grade work out of the live event loop.
+      Evidence: `LiveMatchSink`/`LiveMatchRecord` (`apps/multiplayer-server/src/live-match-sink.ts`)
+      mirror `BotSummarySink`'s M09.17 shape but hold the M08.21 canonical
+      `LiveMatchEnvelope` + retained artifacts, of every match source. `MatchServer`
+      gained an optional `liveMatchSink`, a guarded public `ingestLiveMatch()` (public
+      because no caller exists yet — M08.22B builds the record, M08.22C wires the
+      lifecycle) and a `liveMatchSinkFailures` getter, proven by
+      `live-match-sink.test.ts` (injectable/optional, exact record delivered, a
+      throwing sink's failure caught and never propagated). `boundary.test.ts` proves
+      structurally that `@tcg/multiplayer-server` depends on and imports none of
+      `@tcg/simulator`/`@tcg/admin-server`/`@tcg/admin-contracts`, and that the
+      simulator does not depend back on it. `@tcg/match-telemetry` added as a
+      dependency (package.json + package-lock.json). 356 multiplayer-server tests
+      pass; workspace typecheck, eslint and prettier clean.
 - [ ] **M08.22B — Canonical idempotent persistence.** Write one canonical record
       and configured retained artifacts per match, with stable duplicate/retry keys
       and no second source of truth.

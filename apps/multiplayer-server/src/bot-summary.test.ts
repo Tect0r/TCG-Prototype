@@ -940,7 +940,10 @@ describe('the ingestion seam', () => {
       join(REPO_ROOT, 'apps/multiplayer-server/src/match-server.ts'),
       'utf8',
     );
-    expect(source.match(/sink\.receive\(/g) ?? []).toHaveLength(1);
+    // Scoped to this sink's own argument shape: M08.22A adds a second,
+    // differently-typed sink (`LiveMatchSink`) with its own single call site,
+    // and a bare `sink.receive(` would match both.
+    expect(source.match(/sink\.receive\(summary\)/g) ?? []).toHaveLength(1);
     expect(source.match(/buildBotMatchSummary\(/g) ?? []).toHaveLength(1);
   });
 });

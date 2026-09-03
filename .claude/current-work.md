@@ -1471,3 +1471,80 @@ section in `IMPLEMENTATION_PLAN.md` now name **M08.22A — Injectable
 failure-contained sink** (first slice of "M08.22 — Multiplayer telemetry
 sink") as the next unit. Per the user's explicit instruction for this
 session, M08.22A itself is not started here.
+
+## M08.22A — Injectable failure-contained sink (slice complete)
+
+Resolved a genuine ambiguity before writing any code: the milestone file's
+"Post-M09 baseline" note (written before M08.21) claimed M08.22 would
+implement `BotSummarySink` using `botMatchSummarySchema` as the record, but
+`botMatchSummarySchema` (`packages/protocol/src/bot-summary.ts`) is narrow
+bot-pacing-only data with no `source`, no `terminationOrigin`, no retention
+tiers, and is only produced for matches holding a bot seat. The tranche M08.22
+sits directly after — M08.21A-D — built exactly the record this slice needed:
+`liveMatchEnvelopeSchema` (`@tcg/match-telemetry`), whose own doc comment
+states it "is written once by the server that ran the match (M08.22)". Treated
+that fresher, more specific, code-embedded statement as authoritative over the
+older planning note, the same way CLAUDE.md treats a fresher ADR as
+superseding a stale one. Did not ask the user; this was a normal
+targeted-investigation resolution, not an unresolved rule.
+
+Implemented, mirroring `BotSummarySink`'s M09.17 shape but for the M08.21
+canonical record, of every match source (not only bot matches):
+
+- `apps/multiplayer-server/src/live-match-sink.ts` (new): `LiveMatchRecord`
+  (`envelope` + nullable `rawEvent`/`replay`, matching M08.21B's retention
+  tiers) and `LiveMatchSink` (`sinkId` + `receive(record): void`).
+- `apps/multiplayer-server/src/match-server.ts`: added optional
+  `liveMatchSink` to `MatchServerOptions`; `#liveMatchSink`/
+  `#liveMatchSinkFailures` fields; a **public** guarded `ingestLiveMatch()`
+  (public, unlike the private `ingestSummary`, because no caller exists
+  inside this class yet — building the record from a finished match is
+  M08.22B's job and the lifecycle that calls into it is M08.22C's; this slice
+  is only the boundary and failure policy, proven by a direct unit-test call
+  rather than a live call site) and a `liveMatchSinkFailures` getter.
+- `apps/multiplayer-server/src/boundary.test.ts` (new): structurally proves
+  `@tcg/multiplayer-server` declares no dependency on and imports no source
+  from `@tcg/simulator`/`@tcg/admin-server`/`@tcg/admin-contracts`, and that
+  `apps/simulator/package.json` does not depend back on it — the checklist's
+  "no simulator-grade work in the live event loop" line, checked rather than
+  promised, in the same style as `apps/admin-server/src/boundary.test.ts`.
+- `apps/multiplayer-server/src/live-match-sink.test.ts` (new): the sink is
+  optional (ingesting without one no-ops harmlessly), an injected sink
+  receives the exact record, and a throwing sink's failure is caught and
+  recorded in `liveMatchSinkFailures` without escaping — never fatal to the
+  match, one failure entry per throwing call.
+- `apps/multiplayer-server/package.json` + `package-lock.json`: added
+  `@tcg/match-telemetry` as a dependency (already an existing workspace
+  package since M08.21; only the multiplayer-server dependency edge was new,
+  1 line in the lockfile).
+- `apps/multiplayer-server/src/bot-summary.test.ts`: the pre-existing "one
+  call site" source-scan (`sink.receive\(` regex, asserting `BotSummarySink`
+  is reached from exactly one place) started matching `ingestLiveMatch`'s own
+  `sink.receive(record)` too, since both locals are conventionally named
+  `sink`. Tightened the regex to `sink\.receive\(summary\)`, scoping it to
+  the argument shape unique to `BotSummarySink`'s call, so it keeps proving
+  exactly what it always proved without being incidentally broken by an
+  unrelated, differently-typed sink.
+
+Focused verification: `npx vitest run apps/multiplayer-server` — 356 tests
+pass (was 352; +4 new). `npm run --workspace=@tcg/multiplayer-server
+typecheck` clean. `npx eslint` clean on every touched file. `npx prettier
+--check` clean after one `--write` auto-format of the new test file. Did not
+run `check:consistency`, `audit:check` or the full `npm run verify` gate —
+those are reserved for the M08.22D tranche-close slice per CLAUDE.md.
+
+Marked the M08.22A work-slice checkbox complete in
+`docs/milestones/M08-ai-lab-and-player-meta.md` with an evidence note. Did not
+touch the M08.22 tranche checklist or `IMPLEMENTATION_PLAN.md`'s root status
+row — both move only at tranche close (M08.22D).
+
+The pre-existing unrelated uncommitted change to `.claude/settings.json`
+(emptying `permissions.deny`) remains untouched and unstaged, not part of
+this slice's commit.
+
+Committed as a checkpoint and pushed. Next slice: **M08.22B — Canonical
+idempotent persistence**, per `IMPLEMENTATION_PLAN.md` and the M08.22 tranche
+in `docs/milestones/M08-ai-lab-and-player-meta.md`. `IMPLEMENTATION_PLAN.md`'s
+"next bounded task" section and root status row stay untouched here, per
+CLAUDE.md — both move only at tranche close (M08.22D). Per the user's
+explicit instruction for this session, **M08.22B is not started here.**
