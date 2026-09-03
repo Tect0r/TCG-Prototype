@@ -2393,3 +2393,45 @@ tests, including the 7 new) both pass clean. Tranche-close gates
 to M08.24E, per this milestone's work-slice split.
 
 Slice complete. Next slice: **M08.24B — Eligibility-aware card evidence.**
+
+M08.24B is implemented: eligibility-aware card and pair evidence over live
+matches, in the new `apps/simulator/src/analysis/live-card-evidence.ts`
+(`aggregateLiveCardEvidence`), wired into the simulator's barrel export. The
+milestone's data model has no per-game card play/draw/hold telemetry — a
+`LiveMatchEnvelope` seat carries only a deck snapshot and the match's final
+outcome — so "played, held and unusable" is read as a deck-building
+*eligibility* concept (the slice's own title), not in-game event telemetry:
+for each Commander a partition actually saw played, every card in that
+Commander's deckable pool (`CardDatabase.deckable()`) is checked against
+`isColorIdentityLegal`. A card off-colour for the Commander is
+`status: 'unusable'` with `inclusion: null` — never a fabricated `0`, which is
+the literal acceptance requirement ("never treat structural ineligibility as
+non-selection"). A legal card no seat ever included is `'held'` (inclusion
+`0`); a legal, included card is `'played'`, with `matchesIncluding /
+commanderMatches` as its inclusion rate. Card pairs are plain co-occurrence
+counts (not the heavier bootstrap-CI synergy analysis already in
+`./pairs.ts`, a different, out-of-scope concept) and only report pairs that
+actually co-occurred at least once. All counts are match-weighted, matching
+M08.24A's own scope (unique-deck weighting is M08.24C's job).
+
+Shared partitioning: extracted `partitionLiveMatches` as a new export from
+`live-match-aggregate.ts` (previously private to `aggregateLiveMatches`) and
+reused it here, so the match-level (M08.24A) and card-level (M08.24B) views
+can never partition the same input differently. No other change to
+`aggregatePartition`'s behavior.
+
+Verified: 6 new tests in `apps/simulator/src/analysis/live-card-evidence.test.ts`
+(off-colour card reports `'unusable'` with `inclusion: null`, never `0`;
+`'held'` vs `'played'` distinguished with the correct match-weighted
+inclusion rate; pairs report only actual co-occurrence with correct support;
+evidence computed per Commander, never pooled across Commanders of different
+colours; `commanders: null` with a stated reason when no database is
+supplied for a partition's content version; empty input yields `[]`) pass.
+The pre-existing `live-match-aggregate.test.ts` (7 tests) still passes
+unregressed after the `partitionLiveMatches` extraction. `npm run typecheck`
+clean on both `@tcg/simulator` and `@tcg/admin-server`. ESLint clean on all
+four changed/new files. Tranche-close gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.24E, per this
+milestone's work-slice split.
+
+Slice complete. Next slice: **M08.24C — Honest weighting and denominators.**

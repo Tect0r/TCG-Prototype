@@ -122,14 +122,16 @@ export interface LiveMatchAggregateOptions {
   readonly confidence?: number;
 }
 
-/** Aggregates live matches into one entry per `(source, contentVersion, rulesVersion)` partition. */
-export function aggregateLiveMatches(
+/**
+ * Groups live matches into one bucket per `(source, contentVersion,
+ * rulesVersion)` partition, sorted deterministically. Shared by
+ * `aggregateLiveMatches` below and `./live-card-evidence.ts`'s
+ * `aggregateLiveCardEvidence`, so the two card- and match-level views can
+ * never partition the same input differently.
+ */
+export function partitionLiveMatches(
   matches: readonly LiveMatchEnvelope[],
-  options: LiveMatchAggregateOptions = {},
-): readonly LiveMatchAggregate[] {
-  const confidence = options.confidence ?? 0.95;
-  const databases = options.cardDatabasesByContentVersion ?? new Map<number, CardDatabase>();
-
+): readonly { readonly partition: LiveMatchAggregatePartition; readonly matches: readonly LiveMatchEnvelope[] }[] {
   const partitions = new Map<string, LiveMatchEnvelope[]>();
   for (const match of matches) {
     const key = partitionKey(match.source, match.provenance.contentVersion, match.provenance.rulesVersion);
@@ -139,8 +141,29 @@ export function aggregateLiveMatches(
   }
 
   return [...partitions.values()]
-    .map((group) => aggregatePartition(group, databases, options.clusterThreshold, confidence))
+    .map((group) => {
+      const first = group[0] as LiveMatchEnvelope;
+      const partition: LiveMatchAggregatePartition = {
+        source: first.source,
+        contentVersion: first.provenance.contentVersion,
+        rulesVersion: first.provenance.rulesVersion,
+      };
+      return { partition, matches: group };
+    })
     .sort((left, right) => comparePartitions(left.partition, right.partition));
+}
+
+/** Aggregates live matches into one entry per `(source, contentVersion, rulesVersion)` partition. */
+export function aggregateLiveMatches(
+  matches: readonly LiveMatchEnvelope[],
+  options: LiveMatchAggregateOptions = {},
+): readonly LiveMatchAggregate[] {
+  const confidence = options.confidence ?? 0.95;
+  const databases = options.cardDatabasesByContentVersion ?? new Map<number, CardDatabase>();
+
+  return partitionLiveMatches(matches).map(({ matches: group }) =>
+    aggregatePartition(group, databases, options.clusterThreshold, confidence),
+  );
 }
 
 function partitionKey(source: LiveMatchSource, contentVersion: number, rulesVersion: string): string {

@@ -263,6 +263,7 @@ export { aggregateBoard, type BoardAggregate, type BoardMeasure } from './analys
 
 export {
   aggregateLiveMatches,
+  partitionLiveMatches,
   type CommanderSelectionEntry,
   type DeckMatchupEntry,
   type DeckUsageEntry,
@@ -273,6 +274,16 @@ export {
   type LiveMatchDurationStats,
   type TerminationOriginCount,
 } from './analysis/live-match-aggregate.js';
+
+export {
+  aggregateLiveCardEvidence,
+  type CardEligibilityEntry,
+  type CardEligibilityStatus,
+  type CardPairEntry,
+  type CommanderCardEvidence,
+  type LiveCardEvidence,
+  type LiveCardEvidenceOptions,
+} from './analysis/live-card-evidence.js';
 
 export { cardPairs, cardPairSchema, type CardPair } from './analysis/pairs.js';
 

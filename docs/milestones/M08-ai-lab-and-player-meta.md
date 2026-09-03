@@ -4308,9 +4308,22 @@ filter and sparse-data tests.
       tests pass; full `admin-server` (648 tests) and `simulator` (672 tests)
       projects pass; both workspaces typecheck clean. See `.claude/current-work.md`
       for detail.
-- [ ] **M08.24B — Eligibility-aware card evidence.** Aggregate inclusion, pairs,
+- [x] **M08.24B — Eligibility-aware card evidence.** Aggregate inclusion, pairs,
       played, held and unusable cards with Commander legality and explicit support;
       never treat structural ineligibility as non-selection.
+      Done: `aggregateLiveCardEvidence` in `apps/simulator/src/analysis/live-card-evidence.ts`
+      (wired into the simulator's barrel export). Shares M08.24A's partitioning via a
+      newly extracted `partitionLiveMatches` export from `live-match-aggregate.ts`, so
+      the two views can never disagree about what counts as one partition. Per
+      Commander a match saw played, checks every card in that Commander's deckable
+      pool (`CardDatabase.deckable()`) against `isColorIdentityLegal`: an off-colour
+      card is `status: 'unusable'` with `inclusion: null` (never a fabricated 0%
+      selection); a legal, never-included card is `'held'`; a legal, included card is
+      `'played'`. Card pairs report only actual co-occurrence. Match-weighted counts
+      only, consistent with M08.24A's scope (M08.24C adds unique-deck weighting). 6
+      focused tests pass; `live-match-aggregate.test.ts`'s 7 tests still pass
+      unregressed; `simulator` and `admin-server` typecheck clean; ESLint clean on the
+      changed files. See `.claude/current-work.md` for detail.
 - [ ] **M08.24C — Honest weighting and denominators.** Provide match-weighted and
       unique-deck-weighted views only, with no player-weighted claim, and preserve
       sparse, missing and corrupt evidence classifications.
