@@ -3811,51 +3811,64 @@ Search`/`Candidate` were already covered) — full file re-run 37/37, no
       present with existing focused tests; no new gap found in this diff,
       unlike M08.20A's own within-slice card-patch gap and M08.20C's
       within-slice Card Replacement gap, both already closed before this
-      close.
-      Found and fixed one real, pre-existing `check:consistency` failure
-      unrelated to the M08.20 diff itself: two backticked
+      close. Found and fixed one real, pre-existing `check:consistency`
+      failure unrelated to the M08.20 diff itself: two backticked
       `path/to/file.ts:123` tokens M08.19E's close had written into
       `IMPLEMENTATION_PLAN.md` (naming `AdaptiveDashboard.tsx:405` and
       `adaptive-results.ts:454,522,549`) were never valid inputs to
       `checkPathReferences` (`scripts/lib/consistency.ts`), which
       `statSync`s the whole backticked token including the trailing
-      `:line` suffix as a literal path and only strips a trailing `#member`
-      — so these two references would fail on any check:consistency run
-      from the moment they were written, evidently after the gate had last
-      run clean in that session. Fixed by moving the line number outside
-      the backticked span (`` `file.ts` line 405 ``) in both spots; no
+      `:line` suffix as a literal path and only strips a trailing
+      `#member` — so these two references would fail on any
+      check:consistency run from the moment they were written, evidently
+      after the gate had last run clean in that session. Fixed by moving
+      the line number outside the backticked span (in both spots); no
       other document names a path this way (confirmed by grepping every
-      active document for the same `\`[^\`]+\.[a-z]+:[0-9]`shape before
-calling this closed).`npm run check:consistency`now reports "No
-inconsistency found" (298 links, 86 path references, 46 documented
-values, 5 count claims, 155 playable cards, 5 owner decisions).
- `npm run audit:check`passed clean with no regeneration needed.
- `npm run format:check`(inside`npm run verify`) flagged 8 files
-unformatted: the two IMPLEMENTATION_PLAN.md fixes plus 6 files this
-tranche's implementation slices had left unformatted
-(`BuilderScreen.tsx`, `builder-form.ts`, `expand.ts`/`.test.ts`, this
-milestone file, `.claude/current-work.md`) — a real gate failure, not
-pre-existing; ran `prettier --write`on exactly those 8 files (this
-milestone file needed a second consecutive`--write`to reach its own
-fixed point — its first pass and`--check`disagreed on a handful of
-continuation-line indents inside long`_..._`-wrapped evidence
-paragraphs, a known prettier markdown reflow instability, not a
-manual edit) and inspected every resulting diff to confirm reflow/
-quote-normalization/list-continuation-indent only, no behavior change.
-One unrelated, pre-existing uncommitted change
-(`.claude/settings.json`, emptying its `permissions.deny`list — not
-part of any M08.20 work slice and predating this session) was
-temporarily`git stash`-ed for the `npm run verify`run so it could
-not mask or be conflated with this tranche's own gate result, then
-restored immediately after; it remains uncommitted and untouched,
-preserved as the repository owner's own in-progress change per
-CLAUDE.md's "preserve unrelated and user-owned changes."`npm run
-      verify`then passed clean: 224 test files, 4613 tests, typecheck,
-lint, format, content validation and build all green. Marked M08.20E
-and the M08.20 checklist complete in this file.`IMPLEMENTATION_PLAN.md`'s
-root status row "Next tranche" column is left at `M08.20A`rather than
-advanced, per CLAUDE.md: the tranche is not marked complete and its
-successor is not named until`tcg-reviewer`returns`VERDICT: APPROVE`._
+      active document for the same colon-plus-line-number shape inside
+      backticks before calling this closed). `npm run check:consistency`
+      now reports "No inconsistency found" (298 links, 86 path
+      references, 46 documented values, 5 count claims, 155 playable
+      cards, 5 owner decisions). `npm run audit:check` passed clean with
+      no regeneration needed. `npm run format:check` (inside `npm run
+verify`) flagged 8 files unformatted: the two IMPLEMENTATION_PLAN.md
+      fixes plus 6 files this tranche's implementation slices had left
+      unformatted (`BuilderScreen.tsx`, `builder-form.ts`,
+      `expand.ts`/`.test.ts`, this milestone file,
+      `.claude/current-work.md`) — a real gate failure, not pre-existing;
+      ran `prettier --write` on exactly those 8 files (this milestone
+      file needed repeated consecutive `--write` passes to reach its own
+      fixed point — a known prettier markdown reflow instability on long
+      evidence paragraphs, not a manual edit) and inspected every
+      resulting diff to confirm reflow/quote-normalization/
+      list-continuation-indent only, no behavior change. One unrelated,
+      pre-existing uncommitted change (`.claude/settings.json`, emptying
+      its `permissions.deny` list — not part of any M08.20 work slice and
+      predating this session) was temporarily `git stash`-ed for the
+      `npm run verify` run so it could not mask or be conflated with this
+      tranche's own gate result, then restored immediately after; it
+      remains uncommitted and untouched, preserved as the repository
+      owner's own in-progress change per CLAUDE.md's "preserve unrelated
+      and user-owned changes." `npm run verify` then passed clean: 224
+      test files, 4613 tests, typecheck, lint, format, content validation
+      and build all green. Marked M08.20E and the M08.20 checklist
+      complete in this file. `IMPLEMENTATION_PLAN.md`'s root status row
+      "Next tranche" column is left at `M08.20A` rather than advanced,
+      per CLAUDE.md: the tranche is not marked complete and its successor
+      is not named until `tcg-reviewer` returns `VERDICT: APPROVE`.
+      `tcg-reviewer` then reviewed the full M08.20 commit range
+      `bfbe36a..13268ed` and returned **`VERDICT: APPROVE`**,
+      independently re-confirming every acceptance-list and checklist
+      item against source (not prose claims alone), re-running
+      check:consistency and audit:check clean, and confirming commit
+      `13268ed`'s diff is reflow-only via `git show -w`. One non-blocking
+      LOW finding: `candidateCardPatchSchema.cost` in
+      `packages/admin-contracts/src/presets.ts` is
+      `.nullable().optional()`, so a schema-legal patch with `cost: null`
+      passes expansion/estimation but fails later as a raw `Error` in
+      `resolveEnvironment` rather than an admin-facing refusal —
+      undermining `requireCandidatePatches`'s own purpose. Left unfixed
+      per this tranche's scope, same as M08.16D/17D/18E/19E's own LOW
+      findings; noted here for whoever next touches this schema._
 
 ### Checklist
 

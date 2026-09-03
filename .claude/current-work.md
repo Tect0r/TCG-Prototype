@@ -1082,3 +1082,20 @@ M08.20 checklist complete in the milestone file. `IMPLEMENTATION_PLAN.md`'s
 root status row "Next tranche" column is left at `M08.20A` rather than
 advanced, per CLAUDE.md: the tranche is not marked complete and its successor
 is not named until `tcg-reviewer` returns `VERDICT: APPROVE`.
+
+`tcg-reviewer` reviewed the full M08.20 commit range `bfbe36a..13268ed` and
+returned **`VERDICT: APPROVE`**, independently re-confirming every
+acceptance-list and checklist item against source, re-running
+`check:consistency` and `audit:check` clean, and confirming commit
+`13268ed`'s diff is reflow-only via `git show -w`. One non-blocking LOW
+finding: `candidateCardPatchSchema.cost` in
+`packages/admin-contracts/src/presets.ts` is `.nullable().optional()`, so a
+schema-legal patch with `cost: null` passes expansion/estimation but fails
+later as a raw `Error` in `resolveEnvironment` instead of an admin-facing
+refusal, undermining `requireCandidatePatches`'s own purpose. Left unfixed
+per this tranche's scope, matching how M08.16D/17D/18E/19E's own LOW
+findings were recorded rather than fixed immediately.
+
+M08.20 tranche closed. Root status row's "Next tranche" column advances to
+**M08.21A — Versioned live-match envelope** in
+`docs/milestones/M08-ai-lab-and-player-meta.md`.

@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-02)   | M08.20A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-03)   | M08.21A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,15 +223,30 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.20E — Tranche close.** Prove UI-to-config equivalence, shared seeds,
-profile separation, retained soak failures and candidate containment through
-the standard tranche-close gate (`check:consistency`, `audit:check`,
-`verify`, then `tcg-reviewer` over the whole M08.20 commit range). Its scope
-and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0820--advanced-test-templates).
-This is unrelated to the still-unscoped adaptive enqueue/execution gap below —
-M08.20 exposes already-existing comparison/robustness/soak/replacement
-contracts and does not touch `AdaptiveConfig` or the job runner.
+**M08.21A — Versioned live-match envelope.** Define the strict envelope,
+shared telemetry reuse, software/content/rules provenance, source
+(`human_human`, `human_ai`, `ai_ai`), format, immutable deck snapshots and
+hashes, Commander, seat, counts and outcome. Prove round trip, unknown-field
+and future-version refusal. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0821--live-human-match-telemetry-contract).
+This is the first slice of M08.21, unrelated to the still-unscoped adaptive
+enqueue/execution gap below.
+
+**M08.20 closed 2026-09-03** (`tcg-reviewer` `VERDICT: APPROVE`, one
+non-blocking LOW finding): Candidate Patch Comparison, Pilot Robustness,
+Engine Soak, Card Replacement and their template UI all implemented and
+gated, per the four work-slice notes below and M08.20E's own revalidation
+against the tranche's full acceptance list. The reviewer independently
+re-confirmed every acceptance-list and checklist item against source,
+re-ran `check:consistency`/`audit:check` clean, and verified commit
+`13268ed`'s diff is reflow-only. Its one LOW finding: `candidateCardPatchSchema.cost`
+in `packages/admin-contracts/src/presets.ts` is `.nullable().optional()`, so
+a schema-legal patch with `cost: null` passes expansion/estimation but fails
+later as a raw `Error` in `resolveEnvironment` instead of an admin-facing
+refusal, undermining `requireCandidatePatches`'s own purpose — left unfixed
+per this tranche's scope, to close next time this file is touched. Full
+record in `docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.20E
+checkbox and `.claude/current-work.md`.
 
 **M08.20A closed 2026-09-02** (Candidate Patch Comparison — widened the
 `candidate_comparison` preset from remove-only to remove-and-patch, per its
