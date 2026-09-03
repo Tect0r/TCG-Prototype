@@ -3908,7 +3908,7 @@ exact deck snapshot, source classification, and every termination-origin test.
       concede, leave concession, disconnect timeout, rules victory, server failure
       and abandoned/unrecordable outcomes as analytics provenance without changing
       the engine action meaning.
-- [ ] **M08.21C — Retention and artifact contracts.** Define configurable summary,
+- [x] **M08.21C — Retention and artifact contracts.** Define configurable summary,
       raw-event and replay retention plus exact compatibility behavior; do not add a
       multiplayer sink or storage implementation.
 - [ ] **M08.21D — Privacy and participant identity.** Make forbidden personal and

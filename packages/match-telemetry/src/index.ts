@@ -25,3 +25,27 @@ export {
   type LiveMatchSource,
   type LiveMatchTerminationOrigin,
 } from './schema.js';
+
+export {
+  LIVE_MATCH_FORCED_RAW_EVENT_ORIGINS,
+  LIVE_MATCH_RAW_EVENT_SCHEMA_VERSION,
+  LIVE_MATCH_REPLAY_SCHEMA_VERSION,
+  assertReadableLiveMatchRawEventVersion,
+  assertReadableLiveMatchReplayVersion,
+  decideLiveMatchRetention,
+  describeLiveMatchRawEventVersionProblem,
+  describeLiveMatchReplayVersionProblem,
+  isForcedLiveMatchRawEventOrigin,
+  isReadableLiveMatchRawEventVersion,
+  isReadableLiveMatchReplayVersion,
+  liveMatchRawEventArtifactSchema,
+  liveMatchReplayArtifactSchema,
+  liveMatchRetentionConfigSchema,
+  liveMatchRetentionDecisionSchema,
+  parseLiveMatchRawEventArtifact,
+  parseLiveMatchReplayArtifact,
+  type LiveMatchRawEventArtifact,
+  type LiveMatchReplayArtifact,
+  type LiveMatchRetentionConfig,
+  type LiveMatchRetentionDecision,
+} from './retention.js';

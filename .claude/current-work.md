@@ -1224,6 +1224,65 @@ inspection), `--check` now clean. Tranche-close gates (`check:consistency`,
 `audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.21E, per this
 milestone's work-slice split.
 
-Next slice: **M08.21C — Retention and artifact contracts**, per
+M08.21C is implemented: a new `packages/match-telemetry/src/retention.ts`
+defines what a deployment may keep beyond the mandatory summary envelope, and
+the pure decision of what to actually retain for one match — contracts only,
+no writer, sink or storage path, wiring a real server to persist any of it is
+M08.22's job. Three tiers: **summary** (the envelope itself, always produced,
+not configurable), **raw-event** (`liveMatchRawEventArtifactSchema` — full
+`log`/`actionLog`, `MatchState`'s own fields verbatim, for analysis without
+re-running anything) and **replay** (`liveMatchReplayArtifactSchema` — just
+`seed` and `actionLog`, per `MatchState`'s own "every accepted action, in
+order, so a match can be re-derived from the seed" contract; deliberately not
+the full `matchStateSchema`, since `seed`+`actionLog` is sufficient to
+re-derive a match through `createMatch`/`applyAction` without restating the
+format/deck identity the envelope already carries). Both artifacts reuse
+`@tcg/rules-engine`'s own `gameEventSchema`/`loggedActionSchema` rather than
+inventing new shapes, and each gets its own independently-versioned
+readable-refusal quartet (`isReadable*Version`/`describe*VersionProblem`/
+`assertReadable*Version`/`parse*`), matching `liveMatchEnvelopeSchema`'s
+M08.21A precedent — a raw-event or replay artifact can be read much later by
+a different build than the one that wrote it, and each tier moves at its own
+pace. `liveMatchRetentionConfigSchema` is two independent boolean dials
+(`rawEvent`/`replay`, both default `false`) rather than a sample rate: unlike
+the simulator's batch runs (`apps/simulator/src/config.ts`'s
+`retentionSchema`), there is no population of matches to sample across for a
+live match, so the only question per tier is whether to keep it at all.
+`LIVE_MATCH_FORCED_RAW_EVENT_ORIGINS` (`server_failure`/
+`abandoned_unrecordable`) forces `rawEvent` retention regardless of the
+configured policy, mirroring the simulator's "abnormal matches are always
+kept regardless of these settings" rule — these are exactly the matches an
+operator needs the raw stream from to diagnose what happened. `replay` stays
+configuration-only for every origin including these two:
+`abandoned_unrecordable` names a match with no `MatchResult`, but the engine
+may still hold a valid, reconstructable `seed`/`actionLog`, so an operator
+who wants replay evidence for an abnormal match opts in via `replay` like any
+other match rather than having it forced. `decideLiveMatchRetention(origin,
+config)` is the pure decision combining both. All new exports re-exported
+from the package barrel.
+
+Verified: new focused suite `packages/match-telemetry/src/retention.test.ts`,
+24 tests (52 total, was 28) — round trip and unknown-field refusal for both
+artifacts; version-problem messages (missing/non-numeric, newer, older,
+current) for both; `parse*` throwing the readable refusal before the strict
+schema runs and parsing valid input; retention-config defaults, explicit
+round trip and unknown-field refusal; `LIVE_MATCH_FORCED_RAW_EVENT_ORIGINS`
+named exactly; a normal origin following the configured policy in both
+directions; each forced origin forcing `rawEvent` via `it.each`; `replay`
+never forced for a forced-rawEvent origin; and `isForcedLiveMatchRawEventOrigin`
+checked against every termination origin. `npm run
+--workspace=@tcg/match-telemetry typecheck` clean; `npx eslint
+packages/match-telemetry/src` clean; `npx prettier --write` applied to the
+new test file (reflow only, confirmed by inspection), `--check` now clean on
+all three changed/new files. Tranche-close gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.21E, per this
+milestone's work-slice split.
+
+One unrelated, pre-existing uncommitted change (`.claude/settings.json`,
+emptying its `permissions.deny` list) predates this session and remains
+untouched and unstaged, per CLAUDE.md's "preserve unrelated and user-owned
+changes."
+
+Next slice: **M08.21D — Privacy and participant identity**, per
 `IMPLEMENTATION_PLAN.md` and the M08.21 tranche in
 `docs/milestones/M08-ai-lab-and-player-meta.md`. Not started this session.
