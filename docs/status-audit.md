@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                       |
-| ---------------- | ------------------------------------------- |
-| Commit           | `071fae1a67ec7ebb262909fa139b529eae92ac58`  |
-| Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-09-02                                  |
-| Node             | v24.15.0                                    |
-| `npm run verify` | not run for this audit                      |
+| Reading          | Value                                      |
+| ---------------- | ------------------------------------------ |
+| Commit           | `c3643bfba20ebc62f88522b22f2207a43533ffc4` |
+| Working tree     | clean                                      |
+| Taken on         | 2026-09-03                                 |
+| Node             | v24.15.0                                   |
+| `npm run verify` | not run for this audit                     |
 
 ### Verification chain
 
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 16      | 299      |
-| admin-server   | 32      | 631      |
-| packages       | 96      | 2292     |
+| admin-client   | 16      | 321      |
+| admin-server   | 32      | 648      |
+| packages       | 98      | 2362     |
 | scripts        | 4       | 69       |
 | server         | 17      | 345      |
 | simulator      | 39      | 665      |
 | web-client     | 20      | 272      |
-| **total**      | **224** | **4573** |
+| **total**      | **226** | **4682** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -284,13 +284,13 @@ No question the plan calls open is missing or answered in the question file.
 
 ## Repository inventory
 
-| Reading                                  | Value                                                                                                                                                                                                                                                                                                                                                                                               |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspaces                               | `packages/admin-contracts`, `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/deck-generator`, `packages/help-content`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/admin-client`, `apps/admin-server`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
-| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                                                                                                                              |
-| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                                                                                                                                |
-| Architecture decision records            | 24                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Milestone documents                      | 9                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Reading                                  | Value                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspaces                               | `packages/admin-contracts`, `packages/board-telemetry`, `packages/bot-config`, `packages/bot-interface`, `packages/card-data`, `packages/deck`, `packages/deck-generator`, `packages/help-content`, `packages/match-telemetry`, `packages/protocol`, `packages/rules-engine`, `packages/shared`, `packages/spectator`, `apps/admin-client`, `apps/admin-server`, `apps/multiplayer-server`, `apps/simulator`, `apps/web-client` |
+| Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                                                                                                                                                          |
+| Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Architecture decision records            | 24                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Milestone documents                      | 9                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ### Architecture decision records
 

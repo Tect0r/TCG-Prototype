@@ -3914,16 +3914,16 @@ exact deck snapshot, source classification, and every termination-origin test.
 - [x] **M08.21D — Privacy and participant identity.** Make forbidden personal and
       secret fields absent by schema, use match-local pseudonymous participant IDs
       only, and prove no cross-session identity claim or hidden-data projection.
-- [ ] **M08.21E — Tranche close.** Revalidate all six origins, exact decks,
+- [x] **M08.21E — Tranche close.** Revalidate all six origins, exact decks,
       source classification, privacy absence and version behavior through the
       standard tranche-close gate. Do not add the write path.
 
 ### Checklist
 
-- [ ] Strict versioned envelope reusing shared telemetry payloads.
-- [ ] Six termination origins distinguished, including the two concessions.
-- [ ] Privacy fields provably absent.
-- [ ] Match-local pseudonymous participant IDs only.
+- [x] Strict versioned envelope reusing shared telemetry payloads.
+- [x] Six termination origins distinguished, including the two concessions.
+- [x] Privacy fields provably absent.
+- [x] Match-local pseudonymous participant IDs only.
 
 ## M08.22 — Multiplayer telemetry sink
 

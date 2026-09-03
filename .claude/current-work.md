@@ -1354,3 +1354,36 @@ changes."
 Next slice: **M08.21E — Tranche close**, per `IMPLEMENTATION_PLAN.md` and the
 M08.21 tranche in `docs/milestones/M08-ai-lab-and-player-meta.md`. Not
 started this session.
+
+M08.21E is done pending review: revalidated the combined M08.21A–D tranche
+diff (`de31b19..c3643bf`, entirely the new `packages/match-telemetry`
+package) against this milestone's acceptance list — schema round trip,
+future-version refusal, privacy-field absence, exact deck snapshot, source
+classification and every termination-origin test all present with existing
+focused tests (69 tests across `schema.test.ts`/`retention.test.ts`). No new
+gap found in the diff itself; no multiplayer write path or feedback prompt
+was added, matching this milestone's own exclusion.
+
+`npm run check:consistency` passed clean on the first run (298 links, 88 path
+references, 46 documented values, 5 count claims, 155 playable cards, 5 owner
+decisions). `npm run audit:check` failed on the first run — `docs/status-audit.md`
+still described commit `071fae1` (M08.19E's audit) rather than this tranche;
+regenerated with `npm run audit:status` (now `c3643bf`, 226 files/4682 tests,
+`packages/match-telemetry` listed among workspaces, `packages` project
+96→98 files/2292→2362 tests) and `audit:check` then passed clean.
+
+One unrelated, pre-existing uncommitted change (`.claude/settings.json`,
+emptying its `permissions.deny` list) predates this session; `git stash`-ed for
+the `verify`/audit runs so it could not mask or be conflated with this
+tranche's own gate result, then restored immediately after. It remains
+uncommitted and untouched, per CLAUDE.md's "preserve unrelated and user-owned
+changes"; it is not part of this tranche-close commit.
+
+`npm run verify` then passed clean: 226 test files, 4682 tests, typecheck
+(all workspaces plus root), lint, format, content validation (one
+pre-existing `dread_sovereign` "Resilient" inert-keyword warning, unrelated to
+this tranche) and build all green — no unformatted files this time. Marked
+M08.21E and the M08.21 checklist complete in the milestone file. Root status
+row's "Next tranche" column is left at `M08.21A` rather than advanced, per
+CLAUDE.md: the tranche is not marked complete and its successor is not named
+until `tcg-reviewer` returns `VERDICT: APPROVE`.
