@@ -4343,10 +4343,37 @@ filter and sparse-data tests.
       (680 tests) passes; both workspaces typecheck clean; ESLint and `prettier
       --check` clean on the four changed files. See `.claude/current-work.md` for
       detail.
-- [ ] **M08.24D — Surrender state and exposure windows.** Aggregate voluntary
+- [x] **M08.24D — Surrender state and exposure windows.** Aggregate voluntary
       surrender by Commander/deck/turn/phase and state, plus exposure-adjusted action
       chain/turn/round proximity carrying exposure and event-distance counts. Exclude
       timeout and make correlation semantics structural.
+      Done: added `apps/simulator/src/analysis/live-match-surrender.ts`, joining
+      `LiveMatchPreActionCapture[]` (M08.23A/B) to `LiveMatchEnvelope[]` by `matchId`,
+      reusing M08.24A's `(source, contentVersion, rulesVersion)` partition shape so
+      this view can never disagree with M08.24A/B/C about a bucket. A capture with no
+      matching envelope, a mismatched `terminationOrigin`, or an unseated `playerId`
+      is reported in `unmatched` with a stated reason, never dropped. "State" is
+      scoped to what a pre-action capture actually carries — phase, whether combat
+      had declared attackers, Reaction-window-open and pending-choice-open (with
+      `type`) — never a fabricated board/Health/resource figure, since
+      `LiveMatchPreActionCapture` never captures those. "Exposure" is the Wilson-
+      bounded share of a partition's own surrenders whose retained 30-event window
+      held a given event type or card `definitionId` — evidence relative to this
+      partition's surrenders, not a whole-match population rate — with
+      events/actions/turns-ago distance stats reused unchanged from
+      `LiveMatchEventDistance`, plus a derived `roundsAgo = floor(turnsAgo / 2)`
+      documented as arithmetic convenience, not a new engine concept. No field is
+      named "cause" or "reason" for the exposure tables, matching the
+      correlation-only restraint `LiveMatchPreActionCapture`/`LiveMatchEventWindow`'s
+      own doc comments already require. Timeout exclusion is structural: a timeout
+      termination never produces a pre-action capture, so there is nothing to filter.
+      Wired into the simulator's barrel export. 9 new focused tests pass (unmatched
+      reasons, partition isolation, Commander/deck/turn/phase/origin tallies,
+      structural state, exposure/proximity math, sparse input); full
+      `apps/simulator/src/analysis` suite (79 tests) passes; `apps/simulator`
+      typechecks clean; ESLint and `prettier --check` clean on the three changed
+      files. Tranche-close gates are deferred to M08.24E. See
+      `.claude/current-work.md` for detail.
 - [ ] **M08.24E — Tranche close.** Revalidate source separation, eligibility,
       denominators, version filters, sparse data and surrender proximity through the
       standard tranche-close gate. Do not create the Player Meta page.

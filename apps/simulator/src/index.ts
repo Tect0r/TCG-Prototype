@@ -285,6 +285,24 @@ export {
   type LiveCardEvidenceOptions,
 } from './analysis/live-card-evidence.js';
 
+export {
+  aggregateLiveMatchSurrenders,
+  type LiveMatchSurrenderAggregate,
+  type LiveMatchSurrenderOptions,
+  type LiveMatchSurrenderResult,
+  type SurrenderCommanderEntry,
+  type SurrenderDeckEntry,
+  type SurrenderExposureView,
+  type SurrenderOriginCount,
+  type SurrenderPendingChoiceEntry,
+  type SurrenderPhaseEntry,
+  type SurrenderProximityDistance,
+  type SurrenderProximityEntry,
+  type SurrenderStateSummary,
+  type SurrenderTurnEntry,
+  type UnmatchedSurrenderCapture,
+} from './analysis/live-match-surrender.js';
+
 export { cardPairs, cardPairSchema, type CardPair } from './analysis/pairs.js';
 
 export {

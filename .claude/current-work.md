@@ -2484,3 +2484,84 @@ behavior change). Tranche-close gates (`check:consistency`, `audit:check`,
 work-slice split.
 
 Slice complete. Next slice: **M08.24D — Surrender state and exposure windows.**
+
+## M08.24D — Surrender state and exposure windows
+
+M08.24D is implemented: a new `apps/simulator/src/analysis/live-match-surrender.ts`
+aggregates voluntary-surrender evidence by cross-referencing
+`LiveMatchPreActionCapture[]` (M08.23A/B's pre-concession structural snapshot)
+against `LiveMatchEnvelope[]` (M08.24A's own input) by `matchId`. It reuses
+`live-match-aggregate.ts`'s exported `LiveMatchAggregatePartition` shape
+(`source`, `contentVersion`, `rulesVersion`) so this view's buckets can never
+disagree with M08.24A/B/C's — a local `partitionKey`/`comparePartitions` pair
+mirrors that file's own (unexported) helpers rather than exporting them
+speculatively for a second caller that does not yet need them.
+
+A capture is matched to exactly one envelope by `matchId`, then cross-checked:
+the envelope's `terminationOrigin` must equal the capture's own `origin`, and
+`capture.playerId` must name a seated player. Any of the three failures (no
+envelope, an origin mismatch, an unseated player) is pushed into
+`LiveMatchSurrenderResult.unmatched` with a stated reason string — never
+silently dropped, matching this codebase's dominant idiom for anomalous
+records.
+
+**Scope of "state":** the milestone's own overview prose says "board, Health
+and resource state at surrender," but `LiveMatchPreActionCapture` was
+deliberately built (M08.23A/B) to never capture board/Health/resource
+numbers — only structural match state. Rather than either blocking the slice
+on data that does not exist or fabricating figures that were never captured,
+`SurrenderStateSummary` reports exactly what the capture carries: whether
+combat had declared attackers (`combat.attacks.length > 0`), whether a
+Reaction window was open, whether a pending choice was open (with its
+`.type`), and per-Commander/deck/turn/phase/origin surrender tallies. This
+mirrors the same honest-narrowing move M08.24B made for `status: 'unusable'`
+and M08.24A made for `clustersUnavailableReason`.
+
+**Exposure and proximity:** "exposure" is the Wilson-bounded (`stats.ts`'s
+`proportion()`) share of a partition's *own* surrenders whose retained
+30-event window (M08.23B's `LiveMatchEventWindow`) contains a given event
+type or card `definitionId` at least once — evidence relative to this
+partition's own surrender population, never an independent whole-match base
+rate, since no full per-match event log is fed into this module, only each
+capture's own bounded window. Distance stats (`min`/`mean`/`max`) reuse
+`LiveMatchEventDistance`'s existing `eventsAgo`/`actionsAgo`/`turnsAgo` fields
+unchanged, taking the nearest (chronologically last, since `recentEvents` is
+sequence-ascending) occurrence per key within one capture. `roundsAgo` is a
+derived `Math.floor(turnsAgo / 2)` — documented explicitly as an arithmetic
+convenience for this format's two-seat matches (one round is both players'
+turns), not a new engine primitive, avoiding CLAUDE.md's "do not silently
+invent unresolved rules." Card `definitionId` extraction across the ~60-event
+`GameEvent` discriminated union uses a single `'definitionId' in event`
+narrowing check rather than an enumerated allow-list, so a future event type
+that gains a `definitionId` field is picked up automatically. No field in
+either proximity table is named "cause" or "reason" — everything is
+"exposure" or "proximity," the same restraint `LiveMatchPreActionCapture` and
+`LiveMatchEventWindow`'s own doc comments already require of this exact
+computation (both explicitly deferred it to "M08.24D").
+
+**Timeout exclusion is structural, not filtered:**
+`LiveMatchPreActionCapture.origin` is typed to only
+`LIVE_MATCH_VOLUNTARY_TERMINATION_ORIGINS` (`concede_action`/`concede_leave`);
+a timeout termination never produces a pre-action capture at all, so this
+module has nothing to exclude — it only additionally guards against a capture
+whose `origin` disagrees with its own envelope's `terminationOrigin`.
+
+Wired into `apps/simulator/src/index.ts`'s barrel export alongside the
+M08.24A/B modules.
+
+Verified: 9 new focused tests in `live-match-surrender.test.ts` (unmatched-
+capture reasons for each of the three failure modes; source/version partition
+isolation; Commander/deck/turn/phase/origin tallies; structural state summary
+with an explicit assertion that no `health`/`board` property exists;
+exposure/proximity math for both a fully-exposed and a partially-exposed
+card, including the Wilson point/interval and all four distance axes; empty
+input) pass. Full `apps/simulator/src/analysis` suite (6 files, 79 tests)
+passes, including the precedent `live-match-aggregate.test.ts` and
+`live-card-evidence.test.ts` unchanged. `apps/simulator` typechecks clean.
+ESLint clean on all three changed/new files. `prettier --check` clean after
+one `--write` reflow of the new test file (whitespace/line-wrap only,
+inspected). Tranche-close gates (`check:consistency`, `audit:check`,
+`verify`) and `tcg-reviewer` are deferred to M08.24E, per this milestone's
+work-slice split.
+
+Slice complete. Next slice: **M08.24E — Tranche close.**
