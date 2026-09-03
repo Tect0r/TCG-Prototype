@@ -197,6 +197,7 @@ function lobbyOf(inviteCode: string, seats: readonly Seat[]): Lobby {
     matchStartedAtMs: null,
     status: 'waiting',
     state: null,
+    lastConcedeOrigin: null,
   };
 }
 

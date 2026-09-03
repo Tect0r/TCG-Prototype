@@ -162,6 +162,19 @@ export interface Lobby {
   matchStartedAtMs: number | null;
   status: LobbyStatus;
   state: MatchState | null;
+  /**
+   * Which of the two concessions produced the engine's last `'concede'`
+   * action, set immediately before the call that could produce it —
+   * `submit_action` with an explicit `concede` (`'concede_action'`) or
+   * `leave()` turning a disconnect into one (`'concede_leave'`). The engine's
+   * own `MatchResult.reason` cannot tell these apart (both are `'concede'`),
+   * so this is the one fact `match-server.ts` has to preserve above it for
+   * the live-match record's `terminationOrigin` (M08.22C). `null` before any
+   * concede has been attempted; stale values left over from a rejected
+   * concede attempt are harmless because a reader only consults this field
+   * when the match actually ended with reason `'concede'`.
+   */
+  lastConcedeOrigin: 'concede_action' | 'concede_leave' | null;
 }
 
 const CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

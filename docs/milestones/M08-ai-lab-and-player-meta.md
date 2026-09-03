@@ -3976,9 +3976,50 @@ interruption, duplicate completion, configured retention and sink-failure tests.
       way M08.22A contains a throwing sink. Not wired into any match lifecycle
       call site yet (M08.22C). 7 new tests in `live-match-store.test.ts`;
       full `apps/multiplayer-server` suite (20 files, 359 tests) still passes.
-- [ ] **M08.22C — Lifecycle integration.** Cover normal victory, reconnect,
+- [x] **M08.22C — Lifecycle integration.** Cover normal victory, reconnect,
       disconnect timeout, interruption and server restart, preserving the gameplay
       outcome even when persistence fails or completion is delivered twice.
+      Evidence: `buildLiveMatchRecord`/`liveMatchTerminationOriginFor`
+      (`apps/multiplayer-server/src/live-match-record.ts`) is a pure builder in
+      `buildBotMatchSummary`'s shape, over the finished `MatchState` plus the
+      per-seat facts the lobby already holds. `concede`'s two engine origins
+      (an explicit `submit_action` vs. `leave()` turning a disconnect into a
+      concession) are disambiguated by a new `Lobby.lastConcedeOrigin` field,
+      set at both call sites in `match-server.ts` immediately before the
+      `applyAction` that could produce a `concede` result, and read by
+      `liveMatchTerminationOriginFor` with a `?? 'concede_action'` fallback — a
+      bot never submits `concede` (`ACTIONS_A_LIVE_BOT_NEVER_SUBMITS` in
+      `bot-runner.ts`), so that fallback is exercised only by a human path.
+      New `MatchServer#publishLiveMatchRecord` is the one caller, invoked once
+      from `broadcastMatchState`'s existing one-shot `finished` gate
+      (the same gate `publishPacingSummary` relies on), wrapped in its own
+      `try`/`catch` distinct from `ingestLiveMatch`'s so a builder failure is
+      contained into `liveMatchSinkFailures` exactly like a sink failure. New
+      `MatchServerOptions.liveMatchRetention`, defaulting to
+      `{ rawEvent: false, replay: false }`, feeds `decideLiveMatchRetention`.
+      New `LIVE_MATCH_SOFTWARE_VERSION` (`apps/multiplayer-server/src/version.ts`)
+      follows `DECK_GENERATOR_VERSION`'s hand-bumped-constant precedent.
+      Deliberately out of scope, not an oversight: `abandoned_unrecordable` has
+      no reachable production call site (`broadcastMatchState`'s finished gate
+      requires a non-null result; `closeIfAbandoned()` refuses while
+      `in_match`), so no code path produces it; a 3–4 seat free-for-all is
+      cleanly skipped (`buildLiveMatchRecord` returns `null`) because
+      `liveMatchEnvelopeSchema` covers exactly two seats, matching
+      `IMPLEMENTATION_PLAN.md`'s open 3–4 seat classification note; a seat
+      whose deck never resolved a Commander is skipped the same way
+      `revealBotDecks` already skips it, by construction rather than a test,
+      since a human deck cannot reach `submit_deck` with a null Commander.
+      18 new tests in `live-match-record.test.ts` (pure `reason`/origin mapping,
+      a natural `rules_victory` finish driven only by `legalActions`,
+      `concede_leave` via `leave()`, `concede_action` via an explicit action,
+      `disconnect_timeout` via the existing grace-window timer, a mid-match
+      reconnect that does not disturb the eventual origin, a throwing sink
+      contained without losing the gameplay result, a 3-seat table recording
+      nothing and no failure, configured-on and default-off retention, and a
+      simulated server restart redelivering one completion twice through two
+      independent `LiveMatchFileStore` instances against the same directory
+      without throwing). Full `apps/multiplayer-server` suite (21 files, 377
+      tests) passes; workspace typecheck, eslint and prettier clean.
 - [ ] **M08.22D — Tranche close.** Revalidate retention, idempotence, restart and
       failure containment through the standard tranche-close gate. Do not add
       surrender snapshots or dashboard behavior.

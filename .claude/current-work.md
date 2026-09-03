@@ -1625,3 +1625,118 @@ integration**, per `IMPLEMENTATION_PLAN.md` and the M08.22 tranche in
 "next bounded task" section and root status row stay untouched here, per
 CLAUDE.md — both move only at tranche close (M08.22D). Per the user's
 explicit instruction for this session, **M08.22C is not started here.**
+
+## M08.22C — Lifecycle integration
+
+Wires M08.22A's sink boundary and M08.22B's persistence to the one real match
+lifecycle, so `MatchServer` records exactly one canonical live-match record
+per finished match, without the record-builder itself ever needing to
+re-derive facts the engine already settled.
+
+- `apps/multiplayer-server/src/version.ts` (new): `LIVE_MATCH_SOFTWARE_VERSION`
+  ('1'), a small hand-bumped string constant following
+  `apps/deck-generator/src/version.ts`'s `DECK_GENERATOR_VERSION` precedent —
+  a package version or git hash was rejected as the source, since neither
+  changes only when something that shapes how a match is played or recorded
+  actually changes.
+- `apps/multiplayer-server/src/live-match-record.ts` (new): `buildLiveMatchRecord`
+  is a pure function over a finished `MatchState` plus the per-seat facts the
+  lobby already holds — no clock, no lobby reference, no side effect, in
+  `buildBotMatchSummary`'s established shape. Returns `null` (not a thrown
+  error) for two clean "nothing to record" cases rather than a bug: a 3–4
+  seat free-for-all, since `liveMatchEnvelopeSchema` covers exactly two seats
+  (`IMPLEMENTATION_PLAN.md`'s own open 3–4 seat classification note stays
+  open, this slice does not close it); and a seat whose deck never resolved a
+  Commander, mirroring `revealBotDecks`'s existing guard. Also exports
+  `liveMatchTerminationOriginFor(reason, concedeOrigin)`, the one thing a
+  finished `MatchResult` cannot resolve by itself: `concede` is the same
+  engine action whether it came from an explicit `submit_action` or from
+  `leave()` turning a disconnect into a concession, so the caller must supply
+  which one happened via `concedeOrigin`, defaulting to `'concede_action'`
+  when null — a default that in practice is read only for a bot's own
+  concede (`ACTIONS_A_LIVE_BOT_NEVER_SUBMITS` in `bot-runner.ts` proves a
+  live bot never submits `concede` itself, so this path is unreachable
+  today; the default is still correct if that ever changes, since a bot's
+  concede is exactly as explicit as a human's).
+- `apps/multiplayer-server/src/lobby.ts`: `Lobby` gained
+  `lastConcedeOrigin: 'concede_action' | 'concede_leave' | null`, set at the
+  two call sites that can turn into an engine `concede` result — immediately
+  before the `applyAction` call in `submitAction`'s explicit-concede branch,
+  and immediately before `leave()`'s own `applyAction({ type: 'concede', ... })`
+  call — and read once, at completion, by `liveMatchTerminationOriginFor`. A
+  stale value from an earlier match phase is harmless: it is only ever read
+  when `state.result.reason === 'concede'` for *this* completion, at which
+  point it was necessarily just set by whichever of the two call sites
+  produced that exact result.
+- `apps/multiplayer-server/src/match-server.ts`: new private
+  `publishLiveMatchRecord(lobby)` builds the seat list from `seatsOf(lobby)`,
+  resolves the termination origin and the retention decision
+  (`decideLiveMatchRetention`, from the new `MatchServerOptions.liveMatchRetention`,
+  defaulting to `{ rawEvent: false, replay: false }` — the schema's own
+  documented default-off policy), calls `buildLiveMatchRecord`, and — if it
+  returned a record rather than `null` — calls `this.ingestLiveMatch(record)`
+  (M08.22A). The whole build-and-ingest sequence is wrapped in its own
+  `try`/`catch`, distinct from `ingestLiveMatch`'s internal one, so a builder
+  bug (a bad seat shape, a schema refusal) is contained into
+  `liveMatchSinkFailures` the same way a throwing sink already is, rather
+  than crashing `broadcastMatchState`. The one call site is inside
+  `broadcastMatchState`'s existing `finished` branch, gated by
+  `lobby.status !== 'finished'` — the same one-shot gate
+  `publishPacingSummary` already relies on — so production never calls it
+  twice for one match; `LiveMatchFileStore`'s own idempotent overwrite
+  (M08.22B) is the second, independent layer that makes a duplicate
+  delivery harmless if it ever happened anyway.
+- `apps/multiplayer-server/src/bot-lobby.test.ts`: the one pre-existing
+  hand-assembled `Lobby` fixture (`lobbyOf`, for states no protocol message
+  can reach) updated with `lastConcedeOrigin: null` to keep matching the
+  widened interface — no behavior change.
+- `apps/multiplayer-server/src/live-match-record.test.ts` (new, 18 tests):
+  a pure `it.each` over every `MatchEndReason`→origin mapping including both
+  `concedeOrigin` branches and the null fallback; then, through the same
+  protocol harness `match-server.test.ts` already drives the rest of the
+  server with (never a hand-built `MatchState`, so the fixture cannot drift
+  from what the engine actually produces) — a natural finish driven only by
+  `view.legalActions` records `rules_victory`; `leave()` records
+  `concede_leave`; an explicit `concede` action records `concede_action`;
+  the existing disconnect-grace-window timer firing records
+  `disconnect_timeout`; a mid-match disconnect-then-reconnect followed by a
+  `leave()` still records `concede_leave`, proving reconnect does not
+  disturb the eventual origin; a throwing sink is contained
+  (`liveMatchSinkFailures` records it) without losing the gameplay result
+  the client actually sees; a 3-seat table records nothing and no failure,
+  proving the two-seat skip is silent rather than an error; a configured
+  `{ rawEvent: true, replay: true }` retention policy is honoured, and the
+  default is both off; and a captured real record, fed through two
+  independent `LiveMatchFileStore` instances against the same directory (a
+  restart standing in for the process coming back up), does not throw on
+  the second, duplicate delivery.
+
+Deliberately not attempted, and not a gap: `abandoned_unrecordable` has no
+reachable production call site today (`broadcastMatchState`'s finished gate
+requires a non-null `result`; `closeIfAbandoned()` refuses while
+`in_match`), so no code path here produces it, and no test claims one does.
+
+Focused verification: `npx vitest run apps/multiplayer-server` — 377 tests
+pass (was 359; +18 new). `npx tsc --noEmit -p apps/multiplayer-server/tsconfig.json`
+clean (after also widening `bot-lobby.test.ts`'s fixture and adding an
+explicit `LiveMatchReplayArtifact` type annotation the `exactOptionalPropertyTypes`
+gate required). `npx eslint` and `npx prettier --check` clean on every new
+and changed file. Did not run `check:consistency`, `audit:check` or the full
+`npm run verify` gate — those are reserved for the M08.22D tranche-close
+slice per CLAUDE.md.
+
+Marked the M08.22C work-slice checkbox complete in
+`docs/milestones/M08-ai-lab-and-player-meta.md` with an evidence note. Did not
+touch the M08.22 tranche checklist or `IMPLEMENTATION_PLAN.md`'s root status
+row — both move only at tranche close (M08.22D).
+
+The pre-existing unrelated uncommitted change to `.claude/settings.json`
+(emptying `permissions.deny`) remains untouched and unstaged, not part of
+this slice's commit.
+
+Committed as a checkpoint and pushed. Next slice: **M08.22D — Tranche
+close**, per `IMPLEMENTATION_PLAN.md` and the M08.22 tranche in
+`docs/milestones/M08-ai-lab-and-player-meta.md`. `IMPLEMENTATION_PLAN.md`'s
+"next bounded task" section and root status row stay untouched here, per
+CLAUDE.md — both move only at tranche close. Per the standing instruction
+for this session, **M08.22D is not started here.**

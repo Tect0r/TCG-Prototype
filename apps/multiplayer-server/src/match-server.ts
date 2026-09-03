@@ -16,6 +16,7 @@ import {
   type DeckFormatConfig,
   type SavedDeck,
 } from '@tcg/deck';
+import { decideLiveMatchRetention, type LiveMatchRetentionConfig } from '@tcg/match-telemetry';
 import {
   botLobbyError,
   CURRENT_VERSIONS,
@@ -59,7 +60,9 @@ import {
   type BotSubmitResult,
 } from './bot-runner.js';
 import { buildBotMatchSummary, type BotSummarySink } from './bot-match-summary.js';
+import { buildLiveMatchRecord, liveMatchTerminationOriginFor } from './live-match-record.js';
 import type { LiveMatchRecord, LiveMatchSink } from './live-match-sink.js';
+import { LIVE_MATCH_SOFTWARE_VERSION } from './version.js';
 import {
   botSeatsOf,
   canStart,
@@ -169,11 +172,18 @@ export interface MatchServerOptions {
    *
    * The general-purpose sibling of `summarySink`: an optional collaborator,
    * called once per match, of every source — not only matches with a bot seat.
-   * Absent by default, and this slice builds no record and calls this option
-   * from nowhere yet; it exists so the failure-containment boundary below can
-   * be proven before M08.22B gives it a real caller.
+   * `publishLiveMatchRecord` (M08.22C) is the one live call site.
    */
   readonly liveMatchSink?: LiveMatchSink;
+  /**
+   * What this deployment keeps beyond the mandatory envelope (M08.21C),
+   * decided per match from its termination origin via
+   * `decideLiveMatchRetention`. Defaults to keeping neither optional tier —
+   * the same "off unless configured" default `liveMatchRetentionConfigSchema`
+   * itself declares — so a deployment that never sets this records the
+   * envelope alone.
+   */
+  readonly liveMatchRetention?: LiveMatchRetentionConfig;
 }
 
 /**
@@ -207,6 +217,7 @@ export class MatchServer {
   readonly #summarySinkFailures: string[] = [];
   readonly #liveMatchSink: LiveMatchSink | undefined;
   readonly #liveMatchSinkFailures: string[] = [];
+  readonly #liveMatchRetention: LiveMatchRetentionConfig;
 
   readonly #lobbies = new Map<string, Lobby>();
   readonly #connections = new Map<string, ServerConnection>();
@@ -229,6 +240,7 @@ export class MatchServer {
     this.#botPilotFor = options.botPilotFor;
     this.#summarySink = options.summarySink;
     this.#liveMatchSink = options.liveMatchSink;
+    this.#liveMatchRetention = options.liveMatchRetention ?? { rawEvent: false, replay: false };
     this.#seedFor =
       options.seedFor ?? ((inviteCode) => `${inviteCode}-${this.#now()}-${this.#random()}`);
   }
@@ -380,6 +392,7 @@ export class MatchServer {
       matchStartedAtMs: null,
       status: 'waiting',
       state: null,
+      lastConcedeOrigin: null,
     };
     this.#lobbies.set(inviteCode, lobby);
     this.attach(connection, lobby, seat);
@@ -1167,6 +1180,12 @@ export class MatchServer {
       return;
     }
 
+    // `submit_action` carries an explicit concede through the same generic
+    // path every other action takes, so this is the one point that can tell
+    // it apart from `leave()`'s (below) before the engine sees only
+    // `reason: 'concede'` either way.
+    if (action.type === 'concede') lobby.lastConcedeOrigin = 'concede_action';
+
     const result = applyAction(lobby.state, action, {
       database: this.#database,
       config: this.#config,
@@ -1192,6 +1211,7 @@ export class MatchServer {
 
     if (lobby.status === 'in_match' && lobby.state && lobby.state.status !== 'complete') {
       // Leaving a live match is a concession, not a disconnect.
+      lobby.lastConcedeOrigin = 'concede_leave';
       const result = applyAction(
         lobby.state,
         { type: 'concede', playerId: PLAYER_ID_BY_SEAT[seat.seatId] },
@@ -1436,6 +1456,63 @@ export class MatchServer {
     return [...this.#liveMatchSinkFailures];
   }
 
+  /**
+   * Builds and ingests a finished match's canonical live-match record
+   * (M08.22C).
+   *
+   * Called once, from `broadcastMatchState`'s finished branch — the same
+   * one-shot gate `publishPacingSummary` already relies on, so "exactly once
+   * per match, regardless of how it ended" is one guard rather than two. The
+   * whole build-and-ingest sequence runs inside its own `try`/`catch`,
+   * separate from `ingestLiveMatch`'s own: a bug in the builder (a bad seat
+   * shape, a schema refusal) must be no more able to break a just-finished
+   * match's broadcast than a sink that throws is, so it is recorded into the
+   * same `#liveMatchSinkFailures` list and stepped over rather than left to
+   * propagate out of `broadcastMatchState`.
+   *
+   * `buildLiveMatchRecord` returning `null` — a 3-/4-seat match, or a seat
+   * whose deck never resolved a Commander — is not a failure and is not
+   * recorded as one: nothing to publish is exactly what `publishPacingSummary`
+   * does for a table with no bots.
+   */
+  private publishLiveMatchRecord(lobby: Lobby): void {
+    const { state } = lobby;
+    if (!state || state.status !== 'complete' || state.result === null) return;
+
+    try {
+      const seats = seatsOf(lobby).flatMap((seat) => {
+        if (!seat.deck) return [];
+        return [
+          {
+            playerId: PLAYER_ID_BY_SEAT[seat.seatId],
+            kind: isBotSeat(seat) ? ('bot' as const) : ('human' as const),
+            deck: { commanderId: seat.deck.commanderId, cards: seat.deck.cards },
+          },
+        ];
+      });
+
+      const terminationOrigin = liveMatchTerminationOriginFor(
+        state.result.reason,
+        lobby.lastConcedeOrigin,
+      );
+      const retention = decideLiveMatchRetention(terminationOrigin, this.#liveMatchRetention);
+
+      const record = buildLiveMatchRecord({
+        state,
+        formatId: this.#deckFormat.formatId,
+        softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
+        seats,
+        terminationOrigin,
+        retention,
+      });
+      if (record) this.ingestLiveMatch(record);
+    } catch (error) {
+      this.#liveMatchSinkFailures.push(
+        `live_match_record_builder: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   /** Tells every *other* seat that one seat's connection changed. */
   private broadcastConnection(lobby: Lobby, changed: HumanSeat): void {
     const graceSeconds = graceSecondsFor(changed, this.#now);
@@ -1471,6 +1548,11 @@ export class MatchServer {
       // summary is what a playtest note quotes, and a note is written with the
       // result and the decks already on the screen (M09.17).
       this.publishPacingSummary(lobby);
+      // Last of the four, and independent of it: Player Meta's record is not
+      // a playtest note, so it does not need to wait on one — it is ordered
+      // here only because "after the match is fully broadcast" is the
+      // simplest invariant to keep (M08.22C).
+      this.publishLiveMatchRecord(lobby);
     }
   }
 
