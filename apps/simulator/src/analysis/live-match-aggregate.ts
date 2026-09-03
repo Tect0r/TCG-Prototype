@@ -31,11 +31,7 @@ import { mean, percentile, proportion, round, type ProportionEstimate } from './
  * never pooled across that key: `source` already *is* the human/mixed/AI
  * split this milestone requires (`human_human` / `human_ai` / `ai_ai`), and
  * content/rules version separation keeps a card whose text or cost changed
- * from being silently compared against its former self. Honest match- vs.
- * unique-deck-weighted views are M08.24C's job, not this slice's — every
- * count and rate here is a plain match-weighted count, and callers get the
- * decisive sample size for free off `ProportionEstimate.total` rather than a
- * second, easy-to-desync field.
+ * from being silently compared against its former self.
  *
  * A `null` `outcome` means the engine never reached a `MatchResult` at all
  * (`terminationOrigin: 'abandoned_unrecordable'`) — such a match is still
@@ -43,6 +39,26 @@ import { mean, percentile, proportion, round, type ProportionEstimate } from './
  * it) but excluded from every win-rate, matchup and duration figure, whose
  * denominators would otherwise silently understate a real rate by mixing in
  * matches nobody actually won or lost.
+ *
+ * M08.24C — honest weighting and denominators. Popularity here has two
+ * legitimate readings that disagree whenever one deck is replayed many
+ * times: `matches` counts every seat-appearance (one tester grinding a
+ * hundred games with the same build dominates it), while `uniqueDecks`
+ * counts distinct built decks once each, regardless of how many matches
+ * they played. Both are reported side by side wherever this module reports
+ * a selection count (the partition total and `CommanderSelectionEntry`) so
+ * a caller can choose the honest lens rather than only ever seeing the
+ * grinding-biased one. There is deliberately no third, player-weighted
+ * count: `LiveMatchEnvelope.seats[].playerId` is not a stable cross-match
+ * identity (ADR 0023), so no denominator here claims to measure "how many
+ * distinct testers." Win rate, duration and termination-origin figures stay
+ * match-weighted only — they describe what happened *in a match*, a
+ * property a deck-weighted average could only approximate by fabricating a
+ * second statistic nobody asked for; `DeckUsageEntry`/`DeckMatchupEntry`
+ * and `Cluster` are already one row per deck/pairing/cluster, so their own
+ * `matches` field already reads correctly without a parallel field, and
+ * `Cluster.deckHashes.length` already gives the unique-deck count for that
+ * row for free.
  */
 
 export interface LiveMatchAggregatePartition {
@@ -53,8 +69,10 @@ export interface LiveMatchAggregatePartition {
 
 export interface CommanderSelectionEntry {
   readonly commanderId: string;
-  /** Every match this Commander was seated in, any outcome. */
+  /** Every match this Commander was seated in, any outcome. Match-weighted: one grinding deck can dominate this. */
   readonly matches: number;
+  /** Distinct decks built for this Commander in this partition — the unique-deck-weighted counterpart to `matches`. */
+  readonly uniqueDecks: number;
   /** Over decisive matches only; `winRate.total` is that decisive sample size. */
   readonly winRate: ProportionEstimate;
 }
@@ -96,8 +114,10 @@ export interface LiveMatchClusterView {
 
 export interface LiveMatchAggregate {
   readonly partition: LiveMatchAggregatePartition;
-  /** Every match in this partition, any outcome. */
+  /** Every match in this partition, any outcome. Match-weighted: one grinding deck can dominate this. */
   readonly matches: number;
+  /** Distinct decks played in this partition — the unique-deck-weighted counterpart to `matches`. */
+  readonly uniqueDecks: number;
   readonly decisiveMatches: number;
   readonly commanderSelection: readonly CommanderSelectionEntry[];
   readonly deckUsage: readonly DeckUsageEntry[];
@@ -129,12 +149,17 @@ export interface LiveMatchAggregateOptions {
  * `aggregateLiveCardEvidence`, so the two card- and match-level views can
  * never partition the same input differently.
  */
-export function partitionLiveMatches(
-  matches: readonly LiveMatchEnvelope[],
-): readonly { readonly partition: LiveMatchAggregatePartition; readonly matches: readonly LiveMatchEnvelope[] }[] {
+export function partitionLiveMatches(matches: readonly LiveMatchEnvelope[]): readonly {
+  readonly partition: LiveMatchAggregatePartition;
+  readonly matches: readonly LiveMatchEnvelope[];
+}[] {
   const partitions = new Map<string, LiveMatchEnvelope[]>();
   for (const match of matches) {
-    const key = partitionKey(match.source, match.provenance.contentVersion, match.provenance.rulesVersion);
+    const key = partitionKey(
+      match.source,
+      match.provenance.contentVersion,
+      match.provenance.rulesVersion,
+    );
     const group = partitions.get(key);
     if (group) group.push(match);
     else partitions.set(key, [match]);
@@ -166,7 +191,11 @@ export function aggregateLiveMatches(
   );
 }
 
-function partitionKey(source: LiveMatchSource, contentVersion: number, rulesVersion: string): string {
+function partitionKey(
+  source: LiveMatchSource,
+  contentVersion: number,
+  rulesVersion: string,
+): string {
   return `${source} ${String(contentVersion)} ${rulesVersion}`;
 }
 
@@ -273,11 +302,17 @@ function aggregatePartition(
     }
   }
 
+  const commanderUniqueDecks = new Map<string, number>();
+  for (const [, commanderId] of deckCommander) {
+    commanderUniqueDecks.set(commanderId, (commanderUniqueDecks.get(commanderId) ?? 0) + 1);
+  }
+
   const commanderSelectionEntries: CommanderSelectionEntry[] = [...commanderSelection]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([commanderId, matchCount]) => ({
       commanderId,
       matches: matchCount,
+      uniqueDecks: commanderUniqueDecks.get(commanderId) ?? 0,
       winRate: rate(commanderDecisive.get(commanderId) ?? { wins: 0, total: 0 }, confidence),
     }));
 
@@ -329,11 +364,15 @@ function aggregatePartition(
             `No card database was supplied for content version ${String(partition.contentVersion)}, ` +
             'so decks in this partition were not clustered.',
         }
-      : { clusters: clusterView(deckSnapshots, database, group, clusterThreshold, confidence), clustersUnavailableReason: null };
+      : {
+          clusters: clusterView(deckSnapshots, database, group, clusterThreshold, confidence),
+          clustersUnavailableReason: null,
+        };
 
   return {
     partition,
     matches: group.length,
+    uniqueDecks: deckSelection.size,
     decisiveMatches,
     commanderSelection: commanderSelectionEntries,
     deckUsage: deckUsageEntries,

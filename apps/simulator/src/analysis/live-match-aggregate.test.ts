@@ -74,9 +74,15 @@ describe('aggregateLiveMatches', () => {
 
   it('never pools distinct content or rules versions into one partition', () => {
     const aggregates = aggregateLiveMatches([
-      envelope({ provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.0.0' } }),
-      envelope({ provenance: { softwareVersion: '1.0.0', contentVersion: 6, rulesVersion: '1.0.0' } }),
-      envelope({ provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.1.0' } }),
+      envelope({
+        provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.0.0' },
+      }),
+      envelope({
+        provenance: { softwareVersion: '1.0.0', contentVersion: 6, rulesVersion: '1.0.0' },
+      }),
+      envelope({
+        provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.1.0' },
+      }),
     ]);
 
     expect(aggregates).toHaveLength(3);
@@ -127,9 +133,16 @@ describe('aggregateLiveMatches', () => {
   });
 
   it('computes clusters only for a partition whose content version has a supplied database', () => {
-    const withDatabase = aggregateLiveMatches([envelope({ provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.0.0' } })], {
-      cardDatabasesByContentVersion: new Map([[5, database]]),
-    });
+    const withDatabase = aggregateLiveMatches(
+      [
+        envelope({
+          provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.0.0' },
+        }),
+      ],
+      {
+        cardDatabasesByContentVersion: new Map([[5, database]]),
+      },
+    );
     expect(withDatabase[0]?.clusters).not.toBeNull();
     expect(withDatabase[0]?.clustersUnavailableReason).toBeNull();
     expect(withDatabase[0]?.clusters?.features).toHaveLength(2);
@@ -151,5 +164,20 @@ describe('aggregateLiveMatches', () => {
 
   it('returns no partitions for an empty input', () => {
     expect(aggregateLiveMatches([])).toEqual([]);
+  });
+
+  it('reports match-weighted and unique-deck-weighted selection counts separately', () => {
+    // Both matches replay the exact same blue and red decks — one grinding pair,
+    // not two distinct builds.
+    const [aggregate] = aggregateLiveMatches([envelope(), envelope({ matchId: 'match_two' })]);
+
+    expect(aggregate?.matches).toBe(2);
+    expect(aggregate?.uniqueDecks).toBe(2); // one blue deck, one red deck
+
+    const blueSelection = aggregate?.commanderSelection.find(
+      (entry) => entry.commanderId === 'prototype_commander_blue',
+    );
+    expect(blueSelection?.matches).toBe(2);
+    expect(blueSelection?.uniqueDecks).toBe(1);
   });
 });

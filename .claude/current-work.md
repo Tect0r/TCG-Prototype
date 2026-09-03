@@ -2435,3 +2435,52 @@ four changed/new files. Tranche-close gates (`check:consistency`,
 milestone's work-slice split.
 
 Slice complete. Next slice: **M08.24C — Honest weighting and denominators.**
+
+M08.24C is implemented: match-weighted and unique-deck-weighted views only,
+with no player-weighted claim (a `LiveMatchEnvelope` seat's `playerId` is not
+a stable cross-match identity, the same reason M08.24A never reported a
+per-player count), and all M08.24A/M08.24B sparse/missing/corrupt evidence
+classifications preserved unchanged. Scoped narrowly to the concrete,
+well-defined popularity/selection denominators this milestone's intro
+actually names — Commander selection, card inclusion, card pairs — rather
+than fabricating a new deck-averaged win-rate/duration/termination statistic
+nobody asked for; `DeckUsageEntry`, `DeckMatchupEntry`, `LiveMatchDurationStats`,
+`TerminationOriginCount` and clustering stay match-weighted only, with the
+"why" recorded in both files' doc comments. In
+`apps/simulator/src/analysis/live-match-aggregate.ts`: `LiveMatchAggregate`
+and `CommanderSelectionEntry` each gain a `uniqueDecks` field (partition-level
+distinct-deck count, and per-Commander distinct-deck count) alongside their
+existing match-weighted `matches`. In
+`apps/simulator/src/analysis/live-card-evidence.ts`: `CommanderCardEvidence`
+gains `uniqueDecks`; `CardEligibilityEntry` gains `decksIncluding` and
+`inclusionByUniqueDeck` (null under the same `'unusable'` rule as
+`inclusion`); `CardPairEntry` gains `decksIncludingBoth` and
+`supportByUniqueDeck`. Deck identity for the unique-deck denominator is each
+seat's `deck.deckHash`, deduplicated per Commander per partition.
+
+While extending `live-card-evidence.ts`'s `pairKey`/`key.split(...)`
+separator for the new deck-level pair maps, found the *committed* M08.24B
+version of that exact line already contained a literal NUL byte (` `)
+in place of the space separator in both `pairKey`'s template literal and its
+matching `.split(...)` call — invisible in editors and inert for tests (both
+sides used the same byte consistently, so lookups still matched), but it
+silently made `git diff`/`file` treat the whole source file as binary. Fixed
+in this slice's rewrite of that function (now a literal space on both sides,
+matching the file's own written intent) as a direct, in-scope byproduct of
+touching that exact code path — not a separate cleanup pass.
+
+Verified: 2 new tests, one per file (`live-match-aggregate.test.ts`: match-
+and unique-deck-weighted selection counts separately at both partition and
+per-Commander level; `live-card-evidence.test.ts`: unique-deck-weighted
+inclusion/support alongside match-weighted, and `null`/`0` for an unusable
+card, using a three-match/two-unique-deck fixture) pass. Full
+`--project simulator` (41 files, 680 tests, including the 2 new) passes
+clean. `npm run typecheck` clean on both `@tcg/simulator` and
+`@tcg/admin-server`. ESLint clean on all four changed files. `prettier
+--check` clean on all four changed files (after `--write`; diffs inspected
+and confirmed reflow plus the NUL-to-space correctness fix above, no other
+behavior change). Tranche-close gates (`check:consistency`, `audit:check`,
+`verify`) and `tcg-reviewer` are deferred to M08.24E, per this milestone's
+work-slice split.
+
+Slice complete. Next slice: **M08.24D — Surrender state and exposure windows.**

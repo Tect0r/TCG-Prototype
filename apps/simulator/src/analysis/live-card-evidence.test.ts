@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { loadBundledCardData, type CardDatabase } from '@tcg/card-data';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
 import { aggregateLiveCardEvidence } from './live-card-evidence.js';
+import { round } from './stats.js';
 
 /**
  * M08.24B — eligibility-aware card evidence.
@@ -74,7 +75,9 @@ describe('aggregateLiveCardEvidence', () => {
     const [evidence] = aggregateLiveCardEvidence([envelope()], {
       cardDatabasesByContentVersion: databases,
     });
-    const blue = evidence?.commanders?.find((entry) => entry.commanderId === 'prototype_commander_blue');
+    const blue = evidence?.commanders?.find(
+      (entry) => entry.commanderId === 'prototype_commander_blue',
+    );
     const bannerKeeper = blue?.cards.find((entry) => entry.cardId === 'banner_keeper');
 
     expect(bannerKeeper?.status).toBe('unusable');
@@ -84,13 +87,21 @@ describe('aggregateLiveCardEvidence', () => {
 
   it('distinguishes a held legal card (0 inclusion) from a played one, match-weighted', () => {
     const [evidence] = aggregateLiveCardEvidence(
-      [envelope(), envelope({ matchId: 'match_two', seats: [
-        { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: blueDeckWithoutSnare() },
-        { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
-      ] })],
+      [
+        envelope(),
+        envelope({
+          matchId: 'match_two',
+          seats: [
+            { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: blueDeckWithoutSnare() },
+            { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
+          ],
+        }),
+      ],
       { cardDatabasesByContentVersion: databases },
     );
-    const blue = evidence?.commanders?.find((entry) => entry.commanderId === 'prototype_commander_blue');
+    const blue = evidence?.commanders?.find(
+      (entry) => entry.commanderId === 'prototype_commander_blue',
+    );
     expect(blue?.commanderMatches).toBe(2);
 
     const archiveAcolyte = blue?.cards.find((entry) => entry.cardId === 'archive_acolyte');
@@ -106,13 +117,21 @@ describe('aggregateLiveCardEvidence', () => {
 
   it('reports only pairs that actually co-occurred, with match-weighted support', () => {
     const [evidence] = aggregateLiveCardEvidence(
-      [envelope(), envelope({ matchId: 'match_two', seats: [
-        { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: blueDeckWithoutSnare() },
-        { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
-      ] })],
+      [
+        envelope(),
+        envelope({
+          matchId: 'match_two',
+          seats: [
+            { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: blueDeckWithoutSnare() },
+            { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
+          ],
+        }),
+      ],
       { cardDatabasesByContentVersion: databases },
     );
-    const blue = evidence?.commanders?.find((entry) => entry.commanderId === 'prototype_commander_blue');
+    const blue = evidence?.commanders?.find(
+      (entry) => entry.commanderId === 'prototype_commander_blue',
+    );
 
     expect(blue?.pairs).toHaveLength(1);
     expect(blue?.pairs[0]).toMatchObject({
@@ -129,7 +148,9 @@ describe('aggregateLiveCardEvidence', () => {
     });
     expect(evidence?.commanders).toHaveLength(2);
 
-    const red = evidence?.commanders?.find((entry) => entry.commanderId === 'prototype_commander_red');
+    const red = evidence?.commanders?.find(
+      (entry) => entry.commanderId === 'prototype_commander_red',
+    );
     const arcaneSnareUnderRed = red?.cards.find((entry) => entry.cardId === 'arcane_snare');
     expect(arcaneSnareUnderRed?.status).toBe('unusable');
     expect(arcaneSnareUnderRed?.inclusion).toBeNull();
@@ -143,5 +164,47 @@ describe('aggregateLiveCardEvidence', () => {
 
   it('returns no partitions for an empty input', () => {
     expect(aggregateLiveCardEvidence([])).toEqual([]);
+  });
+
+  it('reports unique-deck-weighted inclusion and support alongside match-weighted, and never for an unusable card', () => {
+    // Three matches: the first two replay the exact same blue deck (a grinding
+    // pair), the third uses a distinct blue build without arcane_snare.
+    const [evidence] = aggregateLiveCardEvidence(
+      [
+        envelope(),
+        envelope({ matchId: 'match_two' }),
+        envelope({
+          matchId: 'match_three',
+          seats: [
+            { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: blueDeckWithoutSnare() },
+            { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
+          ],
+        }),
+      ],
+      { cardDatabasesByContentVersion: databases },
+    );
+    const blue = evidence?.commanders?.find(
+      (entry) => entry.commanderId === 'prototype_commander_blue',
+    );
+    expect(blue?.commanderMatches).toBe(3);
+    expect(blue?.uniqueDecks).toBe(2);
+
+    const arcaneSnare = blue?.cards.find((entry) => entry.cardId === 'arcane_snare');
+    expect(arcaneSnare?.matchesIncluding).toBe(2);
+    expect(arcaneSnare?.inclusion).toBe(round(2 / 3));
+    expect(arcaneSnare?.decksIncluding).toBe(1);
+    expect(arcaneSnare?.inclusionByUniqueDeck).toBe(0.5);
+
+    const bannerKeeper = blue?.cards.find((entry) => entry.cardId === 'banner_keeper');
+    expect(bannerKeeper?.status).toBe('unusable');
+    expect(bannerKeeper?.decksIncluding).toBe(0);
+    expect(bannerKeeper?.inclusionByUniqueDeck).toBeNull();
+
+    const pair = blue?.pairs.find(
+      (entry) => entry.cardIdA === 'arcane_snare' && entry.cardIdB === 'prototype_drone',
+    );
+    expect(pair?.matchesIncludingBoth).toBe(2);
+    expect(pair?.decksIncludingBoth).toBe(1);
+    expect(pair?.supportByUniqueDeck).toBe(0.5);
   });
 });

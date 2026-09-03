@@ -4324,9 +4324,25 @@ filter and sparse-data tests.
       focused tests pass; `live-match-aggregate.test.ts`'s 7 tests still pass
       unregressed; `simulator` and `admin-server` typecheck clean; ESLint clean on the
       changed files. See `.claude/current-work.md` for detail.
-- [ ] **M08.24C — Honest weighting and denominators.** Provide match-weighted and
+- [x] **M08.24C — Honest weighting and denominators.** Provide match-weighted and
       unique-deck-weighted views only, with no player-weighted claim, and preserve
       sparse, missing and corrupt evidence classifications.
+      Done: added a parallel `uniqueDecks` (partition- and Commander-level) to
+      `live-match-aggregate.ts`'s `LiveMatchAggregate`/`CommanderSelectionEntry`, and
+      `decksIncluding`/`inclusionByUniqueDeck`/`decksIncludingBoth`/`supportByUniqueDeck`
+      to `live-card-evidence.ts`'s `CardEligibilityEntry`/`CardPairEntry`, alongside
+      every existing match-weighted count — deliberately no player-weighted count,
+      for the same no-stable-cross-match-identity reason M08.24A already documents.
+      Scoped to the named popularity/selection denominators only; win-rate, duration,
+      termination, deck usage/matchups and clustering stay match-weighted (documented
+      why in both files). Deck identity is each seat's `deck.deckHash`, deduplicated
+      per Commander per partition. Fixed a pre-existing NUL-byte separator bug in
+      M08.24B's committed `pairKey`/`.split(...)` (silently made the file look binary
+      to `git diff`/`file`, though functionally inert) as a direct byproduct of
+      touching that exact line. 2 new focused tests pass; full `simulator` project
+      (680 tests) passes; both workspaces typecheck clean; ESLint and `prettier
+      --check` clean on the four changed files. See `.claude/current-work.md` for
+      detail.
 - [ ] **M08.24D — Surrender state and exposure windows.** Aggregate voluntary
       surrender by Commander/deck/turn/phase and state, plus exposure-adjusted action
       chain/turn/round proximity carrying exposure and event-distance counts. Exclude
