@@ -6,9 +6,11 @@ import { loadBundledCardData, type CardDatabase } from '@tcg/card-data';
 import {
   freezeLiveMatchDeckSnapshot,
   parseLiveMatchEnvelope,
+  parseLiveMatchPreActionCapture,
   parseLiveMatchRawEventArtifact,
   parseLiveMatchReplayArtifact,
   type LiveMatchEnvelope,
+  type LiveMatchPreActionCapture,
   type LiveMatchRawEventArtifact,
   type LiveMatchReplayArtifact,
 } from '@tcg/match-telemetry';
@@ -70,6 +72,40 @@ function replayFor(matchId: string): LiveMatchReplayArtifact {
   return { schemaVersion: 1, matchId, seed: 'seed_001', actionLog: [] };
 }
 
+function preActionCaptureFor(matchId: string): LiveMatchPreActionCapture {
+  return {
+    schemaVersion: 3,
+    matchId,
+    playerId: 'player_2',
+    origin: 'concede_action',
+    turn: 1,
+    phase: 'main_1',
+    activePlayerId: 'player_1',
+    sequence: 0,
+    pendingChoice: null,
+    combat: {
+      attacks: [],
+      awaitingDefenders: [],
+      submissions: [],
+      blocks: [],
+      combatantInstanceIds: [],
+      damageResolved: false,
+    },
+    reactionWindow: null,
+    eventWindow: {
+      recentEvents: [],
+      eventDistances: [],
+      currentTurnWindow: { turn: 1, startSequence: 0, endSequence: 0 },
+      previousTurnWindow: null,
+    },
+    provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.0.0' },
+    deck: freezeLiveMatchDeckSnapshot({
+      commanderId: 'cmd_beta',
+      cards: [{ cardId: 'card_b', quantity: 40 }],
+    }),
+  };
+}
+
 let root: string;
 
 beforeEach(() => {
@@ -99,6 +135,7 @@ describe('LiveMatchFileStore (M08.22B)', () => {
     expect(written).toEqual(record.envelope);
     expect(existsSync(join(matchDirectory, 'raw-event.json'))).toBe(false);
     expect(existsSync(join(matchDirectory, 'replay.json'))).toBe(false);
+    expect(existsSync(join(matchDirectory, 'pre-action-capture.json'))).toBe(false);
   });
 
   it('writes configured raw-event and replay artifacts alongside the envelope', () => {
@@ -121,6 +158,24 @@ describe('LiveMatchFileStore (M08.22B)', () => {
     );
     expect(rawEvent).toEqual(record.rawEvent);
     expect(replay).toEqual(record.replay);
+  });
+
+  it('writes a configured pre-action capture alongside the envelope (M08.23D)', () => {
+    const store = new LiveMatchFileStore({ rootDirectory: root });
+    const record: LiveMatchRecord = {
+      envelope: envelopeFor('match_005'),
+      rawEvent: null,
+      replay: null,
+      preActionCapture: preActionCaptureFor('match_005'),
+    };
+
+    store.receive(record);
+
+    const matchDirectory = join(root, 'match_005');
+    const preActionCapture = parseLiveMatchPreActionCapture(
+      JSON.parse(readFileSync(join(matchDirectory, 'pre-action-capture.json'), 'utf8')),
+    );
+    expect(preActionCapture).toEqual(record.preActionCapture);
   });
 
   it('keeps separate matches in separate directories', () => {

@@ -6,12 +6,21 @@ import type { LiveMatchRecord, LiveMatchSink } from './live-match-sink.js';
 /**
  * M08.22B's canonical idempotent persistence: one durable record per match, on
  * disk, addressed by `matchId` alone. `<rootDirectory>/<matchId>/` holds
- * `envelope.json` (always) plus `raw-event.json` and `replay.json` (exactly when
- * `LiveMatchRecord` carries them — a retention decision M08.21 already made, not
- * one this store second-guesses). No index file and no minted id anywhere in
- * this module: the directory name *is* the record's identity, so "does this
- * match already have a record" is answerable by the filesystem itself rather
- * than a second source of truth that could drift from it.
+ * `envelope.json` (always) plus `raw-event.json`, `replay.json` and
+ * `pre-action-capture.json` (exactly when `LiveMatchRecord` carries them — a
+ * retention decision M08.21/M08.23D already made, not one this store
+ * second-guesses). No index file and no minted id anywhere in this module:
+ * the directory name *is* the record's identity, so "does this match already
+ * have a record" is answerable by the filesystem itself rather than a second
+ * source of truth that could drift from it.
+ *
+ * `pre-action-capture.json` is the most sensitive of the three: a full,
+ * unredacted engine-state snapshot including whatever either player's hidden
+ * zones held. It is written to the same match directory as the other
+ * artifacts — this store has no separate admin-only storage area — so
+ * "admin-only" is enforced entirely upstream, by which callers are ever wired
+ * to read this root directory at all, and by `packages/protocol/src/boundary.test.ts`
+ * proving the wire protocol sent to clients can never carry it.
  *
  * `receive` is synchronous, matching `LiveMatchSink`'s contract (M08.22A):
  * `MatchServer.ingestLiveMatch` calls it inside a plain `try`/`catch`, so
@@ -131,6 +140,9 @@ export class LiveMatchFileStore implements LiveMatchSink {
     }
     if (record.replay !== null) {
       writeJsonAtomicallySync(join(matchDirectory, 'replay.json'), record.replay);
+    }
+    if (record.preActionCapture !== null) {
+      writeJsonAtomicallySync(join(matchDirectory, 'pre-action-capture.json'), record.preActionCapture);
     }
   }
 }

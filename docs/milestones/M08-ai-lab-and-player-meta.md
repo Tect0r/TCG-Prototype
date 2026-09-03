@@ -4180,9 +4180,41 @@ AI continuation from the state.
       result. Assigns no cause: `origin` names the mechanism a player used,
       never why. 476 focused tests pass across `@tcg/match-telemetry` and
       `@tcg/multiplayer-server`; both packages typecheck clean.
-- [ ] **M08.23D — Hidden-artifact retention and authorization.** Store full-state
+- [x] **M08.23D — Hidden-artifact retention and authorization.** Store full-state
       snapshots only under configured retention as admin-only artifacts and prove
-      public/client/unauthorized paths cannot obtain them.
+      public/client/unauthorized paths cannot obtain them. Adds a third
+      independent dial, `preActionCapture`, to `liveMatchRetentionConfigSchema`
+      and `liveMatchRetentionDecisionSchema` (`retention.ts`) — off by default
+      like the other two tiers, and never forced for any origin, since a
+      pre-action capture only ever exists for a voluntary termination in the
+      first place. `buildLiveMatchRecord` (`live-match-record.ts`) now gates
+      `voluntaryPreActionCaptureFor` behind `input.retention.preActionCapture`:
+      the lobby can still capture one (M08.23A–C), but it is attached to the
+      built record only when the deployment opted in. `LiveMatchFileStore.receive`
+      (`live-match-store.ts`) writes it to `pre-action-capture.json` in the
+      match directory when present, the same atomic-write, matchId-keyed
+      idempotence the other two artifacts already use. `match-server.ts`'s
+      default `liveMatchRetention` gained the new field, off. The
+      "admin-only"/"public path cannot obtain it" half of the acceptance line
+      is a structural proof, not a runtime scan: new
+      `packages/protocol/src/boundary.test.ts` reads `@tcg/protocol`'s manifest
+      and every source file and asserts neither declares nor imports
+      `@tcg/match-telemetry` — the same idiom
+      `apps/multiplayer-server/src/boundary.test.ts` already uses for its own
+      workspace boundary — so no `ServerMessage`, `PlayerView` or `LobbyView`
+      this package defines can structurally embed a hidden artifact; the file
+      store's own header doc comment records that "admin-only" is enforced
+      entirely upstream of it, since it has no separate admin-only storage
+      area of its own. `retention.test.ts` gained a default-false and
+      round-trip case for the third dial and a
+      `decideLiveMatchRetention`/never-forced proof across every termination
+      origin; `live-match-record.test.ts`'s five affected tests now configure
+      or assert the new gate explicitly, including one proving the lobby's own
+      capture stays un-persisted when the dial is left off; `live-match-store.test.ts`
+      gained a `preActionCaptureFor` fixture and a persistence round-trip test,
+      plus a "skips" assertion for `pre-action-capture.json`. 480 focused tests
+      pass across `@tcg/match-telemetry`, `@tcg/multiplayer-server` and
+      `@tcg/protocol`; all three packages typecheck clean.
 - [ ] **M08.23E — Tranche close.** Revalidate pending contexts, windows, timeout
       exclusion, retention, idempotence and authorization through the standard
       tranche-close gate. Do not add cause labels, UI or AI continuation.

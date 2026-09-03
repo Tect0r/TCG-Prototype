@@ -2133,3 +2133,105 @@ checkbox and evidence note are updated; the M08.23 tranche checklist, the
 root status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
 are untouched, per the normal-slice rule. Next slice: **M08.23D — Hidden-
 artifact retention and authorization.**
+
+## M08.23D — Hidden-artifact retention and authorization
+
+Implemented the milestone's exact scope line: "Store full-state snapshots
+only under configured retention as admin-only artifacts and prove
+public/client/unauthorized paths cannot obtain them."
+
+- `packages/match-telemetry/src/retention.ts`: added a third independent
+  dial, `preActionCapture: z.boolean().default(false)`, to
+  `liveMatchRetentionConfigSchema` (now "Three independent dials", not two)
+  and a matching `preActionCapture: z.boolean()` to
+  `liveMatchRetentionDecisionSchema`. `decideLiveMatchRetention` now computes
+  `preActionCapture: config.preActionCapture` — following the configured dial
+  exactly, with no forced override for any origin: unlike `rawEvent`'s
+  diagnostic force for `server_failure`/`abandoned_unrecordable`, there is no
+  "abnormal but voluntary" case to force it for, since a pre-action capture
+  only ever exists for a voluntary termination in the first place. The header
+  doc comment gained a fourth tier bullet describing this as the dial that
+  decides whether a deployment actually keeps the M08.23A–C artifact, off by
+  default like the other two tiers — the most sensitive artifact this package
+  defines, so a deployment must opt in.
+- `packages/match-telemetry/src/retention.test.ts`: widened the
+  `liveMatchRetentionConfigSchema` default and round-trip tests to the third
+  dial; widened every `decideLiveMatchRetention` expectation across the
+  "follows policy", "forces rawEvent" and "never forces replay" tests; added a
+  new test proving `preActionCapture` is never forced for any origin in
+  `LIVE_MATCH_TERMINATION_ORIGINS`, following the configured value exactly
+  both on and off.
+- `apps/multiplayer-server/src/live-match-record.ts`: `buildLiveMatchRecord`
+  now gates the existing `voluntaryPreActionCaptureFor(envelope,
+  input.preActionCapture)` call behind `input.retention.preActionCapture` —
+  `null` when the dial is off, regardless of what the lobby captured.
+  `voluntaryPreActionCaptureFor` still proves voluntariness and freshness
+  exactly as M08.23C left it; deciding whether to keep the result at all is
+  now the caller's job, not folded into the same gate. Doc comments on
+  `LiveMatchRecordInput.preActionCapture` and on
+  `voluntaryPreActionCaptureFor` itself updated to point at the new retention
+  gate.
+- `apps/multiplayer-server/src/live-match-sink.ts`: updated the
+  `LiveMatchRecord` doc comment — `preActionCapture` is now `null` for the
+  same reason `rawEvent`/`replay` are: a retention decision already made, not
+  a choice for a sink to second-guess, in addition to always being `null` for
+  a non-voluntary termination.
+- `apps/multiplayer-server/src/live-match-store.ts`: `LiveMatchFileStore.receive`
+  now writes `pre-action-capture.json` to the match directory when
+  `record.preActionCapture !== null`, using the same atomic-write helper as
+  the other two optional artifacts. Header doc comment updated to name the
+  third optional file and to record that "admin-only" is enforced entirely
+  upstream of this store — it has no separate admin-only storage area, so
+  which callers are ever wired to read this root directory, plus the new
+  `packages/protocol/src/boundary.test.ts` proof that the wire protocol can
+  never carry one, are what make the artifact admin-only in practice.
+- `apps/multiplayer-server/src/live-match-store.test.ts`: added a
+  `preActionCaptureFor(matchId)` fixture (schema version 3, turn 1, idle
+  combat, no pending choice or Reaction window, an empty event window valid
+  under the schema's own turn-1-has-no-previous-window rule, and a deck
+  snapshot with a correctly computed hash via `freezeLiveMatchDeckSnapshot`).
+  Added a new test proving `pre-action-capture.json` round-trips through
+  `parseLiveMatchPreActionCapture`; extended the existing "skips artifacts"
+  test with an assertion that the file is absent when the record does not
+  carry one.
+- `apps/multiplayer-server/src/match-server.ts`: the default
+  `liveMatchRetention` a deployment falls back to when it never configures one
+  gained `preActionCapture: false`, alongside the existing `rawEvent`/`replay`
+  defaults; its doc comment updated to say "none of the three optional tiers."
+- `apps/multiplayer-server/src/live-match-record.test.ts`: the four tests that
+  asserted a populated `preActionCapture` (the `concede_leave` and
+  `concede_action` lifecycle tests, the "attaches exactly the lobby's own
+  capture" test, and "honours a configured retention policy") now explicitly
+  configure `liveMatchRetention` with `preActionCapture: true`, since the
+  dial defaults closed. "Records no artifacts by default" renamed and
+  extended to prove the lobby itself still captured one
+  (`lobby?.lastPreActionCapture` is not null) while the persisted record's
+  `preActionCapture` stays `null` — the gate closing by default, not the
+  lobby failing to capture at all.
+- `packages/protocol/src/boundary.test.ts` (new file): the structural
+  "public/client path cannot obtain it" proof, mirroring
+  `apps/multiplayer-server/src/boundary.test.ts`'s own idiom — reads
+  `@tcg/protocol`'s manifest and every non-test source file (comments
+  stripped) and asserts neither declares a `@tcg/match-telemetry` dependency
+  nor imports it anywhere. Since `ServerMessage`/`PlayerView`/`LobbyView` and
+  every other wire type this package defines is built from types this package
+  itself declares, zero dependency on `@tcg/match-telemetry` means no message
+  ever sent to a client can structurally embed a hidden artifact — a
+  rot-resistant proof about what the protocol can express, not a runtime
+  trace of one match.
+
+**Verification:** `npx vitest run packages/match-telemetry apps/multiplayer-server
+packages/protocol/src/boundary.test.ts` — 26 test files, 480 tests, all pass.
+`npm run typecheck --workspace=@tcg/match-telemetry`,
+`--workspace=@tcg/multiplayer-server` and `--workspace=@tcg/protocol` all
+clean. A repo-wide grep for hand-constructed `rawEvent: (true|false)` literals
+confirmed no other call site needed updating for the widened
+`LiveMatchRetentionConfig` type. Per CLAUDE.md, the full
+`npm run verify`/`check:consistency`/`audit:check` gates are reserved for
+tranche close (M08.23E) and were not run.
+
+Slice complete. `docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.23D
+checkbox and evidence note are updated; the M08.23 tranche checklist, the
+root status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
+are untouched, per the normal-slice rule. Next slice: **M08.23E — Tranche
+close.**

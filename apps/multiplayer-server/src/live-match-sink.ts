@@ -7,12 +7,12 @@ import type {
 
 /**
  * The ordinary live-match record, at whatever retention tier M08.21's policy kept
- * for this match. `rawEvent` and `replay` are `null` exactly when
- * `decideLiveMatchRetention` (M08.21B) chose not to keep that tier — their
- * presence is a retention decision already made, not a choice for a sink to
- * second-guess. `preActionCapture` (M08.23C) is `null` for every non-voluntary
- * termination and is not yet governed by a retention tier of its own — that is
- * M08.23D's job, not this one.
+ * for this match. `rawEvent`, `replay` and `preActionCapture` are `null`
+ * exactly when `decideLiveMatchRetention` (M08.21B) chose not to keep that
+ * tier — their presence is a retention decision already made, not a choice
+ * for a sink to second-guess. `preActionCapture` (M08.23C) is additionally
+ * always `null` for every non-voluntary termination, on top of that gate
+ * (M08.23D).
  */
 export interface LiveMatchRecord {
   readonly envelope: LiveMatchEnvelope;

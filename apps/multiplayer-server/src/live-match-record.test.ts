@@ -319,9 +319,12 @@ describe('lifecycle integration (M08.22C)', () => {
     expect(records[0]?.preActionCapture).toBeNull();
   });
 
-  it('records concede_leave when a seat leaves, with a matching pre-action capture (M08.23C)', () => {
+  it('records concede_leave when a seat leaves, with a matching pre-action capture (M08.23C, M08.23D)', () => {
     const { sink, records } = capturingSink();
-    const harness = createHarness({ liveMatchSink: sink });
+    const harness = createHarness({
+      liveMatchSink: sink,
+      liveMatchRetention: { rawEvent: false, replay: false, preActionCapture: true },
+    });
     startMatch(harness);
     const [, guest] = harness.seats as [FakeConnection, FakeConnection];
 
@@ -335,9 +338,12 @@ describe('lifecycle integration (M08.22C)', () => {
     expect(records[0]?.preActionCapture?.matchId).toBe(records[0]?.envelope.matchId);
   });
 
-  it('records concede_action for an explicit concede, with a matching pre-action capture (M08.23C)', () => {
+  it('records concede_action for an explicit concede, with a matching pre-action capture (M08.23C, M08.23D)', () => {
     const { sink, records } = capturingSink();
-    const harness = createHarness({ liveMatchSink: sink });
+    const harness = createHarness({
+      liveMatchSink: sink,
+      liveMatchRetention: { rawEvent: false, replay: false, preActionCapture: true },
+    });
     startMatch(harness);
     const [, guest] = harness.seats as [FakeConnection, FakeConnection];
 
@@ -427,7 +433,7 @@ describe('lifecycle integration (M08.22C)', () => {
     const { sink, records } = capturingSink();
     const harness = createHarness({
       liveMatchSink: sink,
-      liveMatchRetention: { rawEvent: true, replay: true },
+      liveMatchRetention: { rawEvent: true, replay: true, preActionCapture: true },
     });
     startMatch(harness);
     const [, guest] = harness.seats as [FakeConnection, FakeConnection];
@@ -436,9 +442,10 @@ describe('lifecycle integration (M08.22C)', () => {
 
     expect(records[0]?.rawEvent).not.toBeNull();
     expect(records[0]?.replay).not.toBeNull();
+    expect(records[0]?.preActionCapture).not.toBeNull();
   });
 
-  it('records no artifacts by default', () => {
+  it('records no artifacts by default, including the pre-action capture (M08.23D)', () => {
     const { sink, records } = capturingSink();
     const harness = createHarness({ liveMatchSink: sink });
     startMatch(harness);
@@ -448,6 +455,10 @@ describe('lifecycle integration (M08.22C)', () => {
 
     expect(records[0]?.rawEvent).toBeNull();
     expect(records[0]?.replay).toBeNull();
+    // The lobby captured one (M08.23C), but the default-off retention dial
+    // must still keep it out of the persisted record (M08.23D).
+    expect(harness.server.lobbyByCode(harness.inviteCode)?.lastPreActionCapture).not.toBeNull();
+    expect(records[0]?.preActionCapture).toBeNull();
   });
 
   it('preserves the outcome across a simulated server restart delivering the same completion twice', () => {
@@ -476,9 +487,12 @@ describe('lifecycle integration (M08.22C)', () => {
     }
   });
 
-  it('attaches exactly the lobby\'s own pre-action capture, unmodified (M08.23C)', () => {
+  it('attaches exactly the lobby\'s own pre-action capture, unmodified (M08.23C, M08.23D)', () => {
     const { sink, records } = capturingSink();
-    const harness = createHarness({ liveMatchSink: sink });
+    const harness = createHarness({
+      liveMatchSink: sink,
+      liveMatchRetention: { rawEvent: false, replay: false, preActionCapture: true },
+    });
     startMatch(harness);
     const [, guest] = harness.seats as [FakeConnection, FakeConnection];
 

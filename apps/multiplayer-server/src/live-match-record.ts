@@ -57,7 +57,13 @@ export interface LiveMatchRecordInput {
   readonly seats: readonly LiveMatchRecordSeatInput[];
   readonly terminationOrigin: LiveMatchTerminationOrigin;
   readonly retention: LiveMatchRetentionConfig;
-  /** The lobby's own capture from the instant of concede/leave, if any. Never read for a non-voluntary termination. */
+  /**
+   * The lobby's own capture from the instant of concede/leave, if any. Never
+   * read for a non-voluntary termination, and attached to the built record
+   * only when `retention.preActionCapture` is configured on — a deployment
+   * that leaves the dial off never gets one persisted, regardless of what the
+   * lobby captured (M08.23D).
+   */
   readonly preActionCapture: LiveMatchPreActionCapture | null;
 }
 
@@ -106,6 +112,11 @@ export function liveMatchTerminationOriginFor(
  * different match on a reused lobby, and the captured player must be one of
  * this outcome's losers, since a pre-action capture is only ever taken for
  * whoever conceded or left.
+ *
+ * This proves voluntariness and freshness; it does not decide whether the
+ * capture should be kept at all — that is the caller's `retention.preActionCapture`
+ * gate below (M08.23D), since the most sensitive artifact this package
+ * defines must default to discarded like every other retention tier.
  */
 function voluntaryPreActionCaptureFor(
   envelope: Pick<LiveMatchEnvelope, 'matchId' | 'terminationOrigin' | 'outcome'>,
@@ -188,7 +199,9 @@ export function buildLiveMatchRecord(input: LiveMatchRecordInput): LiveMatchReco
       }
     : null;
 
-  const preActionCapture = voluntaryPreActionCaptureFor(envelope, input.preActionCapture);
+  const preActionCapture = input.retention.preActionCapture
+    ? voluntaryPreActionCaptureFor(envelope, input.preActionCapture)
+    : null;
 
   return { envelope, rawEvent, replay, preActionCapture };
 }

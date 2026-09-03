@@ -154,12 +154,16 @@ describe('parseLiveMatchReplayArtifact', () => {
 });
 
 describe('liveMatchRetentionConfigSchema', () => {
-  it('defaults both dials to false', () => {
-    expect(liveMatchRetentionConfigSchema.parse({})).toEqual({ rawEvent: false, replay: false });
+  it('defaults all three dials to false', () => {
+    expect(liveMatchRetentionConfigSchema.parse({})).toEqual({
+      rawEvent: false,
+      replay: false,
+      preActionCapture: false,
+    });
   });
 
   it('round trips an explicit configuration', () => {
-    const config = { rawEvent: true, replay: true };
+    const config = { rawEvent: true, replay: true, preActionCapture: true };
     expect(liveMatchRetentionConfigSchema.parse(config)).toEqual(config);
   });
 
@@ -180,31 +184,54 @@ describe('decideLiveMatchRetention', () => {
 
   it('follows the configured policy for a normal origin', () => {
     const origin: LiveMatchTerminationOrigin = 'rules_victory';
-    expect(decideLiveMatchRetention(origin, { rawEvent: false, replay: false })).toEqual({
+    expect(
+      decideLiveMatchRetention(origin, { rawEvent: false, replay: false, preActionCapture: false }),
+    ).toEqual({
       rawEvent: false,
       replay: false,
+      preActionCapture: false,
     });
-    expect(decideLiveMatchRetention(origin, { rawEvent: true, replay: true })).toEqual({
+    expect(
+      decideLiveMatchRetention(origin, { rawEvent: true, replay: true, preActionCapture: true }),
+    ).toEqual({
       rawEvent: true,
       replay: true,
+      preActionCapture: true,
     });
   });
 
   it.each(LIVE_MATCH_FORCED_RAW_EVENT_ORIGINS)(
     'forces rawEvent retention for %s even when the policy declines it',
     (origin) => {
-      expect(decideLiveMatchRetention(origin, { rawEvent: false, replay: false })).toEqual({
+      expect(
+        decideLiveMatchRetention(origin, { rawEvent: false, replay: false, preActionCapture: false }),
+      ).toEqual({
         rawEvent: true,
         replay: false,
+        preActionCapture: false,
       });
     },
   );
 
   it('never forces replay retention, even for a forced-rawEvent origin', () => {
     for (const origin of LIVE_MATCH_FORCED_RAW_EVENT_ORIGINS) {
-      expect(decideLiveMatchRetention(origin, { rawEvent: false, replay: false }).replay).toBe(
-        false,
-      );
+      expect(
+        decideLiveMatchRetention(origin, { rawEvent: false, replay: false, preActionCapture: false })
+          .replay,
+      ).toBe(false);
+    }
+  });
+
+  it('never forces preActionCapture retention, for any origin', () => {
+    for (const origin of LIVE_MATCH_TERMINATION_ORIGINS) {
+      expect(
+        decideLiveMatchRetention(origin, { rawEvent: false, replay: false, preActionCapture: false })
+          .preActionCapture,
+      ).toBe(false);
+      expect(
+        decideLiveMatchRetention(origin, { rawEvent: true, replay: true, preActionCapture: true })
+          .preActionCapture,
+      ).toBe(true);
     }
   });
 

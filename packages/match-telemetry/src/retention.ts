@@ -10,7 +10,7 @@ import type { LiveMatchTerminationOrigin } from './schema.js';
  * decision, never a writer, a sink or a storage path. Wiring a real server to
  * actually persist any of this is M08.22's job.
  *
- * Three tiers, in increasing detail:
+ * Four tiers, in increasing detail:
  * - **summary** — the envelope itself. Always produced; not configurable, so
  *   it carries no field in `liveMatchRetentionConfigSchema` below.
  * - **raw-event** — `liveMatchRawEventArtifactSchema`. The full authoritative
@@ -22,6 +22,13 @@ import type { LiveMatchTerminationOrigin } from './schema.js';
  *   through `createMatch`/`applyAction` and reconstruct the match exactly,
  *   without restating the format or deck identity the envelope already
  *   carries.
+ * - **pre-action-capture** — `liveMatchPreActionCaptureSchema`
+ *   (`./pre-action-capture.ts`). The full engine-state snapshot taken the
+ *   instant before a voluntary concession, including whatever either player's
+ *   hidden zones held at that moment. Defined and captured under M08.23A–C;
+ *   this dial (M08.23D) is what decides whether a deployment actually keeps
+ *   it, the same "off unless configured" default the other two artifact tiers
+ *   already use.
  *
  * Each artifact is independently versioned, the same readable-refusal
  * treatment `describeLiveMatchEnvelopeVersionProblem` set for the envelope:
@@ -156,7 +163,7 @@ export function parseLiveMatchReplayArtifact(input: unknown): LiveMatchReplayArt
 }
 
 /**
- * What a deployment is configured to keep beyond the mandatory summary. Two
+ * What a deployment is configured to keep beyond the mandatory summary. Three
  * independent dials, not a sample rate: unlike the simulator's batch runs
  * (`apps/simulator/src/config.ts`'s `retentionSchema`), there is no
  * population of matches to sample across here — every live match is itself,
@@ -167,6 +174,13 @@ export const liveMatchRetentionConfigSchema = z.strictObject({
   rawEvent: z.boolean().default(false),
   /** Keep `liveMatchReplayArtifactSchema` for a completed or abandoned match. */
   replay: z.boolean().default(false),
+  /**
+   * Keep `liveMatchPreActionCaptureSchema` (`./pre-action-capture.ts`) for a
+   * voluntary termination. Off by default like the other two tiers: a
+   * full-state snapshot is the most sensitive artifact this package defines
+   * (M08.23D), so a deployment must opt in to retaining it at all.
+   */
+  preActionCapture: z.boolean().default(false),
 });
 export type LiveMatchRetentionConfig = z.infer<typeof liveMatchRetentionConfigSchema>;
 
@@ -199,12 +213,21 @@ export function isForcedLiveMatchRawEventOrigin(origin: LiveMatchTerminationOrig
 export const liveMatchRetentionDecisionSchema = z.strictObject({
   rawEvent: z.boolean(),
   replay: z.boolean(),
+  preActionCapture: z.boolean(),
 });
 export type LiveMatchRetentionDecision = z.infer<typeof liveMatchRetentionDecisionSchema>;
 
 /**
  * What should actually be retained for one match, given its termination
  * origin and the deployment's configured policy.
+ *
+ * `preActionCapture` follows the configured dial exactly, with no forced
+ * override: unlike `rawEvent`'s diagnostic force for abnormal origins, there
+ * is no "abnormal but voluntary" case to force it for — a pre-action capture
+ * only ever exists for a voluntary termination in the first place (the
+ * forced-`rawEvent` origins, `server_failure` and `abandoned_unrecordable`,
+ * can never carry one; see `voluntaryPreActionCaptureFor` in
+ * `apps/multiplayer-server/src/live-match-record.ts`).
  */
 export function decideLiveMatchRetention(
   origin: LiveMatchTerminationOrigin,
@@ -213,5 +236,6 @@ export function decideLiveMatchRetention(
   return {
     rawEvent: config.rawEvent || isForcedLiveMatchRawEventOrigin(origin),
     replay: config.replay,
+    preActionCapture: config.preActionCapture,
   };
 }

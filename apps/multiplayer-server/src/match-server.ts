@@ -179,10 +179,10 @@ export interface MatchServerOptions {
   /**
    * What this deployment keeps beyond the mandatory envelope (M08.21C),
    * decided per match from its termination origin via
-   * `decideLiveMatchRetention`. Defaults to keeping neither optional tier —
-   * the same "off unless configured" default `liveMatchRetentionConfigSchema`
-   * itself declares — so a deployment that never sets this records the
-   * envelope alone.
+   * `decideLiveMatchRetention`. Defaults to keeping none of the three optional
+   * tiers — the same "off unless configured" default
+   * `liveMatchRetentionConfigSchema` itself declares — so a deployment that
+   * never sets this records the envelope alone.
    */
   readonly liveMatchRetention?: LiveMatchRetentionConfig;
 }
@@ -241,7 +241,11 @@ export class MatchServer {
     this.#botPilotFor = options.botPilotFor;
     this.#summarySink = options.summarySink;
     this.#liveMatchSink = options.liveMatchSink;
-    this.#liveMatchRetention = options.liveMatchRetention ?? { rawEvent: false, replay: false };
+    this.#liveMatchRetention = options.liveMatchRetention ?? {
+      rawEvent: false,
+      replay: false,
+      preActionCapture: false,
+    };
     this.#seedFor =
       options.seedFor ?? ((inviteCode) => `${inviteCode}-${this.#now()}-${this.#random()}`);
   }
