@@ -52,3 +52,13 @@ export {
   type LiveMatchRetentionConfig,
   type LiveMatchRetentionDecision,
 } from './retention.js';
+
+export {
+  LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION,
+  assertReadableLiveMatchPreActionCaptureVersion,
+  describeLiveMatchPreActionCaptureVersionProblem,
+  isReadableLiveMatchPreActionCaptureVersion,
+  liveMatchPreActionCaptureSchema,
+  parseLiveMatchPreActionCapture,
+  type LiveMatchPreActionCapture,
+} from './pre-action-capture.js';

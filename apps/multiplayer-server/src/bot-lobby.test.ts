@@ -198,6 +198,7 @@ function lobbyOf(inviteCode: string, seats: readonly Seat[]): Lobby {
     status: 'waiting',
     state: null,
     lastConcedeOrigin: null,
+    lastPreActionCapture: null,
   };
 }
 

@@ -1,5 +1,6 @@
 import { publicBotSeatOf, type BotPacingBudgets, type BotSeatConfig } from '@tcg/bot-config';
 import type { SavedDeck } from '@tcg/deck';
+import type { LiveMatchPreActionCapture } from '@tcg/match-telemetry';
 import {
   MAX_BOT_SEATS,
   MAX_SEATS,
@@ -175,6 +176,16 @@ export interface Lobby {
    * when the match actually ended with reason `'concede'`.
    */
   lastConcedeOrigin: 'concede_action' | 'concede_leave' | null;
+  /**
+   * What the match looked like the instant before the last explicit or
+   * leave-triggered concede reached the engine, set immediately before the
+   * same two calls that set `lastConcedeOrigin` above — before the engine's
+   * concede resolution clears `pendingChoice`, ends `combat` and closes any
+   * open `reactionWindow` (M08.23A). `null` before any concede has been
+   * attempted; stale values left over from a rejected concede attempt are
+   * harmless for the same reason `lastConcedeOrigin`'s are.
+   */
+  lastPreActionCapture: LiveMatchPreActionCapture | null;
 }
 
 const CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

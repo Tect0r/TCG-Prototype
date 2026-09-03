@@ -62,6 +62,7 @@ import {
 import { buildBotMatchSummary, type BotSummarySink } from './bot-match-summary.js';
 import { buildLiveMatchRecord, liveMatchTerminationOriginFor } from './live-match-record.js';
 import type { LiveMatchRecord, LiveMatchSink } from './live-match-sink.js';
+import { capturePreActionState } from './pre-action-capture.js';
 import { LIVE_MATCH_SOFTWARE_VERSION } from './version.js';
 import {
   botSeatsOf,
@@ -393,6 +394,7 @@ export class MatchServer {
       status: 'waiting',
       state: null,
       lastConcedeOrigin: null,
+      lastPreActionCapture: null,
     };
     this.#lobbies.set(inviteCode, lobby);
     this.attach(connection, lobby, seat);
@@ -1184,7 +1186,10 @@ export class MatchServer {
     // path every other action takes, so this is the one point that can tell
     // it apart from `leave()`'s (below) before the engine sees only
     // `reason: 'concede'` either way.
-    if (action.type === 'concede') lobby.lastConcedeOrigin = 'concede_action';
+    if (action.type === 'concede') {
+      lobby.lastConcedeOrigin = 'concede_action';
+      lobby.lastPreActionCapture = capturePreActionState(lobby.state, action.playerId);
+    }
 
     const result = applyAction(lobby.state, action, {
       database: this.#database,
@@ -1212,6 +1217,10 @@ export class MatchServer {
     if (lobby.status === 'in_match' && lobby.state && lobby.state.status !== 'complete') {
       // Leaving a live match is a concession, not a disconnect.
       lobby.lastConcedeOrigin = 'concede_leave';
+      lobby.lastPreActionCapture = capturePreActionState(
+        lobby.state,
+        PLAYER_ID_BY_SEAT[seat.seatId],
+      );
       const result = applyAction(
         lobby.state,
         { type: 'concede', playerId: PLAYER_ID_BY_SEAT[seat.seatId] },

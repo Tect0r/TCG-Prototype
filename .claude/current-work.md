@@ -1874,3 +1874,80 @@ confirmed the milestone wording now matches the code) and returned
 column and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section now name
 **M08.23A — Pre-action capture contract**, the first slice of M08.23
 ("Surrender context capture").
+
+## M08.23A — Pre-action capture contract
+
+Implemented the milestone's exact scope line: "Define and capture the state
+immediately before explicit or leave concession, including pending choice,
+combat and Reaction context, without changing the engine concession."
+
+- `packages/match-telemetry/src/pre-action-capture.ts` (new): the versioned
+  `liveMatchPreActionCaptureSchema` (`LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION
+  = 1`) plus the standard `isReadable...`/`describe...VersionProblem`/
+  `assertReadable...`/`parse...` boilerplate `retention.ts` established.
+  Fields: `matchId`, `playerId` (`liveMatchParticipantIdSchema`, the seat-
+  derived id — never a display name), `turn`, `phase`, `activePlayerId`,
+  `sequence`, and `pendingChoice`/`combat`/`reactionWindow` reused verbatim
+  from `@tcg/rules-engine`'s own `pendingChoiceSchema`/`combatStateSchema`/
+  `reactionWindowStateSchema` rather than restated, so this can never drift
+  from what the engine actually produces. Contract only — no builder, no
+  sink, matching `retention.ts`'s own split.
+- `packages/match-telemetry/src/pre-action-capture.test.ts` (new, 9 tests):
+  round trips a capture with all three of pendingChoice/combat/reactionWindow
+  populated (hand-built literal fixtures for each, mirroring the values
+  those schemas actually accept) and a second with all three idle/null;
+  unknown-field refusal; a `playerId` that is not a seat-derived participant
+  id is refused; missing/non-numeric, newer and current schema version
+  handling, mirroring `retention.test.ts` exactly.
+- `packages/match-telemetry/src/index.ts`: added the new module's export
+  block.
+- `apps/multiplayer-server/src/pre-action-capture.ts` (new): the pure
+  `capturePreActionState(state, playerId)` builder, the same no-clock/
+  no-lobby-reference/no-side-effect shape `live-match-record.ts`'s
+  `buildLiveMatchRecord` established — reads the nine fields straight off a
+  live `MatchState` and parses them through `liveMatchPreActionCaptureSchema`
+  rather than trusting the object by hand.
+- `apps/multiplayer-server/src/lobby.ts`: added `Lobby.lastPreActionCapture:
+  LiveMatchPreActionCapture | null`, doc-commented in `lastConcedeOrigin`'s
+  own style — `null` until a concede is attempted, stale values after a
+  rejected attempt are harmless for the same reason.
+- `apps/multiplayer-server/src/match-server.ts`: calls `capturePreActionState`
+  at both of `lastConcedeOrigin`'s existing call sites — `submit_action`'s
+  explicit `concede` branch (using the already-validated `action.playerId`)
+  and `leave()` (using `PLAYER_ID_BY_SEAT[seat.seatId]`, matching that
+  call's existing style) — immediately before `applyAction`, so the
+  engine's own concede resolution (which clears `pendingChoice`, ends
+  `combat` and closes any open `reactionWindow`) never overwrites what is
+  captured. `createLobby()` initializes the new field to `null`. The engine's
+  `applyAction` call and the `concede` action itself are untouched.
+- `apps/multiplayer-server/src/bot-lobby.test.ts`: added the new field to the
+  hand-built `lobbyOf()` fixture.
+- `apps/multiplayer-server/src/match-server.test.ts`: two new protocol-harness
+  tests in the existing `describe('match termination', ...)` block — one for
+  an explicit concede, one for a leave — each confirming
+  `lastPreActionCapture` is `null` before any concede, then after conceding
+  matches the pre-concede `PlayerView`'s `matchId`/`turn`/`phase`/
+  `activePlayerId`/`sequence`/`combat` exactly, with `playerId` naming the
+  conceding seat and `pendingChoice`/`reactionWindow` both `null` (the real
+  state at that point in the drive). A trailing assertion in the explicit-
+  concede test confirms the server's own sequence has since moved past the
+  captured one, proving the capture is a snapshot rather than a live
+  reference into `lobby.state`. Reaching a genuine non-idle `pendingChoice`/
+  `combat`/`reactionWindow` through real play was left to the schema-level
+  fixture tests above rather than driven through the protocol harness here,
+  to keep this slice within its own boundary ("without changing the engine
+  concession") — the wiring test's job is only to prove the call sites fire
+  with the correct identity, at the correct instant, not to re-prove the
+  schema's own shape.
+
+**Verification:** `npx vitest run packages/match-telemetry apps/multiplayer-server`
+— 24 test files, 458 tests, all pass. `npm run typecheck --workspace=@tcg/match-telemetry`
+and `--workspace=@tcg/multiplayer-server` both clean. Per CLAUDE.md, the full
+`npm run verify`/`check:consistency`/`audit:check` gates are reserved for
+tranche close (M08.23E) and were not run.
+
+Slice complete. `docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.23A
+checkbox and evidence note are updated; the M08.23 tranche checklist, the
+root status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
+are untouched, per the normal-slice rule. Next slice: **M08.23B — Event and
+turn windows.**

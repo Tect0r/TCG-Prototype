@@ -4082,9 +4082,26 @@ AI continuation from the state.
 
 ### Work slices
 
-- [ ] **M08.23A — Pre-action capture contract.** Define and capture the state
+- [x] **M08.23A — Pre-action capture contract.** Define and capture the state
       immediately before explicit or leave concession, including pending choice,
       combat and Reaction context, without changing the engine concession.
+      Evidence: `packages/match-telemetry/src/pre-action-capture.ts` defines
+      the versioned `liveMatchPreActionCaptureSchema` (pendingChoice, combat,
+      reactionWindow reused verbatim from `@tcg/rules-engine`, plus
+      matchId/playerId/turn/phase/activePlayerId/sequence), with the standard
+      readable-version boilerplate and 9 round-trip/refusal/version tests in
+      `pre-action-capture.test.ts`. `apps/multiplayer-server/src/pre-action-capture.ts`
+      adds the pure `capturePreActionState` builder; `match-server.ts` calls it
+      at both concede call sites (`submit_action`'s explicit `concede` and
+      `leave()`), immediately before `applyAction`, storing the result on a new
+      `Lobby.lastPreActionCapture` field mirroring `lastConcedeOrigin`'s
+      placement and doc style. Two protocol-harness tests in
+      `match-server.test.ts` prove the wiring: null before any concede,
+      populated with the correct matchId/playerId/turn/phase/activePlayerId/
+      sequence/combat for both an explicit and a leave-triggered concede. The
+      engine's own concede action is untouched. 458 focused tests pass across
+      `@tcg/match-telemetry` and `@tcg/multiplayer-server`; both packages
+      typecheck clean.
 - [ ] **M08.23B — Event and turn windows.** Retain the last meaningful event
       chain, current/previous turn windows, event distances, content identity and
       deck provenance needed by later exposure-aware analysis.

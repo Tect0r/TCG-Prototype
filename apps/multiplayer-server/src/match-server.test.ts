@@ -506,6 +506,59 @@ describe('match termination', () => {
     expect(view.result?.winnerId).toBe('player_1');
   });
 
+  it('captures the pre-action state immediately before an explicit concede (M08.23A)', () => {
+    const harness = createHarness();
+    startMatch(harness);
+    act(harness, harness.host, { type: 'mulligan', playerId: 'player_1', returnInstanceIds: [] });
+    act(harness, harness.guest, { type: 'mulligan', playerId: 'player_2', returnInstanceIds: [] });
+    resolvePendingChoices(harness);
+
+    expect(harness.server.lobbyByCode(harness.inviteCode)?.lastPreActionCapture).toBeNull();
+
+    const before = harness.guest.view();
+    act(harness, harness.guest, { type: 'concede', playerId: 'player_2' });
+
+    const capture = harness.server.lobbyByCode(harness.inviteCode)?.lastPreActionCapture;
+    expect(capture).not.toBeNull();
+    expect(capture?.matchId).toBe(before.matchId);
+    expect(capture?.playerId).toBe('player_2');
+    expect(capture?.turn).toBe(before.turn);
+    expect(capture?.phase).toBe(before.phase);
+    expect(capture?.activePlayerId).toBe(before.activePlayerId);
+    expect(capture?.sequence).toBe(before.sequence);
+    expect(capture?.pendingChoice).toBeNull();
+    expect(capture?.reactionWindow).toBeNull();
+    expect(capture?.combat).toEqual(before.combat);
+    // The engine's own concede resolution has since moved sequence and status
+    // on: the capture is a snapshot, not a live reference into `lobby.state`.
+    expect(harness.host.view().sequence).toBeGreaterThan(capture!.sequence);
+  });
+
+  it('captures the pre-action state immediately before a leave-triggered concede (M08.23A)', () => {
+    const harness = createHarness();
+    startMatch(harness);
+    act(harness, harness.host, { type: 'mulligan', playerId: 'player_1', returnInstanceIds: [] });
+    act(harness, harness.guest, { type: 'mulligan', playerId: 'player_2', returnInstanceIds: [] });
+    resolvePendingChoices(harness);
+
+    expect(harness.server.lobbyByCode(harness.inviteCode)?.lastPreActionCapture).toBeNull();
+
+    const before = harness.guest.view();
+    harness.send(harness.guest, { type: 'leave' });
+
+    const capture = harness.server.lobbyByCode(harness.inviteCode)?.lastPreActionCapture;
+    expect(capture).not.toBeNull();
+    expect(capture?.matchId).toBe(before.matchId);
+    expect(capture?.playerId).toBe('player_2');
+    expect(capture?.turn).toBe(before.turn);
+    expect(capture?.phase).toBe(before.phase);
+    expect(capture?.activePlayerId).toBe(before.activePlayerId);
+    expect(capture?.sequence).toBe(before.sequence);
+    expect(capture?.pendingChoice).toBeNull();
+    expect(capture?.reactionWindow).toBeNull();
+    expect(capture?.combat).toEqual(before.combat);
+  });
+
   it('plays a complete match through the protocol and reports a winner', () => {
     const harness = createHarness();
     startMatch(harness);
