@@ -3961,9 +3961,21 @@ interruption, duplicate completion, configured retention and sink-failure tests.
       simulator does not depend back on it. `@tcg/match-telemetry` added as a
       dependency (package.json + package-lock.json). 356 multiplayer-server tests
       pass; workspace typecheck, eslint and prettier clean.
-- [ ] **M08.22B — Canonical idempotent persistence.** Write one canonical record
+- [x] **M08.22B — Canonical idempotent persistence.** Write one canonical record
       and configured retained artifacts per match, with stable duplicate/retry keys
-      and no second source of truth.
+      and no second source of truth. `LiveMatchFileStore`
+      (`apps/multiplayer-server/src/live-match-store.ts`) implements M08.22A's
+      `LiveMatchSink` synchronously: `<root>/<matchId>/envelope.json` always,
+      plus `raw-event.json`/`replay.json` exactly when the record carries them.
+      Every file is a temp-write-then-atomic-rename (Windows busy-reader retry
+      included), reimplemented from `apps/admin-server/src/catalog/files.ts`'s
+      discipline rather than imported (`boundary.test.ts`). The path is a pure
+      function of `matchId` alone — no minted id, no index — so a retried
+      `receive()` for the same match overwrites in place instead of
+      duplicating, and an unsafe `matchId` is refused and contained the same
+      way M08.22A contains a throwing sink. Not wired into any match lifecycle
+      call site yet (M08.22C). 7 new tests in `live-match-store.test.ts`;
+      full `apps/multiplayer-server` suite (20 files, 359 tests) still passes.
 - [ ] **M08.22C — Lifecycle integration.** Cover normal victory, reconnect,
       disconnect timeout, interruption and server restart, preserving the gameplay
       outcome even when persistence fails or completion is delivered twice.

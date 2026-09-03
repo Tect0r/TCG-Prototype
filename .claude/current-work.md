@@ -1548,3 +1548,80 @@ in `docs/milestones/M08-ai-lab-and-player-meta.md`. `IMPLEMENTATION_PLAN.md`'s
 "next bounded task" section and root status row stay untouched here, per
 CLAUDE.md — both move only at tranche close (M08.22D). Per the user's
 explicit instruction for this session, **M08.22B is not started here.**
+
+## M08.22B — Canonical idempotent persistence
+
+Implemented the milestone's exact scope line: "Write one canonical record and
+configured retained artifacts per match, with stable duplicate/retry keys and
+no second source of truth." `retention.ts`'s own doc comment already named
+this M08.22's job ("Wiring a real server to actually persist any of this is
+M08.22's job"), and `live-match-sink.ts`'s doc comment named it M08.22B's
+specifically, distinct from M08.22C's lifecycle wiring.
+
+- `apps/multiplayer-server/src/live-match-store.ts` (new): `LiveMatchFileStore`
+  implements M08.22A's `LiveMatchSink` interface directly — no new interface,
+  no wrapper. Layout is `<rootDirectory>/<matchId>/`: `envelope.json` always,
+  `raw-event.json` and `replay.json` exactly when `LiveMatchRecord` carries
+  them (the retention tier decision is M08.21's, never second-guessed here).
+  `matchId` alone is the record's identity — the directory name — so there is
+  no minted id and no index file that could drift from the files it
+  describes ("no second source of truth"). Every write is a synchronous
+  temp-file-then-atomic-rename (`writeJsonAtomicallySync`), with the same
+  Windows busy-reader rename retry `apps/admin-server/src/catalog/files.ts`'s
+  `writeJsonAtomically` uses, reimplemented rather than imported —
+  `boundary.test.ts` forbids depending on `@tcg/admin-server`, and that
+  store's own writes are asynchronous throughout, which `LiveMatchSink.receive`
+  (a synchronous `void` call inside `MatchServer.ingestLiveMatch`'s
+  `try`/`catch`) cannot be. The backoff between rename retries uses
+  `Atomics.wait` on a throwaway `SharedArrayBuffer`, a synchronous sleep that
+  does not spin the CPU, since `setTimeout` cannot be awaited from a
+  synchronous call. Because each file's path is a pure function of `matchId`,
+  a duplicate or retried `receive()` for the same match overwrites the same
+  files atomically instead of creating another record — "idempotent" here
+  means safe to repeat, not "refuses the second call," matching the milestone
+  wording exactly ("stable duplicate/retry keys"). A `matchId` that is not
+  safe as a filesystem path segment (schema-legal per `@tcg/match-telemetry`
+  but not charset-restricted; real invite-code-derived ids like `match_ABC123`
+  always are) is refused with a thrown `Error` before any filesystem access,
+  which `ingestLiveMatch`'s existing `try`/`catch` (M08.22A) already contains
+  and records exactly like a throwing sink.
+- `apps/multiplayer-server/src/live-match-store.test.ts` (new, 7 tests):
+  canonical envelope write with artifacts skipped when absent; raw-event and
+  replay artifacts written and schema-valid when present; two matches land in
+  separate directories without interference; repeating the identical record
+  is idempotent (no throw, same content); a retry with different content for
+  the same `matchId` overwrites in place, proving the key is `matchId` alone;
+  an unsafe `matchId` throws with the exact refusal message; and, composed
+  with a real `MatchServer`, that refusal is contained as a recorded
+  `liveMatchSinkFailures` entry rather than escaping — reusing M08.22A's own
+  proven boundary instead of re-deriving it.
+
+Deliberately not done in this slice, per the milestone's own split: no call
+site inside `MatchServer` invokes `ingestLiveMatch` with a real store yet, and
+`main.ts` does not construct a `LiveMatchFileStore` — both are M08.22C's
+"lifecycle integration" job (normal victory, reconnect, disconnect timeout,
+interruption, server restart). This store is proven standalone and against
+M08.22A's sink boundary only.
+
+Focused verification: `npx vitest run apps/multiplayer-server` — 359 tests
+pass (was 356; +7 new, plus the 4 M08.22A tests it now shares a boundary test
+with). `npx tsc --noEmit -p apps/multiplayer-server/tsconfig.json` clean.
+`npx eslint` clean on both new files. Did not run `check:consistency`,
+`audit:check` or the full `npm run verify` gate — those are reserved for the
+M08.22D tranche-close slice per CLAUDE.md.
+
+Marked the M08.22B work-slice checkbox complete in
+`docs/milestones/M08-ai-lab-and-player-meta.md` with an evidence note. Did not
+touch the M08.22 tranche checklist or `IMPLEMENTATION_PLAN.md`'s root status
+row — both move only at tranche close (M08.22D).
+
+The pre-existing unrelated uncommitted change to `.claude/settings.json`
+(emptying `permissions.deny`) remains untouched and unstaged, not part of
+this slice's commit.
+
+Committed as a checkpoint and pushed. Next slice: **M08.22C — Lifecycle
+integration**, per `IMPLEMENTATION_PLAN.md` and the M08.22 tranche in
+`docs/milestones/M08-ai-lab-and-player-meta.md`. `IMPLEMENTATION_PLAN.md`'s
+"next bounded task" section and root status row stay untouched here, per
+CLAUDE.md — both move only at tranche close (M08.22D). Per the user's
+explicit instruction for this session, **M08.22C is not started here.**
