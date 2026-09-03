@@ -7,6 +7,7 @@ import {
   describeLiveMatchEnvelopeVersionProblem,
   freezeLiveMatchDeckSnapshot,
   liveMatchEnvelopeSchema,
+  liveMatchParticipantIdSchema,
   liveMatchSourceOf,
   liveMatchTerminationOriginsForReason,
   parseLiveMatchEnvelope,
@@ -128,6 +129,66 @@ describe('liveMatchEnvelopeSchema', () => {
     const envelope = validEnvelope();
     envelope.outcome = { ...winOutcome, winnerId: 'player_9' };
     expect(() => liveMatchEnvelopeSchema.parse(envelope)).toThrow();
+  });
+});
+
+/**
+ * Privacy and participant identity (M08.21D): forbidden personal/secret
+ * fields are structurally absent (no field exists to hold them, so
+ * `z.strictObject`'s unknown-key refusal is what proves it), participant ids
+ * are checked to be the seat-derived shape rather than trusted to be, and
+ * the schema draws no link between the same id appearing in two matches.
+ */
+describe('privacy and participant identity', () => {
+  it.each([
+    { displayName: 'Alice' },
+    { inviteCode: 'ABCD-1234' },
+    { reconnectCode: 'zzz999' },
+    { ipAddress: '203.0.113.7' },
+    { authToken: 'secret-token' },
+    { chatLog: ['gg'] },
+  ])('refuses an envelope carrying %o', (extra) => {
+    const withExtra = { ...validEnvelope(), ...extra };
+    expect(() => liveMatchEnvelopeSchema.parse(withExtra)).toThrow();
+  });
+
+  it.each([{ displayName: 'Alice' }, { ipAddress: '203.0.113.7' }])(
+    'refuses a seat carrying %o',
+    (extra) => {
+      const envelope = validEnvelope();
+      envelope.seats[0] = { ...envelope.seats[0], ...extra } as LiveMatchEnvelope['seats'][0];
+      expect(() => liveMatchEnvelopeSchema.parse(envelope)).toThrow();
+    },
+  );
+
+  it('accepts every seat-derived participant id from player_1 to player_4', () => {
+    for (const id of ['player_1', 'player_2', 'player_3', 'player_4']) {
+      expect(liveMatchParticipantIdSchema.safeParse(id).success).toBe(true);
+    }
+  });
+
+  it.each(['player_0', 'player_5', 'Alice', 'alice@example.com', 'player_1 ', ''])(
+    'refuses %j as a participant id',
+    (id) => {
+      expect(liveMatchParticipantIdSchema.safeParse(id).success).toBe(false);
+    },
+  );
+
+  it('refuses a seat whose playerId is a display name rather than a seat-derived id', () => {
+    const envelope = validEnvelope();
+    envelope.seats[0].playerId = 'Alice';
+    expect(() => liveMatchEnvelopeSchema.parse(envelope)).toThrow();
+  });
+
+  it('draws no link between the same participant id in two unrelated matches', () => {
+    const first = validEnvelope();
+    first.matchId = 'match_alice_vs_bob';
+    const second = validEnvelope();
+    second.matchId = 'match_carol_vs_dave';
+    // Same seat-1/seat-2 ids in both matches; nothing on the schema ties them
+    // to the same real person, so both parse independently and identically.
+    expect(() => liveMatchEnvelopeSchema.parse(first)).not.toThrow();
+    expect(() => liveMatchEnvelopeSchema.parse(second)).not.toThrow();
   });
 });
 

@@ -6,14 +6,18 @@ import {
   DECK_FINGERPRINT_LENGTH,
   type DeckEntry,
 } from '@tcg/deck';
-import { matchResultSchema, type MatchEndReason, playerIdSchema } from '@tcg/rules-engine';
+import { matchResultSchema, type MatchEndReason } from '@tcg/rules-engine';
 
 /**
  * The versioned live-match analytics envelope (M08.21A): a strict, durable
  * record of one completed live match, reusing `@tcg/rules-engine`'s own
  * `matchResultSchema` for outcome and `@tcg/deck`'s own fingerprint for deck
  * identity rather than restating either. Termination-origin detail (M08.21B)
- * is below; privacy and pseudonymous participant identity are M08.21D's.
+ * is above; participant identity (M08.21D, below) is the seat-derived
+ * `liveMatchParticipantIdSchema`, never a display name, invite/reconnect
+ * code, IP address, auth secret or chat line — none of those has a field on
+ * this schema at all, so `z.strictObject`'s unknown-key refusal is what
+ * proves their absence rather than merely documenting it.
  *
  * **Why exactly two seats.** The engine and `@tcg/multiplayer-server` allow
  * 2–4 seat free-for-all matches, but `source` (`human_human` / `human_ai` /
@@ -24,7 +28,7 @@ import { matchResultSchema, type MatchEndReason, playerIdSchema } from '@tcg/rul
  * further-scope-narrowing call M08.19A made for `enqueueAdaptive` wiring.
  */
 
-export const LIVE_MATCH_ENVELOPE_SCHEMA_VERSION = 2;
+export const LIVE_MATCH_ENVELOPE_SCHEMA_VERSION = 3;
 
 /** Whether `found` is a readable schema version this build is simply too new or old to read. */
 export function isReadableLiveMatchEnvelopeVersion(found: unknown): found is number {
@@ -168,9 +172,37 @@ export function freezeLiveMatchDeckSnapshot(deck: {
   };
 }
 
+/**
+ * A match-local pseudonymous participant id (M08.21D): the seat-derived label
+ * every part of this engine actually produces — `PLAYER_ID_BY_SEAT` in
+ * `apps/multiplayer-server/src/lobby.ts` for live matches, and the same
+ * `player_1`/`player_2` convention every simulator match uses — never a
+ * display name, email or persistent account id. It is fixed per seat number,
+ * not per real person: the same value (`player_1`) is the seat-1 occupant in
+ * every match ever played, so it identifies "whoever sat in this seat this
+ * match," not a person across matches. `@tcg/rules-engine`'s own
+ * `playerIdSchema` is a generic `z.string().min(1).max(64)` with no shape
+ * constraint, so reusing it verbatim (as M08.21A originally did) would leave
+ * "match-local pseudonymous id" a caller's claim rather than a checked
+ * property — restated here (ADR 0001) narrower than the engine's own type,
+ * matching this package's own two-seat narrowing precedent (M08.21A's doc
+ * comment above). Four seats, matching `MIN_SEATS`/`MAX_SEATS` in
+ * `@tcg/protocol` (not imported — this package depends on no app-facing
+ * package per M08.21A's dependency list), covers every seat count the engine
+ * allows even though this envelope itself only ever names two of them.
+ */
+export const LIVE_MATCH_PARTICIPANT_ID_PATTERN = /^player_[1-4]$/;
+export const liveMatchParticipantIdSchema = z
+  .string()
+  .regex(
+    LIVE_MATCH_PARTICIPANT_ID_PATTERN,
+    'Must be a seat-derived participant id (player_1..player_4), never a display name, email or account id.',
+  );
+export type LiveMatchParticipantId = z.infer<typeof liveMatchParticipantIdSchema>;
+
 export const liveMatchSeatSchema = z.strictObject({
   seatIndex: z.union([z.literal(0), z.literal(1)]),
-  playerId: playerIdSchema,
+  playerId: liveMatchParticipantIdSchema,
   kind: liveMatchParticipantKindSchema,
   deck: liveMatchDeckSnapshotSchema,
 });

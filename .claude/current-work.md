@@ -1286,3 +1286,71 @@ changes."
 Next slice: **M08.21D — Privacy and participant identity**, per
 `IMPLEMENTATION_PLAN.md` and the M08.21 tranche in
 `docs/milestones/M08-ai-lab-and-player-meta.md`. Not started this session.
+
+M08.21D is implemented: match-local pseudonymous participant identity, in
+`packages/match-telemetry/src/schema.ts`, wired into the package's barrel
+export. M08.21A had reused `@tcg/rules-engine`'s own `playerIdSchema`
+verbatim for `liveMatchSeatSchema.playerId` — a generic `z.string().min(1).
+max(64)` with no shape constraint, so "match-local pseudonymous id" was a
+caller's claim, not a checked property. New `liveMatchParticipantIdSchema`
+restricts it to `^player_[1-4]$` — the one convention every actual writer
+uses (`PLAYER_ID_BY_SEAT` in `apps/multiplayer-server/src/lobby.ts` for live
+matches; the same `player_1`/`player_2` literals in every simulator match
+fixture), four seats matching `@tcg/protocol`'s `MIN_SEATS`/`MAX_SEATS`
+(restated, not imported, keeping this package's M08.21A dependency list
+unchanged: `@tcg/card-data`, `@tcg/deck`, `@tcg/rules-engine`, `zod`). This id
+is fixed per seat number, not per real person — the same value (`player_1`)
+names the seat-1 occupant in every match ever played — so it identifies "who
+sat here this match," never a person across matches; the existing `superRefine`
+already binds `outcome.winnerId`/`loserIds` to be one of the two seats'
+(now-narrowed) ids, so no further change was needed there.
+`LIVE_MATCH_ENVELOPE_SCHEMA_VERSION` bumped 2→3: narrowing an existing
+field's validation is a genuine behavior change to the envelope (a
+pre-M08.21D record whose `playerId` doesn't match this pattern is now
+refused), the same "not additive" reasoning M08.21B's 1→2 bump used, even
+though nothing has written this envelope yet (M08.22, the writer, has not
+landed) so there is no real compatibility break in practice.
+
+Privacy-field absence (display names, invite/reconnect codes, IP addresses,
+auth secrets, chat) was already true by construction — no such field is
+defined anywhere on the envelope — so this slice's job was proving it rather
+than adding anything: new tests attempt to add each forbidden field name to
+both the envelope and a seat and confirm `z.strictObject`'s unknown-key
+refusal catches every one. A new test also parses two envelopes with
+different `matchId`s that reuse the same `playerId` values, confirming the
+schema draws no link between them (no uniqueness constraint ties a
+participant id to a single match).
+
+`packages/match-telemetry/src/retention.ts` gained a doc-comment section (no
+code change) stating the "no hidden-data projection" property for the
+raw-event/replay artifacts: unlike `@tcg/rules-engine`'s `playerView`/
+`MatchView` (`view.ts`), which redacts hidden zones for one viewer, this
+package defines no per-viewer projection of either artifact at all — they
+are full, unredacted, server-side-only records, and a caller wanting a
+player-facing view must build its own redaction; none is provided to be
+handed out by mistake.
+
+Verified: 17 new tests in `schema.test.ts` (45 total in that file) — six
+forbidden-field names refused on the envelope, two refused on a seat, all
+four valid participant ids accepted, six invalid shapes refused (a
+too-low/too-high seat number, a display name, an email, a trailing space, an
+empty string), a display-name `playerId` refused end-to-end through the full
+envelope, and the two-different-`matchId`-same-`playerId` non-link case. Full
+`packages/match-telemetry` suite (69 tests, was 52) passes — pure addition,
+confirmed via `git diff --stat` (61 insertions, 0 deletions) against
+`0759df3`. `npm run --workspace=@tcg/match-telemetry typecheck` clean; `npx
+eslint packages/match-telemetry/src` clean; `npx prettier --write` applied to
+`schema.test.ts` (reflow only, confirmed by inspection), `--check` now clean
+on all four changed/touched files. Marked M08.21D complete in the milestone
+file. Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
+`tcg-reviewer` remain deferred to M08.21E, per this milestone's work-slice
+split.
+
+One unrelated, pre-existing uncommitted change (`.claude/settings.json`,
+emptying its `permissions.deny` list) predates this session and remains
+untouched and unstaged, per CLAUDE.md's "preserve unrelated and user-owned
+changes."
+
+Next slice: **M08.21E — Tranche close**, per `IMPLEMENTATION_PLAN.md` and the
+M08.21 tranche in `docs/milestones/M08-ai-lab-and-player-meta.md`. Not
+started this session.

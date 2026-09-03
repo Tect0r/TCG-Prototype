@@ -1,5 +1,6 @@
 export {
   LIVE_MATCH_ENVELOPE_SCHEMA_VERSION,
+  LIVE_MATCH_PARTICIPANT_ID_PATTERN,
   LIVE_MATCH_PARTICIPANT_KINDS,
   LIVE_MATCH_SOURCES,
   LIVE_MATCH_TERMINATION_ORIGINS,
@@ -9,6 +10,7 @@ export {
   isReadableLiveMatchEnvelopeVersion,
   liveMatchDeckSnapshotSchema,
   liveMatchEnvelopeSchema,
+  liveMatchParticipantIdSchema,
   liveMatchParticipantKindSchema,
   liveMatchProvenanceSchema,
   liveMatchSeatSchema,
@@ -19,6 +21,7 @@ export {
   parseLiveMatchEnvelope,
   type LiveMatchDeckSnapshot,
   type LiveMatchEnvelope,
+  type LiveMatchParticipantId,
   type LiveMatchParticipantKind,
   type LiveMatchProvenance,
   type LiveMatchSeat,

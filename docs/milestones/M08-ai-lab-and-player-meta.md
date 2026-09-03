@@ -3911,7 +3911,7 @@ exact deck snapshot, source classification, and every termination-origin test.
 - [x] **M08.21C — Retention and artifact contracts.** Define configurable summary,
       raw-event and replay retention plus exact compatibility behavior; do not add a
       multiplayer sink or storage implementation.
-- [ ] **M08.21D — Privacy and participant identity.** Make forbidden personal and
+- [x] **M08.21D — Privacy and participant identity.** Make forbidden personal and
       secret fields absent by schema, use match-local pseudonymous participant IDs
       only, and prove no cross-session identity claim or hidden-data projection.
 - [ ] **M08.21E — Tranche close.** Revalidate all six origins, exact decks,

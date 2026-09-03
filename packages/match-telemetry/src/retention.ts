@@ -27,6 +27,18 @@ import type { LiveMatchTerminationOrigin } from './schema.js';
  * treatment `describeLiveMatchEnvelopeVersionProblem` set for the envelope:
  * a raw-event or replay artifact can be read much later by a different build
  * than the one that wrote it, and each tier can move at its own pace.
+ *
+ * **No viewer-scoped projection (M08.21D).** Both artifacts are the full,
+ * unredacted authoritative stream — necessarily including whatever either
+ * player's hidden zones held, since that is what "analysis without
+ * re-running anything" and "re-derive the match exactly" require. Unlike
+ * `@tcg/rules-engine`'s own `playerView`/`MatchView` (`view.ts`), which
+ * redacts hidden zones for one specific viewer, this package defines no
+ * per-viewer projection of either artifact at all — they are written for
+ * server-side analysis, never served to a player or spectator. A caller that
+ * wants to show either artifact to a match participant must build its own
+ * redacted projection; this package provides none, so none can be handed out
+ * by mistake.
  */
 
 export const LIVE_MATCH_RAW_EVENT_SCHEMA_VERSION = 1;
