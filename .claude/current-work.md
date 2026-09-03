@@ -984,6 +984,49 @@ M08.20C complete in the milestone file with this evidence note; the M08.20
 tranche checklist and root status row are untouched, per CLAUDE.md — both
 move only at tranche close.
 
-Next slice: **M08.20D — Template UI and restoration**, per
-`IMPLEMENTATION_PLAN.md` and the M08.20 tranche in
-`docs/milestones/M08-ai-lab-and-player-meta.md`.
+M08.20D is implemented: a `BuilderScreen.tsx` family for each of the four
+templates M08.20A–C exposed a contract for but no UI —
+`candidate_comparison`, `pilot_robustness`, `engine_soak`, `card_replacement`
+— reusing the existing `Family` radio pattern (`FamilySection`) and the
+`family === '<id>'` panel-gating `open_meta` already established, no new
+execution engine. New pure form logic in `apps/admin-client/src/lib/
+builder-form.ts` (`*Form`/`initial*Form`/`*ChoiceOf`/`*FormFingerprint`/
+`*FormOf`, one quartet per template) mirrors `openMetaFormOf`'s existing
+two-stage validation: shape checks report field-scoped problems first, then
+`presetChoiceSchema.safeParse` catches whatever the shape check missed and a
+per-template `*FieldOf` helper maps each Zod issue path back onto the form
+field that caused it. `parseIdList`/`idListRaw` give every free-text
+card/profile/identifier field (there is no card or profile catalog to build
+a checklist from) a comma/newline-splitting, trimming, de-duplicating round
+trip. New shared UI (`PreconChecklist`, `PilotChecklist`, `IdListField`,
+`CopiesField`, `LimitationsNotice`) factors out what all four templates need
+in common, rendering each preset's own `PRESET_REGISTRY[...].summary`/
+`.limitations` text verbatim — Engine Soak's limitations notice is exactly
+"Engine health, never balance," carried from the registry, and its precon
+checklist states there is no pilot control because the preset pins
+`random_legal`. `SavedSection` and the reopen path (`openSaved`) widened to
+all six families; `openSaved` tries every family's `*FormOf` in sequence and
+switches to whichever one accepts the saved choice. `vocabulary.ts` gained
+the `card_replacement` label `TEST_STYLE_LABELS` was missing since M08.20C
+added the preset without it — a real, if minor, gap closed incidentally
+while wiring the family list. No engine, schema, or server change: every
+template's `choiceOf` sends the same `presetChoiceSchema` shape M08.20A–C's
+server-side `expand.ts` already accepts and refuses exactly as before.
+
+Verified: 22 new tests in `builder-form.test.ts` (52 total, was 30) covering
+shape-to-request equivalence, each template's own cardinality refusal beside
+its control, fingerprint stability under a label-only change, exact
+save-and-reopen round trip (including Candidate Patch Comparison's per-row
+patch fields and Card Replacement's insertion controls), and every
+`*FormOf` declining a choice for a preset it does not configure.
+`builder-flow.test.tsx`'s pre-existing "offers no builder for any other test
+style" label list updated (`Engine Soak` is now a real top-level family
+rather than an absent one) — full file re-run 37/37, no regression to the
+Open Meta or benchmark integration flows. Full `apps/admin-client` suite:
+321/321 across 16 files. `npm run --workspace @tcg/admin-client typecheck`
+clean; `eslint` clean on all five changed files. Tranche-close gates
+(`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are
+deferred to M08.20E, per this milestone's work-slice split.
+
+Next slice: **M08.20E — Tranche close**, per `IMPLEMENTATION_PLAN.md` and the
+M08.20 tranche in `docs/milestones/M08-ai-lab-and-player-meta.md`.

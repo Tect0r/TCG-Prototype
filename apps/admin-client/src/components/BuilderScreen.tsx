@@ -4,6 +4,7 @@ import {
   BASIS_WORDING,
   FORCED_INCLUSION_CAVEAT,
   NO_PLAY_QUALITY_CAVEAT,
+  PRESET_REGISTRY,
   type ChoiceEstimate,
   type ContentCatalog,
   type EnqueuePresetResult,
@@ -13,28 +14,59 @@ import {
 
 import { Busy, Empty, Failure } from './Feedback.js';
 import {
+  EMPTY_CARD_PATCH_ROW,
   PRESET_DEPTHS,
   asBenchmarkChoice,
+  asCandidateComparisonChoice,
+  asCardReplacementChoice,
+  asEngineSoakChoice,
   asOpenMetaChoice,
+  asPilotRobustnessChoice,
   benchmarkPresets,
+  candidateComparisonChoiceOf,
+  candidateComparisonFormFingerprint,
+  candidateComparisonFormOf,
+  cardReplacementChoiceOf,
+  cardReplacementFormFingerprint,
+  cardReplacementFormOf,
   catalogCommanderIds,
   choiceOf,
+  engineSoakChoiceOf,
+  engineSoakFormFingerprint,
+  engineSoakFormOf,
   formFingerprint,
   formOf,
+  initialCandidateComparisonForm,
+  initialCardReplacementForm,
+  initialEngineSoakForm,
   initialForm,
   initialOpenMetaForm,
+  initialPilotRobustnessForm,
   openMetaChoiceOf,
   openMetaFormFingerprint,
   openMetaFormOf,
+  pilotRobustnessChoiceOf,
+  pilotRobustnessFormFingerprint,
+  pilotRobustnessFormOf,
   type BuilderForm,
   type BuilderPresetId,
+  type CandidateComparisonForm,
+  type CardReplacementForm,
+  type EngineSoakForm,
   type OpenMetaForm,
+  type PilotRobustnessForm,
 } from '../lib/builder-form.js';
 import { useAdminSession, useAdminState } from '../state/AdminContext.js';
 import type { AdminFailure } from '../net/transport.js';
 
 /** Which test family the screen is configuring right now. */
-type Family = 'benchmark' | 'open_meta';
+type Family =
+  | 'benchmark'
+  | 'open_meta'
+  | 'candidate_comparison'
+  | 'pilot_robustness'
+  | 'engine_soak'
+  | 'card_replacement';
 
 /**
  * The first screen in this build that creates something.
@@ -85,6 +117,16 @@ export function BuilderScreen() {
   const [family, setFamily] = useState<Family>('benchmark');
   const [form, setForm] = useState<BuilderForm>(() => initialForm(content));
   const [openMeta, setOpenMeta] = useState<OpenMetaForm>(() => initialOpenMetaForm(content));
+  const [candidateComparison, setCandidateComparison] = useState<CandidateComparisonForm>(() =>
+    initialCandidateComparisonForm(content),
+  );
+  const [pilotRobustness, setPilotRobustness] = useState<PilotRobustnessForm>(() =>
+    initialPilotRobustnessForm(content),
+  );
+  const [engineSoak, setEngineSoak] = useState<EngineSoakForm>(() => initialEngineSoakForm());
+  const [cardReplacement, setCardReplacement] = useState<CardReplacementForm>(() =>
+    initialCardReplacementForm(content),
+  );
   const [seeded, setSeeded] = useState(content !== null);
   const [priced, setPriced] = useState<{
     readonly fingerprint: string;
@@ -102,17 +144,52 @@ export function BuilderScreen() {
     if (seeded || content === null) return;
     setForm(initialForm(content));
     setOpenMeta(initialOpenMetaForm(content));
+    setCandidateComparison(initialCandidateComparisonForm(content));
+    setPilotRobustness(initialPilotRobustnessForm(content));
+    setCardReplacement(initialCardReplacementForm(content));
     setSeeded(true);
   }, [content, seeded]);
 
   // Whichever family is on screen owns the fingerprint, the request and the
   // batch label the estimate, enqueue and save actions below all act on. The
-  // other family's form keeps whatever was on it, unpriced, so switching back
-  // does not lose it.
+  // other families' forms keep whatever was on them, unpriced, so switching
+  // back does not lose them.
   const fingerprint =
-    family === 'benchmark' ? formFingerprint(form) : openMetaFormFingerprint(openMeta);
-  const result = family === 'benchmark' ? choiceOf(form) : openMetaChoiceOf(openMeta);
-  const batchLabel = family === 'benchmark' ? form.batchLabel : openMeta.batchLabel;
+    family === 'benchmark'
+      ? formFingerprint(form)
+      : family === 'open_meta'
+        ? openMetaFormFingerprint(openMeta)
+        : family === 'candidate_comparison'
+          ? candidateComparisonFormFingerprint(candidateComparison)
+          : family === 'pilot_robustness'
+            ? pilotRobustnessFormFingerprint(pilotRobustness)
+            : family === 'engine_soak'
+              ? engineSoakFormFingerprint(engineSoak)
+              : cardReplacementFormFingerprint(cardReplacement);
+  const result =
+    family === 'benchmark'
+      ? choiceOf(form)
+      : family === 'open_meta'
+        ? openMetaChoiceOf(openMeta)
+        : family === 'candidate_comparison'
+          ? candidateComparisonChoiceOf(candidateComparison)
+          : family === 'pilot_robustness'
+            ? pilotRobustnessChoiceOf(pilotRobustness)
+            : family === 'engine_soak'
+              ? engineSoakChoiceOf(engineSoak)
+              : cardReplacementChoiceOf(cardReplacement);
+  const batchLabel =
+    family === 'benchmark'
+      ? form.batchLabel
+      : family === 'open_meta'
+        ? openMeta.batchLabel
+        : family === 'candidate_comparison'
+          ? candidateComparison.batchLabel
+          : family === 'pilot_robustness'
+            ? pilotRobustness.batchLabel
+            : family === 'engine_soak'
+              ? engineSoak.batchLabel
+              : cardReplacement.batchLabel;
   const current = priced !== null && priced.fingerprint === fingerprint ? priced.estimate : null;
 
   const update = (change: Partial<BuilderForm>): void => {
@@ -123,6 +200,30 @@ export function BuilderScreen() {
 
   const updateOpenMeta = (change: Partial<OpenMetaForm>): void => {
     setOpenMeta((previous) => ({ ...previous, ...change }));
+    setEnqueued(null);
+    setSaved(null);
+  };
+
+  const updateCandidateComparison = (change: Partial<CandidateComparisonForm>): void => {
+    setCandidateComparison((previous) => ({ ...previous, ...change }));
+    setEnqueued(null);
+    setSaved(null);
+  };
+
+  const updatePilotRobustness = (change: Partial<PilotRobustnessForm>): void => {
+    setPilotRobustness((previous) => ({ ...previous, ...change }));
+    setEnqueued(null);
+    setSaved(null);
+  };
+
+  const updateEngineSoak = (change: Partial<EngineSoakForm>): void => {
+    setEngineSoak((previous) => ({ ...previous, ...change }));
+    setEnqueued(null);
+    setSaved(null);
+  };
+
+  const updateCardReplacement = (change: Partial<CardReplacementForm>): void => {
+    setCardReplacement((previous) => ({ ...previous, ...change }));
     setEnqueued(null);
     setSaved(null);
   };
@@ -177,10 +278,42 @@ export function BuilderScreen() {
       setFamily('benchmark');
       setForm(benchmark);
     } else {
-      const reopened = openMetaFormOf(entry.choice, entry.label);
-      if (reopened === null) return;
-      setFamily('open_meta');
-      setOpenMeta(reopened);
+      const openMetaReopened = openMetaFormOf(entry.choice, entry.label);
+      const candidateComparisonReopened =
+        openMetaReopened === null ? candidateComparisonFormOf(entry.choice, entry.label) : null;
+      const pilotRobustnessReopened =
+        openMetaReopened === null && candidateComparisonReopened === null
+          ? pilotRobustnessFormOf(entry.choice, entry.label)
+          : null;
+      const engineSoakReopened =
+        openMetaReopened === null &&
+        candidateComparisonReopened === null &&
+        pilotRobustnessReopened === null
+          ? engineSoakFormOf(entry.choice, entry.label)
+          : null;
+      const cardReplacementReopened =
+        openMetaReopened === null &&
+        candidateComparisonReopened === null &&
+        pilotRobustnessReopened === null &&
+        engineSoakReopened === null
+          ? cardReplacementFormOf(entry.choice, entry.label)
+          : null;
+      if (openMetaReopened !== null) {
+        setFamily('open_meta');
+        setOpenMeta(openMetaReopened);
+      } else if (candidateComparisonReopened !== null) {
+        setFamily('candidate_comparison');
+        setCandidateComparison(candidateComparisonReopened);
+      } else if (pilotRobustnessReopened !== null) {
+        setFamily('pilot_robustness');
+        setPilotRobustness(pilotRobustnessReopened);
+      } else if (engineSoakReopened !== null) {
+        setFamily('engine_soak');
+        setEngineSoak(engineSoakReopened);
+      } else if (cardReplacementReopened !== null) {
+        setFamily('card_replacement');
+        setCardReplacement(cardReplacementReopened);
+      } else return;
     }
     setPriced(null);
     setEnqueued(null);
@@ -206,7 +339,7 @@ export function BuilderScreen() {
         <>
           <FamilySection family={family} onChange={selectFamily} />
 
-          {family === 'benchmark' ? (
+          {family === 'benchmark' && (
             <>
               <DepthSection presets={presets} form={form} onChange={update} />
               <PreconSection content={content} form={form} onChange={update} />
@@ -215,7 +348,8 @@ export function BuilderScreen() {
               <AdvancedSection form={form} onChange={update} />
               <IdentitySection form={form} onChange={update} />
             </>
-          ) : (
+          )}
+          {family === 'open_meta' && (
             <>
               <CommanderSection
                 commanderIds={commanderIds}
@@ -228,6 +362,30 @@ export function BuilderScreen() {
               <OpenMetaWorkloadSection form={openMeta} onChange={updateOpenMeta} />
               <OpenMetaIdentitySection form={openMeta} onChange={updateOpenMeta} />
             </>
+          )}
+          {family === 'candidate_comparison' && (
+            <CandidateComparisonSection
+              content={content}
+              form={candidateComparison}
+              onChange={updateCandidateComparison}
+            />
+          )}
+          {family === 'pilot_robustness' && (
+            <PilotRobustnessSection
+              content={content}
+              form={pilotRobustness}
+              onChange={updatePilotRobustness}
+            />
+          )}
+          {family === 'engine_soak' && (
+            <EngineSoakSection content={content} form={engineSoak} onChange={updateEngineSoak} />
+          )}
+          {family === 'card_replacement' && (
+            <CardReplacementSection
+              content={content}
+              form={cardReplacement}
+              onChange={updateCardReplacement}
+            />
           )}
 
           <section className="panel" aria-labelledby="builder-estimate">
@@ -298,8 +456,27 @@ export function BuilderScreen() {
           </section>
 
           <SavedSection
-            presetId={family === 'benchmark' ? form.presetId : 'open_meta'}
-            deckCount={family === 'benchmark' ? form.preconIds.length : null}
+            presetId={
+              family === 'benchmark'
+                ? form.presetId
+                : family === 'open_meta'
+                  ? 'open_meta'
+                  : family
+            }
+            deckCount={
+              family === 'benchmark'
+                ? form.preconIds.length
+                : family === 'candidate_comparison'
+                  ? candidateComparison.referencePreconIds.length
+                  : family === 'pilot_robustness'
+                    ? pilotRobustness.preconIds.length
+                    : family === 'engine_soak'
+                      ? engineSoak.preconIds.length
+                      : family === 'card_replacement'
+                        ? cardReplacement.baseDeckPreconIds.length +
+                          cardReplacement.opponentPreconIds.length
+                        : null
+            }
             saveLabel={saveLabel}
             onLabel={setSaveLabel}
             onKeep={() => void keep()}
@@ -360,8 +537,75 @@ function FamilySection({
             An evolutionary search over legal Commanders and cards — discovery, not validation.
           </p>
         </li>
+        <li>
+          <label>
+            <input
+              type="radio"
+              name="builder-family"
+              checked={family === 'candidate_comparison'}
+              onChange={() => {
+                onChange('candidate_comparison');
+              }}
+            />
+            <span className="builder__choice-label">Candidate Patch Comparison</span>
+          </label>
+          <p className="builder__choice-note">{PRESET_REGISTRY.candidate_comparison.summary}</p>
+        </li>
+        <li>
+          <label>
+            <input
+              type="radio"
+              name="builder-family"
+              checked={family === 'pilot_robustness'}
+              onChange={() => {
+                onChange('pilot_robustness');
+              }}
+            />
+            <span className="builder__choice-label">Pilot Robustness</span>
+          </label>
+          <p className="builder__choice-note">{PRESET_REGISTRY.pilot_robustness.summary}</p>
+        </li>
+        <li>
+          <label>
+            <input
+              type="radio"
+              name="builder-family"
+              checked={family === 'engine_soak'}
+              onChange={() => {
+                onChange('engine_soak');
+              }}
+            />
+            <span className="builder__choice-label">Engine Soak</span>
+          </label>
+          <p className="builder__choice-note">{PRESET_REGISTRY.engine_soak.summary}</p>
+        </li>
+        <li>
+          <label>
+            <input
+              type="radio"
+              name="builder-family"
+              checked={family === 'card_replacement'}
+              onChange={() => {
+                onChange('card_replacement');
+              }}
+            />
+            <span className="builder__choice-label">Card Replacement</span>
+          </label>
+          <p className="builder__choice-note">{PRESET_REGISTRY.card_replacement.summary}</p>
+        </li>
       </ul>
     </section>
+  );
+}
+
+/** A preset's own limitations, shown wherever its family is selected. */
+function LimitationsNotice({ limitations }: { readonly limitations: readonly string[] }) {
+  return (
+    <ul className="builder__limitations">
+      {limitations.map((limitation) => (
+        <li key={limitation}>{limitation}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -1164,6 +1408,623 @@ function OpenMetaIdentitySection({
   );
 }
 
+/* -------------------------------------------------------- templates: shared */
+
+/** A generic precon checklist, for the four families with no depth/mirror controls of their own. */
+function PreconChecklist({
+  content,
+  selected,
+  onChange,
+  heading,
+  note,
+}: {
+  readonly content: ContentCatalog;
+  readonly selected: readonly string[];
+  readonly onChange: (ids: readonly string[]) => void;
+  readonly heading: string;
+  readonly note: string;
+}) {
+  const chosen = new Set(selected);
+  return (
+    <fieldset className="builder__field">
+      <legend>{heading}</legend>
+      <p className="builder__choice-note">{note}</p>
+      {content.precons.length === 0 ? (
+        <Empty>This format publishes no precon.</Empty>
+      ) : (
+        <ul className="builder__choices">
+          {content.precons.map((precon) => {
+            const refused = precon.refusals.length > 0;
+            return (
+              <li key={precon.preconId} className={refused ? 'is-refused' : ''}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={chosen.has(precon.preconId)}
+                    disabled={refused}
+                    onChange={(event) => {
+                      const next = new Set(selected);
+                      if (event.target.checked) next.add(precon.preconId);
+                      else next.delete(precon.preconId);
+                      onChange(
+                        content.precons.map((entry) => entry.preconId).filter((id) => next.has(id)),
+                      );
+                    }}
+                  />
+                  <span className="builder__choice-label">{precon.name}</span>
+                </label>
+                <p className="builder__choice-note">
+                  {precon.strategy} · {precon.cardCount} cards under{' '}
+                  <code>{precon.commanderId}</code>
+                </p>
+                {refused && (
+                  <ul className="builder__limitations" role="note">
+                    {precon.refusals.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </fieldset>
+  );
+}
+
+/** A generic pilot checklist, for the three families with a pilot field. */
+function PilotChecklist({
+  content,
+  selected,
+  onChange,
+  heading,
+}: {
+  readonly content: ContentCatalog;
+  readonly selected: readonly string[];
+  readonly onChange: (ids: readonly string[]) => void;
+  readonly heading: string;
+}) {
+  const chosen = new Set(selected);
+  const anyPlayQuality = content.pilots.some(
+    (pilot) => chosen.has(pilot.pilotId) && pilot.playQualityEvidence,
+  );
+  return (
+    <fieldset className="builder__field">
+      <legend>{heading}</legend>
+      <ul className="builder__choices">
+        {content.pilots.map((pilot) => (
+          <li key={pilot.pilotId}>
+            <label>
+              <input
+                type="checkbox"
+                checked={chosen.has(pilot.pilotId)}
+                onChange={(event) => {
+                  const next = new Set(selected);
+                  if (event.target.checked) next.add(pilot.pilotId);
+                  else next.delete(pilot.pilotId);
+                  onChange(content.pilots.map((entry) => entry.pilotId).filter((id) => next.has(id)));
+                }}
+              />
+              <span className="builder__choice-label">{pilot.pilotId}</span>
+            </label>
+            <p className="builder__choice-note">
+              Agent class <code>{pilot.agentClass}</code>.{' '}
+              {pilot.playQualityEvidence
+                ? 'Can carry a claim about how well the game was played.'
+                : 'Makes no attempt to play well, so it is engine evidence and never balance evidence.'}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {selected.length > 0 && !anyPlayQuality && (
+        <p className="notice notice--warning" role="status">
+          {NO_PLAY_QUALITY_CAVEAT}
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
+/** A free-text identifier field. Nothing here validates a listed identifier — the service does. */
+function IdListField({
+  label,
+  note,
+  value,
+  onChange,
+}: {
+  readonly label: string;
+  readonly note: string;
+  readonly value: string;
+  readonly onChange: (raw: string) => void;
+}) {
+  return (
+    <>
+      <label className="builder__field">
+        <span>{label}</span>
+        <input
+          type="text"
+          value={value}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+        />
+      </label>
+      <p className="builder__choice-note">{note}</p>
+    </>
+  );
+}
+
+/** The `number(1-4) | 'all'` copies union, as a mode toggle plus a bounded count. */
+function CopiesField({
+  label,
+  mode,
+  count,
+  onChange,
+}: {
+  readonly label: string;
+  readonly mode: 'all' | 'custom';
+  readonly count: number;
+  readonly onChange: (mode: 'all' | 'custom', count: number) => void;
+}) {
+  return (
+    <fieldset className="builder__field">
+      <legend>{label}</legend>
+      <label>
+        <input
+          type="radio"
+          checked={mode === 'all'}
+          onChange={() => {
+            onChange('all', count);
+          }}
+        />
+        <span>All copies</span>
+      </label>
+      <label>
+        <input
+          type="radio"
+          checked={mode === 'custom'}
+          onChange={() => {
+            onChange('custom', count);
+          }}
+        />
+        <span>A number of copies</span>
+      </label>
+      <input
+        type="number"
+        min={1}
+        max={4}
+        value={count}
+        disabled={mode !== 'custom'}
+        onChange={(event) => {
+          onChange('custom', Number(event.target.value));
+        }}
+      />
+    </fieldset>
+  );
+}
+
+/** Games per seat order, the only workload knob these four presets expose. */
+function TemplateWorkloadSection<T extends { gamesPerSeatOrder: number }>({
+  form,
+  onChange,
+  max,
+}: {
+  readonly form: T;
+  readonly onChange: (change: Partial<T>) => void;
+  readonly max: number;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-template-workload">
+      <h2 id="builder-template-workload">Workload</h2>
+      <label className="builder__field">
+        <span>Games per seat order</span>
+        <input
+          type="number"
+          min={1}
+          max={max}
+          value={form.gamesPerSeatOrder}
+          onChange={(event) => {
+            onChange({ gamesPerSeatOrder: Number(event.target.value) } as Partial<T>);
+          }}
+        />
+      </label>
+    </section>
+  );
+}
+
+/** Name and seed, shared verbatim across the four template families. */
+function TemplateIdentitySection<T extends { batchLabel: string; experimentId: string; seed: string }>({
+  form,
+  onChange,
+}: {
+  readonly form: T;
+  readonly onChange: (change: Partial<T>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-template-identity">
+      <h2 id="builder-template-identity">Name and seed</h2>
+      <label className="builder__field">
+        <span>Batch label</span>
+        <input
+          type="text"
+          value={form.batchLabel}
+          onChange={(event) => {
+            onChange({ batchLabel: event.target.value } as Partial<T>);
+          }}
+        />
+      </label>
+      <label className="builder__field">
+        <span>Experiment name</span>
+        <input
+          type="text"
+          value={form.experimentId}
+          onChange={(event) => {
+            onChange({ experimentId: event.target.value } as Partial<T>);
+          }}
+        />
+      </label>
+      <p className="builder__choice-note">
+        Lowercase, starting with a letter, hyphens and underscores inside.
+      </p>
+      <label className="builder__field">
+        <span>Seed</span>
+        <input
+          type="text"
+          value={form.seed}
+          onChange={(event) => {
+            onChange({ seed: event.target.value } as Partial<T>);
+          }}
+        />
+      </label>
+      <p className="builder__choice-note">
+        Everything else is derived from it. The same seed and the same configuration reproduce the
+        same run.
+      </p>
+    </section>
+  );
+}
+
+/* -------------------------------------------------- templates: candidate comparison */
+
+function CandidateComparisonSection({
+  content,
+  form,
+  onChange,
+}: {
+  readonly content: ContentCatalog;
+  readonly form: CandidateComparisonForm;
+  readonly onChange: (change: Partial<CandidateComparisonForm>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-candidate-comparison">
+      <h2 id="builder-candidate-comparison">Candidate Patch Comparison</h2>
+      <p className="panel__note">{PRESET_REGISTRY.candidate_comparison.summary}</p>
+      <LimitationsNotice limitations={PRESET_REGISTRY.candidate_comparison.limitations} />
+
+      <PreconChecklist
+        content={content}
+        selected={form.referencePreconIds}
+        onChange={(referencePreconIds) => {
+          onChange({ referencePreconIds });
+        }}
+        heading="Reference decks"
+        note="Played unchanged in both environments."
+      />
+      <PilotChecklist
+        content={content}
+        selected={form.pilotIds}
+        onChange={(pilotIds) => {
+          onChange({ pilotIds });
+        }}
+        heading="Pilots"
+      />
+
+      <fieldset className="builder__field">
+        <legend>The candidate change</legend>
+        <IdListField
+          label="Remove cards (identifiers, comma or newline separated)"
+          note="Cards removed from the candidate environment's pool."
+          value={form.removeCardIdsRaw}
+          onChange={(removeCardIdsRaw) => {
+            onChange({ removeCardIdsRaw });
+          }}
+        />
+
+        <p className="builder__choice-note">
+          Card patches: up to three numeric balance dials per card — cost, attack, health. Leave a
+          dial blank to leave it unchanged.
+        </p>
+        {form.cardPatchRows.map((row, index) => (
+          <fieldset className="builder__field" key={index}>
+            <legend>Patch {index + 1}</legend>
+            <label>
+              <span>Card ID</span>
+              <input
+                type="text"
+                value={row.cardId}
+                onChange={(event) => {
+                  const next = form.cardPatchRows.map((entry, i) =>
+                    i === index ? { ...entry, cardId: event.target.value } : entry,
+                  );
+                  onChange({ cardPatchRows: next });
+                }}
+              />
+            </label>
+            <label>
+              <span>Cost</span>
+              <input
+                type="text"
+                value={row.cost}
+                onChange={(event) => {
+                  const next = form.cardPatchRows.map((entry, i) =>
+                    i === index ? { ...entry, cost: event.target.value } : entry,
+                  );
+                  onChange({ cardPatchRows: next });
+                }}
+              />
+            </label>
+            <label>
+              <span>Attack</span>
+              <input
+                type="text"
+                value={row.attack}
+                onChange={(event) => {
+                  const next = form.cardPatchRows.map((entry, i) =>
+                    i === index ? { ...entry, attack: event.target.value } : entry,
+                  );
+                  onChange({ cardPatchRows: next });
+                }}
+              />
+            </label>
+            <label>
+              <span>Health</span>
+              <input
+                type="text"
+                value={row.health}
+                onChange={(event) => {
+                  const next = form.cardPatchRows.map((entry, i) =>
+                    i === index ? { ...entry, health: event.target.value } : entry,
+                  );
+                  onChange({ cardPatchRows: next });
+                }}
+              />
+            </label>
+            <p className="builder__actions">
+              <button
+                type="button"
+                onClick={() => {
+                  onChange({ cardPatchRows: form.cardPatchRows.filter((_, i) => i !== index) });
+                }}
+              >
+                Remove this patch
+              </button>
+            </p>
+          </fieldset>
+        ))}
+        <p className="builder__actions">
+          <button
+            type="button"
+            onClick={() => {
+              onChange({ cardPatchRows: [...form.cardPatchRows, EMPTY_CARD_PATCH_ROW] });
+            }}
+          >
+            Add a card patch
+          </button>
+        </p>
+
+        <label>
+          <input
+            type="checkbox"
+            checked={form.searchBothEnvironments}
+            onChange={(event) => {
+              onChange({ searchBothEnvironments: event.target.checked });
+            }}
+          />
+          <span>Also run an independent search in both environments</span>
+        </label>
+      </fieldset>
+
+      <TemplateWorkloadSection form={form} onChange={onChange} max={200} />
+      <TemplateIdentitySection form={form} onChange={onChange} />
+    </section>
+  );
+}
+
+/* -------------------------------------------------- templates: pilot robustness */
+
+function PilotRobustnessSection({
+  content,
+  form,
+  onChange,
+}: {
+  readonly content: ContentCatalog;
+  readonly form: PilotRobustnessForm;
+  readonly onChange: (change: Partial<PilotRobustnessForm>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-pilot-robustness">
+      <h2 id="builder-pilot-robustness">Pilot Robustness</h2>
+      <p className="panel__note">{PRESET_REGISTRY.pilot_robustness.summary}</p>
+      <LimitationsNotice limitations={PRESET_REGISTRY.pilot_robustness.limitations} />
+
+      <PreconChecklist
+        content={content}
+        selected={form.preconIds}
+        onChange={(preconIds) => {
+          onChange({ preconIds });
+        }}
+        heading="Decks"
+        note="Played by every perturbation profile below, on identical seeds."
+      />
+      <PilotChecklist
+        content={content}
+        selected={form.pilotIds}
+        onChange={(pilotIds) => {
+          onChange({ pilotIds });
+        }}
+        heading="Pilots"
+      />
+      <IdListField
+        label="Perturbation profiles (identifiers, comma or newline separated)"
+        note="`published` is always the reference arm, whether or not it is listed here."
+        value={form.profileIdsRaw}
+        onChange={(profileIdsRaw) => {
+          onChange({ profileIdsRaw });
+        }}
+      />
+
+      <TemplateWorkloadSection form={form} onChange={onChange} max={200} />
+      <TemplateIdentitySection form={form} onChange={onChange} />
+    </section>
+  );
+}
+
+/* -------------------------------------------------- templates: engine soak */
+
+function EngineSoakSection({
+  content,
+  form,
+  onChange,
+}: {
+  readonly content: ContentCatalog;
+  readonly form: EngineSoakForm;
+  readonly onChange: (change: Partial<EngineSoakForm>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-engine-soak">
+      <h2 id="builder-engine-soak">Engine Soak</h2>
+      <p className="panel__note">{PRESET_REGISTRY.engine_soak.summary}</p>
+      <LimitationsNotice limitations={PRESET_REGISTRY.engine_soak.limitations} />
+
+      <PreconChecklist
+        content={content}
+        selected={form.preconIds}
+        onChange={(preconIds) => {
+          onChange({ preconIds });
+        }}
+        heading="Decks"
+        note="Flown by the random-legal pilot only; there is no pilot selection for a soak run."
+      />
+
+      <TemplateWorkloadSection form={form} onChange={onChange} max={500} />
+      <TemplateIdentitySection form={form} onChange={onChange} />
+    </section>
+  );
+}
+
+/* -------------------------------------------------- templates: card replacement */
+
+function CardReplacementSection({
+  content,
+  form,
+  onChange,
+}: {
+  readonly content: ContentCatalog;
+  readonly form: CardReplacementForm;
+  readonly onChange: (change: Partial<CardReplacementForm>) => void;
+}) {
+  return (
+    <section className="panel" aria-labelledby="builder-card-replacement">
+      <h2 id="builder-card-replacement">Card Replacement</h2>
+      <p className="panel__note">{PRESET_REGISTRY.card_replacement.summary}</p>
+      <LimitationsNotice limitations={PRESET_REGISTRY.card_replacement.limitations} />
+
+      <PreconChecklist
+        content={content}
+        selected={form.baseDeckPreconIds}
+        onChange={(baseDeckPreconIds) => {
+          onChange({ baseDeckPreconIds });
+        }}
+        heading="Base decks"
+        note="Decks the substitution is applied to."
+      />
+      <PreconChecklist
+        content={content}
+        selected={form.opponentPreconIds}
+        onChange={(opponentPreconIds) => {
+          onChange({ opponentPreconIds });
+        }}
+        heading="Opponent field"
+        note="The fixed opponent field every variant is measured against."
+      />
+      <PilotChecklist
+        content={content}
+        selected={form.pilotIds}
+        onChange={(pilotIds) => {
+          onChange({ pilotIds });
+        }}
+        heading="Pilots"
+      />
+
+      <label className="builder__field">
+        <span>Subject card ID</span>
+        <input
+          type="text"
+          value={form.subjectCardId}
+          onChange={(event) => {
+            onChange({ subjectCardId: event.target.value });
+          }}
+        />
+      </label>
+      <p className="builder__choice-note">The card taken out of the base decks.</p>
+
+      <IdListField
+        label="Candidate replacements (identifiers, comma or newline separated)"
+        note="Empty means the simulator picks comparable cards automatically by cost, type, role, tags, colour legality and power class."
+        value={form.candidateCardIdsRaw}
+        onChange={(candidateCardIdsRaw) => {
+          onChange({ candidateCardIdsRaw });
+        }}
+      />
+
+      <CopiesField
+        label="Copies swapped out per variant"
+        mode={form.copiesMode}
+        count={form.copiesCount}
+        onChange={(copiesMode, copiesCount) => {
+          onChange({ copiesMode, copiesCount });
+        }}
+      />
+
+      <label className="builder__field">
+        <input
+          type="checkbox"
+          checked={form.includeInsertion}
+          onChange={(event) => {
+            onChange({ includeInsertion: event.target.checked });
+          }}
+        />
+        <span>Also insert the subject into base decks that do not run it</span>
+      </label>
+
+      {form.includeInsertion && (
+        <>
+          <CopiesField
+            label="Copies inserted per insertion variant"
+            mode={form.insertionCopiesMode}
+            count={form.insertionCopiesCount}
+            onChange={(insertionCopiesMode, insertionCopiesCount) => {
+              onChange({ insertionCopiesMode, insertionCopiesCount });
+            }}
+          />
+          <IdListField
+            label="Cards that must pay for an insertion, in priority order"
+            note="Empty means the builder ranks the base deck's own cards by comparability to the inserted card."
+            value={form.insertionRemoveCardIdsRaw}
+            onChange={(insertionRemoveCardIdsRaw) => {
+              onChange({ insertionRemoveCardIdsRaw });
+            }}
+          />
+        </>
+      )}
+
+      <TemplateWorkloadSection form={form} onChange={onChange} max={200} />
+      <TemplateIdentitySection form={form} onChange={onChange} />
+    </section>
+  );
+}
+
 /* --------------------------------------------------------------- estimate */
 
 function EstimateTables({ estimate }: { readonly estimate: ChoiceEstimate }) {
@@ -1313,7 +2174,12 @@ function SavedSection({
       list.status === 'ready'
         ? list.value.items.filter(
             (entry) =>
-              asBenchmarkChoice(entry.choice) !== null || asOpenMetaChoice(entry.choice) !== null,
+              asBenchmarkChoice(entry.choice) !== null ||
+              asOpenMetaChoice(entry.choice) !== null ||
+              asCandidateComparisonChoice(entry.choice) !== null ||
+              asPilotRobustnessChoice(entry.choice) !== null ||
+              asEngineSoakChoice(entry.choice) !== null ||
+              asCardReplacementChoice(entry.choice) !== null,
           )
         : [],
     [list],

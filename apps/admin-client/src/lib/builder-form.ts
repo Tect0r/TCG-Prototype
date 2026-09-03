@@ -1,6 +1,7 @@
 import {
   PRESET_REGISTRY,
   presetChoiceSchema,
+  type CandidateCardPatch,
   type ContentCatalog,
   type ExperimentPresetDefinitionValue,
   type ExperimentPresetId,
@@ -499,5 +500,598 @@ export function openMetaFormOf(input: PresetChoice, batchLabel: string): OpenMet
     archiveSize: choice.archiveSize,
     replicates: choice.replicates,
     replaySampleRate: choice.retention.replaySampleRate,
+  };
+}
+
+/* -------------------------------------------------- advanced templates */
+
+/**
+ * The free-text control every card, profile and identifier field below uses.
+ *
+ * None of the four templates' card or perturbation-profile fields have a
+ * catalog to build a checkbox list from — `content.ts`'s own answer carries
+ * no card list and no profile list (`@tcg/bot-interface` owns the real
+ * profile enum, and this package cannot import it; see `presets.ts`'s
+ * header) — so a person types the identifiers the same way an experiment
+ * name is typed, and `presetChoiceSchema` is what actually checks them.
+ */
+export function parseIdList(raw: string): readonly string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const piece of raw.split(/[,\n]/)) {
+    const trimmed = piece.trim();
+    if (trimmed === '' || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+/** The reverse of `parseIdList`, for restoring a saved choice into the control. */
+export function idListRaw(ids: readonly string[]): string {
+  return ids.join(', ');
+}
+
+/* ---------------------------------------------- candidate patch comparison */
+
+/** One row of the candidate patch editor. Blank dials are left out of the patch. */
+export interface CardPatchRowForm {
+  readonly cardId: string;
+  readonly cost: string;
+  readonly attack: string;
+  readonly health: string;
+}
+
+export const EMPTY_CARD_PATCH_ROW: CardPatchRowForm = { cardId: '', cost: '', attack: '', health: '' };
+
+function cardPatchesOf(rows: readonly CardPatchRowForm[]): readonly CandidateCardPatch[] {
+  const patches: CandidateCardPatch[] = [];
+  for (const row of rows) {
+    const cardId = row.cardId.trim();
+    if (cardId === '') continue;
+    const patch: { cardId: string; cost?: number; attack?: number; health?: number } = { cardId };
+    if (row.cost.trim() !== '') patch.cost = Number(row.cost);
+    if (row.attack.trim() !== '') patch.attack = Number(row.attack);
+    if (row.health.trim() !== '') patch.health = Number(row.health);
+    patches.push(patch as CandidateCardPatch);
+  }
+  return patches;
+}
+
+export interface CandidateComparisonForm {
+  readonly batchLabel: string;
+  readonly experimentId: string;
+  readonly seed: string;
+  readonly referencePreconIds: readonly string[];
+  readonly pilotIds: readonly string[];
+  readonly removeCardIdsRaw: string;
+  readonly cardPatchRows: readonly CardPatchRowForm[];
+  readonly gamesPerSeatOrder: number;
+  readonly searchBothEnvironments: boolean;
+}
+
+export type CandidateComparisonChoice = Extract<PresetChoice, { presetId: 'candidate_comparison' }>;
+
+export function asCandidateComparisonChoice(
+  choice: PresetChoice,
+): CandidateComparisonChoice | null {
+  return choice.presetId === 'candidate_comparison' ? choice : null;
+}
+
+export function initialCandidateComparisonForm(
+  content: ContentCatalog | null,
+): CandidateComparisonForm {
+  const pilot =
+    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ?? content?.pilots[0]?.pilotId;
+  return {
+    batchLabel: 'Candidate patch comparison',
+    experimentId: 'candidate-comparison',
+    seed: 'candidate-comparison-1',
+    referencePreconIds: [],
+    pilotIds: pilot === undefined ? [] : [pilot],
+    removeCardIdsRaw: '',
+    cardPatchRows: [],
+    gamesPerSeatOrder: 4,
+    searchBothEnvironments: true,
+  };
+}
+
+export interface CandidateComparisonFormProblem {
+  readonly field: keyof CandidateComparisonForm;
+  readonly message: string;
+}
+
+export type CandidateComparisonChoiceResult =
+  | { readonly ok: true; readonly choice: CandidateComparisonChoice }
+  | { readonly ok: false; readonly problems: readonly CandidateComparisonFormProblem[] };
+
+export function candidateComparisonChoiceOf(
+  form: CandidateComparisonForm,
+): CandidateComparisonChoiceResult {
+  const problems: CandidateComparisonFormProblem[] = [];
+  if (form.referencePreconIds.length < 2) {
+    problems.push({
+      field: 'referencePreconIds',
+      message: 'Choose at least two reference decks — a comparison needs an opponent.',
+    });
+  }
+  if (form.pilotIds.length < 1) {
+    problems.push({ field: 'pilotIds', message: 'Choose at least one pilot to fly the decks.' });
+  }
+  if (form.experimentId.trim() === '') {
+    problems.push({ field: 'experimentId', message: 'Give the run a name.' });
+  }
+  if (form.seed.trim() === '') {
+    problems.push({
+      field: 'seed',
+      message: 'Give the run a seed; it is what makes it repeatable.',
+    });
+  }
+  if (form.batchLabel.trim() === '') {
+    problems.push({ field: 'batchLabel', message: 'Give the batch a label.' });
+  }
+  if (problems.length > 0) return { ok: false, problems };
+
+  const parsed = presetChoiceSchema.safeParse({
+    presetId: 'candidate_comparison',
+    experimentId: form.experimentId.trim(),
+    seed: form.seed.trim(),
+    referencePreconIds: [...form.referencePreconIds],
+    pilotIds: [...form.pilotIds],
+    removeCardIds: parseIdList(form.removeCardIdsRaw),
+    cardPatches: cardPatchesOf(form.cardPatchRows),
+    gamesPerSeatOrder: form.gamesPerSeatOrder,
+    searchBothEnvironments: form.searchBothEnvironments,
+  });
+
+  if (parsed.success) {
+    const choice = asCandidateComparisonChoice(parsed.data);
+    // Unreachable: `presetId: 'candidate_comparison'` was just sent.
+    if (choice === null) throw new Error('Parsed a candidate_comparison request into another preset.');
+    return { ok: true, choice };
+  }
+  return {
+    ok: false,
+    problems: parsed.error.issues.map((issue) => ({
+      field: candidateComparisonFieldOf(issue.path),
+      message: issue.message,
+    })),
+  };
+}
+
+function candidateComparisonFieldOf(
+  path: readonly PropertyKey[],
+): keyof CandidateComparisonForm {
+  const head = String(path[0] ?? '');
+  const known = new Set<keyof CandidateComparisonForm>([
+    'referencePreconIds',
+    'pilotIds',
+    'seed',
+    'gamesPerSeatOrder',
+    'searchBothEnvironments',
+  ]);
+  if ((known as ReadonlySet<string>).has(head)) return head as keyof CandidateComparisonForm;
+  if (head === 'removeCardIds') return 'removeCardIdsRaw';
+  if (head === 'cardPatches') return 'cardPatchRows';
+  return 'experimentId';
+}
+
+export function candidateComparisonFormFingerprint(form: CandidateComparisonForm): string {
+  const result = candidateComparisonChoiceOf(form);
+  return result.ok ? JSON.stringify(result.choice) : '';
+}
+
+export function candidateComparisonFormOf(
+  input: PresetChoice,
+  batchLabel: string,
+): CandidateComparisonForm | null {
+  const choice = asCandidateComparisonChoice(input);
+  if (choice === null) return null;
+  return {
+    batchLabel,
+    experimentId: choice.experimentId,
+    seed: choice.seed,
+    referencePreconIds: [...choice.referencePreconIds],
+    pilotIds: [...choice.pilotIds],
+    removeCardIdsRaw: idListRaw(choice.removeCardIds),
+    cardPatchRows: choice.cardPatches.map((patch) => ({
+      cardId: patch.cardId,
+      cost: patch.cost === undefined || patch.cost === null ? '' : String(patch.cost),
+      attack: patch.attack === undefined ? '' : String(patch.attack),
+      health: patch.health === undefined ? '' : String(patch.health),
+    })),
+    gamesPerSeatOrder: choice.gamesPerSeatOrder,
+    searchBothEnvironments: choice.searchBothEnvironments,
+  };
+}
+
+/* --------------------------------------------------------- pilot robustness */
+
+export interface PilotRobustnessForm {
+  readonly batchLabel: string;
+  readonly experimentId: string;
+  readonly seed: string;
+  readonly preconIds: readonly string[];
+  readonly pilotIds: readonly string[];
+  readonly profileIdsRaw: string;
+  readonly gamesPerSeatOrder: number;
+}
+
+export type PilotRobustnessChoice = Extract<PresetChoice, { presetId: 'pilot_robustness' }>;
+
+export function asPilotRobustnessChoice(choice: PresetChoice): PilotRobustnessChoice | null {
+  return choice.presetId === 'pilot_robustness' ? choice : null;
+}
+
+export function initialPilotRobustnessForm(content: ContentCatalog | null): PilotRobustnessForm {
+  const pilot =
+    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ?? content?.pilots[0]?.pilotId;
+  return {
+    batchLabel: 'Pilot robustness',
+    experimentId: 'pilot-robustness',
+    seed: 'pilot-robustness-1',
+    preconIds: [],
+    pilotIds: pilot === undefined ? [] : [pilot],
+    profileIdsRaw: '',
+    gamesPerSeatOrder: 4,
+  };
+}
+
+export interface PilotRobustnessFormProblem {
+  readonly field: keyof PilotRobustnessForm;
+  readonly message: string;
+}
+
+export type PilotRobustnessChoiceResult =
+  | { readonly ok: true; readonly choice: PilotRobustnessChoice }
+  | { readonly ok: false; readonly problems: readonly PilotRobustnessFormProblem[] };
+
+export function pilotRobustnessChoiceOf(form: PilotRobustnessForm): PilotRobustnessChoiceResult {
+  const problems: PilotRobustnessFormProblem[] = [];
+  if (form.preconIds.length < 2) {
+    problems.push({ field: 'preconIds', message: 'Choose at least two precons.' });
+  }
+  if (form.pilotIds.length < 1) {
+    problems.push({ field: 'pilotIds', message: 'Choose at least one pilot to fly the decks.' });
+  }
+  const profileIds = parseIdList(form.profileIdsRaw);
+  if (profileIds.length < 1) {
+    problems.push({
+      field: 'profileIdsRaw',
+      message: 'Name at least one perturbation profile.',
+    });
+  }
+  if (form.experimentId.trim() === '') {
+    problems.push({ field: 'experimentId', message: 'Give the run a name.' });
+  }
+  if (form.seed.trim() === '') {
+    problems.push({
+      field: 'seed',
+      message: 'Give the run a seed; it is what makes it repeatable.',
+    });
+  }
+  if (form.batchLabel.trim() === '') {
+    problems.push({ field: 'batchLabel', message: 'Give the batch a label.' });
+  }
+  if (problems.length > 0) return { ok: false, problems };
+
+  const parsed = presetChoiceSchema.safeParse({
+    presetId: 'pilot_robustness',
+    experimentId: form.experimentId.trim(),
+    seed: form.seed.trim(),
+    preconIds: [...form.preconIds],
+    pilotIds: [...form.pilotIds],
+    profileIds,
+    gamesPerSeatOrder: form.gamesPerSeatOrder,
+  });
+  if (parsed.success) {
+    const choice = asPilotRobustnessChoice(parsed.data);
+    // Unreachable: `presetId: 'pilot_robustness'` was just sent.
+    if (choice === null) throw new Error('Parsed a pilot_robustness request into another preset.');
+    return { ok: true, choice };
+  }
+  return {
+    ok: false,
+    problems: parsed.error.issues.map((issue) => ({
+      field: pilotRobustnessFieldOf(issue.path),
+      message: issue.message,
+    })),
+  };
+}
+
+function pilotRobustnessFieldOf(path: readonly PropertyKey[]): keyof PilotRobustnessForm {
+  const head = String(path[0] ?? '');
+  const known = new Set<keyof PilotRobustnessForm>(['preconIds', 'pilotIds', 'seed', 'gamesPerSeatOrder']);
+  if ((known as ReadonlySet<string>).has(head)) return head as keyof PilotRobustnessForm;
+  if (head === 'profileIds') return 'profileIdsRaw';
+  return 'experimentId';
+}
+
+export function pilotRobustnessFormFingerprint(form: PilotRobustnessForm): string {
+  const result = pilotRobustnessChoiceOf(form);
+  return result.ok ? JSON.stringify(result.choice) : '';
+}
+
+export function pilotRobustnessFormOf(
+  input: PresetChoice,
+  batchLabel: string,
+): PilotRobustnessForm | null {
+  const choice = asPilotRobustnessChoice(input);
+  if (choice === null) return null;
+  return {
+    batchLabel,
+    experimentId: choice.experimentId,
+    seed: choice.seed,
+    preconIds: [...choice.preconIds],
+    pilotIds: [...choice.pilotIds],
+    profileIdsRaw: idListRaw(choice.profileIds),
+    gamesPerSeatOrder: choice.gamesPerSeatOrder,
+  };
+}
+
+/* -------------------------------------------------------------- engine soak */
+
+export interface EngineSoakForm {
+  readonly batchLabel: string;
+  readonly experimentId: string;
+  readonly seed: string;
+  readonly preconIds: readonly string[];
+  readonly gamesPerSeatOrder: number;
+}
+
+export type EngineSoakChoice = Extract<PresetChoice, { presetId: 'engine_soak' }>;
+
+export function asEngineSoakChoice(choice: PresetChoice): EngineSoakChoice | null {
+  return choice.presetId === 'engine_soak' ? choice : null;
+}
+
+export function initialEngineSoakForm(): EngineSoakForm {
+  return {
+    batchLabel: 'Engine soak',
+    experimentId: 'engine-soak',
+    seed: 'engine-soak-1',
+    preconIds: [],
+    gamesPerSeatOrder: 25,
+  };
+}
+
+export interface EngineSoakFormProblem {
+  readonly field: keyof EngineSoakForm;
+  readonly message: string;
+}
+
+export type EngineSoakChoiceResult =
+  | { readonly ok: true; readonly choice: EngineSoakChoice }
+  | { readonly ok: false; readonly problems: readonly EngineSoakFormProblem[] };
+
+export function engineSoakChoiceOf(form: EngineSoakForm): EngineSoakChoiceResult {
+  const problems: EngineSoakFormProblem[] = [];
+  if (form.preconIds.length < 2) {
+    problems.push({ field: 'preconIds', message: 'Choose at least two precons.' });
+  }
+  if (form.experimentId.trim() === '') {
+    problems.push({ field: 'experimentId', message: 'Give the run a name.' });
+  }
+  if (form.seed.trim() === '') {
+    problems.push({
+      field: 'seed',
+      message: 'Give the run a seed; it is what makes it repeatable.',
+    });
+  }
+  if (form.batchLabel.trim() === '') {
+    problems.push({ field: 'batchLabel', message: 'Give the batch a label.' });
+  }
+  if (problems.length > 0) return { ok: false, problems };
+
+  const parsed = presetChoiceSchema.safeParse({
+    presetId: 'engine_soak',
+    experimentId: form.experimentId.trim(),
+    seed: form.seed.trim(),
+    preconIds: [...form.preconIds],
+    gamesPerSeatOrder: form.gamesPerSeatOrder,
+  });
+  if (parsed.success) {
+    const choice = asEngineSoakChoice(parsed.data);
+    // Unreachable: `presetId: 'engine_soak'` was just sent.
+    if (choice === null) throw new Error('Parsed an engine_soak request into another preset.');
+    return { ok: true, choice };
+  }
+  return {
+    ok: false,
+    problems: parsed.error.issues.map((issue) => ({
+      field: engineSoakFieldOf(issue.path),
+      message: issue.message,
+    })),
+  };
+}
+
+function engineSoakFieldOf(path: readonly PropertyKey[]): keyof EngineSoakForm {
+  const head = String(path[0] ?? '');
+  const known = new Set<keyof EngineSoakForm>(['preconIds', 'seed', 'gamesPerSeatOrder']);
+  if ((known as ReadonlySet<string>).has(head)) return head as keyof EngineSoakForm;
+  return 'experimentId';
+}
+
+export function engineSoakFormFingerprint(form: EngineSoakForm): string {
+  const result = engineSoakChoiceOf(form);
+  return result.ok ? JSON.stringify(result.choice) : '';
+}
+
+export function engineSoakFormOf(input: PresetChoice, batchLabel: string): EngineSoakForm | null {
+  const choice = asEngineSoakChoice(input);
+  if (choice === null) return null;
+  return {
+    batchLabel,
+    experimentId: choice.experimentId,
+    seed: choice.seed,
+    preconIds: [...choice.preconIds],
+    gamesPerSeatOrder: choice.gamesPerSeatOrder,
+  };
+}
+
+/* ---------------------------------------------------------- card replacement */
+
+export interface CardReplacementForm {
+  readonly batchLabel: string;
+  readonly experimentId: string;
+  readonly seed: string;
+  readonly baseDeckPreconIds: readonly string[];
+  readonly opponentPreconIds: readonly string[];
+  readonly pilotIds: readonly string[];
+  readonly subjectCardId: string;
+  readonly candidateCardIdsRaw: string;
+  readonly copiesMode: 'all' | 'custom';
+  readonly copiesCount: number;
+  readonly gamesPerSeatOrder: number;
+  readonly includeInsertion: boolean;
+  readonly insertionCopiesMode: 'all' | 'custom';
+  readonly insertionCopiesCount: number;
+  readonly insertionRemoveCardIdsRaw: string;
+}
+
+export type CardReplacementChoice = Extract<PresetChoice, { presetId: 'card_replacement' }>;
+
+export function asCardReplacementChoice(choice: PresetChoice): CardReplacementChoice | null {
+  return choice.presetId === 'card_replacement' ? choice : null;
+}
+
+export function initialCardReplacementForm(content: ContentCatalog | null): CardReplacementForm {
+  const pilot =
+    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ?? content?.pilots[0]?.pilotId;
+  return {
+    batchLabel: 'Card replacement',
+    experimentId: 'card-replacement',
+    seed: 'card-replacement-1',
+    baseDeckPreconIds: [],
+    opponentPreconIds: [],
+    pilotIds: pilot === undefined ? [] : [pilot],
+    subjectCardId: '',
+    candidateCardIdsRaw: '',
+    copiesMode: 'all',
+    copiesCount: 1,
+    gamesPerSeatOrder: 4,
+    includeInsertion: true,
+    insertionCopiesMode: 'custom',
+    insertionCopiesCount: 1,
+    insertionRemoveCardIdsRaw: '',
+  };
+}
+
+export interface CardReplacementFormProblem {
+  readonly field: keyof CardReplacementForm;
+  readonly message: string;
+}
+
+export type CardReplacementChoiceResult =
+  | { readonly ok: true; readonly choice: CardReplacementChoice }
+  | { readonly ok: false; readonly problems: readonly CardReplacementFormProblem[] };
+
+export function cardReplacementChoiceOf(form: CardReplacementForm): CardReplacementChoiceResult {
+  const problems: CardReplacementFormProblem[] = [];
+  if (form.baseDeckPreconIds.length < 1) {
+    problems.push({ field: 'baseDeckPreconIds', message: 'Choose at least one base deck.' });
+  }
+  if (form.opponentPreconIds.length < 2) {
+    problems.push({
+      field: 'opponentPreconIds',
+      message: 'Choose at least two opponent decks for the fixed field.',
+    });
+  }
+  if (form.pilotIds.length < 1) {
+    problems.push({ field: 'pilotIds', message: 'Choose at least one pilot to fly the decks.' });
+  }
+  if (form.subjectCardId.trim() === '') {
+    problems.push({ field: 'subjectCardId', message: 'Name the card being replaced.' });
+  }
+  if (form.experimentId.trim() === '') {
+    problems.push({ field: 'experimentId', message: 'Give the run a name.' });
+  }
+  if (form.seed.trim() === '') {
+    problems.push({
+      field: 'seed',
+      message: 'Give the run a seed; it is what makes it repeatable.',
+    });
+  }
+  if (form.batchLabel.trim() === '') {
+    problems.push({ field: 'batchLabel', message: 'Give the batch a label.' });
+  }
+  if (problems.length > 0) return { ok: false, problems };
+
+  const parsed = presetChoiceSchema.safeParse({
+    presetId: 'card_replacement',
+    experimentId: form.experimentId.trim(),
+    seed: form.seed.trim(),
+    baseDeckPreconIds: [...form.baseDeckPreconIds],
+    opponentPreconIds: [...form.opponentPreconIds],
+    pilotIds: [...form.pilotIds],
+    subjectCardId: form.subjectCardId.trim(),
+    candidateCardIds: parseIdList(form.candidateCardIdsRaw),
+    copies: form.copiesMode === 'all' ? 'all' : form.copiesCount,
+    gamesPerSeatOrder: form.gamesPerSeatOrder,
+    includeInsertion: form.includeInsertion,
+    insertionCopies: form.insertionCopiesMode === 'all' ? 'all' : form.insertionCopiesCount,
+    insertionRemoveCardIds: parseIdList(form.insertionRemoveCardIdsRaw),
+  });
+  if (parsed.success) {
+    const choice = asCardReplacementChoice(parsed.data);
+    // Unreachable: `presetId: 'card_replacement'` was just sent.
+    if (choice === null) throw new Error('Parsed a card_replacement request into another preset.');
+    return { ok: true, choice };
+  }
+  return {
+    ok: false,
+    problems: parsed.error.issues.map((issue) => ({
+      field: cardReplacementFieldOf(issue.path),
+      message: issue.message,
+    })),
+  };
+}
+
+function cardReplacementFieldOf(path: readonly PropertyKey[]): keyof CardReplacementForm {
+  const head = String(path[0] ?? '');
+  const known = new Set<keyof CardReplacementForm>([
+    'baseDeckPreconIds',
+    'opponentPreconIds',
+    'pilotIds',
+    'subjectCardId',
+    'seed',
+    'gamesPerSeatOrder',
+    'includeInsertion',
+  ]);
+  if ((known as ReadonlySet<string>).has(head)) return head as keyof CardReplacementForm;
+  if (head === 'candidateCardIds') return 'candidateCardIdsRaw';
+  if (head === 'copies') return 'copiesCount';
+  if (head === 'insertionCopies') return 'insertionCopiesCount';
+  if (head === 'insertionRemoveCardIds') return 'insertionRemoveCardIdsRaw';
+  return 'experimentId';
+}
+
+export function cardReplacementFormFingerprint(form: CardReplacementForm): string {
+  const result = cardReplacementChoiceOf(form);
+  return result.ok ? JSON.stringify(result.choice) : '';
+}
+
+export function cardReplacementFormOf(
+  input: PresetChoice,
+  batchLabel: string,
+): CardReplacementForm | null {
+  const choice = asCardReplacementChoice(input);
+  if (choice === null) return null;
+  return {
+    batchLabel,
+    experimentId: choice.experimentId,
+    seed: choice.seed,
+    baseDeckPreconIds: [...choice.baseDeckPreconIds],
+    opponentPreconIds: [...choice.opponentPreconIds],
+    pilotIds: [...choice.pilotIds],
+    subjectCardId: choice.subjectCardId,
+    candidateCardIdsRaw: idListRaw(choice.candidateCardIds),
+    copiesMode: choice.copies === 'all' ? 'all' : 'custom',
+    copiesCount: choice.copies === 'all' ? 1 : choice.copies,
+    gamesPerSeatOrder: choice.gamesPerSeatOrder,
+    includeInsertion: choice.includeInsertion,
+    insertionCopiesMode: choice.insertionCopies === 'all' ? 'all' : 'custom',
+    insertionCopiesCount: choice.insertionCopies === 'all' ? 1 : choice.insertionCopies,
+    insertionRemoveCardIdsRaw: idListRaw(choice.insertionRemoveCardIds),
   };
 }

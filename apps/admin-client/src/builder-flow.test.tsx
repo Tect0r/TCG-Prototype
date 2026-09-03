@@ -115,7 +115,7 @@ describe('the depth control', () => {
 
   it('offers no preset from another test style', async () => {
     await openBuilder();
-    for (const label of ['Open Meta Search', 'Engine Soak', 'Adaptive Counter Search']) {
+    for (const label of ['Commander Search', 'Adaptive Counter Search']) {
       expect(within(main()).queryByRole('radio', { name: label })).toBeNull();
     }
   });

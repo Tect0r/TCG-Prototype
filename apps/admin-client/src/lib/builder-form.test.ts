@@ -4,20 +4,40 @@ import { PRESET_REGISTRY, type ContentCatalog, type PresetChoice } from '@tcg/ad
 
 import {
   BUILDER_PRESET_IDS,
+  EMPTY_CARD_PATCH_ROW,
   PRESET_DEPTHS,
   asBenchmarkChoice,
   benchmarkPresets,
+  candidateComparisonChoiceOf,
+  candidateComparisonFormFingerprint,
+  candidateComparisonFormOf,
+  cardReplacementChoiceOf,
+  cardReplacementFormOf,
   catalogCommanderIds,
   choiceOf,
+  engineSoakChoiceOf,
+  engineSoakFormOf,
   formFingerprint,
   formOf,
+  idListRaw,
+  initialCandidateComparisonForm,
+  initialCardReplacementForm,
+  initialEngineSoakForm,
   initialForm,
   initialOpenMetaForm,
+  initialPilotRobustnessForm,
   openMetaChoiceOf,
   openMetaFormFingerprint,
   openMetaFormOf,
+  parseIdList,
+  pilotRobustnessChoiceOf,
+  pilotRobustnessFormOf,
   type BuilderForm,
+  type CandidateComparisonForm,
+  type CardReplacementForm,
+  type EngineSoakForm,
   type OpenMetaForm,
+  type PilotRobustnessForm,
 } from './builder-form.js';
 import { contentCatalogFixture, presetCatalogFixture } from '../test/fake-service.js';
 
@@ -380,5 +400,300 @@ describe('the Open Meta form', () => {
     expect(precon.ok).toBe(true);
     if (!precon.ok) return;
     expect(openMetaFormOf(precon.choice, 'Kept')).toBeNull();
+  });
+});
+
+/* --------------------------------------------------------- id list parsing */
+
+describe('parseIdList', () => {
+  it('splits on commas and newlines, trims, and drops blanks and duplicates', () => {
+    expect(parseIdList('a, b\nc,, a ,  \n')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('round-trips through idListRaw', () => {
+    expect(parseIdList(idListRaw(['x', 'y']))).toEqual(['x', 'y']);
+  });
+});
+
+/* ------------------------------------------------- candidate patch comparison */
+
+function candidateComparisonForm(
+  overrides: Partial<CandidateComparisonForm> = {},
+): CandidateComparisonForm {
+  return { ...initialCandidateComparisonForm(CONTENT), ...overrides };
+}
+
+describe('the Candidate Patch Comparison form (M08.20D)', () => {
+  it('turns reference decks, pilots and a card patch into a request the contract accepts', () => {
+    const result = candidateComparisonChoiceOf(
+      candidateComparisonForm({
+        referencePreconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+        cardPatchRows: [{ cardId: 'goblin_raider', cost: '3', attack: '', health: '' }],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.choice.referencePreconIds).toEqual([
+      'precon_goblin_swarm',
+      'precon_bastion_guardians',
+    ]);
+    expect(result.choice.cardPatches).toEqual([{ cardId: 'goblin_raider', cost: 3 }]);
+  });
+
+  it('refuses fewer than two reference decks, beside the control', () => {
+    const result = candidateComparisonChoiceOf(
+      candidateComparisonForm({ referencePreconIds: ['precon_goblin_swarm'] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.problems[0]?.field).toBe('referencePreconIds');
+  });
+
+  it('drops a card patch row whose card ID is blank, without failing the request', () => {
+    const result = candidateComparisonChoiceOf(
+      candidateComparisonForm({
+        referencePreconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+        cardPatchRows: [
+          EMPTY_CARD_PATCH_ROW,
+          { cardId: 'goblin_raider', cost: '3', attack: '', health: '' },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.choice.cardPatches).toEqual([{ cardId: 'goblin_raider', cost: 3 }]);
+    }
+  });
+
+  it('changes fingerprint when the candidate change changes, not when the label does', () => {
+    const base = candidateComparisonFormFingerprint(
+      candidateComparisonForm({
+        referencePreconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+      }),
+    );
+    const removed = candidateComparisonFormFingerprint(
+      candidateComparisonForm({
+        referencePreconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+        removeCardIdsRaw: 'goblin_raider',
+      }),
+    );
+    expect(removed).not.toBe(base);
+
+    const relabeled = candidateComparisonFormFingerprint(
+      candidateComparisonForm({
+        referencePreconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+        batchLabel: 'Renamed',
+      }),
+    );
+    expect(relabeled).toBe(base);
+  });
+
+  it('reopens a saved choice into the form it was saved from', () => {
+    const original = candidateComparisonForm({
+      referencePreconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+      removeCardIdsRaw: 'goblin_raider, shock_bolt',
+      cardPatchRows: [{ cardId: 'goblin_raider', cost: '3', attack: '2', health: '' }],
+      searchBothEnvironments: false,
+      seed: 'kept-seed',
+      experimentId: 'kept-run',
+    });
+    const result = candidateComparisonChoiceOf(original);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reopened = candidateComparisonFormOf(result.choice, 'Kept');
+    expect(reopened).toEqual({ ...original, batchLabel: 'Kept' });
+    expect(candidateComparisonFormFingerprint(reopened as CandidateComparisonForm)).toBe(
+      candidateComparisonFormFingerprint(original),
+    );
+  });
+
+  it('declines a choice for a preset this form does not configure', () => {
+    const precon = choiceOf(form());
+    expect(precon.ok).toBe(true);
+    if (!precon.ok) return;
+    expect(candidateComparisonFormOf(precon.choice, 'Kept')).toBeNull();
+  });
+});
+
+/* --------------------------------------------------------- pilot robustness */
+
+function pilotRobustnessForm(overrides: Partial<PilotRobustnessForm> = {}): PilotRobustnessForm {
+  return { ...initialPilotRobustnessForm(CONTENT), ...overrides };
+}
+
+describe('the Pilot Robustness form (M08.20D)', () => {
+  it('turns decks, pilots and named profiles into a request the contract accepts', () => {
+    const result = pilotRobustnessChoiceOf(
+      pilotRobustnessForm({
+        preconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+        profileIdsRaw: 'timing_jitter, mulligan_noise',
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.choice.profileIds).toEqual(['timing_jitter', 'mulligan_noise']);
+    }
+  });
+
+  it('refuses no perturbation profile named at all, beside its own control', () => {
+    const result = pilotRobustnessChoiceOf(
+      pilotRobustnessForm({ preconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.problems.map((problem) => problem.field)).toContain('profileIdsRaw');
+  });
+
+  it('reopens a saved choice into the form it was saved from', () => {
+    const original = pilotRobustnessForm({
+      preconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+      profileIdsRaw: 'timing_jitter, mulligan_noise',
+      seed: 'kept-seed',
+      experimentId: 'kept-run',
+    });
+    const result = pilotRobustnessChoiceOf(original);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reopened = pilotRobustnessFormOf(result.choice, 'Kept');
+    expect(reopened).toEqual({ ...original, batchLabel: 'Kept' });
+  });
+
+  it('declines a choice for a preset this form does not configure', () => {
+    const precon = choiceOf(form());
+    expect(precon.ok).toBe(true);
+    if (!precon.ok) return;
+    expect(pilotRobustnessFormOf(precon.choice, 'Kept')).toBeNull();
+  });
+});
+
+/* -------------------------------------------------------------- engine soak */
+
+function engineSoakForm(overrides: Partial<EngineSoakForm> = {}): EngineSoakForm {
+  return { ...initialEngineSoakForm(), ...overrides };
+}
+
+describe('the Engine Soak form (M08.20D)', () => {
+  it('carries no pilot and no seat-order control — only decks and the games knob', () => {
+    const initial = initialEngineSoakForm();
+    expect(initial.preconIds).toEqual([]);
+    expect(initial.gamesPerSeatOrder).toBe(25);
+  });
+
+  it('turns two or more decks into a request the contract accepts', () => {
+    const result = engineSoakChoiceOf(
+      engineSoakForm({ preconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'] }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses fewer than two decks, beside the control', () => {
+    const result = engineSoakChoiceOf(engineSoakForm({ preconIds: ['precon_goblin_swarm'] }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.problems[0]?.field).toBe('preconIds');
+  });
+
+  it('reopens a saved choice into the form it was saved from', () => {
+    const original = engineSoakForm({
+      preconIds: ['precon_goblin_swarm', 'precon_bastion_guardians'],
+      gamesPerSeatOrder: 100,
+      seed: 'kept-seed',
+      experimentId: 'kept-run',
+    });
+    const result = engineSoakChoiceOf(original);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reopened = engineSoakFormOf(result.choice, 'Kept');
+    expect(reopened).toEqual({ ...original, batchLabel: 'Kept' });
+  });
+
+  it('declines a choice for a preset this form does not configure', () => {
+    const precon = choiceOf(form());
+    expect(precon.ok).toBe(true);
+    if (!precon.ok) return;
+    expect(engineSoakFormOf(precon.choice, 'Kept')).toBeNull();
+  });
+});
+
+/* ---------------------------------------------------------- card replacement */
+
+function cardReplacementForm(overrides: Partial<CardReplacementForm> = {}): CardReplacementForm {
+  return { ...initialCardReplacementForm(CONTENT), ...overrides };
+}
+
+describe('the Card Replacement form (M08.20D)', () => {
+  it('turns a base deck, a fixed opponent field and a subject card into a request', () => {
+    const result = cardReplacementChoiceOf(
+      cardReplacementForm({
+        baseDeckPreconIds: ['precon_goblin_swarm'],
+        opponentPreconIds: ['precon_bastion_guardians', 'precon_containment_control'],
+        subjectCardId: 'goblin_raider',
+        candidateCardIdsRaw: 'shock_bolt, iron_wall',
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.choice.subjectCardId).toBe('goblin_raider');
+    expect(result.choice.candidateCardIds).toEqual(['shock_bolt', 'iron_wall']);
+  });
+
+  it('sends the copies control as "all" or a bounded count, never both', () => {
+    const base = {
+      baseDeckPreconIds: ['precon_goblin_swarm'],
+      opponentPreconIds: ['precon_bastion_guardians', 'precon_containment_control'],
+      subjectCardId: 'goblin_raider',
+    };
+    const all = cardReplacementChoiceOf(cardReplacementForm({ ...base, copiesMode: 'all' }));
+    expect(all.ok && all.choice.copies).toBe('all');
+
+    const custom = cardReplacementChoiceOf(
+      cardReplacementForm({ ...base, copiesMode: 'custom', copiesCount: 2 }),
+    );
+    expect(custom.ok && custom.choice.copies).toBe(2);
+  });
+
+  it('refuses no subject card at all, beside its own control', () => {
+    const result = cardReplacementChoiceOf(
+      cardReplacementForm({
+        baseDeckPreconIds: ['precon_goblin_swarm'],
+        opponentPreconIds: ['precon_bastion_guardians', 'precon_containment_control'],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.problems.map((problem) => problem.field)).toContain('subjectCardId');
+  });
+
+  it('reopens a saved choice into the form it was saved from, including the insertion controls', () => {
+    const original = cardReplacementForm({
+      baseDeckPreconIds: ['precon_goblin_swarm'],
+      opponentPreconIds: ['precon_bastion_guardians', 'precon_containment_control'],
+      subjectCardId: 'goblin_raider',
+      candidateCardIdsRaw: 'shock_bolt, iron_wall',
+      copiesMode: 'custom',
+      copiesCount: 2,
+      includeInsertion: true,
+      insertionCopiesMode: 'custom',
+      insertionCopiesCount: 1,
+      insertionRemoveCardIdsRaw: 'chaff_token',
+      seed: 'kept-seed',
+      experimentId: 'kept-run',
+    });
+    const result = cardReplacementChoiceOf(original);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reopened = cardReplacementFormOf(result.choice, 'Kept');
+    expect(reopened).toEqual({ ...original, batchLabel: 'Kept' });
+  });
+
+  it('declines a choice for a preset this form does not configure', () => {
+    const precon = choiceOf(form());
+    expect(precon.ok).toBe(true);
+    if (!precon.ok) return;
+    expect(cardReplacementFormOf(precon.choice, 'Kept')).toBeNull();
   });
 });

@@ -54,6 +54,7 @@ export const TEST_STYLE_LABELS: Readonly<Record<PresetTestStyle, string>> = Obje
   candidate_patch_comparison: 'Candidate Patch Comparison',
   pilot_robustness: 'Pilot Robustness',
   engine_soak: 'Engine Soak',
+  card_replacement: 'Card Replacement',
 });
 
 /**

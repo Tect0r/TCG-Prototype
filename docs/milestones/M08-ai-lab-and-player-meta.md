@@ -3727,9 +3727,66 @@ profile partition, soak failure retention and labelling tests.
       @tcg/admin-server typecheck` both clean; `eslint` clean on all four changed
       files. Neither `IMPLEMENTATION_PLAN.md`'s status row nor this milestone's
       tranche Checklist moved — both wait for M08.20E._
-- [ ] **M08.20D — Template UI and restoration.** Integrate the three templates
+- [x] **M08.20D — Template UI and restoration.** Integrate the three templates
       through progressive controls, exact workload, configuration restoration and
       truthful result labels without adding a new execution engine.
+      _Evidence (2026-09-03): added a `BuilderScreen.tsx` family for each of the
+      four templates M08.20A–C exposed a contract for — `candidate_comparison`,
+      `pilot_robustness`, `engine_soak`, `card_replacement` — reusing the
+      existing `Family` radio pattern (`FamilySection`) alongside the pre-existing
+      `benchmark`/`open_meta` families, each family's own panel gated by a
+      `family === '<id>'` guard the same way `open_meta` already was. New pure
+      form logic in `apps/admin-client/src/lib/builder-form.ts` (`*Form`,
+      `initial*Form`, `*ChoiceOf`, `*FormFingerprint`, `*FormOf`, one quartet per
+      template) mirrors the existing `openMetaFormOf` pattern exactly: schema-shape
+      validation runs first with field-scoped problems reported beside their own
+      control, then `presetChoiceSchema.safeParse` catches whatever the shape
+      check missed and maps each Zod issue path back onto the form's own field via
+      a per-template `*FieldOf` helper, so a schema refusal always lands next to
+      the control that caused it rather than at the top of the form. `parseIdList`/
+      `idListRaw` give every free-text card/profile/identifier field (there is no
+      card or profile catalog to build a checklist from — `ContentCatalog` carries
+      neither) a comma/newline-splitting, trimming, de-duplicating round trip.
+      New shared UI pieces (`PreconChecklist`, `PilotChecklist`, `IdListField`,
+      `CopiesField`, `LimitationsNotice`) factor out what all four templates need
+      in common — a precon checklist (showing each precon's own refusal reasons,
+      disabled rather than hidden), a pilot checklist (warning when the selection
+      cannot carry a play-quality claim, the same `NO_PLAY_QUALITY_CAVEAT` the
+      benchmark family already uses), the `number(1-4) | 'all'` copies union as a
+      mode toggle plus a bounded count, and each preset's own
+      `PRESET_REGISTRY[...].summary`/`.limitations` text rendered verbatim — the
+      Engine Soak panel's limitations notice is exactly "Engine health, never
+      balance," carried from the registry rather than restated, and its precon
+      checklist states outright there is no pilot control because the preset pins
+      `random_legal`. `SavedSection`'s `presetId`/`deckCount` props were widened
+      to cover all six families (a template's `deckCount` sums whichever precon
+      fields it actually has — Card Replacement sums base-deck and opponent-field
+      counts, since it has two disjoint precon roles). The reopen path
+      (`openSaved`) now tries every family's `*FormOf` in sequence and switches to
+      whichever one accepts the saved choice, mirroring the existing
+      benchmark/open-meta either/or. `vocabulary.ts` gained the
+      `card_replacement` label `TEST_STYLE_LABELS` was missing since M08.20C
+      added the preset without it — a real, if minor, gap this slice closed
+      incidentally while wiring the family list. No engine, schema, or server
+      change: every template's `choiceOf` sends the same `presetChoiceSchema`
+      shape M08.20A–C's server-side `expand.ts` already accepts and refuses
+      exactly as before._
+      _Verified: 22 new tests in `builder-form.test.ts` (52 total, was 30) — one
+      `describe` per template covering shape-to-request equivalence, each
+      template's own cardinality refusal beside its control, fingerprint
+      stability under a label-only change, exact save-and-reopen round trip
+      (including the Candidate Patch Comparison's per-row patch fields and Card
+      Replacement's insertion controls), and every `*FormOf` declining a choice
+      for a preset it does not configure. `builder-flow.test.tsx`'s pre-existing
+      "offers no builder for any other test style" label list updated (`Engine
+      Soak` is now a real top-level family rather than an absent one; `Open Meta
+      Search`/`Candidate` were already covered) — full file re-run 37/37, no
+      regression to the Open Meta or benchmark integration flows. Full
+      `apps/admin-client` suite: 321/321 across 16 files. `npm run --workspace
+      @tcg/admin-client typecheck` clean; `eslint` clean on all five changed
+      files. Tranche-close gates (`check:consistency`, `audit:check`, `verify`)
+      and `tcg-reviewer` are deferred to M08.20E, per this milestone's work-slice
+      split._
 - [ ] **M08.20E — Tranche close.** Prove UI-to-config equivalence, shared seeds,
       profile separation, retained soak failures and candidate containment through
       the standard tranche-close gate.
