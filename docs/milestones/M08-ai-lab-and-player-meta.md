@@ -4294,9 +4294,20 @@ filter and sparse-data tests.
 
 ### Work slices
 
-- [ ] **M08.24A — Source-separated match and deck aggregates.** Aggregate
+- [x] **M08.24A — Source-separated match and deck aggregates.** Aggregate
       Commander selection, exact decks, clusters, matchups, duration and termination
       by content/version/source while keeping human, mixed and AI evidence distinct.
+      Done: `aggregateLiveMatches` in `apps/simulator/src/analysis/live-match-aggregate.ts`
+      (wired into the simulator's barrel export, per ADR 0023 §2 — aggregation lives
+      beside `@tcg/simulator`'s existing analysis, and `apps/admin-server` stays a
+      caller of it rather than gaining new direct dependencies). Partitions by
+      `(source, contentVersion, rulesVersion)`; a `null`-outcome
+      (`abandoned_unrecordable`) match counts as selection but is excluded from
+      every win-rate/matchup/duration figure. Match-weighted counts only (M08.24C
+      adds unique-deck weighting); no timeout exclusion yet (M08.24D). 7 focused
+      tests pass; full `admin-server` (648 tests) and `simulator` (672 tests)
+      projects pass; both workspaces typecheck clean. See `.claude/current-work.md`
+      for detail.
 - [ ] **M08.24B — Eligibility-aware card evidence.** Aggregate inclusion, pairs,
       played, held and unusable cards with Commander legality and explicit support;
       never treat structural ineligibility as non-selection.

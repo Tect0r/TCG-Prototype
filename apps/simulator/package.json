@@ -19,6 +19,7 @@
     "@tcg/card-data": "*",
     "@tcg/deck": "*",
     "@tcg/deck-generator": "*",
+    "@tcg/match-telemetry": "*",
     "@tcg/rules-engine": "*",
     "@tcg/shared": "*",
     "@tcg/spectator": "*",

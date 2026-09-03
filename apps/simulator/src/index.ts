@@ -261,6 +261,19 @@ export {
 
 export { aggregateBoard, type BoardAggregate, type BoardMeasure } from './analysis/board.js';
 
+export {
+  aggregateLiveMatches,
+  type CommanderSelectionEntry,
+  type DeckMatchupEntry,
+  type DeckUsageEntry,
+  type LiveMatchAggregate,
+  type LiveMatchAggregateOptions,
+  type LiveMatchAggregatePartition,
+  type LiveMatchClusterView,
+  type LiveMatchDurationStats,
+  type TerminationOriginCount,
+} from './analysis/live-match-aggregate.js';
+
 export { cardPairs, cardPairSchema, type CardPair } from './analysis/pairs.js';
 
 export {

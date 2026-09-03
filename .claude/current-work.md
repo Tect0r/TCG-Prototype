@@ -2335,3 +2335,61 @@ confirmed two consecutive `--write` passes both report "unchanged". No test
 or source semantics involved. `tcg-reviewer` (same agent, resumed) is being
 asked for a bounded recheck of only these two findings and the new diff —
 review/fix cycle 1 of the CLAUDE.md-mandated maximum of 2.
+
+M08.24A is implemented: source-separated match and deck aggregates over live
+matches, in the new `apps/simulator/src/analysis/live-match-aggregate.ts`
+(`aggregateLiveMatches`), wired into the simulator's barrel export. Pure,
+in-memory reduction over `readonly LiveMatchEnvelope[]` — no file enumeration,
+no config root, no HTTP address, following the same "computation now,
+execution-shaped wiring later" split `adaptive-results.ts` drew at M08.19A/B;
+`M08.25A` is the tranche that turns this into a query surface. Every aggregate
+is keyed by `(source, contentVersion, rulesVersion)` and never pooled across
+that key: `source` (`human_human`/`human_ai`/`ai_ai`) already is the
+human/mixed/AI split this milestone requires, and content/rules version
+separation keeps a card whose text or cost changed from being silently
+compared against its former self. A `null` `outcome`
+(`terminationOrigin: 'abandoned_unrecordable'`) counts as a Commander/deck
+selection but is excluded from every win-rate, matchup and duration figure, so
+those denominators never silently absorb a match nobody actually won or lost.
+Match-weighted counts only, per this slice's own scope — honest match- versus
+unique-deck-weighted views are M08.24C's job, and `disconnect_timeout`
+surrender-proximity exclusion is M08.24D's. Deck clustering reuses this
+module's own `clusterDecks`/`featuresOf` (`./clusters.ts`) for feature-distance
+grouping, called with an empty `records: []` (skipping its internal win-rate
+tally, scoped to the offline `MatchRecord` shape) — win rates and matchups are
+tallied natively off the `LiveMatchEnvelope`s already in hand and folded onto
+the clusters found. A partition whose `contentVersion` has no supplied
+`CardDatabase` reports `clusters: null` with a stated reason instead of
+resolving cards against the wrong content.
+
+Placement: this logic was first drafted inside `apps/admin-server` (the
+tranche's obvious eventual caller) but moved into `@tcg/simulator` before this
+slice's checkpoint, once `apps/admin-server/src/boundary.test.ts` failed on
+the added `@tcg/card-data`/`@tcg/deck-generator` imports and the
+widened-beyond-four dependency list. Re-read ADR 0023 §2: "Scheduling
+semantics, deck legality, aggregation and report meaning have exactly one
+implementation, and the admin server is a caller of it" — confirming
+aggregation belongs in the simulator, reached by `apps/admin-server` only
+through `@tcg/simulator`'s barrel, exactly the existing precedent for
+`simDeckSchema`/`makeDeck`/etc. (re-exported from `@tcg/deck-generator` since
+M09.8). `apps/simulator/package.json` gained `@tcg/match-telemetry` as a new
+dependency (no boundary test restricts the simulator's own dependency list);
+`apps/admin-server/package.json` was left at its original four dependencies
+(`@tcg/admin-contracts`, `@tcg/shared`, `@tcg/simulator`, `zod`) — this slice
+adds no admin-server file at all, since nothing in admin-server calls this yet.
+
+Verified: 7 new tests in `apps/simulator/src/analysis/live-match-aggregate.test.ts`
+(source partitioning never pools human/mixed/AI; content/rules version
+partitioning never pools a card change across itself; a null-outcome match
+counts as selection but not as a win/loss/duration sample; deck usage and
+matchup win rates computed over decisive matches only; clusters computed only
+when a database is supplied for that content version, with a stated reason
+otherwise; different-commander decks land in different clusters; empty input
+yields `[]`) pass. `npm run typecheck` clean on both `@tcg/simulator` and
+`@tcg/admin-server`. Full `--project admin-server` (32 files, 648 tests,
+including `boundary.test.ts`) and full `--project simulator` (40 files, 672
+tests, including the 7 new) both pass clean. Tranche-close gates
+(`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are deferred
+to M08.24E, per this milestone's work-slice split.
+
+Slice complete. Next slice: **M08.24B — Eligibility-aware card evidence.**
