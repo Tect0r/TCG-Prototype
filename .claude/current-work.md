@@ -1387,3 +1387,64 @@ M08.21E and the M08.21 checklist complete in the milestone file. Root status
 row's "Next tranche" column is left at `M08.21A` rather than advanced, per
 CLAUDE.md: the tranche is not marked complete and its successor is not named
 until `tcg-reviewer` returns `VERDICT: APPROVE`.
+
+`tcg-reviewer` reviewed the full commit range (`de31b19..ed11511`) plus the
+close-record diff and returned **`VERDICT: CHANGES REQUIRED`**, with one
+BLOCKER: `packages/match-telemetry/package.json` (added in `cc24c6b`, M08.21A)
+was never reflected in `package-lock.json` — `@tcg/match-telemetry` was not
+linked as a workspace at all (`npm query .workspace` listed 17, not 18), so
+`npm ci` — what `.github/workflows/verify.yml` actually runs before `npm run
+verify` — would fail on a fresh clone or CI with "Missing: @tcg/match-telemetry@0.1.0
+from lock file." Every local gate in this tranche had passed only because a
+stale local `node_modules` predated the new package.
+
+Fixed: ran `npm install` (no dependency version changes, purely linking the
+new workspace) and committed the resulting 14-line `package-lock.json`
+addition. Verified `npm ci --dry-run` now exits clean and `npm query
+.workspace` lists all 18 workspaces including `@tcg/match-telemetry`.
+Confirmed the pre-existing `npm audit` high-severity `nanoid` finding predates
+this tranche (present identically before `npm install`, via `git stash`) and
+is unrelated.
+
+Also fixed the reviewer's three non-blocking findings, all cheap and within
+this close's own scope:
+
+- MEDIUM: `liveMatchEnvelopeSchema`'s two-seat scoping (`schema.ts:22-28`) was
+  a real, deliberate decision but had no durable record of which future slice
+  owns 3–4 seat `source` classification. Added a "still open" note in
+  `IMPLEMENTATION_PLAN.md`'s "The next bounded task" section, mirroring the
+  M08.19A-deferred-adaptive-enqueue precedent already there.
+- LOW: the milestone's "configurable summary, raw-event and replay retention"
+  wording implied the summary tier itself was a dial, when `retention.ts`'s
+  own code comment already states it is always produced and not configurable
+  (`liveMatchRetentionConfigSchema` carries only `rawEvent`/`replay`). Reworded
+  the M08.21 intro paragraph and the M08.21C work-slice line to say so, and
+  clarified in the same edit that turn/event counts live on `outcome` and are
+  therefore absent (not merely zero) for `abandoned_unrecordable` matches,
+  which carry no outcome — closing the same finding's third part.
+- LOW: `retention.test.ts`'s "refuses an older schema version" test passed `0`,
+  which — since both artifact schema versions have always been 1 — actually
+  exercises the same "does not declare a readable version" branch as
+  `undefined`, not a distinct older-build path (unreachable today for these
+  two artifacts, which have never had a version below 1). Renamed and
+  reworded the test to state this rather than claim coverage it lacked; added
+  two new tests to `schema.test.ts` exercising the envelope's real "older
+  build" branch against its two actual prior versions (1 from M08.21A, 2 from
+  M08.21B) instead, since the envelope (unlike the two artifacts) really has
+  shipped older versions.
+
+Re-verified after all fixes: `npx vitest run packages/match-telemetry` (70
+tests, was 69), `npm run check:consistency` (clean, 89 path references, was
+88 — the new plan note), `npm run --workspace=@tcg/match-telemetry typecheck`
+clean, `npx prettier --check` clean on every touched file. Re-ran the full
+`npm run verify`: 226 test files, 4683 tests (was 4682), typecheck, lint,
+format, content validation and build all green. Regenerated
+`docs/status-audit.md` (test count only; commit hash `ed11511` unchanged
+since it reads the last commit, working tree dirty for this fix). `npm run
+audit:check` passes clean.
+
+One unrelated, pre-existing uncommitted change (`.claude/settings.json`,
+emptying its `permissions.deny` list) remains untouched and unstaged, per
+CLAUDE.md's "preserve unrelated and user-owned changes"; it was `git
+stash`-ed for the verify run so it could not mask this tranche's own gate
+result, then restored immediately after.

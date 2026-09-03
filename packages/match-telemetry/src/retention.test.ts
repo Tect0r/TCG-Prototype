@@ -83,9 +83,13 @@ describe('liveMatchRawEventArtifactSchema', () => {
     expect(problem).toMatch(/newer build/);
   });
 
-  it('refuses an older schema version with a readable message', () => {
+  it('refuses schema version 0 as unreadable, below the version floor', () => {
+    // The raw-event schema has never had a version below 1, so there is no
+    // real "older build" to construct here (unlike the envelope, which has
+    // shipped versions 1 and 2) — this exercises the same "does not declare
+    // a readable version" branch as `undefined`, not a distinct older-build path.
     const problem = describeLiveMatchRawEventVersionProblem(0);
-    expect(problem).not.toBeNull();
+    expect(problem).toMatch(/does not declare/);
   });
 
   it('accepts the current schema version', () => {

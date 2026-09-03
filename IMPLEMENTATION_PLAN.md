@@ -232,6 +232,14 @@ and future-version refusal. Its scope and checklist are in
 This is the first slice of M08.21, unrelated to the still-unscoped adaptive
 enqueue/execution gap below.
 
+**Also still open, unrelated to M08.21's own scope:** `liveMatchEnvelopeSchema`
+(`packages/match-telemetry/src/schema.ts`) covers exactly two seats — the
+engine and `apps/multiplayer-server` allow 2–4 seat free-for-all matches, but
+`source` classification (`human_human`/`human_ai`/`ai_ai`) is only defined for
+two. 3–4 seat source classification for the live-match envelope remains
+unscoped and un-numbered; it must be scoped as its own slice before M08.22's
+sink is asked to record a 3- or 4-seat match.
+
 **M08.20 closed 2026-09-03** (`tcg-reviewer` `VERDICT: APPROVE`, one
 non-blocking LOW finding): Candidate Patch Comparison, Pilot Robustness,
 Engine Soak, Card Replacement and their template UI all implemented and

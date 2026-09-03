@@ -3882,12 +3882,15 @@ Define durable human evidence without forcing it into simulator fields whose
 meanings do not fit: a strict, versioned live-match analytics envelope reusing
 shared telemetry payloads where semantics match. Record content, rules and
 software provenance, source (`human_human`, `human_ai`, `ai_ai`), format, exact
-immutable deck snapshots and hashes, Commander, seat order, turn, action and
-event counts, outcome, and termination origin. Distinguish explicit concede
-action, leave-message concession, disconnect timeout, rules victory, server
-failure, and abandoned or unrecordable match — the first two are the same
-`concede` action inside the engine, so the origin is an analytics field, not an
-engine reading. Configurable summary, raw-event and replay retention. Display
+immutable deck snapshots and hashes, Commander, seat order, action count and
+(when the engine reached a result) turn, event and outcome; abandoned or
+unrecordable matches carry no outcome and no turn/event reading, only the
+action count. Distinguish explicit concede action, leave-message concession,
+disconnect timeout, rules victory, server failure, and abandoned or
+unrecordable match — the first two are the same `concede` action inside the
+engine, so the origin is an analytics field, not an engine reading.
+Configurable raw-event and replay retention beyond the always-produced,
+non-configurable summary envelope. Display
 names, invite and reconnect codes, IP addresses, authentication secrets and chat
 stay out of analytics records. Match-local pseudonymous participant IDs only: no
 claim of unique people and no cross-session tracking without a later identity and
@@ -3908,9 +3911,10 @@ exact deck snapshot, source classification, and every termination-origin test.
       concede, leave concession, disconnect timeout, rules victory, server failure
       and abandoned/unrecordable outcomes as analytics provenance without changing
       the engine action meaning.
-- [x] **M08.21C — Retention and artifact contracts.** Define configurable summary,
-      raw-event and replay retention plus exact compatibility behavior; do not add a
-      multiplayer sink or storage implementation.
+- [x] **M08.21C — Retention and artifact contracts.** Define the always-produced
+      summary envelope plus configurable raw-event and replay retention and
+      exact compatibility behavior; do not add a multiplayer sink or storage
+      implementation.
 - [x] **M08.21D — Privacy and participant identity.** Make forbidden personal and
       secret fields absent by schema, use match-local pseudonymous participant IDs
       only, and prove no cross-session identity claim or hidden-data projection.

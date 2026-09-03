@@ -325,6 +325,13 @@ describe('describeLiveMatchEnvelopeVersionProblem', () => {
     expect(describeLiveMatchEnvelopeVersionProblem(undefined)).toMatch(/does not declare/);
     expect(describeLiveMatchEnvelopeVersionProblem('1')).toMatch(/does not declare/);
   });
+
+  it('refuses an older version with a readable message', () => {
+    // Versions 1 (M08.21A) and 2 (M08.21B) are real, previously-current
+    // versions this build once wrote, not merely hypothetical.
+    expect(describeLiveMatchEnvelopeVersionProblem(1)).toMatch(/older build/);
+    expect(describeLiveMatchEnvelopeVersionProblem(2)).toMatch(/older build/);
+  });
 });
 
 describe('parseLiveMatchEnvelope', () => {
