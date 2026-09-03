@@ -233,7 +233,12 @@ function requirePoolCards(
  * one-element array so the refusal's field path is `subjectCardId`, not a
  * misleadingly indexed `subjectCardId.0`.
  */
-function requirePoolCard(environment: Environment, cardId: string, path: string, verb: string): void {
+function requirePoolCard(
+  environment: Environment,
+  cardId: string,
+  path: string,
+  verb: string,
+): void {
   const pool = new Set(environment.pool.map((card) => card.id));
   if (pool.has(cardId)) return;
   refuse(

@@ -600,7 +600,10 @@ describe('what a preset refuses', () => {
   });
 
   it('refuses a replacement subject the pool does not contain', () => {
-    const refused = refusal({ ...(CHOICES.card_replacement as object), subjectCardId: 'not_a_card' });
+    const refused = refusal({
+      ...(CHOICES.card_replacement as object),
+      subjectCardId: 'not_a_card',
+    });
     expect(refused.path).toBe('subjectCardId');
     expect(refused.message).toMatch(/declare a change that does not happen/);
   });

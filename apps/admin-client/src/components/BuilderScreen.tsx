@@ -457,11 +457,7 @@ export function BuilderScreen() {
 
           <SavedSection
             presetId={
-              family === 'benchmark'
-                ? form.presetId
-                : family === 'open_meta'
-                  ? 'open_meta'
-                  : family
+              family === 'benchmark' ? form.presetId : family === 'open_meta' ? 'open_meta' : family
             }
             deckCount={
               family === 'benchmark'
@@ -1503,7 +1499,9 @@ function PilotChecklist({
                   const next = new Set(selected);
                   if (event.target.checked) next.add(pilot.pilotId);
                   else next.delete(pilot.pilotId);
-                  onChange(content.pilots.map((entry) => entry.pilotId).filter((id) => next.has(id)));
+                  onChange(
+                    content.pilots.map((entry) => entry.pilotId).filter((id) => next.has(id)),
+                  );
                 }}
               />
               <span className="builder__choice-label">{pilot.pilotId}</span>
@@ -1634,13 +1632,9 @@ function TemplateWorkloadSection<T extends { gamesPerSeatOrder: number }>({
 }
 
 /** Name and seed, shared verbatim across the four template families. */
-function TemplateIdentitySection<T extends { batchLabel: string; experimentId: string; seed: string }>({
-  form,
-  onChange,
-}: {
-  readonly form: T;
-  readonly onChange: (change: Partial<T>) => void;
-}) {
+function TemplateIdentitySection<
+  T extends { batchLabel: string; experimentId: string; seed: string },
+>({ form, onChange }: { readonly form: T; readonly onChange: (change: Partial<T>) => void }) {
   return (
     <section className="panel" aria-labelledby="builder-template-identity">
       <h2 id="builder-template-identity">Name and seed</h2>

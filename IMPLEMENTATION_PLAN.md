@@ -263,20 +263,21 @@ The reviewer independently re-verified the "formatting-only" claim on 10
 prettier-reformatted files by reading every hunk, and returned two
 non-blocking LOW findings to keep in mind for the next tranche that touches
 this code:
-- `apps/admin-client/src/components/AdaptiveDashboard.tsx:405` (`SeriesView`):
-  the "Cumulative — every decided block so far" heading can mislead when the
+
+- `apps/admin-client/src/components/AdaptiveDashboard.tsx` line 405
+  (`SeriesView`): the "Cumulative — every decided block so far" heading can mislead when the
   series table is truncated to one page (a small `blockSize` against a large
   budget can decide more blocks than `PAGE_SIZE_MAX`) — the truncation note
   above it mitigates but doesn't fully cover this. Reword the heading when
   `isAdaptiveTruncated` is true, next time this file is touched.
-- `apps/admin-server/src/service/adaptive-results.ts:454,522,549`
+- `apps/admin-server/src/service/adaptive-results.ts` lines 454, 522, 549
   (`buildAdaptiveTable`): three call sites use `spreadRate` rather than the
   null-vs-zero-safe `spreadRateOrInsufficient` `results.ts` documents for
   exactly this reason; no reachable zero-game score exists today (client-side
   `formatRate` also short-circuits `total === 0`), but switch to the safe
   helper next time this file is touched to close the gap at the source.
-Full record in `docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.19E
-checkbox and `.claude/current-work.md`.
+  Full record in `docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.19E
+  checkbox and `.claude/current-work.md`.
 
 **Still open, unrelated to M08.20:** the M08.19A-deferred adaptive
 enqueue/execution slice — a dedicated `enqueueAdaptive` mutating address and

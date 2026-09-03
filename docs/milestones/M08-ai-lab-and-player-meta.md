@@ -3584,11 +3584,11 @@ labelling, revision drill-down, cycle fixture and incomplete-run tests.
       failure, not caused by this run; ran `prettier --write` on exactly those
       10 files, confirmed by diff inspection to be reflow/quote-normalization
       only, no behavior change. `npm run check:consistency`, `npm run
-      audit:check` (after regenerating `docs/status-audit.md`) and `npm run
-      verify` all pass clean (224 test files, 4573 tests, typecheck, lint,
+audit:check` (after regenerating `docs/status-audit.md`) and `npm run
+verify` all pass clean (224 test files, 4573 tests, typecheck, lint,
       format, content validation, build). `admin-client` suite 299/299 (was
       298, +1 new cycle-fixture test). `tcg-reviewer` returned `VERDICT:
-      APPROVE` with two non-blocking LOW findings (a `SeriesView` cumulative
+APPROVE` with two non-blocking LOW findings (a `SeriesView` cumulative
       heading that can mislead under pagination truncation, and three
       `buildAdaptiveTable` call sites using `spreadRate` instead of the
       null-safe `spreadRateOrInsufficient`); see `IMPLEMENTATION_PLAN.md` and
@@ -3634,7 +3634,7 @@ profile partition, soak failure retention and labelling tests.
       at-least-one-declared-change refusal in `expandPreset`. "Cannot publish live
       content" needed no new test: `cardPatches`/`cardOverrides` only ever flow
       into in-memory `EnvironmentConfig`/job JSON (`apps/simulator/src/
-      environment.ts` has no write path into `content/`), unchanged by this
+environment.ts` has no write path into `content/`), unchanged by this
       widening. Focused: `expand.test.ts` (53/53) and `presets.test.ts` (34/34,
       2 pre-existing tests updated for the schema change), typecheck and eslint
       clean on both packages._
@@ -3662,7 +3662,7 @@ profile partition, soak failure retention and labelling tests.
       seeds and reports them separately" and "is reproducible") — 180 tests total,
       all passing. `npm run --workspace @tcg/admin-contracts typecheck`,
       `--workspace @tcg/admin-server typecheck` and `--workspace @tcg/simulator
-      typecheck` all clean. No source file changed._
+typecheck` all clean. No source file changed._
 - [x] **M08.20C — Engine Soak and advanced card analysis.** Map Engine Soak to a
       bounded batch/random-legal termination configuration that retains failures and
       reports engine health rather than balance. Expose replacement and insertion
@@ -3676,7 +3676,7 @@ profile partition, soak failure retention and labelling tests.
       soak neither stops at the first failure nor bounds a stall past two and a half
       minutes of turns. Abnormal-match replay retention
       (`ABNORMAL_TERMINATIONS`/`isAbnormal()`, `apps/simulator/src/telemetry/
-      schema.ts`) is structural and unconditional regardless of the run's retention
+schema.ts`) is structural and unconditional regardless of the run's retention
       config, and `applySupportLimits` (`apps/simulator/src/analysis/flags.ts`)
       downgrades every balance-level flag to `insufficient_data` whenever a run used
       only legality-only pilots — which every soak run does, by construction, since
@@ -3689,14 +3689,14 @@ profile partition, soak failure retention and labelling tests.
       `'replacement'` and the simulator already runs it end-to-end
       (`replacementConfigSchema`, `runReplacementExperiment` in
       `apps/simulator/src/experiment.ts`, `estimateConfig`'s existing `case
-      'replacement':` in `apps/admin-server/src/lab/estimate.ts` using `basis:
-      'at_least'` since variant count is a floor), but no preset mapped any choice
+'replacement':` in `apps/admin-server/src/lab/estimate.ts` using `basis:
+'at_least'` since variant count is a floor), but no preset mapped any choice
       onto it. Revalidated the underlying contract first:
       `insertion.test.ts`/`experiment.test.ts` (39/39) passed unchanged before any
       new code was written, satisfying "only if their current contracts still pass
       revalidation." Added a ninth preset, `card_replacement`
       (`packages/admin-contracts/src/presets.ts`): registry entry (`kinds:
-      ['replacement']`, limitations covering the controlled-substitution scope, the
+['replacement']`, limitations covering the controlled-substitution scope, the
       unavailable counter-target breadth, and the variant-count floor), and a choice
       schema member with `baseDeckPreconIds` (`min(1)` — a substitution needs a
       substrate, not a comparison pair), `opponentPreconIds` (reusing
@@ -3724,7 +3724,7 @@ profile partition, soak failure retention and labelling tests.
       the two files, all passing. `insertion.test.ts`/`experiment.test.ts` re-run
       clean (39/39).
       `npm run --workspace @tcg/admin-contracts typecheck` and `--workspace
-      @tcg/admin-server typecheck` both clean; `eslint` clean on all four changed
+@tcg/admin-server typecheck` both clean; `eslint` clean on all four changed
       files. Neither `IMPLEMENTATION_PLAN.md`'s status row nor this milestone's
       tranche Checklist moved — both wait for M08.20E._
 - [x] **M08.20D — Template UI and restoration.** Integrate the three templates
@@ -3779,23 +3779,89 @@ profile partition, soak failure retention and labelling tests.
       Replacement's insertion controls), and every `*FormOf` declining a choice
       for a preset it does not configure. `builder-flow.test.tsx`'s pre-existing
       "offers no builder for any other test style" label list updated (`Engine
-      Soak` is now a real top-level family rather than an absent one; `Open Meta
-      Search`/`Candidate` were already covered) — full file re-run 37/37, no
+Soak` is now a real top-level family rather than an absent one; `Open Meta
+Search`/`Candidate` were already covered) — full file re-run 37/37, no
       regression to the Open Meta or benchmark integration flows. Full
       `apps/admin-client` suite: 321/321 across 16 files. `npm run --workspace
-      @tcg/admin-client typecheck` clean; `eslint` clean on all five changed
+@tcg/admin-client typecheck` clean; `eslint` clean on all five changed
       files. Tranche-close gates (`check:consistency`, `audit:check`, `verify`)
       and `tcg-reviewer` are deferred to M08.20E, per this milestone's work-slice
       split._
-- [ ] **M08.20E — Tranche close.** Prove UI-to-config equivalence, shared seeds,
+- [x] **M08.20E — Tranche close.** Prove UI-to-config equivalence, shared seeds,
       profile separation, retained soak failures and candidate containment through
       the standard tranche-close gate.
+      _Evidence (2026-09-03): revalidated the combined M08.20A–D diff
+      (`bfbe36a..817c9e5` — `presets.ts`/`index.ts` in `admin-contracts`;
+      `expand.ts` in `admin-server`; `BuilderScreen.tsx`/`builder-form.ts`/
+      `vocabulary.ts`/`builder-flow.test.tsx` in `admin-client`; plus their
+      tests) against this milestone's acceptance list — UI-to-config
+      equivalence (`builder-form.test.ts`'s shape-to-request equivalence per
+      template), declared-change refusal (Candidate Patch Comparison's
+      at-least-one-declared-change and pool/overlap/combat-stat refusals in
+      `expand.test.ts`), shared-seed and profile partition (Pilot
+      Robustness's `pilotRobustness()` always including the `published`
+      reference arm, `hardening-experiment.test.ts`'s "runs every profile on
+      the same seeds and reports them separately" / "is reproducible"), soak
+      failure retention (`engine_soak`'s pinned `random_legal`/150-turn/
+      `failFast: false` triple feeding the reporter's unconditional Abnormal
+      Matches section) and candidate containment (confirmed by reading
+      `apps/simulator/src/environment.ts` in full: no `cardPatches`/
+      `cardOverrides` write path into `content/` exists, so a temporary
+      candidate environment structurally cannot publish live content) — all
+      present with existing focused tests; no new gap found in this diff,
+      unlike M08.20A's own within-slice card-patch gap and M08.20C's
+      within-slice Card Replacement gap, both already closed before this
+      close.
+      Found and fixed one real, pre-existing `check:consistency` failure
+      unrelated to the M08.20 diff itself: two backticked
+      `path/to/file.ts:123` tokens M08.19E's close had written into
+      `IMPLEMENTATION_PLAN.md` (naming `AdaptiveDashboard.tsx:405` and
+      `adaptive-results.ts:454,522,549`) were never valid inputs to
+      `checkPathReferences` (`scripts/lib/consistency.ts`), which
+      `statSync`s the whole backticked token including the trailing
+      `:line` suffix as a literal path and only strips a trailing `#member`
+      — so these two references would fail on any check:consistency run
+      from the moment they were written, evidently after the gate had last
+      run clean in that session. Fixed by moving the line number outside
+      the backticked span (`` `file.ts` line 405 ``) in both spots; no
+      other document names a path this way (confirmed by grepping every
+      active document for the same `\`[^\`]+\.[a-z]+:[0-9]`shape before
+calling this closed).`npm run check:consistency`now reports "No
+inconsistency found" (298 links, 86 path references, 46 documented
+values, 5 count claims, 155 playable cards, 5 owner decisions).
+ `npm run audit:check`passed clean with no regeneration needed.
+ `npm run format:check`(inside`npm run verify`) flagged 8 files
+unformatted: the two IMPLEMENTATION_PLAN.md fixes plus 6 files this
+tranche's implementation slices had left unformatted
+(`BuilderScreen.tsx`, `builder-form.ts`, `expand.ts`/`.test.ts`, this
+milestone file, `.claude/current-work.md`) — a real gate failure, not
+pre-existing; ran `prettier --write`on exactly those 8 files (this
+milestone file needed a second consecutive`--write`to reach its own
+fixed point — its first pass and`--check`disagreed on a handful of
+continuation-line indents inside long`_..._`-wrapped evidence
+paragraphs, a known prettier markdown reflow instability, not a
+manual edit) and inspected every resulting diff to confirm reflow/
+quote-normalization/list-continuation-indent only, no behavior change.
+One unrelated, pre-existing uncommitted change
+(`.claude/settings.json`, emptying its `permissions.deny`list — not
+part of any M08.20 work slice and predating this session) was
+temporarily`git stash`-ed for the `npm run verify`run so it could
+not mask or be conflated with this tranche's own gate result, then
+restored immediately after; it remains uncommitted and untouched,
+preserved as the repository owner's own in-progress change per
+CLAUDE.md's "preserve unrelated and user-owned changes."`npm run
+      verify`then passed clean: 224 test files, 4613 tests, typecheck,
+lint, format, content validation and build all green. Marked M08.20E
+and the M08.20 checklist complete in this file.`IMPLEMENTATION_PLAN.md`'s
+root status row "Next tranche" column is left at `M08.20A`rather than
+advanced, per CLAUDE.md: the tranche is not marked complete and its
+successor is not named until`tcg-reviewer`returns`VERDICT: APPROVE`._
 
 ### Checklist
 
-- [ ] Three templates mapping onto existing contracts with no new engine.
-- [ ] Soak reports engine health, never balance.
-- [ ] Candidate environments cannot publish live content.
+- [x] Three templates mapping onto existing contracts with no new engine.
+- [x] Soak reports engine health, never balance.
+- [x] Candidate environments cannot publish live content.
 
 ## M08.21 — Live human-match telemetry contract
 

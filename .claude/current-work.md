@@ -810,6 +810,7 @@ hunk, and confirmed the new cycles-fixture test actually closes the gap it
 claims to close. Returned **`VERDICT: APPROVE`**, with two non-blocking LOW
 findings to keep in mind next time these files are touched, not required for
 this close:
+
 - `apps/admin-client/src/components/AdaptiveDashboard.tsx:405` (`SeriesView`):
   the "Cumulative — every decided block so far" heading can mislead when the
   series table is truncated to one page (a small `blockSize` against a large
@@ -835,7 +836,7 @@ edits (`cost`/`attack`/`health`) alongside, or instead of, removals.
 (`cardId` + optional `cost`/`attack`/`health`, `.refine`d to require at least
 one field); relaxed `candidate_comparison`'s `removeCardIds` from `.min(1)` to
 `.default([])` and added `cardPatches: z.array(candidateCardPatchSchema).max(40).default([])`,
-moving the "must declare *some* change" rule to `expand.ts` (same
+moving the "must declare _some_ change" rule to `expand.ts` (same
 schema-shape-vs-cross-field-refusal split already used for
 `adaptiveSwapBoundSchema`). Updated the registry's `summary`/`limitations` text
 to state the patch surface is exactly three numeric dials, not a structural
@@ -1030,3 +1031,54 @@ deferred to M08.20E, per this milestone's work-slice split.
 
 Next slice: **M08.20E — Tranche close**, per `IMPLEMENTATION_PLAN.md` and the
 M08.20 tranche in `docs/milestones/M08-ai-lab-and-player-meta.md`.
+
+M08.20E is done pending review: revalidated the combined M08.20A–D tranche
+diff (`bfbe36a..817c9e5`) against this milestone's acceptance list —
+UI-to-config equivalence, declared-change refusal, shared seeds, profile
+partition, soak failure retention and candidate containment all present with
+existing focused tests. No new gap found in the diff itself.
+
+Found and fixed one real, pre-existing `check:consistency` failure unrelated
+to the M08.20 diff: two backticked `path/to/file.ts:123`-shaped tokens
+M08.19E's close had written into `IMPLEMENTATION_PLAN.md` (naming
+`AdaptiveDashboard.tsx:405` and `adaptive-results.ts:454,522,549`) are not
+valid inputs to `checkPathReferences` (`scripts/lib/consistency.ts`), which
+`statSync`s the whole backticked token — including a trailing `:line` suffix
+it never strips (it strips only a trailing `#member`) — as a literal path.
+These two references must have started failing the moment they were written,
+after the M08.19E session's own last clean `check:consistency` run. Fixed by
+moving the line number outside the backticked span (`` `file.ts` line 405 ``)
+in both spots; grepped every active document for the same
+`` `[^`]+\.[a-z]{2,5}:[0-9] `` shape first and found no other occurrence.
+`npm run check:consistency` now reports "No inconsistency found" (298 links,
+86 path references, 46 documented values, 5 count claims, 155 playable cards,
+5 owner decisions). `npm run audit:check` passed clean with no regeneration
+needed.
+
+`npm run format:check` (inside `npm run verify`) flagged 8 files unformatted:
+the two `IMPLEMENTATION_PLAN.md` path-reference fixes plus 6 files this
+tranche's implementation slices had left unformatted (`BuilderScreen.tsx`,
+`builder-form.ts`, `expand.ts`/`.test.ts`, this milestone's own
+`docs/milestones/M08-ai-lab-and-player-meta.md`, and this file) — a real gate
+failure, not pre-existing. Ran `prettier --write` and inspected every diff to
+confirm reflow/quote-normalization/list-continuation-indent only, no behavior
+change; the milestone file needed three consecutive `--write` passes to reach
+its own fixed point (`--write` and `--check` disagreed on continuation-line
+indentation inside long `_..._`-wrapped evidence paragraphs across the first
+two passes — a prettier markdown-reflow instability, not a manual edit).
+
+One unrelated, pre-existing uncommitted change (`.claude/settings.json`,
+emptying its `permissions.deny` list — not part of any M08.20 work slice and
+predating this session) was temporarily `git stash`-ed for every `npm run
+verify`/format-check run so it could not mask or be conflated with this
+tranche's own gate result, then restored immediately after each run. It
+remains uncommitted and untouched, preserved as the repository owner's own
+in-progress change per CLAUDE.md's "preserve unrelated and user-owned
+changes"; it is not part of this tranche-close commit.
+
+`npm run verify` then passed clean: 224 test files, 4613 tests, typecheck,
+lint, format, content validation and build all green. Marked M08.20E and the
+M08.20 checklist complete in the milestone file. `IMPLEMENTATION_PLAN.md`'s
+root status row "Next tranche" column is left at `M08.20A` rather than
+advanced, per CLAUDE.md: the tranche is not marked complete and its successor
+is not named until `tcg-reviewer` returns `VERDICT: APPROVE`.

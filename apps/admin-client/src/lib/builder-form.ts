@@ -542,7 +542,12 @@ export interface CardPatchRowForm {
   readonly health: string;
 }
 
-export const EMPTY_CARD_PATCH_ROW: CardPatchRowForm = { cardId: '', cost: '', attack: '', health: '' };
+export const EMPTY_CARD_PATCH_ROW: CardPatchRowForm = {
+  cardId: '',
+  cost: '',
+  attack: '',
+  health: '',
+};
 
 function cardPatchesOf(rows: readonly CardPatchRowForm[]): readonly CandidateCardPatch[] {
   const patches: CandidateCardPatch[] = [];
@@ -582,7 +587,8 @@ export function initialCandidateComparisonForm(
   content: ContentCatalog | null,
 ): CandidateComparisonForm {
   const pilot =
-    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ?? content?.pilots[0]?.pilotId;
+    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ??
+    content?.pilots[0]?.pilotId;
   return {
     batchLabel: 'Candidate patch comparison',
     experimentId: 'candidate-comparison',
@@ -647,7 +653,8 @@ export function candidateComparisonChoiceOf(
   if (parsed.success) {
     const choice = asCandidateComparisonChoice(parsed.data);
     // Unreachable: `presetId: 'candidate_comparison'` was just sent.
-    if (choice === null) throw new Error('Parsed a candidate_comparison request into another preset.');
+    if (choice === null)
+      throw new Error('Parsed a candidate_comparison request into another preset.');
     return { ok: true, choice };
   }
   return {
@@ -659,9 +666,7 @@ export function candidateComparisonChoiceOf(
   };
 }
 
-function candidateComparisonFieldOf(
-  path: readonly PropertyKey[],
-): keyof CandidateComparisonForm {
+function candidateComparisonFieldOf(path: readonly PropertyKey[]): keyof CandidateComparisonForm {
   const head = String(path[0] ?? '');
   const known = new Set<keyof CandidateComparisonForm>([
     'referencePreconIds',
@@ -725,7 +730,8 @@ export function asPilotRobustnessChoice(choice: PresetChoice): PilotRobustnessCh
 
 export function initialPilotRobustnessForm(content: ContentCatalog | null): PilotRobustnessForm {
   const pilot =
-    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ?? content?.pilots[0]?.pilotId;
+    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ??
+    content?.pilots[0]?.pilotId;
   return {
     batchLabel: 'Pilot robustness',
     experimentId: 'pilot-robustness',
@@ -801,7 +807,12 @@ export function pilotRobustnessChoiceOf(form: PilotRobustnessForm): PilotRobustn
 
 function pilotRobustnessFieldOf(path: readonly PropertyKey[]): keyof PilotRobustnessForm {
   const head = String(path[0] ?? '');
-  const known = new Set<keyof PilotRobustnessForm>(['preconIds', 'pilotIds', 'seed', 'gamesPerSeatOrder']);
+  const known = new Set<keyof PilotRobustnessForm>([
+    'preconIds',
+    'pilotIds',
+    'seed',
+    'gamesPerSeatOrder',
+  ]);
   if ((known as ReadonlySet<string>).has(head)) return head as keyof PilotRobustnessForm;
   if (head === 'profileIds') return 'profileIdsRaw';
   return 'experimentId';
@@ -957,7 +968,8 @@ export function asCardReplacementChoice(choice: PresetChoice): CardReplacementCh
 
 export function initialCardReplacementForm(content: ContentCatalog | null): CardReplacementForm {
   const pilot =
-    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ?? content?.pilots[0]?.pilotId;
+    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ??
+    content?.pilots[0]?.pilotId;
   return {
     batchLabel: 'Card replacement',
     experimentId: 'card-replacement',
