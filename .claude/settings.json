@@ -8,11 +8,6 @@
   },
   "permissions": {
     "deny": [
-      "Agent(Explore)",
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(./secrets/**)",
-      "Read(./**/credentials.*)"
     ]
   }
 }
