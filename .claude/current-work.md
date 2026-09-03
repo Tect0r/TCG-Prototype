@@ -1178,3 +1178,52 @@ changes."
 Next slice: **M08.21B — Termination and interruption semantics**, per
 `IMPLEMENTATION_PLAN.md` and the M08.21 tranche in
 `docs/milestones/M08-ai-lab-and-player-meta.md`. Not started this session.
+
+M08.21B is implemented: the six termination origins, in
+`packages/match-telemetry/src/schema.ts`, wired into the package's barrel
+export. `@tcg/rules-engine`'s own `MatchEndReason` cannot carry this
+distinction — `concede` is the same engine action whether a player clicked
+"concede" or simply left (`apps/multiplayer-server/src/match-server.ts`'s
+`leave()`: "Leaving a live match is a concession, not a disconnect"), and a
+match that stalls with nobody able to act and nothing conceding
+(`apps/multiplayer-server/src/bot-runner.ts`'s "recorded as a stall,
+honestly") never produces a `MatchResult` at all — so a new
+`liveMatchTerminationOriginSchema` (`concede_action`/`concede_leave`/
+`disconnect_timeout`/`rules_victory`/`server_failure`/`abandoned_unrecordable`)
+is analytics provenance the record's writer supplies, never a value read off
+the engine, exactly as the milestone's own intro states. The envelope's
+`outcome` field widened from required to `.nullable()` — `null` exactly for
+`abandoned_unrecordable`, the one origin naming a match the engine never
+reached a `MatchResult` for — and gained a sibling `terminationOrigin`
+field. `liveMatchTerminationOriginsForReason(reason)` names which origins are
+consistent with each engine `MatchEndReason` (`concede` is the only reason
+with two — that ambiguity is exactly what this field resolves); the
+envelope's existing `superRefine` now enforces null-outcome-iff-abandoned and
+origin-agrees-with-reason before running the existing seat/winner/loser
+checks, which now only run when `outcome` is non-null. No engine or
+multiplayer-server change — this is schema-only, per this slice's own
+"without changing the engine action meaning" and M08.21's exclusion ("no
+multiplayer write path"). `LIVE_MATCH_ENVELOPE_SCHEMA_VERSION` bumped 1→2
+(a genuinely new required field, not an additive-widening case), so a
+schemaVersion-1 record is now refused as an older build via the existing
+`describeLiveMatchEnvelopeVersionProblem` readable-refusal path.
+
+Verified: 19 new tests in `schema.test.ts` (47 total, was 28) — all six
+origins named; both concede origins accepted for a `concede` reason and a
+mismatched origin refused; `disconnect_timeout`/`timeout` and
+`server_failure`/`engine_error` each accepted and cross-refused against
+`rules_victory`; `rules_victory` accepted for all three rules-victory reasons
+(`health_depleted`/`empty_deck`/`simultaneous_loss`); null outcome accepted
+only under `abandoned_unrecordable` and refused under every other origin;
+`abandoned_unrecordable` refused when a real outcome is present; a null-outcome
+envelope round-trips; and `liveMatchTerminationOriginsForReason` asserted
+directly for every `MatchEndReason`. `npm run --workspace=@tcg/match-telemetry
+typecheck` clean; `npx eslint packages/match-telemetry/src` clean; `npx
+prettier --write` applied to the two changed files (reflow only, confirmed by
+inspection), `--check` now clean. Tranche-close gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.21E, per this
+milestone's work-slice split.
+
+Next slice: **M08.21C — Retention and artifact contracts**, per
+`IMPLEMENTATION_PLAN.md` and the M08.21 tranche in
+`docs/milestones/M08-ai-lab-and-player-meta.md`. Not started this session.

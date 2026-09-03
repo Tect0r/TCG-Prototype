@@ -3904,7 +3904,7 @@ exact deck snapshot, source classification, and every termination-origin test.
       shared telemetry reuse, software/content/rules provenance, source, format,
       immutable deck snapshots and hashes, Commander, seat, counts and outcome.
       Prove round trip, unknown-field and future-version refusal.
-- [ ] **M08.21B — Termination and interruption semantics.** Model explicit
+- [x] **M08.21B — Termination and interruption semantics.** Model explicit
       concede, leave concession, disconnect timeout, rules victory, server failure
       and abandoned/unrecordable outcomes as analytics provenance without changing
       the engine action meaning.

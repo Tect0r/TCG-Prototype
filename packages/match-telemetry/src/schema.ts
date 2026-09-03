@@ -1,17 +1,19 @@
 import { z } from 'zod';
 import { cardIdSchema, formatIdSchema } from '@tcg/card-data';
-import { deckEntrySchema, deckFingerprint, DECK_FINGERPRINT_LENGTH, type DeckEntry } from '@tcg/deck';
-import { matchResultSchema, playerIdSchema } from '@tcg/rules-engine';
+import {
+  deckEntrySchema,
+  deckFingerprint,
+  DECK_FINGERPRINT_LENGTH,
+  type DeckEntry,
+} from '@tcg/deck';
+import { matchResultSchema, type MatchEndReason, playerIdSchema } from '@tcg/rules-engine';
 
 /**
  * The versioned live-match analytics envelope (M08.21A): a strict, durable
  * record of one completed live match, reusing `@tcg/rules-engine`'s own
  * `matchResultSchema` for outcome and `@tcg/deck`'s own fingerprint for deck
- * identity rather than restating either. Termination-origin detail (the six
- * ways a match actually ends, per CLAUDE.md's product rules) is M08.21B's
- * field, not this one; privacy and pseudonymous participant identity are
- * M08.21D's. This slice only proves the envelope round-trips, refuses an
- * unknown field, and refuses a schema version it cannot read.
+ * identity rather than restating either. Termination-origin detail (M08.21B)
+ * is below; privacy and pseudonymous participant identity are M08.21D's.
  *
  * **Why exactly two seats.** The engine and `@tcg/multiplayer-server` allow
  * 2–4 seat free-for-all matches, but `source` (`human_human` / `human_ai` /
@@ -22,7 +24,7 @@ import { matchResultSchema, playerIdSchema } from '@tcg/rules-engine';
  * further-scope-narrowing call M08.19A made for `enqueueAdaptive` wiring.
  */
 
-export const LIVE_MATCH_ENVELOPE_SCHEMA_VERSION = 1;
+export const LIVE_MATCH_ENVELOPE_SCHEMA_VERSION = 2;
 
 /** Whether `found` is a readable schema version this build is simply too new or old to read. */
 export function isReadableLiveMatchEnvelopeVersion(found: unknown): found is number {
@@ -90,6 +92,57 @@ export function liveMatchSourceOf(
 }
 
 /**
+ * The six ways a live match actually ends (M08.21B), per this milestone's own
+ * intro: explicit concede action, leave-message concession, disconnect
+ * timeout, rules victory, server failure, and an abandoned or otherwise
+ * unrecordable match. `@tcg/rules-engine`'s own `MatchEndReason` cannot carry
+ * this distinction — `concede` is the same engine action whether a player
+ * clicked "concede" or simply left (`apps/multiplayer-server/src/match-server.ts`'s
+ * `leave()`: "Leaving a live match is a concession, not a disconnect"), and a
+ * match that stalls with nobody able to act and nothing conceding
+ * (`apps/multiplayer-server/src/bot-runner.ts`'s "recorded as a stall,
+ * honestly") never produces a `MatchResult` at all. So this field is analytics
+ * provenance the record's writer supplies from what it actually observed,
+ * never a value read off the engine — the same split this milestone's own
+ * description draws between the two concessions.
+ */
+export const LIVE_MATCH_TERMINATION_ORIGINS = [
+  'concede_action',
+  'concede_leave',
+  'disconnect_timeout',
+  'rules_victory',
+  'server_failure',
+  'abandoned_unrecordable',
+] as const;
+export const liveMatchTerminationOriginSchema = z.enum(LIVE_MATCH_TERMINATION_ORIGINS);
+export type LiveMatchTerminationOrigin = z.infer<typeof liveMatchTerminationOriginSchema>;
+
+/**
+ * Which termination origins are consistent with a given engine
+ * `MatchEndReason`, when a `MatchResult` exists at all. `concede` is the only
+ * reason with more than one valid origin — that ambiguity is exactly what this
+ * field exists to resolve. `abandoned_unrecordable` names a match with no
+ * `MatchResult` (below), so it is never a valid origin for a reason that came
+ * from one.
+ */
+export function liveMatchTerminationOriginsForReason(
+  reason: MatchEndReason,
+): readonly LiveMatchTerminationOrigin[] {
+  switch (reason) {
+    case 'concede':
+      return ['concede_action', 'concede_leave'];
+    case 'timeout':
+      return ['disconnect_timeout'];
+    case 'health_depleted':
+    case 'empty_deck':
+    case 'simultaneous_loss':
+      return ['rules_victory'];
+    case 'engine_error':
+      return ['server_failure'];
+  }
+}
+
+/**
  * A deck exactly as it stood when the match started: the flat entry list plus
  * the fingerprint `@tcg/deck`'s `deckFingerprint` takes over it. The hash is
  * re-verified below rather than trusted, so "exact immutable deck snapshot" is
@@ -149,8 +202,16 @@ export const liveMatchEnvelopeSchema = z
     seats: z.tuple([liveMatchSeatSchema, liveMatchSeatSchema]),
     /** The accepted-action count, from `MatchState.actionLog.length`. Turn and event counts live on `outcome`. */
     actionCount: z.number().int().min(0),
-    /** Reused wholesale from `@tcg/rules-engine`: outcome, reason, `finalTurn`, `finalSequence`. */
-    outcome: matchResultSchema,
+    /** One of the six ways this match actually ended (M08.21B). See `liveMatchTerminationOriginSchema` above. */
+    terminationOrigin: liveMatchTerminationOriginSchema,
+    /**
+     * Reused wholesale from `@tcg/rules-engine`: outcome, reason, `finalTurn`,
+     * `finalSequence`. `null` exactly when `terminationOrigin` is
+     * `'abandoned_unrecordable'` — a match the engine never reached a
+     * `MatchResult` for at all, not merely one this package chooses not to
+     * report.
+     */
+    outcome: matchResultSchema.nullable(),
   })
   .superRefine((envelope, ctx) => {
     const [seatA, seatB] = envelope.seats;
@@ -181,48 +242,83 @@ export const liveMatchEnvelopeSchema = z
     }
 
     for (const [index, seat] of envelope.seats.entries()) {
-      const expectedHash = deckFingerprint({ commanderId: seat.deck.commanderId, cards: seat.deck.cards });
+      const expectedHash = deckFingerprint({
+        commanderId: seat.deck.commanderId,
+        cards: seat.deck.cards,
+      });
       if (seat.deck.deckHash !== expectedHash) {
         ctx.addIssue({
           code: 'custom',
           path: ['seats', index, 'deck', 'deckHash'],
-          message: 'This deck snapshot\'s hash does not match its own contents.',
+          message: "This deck snapshot's hash does not match its own contents.",
         });
       }
     }
 
     const seatPlayerIds = new Set([seatA.playerId, seatB.playerId]);
-    const { outcome } = envelope;
-    if (outcome.winnerId !== null && !seatPlayerIds.has(outcome.winnerId)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['outcome', 'winnerId'],
-        message: 'The outcome names a winner who is not one of this match\'s two seats.',
-      });
-    }
-    for (const [index, loserId] of outcome.loserIds.entries()) {
-      if (!seatPlayerIds.has(loserId)) {
+    const { outcome, terminationOrigin } = envelope;
+
+    if (outcome === null) {
+      if (terminationOrigin !== 'abandoned_unrecordable') {
         ctx.addIssue({
           code: 'custom',
-          path: ['outcome', 'loserIds', index],
-          message: 'The outcome names a loser who is not one of this match\'s two seats.',
+          path: ['terminationOrigin'],
+          message:
+            'A null outcome means the engine never reached a result, so terminationOrigin must be "abandoned_unrecordable".',
         });
       }
-    }
-    if (outcome.outcome === 'win') {
-      if (outcome.winnerId === null || outcome.loserIds.length !== 1 || outcome.loserIds[0] === outcome.winnerId) {
+    } else {
+      if (terminationOrigin === 'abandoned_unrecordable') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['terminationOrigin'],
+          message: '"abandoned_unrecordable" names a match with no outcome; this envelope has one.',
+        });
+      } else if (
+        !liveMatchTerminationOriginsForReason(outcome.reason).includes(terminationOrigin)
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['terminationOrigin'],
+          message: `terminationOrigin "${terminationOrigin}" is not consistent with outcome.reason "${outcome.reason}".`,
+        });
+      }
+
+      if (outcome.winnerId !== null && !seatPlayerIds.has(outcome.winnerId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['outcome', 'winnerId'],
+          message: "The outcome names a winner who is not one of this match's two seats.",
+        });
+      }
+      for (const [index, loserId] of outcome.loserIds.entries()) {
+        if (!seatPlayerIds.has(loserId)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['outcome', 'loserIds', index],
+            message: "The outcome names a loser who is not one of this match's two seats.",
+          });
+        }
+      }
+      if (outcome.outcome === 'win') {
+        if (
+          outcome.winnerId === null ||
+          outcome.loserIds.length !== 1 ||
+          outcome.loserIds[0] === outcome.winnerId
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['outcome'],
+            message: 'A two-seat win must name a winner and exactly the other seat as loser.',
+          });
+        }
+      } else if (outcome.winnerId !== null || new Set(outcome.loserIds).size !== 2) {
         ctx.addIssue({
           code: 'custom',
           path: ['outcome'],
-          message: 'A two-seat win must name a winner and exactly the other seat as loser.',
+          message: 'A two-seat draw must name no winner and both seats as losers.',
         });
       }
-    } else if (outcome.winnerId !== null || new Set(outcome.loserIds).size !== 2) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['outcome'],
-        message: 'A two-seat draw must name no winner and both seats as losers.',
-      });
     }
   });
 export type LiveMatchEnvelope = z.infer<typeof liveMatchEnvelopeSchema>;

@@ -2,6 +2,7 @@ export {
   LIVE_MATCH_ENVELOPE_SCHEMA_VERSION,
   LIVE_MATCH_PARTICIPANT_KINDS,
   LIVE_MATCH_SOURCES,
+  LIVE_MATCH_TERMINATION_ORIGINS,
   assertReadableLiveMatchEnvelopeVersion,
   describeLiveMatchEnvelopeVersionProblem,
   freezeLiveMatchDeckSnapshot,
@@ -13,6 +14,8 @@ export {
   liveMatchSeatSchema,
   liveMatchSourceOf,
   liveMatchSourceSchema,
+  liveMatchTerminationOriginSchema,
+  liveMatchTerminationOriginsForReason,
   parseLiveMatchEnvelope,
   type LiveMatchDeckSnapshot,
   type LiveMatchEnvelope,
@@ -20,4 +23,5 @@ export {
   type LiveMatchProvenance,
   type LiveMatchSeat,
   type LiveMatchSource,
+  type LiveMatchTerminationOrigin,
 } from './schema.js';
