@@ -4020,15 +4020,45 @@ interruption, duplicate completion, configured retention and sink-failure tests.
       independent `LiveMatchFileStore` instances against the same directory
       without throwing). Full `apps/multiplayer-server` suite (21 files, 377
       tests) passes; workspace typecheck, eslint and prettier clean.
-- [ ] **M08.22D — Tranche close.** Revalidate retention, idempotence, restart and
+- [x] **M08.22D — Tranche close.** Revalidate retention, idempotence, restart and
       failure containment through the standard tranche-close gate. Do not add
       surrender snapshots or dashboard behavior.
+      Evidence: revalidated the combined M08.22A–C diff against this
+      milestone's acceptance list (normal victory, reconnect, disconnect
+      timeout, server restart and interruption, duplicate completion,
+      configured retention, sink-failure containment), all present with
+      focused tests. Found and closed one real gate failure unrelated to
+      M08.22's own logic: `packages/admin-contracts/src/boundary.test.ts` and
+      `apps/admin-server/src/boundary.test.ts` each scan the whole repository
+      for a bare mention of their own package name, with a single named-file
+      allowance for the one legitimate non-import mention; M08.22A's new
+      `apps/multiplayer-server/src/boundary.test.ts` needed to name both
+      packages in its own converse `not.toContain` assertions, which is a
+      second legitimate mention neither scan's allowance yet named. Widened
+      `apps/admin-server`'s allowance to a verified two-file list and added a
+      new single-file allowance to `packages/admin-contracts`'s, each with a
+      verification test that the new mention is a refusal and not an import
+      (later strengthened, in reviewer follow-up, to also catch a
+      prettier-wrapped multi-line or dynamic-import form of that mention)
+      rather than loosening the scan itself. `npm run check:consistency`,
+      `npm run audit:check` and `npm run verify` all pass clean (230 test
+      files, 4716 tests, typecheck, lint, format, content validation, build).
+      `tcg-reviewer`'s first pass returned one further MEDIUM finding, fixed in
+      the same recheck cycle: `LiveMatchFileStore` treats `matchId` alone as a
+      durable identity, but `MatchServer` derives it from a lobby invite code
+      that is recycled once a lobby closes, so nothing yet guarantees a live
+      `matchId` stays unique across the retention window. No deployment wires
+      this store to a live match today, so nothing is at risk; added a
+      doc-comment precondition to `live-match-store.ts` naming this as the
+      open question a future deployment-wiring slice must close first, rather
+      than redesigning the key in this close. Full detail of the review and
+      fix cycle in `.claude/current-work.md`.
 
 ### Checklist
 
-- [ ] Injectable sink; failure contained and never fatal to a match.
-- [ ] One canonical record per match; writes idempotent.
-- [ ] No simulator-grade work in the live event loop.
+- [x] Injectable sink; failure contained and never fatal to a match.
+- [x] One canonical record per match; writes idempotent.
+- [x] No simulator-grade work in the live event loop.
 
 ## M08.23 — Surrender context capture
 

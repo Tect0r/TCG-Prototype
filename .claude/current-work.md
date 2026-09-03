@@ -1665,7 +1665,7 @@ re-derive facts the engine already settled.
   and immediately before `leave()`'s own `applyAction({ type: 'concede', ... })`
   call — and read once, at completion, by `liveMatchTerminationOriginFor`. A
   stale value from an earlier match phase is harmless: it is only ever read
-  when `state.result.reason === 'concede'` for *this* completion, at which
+  when `state.result.reason === 'concede'` for _this_ completion, at which
   point it was necessarily just set by whichever of the two call sites
   produced that exact result.
 - `apps/multiplayer-server/src/match-server.ts`: new private
@@ -1740,3 +1740,137 @@ close**, per `IMPLEMENTATION_PLAN.md` and the M08.22 tranche in
 "next bounded task" section and root status row stay untouched here, per
 CLAUDE.md — both move only at tranche close. Per the standing instruction
 for this session, **M08.22D is not started here.**
+
+## M08.22D — Tranche close
+
+M08.22D is done pending review: revalidated the combined M08.22 tranche diff
+(`33a4705..HEAD` — `live-match-sink.ts`, `live-match-store.ts`,
+`live-match-record.ts`, `version.ts`, `lobby.ts`, `match-server.ts`,
+`boundary.test.ts` and their tests, all in `apps/multiplayer-server`) against
+this milestone's acceptance list — normal victory, reconnect, disconnect
+timeout, server restart and interruption, duplicate completion, configured
+retention and sink-failure containment all present with focused tests
+(`live-match-sink.test.ts`, `live-match-store.test.ts`,
+`live-match-record.test.ts`). `npx vitest run apps/multiplayer-server` — 377
+tests pass, confirming no drift since M08.22C's own report.
+
+Found and closed one real gap during revalidation: `npm run verify` failed
+two pre-existing, unrelated boundary tests it had never previously exercised
+together with this tranche's new file —
+`packages/admin-contracts/src/boundary.test.ts`'s and
+`apps/admin-server/src/boundary.test.ts`'s "imported by nobody else" scans
+each do a bare substring search (`.includes("'@tcg/admin-contracts'")` /
+`.includes("'@tcg/admin-server'")`) over every source file in the repository,
+with a single named-file carve-out (`NAMED_BY_REFUSAL`) for the one place
+each package name is legitimately _mentioned_ rather than imported. M08.22A's
+new `apps/multiplayer-server/src/boundary.test.ts` independently proves the
+converse — that the live match server imports neither package — and in doing
+so also had to name both packages in `not.toContain(...)` assertions, which
+the two existing scans read as a hit. This is not a defect in M08.22's own
+code: the scans' own doc comments already anticipated exactly one legitimate
+non-import mention each (`apps/admin-client/src/boundary.test.ts`), and
+`apps/multiplayer-server/src/boundary.test.ts` is a second, equally
+legitimate one the scans' single-file carve-out could not yet name. Widened
+`NAMED_BY_REFUSAL` in `apps/admin-server/src/boundary.test.ts` from one path
+to a list of two (`NAMED_BY_REFUSAL_ADMIN_CLIENT`/
+`NAMED_BY_REFUSAL_MULTIPLAYER_SERVER`), and added the equivalent single-file
+`NAMED_BY_REFUSAL` carve-out (new to that file) in
+`packages/admin-contracts/src/boundary.test.ts`; both files' "named by that
+exception only in order to forbid it" verification test now also confirms
+`apps/multiplayer-server/src/boundary.test.ts`'s mention is a `not.toContain`
+refusal and not a top-level `import`, so a future edit that turned that
+mention into a real import would fail here rather than silently widen the
+allow-list's meaning. No production code changed; both fixes are additions to
+existing boundary-test scaffolding. Re-ran the four affected boundary suites
+together (`packages/admin-contracts`, `apps/admin-server`,
+`apps/multiplayer-server`, `apps/admin-client`) — 75 tests pass. `eslint`
+clean on both changed files; `prettier --write` applied to
+`apps/admin-server/src/boundary.test.ts` (reflow only, from the added lines)
+and confirmed already clean on `packages/admin-contracts/src/boundary.test.ts`.
+
+The pre-existing unrelated uncommitted change to `.claude/settings.json`
+(emptying `permissions.deny`) remains untouched and unstaged, not part of
+this tranche-close commit: `git stash push -- .claude/settings.json` before
+each `npm run verify` run so it could not mask or be conflated with this
+tranche's own gate result, `git stash pop` immediately after.
+
+One `npm run verify` run mid-session failed
+`apps/admin-server/src/run/queue.test.ts` with `ENOTEMPTY: directory not
+empty, rmdir '...\tcg-admin-catalog-*\catalog\jobs'` — a Windows temp-directory
+cleanup race unconnected to any file this tranche touches. The same file
+passed cleanly in isolation immediately after, and a full re-run of `npm run
+verify` passed clean end to end (230 files, 4716 tests); not investigated
+further as an environment flake outside this tranche's scope.
+
+`npm run format:check` also flagged this file (`.claude/current-work.md`)
+itself as unformatted before any edits in this session — a real, pre-existing
+gate failure (one straight-quote reflowed to a curly one inside an M08.22C
+evidence paragraph), not introduced here. Ran `prettier --write` on exactly
+this file first and confirmed the diff was that single quote-normalization
+with no behavior change.
+
+`npm run check:consistency`, `npm run audit:check` and `npm run verify` all
+pass clean (230 test files, 4716 tests, typecheck, lint, format, content
+validation, build). Marked M08.22D and the M08.22 checklist complete in the
+milestone file. Root status row's "Next tranche" column left at `M08.22A`
+rather than advanced to a not-yet-named M08.23A, per CLAUDE.md: the tranche
+is not marked complete and its successor is not named until `tcg-reviewer`
+returns `VERDICT: APPROVE`.
+
+### M08.22D — reviewer fix cycle
+
+`tcg-reviewer`'s first pass on the tranche (`33a4705..HEAD` plus this
+close-record diff) returned `VERDICT: CHANGES REQUIRED` with one MEDIUM and
+two LOW findings; no HIGH/blocker. Fixed all three:
+
+- **MEDIUM** — `LiveMatchFileStore.receive` (`apps/multiplayer-server/src/
+live-match-store.ts`) treats `matchId` as a durable identity forever, but
+  `MatchServer` derives it from a lobby invite code
+  (`match_${lobby.inviteCode}`) and `generateInviteCode` only excludes
+  currently-live codes, so a closed lobby's code is recyclable — a later
+  match could silently overwrite an earlier one's canonical record on disk.
+  No deployment wires this store to a live `matchId` yet (only tests
+  construct one), so nothing is at risk today. Per the reviewer's own
+  "smallest correction," redesigning the key was out of scope for this
+  close; instead added a doc-comment precondition to the class stating the
+  store is canonical only for a `matchId` unique across the retention
+  window, and named the invite-code-recycling gap as the open question
+  whichever future slice wires this store to a live match must close first.
+- **LOW** — the two boundary-test carve-out verifications (`apps/admin-server
+/src/boundary.test.ts`, `packages/admin-contracts/src/boundary.test.ts`)
+  only caught a single-line `import ... from '...'`; a prettier-wrapped
+  multi-line import or `import('...')` would evade the regex undetected,
+  since the exempted files are the _only_ remaining guard on those two
+  carve-outs. The reviewer's own suggested one-line `not.toContain("from
+'...'")` fix was checked against the actual file content and found to
+  produce a false positive — the admin-client exemption's own refusal
+  assertion literally contains that substring inside its string argument.
+  Used a statement-scoped regex instead
+  (`/\bimport\b[^;]*?['"]@tcg\/<pkg>['"]/`, requiring the `import` keyword
+  and the quoted specifier to share a statement with no semicolon between
+  them) — verified by hand against both exempted files' actual content that
+  no legitimate refusal or comment falsely trips it, while it still catches
+  a wrapped or dynamic import in the same statement.
+- **LOW** — the milestone file's M08.22D evidence said "widened both scans'
+  allowance to a verified two-file list," but only `apps/admin-server`
+  received a two-file list; `packages/admin-contracts` received a new
+  single-file allowance (this record already said so correctly). Reworded
+  the milestone-file sentence to match.
+
+Re-ran the affected focused suites (`live-match-store.test.ts` plus all four
+boundary suites — 82 tests pass) and confirmed `prettier --check` clean on
+all four touched files. Re-ran `npm run check:consistency` (clean), `npm run
+audit:check` (clean) and the full `npm run verify` (clean end to end: 230
+test files, 4716 tests, typecheck, lint, format, content validation, build —
+`.claude/settings.json` excluded via stash/pop as before) before requesting
+the bounded recheck.
+
+`tcg-reviewer`'s bounded recheck confirmed all three fixes independently
+(re-derived the regex's non-false-positive property against both exempted
+files' actual content rather than trusting the claim; confirmed the store's
+new doc comment states a dependency rather than a false safety guarantee;
+confirmed the milestone wording now matches the code) and returned
+**`VERDICT: APPROVE`**. M08.22 is closed. Root status row's "Next tranche"
+column and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section now name
+**M08.23A — Pre-action capture contract**, the first slice of M08.23
+("Surrender context capture").

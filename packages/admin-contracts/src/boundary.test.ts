@@ -161,6 +161,14 @@ describe('nothing admin is reachable from the player bundle', () => {
     expect(Object.keys(server.dependencies ?? {})).not.toContain('@tcg/admin-contracts');
   });
 
+  // `apps/multiplayer-server/src/boundary.test.ts` (M08.22A) asserts the
+  // converse of this whole describe block — that the live match server
+  // declares no dependency on this package — which means it has to write the
+  // package name down. The scan below reads a mention rather than an import,
+  // so the file is excluded here and checked, immediately after, to be a
+  // refusal rather than an importer.
+  const NAMED_BY_REFUSAL = join(REPO_ROOT, 'apps', 'multiplayer-server', 'src', 'boundary.test.ts');
+
   it('is imported by the admin workspaces and by nothing else', () => {
     // M08.1 could state this as "imported by nobody", because the applications
     // ADR 0023 §1 names did not exist yet. M08.2 built the first of them, so the
@@ -179,6 +187,7 @@ describe('nothing admin is reachable from the player bundle', () => {
         }
         if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue;
         if (path.startsWith(PACKAGE_ROOT)) continue;
+        if (path === NAMED_BY_REFUSAL) continue;
         if (!readFileSync(path, 'utf8').includes("'@tcg/admin-contracts'")) continue;
         const relative = path.slice(REPO_ROOT.length + 1);
         if (ALLOWED.some((allowed) => relative.startsWith(allowed))) continue;
@@ -197,6 +206,22 @@ describe('nothing admin is reachable from the player bundle', () => {
       'utf8',
     );
     expect(store).toContain("from '@tcg/admin-contracts'");
+  });
+
+  it('is named by that one exception only in order to forbid it', () => {
+    // The scan above reads a *mention* rather than an import, so the honest
+    // allowance is this one file plus a check that its mention really is a
+    // refusal. A file that stopped refusing and started importing fails here.
+    // The single-line regex only catches `import ... from '...'` on one line;
+    // this second check requires an `import` keyword and the quoted specifier
+    // to share a statement (no semicolon between them), which real import
+    // syntax always does — including a prettier-wrapped multi-line import or
+    // a dynamic `import('...')` — and this file's actual refusal calls never
+    // do (verified: `import` never shares a statement with the quoted name).
+    const text = readFileSync(NAMED_BY_REFUSAL, 'utf8');
+    expect(text).toContain(`not.toContain('@tcg/admin-contracts')`);
+    expect(text).not.toMatch(/^\s*import .*'@tcg\/admin-contracts'/m);
+    expect(text).not.toMatch(/\bimport\b[^;]*?['"]@tcg\/admin-contracts['"]/);
   });
 });
 

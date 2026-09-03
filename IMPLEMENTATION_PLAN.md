@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-03)   | M08.22A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-03)   | M08.23A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,21 +223,34 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.22A — Injectable failure-contained sink.** Add the authoritative server
-boundary and failure policy so analytics errors cannot block, change or
-corrupt gameplay; keep simulator-grade work out of the live event loop. Its
+**M08.23A — Pre-action capture contract.** Define and capture the state
+immediately before explicit or leave concession, including pending choice,
+combat and Reaction context, without changing the engine concession. Its
 scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0822--multiplayer-telemetry-sink).
-This is the first slice of M08.22, unrelated to the still-unscoped adaptive
-enqueue/execution gap below.
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0823--surrender-context-capture).
+This is the first slice of M08.23, unrelated to the still-unscoped 3–4 seat
+source-classification gap below.
 
-**Also still open, unrelated to M08.22's own scope:** `liveMatchEnvelopeSchema`
+**Also still open, unrelated to M08.23's own scope:** `liveMatchEnvelopeSchema`
 (`packages/match-telemetry/src/schema.ts`) covers exactly two seats — the
 engine and `apps/multiplayer-server` allow 2–4 seat free-for-all matches, but
 `source` classification (`human_human`/`human_ai`/`ai_ai`) is only defined for
 two. 3–4 seat source classification for the live-match envelope remains
-unscoped and un-numbered; it must be scoped as its own slice before M08.22's
-sink is asked to record a 3- or 4-seat match.
+unscoped and un-numbered; it must be scoped as its own slice before any
+future sink is asked to record a 3- or 4-seat match.
+
+**M08.22 closed 2026-09-03** (`tcg-reviewer` `VERDICT: APPROVE` on the second,
+bounded recheck cycle; first pass returned `CHANGES REQUIRED` with one MEDIUM
+— `LiveMatchFileStore` trusts a live `matchId` as a durable identity while
+`MatchServer` derives it from a recyclable lobby invite code, closed with a
+documented precondition rather than a redesign since no deployment wires the
+store yet — and two non-blocking LOW findings (a boundary-test carve-out
+regex that missed a wrapped/dynamic import form; a milestone-evidence wording
+overstatement), all fixed and rechecked): an injectable failure-contained
+live-match sink, canonical idempotent file persistence keyed on `matchId`,
+and lifecycle integration covering normal victory, reconnect, disconnect
+timeout, interruption, server restart and duplicate completion. Details in
+[`.claude/current-work.md`](.claude/current-work.md).
 
 **M08.21 closed 2026-09-03** (`tcg-reviewer` `VERDICT: APPROVE` on the second,
 bounded recheck cycle; first pass returned `CHANGES REQUIRED` with one
