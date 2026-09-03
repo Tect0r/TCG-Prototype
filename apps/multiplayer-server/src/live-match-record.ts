@@ -125,7 +125,8 @@ function voluntaryPreActionCaptureFor(
   if (capture === null) return null;
   if (capture.origin !== envelope.terminationOrigin) return null;
   if (capture.matchId !== envelope.matchId) return null;
-  if (envelope.outcome === null || !envelope.outcome.loserIds.includes(capture.playerId)) return null;
+  if (envelope.outcome === null || !envelope.outcome.loserIds.includes(capture.playerId))
+    return null;
   return capture;
 }
 

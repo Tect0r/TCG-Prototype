@@ -204,7 +204,11 @@ describe('decideLiveMatchRetention', () => {
     'forces rawEvent retention for %s even when the policy declines it',
     (origin) => {
       expect(
-        decideLiveMatchRetention(origin, { rawEvent: false, replay: false, preActionCapture: false }),
+        decideLiveMatchRetention(origin, {
+          rawEvent: false,
+          replay: false,
+          preActionCapture: false,
+        }),
       ).toEqual({
         rawEvent: true,
         replay: false,
@@ -216,8 +220,11 @@ describe('decideLiveMatchRetention', () => {
   it('never forces replay retention, even for a forced-rawEvent origin', () => {
     for (const origin of LIVE_MATCH_FORCED_RAW_EVENT_ORIGINS) {
       expect(
-        decideLiveMatchRetention(origin, { rawEvent: false, replay: false, preActionCapture: false })
-          .replay,
+        decideLiveMatchRetention(origin, {
+          rawEvent: false,
+          replay: false,
+          preActionCapture: false,
+        }).replay,
       ).toBe(false);
     }
   });
@@ -225,8 +232,11 @@ describe('decideLiveMatchRetention', () => {
   it('never forces preActionCapture retention, for any origin', () => {
     for (const origin of LIVE_MATCH_TERMINATION_ORIGINS) {
       expect(
-        decideLiveMatchRetention(origin, { rawEvent: false, replay: false, preActionCapture: false })
-          .preActionCapture,
+        decideLiveMatchRetention(origin, {
+          rawEvent: false,
+          replay: false,
+          preActionCapture: false,
+        }).preActionCapture,
       ).toBe(false);
       expect(
         decideLiveMatchRetention(origin, { rawEvent: true, replay: true, preActionCapture: true })

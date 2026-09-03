@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deckFingerprint } from '@tcg/deck';
 import type { CombatState, PendingChoice, ReactionWindowState } from '@tcg/rules-engine';
-import type { LiveMatchEventWindow } from './event-window.js';
+import { deriveLiveMatchEventWindow, type LiveMatchEventWindow } from './event-window.js';
 import {
   LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION,
   describeLiveMatchPreActionCaptureVersionProblem,
@@ -79,8 +79,20 @@ const eventCause = { actionType: null, sourceInstanceId: null, resolutionId: nul
 const eventWindowFixture: LiveMatchEventWindow = {
   recentEvents: [
     { type: 'turn_started', sequence: 8, cause: eventCause, playerId: 'player_1', turn: 3 },
-    { type: 'phase_changed', sequence: 9, cause: eventCause, from: 'main_1', to: 'declare_attackers' },
-    { type: 'phase_changed', sequence: 12, cause: eventCause, from: 'declare_attackers', to: 'main_2' },
+    {
+      type: 'phase_changed',
+      sequence: 9,
+      cause: eventCause,
+      from: 'main_1',
+      to: 'declare_attackers',
+    },
+    {
+      type: 'phase_changed',
+      sequence: 12,
+      cause: eventCause,
+      from: 'declare_attackers',
+      to: 'main_2',
+    },
   ],
   eventDistances: [
     { sequence: 8, eventsAgo: 4, actionsAgo: 2, turnsAgo: 0 },
@@ -219,7 +231,10 @@ describe('liveMatchPreActionCaptureSchema event window cross-checks (M08.23B)', 
   });
 
   it('refuses a missing previous turn window past turn 1', () => {
-    const capture = { ...validCapture(), eventWindow: { ...eventWindowFixture, previousTurnWindow: null } };
+    const capture = {
+      ...validCapture(),
+      eventWindow: { ...eventWindowFixture, previousTurnWindow: null },
+    };
     expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
   });
 
@@ -237,7 +252,10 @@ describe('liveMatchPreActionCaptureSchema event window cross-checks (M08.23B)', 
   it('refuses a mismatched count of recent events and event distances', () => {
     const capture = {
       ...validCapture(),
-      eventWindow: { ...eventWindowFixture, eventDistances: eventWindowFixture.eventDistances.slice(1) },
+      eventWindow: {
+        ...eventWindowFixture,
+        eventDistances: eventWindowFixture.eventDistances.slice(1),
+      },
     };
     expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
   });
@@ -267,8 +285,11 @@ describe('liveMatchPreActionCaptureSchema event window cross-checks (M08.23B)', 
     expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
   });
 
-  it("refuses a deck snapshot whose hash does not match its own contents", () => {
-    const capture = { ...validCapture(), deck: { ...deckFixture, deckHash: deckFingerprint({ commanderId: 'cmd_other', cards: [] }) } };
+  it('refuses a deck snapshot whose hash does not match its own contents', () => {
+    const capture = {
+      ...validCapture(),
+      deck: { ...deckFixture, deckHash: deckFingerprint({ commanderId: 'cmd_other', cards: [] }) },
+    };
     expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
   });
 
@@ -276,11 +297,58 @@ describe('liveMatchPreActionCaptureSchema event window cross-checks (M08.23B)', 
     const capture = validCapture();
     expect(parseLiveMatchPreActionCapture(capture)).toEqual(capture);
   });
+
+  it("round trips a capture with an open pendingChoice taken mid-Ready-Step, before the new turn's turn_started is logged", () => {
+    // Reproduces the tcg-reviewer M08.23E HIGH finding's scenario end to end
+    // through the real schema: `MatchState.turn` has already advanced (here to
+    // turn 2) but `turn_started` has not been logged yet — reachable when a
+    // capture lands inside a paused, costed `replace_ready` choice such as
+    // `temporal_anchor`'s (`flow.ts`'s `runReadyStep`) — with a real
+    // `pendingChoice` still open, matching that paused state.
+    const log = [
+      {
+        type: 'turn_started' as const,
+        sequence: 1,
+        cause: eventCause,
+        playerId: 'player_1',
+        turn: 1,
+      },
+      {
+        type: 'phase_changed' as const,
+        sequence: 2,
+        cause: eventCause,
+        from: 'main_1' as const,
+        to: 'declare_attackers' as const,
+      },
+      {
+        type: 'phase_changed' as const,
+        sequence: 3,
+        cause: eventCause,
+        from: 'declare_attackers' as const,
+        to: 'main_2' as const,
+      },
+    ];
+    const eventWindow = deriveLiveMatchEventWindow({ log, actionLog: [], turn: 2, sequence: 3 });
+    const capture: LiveMatchPreActionCapture = {
+      ...validCapture(),
+      turn: 2,
+      sequence: 3,
+      pendingChoice: pendingChoiceFixture,
+      eventWindow,
+    };
+
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).not.toThrow();
+    expect(eventWindow.currentTurnWindow).toEqual({ turn: 2, startSequence: 3, endSequence: 3 });
+    expect(eventWindow.previousTurnWindow).toEqual({ turn: 1, startSequence: 1, endSequence: 2 });
+  });
 });
 
 describe('parseLiveMatchPreActionCapture', () => {
   it('throws the readable refusal before the strict schema runs', () => {
-    const capture = { ...validCapture(), schemaVersion: LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION + 1 };
+    const capture = {
+      ...validCapture(),
+      schemaVersion: LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION + 1,
+    };
     expect(() => parseLiveMatchPreActionCapture(capture)).toThrow(/newer build/);
   });
 

@@ -487,7 +487,7 @@ describe('lifecycle integration (M08.22C)', () => {
     }
   });
 
-  it('attaches exactly the lobby\'s own pre-action capture, unmodified (M08.23C, M08.23D)', () => {
+  it("attaches exactly the lobby's own pre-action capture, unmodified (M08.23C, M08.23D)", () => {
     const { sink, records } = capturingSink();
     const harness = createHarness({
       liveMatchSink: sink,

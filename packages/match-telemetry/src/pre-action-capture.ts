@@ -177,7 +177,8 @@ export const liveMatchPreActionCaptureSchema = z
           ctx.addIssue({
             code: 'custom',
             path: ['eventWindow', 'eventDistances', index, 'sequence'],
-            message: 'Event distances must be recorded in the same order as their recent events, by sequence.',
+            message:
+              'Event distances must be recorded in the same order as their recent events, by sequence.',
           });
         } else if (distance.eventsAgo !== capture.sequence - event.sequence) {
           ctx.addIssue({

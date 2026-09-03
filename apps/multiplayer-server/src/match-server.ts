@@ -1192,11 +1192,15 @@ export class MatchServer {
     // `reason: 'concede'` either way.
     if (action.type === 'concede') {
       lobby.lastConcedeOrigin = 'concede_action';
-      lobby.lastPreActionCapture = capturePreActionState(lobby.state, action.playerId, {
-        softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
-        deck: { commanderId: seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] },
-        origin: 'concede_action',
-      });
+      lobby.lastPreActionCapture = this.capturePreActionStateContained(
+        lobby.state,
+        action.playerId,
+        {
+          softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
+          deck: { commanderId: seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] },
+          origin: 'concede_action',
+        },
+      );
     }
 
     const result = applyAction(lobby.state, action, {
@@ -1225,11 +1229,15 @@ export class MatchServer {
     if (lobby.status === 'in_match' && lobby.state && lobby.state.status !== 'complete') {
       // Leaving a live match is a concession, not a disconnect.
       lobby.lastConcedeOrigin = 'concede_leave';
-      lobby.lastPreActionCapture = capturePreActionState(lobby.state, PLAYER_ID_BY_SEAT[seat.seatId], {
-        softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
-        deck: { commanderId: seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] },
-        origin: 'concede_leave',
-      });
+      lobby.lastPreActionCapture = this.capturePreActionStateContained(
+        lobby.state,
+        PLAYER_ID_BY_SEAT[seat.seatId],
+        {
+          softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
+          deck: { commanderId: seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] },
+          origin: 'concede_leave',
+        },
+      );
       const result = applyAction(
         lobby.state,
         { type: 'concede', playerId: PLAYER_ID_BY_SEAT[seat.seatId] },
@@ -1472,6 +1480,29 @@ export class MatchServer {
    */
   get liveMatchSinkFailures(): readonly string[] {
     return [...this.#liveMatchSinkFailures];
+  }
+
+  /**
+   * `capturePreActionState`, contained the same way `publishLiveMatchRecord`
+   * contains its own builder (M08.23E): a telemetry contract refusal (the
+   * schema's own cross-field checks) must be no more able to block the
+   * concede it is capturing context for than a downstream sink failure is
+   * able to block a finished match's broadcast. Failure collapses to `null`
+   * — the same "nothing captured" shape a missing Commander already produces
+   * — and is recorded into the shared `#liveMatchSinkFailures` list rather
+   * than thrown into `submit_action`'s or `leave()`'s caller.
+   */
+  private capturePreActionStateContained(
+    ...args: Parameters<typeof capturePreActionState>
+  ): ReturnType<typeof capturePreActionState> {
+    try {
+      return capturePreActionState(...args);
+    } catch (error) {
+      this.#liveMatchSinkFailures.push(
+        `pre_action_capture: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 
   /**

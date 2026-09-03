@@ -142,7 +142,10 @@ export class LiveMatchFileStore implements LiveMatchSink {
       writeJsonAtomicallySync(join(matchDirectory, 'replay.json'), record.replay);
     }
     if (record.preActionCapture !== null) {
-      writeJsonAtomicallySync(join(matchDirectory, 'pre-action-capture.json'), record.preActionCapture);
+      writeJsonAtomicallySync(
+        join(matchDirectory, 'pre-action-capture.json'),
+        record.preActionCapture,
+      );
     }
   }
 }

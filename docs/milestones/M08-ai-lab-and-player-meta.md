@@ -4130,7 +4130,7 @@ AI continuation from the state.
       and `leave()`) now pass `LIVE_MATCH_SOFTWARE_VERSION` and the seat's
       deck; the two existing wiring tests in `match-server.test.ts` gained
       assertions on `eventWindow`/`provenance`/`deck`. Assigns no cause
-      anywhere: the widened contract is silent on *why* a player conceded, as
+      anywhere: the widened contract is silent on _why_ a player conceded, as
       CLAUDE.md's product rules require. 473 focused tests pass across
       `@tcg/match-telemetry` and `@tcg/multiplayer-server`; both packages
       typecheck clean.
@@ -4215,15 +4215,63 @@ AI continuation from the state.
       plus a "skips" assertion for `pre-action-capture.json`. 480 focused tests
       pass across `@tcg/match-telemetry`, `@tcg/multiplayer-server` and
       `@tcg/protocol`; all three packages typecheck clean.
-- [ ] **M08.23E — Tranche close.** Revalidate pending contexts, windows, timeout
+- [x] **M08.23E — Tranche close.** Revalidate pending contexts, windows, timeout
       exclusion, retention, idempotence and authorization through the standard
       tranche-close gate. Do not add cause labels, UI or AI continuation.
+      Evidence: revalidated the combined M08.23 tranche diff (`2f9faf8..1378c9d`,
+      20 files across `packages/match-telemetry`, `apps/multiplayer-server` and
+      `packages/protocol/src/boundary.test.ts`) against this milestone's
+      acceptance list — pending choice/combat/Reaction capture, event and turn
+      windows, explicit-vs-leave distinction with timeout/disconnect exclusion,
+      idempotence via the pure `voluntaryPreActionCaptureFor` gate, and
+      retention/admin-only authorization (the structural `boundary.test.ts`
+      proof) all present with focused tests already in place from M08.23A–D.
+      `npm run verify` first failed at `format:check` on 12 files spanning the
+      whole tranche plus `.claude/current-work.md`, `.claude/settings.json` and
+      this milestone file — a real gate failure, not pre-existing. Ran
+      `prettier --write` on exactly those 12 files; inspected every diff and
+      confirmed reflow/reindent only, no behavior change. Reran
+      `npm run check:consistency`, `npm run audit:check` and `npm run verify`,
+      all clean (233 test files, 4749 tests, typecheck, lint, format, content
+      validation, build). `tcg-reviewer` review of the full tranche commit
+      range plus this close-record diff found one HIGH and one MEDIUM finding,
+      fixed in review/fix cycle 1 of the 2 CLAUDE.md allows: (HIGH)
+      `turnStartSequence` conflated "turn 0" with "this turn's `turn_started`
+      not logged yet" (both `0`), so a capture taken mid-Ready-Step — after
+      `beginTurn` sets `MatchState.turn` but before `finishReadyStep` emits
+      that turn's `turn_started`, e.g. paused on `temporal_anchor`'s costed
+      `replace_ready` choice — derived a negative `endSequence` that failed
+      the schema's `.parse()` uncaught, aborting an authoritative concede.
+      Fixed in `packages/match-telemetry/src/event-window.ts`:
+      `turnStartSequence` now returns `null` (not `0`) when not found;
+      `deriveLiveMatchEventWindow` falls the current window's start back to
+      `sequence`; `previousTurnWindow.endSequence` is now `currentStart - 1`
+      by construction, so the schema's contiguity check holds unconditionally.
+      Added defense-in-depth: `match-server.ts`'s new
+      `capturePreActionStateContained` wraps both `capturePreActionState`
+      call sites (the `concede` action and `leave()`) the same way
+      `publishLiveMatchRecord` is already contained, collapsing any future
+      unanticipated capture failure to `null` in `#liveMatchSinkFailures`
+      rather than blocking the concede it captures context for. (MEDIUM) this
+      evidence note previously overstated pending-choice coverage — no test
+      exercised a capture during a real open `pendingChoice`; corrected here.
+      New regression coverage: `event-window.test.ts` and
+      `pre-action-capture.test.ts` (the latter through the real schema,
+      `pendingChoice` populated, `deriveLiveMatchEventWindow` used directly)
+      both prove the exact mid-Ready-Step scenario now round-trips. Re-ran
+      focused tests (99 in `@tcg/match-telemetry`, 381 in
+      `@tcg/multiplayer-server`), typecheck for all three affected packages,
+      and all three tranche-close gates clean, including `npm run verify`
+      (233 test files, 4751 tests). `tcg-reviewer`'s bounded
+      recheck of this fix and the LOW finding (accepted as informational, no
+      fix required) is the next step before the tranche, root status row and
+      its successor can be marked complete.
 
 ### Checklist
 
-- [ ] Pre-action state, pending context and event windows captured.
-- [ ] Explicit and leave concession distinguished; timeout excluded.
-- [ ] Snapshots admin-only and authorization-tested.
+- [x] Pre-action state, pending context and event windows captured.
+- [x] Explicit and leave concession distinguished; timeout excluded.
+- [x] Snapshots admin-only and authorization-tested.
 
 ## M08.24 — Player Meta aggregates
 

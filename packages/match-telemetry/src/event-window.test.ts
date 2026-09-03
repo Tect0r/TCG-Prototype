@@ -41,7 +41,13 @@ describe('deriveLiveMatchEventWindow', () => {
   });
 
   it('places the current and previous turn windows back to back on turn 2', () => {
-    const log = [turnStarted(1, 1), phaseChanged(2), phaseChanged(3), turnStarted(4, 2), phaseChanged(5)];
+    const log = [
+      turnStarted(1, 1),
+      phaseChanged(2),
+      phaseChanged(3),
+      turnStarted(4, 2),
+      phaseChanged(5),
+    ];
     const window = deriveLiveMatchEventWindow({ log, actionLog: [], turn: 2, sequence: 5 });
     expect(window.currentTurnWindow).toEqual({ turn: 2, startSequence: 4, endSequence: 5 });
     expect(window.previousTurnWindow).toEqual({ turn: 1, startSequence: 1, endSequence: 3 });
@@ -61,16 +67,34 @@ describe('deriveLiveMatchEventWindow', () => {
     ]);
   });
 
+  it('never derives a negative endSequence when the current turn has not logged its own turn_started yet', () => {
+    // Reachable when a capture is taken mid-Ready-Step, after `MatchState.turn`
+    // has already advanced to the new turn but before `finishReadyStep` has
+    // emitted that turn's `turn_started` (e.g. a paused `replace_ready` cost
+    // choice) — the exact gap `turnStartSequence`'s doc comment describes.
+    const log = [turnStarted(1, 1), phaseChanged(2), phaseChanged(3)];
+    const window = deriveLiveMatchEventWindow({ log, actionLog: [], turn: 2, sequence: 3 });
+    expect(window.currentTurnWindow).toEqual({ turn: 2, startSequence: 3, endSequence: 3 });
+    expect(window.previousTurnWindow).toEqual({ turn: 1, startSequence: 1, endSequence: 2 });
+  });
+
   it('retains only the most recent window-size events, always ending at the capture sequence', () => {
     const log: GameEvent[] = [turnStarted(1, 1)];
     for (let sequence = 2; sequence <= LIVE_MATCH_RECENT_EVENT_WINDOW_SIZE + 10; sequence += 1) {
       log.push(phaseChanged(sequence));
     }
     const lastSequence = log.at(-1)!.sequence;
-    const window = deriveLiveMatchEventWindow({ log, actionLog: [], turn: 1, sequence: lastSequence });
+    const window = deriveLiveMatchEventWindow({
+      log,
+      actionLog: [],
+      turn: 1,
+      sequence: lastSequence,
+    });
 
     expect(window.recentEvents).toHaveLength(LIVE_MATCH_RECENT_EVENT_WINDOW_SIZE);
     expect(window.recentEvents.at(-1)?.sequence).toBe(lastSequence);
-    expect(window.recentEvents[0]?.sequence).toBe(lastSequence - LIVE_MATCH_RECENT_EVENT_WINDOW_SIZE + 1);
+    expect(window.recentEvents[0]?.sequence).toBe(
+      lastSequence - LIVE_MATCH_RECENT_EVENT_WINDOW_SIZE + 1,
+    );
   });
 });

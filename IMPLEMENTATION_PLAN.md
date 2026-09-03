@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-03)   | M08.23A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-03)   | M08.24A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,21 +223,37 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.23A — Pre-action capture contract.** Define and capture the state
-immediately before explicit or leave concession, including pending choice,
-combat and Reaction context, without changing the engine concession. Its
-scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0823--surrender-context-capture).
-This is the first slice of M08.23, unrelated to the still-unscoped 3–4 seat
+**M08.24A — Source-separated match and deck aggregates.** Aggregate Commander
+selection, exact decks, clusters, matchups, duration and termination by
+content/version/source while keeping human, mixed and AI evidence distinct.
+Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0824--player-meta-aggregates).
+This is the first slice of M08.24, unrelated to the still-unscoped 3–4 seat
 source-classification gap below.
 
-**Also still open, unrelated to M08.23's own scope:** `liveMatchEnvelopeSchema`
+**Also still open, unrelated to M08.24's own scope:** `liveMatchEnvelopeSchema`
 (`packages/match-telemetry/src/schema.ts`) covers exactly two seats — the
 engine and `apps/multiplayer-server` allow 2–4 seat free-for-all matches, but
 `source` classification (`human_human`/`human_ai`/`ai_ai`) is only defined for
 two. 3–4 seat source classification for the live-match envelope remains
 unscoped and un-numbered; it must be scoped as its own slice before any
 future sink is asked to record a 3- or 4-seat match.
+
+**M08.23 closed 2026-09-03** (`tcg-reviewer` `VERDICT: APPROVE` on the second,
+bounded recheck cycle; first pass returned `CHANGES REQUIRED` with one HIGH —
+`turnStartSequence` conflated "turn 0" with "this turn's `turn_started` not
+logged yet," so a capture taken mid-Ready-Step (e.g. paused on
+`temporal_anchor`'s costed `replace_ready` choice) could derive a negative
+`endSequence` and fail the schema's `.parse()` uncaught, aborting an
+authoritative concede — and one MEDIUM — the close-record evidence note
+overstated pending-choice test coverage — both fixed and rechecked, plus one
+non-blocking LOW, accepted as informational): pre-action capture of pending
+choice, combat and Reaction context; recent-event and turn windows now
+correct even mid-Ready-Step, with `capturePreActionStateContained` as
+defense-in-depth; explicit-vs-leave concession distinction with
+timeout/disconnect exclusion; idempotence; retention and hidden-artifact
+admin-only authorization. Details in
+[`.claude/current-work.md`](.claude/current-work.md).
 
 **M08.22 closed 2026-09-03** (`tcg-reviewer` `VERDICT: APPROVE` on the second,
 bounded recheck cycle; first pass returned `CHANGES REQUIRED` with one MEDIUM

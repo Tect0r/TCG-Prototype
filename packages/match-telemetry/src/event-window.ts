@@ -54,13 +54,23 @@ export const liveMatchEventWindowSchema = z.strictObject({
 });
 export type LiveMatchEventWindow = z.infer<typeof liveMatchEventWindowSchema>;
 
-/** The sequence of `turn`'s own `turn_started` event, or 0 when `turn` is 0 (pre-game) or never started. */
-function turnStartSequence(log: readonly GameEvent[], turn: number): number {
+/**
+ * The sequence of `turn`'s own `turn_started` event, 0 when `turn` is 0
+ * (pre-game), or `null` when `turn` is 1 or higher but its `turn_started`
+ * has not been logged yet — reachable at a capture instant paused inside
+ * `beginTurn`'s Ready Step (`flow.ts`'s `runReadyStep`, e.g. a `replace_ready`
+ * with a cost, such as `temporal_anchor`): `MatchState.turn` is set before
+ * `runReadyStep` runs, but `turn_started` is only emitted once it finishes,
+ * so a `pendingChoice` can be open in a turn the log does not yet record the
+ * start of. Distinct from 0 so a caller never mistakes "not yet started" for
+ * "started at sequence 0."
+ */
+function turnStartSequence(log: readonly GameEvent[], turn: number): number | null {
   if (turn <= 0) return 0;
   for (const event of log) {
     if (event.type === 'turn_started' && event.turn === turn) return event.sequence;
   }
-  return 0;
+  return null;
 }
 
 /** The highest turn number whose `turn_started` event has a sequence `<= sequence`. */
@@ -86,7 +96,12 @@ export function deriveLiveMatchEventWindow(input: {
 }): LiveMatchEventWindow {
   const { log, actionLog, turn, sequence } = input;
 
-  const currentStart = turnStartSequence(log, turn);
+  // `?? sequence`: when this turn's own `turn_started` has not been logged
+  // yet (see `turnStartSequence`'s doc comment), there is no real boundary
+  // sequence to report, so the current window collapses to "nothing of this
+  // turn logged so far" rather than deriving a startSequence past the log's
+  // own end.
+  const currentStart = turnStartSequence(log, turn) ?? sequence;
   const currentTurnWindow: LiveMatchTurnWindow = {
     turn,
     startSequence: currentStart,
@@ -96,7 +111,15 @@ export function deriveLiveMatchEventWindow(input: {
     turn > 1
       ? {
           turn: turn - 1,
-          startSequence: turnStartSequence(log, turn - 1),
+          // Always found in practice: turn only ever reaches turn - 1 + 1
+          // after turn - 1's own `turn_started` has already been logged. The
+          // fallback is defensive, not a documented case.
+          startSequence: turnStartSequence(log, turn - 1) ?? 0,
+          // Tied to `currentStart` by construction (not independently
+          // clamped) so `liveMatchPreActionCaptureSchema`'s contiguity check
+          // — previous window's end + 1 equals the current window's start —
+          // holds unconditionally, in the fallback branch as much as the
+          // normal one.
           endSequence: currentStart - 1,
         }
       : null;

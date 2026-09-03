@@ -1883,7 +1883,7 @@ combat and Reaction context, without changing the engine concession."
 
 - `packages/match-telemetry/src/pre-action-capture.ts` (new): the versioned
   `liveMatchPreActionCaptureSchema` (`LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION
-  = 1`) plus the standard `isReadable...`/`describe...VersionProblem`/
+= 1`) plus the standard `isReadable...`/`describe...VersionProblem`/
   `assertReadable...`/`parse...` boilerplate `retention.ts` established.
   Fields: `matchId`, `playerId` (`liveMatchParticipantIdSchema`, the seat-
   derived id — never a display name), `turn`, `phase`, `activePlayerId`,
@@ -1908,7 +1908,7 @@ combat and Reaction context, without changing the engine concession."
   live `MatchState` and parses them through `liveMatchPreActionCaptureSchema`
   rather than trusting the object by hand.
 - `apps/multiplayer-server/src/lobby.ts`: added `Lobby.lastPreActionCapture:
-  LiveMatchPreActionCapture | null`, doc-commented in `lastConcedeOrigin`'s
+LiveMatchPreActionCapture | null`, doc-commented in `lastConcedeOrigin`'s
   own style — `null` until a concede is attempted, stale values after a
   rejected attempt are harmless for the same reason.
 - `apps/multiplayer-server/src/match-server.ts`: calls `capturePreActionState`
@@ -1972,9 +1972,9 @@ and deck provenance needed by later exposure-aware analysis."
   `{ turn, startSequence, endSequence }`, contiguous by construction
   (`previousTurnWindow.endSequence` is always `currentTurnWindow.startSequence
   - 1`), with `previousTurnWindow` null on turn 0 or 1. Assigns no cause
-  anywhere — purely structural distances, never a flag on which event
-  "caused" anything, per CLAUDE.md's product rules and the milestone's own
-  exclusion.
+    anywhere — purely structural distances, never a flag on which event
+    "caused" anything, per CLAUDE.md's product rules and the milestone's own
+    exclusion.
 - `packages/match-telemetry/src/event-window.test.ts` (new, 5 tests): empty
   window before any turn starts; no previous window on turn 1; current/
   previous windows placed correctly and contiguously on turn 2; events/
@@ -1982,7 +1982,7 @@ and deck provenance needed by later exposure-aware analysis."
   window-size truncation always ends at the capture sequence.
 - `packages/match-telemetry/src/pre-action-capture.ts`: bumped
   `LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION` 1→2. Added `eventWindow:
-  liveMatchEventWindowSchema`, `provenance: liveMatchProvenanceSchema` (content
+liveMatchEventWindowSchema`, `provenance: liveMatchProvenanceSchema` (content
   identity, reused verbatim — the same shape `liveMatchEnvelopeSchema` already
   uses) and `deck: liveMatchDeckSnapshotSchema` (the conceding player's own
   deck, reused verbatim via `freezeLiveMatchDeckSnapshot`). `superRefine` cross-
@@ -2020,7 +2020,7 @@ and deck provenance needed by later exposure-aware analysis."
 - `apps/multiplayer-server/src/match-server.ts`: both call sites
   (`submit_action`'s explicit `concede` branch and `leave()`) now pass
   `{ softwareVersion: LIVE_MATCH_SOFTWARE_VERSION, deck: { commanderId:
-  seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] } }` as the
+seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] } }` as the
   new third argument.
 - `apps/multiplayer-server/src/match-server.test.ts`: extended both existing
   M08.23A wiring tests (explicit concede and leave) with assertions that
@@ -2049,7 +2049,7 @@ and make duplicate completion/retry capture idempotent."
 
 - `packages/match-telemetry/src/schema.ts`: added
   `LIVE_MATCH_VOLUNTARY_TERMINATION_ORIGINS` — `['concede_action',
-  'concede_leave'] as const satisfies readonly LiveMatchTerminationOrigin[]`
+'concede_leave'] as const satisfies readonly LiveMatchTerminationOrigin[]`
   — plus `liveMatchVoluntaryTerminationOriginSchema` and its inferred type,
   placed directly under `LIVE_MATCH_TERMINATION_ORIGINS` so the two-value
   voluntary subset is derived from, not restated alongside, the six-value
@@ -2061,7 +2061,7 @@ and make duplicate completion/retry capture idempotent."
   since M08.23A. Assigns no cause: `origin` names which mechanism the player
   used (button press vs. leaving), never why they used it.
 - `packages/match-telemetry/src/pre-action-capture.test.ts`: added `origin:
-  'concede_action'` to `validCapture()` and 2 new tests — a non-voluntary
+'concede_action'` to `validCapture()` and 2 new tests — a non-voluntary
   origin (`disconnect_timeout`) is refused by the strict schema, and the
   leave-triggered origin round-trips.
 - `packages/match-telemetry/src/index.ts`: exported the three new `schema.ts`
@@ -2163,7 +2163,7 @@ public/client/unauthorized paths cannot obtain them."
   both on and off.
 - `apps/multiplayer-server/src/live-match-record.ts`: `buildLiveMatchRecord`
   now gates the existing `voluntaryPreActionCaptureFor(envelope,
-  input.preActionCapture)` call behind `input.retention.preActionCapture` —
+input.preActionCapture)` call behind `input.retention.preActionCapture` —
   `null` when the dial is off, regardless of what the lobby captured.
   `voluntaryPreActionCaptureFor` still proves voluntariness and freshness
   exactly as M08.23C left it; deciding whether to keep the result at all is
@@ -2235,3 +2235,103 @@ checkbox and evidence note are updated; the M08.23 tranche checklist, the
 root status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
 are untouched, per the normal-slice rule. Next slice: **M08.23E — Tranche
 close.**
+
+## M08.23E — Tranche close
+
+Revalidated the combined M08.23 tranche diff (`2f9faf8..1378c9d` — 20 files:
+`event-window.ts`/`.test.ts`, `pre-action-capture.ts`/`.test.ts`,
+`retention.ts`/`.test.ts`, `schema.ts` and `index.ts` in
+`packages/match-telemetry`; `pre-action-capture.ts`, `lobby.ts`,
+`match-server.ts`/`.test.ts`, `live-match-record.ts`/`.test.ts`,
+`live-match-sink.ts`/`.test.ts`, `live-match-store.ts`/`.test.ts` and
+`bot-lobby.test.ts` in `apps/multiplayer-server`; new
+`packages/protocol/src/boundary.test.ts`) against this milestone's
+**Acceptance** line — explicit concede, leave concede, pending choice, combat
+and reaction window, recent-event window, timeout exclusion, idempotence,
+retention and hidden-artifact authorization tests all present, matching the
+M08.23A–D evidence notes with no gap found.
+
+`npx vitest run packages/match-telemetry apps/multiplayer-server
+packages/protocol/src/boundary.test.ts` reproduced 26 test files, 480 tests,
+all pass; `npm run typecheck` clean on `@tcg/match-telemetry`,
+`@tcg/multiplayer-server` and `@tcg/protocol` individually. `npm run
+check:consistency` and `npm run audit:check` both pass clean with no
+regeneration needed (the audit was already current). `npm run verify` first
+failed at `format:check` on 12 files: the 11 tranche source/test files
+`format:check` had accumulated across M08.23A–D plus `.claude/current-work.md`
+— none reformatted at slice time, since a normal slice runs only its focused
+checks, not the full gate — and `.claude/settings.json` (an unrelated,
+already-committed formatting drift from the `update settings` commit). Ran
+`prettier --write` on exactly those 12 files; read every diff and confirmed
+reflow/reindent/quote-normalization only (long conditionals and object
+literals wrapped, an empty `"deny": []` array collapsed to one line), no
+behavior change. Re-ran the full `npm run verify`: passes clean (233 test
+files, 4749 tests, typecheck, lint, format, content validation, build).
+
+Updated `docs/milestones/M08-ai-lab-and-player-meta.md`: marked M08.23E and
+the M08.23 checklist's three items complete, with an evidence note recording
+the revalidation and the format-only fix. Root status row
+(`IMPLEMENTATION_PLAN.md`) and the M08.23 tranche's completion are left
+untouched until `tcg-reviewer` returns `VERDICT: APPROVE`, per CLAUDE.md.
+
+### Review/fix cycle 1
+
+`tcg-reviewer`'s review of `2f9faf8..1378c9d` plus the M08.23E close-record
+diff returned one HIGH, one MEDIUM and one LOW finding.
+
+**HIGH (fixed).** `turnStartSequence` (`event-window.ts`) returned `0` both
+for "turn 0" and for "this turn's `turn_started` not logged yet," so a
+capture taken mid-Ready-Step — `beginTurn` sets `MatchState.turn` before
+`runReadyStep` runs, but `finishReadyStep` alone emits `turn_started`, so a
+paused costed `replace_ready` choice (shipped content: `temporal_anchor.json`)
+leaves a real gap — derived a negative `endSequence`, failing the schema's
+`min(0)` inside an uncaught `.parse()` and aborting the concede it was meant
+to capture context for. Independently confirmed reachable by reading
+`flow.ts`'s `beginTurn`/`runReadyStep`/`finishReadyStep` and
+`temporal_anchor.json`'s `replace_ready`/`energyCost: 1` before fixing.
+
+Fix: `turnStartSequence` now returns `null` (not `0`) when the turn's
+`turn_started` is not yet logged; `deriveLiveMatchEventWindow` falls the
+current window's `startSequence` back to `sequence` in that case;
+`previousTurnWindow.endSequence` is now `currentStart - 1` directly (not
+independently clamped), so the schema's
+`previousTurnWindow.endSequence + 1 === currentTurnWindow.startSequence`
+contiguity check holds unconditionally rather than by coincidence. (Rejected
+an earlier `Math.max(...)` clamp attempt on `endSequence` — it would have
+decoupled `endSequence` from `currentStart` and could reintroduce a
+contiguity-check failure in the same degenerate case it was meant to guard.)
+
+Defense-in-depth: added `capturePreActionStateContained` to
+`match-server.ts`, wrapping both `capturePreActionState` call sites
+(`submit_action`'s concede branch and `leave()`) the same way
+`publishLiveMatchRecord` already contains its own builder — any future
+unanticipated capture failure now collapses to `null` into the shared
+`#liveMatchSinkFailures` list instead of throwing into the concede path.
+
+**MEDIUM (fixed).** The M08.23E evidence note claimed pending-choice coverage
+that did not exist — no test exercised a capture during a real open
+`pendingChoice`. Corrected the evidence note; added a regression test to
+`pre-action-capture.test.ts` that builds a capture with a real
+`pendingChoiceFixture` populated, `turn`/`sequence` set to the exact
+mid-Ready-Step gap, and `eventWindow` from `deriveLiveMatchEventWindow`
+directly, then asserts `liveMatchPreActionCaptureSchema.parse()` does not
+throw. Also added the pure-derivation-level case to `event-window.test.ts`.
+
+**LOW.** Accepted as informational; no fix required in this tranche.
+
+Re-ran focused tests: 99 tests in `@tcg/match-telemetry` (was 98),
+381 in `@tcg/multiplayer-server`; `npm run typecheck` clean on
+`@tcg/match-telemetry`, `@tcg/multiplayer-server` and `@tcg/protocol`. Re-ran
+`npm run check:consistency` and `npm run audit:check`: both pass clean. Re-ran
+`npm run verify`: passes clean (233 test files, 4751 tests — up 2 from the
+new mid-Ready-Step regression tests — typecheck, lint, format, content
+validation, build). One format:check hitch along the way, unrelated to the
+fix itself: the milestone file's evidence-note edit split an inline code span
+(`` `npm run check:consistency` ``) across a line break, which made
+`prettier --write`/`--check` disagree with each other run to run (leading
+whitespace on a continuation line inside a code span is literal content, not
+indentation) — reworded that one sentence so the span stays on one line;
+confirmed two consecutive `--write` passes both report "unchanged". No test
+or source semantics involved. `tcg-reviewer` (same agent, resumed) is being
+asked for a bounded recheck of only these two findings and the new diff —
+review/fix cycle 1 of the CLAUDE.md-mandated maximum of 2.

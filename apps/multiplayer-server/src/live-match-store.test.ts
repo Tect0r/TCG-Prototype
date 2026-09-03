@@ -180,8 +180,18 @@ describe('LiveMatchFileStore (M08.22B)', () => {
 
   it('keeps separate matches in separate directories', () => {
     const store = new LiveMatchFileStore({ rootDirectory: root });
-    store.receive({ envelope: envelopeFor('match_a'), rawEvent: null, replay: null, preActionCapture: null });
-    store.receive({ envelope: envelopeFor('match_b'), rawEvent: null, replay: null, preActionCapture: null });
+    store.receive({
+      envelope: envelopeFor('match_a'),
+      rawEvent: null,
+      replay: null,
+      preActionCapture: null,
+    });
+    store.receive({
+      envelope: envelopeFor('match_b'),
+      rawEvent: null,
+      replay: null,
+      preActionCapture: null,
+    });
 
     expect(existsSync(join(root, 'match_a', 'envelope.json'))).toBe(true);
     expect(existsSync(join(root, 'match_b', 'envelope.json'))).toBe(true);
