@@ -1448,3 +1448,26 @@ emptying its `permissions.deny` list) remains untouched and unstaged, per
 CLAUDE.md's "preserve unrelated and user-owned changes"; it was `git
 stash`-ed for the verify run so it could not mask this tranche's own gate
 result, then restored immediately after.
+
+The fix set (`package-lock.json`, `IMPLEMENTATION_PLAN.md`, the milestone
+file, both test files) was committed as `95d13c0` and pushed. The same
+`tcg-reviewer` review was resumed for the mandated bounded recheck — scoped
+explicitly to only the four prior findings and the `ed11511..95d13c0` diff,
+not a fresh review of the whole tranche. It independently re-verified each
+fix (its own `npm ci --dry-run`, `npm query .workspace`, `npx vitest run
+packages/match-telemetry`, `check:consistency`, `audit:check` runs) rather
+than trusting the commit message, and returned **`VERDICT: APPROVE`** with no
+material findings. It noted two residual, non-blocking observations, both
+already correctly recorded rather than hidden: the "older build" refusal
+branches for the two retention artifact schemas stay structurally untested
+until either version ever ships past 1 (unavoidable — there is no real older
+version to construct today), and `docs/status-audit.md`'s commit-hash row
+reads `ed11511` because it was regenerated before `95d13c0` existed, which
+`audit:check` still treats as current since the row is a test-count
+snapshot, not a HEAD pointer.
+
+M08.21 is closed. Per CLAUDE.md, the root status row and "next bounded task"
+section in `IMPLEMENTATION_PLAN.md` now name **M08.22A — Injectable
+failure-contained sink** (first slice of "M08.22 — Multiplayer telemetry
+sink") as the next unit. Per the user's explicit instruction for this
+session, M08.22A itself is not started here.
