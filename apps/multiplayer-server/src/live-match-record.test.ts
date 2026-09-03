@@ -315,9 +315,11 @@ describe('lifecycle integration (M08.22C)', () => {
     );
     expect(records[0]?.envelope.seats.map((seat) => seat.kind)).toEqual(['human', 'human']);
     expect(harness.server.liveMatchSinkFailures).toEqual([]);
+    // A rules victory is not a concession: no pre-action capture accompanies it (M08.23C).
+    expect(records[0]?.preActionCapture).toBeNull();
   });
 
-  it('records concede_leave when a seat leaves', () => {
+  it('records concede_leave when a seat leaves, with a matching pre-action capture (M08.23C)', () => {
     const { sink, records } = capturingSink();
     const harness = createHarness({ liveMatchSink: sink });
     startMatch(harness);
@@ -328,9 +330,12 @@ describe('lifecycle integration (M08.22C)', () => {
     expect(records).toHaveLength(1);
     expect(records[0]?.envelope.terminationOrigin).toBe('concede_leave');
     expect(records[0]?.envelope.outcome?.reason).toBe('concede');
+    expect(records[0]?.preActionCapture?.origin).toBe('concede_leave');
+    expect(records[0]?.preActionCapture?.playerId).toBe('player_2');
+    expect(records[0]?.preActionCapture?.matchId).toBe(records[0]?.envelope.matchId);
   });
 
-  it('records concede_action for an explicit concede', () => {
+  it('records concede_action for an explicit concede, with a matching pre-action capture (M08.23C)', () => {
     const { sink, records } = capturingSink();
     const harness = createHarness({ liveMatchSink: sink });
     startMatch(harness);
@@ -340,9 +345,11 @@ describe('lifecycle integration (M08.22C)', () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]?.envelope.terminationOrigin).toBe('concede_action');
+    expect(records[0]?.preActionCapture?.origin).toBe('concede_action');
+    expect(records[0]?.preActionCapture?.playerId).toBe('player_2');
   });
 
-  it('records disconnect_timeout when the grace window expires', () => {
+  it('records disconnect_timeout when the grace window expires, without a pre-action capture (M08.23C)', () => {
     const { sink, records } = capturingSink();
     const harness = createHarness({ liveMatchSink: sink });
     startMatch(harness);
@@ -354,6 +361,11 @@ describe('lifecycle integration (M08.22C)', () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]?.envelope.terminationOrigin).toBe('disconnect_timeout');
+    // Timeout never sets `lastPreActionCapture` at all, but this also proves
+    // the record-building gate: even a stale capture from an earlier concede
+    // attempt on this lobby could never leak into a timeout's record, since
+    // its `origin` would not equal `terminationOrigin`.
+    expect(records[0]?.preActionCapture).toBeNull();
   });
 
   it('still records the right origin after a mid-match reconnect', () => {
@@ -462,5 +474,23 @@ describe('lifecycle integration (M08.22C)', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('attaches exactly the lobby\'s own pre-action capture, unmodified (M08.23C)', () => {
+    const { sink, records } = capturingSink();
+    const harness = createHarness({ liveMatchSink: sink });
+    startMatch(harness);
+    const [, guest] = harness.seats as [FakeConnection, FakeConnection];
+
+    act(harness, guest, { type: 'concede', playerId: 'player_2' });
+    expect(records).toHaveLength(1);
+    // `voluntaryPreActionCaptureFor` (`live-match-record.ts`) is a gate over
+    // already-immutable inputs — matchId, origin, loser membership — never new
+    // state, so the attached capture is exactly what the lobby captured at
+    // concede time, byte for byte. That equality is what keeps a duplicate
+    // build from the same lobby idempotent, the same way `LiveMatchFileStore`'s
+    // matchId-keyed overwrite already proves idempotence at the storage layer.
+    const lobby = harness.server.lobbyByCode(harness.inviteCode);
+    expect(lobby?.lastPreActionCapture).toEqual(records[0]?.preActionCapture);
   });
 });

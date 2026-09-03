@@ -1191,6 +1191,7 @@ export class MatchServer {
       lobby.lastPreActionCapture = capturePreActionState(lobby.state, action.playerId, {
         softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
         deck: { commanderId: seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] },
+        origin: 'concede_action',
       });
     }
 
@@ -1223,6 +1224,7 @@ export class MatchServer {
       lobby.lastPreActionCapture = capturePreActionState(lobby.state, PLAYER_ID_BY_SEAT[seat.seatId], {
         softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
         deck: { commanderId: seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] },
+        origin: 'concede_leave',
       });
       const result = applyAction(
         lobby.state,
@@ -1516,6 +1518,7 @@ export class MatchServer {
         seats,
         terminationOrigin,
         retention,
+        preActionCapture: lobby.lastPreActionCapture,
       });
       if (record) this.ingestLiveMatch(record);
     } catch (error) {

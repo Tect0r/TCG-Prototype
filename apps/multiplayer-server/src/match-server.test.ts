@@ -507,7 +507,7 @@ describe('match termination', () => {
     expect(view.result?.winnerId).toBe('player_1');
   });
 
-  it('captures the pre-action state immediately before an explicit concede (M08.23A/M08.23B)', () => {
+  it('captures the pre-action state immediately before an explicit concede (M08.23A/M08.23B/M08.23C)', () => {
     const harness = createHarness();
     startMatch(harness);
     act(harness, harness.host, { type: 'mulligan', playerId: 'player_1', returnInstanceIds: [] });
@@ -523,6 +523,7 @@ describe('match termination', () => {
     expect(capture).not.toBeNull();
     expect(capture?.matchId).toBe(before.matchId);
     expect(capture?.playerId).toBe('player_2');
+    expect(capture?.origin).toBe('concede_action');
     expect(capture?.turn).toBe(before.turn);
     expect(capture?.phase).toBe(before.phase);
     expect(capture?.activePlayerId).toBe(before.activePlayerId);
@@ -545,7 +546,7 @@ describe('match termination', () => {
     expect(capture?.deck.commanderId).toBe('prototype_commander_blue_red');
   });
 
-  it('captures the pre-action state immediately before a leave-triggered concede (M08.23A/M08.23B)', () => {
+  it('captures the pre-action state immediately before a leave-triggered concede (M08.23A/M08.23B/M08.23C)', () => {
     const harness = createHarness();
     startMatch(harness);
     act(harness, harness.host, { type: 'mulligan', playerId: 'player_1', returnInstanceIds: [] });
@@ -561,6 +562,7 @@ describe('match termination', () => {
     expect(capture).not.toBeNull();
     expect(capture?.matchId).toBe(before.matchId);
     expect(capture?.playerId).toBe('player_2');
+    expect(capture?.origin).toBe('concede_leave');
     expect(capture?.turn).toBe(before.turn);
     expect(capture?.phase).toBe(before.phase);
     expect(capture?.activePlayerId).toBe(before.activePlayerId);

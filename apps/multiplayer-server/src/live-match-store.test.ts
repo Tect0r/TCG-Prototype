@@ -87,6 +87,7 @@ describe('LiveMatchFileStore (M08.22B)', () => {
       envelope: envelopeFor('match_001'),
       rawEvent: null,
       replay: null,
+      preActionCapture: null,
     };
 
     store.receive(record);
@@ -106,6 +107,7 @@ describe('LiveMatchFileStore (M08.22B)', () => {
       envelope: envelopeFor('match_002'),
       rawEvent: rawEventFor('match_002'),
       replay: replayFor('match_002'),
+      preActionCapture: null,
     };
 
     store.receive(record);
@@ -123,8 +125,8 @@ describe('LiveMatchFileStore (M08.22B)', () => {
 
   it('keeps separate matches in separate directories', () => {
     const store = new LiveMatchFileStore({ rootDirectory: root });
-    store.receive({ envelope: envelopeFor('match_a'), rawEvent: null, replay: null });
-    store.receive({ envelope: envelopeFor('match_b'), rawEvent: null, replay: null });
+    store.receive({ envelope: envelopeFor('match_a'), rawEvent: null, replay: null, preActionCapture: null });
+    store.receive({ envelope: envelopeFor('match_b'), rawEvent: null, replay: null, preActionCapture: null });
 
     expect(existsSync(join(root, 'match_a', 'envelope.json'))).toBe(true);
     expect(existsSync(join(root, 'match_b', 'envelope.json'))).toBe(true);
@@ -136,6 +138,7 @@ describe('LiveMatchFileStore (M08.22B)', () => {
       envelope: envelopeFor('match_003'),
       rawEvent: null,
       replay: null,
+      preActionCapture: null,
     };
 
     expect(() => store.receive(record)).not.toThrow();
@@ -151,10 +154,10 @@ describe('LiveMatchFileStore (M08.22B)', () => {
   it('a retry with different content for the same matchId overwrites, keyed by matchId alone', () => {
     const store = new LiveMatchFileStore({ rootDirectory: root });
     const first = envelopeFor('match_004');
-    store.receive({ envelope: first, rawEvent: null, replay: null });
+    store.receive({ envelope: first, rawEvent: null, replay: null, preActionCapture: null });
 
     const retried: LiveMatchEnvelope = { ...first, actionCount: first.actionCount + 3 };
-    store.receive({ envelope: retried, rawEvent: null, replay: null });
+    store.receive({ envelope: retried, rawEvent: null, replay: null, preActionCapture: null });
 
     const matchDirectory = join(root, 'match_004');
     const written = parseLiveMatchEnvelope(
@@ -169,6 +172,7 @@ describe('LiveMatchFileStore (M08.22B)', () => {
       envelope: envelopeFor('../escape'),
       rawEvent: null,
       replay: null,
+      preActionCapture: null,
     };
 
     expect(() => store.receive(record)).toThrow(/not safe to use as a filesystem path segment/);
@@ -181,6 +185,7 @@ describe('LiveMatchFileStore (M08.22B)', () => {
       envelope: envelopeFor('../escape'),
       rawEvent: null,
       replay: null,
+      preActionCapture: null,
     };
 
     expect(() => server.ingestLiveMatch(record)).not.toThrow();

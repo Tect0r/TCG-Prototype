@@ -6,6 +6,7 @@ import {
   freezeLiveMatchDeckSnapshot,
   liveMatchPreActionCaptureSchema,
   type LiveMatchPreActionCapture,
+  type LiveMatchVoluntaryTerminationOrigin,
 } from '@tcg/match-telemetry';
 import { CURRENT_VERSIONS } from '@tcg/protocol';
 import type { MatchState, PlayerId } from '@tcg/rules-engine';
@@ -17,18 +18,20 @@ export interface PreActionCaptureDeckInput {
 }
 
 /**
- * Builds one player's pre-action capture (M08.23A, widened M08.23B) from a
- * live `MatchState`.
+ * Builds one player's pre-action capture (M08.23A, widened M08.23B, given its
+ * `origin` in M08.23C) from a live `MatchState`.
  *
  * A pure function over the live `state`, the conceding `playerId` and the
- * caller-supplied build/deck facts the lobby already holds — the same
+ * caller-supplied build/deck/origin facts the lobby already holds — the same
  * no-clock/no-lobby-reference/no-side-effect shape `buildLiveMatchRecord`
  * (`./live-match-record.ts`) established for the finished-match envelope.
  * `match-server.ts` calls this at the two points that can produce a concede —
  * `submit_action` with an explicit `concede`, and `leave()` — immediately
  * before `applyAction`, so the engine's own concede resolution (which clears
  * `pendingChoice`, ends `combat` and closes any open `reactionWindow`) never
- * has a chance to overwrite what it captures.
+ * has a chance to overwrite what it captures. Each call site passes its own
+ * fixed `origin` (`'concede_action'` or `'concede_leave'`) rather than this
+ * function inferring one, since it has no way to tell the two apart itself.
  *
  * Returns `null`, not a thrown error, when the conceding seat's deck never
  * resolved a Commander — the same clean "nothing to record" case
@@ -46,7 +49,11 @@ export interface PreActionCaptureDeckInput {
 export function capturePreActionState(
   state: MatchState,
   playerId: PlayerId,
-  context: { readonly softwareVersion: string; readonly deck: PreActionCaptureDeckInput },
+  context: {
+    readonly softwareVersion: string;
+    readonly deck: PreActionCaptureDeckInput;
+    readonly origin: LiveMatchVoluntaryTerminationOrigin;
+  },
 ): LiveMatchPreActionCapture | null {
   if (context.deck.commanderId === null) return null;
 
@@ -61,6 +68,7 @@ export function capturePreActionState(
     schemaVersion: LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION,
     matchId: state.matchId,
     playerId,
+    origin: context.origin,
     turn: state.turn,
     phase: state.phase,
     activePlayerId: state.activePlayerId,

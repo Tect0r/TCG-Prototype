@@ -1,5 +1,6 @@
 import type {
   LiveMatchEnvelope,
+  LiveMatchPreActionCapture,
   LiveMatchRawEventArtifact,
   LiveMatchReplayArtifact,
 } from '@tcg/match-telemetry';
@@ -9,12 +10,15 @@ import type {
  * for this match. `rawEvent` and `replay` are `null` exactly when
  * `decideLiveMatchRetention` (M08.21B) chose not to keep that tier — their
  * presence is a retention decision already made, not a choice for a sink to
- * second-guess.
+ * second-guess. `preActionCapture` (M08.23C) is `null` for every non-voluntary
+ * termination and is not yet governed by a retention tier of its own — that is
+ * M08.23D's job, not this one.
  */
 export interface LiveMatchRecord {
   readonly envelope: LiveMatchEnvelope;
   readonly rawEvent: LiveMatchRawEventArtifact | null;
   readonly replay: LiveMatchReplayArtifact | null;
+  readonly preActionCapture: LiveMatchPreActionCapture | null;
 }
 
 /**

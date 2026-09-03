@@ -52,7 +52,7 @@ function validEnvelope(): LiveMatchEnvelope {
 }
 
 function recordOf(): LiveMatchRecord {
-  return { envelope: validEnvelope(), rawEvent: null, replay: null };
+  return { envelope: validEnvelope(), rawEvent: null, replay: null, preActionCapture: null };
 }
 
 describe('the live-match sink boundary (M08.22A)', () => {

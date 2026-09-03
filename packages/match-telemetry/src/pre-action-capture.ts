@@ -11,6 +11,7 @@ import {
   liveMatchDeckSnapshotSchema,
   liveMatchParticipantIdSchema,
   liveMatchProvenanceSchema,
+  liveMatchVoluntaryTerminationOriginSchema,
 } from './schema.js';
 
 /**
@@ -44,11 +45,14 @@ import {
  * exposure-adjusted aggregates later (M08.24D). `provenance` and `deck`
  * (also M08.23B) place the capture against the content/rules build and the
  * conceding player's own deck, reusing `@tcg/deck`'s and this package's own
- * verbatim shapes rather than restating them. `M08.23C` still owes the
- * explicit-vs-leave distinction; this contract does not carry it.
+ * verbatim shapes rather than restating them. `origin` (M08.23C) distinguishes
+ * an explicit `concede` action from a `leave()`-triggered concession — the
+ * same two-value split `LIVE_MATCH_VOLUNTARY_TERMINATION_ORIGINS` draws on the
+ * finished-match envelope's own `terminationOrigin` — but still assigns no
+ * cause: it names which mechanism the player used, never why.
  */
 
-export const LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION = 2;
+export const LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION = 3;
 
 /** Whether `found` is a readable schema version this build is simply too new or old to read. */
 export function isReadableLiveMatchPreActionCaptureVersion(found: unknown): found is number {
@@ -93,6 +97,8 @@ export const liveMatchPreActionCaptureSchema = z
     matchId: z.string().min(1).max(128),
     /** The seat-derived id of the player whose concede or leave this captures. */
     playerId: liveMatchParticipantIdSchema,
+    /** Which voluntary mechanism the player used (M08.23C): an explicit concede action, or leaving the match. */
+    origin: liveMatchVoluntaryTerminationOriginSchema,
     turn: z.number().int().min(0),
     phase: matchPhaseSchema,
     activePlayerId: liveMatchParticipantIdSchema,

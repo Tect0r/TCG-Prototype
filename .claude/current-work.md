@@ -2040,3 +2040,96 @@ checkbox and evidence note are updated; the M08.23 tranche checklist, the
 root status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
 are untouched, per the normal-slice rule. Next slice: **M08.23C — Termination
 integration and idempotence.**
+
+## M08.23C — Termination integration and idempotence
+
+Implemented the milestone's exact scope line: "Distinguish the two voluntary
+origins in analytics, exclude timeout/disconnect from voluntary snapshots,
+and make duplicate completion/retry capture idempotent."
+
+- `packages/match-telemetry/src/schema.ts`: added
+  `LIVE_MATCH_VOLUNTARY_TERMINATION_ORIGINS` — `['concede_action',
+  'concede_leave'] as const satisfies readonly LiveMatchTerminationOrigin[]`
+  — plus `liveMatchVoluntaryTerminationOriginSchema` and its inferred type,
+  placed directly under `LIVE_MATCH_TERMINATION_ORIGINS` so the two-value
+  voluntary subset is derived from, not restated alongside, the six-value
+  full list and cannot drift from it.
+- `packages/match-telemetry/src/pre-action-capture.ts`: bumped
+  `LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION` 2→3. Added a required
+  `origin: liveMatchVoluntaryTerminationOriginSchema` field — the
+  explicit-vs-leave distinction the doc comment had flagged as still owed
+  since M08.23A. Assigns no cause: `origin` names which mechanism the player
+  used (button press vs. leaving), never why they used it.
+- `packages/match-telemetry/src/pre-action-capture.test.ts`: added `origin:
+  'concede_action'` to `validCapture()` and 2 new tests — a non-voluntary
+  origin (`disconnect_timeout`) is refused by the strict schema, and the
+  leave-triggered origin round-trips.
+- `packages/match-telemetry/src/index.ts`: exported the three new `schema.ts`
+  symbols (`LIVE_MATCH_VOLUNTARY_TERMINATION_ORIGINS`,
+  `liveMatchVoluntaryTerminationOriginSchema`, type
+  `LiveMatchVoluntaryTerminationOrigin`).
+- `apps/multiplayer-server/src/pre-action-capture.ts`: widened
+  `capturePreActionState`'s `context` with a required
+  `origin: LiveMatchVoluntaryTerminationOrigin`, passed straight through into
+  the schema-validated object. The function does not infer `origin` itself —
+  it has no way to tell an explicit concede from a leave apart — so each
+  caller supplies its own fixed value.
+- `apps/multiplayer-server/src/match-server.ts`: both call sites now pass
+  `origin: 'concede_action'` (`submit_action`'s explicit `concede` branch) and
+  `origin: 'concede_leave'` (`leave()`) alongside the existing
+  `softwareVersion`/`deck` context. `publishLiveMatchRecord` now also passes
+  `preActionCapture: lobby.lastPreActionCapture` into `buildLiveMatchRecord`.
+- `apps/multiplayer-server/src/live-match-record.ts`: added
+  `preActionCapture: LiveMatchPreActionCapture | null` to
+  `LiveMatchRecordInput`, and a new internal pure gate,
+  `voluntaryPreActionCaptureFor(envelope, capture)`. Requiring
+  `capture.origin === envelope.terminationOrigin` does double duty: it picks
+  the matching one of the two concessions apart, and — since `capture.origin`
+  can only ever hold one of the two voluntary values — it also proves the
+  termination was voluntary at all, so `disconnect_timeout`, `rules_victory`,
+  `server_failure` and `abandoned_unrecordable` can never carry a capture
+  through this gate. Also checks `capture.matchId === envelope.matchId`
+  (guards a stale capture surviving into a different match on a reused
+  lobby) and that the captured `playerId` is one of `envelope.outcome`'s
+  losers. `buildLiveMatchRecord` calls this and returns the result on the
+  record's new `preActionCapture` field. The gate is a pure function of
+  already-immutable inputs — no new mutable dedup state — the same
+  idempotence-via-pure-path-function shape `LiveMatchFileStore` already uses
+  for a duplicate publish at the storage layer; a repeated build from the
+  same lobby fields always returns the same result, which is what "make
+  duplicate completion/retry capture idempotent" needed, without inventing
+  any new state to do it.
+- `apps/multiplayer-server/src/live-match-sink.ts`: added
+  `preActionCapture: LiveMatchPreActionCapture | null` to the `LiveMatchRecord`
+  interface.
+- `apps/multiplayer-server/src/live-match-sink.test.ts`: added
+  `preActionCapture: null` to the single `recordOf()` helper (fixes all 4
+  call sites at once).
+- `apps/multiplayer-server/src/live-match-store.test.ts`: added
+  `preActionCapture: null` to all 9 literal `LiveMatchRecord` constructions
+  across its tests. `LiveMatchFileStore` itself is untouched — persisting
+  this artifact to disk is M08.23D's job (hidden-artifact retention and
+  authorization), not this one.
+- `apps/multiplayer-server/src/match-server.test.ts`: extended both existing
+  M08.23A/B wiring tests with an assertion that `capture?.origin` is
+  `'concede_action'`/`'concede_leave'` respectively.
+- `apps/multiplayer-server/src/live-match-record.test.ts`: extended the
+  `rules_victory` and `disconnect_timeout` lifecycle tests with an assertion
+  that `records[0]?.preActionCapture` is `null`; extended the `concede_leave`
+  and `concede_action` lifecycle tests with assertions that
+  `preActionCapture?.origin`/`playerId` match what actually happened; added
+  one new test proving the attached capture equals exactly the lobby's own
+  captured snapshot, unmodified — the equality that keeps a duplicate build
+  idempotent without any new mechanism to prove it.
+
+**Verification:** `npx vitest run packages/match-telemetry apps/multiplayer-server`
+— 25 test files, 476 tests, all pass. `npm run typecheck --workspace=@tcg/match-telemetry`
+and `--workspace=@tcg/multiplayer-server` both clean. Per CLAUDE.md, the full
+`npm run verify`/`check:consistency`/`audit:check` gates are reserved for
+tranche close (M08.23E) and were not run.
+
+Slice complete. `docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.23C
+checkbox and evidence note are updated; the M08.23 tranche checklist, the
+root status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
+are untouched, per the normal-slice rule. Next slice: **M08.23D — Hidden-
+artifact retention and authorization.**

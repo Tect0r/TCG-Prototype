@@ -122,6 +122,26 @@ export const liveMatchTerminationOriginSchema = z.enum(LIVE_MATCH_TERMINATION_OR
 export type LiveMatchTerminationOrigin = z.infer<typeof liveMatchTerminationOriginSchema>;
 
 /**
+ * The two termination origins a player actually chooses (M08.23C): an
+ * explicit concede action, or leaving the match. Derived from — not
+ * duplicated alongside — `LIVE_MATCH_TERMINATION_ORIGINS` above, so the two
+ * lists cannot drift apart. `disconnect_timeout` is a grace-window expiry
+ * nobody chose, and `rules_victory`/`server_failure`/`abandoned_unrecordable`
+ * are not concessions at all; only these two ever accompany a pre-action
+ * capture.
+ */
+export const LIVE_MATCH_VOLUNTARY_TERMINATION_ORIGINS = [
+  'concede_action',
+  'concede_leave',
+] as const satisfies readonly LiveMatchTerminationOrigin[];
+export const liveMatchVoluntaryTerminationOriginSchema = z.enum(
+  LIVE_MATCH_VOLUNTARY_TERMINATION_ORIGINS,
+);
+export type LiveMatchVoluntaryTerminationOrigin = z.infer<
+  typeof liveMatchVoluntaryTerminationOriginSchema
+>;
+
+/**
  * Which termination origins are consistent with a given engine
  * `MatchEndReason`, when a `MatchResult` exists at all. `concede` is the only
  * reason with more than one valid origin — that ambiguity is exactly what this

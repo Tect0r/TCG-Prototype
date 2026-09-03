@@ -4134,9 +4134,52 @@ AI continuation from the state.
       CLAUDE.md's product rules require. 473 focused tests pass across
       `@tcg/match-telemetry` and `@tcg/multiplayer-server`; both packages
       typecheck clean.
-- [ ] **M08.23C — Termination integration and idempotence.** Distinguish the two
+- [x] **M08.23C — Termination integration and idempotence.** Distinguish the two
       voluntary origins in analytics, exclude timeout/disconnect from voluntary
       snapshots, and make duplicate completion/retry capture idempotent.
+      Evidence: `packages/match-telemetry/src/schema.ts` adds
+      `LIVE_MATCH_VOLUNTARY_TERMINATION_ORIGINS`/`liveMatchVoluntaryTerminationOriginSchema`
+      as a derived two-value subset (`concede_action`/`concede_leave`) of
+      `LIVE_MATCH_TERMINATION_ORIGINS`, `as const satisfies` against that array
+      so the two lists cannot drift apart. `pre-action-capture.ts` bumps
+      `LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION` 2→3 and adds a required
+      `origin` field of that voluntary-only type — the explicit-vs-leave
+      distinction M08.23B's own doc comment flagged as still owed. 2 new
+      contract tests: a non-voluntary origin (`disconnect_timeout`) is refused
+      by the schema outright, and the leave origin round-trips.
+      `apps/multiplayer-server/src/pre-action-capture.ts` widens
+      `capturePreActionState`'s context with `origin`; both `match-server.ts`
+      call sites pass their own fixed value (`'concede_action'` for
+      `submit_action`'s explicit concede, `'concede_leave'` for `leave()`) —
+      the builder never infers one, since it has no way to tell the two apart
+      itself. `live-match-record.ts` adds `preActionCapture` to
+      `LiveMatchRecordInput` and a new pure gate, `voluntaryPreActionCaptureFor`:
+      requiring `capture.origin === envelope.terminationOrigin` both matches
+      the right concession and, since `origin` only ever holds one of the two
+      voluntary values, proves the termination was voluntary at all — so
+      `disconnect_timeout`/`rules_victory`/`server_failure`/
+      `abandoned_unrecordable` can never carry a capture — plus a `matchId`
+      match against a stale capture on a reused lobby and a check that the
+      captured player is one of the outcome's losers. `buildLiveMatchRecord`
+      calls it and returns the result on the record's new `preActionCapture`
+      field; `match-server.ts`'s `publishLiveMatchRecord` passes
+      `lobby.lastPreActionCapture` through. `live-match-sink.ts`'s
+      `LiveMatchRecord` interface gained the same field, propagated through
+      every existing literal fixture in `live-match-sink.test.ts` (1 helper)
+      and `live-match-store.test.ts` (9 sites), all as `null` — the store
+      itself is untouched, since persisting this artifact is M08.23D's job,
+      not this one. `live-match-record.test.ts` gained assertions across the
+      real lifecycle: `preActionCapture` is null for `rules_victory` and
+      `disconnect_timeout`, populated with the matching `origin`/`playerId`
+      for both `concede_action` and `concede_leave`, and — since the gate is a
+      pure function of already-immutable inputs rather than new dedup state,
+      the same idempotence-via-pure-path-function shape `LiveMatchFileStore`
+      already uses — is asserted to equal exactly the lobby's own captured
+      snapshot, unmodified. Idempotence itself needs no new mechanism: a
+      duplicate build from the same lobby fields always returns the same
+      result. Assigns no cause: `origin` names the mechanism a player used,
+      never why. 476 focused tests pass across `@tcg/match-telemetry` and
+      `@tcg/multiplayer-server`; both packages typecheck clean.
 - [ ] **M08.23D — Hidden-artifact retention and authorization.** Store full-state
       snapshots only under configured retention as admin-only artifacts and prove
       public/client/unauthorized paths cannot obtain them.

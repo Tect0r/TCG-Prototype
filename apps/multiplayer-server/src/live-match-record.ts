@@ -7,7 +7,9 @@ import {
   LIVE_MATCH_ENVELOPE_SCHEMA_VERSION,
   LIVE_MATCH_RAW_EVENT_SCHEMA_VERSION,
   LIVE_MATCH_REPLAY_SCHEMA_VERSION,
+  type LiveMatchEnvelope,
   type LiveMatchParticipantKind,
+  type LiveMatchPreActionCapture,
   type LiveMatchRawEventArtifact,
   type LiveMatchReplayArtifact,
   type LiveMatchRetentionConfig,
@@ -55,6 +57,8 @@ export interface LiveMatchRecordInput {
   readonly seats: readonly LiveMatchRecordSeatInput[];
   readonly terminationOrigin: LiveMatchTerminationOrigin;
   readonly retention: LiveMatchRetentionConfig;
+  /** The lobby's own capture from the instant of concede/leave, if any. Never read for a non-voluntary termination. */
+  readonly preActionCapture: LiveMatchPreActionCapture | null;
 }
 
 /**
@@ -86,6 +90,32 @@ export function liveMatchTerminationOriginFor(
     case 'engine_error':
       return 'server_failure';
   }
+}
+
+/**
+ * Attaches the lobby's pre-action capture to a voluntary termination's
+ * `LiveMatchRecord` (M08.23C), gated on facts already immutable by the time
+ * this runs rather than any new dedup state — the same idempotence-via-pure-
+ * path-function shape `LiveMatchFileStore` (`./live-match-store.ts`) already
+ * uses for a duplicate publish. `capture.origin` only ever holds one of the
+ * two voluntary values, so requiring it to equal `envelope.terminationOrigin`
+ * both picks the right one of the two concessions apart and, as a side
+ * effect, proves the termination was voluntary at all — `disconnect_timeout`,
+ * `rules_victory`, `server_failure` and `abandoned_unrecordable` can never
+ * satisfy it. `matchId` guards against a stale capture surviving into a
+ * different match on a reused lobby, and the captured player must be one of
+ * this outcome's losers, since a pre-action capture is only ever taken for
+ * whoever conceded or left.
+ */
+function voluntaryPreActionCaptureFor(
+  envelope: Pick<LiveMatchEnvelope, 'matchId' | 'terminationOrigin' | 'outcome'>,
+  capture: LiveMatchPreActionCapture | null,
+): LiveMatchPreActionCapture | null {
+  if (capture === null) return null;
+  if (capture.origin !== envelope.terminationOrigin) return null;
+  if (capture.matchId !== envelope.matchId) return null;
+  if (envelope.outcome === null || !envelope.outcome.loserIds.includes(capture.playerId)) return null;
+  return capture;
 }
 
 export function buildLiveMatchRecord(input: LiveMatchRecordInput): LiveMatchRecord | null {
@@ -158,5 +188,7 @@ export function buildLiveMatchRecord(input: LiveMatchRecordInput): LiveMatchReco
       }
     : null;
 
-  return { envelope, rawEvent, replay };
+  const preActionCapture = voluntaryPreActionCaptureFor(envelope, input.preActionCapture);
+
+  return { envelope, rawEvent, replay, preActionCapture };
 }

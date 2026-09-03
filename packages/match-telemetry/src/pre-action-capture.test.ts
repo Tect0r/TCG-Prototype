@@ -107,6 +107,7 @@ function validCapture(): LiveMatchPreActionCapture {
     schemaVersion: LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION,
     matchId: 'match_001',
     playerId: 'player_1',
+    origin: 'concede_action',
     turn: 3,
     phase: 'main_1',
     activePlayerId: 'player_1',
@@ -151,6 +152,16 @@ describe('liveMatchPreActionCaptureSchema', () => {
   it('refuses a playerId that is not a seat-derived participant id', () => {
     const withBadPlayer = { ...validCapture(), playerId: 'display-name-here' };
     expect(() => liveMatchPreActionCaptureSchema.parse(withBadPlayer)).toThrow();
+  });
+
+  it('refuses an origin that is not voluntary (M08.23C)', () => {
+    const withBadOrigin = { ...validCapture(), origin: 'disconnect_timeout' };
+    expect(() => liveMatchPreActionCaptureSchema.parse(withBadOrigin)).toThrow();
+  });
+
+  it('round trips the leave-triggered origin', () => {
+    const capture: LiveMatchPreActionCapture = { ...validCapture(), origin: 'concede_leave' };
+    expect(liveMatchPreActionCaptureSchema.parse(capture)).toEqual(capture);
   });
 
   it('refuses a missing or non-numeric schema version', () => {
