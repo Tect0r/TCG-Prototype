@@ -1099,3 +1099,82 @@ findings were recorded rather than fixed immediately.
 M08.20 tranche closed. Root status row's "Next tranche" column advances to
 **M08.21A — Versioned live-match envelope** in
 `docs/milestones/M08-ai-lab-and-player-meta.md`.
+
+## M08.21A — Versioned live-match envelope
+
+New package `packages/match-telemetry` (`@tcg/match-telemetry`), depending only
+on `@tcg/card-data`, `@tcg/deck`, `@tcg/rules-engine` and `zod` — no
+`@tcg/simulator`, no `@tcg/board-telemetry`, keeping simulator-grade analytics
+work out of the live event loop per this milestone's exclusion.
+`liveMatchEnvelopeSchema` is a strict, versioned record (`schemaVersion`,
+`matchId`, `source`, `formatId`, `provenance`, `seats`, `actionCount`,
+`outcome`) built by reusing shared telemetry payloads rather than restating
+them: `outcome` is `@tcg/rules-engine`'s own `matchResultSchema` wholesale
+(carrying `finalTurn`/`finalSequence` as the turn/event counts the milestone
+asks for), and each seat's deck snapshot is `@tcg/deck`'s own `deckEntrySchema`
+plus its `deckFingerprint`, not a restated hash. `actionCount` is new (meant to
+read from `MatchState.actionLog.length`, not yet wired to a caller since this
+slice defines the envelope only).
+
+Two scope calls made and recorded here rather than left implicit, the same
+further-narrowing precedent M08.19A set:
+
+- **Exactly two seats.** The engine and `apps/multiplayer-server` allow 2–4
+  seat free-for-all matches, but `source` (`human_human`/`human_ai`/`ai_ai`) is
+  only well-defined for two. `liveMatchEnvelopeSchema.seats` is a fixed
+  `z.tuple` of two: every match played so far is two-seat, and 3–4 seat source
+  classification is left to a later, explicitly named slice rather than guessed
+  at now.
+- **Termination origin stays out.** Per this milestone's own description, the
+  explicit-concede/leave-concession distinction is unrepresentable inside the
+  engine (both are the same `concede` action) and is M08.21B's analytics field,
+  not this envelope's. `outcome.reason` here is exactly the engine's own
+  `MatchEndReason` enum, unchanged.
+
+`source` is not just caller-declared: `liveMatchSourceOf(seat kinds)` computes
+it from each seat's `kind: 'human' | 'bot'`, and the envelope's `superRefine`
+refuses a `source` that disagrees with what the seats actually are. The same
+`superRefine` re-derives each seat's `deckHash` via `deckFingerprint` and
+refuses a snapshot whose hash does not match its own contents (so "exact
+immutable deck snapshot" is a checked property, not an assertion), refuses two
+seats naming the same `playerId`, and refuses an `outcome` naming a
+winner/loser outside the match's two seats or inconsistent with a two-seat
+win/draw shape (a win names exactly the other seat as sole loser; a draw names
+no winner and both seats as losers — mirroring `concludeIfOver`'s own
+`loserIds` convention in `packages/rules-engine/src/state-based.ts`).
+
+Future-version refusal follows the adaptive module's readable-refusal pattern
+(`describeAdaptiveVersionProblem` in `apps/simulator/src/adaptive/version.ts`)
+rather than a bare `z.literal` mismatch: a live-match record is written once by
+the server that ran the match (M08.22) and may be read much later by a
+reporting build, the same gap that pattern exists for. `provenance` records
+`softwareVersion` (an opaque string this package does not compute, matching
+`generatedDeckProvenanceSchema.generatorVersion`'s precedent in
+`@tcg/bot-config`), `contentVersion` (`CARD_SCHEMA_VERSION` as it stood at
+match time, a recorded fact rather than a current-build constraint) and
+`rulesVersion` (mirroring `matchStateSchema.rulesVersion`'s shape).
+
+Privacy fields (display names, invite/reconnect codes, IP addresses, auth
+secrets, chat, pseudonymous participant identity) are M08.21D's job and are
+absent here by construction — `liveMatchSeatSchema` carries only `seatIndex`,
+`playerId` (the engine's own seat identity), `kind` and `deck`.
+
+Verified: new focused suite `packages/match-telemetry/src/schema.test.ts`, 15
+tests — round trip, unknown-field refusal (`z.strictObject`), future-version
+refusal (missing/non-numeric/newer-than-supported, each with a readable
+message), source-classification derivation and its refusal on mismatch,
+deck-hash agreement and its refusal on mismatch, duplicate-seat refusal, and
+win/draw outcome-shape refusal plus acceptance. `npm run
+--workspace=@tcg/match-telemetry typecheck` clean; `npx eslint
+packages/match-telemetry/src` clean. Tranche-close gates
+(`check:consistency`, `audit:check`, `verify`) deferred to M08.21E per this
+milestone's work-slice split.
+
+One unrelated, pre-existing uncommitted change (`.claude/settings.json`,
+emptying its `permissions.deny` list) predates this session and remains
+untouched and unstaged, per CLAUDE.md's "preserve unrelated and user-owned
+changes."
+
+Next slice: **M08.21B — Termination and interruption semantics**, per
+`IMPLEMENTATION_PLAN.md` and the M08.21 tranche in
+`docs/milestones/M08-ai-lab-and-player-meta.md`. Not started this session.

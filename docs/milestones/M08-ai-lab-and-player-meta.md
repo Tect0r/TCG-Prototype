@@ -3900,7 +3900,7 @@ exact deck snapshot, source classification, and every termination-origin test.
 
 ### Work slices
 
-- [ ] **M08.21A — Versioned live-match envelope.** Define the strict envelope,
+- [x] **M08.21A — Versioned live-match envelope.** Define the strict envelope,
       shared telemetry reuse, software/content/rules provenance, source, format,
       immutable deck snapshots and hashes, Commander, seat, counts and outcome.
       Prove round trip, unknown-field and future-version refusal.
