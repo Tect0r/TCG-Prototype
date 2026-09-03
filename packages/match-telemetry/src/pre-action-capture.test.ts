@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { deckFingerprint } from '@tcg/deck';
 import type { CombatState, PendingChoice, ReactionWindowState } from '@tcg/rules-engine';
+import type { LiveMatchEventWindow } from './event-window.js';
 import {
   LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION,
   describeLiveMatchPreActionCaptureVersionProblem,
@@ -7,12 +9,14 @@ import {
   parseLiveMatchPreActionCapture,
   type LiveMatchPreActionCapture,
 } from './pre-action-capture.js';
+import { freezeLiveMatchDeckSnapshot, type LiveMatchProvenance } from './schema.js';
 
 /**
- * The pre-action capture contract (M08.23A): schema round trip, unknown-field
- * and unreadable-version refusal, and that the engine's own pending choice,
- * combat and Reaction window shapes carry through unchanged. No builder or
- * server wiring here — that lives in `apps/multiplayer-server`.
+ * The pre-action capture contract (M08.23A, widened M08.23B): schema round
+ * trip, unknown-field and unreadable-version refusal, that the engine's own
+ * pending choice, combat and Reaction window shapes carry through unchanged,
+ * and the event-window/provenance/deck cross-field invariants M08.23B added.
+ * No builder or server wiring here — that lives in `apps/multiplayer-server`.
  */
 
 const pendingChoiceFixture: PendingChoice = {
@@ -70,6 +74,34 @@ const reactionWindowFixture: ReactionWindowState = {
   resumePhase: 'main_1',
 };
 
+const eventCause = { actionType: null, sourceInstanceId: null, resolutionId: null };
+
+const eventWindowFixture: LiveMatchEventWindow = {
+  recentEvents: [
+    { type: 'turn_started', sequence: 8, cause: eventCause, playerId: 'player_1', turn: 3 },
+    { type: 'phase_changed', sequence: 9, cause: eventCause, from: 'main_1', to: 'declare_attackers' },
+    { type: 'phase_changed', sequence: 12, cause: eventCause, from: 'declare_attackers', to: 'main_2' },
+  ],
+  eventDistances: [
+    { sequence: 8, eventsAgo: 4, actionsAgo: 2, turnsAgo: 0 },
+    { sequence: 9, eventsAgo: 3, actionsAgo: 1, turnsAgo: 0 },
+    { sequence: 12, eventsAgo: 0, actionsAgo: 0, turnsAgo: 0 },
+  ],
+  currentTurnWindow: { turn: 3, startSequence: 8, endSequence: 12 },
+  previousTurnWindow: { turn: 2, startSequence: 5, endSequence: 7 },
+};
+
+const provenanceFixture: LiveMatchProvenance = {
+  softwareVersion: 'test-build',
+  contentVersion: 1,
+  rulesVersion: 'rules-1',
+};
+
+const deckFixture = freezeLiveMatchDeckSnapshot({
+  commanderId: 'cmd_alpha',
+  cards: [{ cardId: 'card_a', quantity: 40 }],
+});
+
 function validCapture(): LiveMatchPreActionCapture {
   return {
     schemaVersion: LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION,
@@ -82,6 +114,9 @@ function validCapture(): LiveMatchPreActionCapture {
     pendingChoice: pendingChoiceFixture,
     combat: combatFixture,
     reactionWindow: reactionWindowFixture,
+    eventWindow: eventWindowFixture,
+    provenance: provenanceFixture,
+    deck: deckFixture,
   };
 }
 
@@ -134,6 +169,101 @@ describe('liveMatchPreActionCaptureSchema', () => {
     expect(
       describeLiveMatchPreActionCaptureVersionProblem(LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION),
     ).toBeNull();
+  });
+});
+
+describe('liveMatchPreActionCaptureSchema event window cross-checks (M08.23B)', () => {
+  it('refuses a current turn window whose turn does not match the capture', () => {
+    const capture = {
+      ...validCapture(),
+      eventWindow: {
+        ...eventWindowFixture,
+        currentTurnWindow: { ...eventWindowFixture.currentTurnWindow, turn: 4 },
+      },
+    };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it('refuses a current turn window that does not end at the capture sequence', () => {
+    const capture = {
+      ...validCapture(),
+      eventWindow: {
+        ...eventWindowFixture,
+        currentTurnWindow: { ...eventWindowFixture.currentTurnWindow, endSequence: 99 },
+      },
+    };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it('refuses a previous turn window on turn 1', () => {
+    const capture = {
+      ...validCapture(),
+      turn: 1,
+      eventWindow: {
+        ...eventWindowFixture,
+        currentTurnWindow: { turn: 1, startSequence: 8, endSequence: 12 },
+      },
+    };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it('refuses a missing previous turn window past turn 1', () => {
+    const capture = { ...validCapture(), eventWindow: { ...eventWindowFixture, previousTurnWindow: null } };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it('refuses a previous turn window that does not end immediately before the current one starts', () => {
+    const capture = {
+      ...validCapture(),
+      eventWindow: {
+        ...eventWindowFixture,
+        previousTurnWindow: { ...eventWindowFixture.previousTurnWindow!, endSequence: 6 },
+      },
+    };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it('refuses a mismatched count of recent events and event distances', () => {
+    const capture = {
+      ...validCapture(),
+      eventWindow: { ...eventWindowFixture, eventDistances: eventWindowFixture.eventDistances.slice(1) },
+    };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it("refuses an eventsAgo that does not equal the capture's sequence minus the event's own", () => {
+    const capture = {
+      ...validCapture(),
+      eventWindow: {
+        ...eventWindowFixture,
+        eventDistances: eventWindowFixture.eventDistances.map((distance, index) =>
+          index === 0 ? { ...distance, eventsAgo: distance.eventsAgo + 1 } : distance,
+        ),
+      },
+    };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it('refuses when the most recent retained event is not at the capture sequence', () => {
+    const capture = {
+      ...validCapture(),
+      eventWindow: {
+        ...eventWindowFixture,
+        recentEvents: eventWindowFixture.recentEvents.slice(0, -1),
+        eventDistances: eventWindowFixture.eventDistances.slice(0, -1),
+      },
+    };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it("refuses a deck snapshot whose hash does not match its own contents", () => {
+    const capture = { ...validCapture(), deck: { ...deckFixture, deckHash: deckFingerprint({ commanderId: 'cmd_other', cards: [] }) } };
+    expect(() => liveMatchPreActionCaptureSchema.parse(capture)).toThrow();
+  });
+
+  it('round trips the widened capture with its event window, provenance and deck intact', () => {
+    const capture = validCapture();
+    expect(parseLiveMatchPreActionCapture(capture)).toEqual(capture);
   });
 });
 

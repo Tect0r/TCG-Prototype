@@ -16,6 +16,7 @@ import {
 } from '@tcg/protocol';
 import type { Action, PlayerId, PlayerView } from '@tcg/rules-engine';
 import { MatchServer, type ScheduleTimer, type ServerConnection } from './match-server.js';
+import { LIVE_MATCH_SOFTWARE_VERSION } from './version.js';
 
 /**
  * Protocol-level integration tests. They drive the real `MatchServer` through
@@ -506,7 +507,7 @@ describe('match termination', () => {
     expect(view.result?.winnerId).toBe('player_1');
   });
 
-  it('captures the pre-action state immediately before an explicit concede (M08.23A)', () => {
+  it('captures the pre-action state immediately before an explicit concede (M08.23A/M08.23B)', () => {
     const harness = createHarness();
     startMatch(harness);
     act(harness, harness.host, { type: 'mulligan', playerId: 'player_1', returnInstanceIds: [] });
@@ -532,9 +533,19 @@ describe('match termination', () => {
     // The engine's own concede resolution has since moved sequence and status
     // on: the capture is a snapshot, not a live reference into `lobby.state`.
     expect(harness.host.view().sequence).toBeGreaterThan(capture!.sequence);
+
+    expect(capture?.eventWindow.currentTurnWindow.turn).toBe(before.turn);
+    expect(capture?.eventWindow.currentTurnWindow.endSequence).toBe(before.sequence);
+    expect(capture?.eventWindow.recentEvents.at(-1)?.sequence).toBe(before.sequence);
+    expect(capture?.provenance).toEqual({
+      softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
+      contentVersion: CURRENT_VERSIONS.cardSchema,
+      rulesVersion: expect.any(String),
+    });
+    expect(capture?.deck.commanderId).toBe('prototype_commander_blue_red');
   });
 
-  it('captures the pre-action state immediately before a leave-triggered concede (M08.23A)', () => {
+  it('captures the pre-action state immediately before a leave-triggered concede (M08.23A/M08.23B)', () => {
     const harness = createHarness();
     startMatch(harness);
     act(harness, harness.host, { type: 'mulligan', playerId: 'player_1', returnInstanceIds: [] });
@@ -557,6 +568,10 @@ describe('match termination', () => {
     expect(capture?.pendingChoice).toBeNull();
     expect(capture?.reactionWindow).toBeNull();
     expect(capture?.combat).toEqual(before.combat);
+
+    expect(capture?.eventWindow.currentTurnWindow.turn).toBe(before.turn);
+    expect(capture?.eventWindow.currentTurnWindow.endSequence).toBe(before.sequence);
+    expect(capture?.deck.commanderId).toBe('prototype_commander_blue_red');
   });
 
   it('plays a complete match through the protocol and reports a winner', () => {

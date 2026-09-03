@@ -1188,7 +1188,10 @@ export class MatchServer {
     // `reason: 'concede'` either way.
     if (action.type === 'concede') {
       lobby.lastConcedeOrigin = 'concede_action';
-      lobby.lastPreActionCapture = capturePreActionState(lobby.state, action.playerId);
+      lobby.lastPreActionCapture = capturePreActionState(lobby.state, action.playerId, {
+        softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
+        deck: { commanderId: seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] },
+      });
     }
 
     const result = applyAction(lobby.state, action, {
@@ -1217,10 +1220,10 @@ export class MatchServer {
     if (lobby.status === 'in_match' && lobby.state && lobby.state.status !== 'complete') {
       // Leaving a live match is a concession, not a disconnect.
       lobby.lastConcedeOrigin = 'concede_leave';
-      lobby.lastPreActionCapture = capturePreActionState(
-        lobby.state,
-        PLAYER_ID_BY_SEAT[seat.seatId],
-      );
+      lobby.lastPreActionCapture = capturePreActionState(lobby.state, PLAYER_ID_BY_SEAT[seat.seatId], {
+        softwareVersion: LIVE_MATCH_SOFTWARE_VERSION,
+        deck: { commanderId: seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] },
+      });
       const result = applyAction(
         lobby.state,
         { type: 'concede', playerId: PLAYER_ID_BY_SEAT[seat.seatId] },

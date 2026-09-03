@@ -4102,9 +4102,38 @@ AI continuation from the state.
       engine's own concede action is untouched. 458 focused tests pass across
       `@tcg/match-telemetry` and `@tcg/multiplayer-server`; both packages
       typecheck clean.
-- [ ] **M08.23B — Event and turn windows.** Retain the last meaningful event
+- [x] **M08.23B — Event and turn windows.** Retain the last meaningful event
       chain, current/previous turn windows, event distances, content identity and
       deck provenance needed by later exposure-aware analysis.
+      Evidence: new `packages/match-telemetry/src/event-window.ts` derives
+      `LiveMatchEventWindow` (bounded `recentEvents` window of 30,
+      `eventDistances` with events/actions/turns-ago per event,
+      `currentTurnWindow`/`previousTurnWindow`) purely from
+      `MatchState.log`/`actionLog`/`turn`/`sequence` — `turn_started` events
+      mark turn boundaries, `sequence` is already contiguous, no new engine
+      concept invented; 5 unit tests cover turn 0, turn 1 (no previous
+      window), multi-turn boundary placement, events/actions/turns-ago
+      arithmetic and window-size truncation. `pre-action-capture.ts` bumps
+      `LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION` 1→2, adding `eventWindow`,
+      `provenance` (reusing `liveMatchProvenanceSchema` verbatim for content
+      identity) and `deck` (reusing `liveMatchDeckSnapshotSchema`/
+      `freezeLiveMatchDeckSnapshot` for the conceding player's own deck, hash
+      re-verified in `superRefine`), plus cross-field checks that the turn
+      windows agree with the capture's own turn/sequence, are contiguous, and
+      that `recentEvents`/`eventDistances` are zipped and arithmetically
+      consistent — 10 new schema tests. `apps/multiplayer-server/src/pre-action-capture.ts`
+      widens `capturePreActionState` to take `softwareVersion`/`deck` context,
+      call `deriveLiveMatchEventWindow` and return `LiveMatchPreActionCapture | null`
+      (the same clean "no Commander resolved" skip `buildLiveMatchRecord`
+      already uses, since a deck snapshot cannot be captured without one).
+      Both `match-server.ts` call sites (`submit_action`'s explicit `concede`
+      and `leave()`) now pass `LIVE_MATCH_SOFTWARE_VERSION` and the seat's
+      deck; the two existing wiring tests in `match-server.test.ts` gained
+      assertions on `eventWindow`/`provenance`/`deck`. Assigns no cause
+      anywhere: the widened contract is silent on *why* a player conceded, as
+      CLAUDE.md's product rules require. 473 focused tests pass across
+      `@tcg/match-telemetry` and `@tcg/multiplayer-server`; both packages
+      typecheck clean.
 - [ ] **M08.23C — Termination integration and idempotence.** Distinguish the two
       voluntary origins in analytics, exclude timeout/disconnect from voluntary
       snapshots, and make duplicate completion/retry capture idempotent.

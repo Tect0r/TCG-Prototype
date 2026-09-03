@@ -1951,3 +1951,92 @@ checkbox and evidence note are updated; the M08.23 tranche checklist, the
 root status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
 are untouched, per the normal-slice rule. Next slice: **M08.23B — Event and
 turn windows.**
+
+## M08.23B — Event and turn windows
+
+Implemented the milestone's exact scope line: "Retain the last meaningful
+event chain, current/previous turn windows, event distances, content identity
+and deck provenance needed by later exposure-aware analysis."
+
+- `packages/match-telemetry/src/event-window.ts` (new): a pure
+  `deriveLiveMatchEventWindow({ log, actionLog, turn, sequence })` over
+  `MatchState`'s own arrays — no new engine concept invented. `sequence` is
+  already contiguous (`context.ts`'s `emit()` increments it by exactly one per
+  event) and `turn_started` events already mark every turn boundary, so this
+  only reads those facts. `LIVE_MATCH_RECENT_EVENT_WINDOW_SIZE = 30` bounds
+  `recentEvents` (`log.slice(-30)`); `eventDistances` pairs one
+  `{ sequence, eventsAgo, actionsAgo, turnsAgo }` per retained event
+  (`eventsAgo`/`turnsAgo` from the capture's own `sequence`/`turn`,
+  `actionsAgo` from counting `actionLog` entries whose `sequenceAfter`
+  exceeds the event's sequence); `currentTurnWindow`/`previousTurnWindow` are
+  `{ turn, startSequence, endSequence }`, contiguous by construction
+  (`previousTurnWindow.endSequence` is always `currentTurnWindow.startSequence
+  - 1`), with `previousTurnWindow` null on turn 0 or 1. Assigns no cause
+  anywhere — purely structural distances, never a flag on which event
+  "caused" anything, per CLAUDE.md's product rules and the milestone's own
+  exclusion.
+- `packages/match-telemetry/src/event-window.test.ts` (new, 5 tests): empty
+  window before any turn starts; no previous window on turn 1; current/
+  previous windows placed correctly and contiguously on turn 2; events/
+  actions/turns-ago arithmetic verified by hand against a small fixture log;
+  window-size truncation always ends at the capture sequence.
+- `packages/match-telemetry/src/pre-action-capture.ts`: bumped
+  `LIVE_MATCH_PRE_ACTION_CAPTURE_SCHEMA_VERSION` 1→2. Added `eventWindow:
+  liveMatchEventWindowSchema`, `provenance: liveMatchProvenanceSchema` (content
+  identity, reused verbatim — the same shape `liveMatchEnvelopeSchema` already
+  uses) and `deck: liveMatchDeckSnapshotSchema` (the conceding player's own
+  deck, reused verbatim via `freezeLiveMatchDeckSnapshot`). `superRefine` cross-
+  checks: the current turn window's `turn`/`endSequence` must match the
+  capture's own `turn`/`sequence`; `previousTurnWindow` is null exactly when
+  `turn <= 1` and otherwise must be exactly one turn back and end immediately
+  before the current window starts; `recentEvents`/`eventDistances` must be
+  the same length, zipped by sequence in order, with `eventsAgo` recomputed
+  from the capture's own sequence and the last retained event's sequence
+  matching the capture's sequence; the deck snapshot's hash is re-verified via
+  `deckFingerprint` rather than trusted, mirroring `liveMatchEnvelopeSchema`'s
+  own check.
+- `packages/match-telemetry/src/pre-action-capture.test.ts`: widened the
+  `validCapture()` fixture with hand-built `eventWindow`/`provenance`/`deck`
+  fixtures (self-consistent under the new cross-checks) and added 10 tests
+  for the new refusals (mismatched turn-window turn/endSequence, a previous
+  window present on turn 1 or missing past it, a non-contiguous previous
+  window, mismatched event-distance count, a wrong `eventsAgo`, a stale
+  most-recent event, a bad deck hash) plus a full round trip.
+- `packages/match-telemetry/src/index.ts`: added `event-window.ts`'s export
+  block.
+- `apps/multiplayer-server/src/pre-action-capture.ts`: widened
+  `capturePreActionState` to take a third `context: { softwareVersion, deck }`
+  argument, call `deriveLiveMatchEventWindow` over the live state's
+  `log`/`actionLog`/`turn`/`sequence`, and assemble `provenance`
+  (`CURRENT_VERSIONS.cardSchema`/`state.rulesVersion`, matching
+  `buildLiveMatchRecord`'s own provenance construction) and `deck`
+  (`freezeLiveMatchDeckSnapshot`). Returns `LiveMatchPreActionCapture | null`
+  now — `null` exactly when `context.deck.commanderId` is null, the same
+  clean "nothing to record" case `buildLiveMatchRecord` already treats a
+  missing Commander as, since neither a deck snapshot nor its provenance can
+  be captured without one. `Lobby.lastPreActionCapture`'s existing type
+  (`LiveMatchPreActionCapture | null`) already accommodated this without a
+  change to `lobby.ts`.
+- `apps/multiplayer-server/src/match-server.ts`: both call sites
+  (`submit_action`'s explicit `concede` branch and `leave()`) now pass
+  `{ softwareVersion: LIVE_MATCH_SOFTWARE_VERSION, deck: { commanderId:
+  seat.deck?.commanderId ?? null, cards: seat.deck?.cards ?? [] } }` as the
+  new third argument.
+- `apps/multiplayer-server/src/match-server.test.ts`: extended both existing
+  M08.23A wiring tests (explicit concede and leave) with assertions that
+  `eventWindow.currentTurnWindow` matches the pre-concede view's `turn`/
+  `sequence`, that the last `recentEvents` entry lands at that same sequence,
+  that `provenance` carries the expected `softwareVersion`/`contentVersion`,
+  and that `deck.commanderId` is the seat's actual Commander.
+
+**Verification:** `npx vitest run packages/match-telemetry apps/multiplayer-server`
+— 25 test files, 473 tests, all pass. `npm run typecheck --workspace=@tcg/match-telemetry`
+and `--workspace=@tcg/multiplayer-server` both clean. Per CLAUDE.md, the full
+`npm run verify`/`check:consistency`/`audit:check` gates are reserved for
+tranche close (M08.23E) and were not run.
+
+Slice complete. `docs/milestones/M08-ai-lab-and-player-meta.md`'s M08.23B
+checkbox and evidence note are updated; the M08.23 tranche checklist, the
+root status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
+are untouched, per the normal-slice rule. Next slice: **M08.23C — Termination
+integration and idempotence.**

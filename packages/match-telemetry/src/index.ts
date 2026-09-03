@@ -62,3 +62,14 @@ export {
   parseLiveMatchPreActionCapture,
   type LiveMatchPreActionCapture,
 } from './pre-action-capture.js';
+
+export {
+  LIVE_MATCH_RECENT_EVENT_WINDOW_SIZE,
+  deriveLiveMatchEventWindow,
+  liveMatchEventDistanceSchema,
+  liveMatchEventWindowSchema,
+  liveMatchTurnWindowSchema,
+  type LiveMatchEventDistance,
+  type LiveMatchEventWindow,
+  type LiveMatchTurnWindow,
+} from './event-window.js';
