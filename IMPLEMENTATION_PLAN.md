@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-04)   | M08.25A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-04)   | M08.26A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,13 +223,33 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.25C — Choice and outcome views.** Render Commander, deck/cluster,
-eligible card, pair, matchup, duration and termination views with exact
-tables, source labels and match/unique-deck weighting controls only. Its
-scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0825--player-meta-dashboard).
-This is the third slice of M08.25, unrelated to the still-unscoped 3–4 seat
+**M08.26A — Shared explorer boundary.** Define bounded pagination,
+authorization, stable identifiers, source/provenance fields and
+cross-navigation contracts without loading unlimited raw rows into the
+browser. Its scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0826--deck-card-and-match-explorers).
+This is the first slice of M08.26, unrelated to the still-unscoped 3–4 seat
 source-classification gap below.
+
+**M08.25 closed 2026-09-04** (`tcg-reviewer` `VERDICT: CHANGES REQUIRED` on
+the first pass — one HIGH finding: the `cards`/`pairs` result tables showed
+`inclusion`/`support` rates without their `commanderMatches`/`uniqueDecks`
+denominators, violating this tranche's own "every aggregate presented with
+its denominator visible" checklist item; fixed by adding both columns to
+`apps/admin-server/src/service/player-meta-results.ts`'s `'cards'`/`'pairs'`
+cases with a new regression test, then `VERDICT: APPROVE` on the bounded
+recheck, which also noted one non-blocking LOW: the new regression test's
+single-match fixture can't distinguish a denominator field from a numerator
+field, since every asserted value happens to equal 1 — left as a note for
+whichever future tranche next touches this test file. Five further
+MEDIUM/LOW findings from the first review pass were deferred as non-blocking:
+a capture-skip signal gap, content-version-mismatch limitation wording, a
+correlation-wording test gap, a contract-version-9 changelog gap, and an N+1
+directory-walk performance note): the Player Meta dashboard end-to-end —
+filter and partition surface, the read model over M08.24's aggregates,
+choice/outcome/surrender views, states, accessibility and drill-down. Details
+in [`.claude/current-work.md`](.claude/current-work.md) and the M08 milestone
+file's M08.25F entry.
 
 **M08.25B shipped 2026-09-04** — the directory-in, pure table-builder read
 model: `readLiveMatchEnvelopes`/`currentLiveMatchCardDatabases`

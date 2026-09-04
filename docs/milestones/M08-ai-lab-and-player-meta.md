@@ -4456,7 +4456,7 @@ drill-down tests.
       matchup, duration and termination evidence, plus the simulator-side
       envelope reader it reads through — no HTTP endpoint, no client UI.
       Done: `readLiveMatchEnvelopes` (`apps/simulator/src/analysis/
-    live-match-read.ts`) synchronously walks `LiveMatchFileStore`'s
+live-match-read.ts`) synchronously walks `LiveMatchFileStore`'s
       `<matchId>/envelope.json` layout, skipping a damaged match rather than
       aborting the read; `currentLiveMatchCardDatabases`
       (`live-match-card-databases.ts`) resolves today's bundled database only
@@ -4467,7 +4467,7 @@ drill-down tests.
       since their row shapes differ), every row carrying its own
       `source`/`contentVersion`/`rulesVersion` partition columns rather than a
       partition-scoped table. `apps/admin-server/src/service/
-    player-meta-results.ts` composes M08.25A's filter with M08.24's
+player-meta-results.ts` composes M08.25A's filter with M08.24's
       aggregates into `readPlayerMetaSummary`/`readPlayerMetaTable`; an empty
       directory is a valid all-zero answer, not a refusal. 35 focused tests
       pass (8 reader, 4 card-database, 13 contract, 10 service);
@@ -4488,7 +4488,7 @@ drill-down tests.
       state summaries and exposure-adjusted recent-card/event tables using enforced
       correlation language and visible support.
       Done: `readLiveMatchPreActionCaptures` (`apps/simulator/src/analysis/
-    live-match-surrender-read.ts`) reads `LiveMatchFileStore`'s optional
+live-match-surrender-read.ts`) reads `LiveMatchFileStore`'s optional
       `pre-action-capture.json`, mirroring `live-match-read.ts`'s tolerant-read
       idiom — a match that never surrendered is silently skipped, only a
       present-but-unreadable capture is reported. `player-meta-results.ts`
@@ -4528,15 +4528,38 @@ drill-down tests.
       change. 21 admin-client tests pass (14 `player-meta-view.test.ts` + 7
       `player-meta-flow.test.tsx`, both up from before this slice); admin-client
       typecheck, lint and format clean. See `.claude/current-work.md` for detail.
-- [ ] **M08.25F — Tranche close.** Revalidate every filter, denominator, source
+- [x] **M08.25F — Tranche close.** Revalidate every filter, denominator, source
       label, state and correlation phrase through the standard tranche-close gate.
       Do not start the explorers.
+      Done: revalidated the combined M08.25 tranche diff (`5990985..cbc35bd`)
+      against this milestone's acceptance list — every table's match/unique-deck
+      weighting and per-row source/version columns visible, the five surrender
+      tables' correlation caption present alongside the always-visible
+      limitations list, and all four states (empty, sparse, corrupt,
+      unauthorized) plus drill-down covered by existing focused tests.
+      `npm run format:check` flagged this milestone file itself as unformatted;
+      `prettier --write` applied (reflow only, needed two passes to converge),
+      no behavior change. `npm run check:consistency`, `npm run audit:check`
+      (after regenerating `docs/status-audit.md`) and `npm run verify` all pass
+      clean (245 test files, 4865 tests, typecheck, lint, format, content
+      validation, build) — one `admin-server` test failed on the first `verify`
+      run with a raw `ETIMEDOUT` connecting to a local ephemeral port; confirmed
+      as an environment flake, not a regression, by rerunning that one file in
+      isolation (51/51 pass) and then rerunning the full gate clean.
+      `tcg-reviewer` returned `VERDICT: CHANGES REQUIRED` (1 HIGH, 5 MEDIUM/LOW);
+      fixed the HIGH finding — the `cards`/`pairs` tables showed rates without
+      their `commanderMatches`/`uniqueDecks` denominators — by adding those two
+      columns to both tables in `player-meta-results.ts`, with a new regression
+      test. Reran the affected focused tests and all final gates clean (245
+      test files, 4866 tests). The 5 MEDIUM/LOW findings are recorded as
+      non-blocking notes for a future tranche. See `.claude/current-work.md`
+      for detail.
 
 ### Checklist
 
-- [ ] Every M08.24 aggregate presented with its denominator visible.
-- [ ] Correlation wording enforced on surrender proximity views.
-- [ ] Empty, sparse and corrupt states designed, not incidental.
+- [x] Every M08.24 aggregate presented with its denominator visible.
+- [x] Correlation wording enforced on surrender proximity views.
+- [x] Empty, sparse and corrupt states designed, not incidental.
 
 ## M08.26 — Deck, Card and Match explorers
 

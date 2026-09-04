@@ -9,11 +9,11 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `ed1151158cc9b06f20c7678d5e71431e49e08327`  |
+| Commit           | `cbc35bd3f9745e7cd15fb3caa38e9c7175e87e79`  |
 | Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-09-03                                  |
+| Taken on         | 2026-09-04                                  |
 | Node             | v24.15.0                                    |
-| `npm run verify` | not run for this audit                      |
+| `npm run verify` | passed at this commit                       |
 
 ### Verification chain
 
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 16      | 321      |
-| admin-server   | 32      | 648      |
-| packages       | 98      | 2363     |
+| admin-client   | 18      | 342      |
+| admin-server   | 33      | 663      |
+| packages       | 103     | 2422     |
 | scripts        | 4       | 69       |
-| server         | 17      | 345      |
-| simulator      | 39      | 665      |
+| server         | 21      | 381      |
+| simulator      | 46      | 717      |
 | web-client     | 20      | 272      |
-| **total**      | **226** | **4683** |
+| **total**      | **245** | **4866** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -106,7 +106,7 @@ The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contr
 
 | Constant                   | Value | Pins                                                                                                                                   |
 | -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_CONTRACT_VERSION`   | 8     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `ADMIN_CONTRACT_VERSION`   | 9     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
 | `CATALOG_DOCUMENT_VERSION` | 4     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments

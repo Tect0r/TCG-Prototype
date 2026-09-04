@@ -3065,3 +3065,111 @@ the reflow changed no behavior. Tranche-close gates (`check:consistency`,
 milestone's work-slice split.
 
 Slice complete. Next slice: **M08.25F — Tranche close.**
+
+M08.25F is done pending review: revalidated the combined M08.25 tranche diff
+(`5990985..cbc35bd` — `player-meta.ts`/`player-meta-results.ts`/`filters.ts`/
+`requests.ts`/`service.ts`/`version.ts`/`index.ts` in `admin-contracts`;
+`live-match-filter.ts`, `live-match-read.ts`, `live-match-card-databases.ts`,
+`live-match-surrender-read.ts` in `simulator`; `player-meta-results.ts`,
+`handlers.ts` in `admin-server`; `PlayerMetaDashboard.tsx`, `ResultsScreen.tsx`,
+`player-meta-view.ts`, `session.ts`, `fake-service.ts` in `admin-client`; plus
+their tests) against this milestone's acceptance list. Spot-checked rather than
+re-deriving from scratch, since every slice already carries its own focused
+verification: confirmed `PlayerMetaDashboard.tsx` renders a match/unique-deck
+weighting toggle plus a per-row `source` column on every table (denominator and
+source both visible), the five surrender tables' exposure/proximity caption sits
+above the always-visible `summary.limitations` list, and all four states
+(empty, sparse, corrupt, unauthorized) plus drill-down are exercised by existing
+`player-meta-flow.test.tsx` tests.
+
+`npm run format:check` flagged `docs/milestones/M08-ai-lab-and-player-meta.md`
+itself as unformatted (this milestone file's own new tranche-close prose,
+indentation-only) — a real gate failure, not pre-existing. `prettier --write`
+needed two passes to fully converge (the first left three lines re-indented one
+space short); the second pass produced a clean `--check`. Diffed both passes:
+reflow only, no content change. `npm run check:consistency` passes clean.
+`npm run audit:check` first failed (`docs/status-audit.md` had drifted since
+M08.24's close); ran `npm run audit:status` to regenerate it (4865 tests in 245
+files at `cbc35bd`), then `audit:check` passed clean.
+
+`npm run verify` on the first attempt failed exactly one test —
+`apps/admin-server/src/service/http.test.ts`'s "refuses a second preset into a
+batch whose ordering has settled" threw a raw `TypeError: fetch failed` /
+`ETIMEDOUT` connecting to a local ephemeral port (127.0.0.1:53219). That file is
+untouched by the M08.25 diff (last touched at `4c3067f`, before this tranche) and
+the failure is a real HTTP server binding to a random port, not a mock — reran
+just that file in isolation and it passed 51/51, confirming a transient
+port-contention flake under the full suite's parallel load rather than a
+regression. Reran the complete `npm run verify` gate clean: 245 test files, 4865
+tests, typecheck, lint, format, content validation and build (`web-client`,
+`admin-client`) all pass.
+
+Marked M08.25F and the M08.25 checklist complete in the milestone file. Root
+status row's "Next tranche" column left at `M08.25A` rather than advanced to a
+not-yet-named next tranche, per CLAUDE.md: the tranche is not marked complete
+and its successor is not named until `tcg-reviewer` returns `VERDICT: APPROVE`.
+
+`tcg-reviewer` returned `VERDICT: CHANGES REQUIRED` on the tranche commit range
+(1 HIGH, 5 MEDIUM/LOW). Fixed the HIGH finding only, per this milestone's
+established two-cycle convention (M08.17D, M08.18E): `buildPlayerMetaTable`'s
+`'cards'`/`'pairs'` cases in `player-meta-results.ts` exposed `matchesIncluding`/
+`inclusion`/`decksIncluding`/`inclusionByUniqueDeck` (and the pair equivalents)
+without their `commanderMatches`/`uniqueDecks` denominators from
+`CommanderCardEvidence` — the one table pair in the whole tranche where a rate
+was shown without its denominator visible, violating the M08.25 checklist item
+itself. Added `commanderMatches`/`commanderUniqueDecks` columns and row fields
+to both cases (no contract schema/version change needed — the result-table
+shape is generic `columns`/`rows`).
+
+Added a regression test to `player-meta-results.test.ts` covering both tables.
+It initially failed with the row missing entirely (not just the new fields):
+the file's shared `envelope()` fixture uses placeholder card/commander IDs
+(`prototype_drone`, `prototype_commander_blue`, ...) that don't resolve against
+`precon_wave_1`'s real bundled database — harmless for every other table in
+this file (they never touch card identity), but the `'cards'` table's row pool
+comes from `database.deckable()` (real content), so a placeholder `cardId` has
+no row at all. Rewrote the new test's fixture cards to real colorless
+`precon_wave_1` cards (`hired_mercenary`, `veteran_guard` — colorless so they
+stay eligible against a commander whose colorIdentity resolves to `[]`), and
+raised its query to `PAGE_SIZE_MAX` (the format's 148-card-per-commander pool
+exceeds the default page size of 50, so the target card was paginated off the
+first page). All 15 tests in the file now pass.
+
+Reran the affected focused checks and all final gates per CLAUDE.md's
+review/fix-cycle rule: `player-meta-results.test.ts` (15/15),
+`player-meta-view.test.ts` (14/14) and `player-meta-flow.test.tsx` (7/7) in
+admin-client (both unaffected — their column handling is fully generic over
+`table.columns`). `prettier --write` needed a second pass on the test file
+(reflow only). `npm run check:consistency` and `npm run audit:check` pass
+clean; regenerated `docs/status-audit.md` for the one added test (4866 tests in
+245 files at `cbc35bd`, verify recorded as passed). `npm run verify` reran
+clean: 245 test files, 4866 tests, typecheck, lint, format, content validation
+and build all pass.
+
+The reviewer's 5 MEDIUM/LOW findings (capture-skip signal gap, content-version-
+mismatch limitation wording, correlation-wording test gap, contract-version-9
+changelog gap, N+1 directory-walk performance note) are recorded here as
+non-blocking notes for a future tranche, not fixed in this cycle.
+
+Requested a bounded recheck from the same `tcg-reviewer` agent, scoped only to
+the HIGH finding's fix and the new diff, per CLAUDE.md's two-cycle rule. (The
+original reviewer agent instance from the first pass no longer existed in this
+session — its context predates a `/clear` — so the recheck ran as a fresh
+`tcg-reviewer` invocation, explicitly scoped to recheck only this fix rather
+than re-auditing the whole tranche.)
+
+`tcg-reviewer` returned `VERDICT: APPROVE` on the recheck: confirmed the two
+new columns carry the Commander-scoped denominators (not per-card numbers),
+placed before their rate pairs, within the table contract's column/key limits,
+with no unrelated changes. It flagged one non-blocking LOW: the new regression
+test's fixture writes a single match with a single deck per Commander, so
+every asserted value (`commanderMatches`, `matchesIncluding`, `inclusion`,
+`commanderUniqueDecks`, `decksIncluding`, `inclusionByUniqueDeck`) equals 1 —
+the test cannot distinguish a denominator field from a numerator field, since
+a future refactor that swapped them would still pass. Recorded here as a
+non-blocking note for whichever future tranche next touches this test file,
+alongside the 5 MEDIUM/LOW findings from the first review pass.
+
+M08.25 tranche closed. Root status row's "Next tranche" column and
+`IMPLEMENTATION_PLAN.md`'s "next bounded task" section advanced to
+**M08.26A — Shared explorer boundary**.

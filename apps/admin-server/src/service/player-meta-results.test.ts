@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   NO_PLAYER_META_FILTER,
+  PAGE_SIZE_MAX,
   pageRequestSchema,
   type PlayerMetaFilter,
 } from '@tcg/admin-contracts';
@@ -248,6 +249,64 @@ describe('the commanders table', () => {
       expect(row.winRateLow).toBeNull();
       expect(row.winRateHigh).toBeNull();
     }
+  });
+});
+
+describe('the eligible-card and pair tables (M08.25B/C)', () => {
+  it("carries the commander's match and unique-deck denominators beside every rate, not only the numerator", () => {
+    writeMatch(
+      'match_a',
+      envelope('match_a', {
+        seats: [
+          {
+            seatIndex: 0,
+            playerId: 'player_1',
+            kind: 'human',
+            deck: freezeLiveMatchDeckSnapshot({
+              commanderId: 'prototype_commander_blue',
+              cards: [
+                { cardId: 'hired_mercenary', quantity: 39 },
+                { cardId: 'veteran_guard', quantity: 1 },
+              ],
+            }),
+          },
+          {
+            seatIndex: 1,
+            playerId: 'player_2',
+            kind: 'human',
+            deck: freezeLiveMatchDeckSnapshot({
+              commanderId: 'prototype_commander_red',
+              cards: [{ cardId: 'prototype_scout', quantity: 40 }],
+            }),
+          },
+        ],
+      }),
+    );
+
+    const bigPage = pageRequestSchema.parse({ limit: PAGE_SIZE_MAX });
+    const cards = unwrap(readPlayerMetaTable(root, 'cards', filter, bigPage));
+    const drone = cards.rows.find(
+      (row) => row.cardId === 'hired_mercenary' && row.commanderId === 'prototype_commander_blue',
+    );
+    expect(drone).toMatchObject({
+      commanderMatches: 1,
+      matchesIncluding: 1,
+      inclusion: 1,
+      commanderUniqueDecks: 1,
+      decksIncluding: 1,
+      inclusionByUniqueDeck: 1,
+    });
+
+    const pairs = unwrap(readPlayerMetaTable(root, 'pairs', filter, page));
+    const pair = pairs.rows.find((row) => row.commanderId === 'prototype_commander_blue');
+    expect(pair).toMatchObject({
+      commanderMatches: 1,
+      matchesIncludingBoth: 1,
+      support: 1,
+      commanderUniqueDecks: 1,
+      decksIncludingBoth: 1,
+      supportByUniqueDeck: 1,
+    });
   });
 });
 
