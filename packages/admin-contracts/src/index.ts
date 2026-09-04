@@ -354,6 +354,32 @@ export {
 } from './player-meta.js';
 
 export {
+  EXPLORER_KINDS,
+  EXPLORER_MATCH_ID_MAX,
+  MAX_EXPLORER_REFS,
+  cardExplorerRefSchema,
+  deckExplorerRefSchema,
+  experimentExplorerEvidenceSchema,
+  explorerEvidenceSourceSchema,
+  explorerKindSchema,
+  explorerMatchIdSchema,
+  explorerRefSchema,
+  explorerRefsSchema,
+  liveMatchExplorerEvidenceSchema,
+  matchExplorerRefSchema,
+  type CardExplorerRef,
+  type DeckExplorerRef,
+  type ExperimentExplorerEvidence,
+  type ExplorerEvidenceSource,
+  type ExplorerKind,
+  type ExplorerMatchId,
+  type ExplorerRef,
+  type ExplorerRefs,
+  type LiveMatchExplorerEvidence,
+  type MatchExplorerRef,
+} from './explorers.js';
+
+export {
   ADMIN_REQUEST_PAYLOAD_NAMES,
   ADMIN_REQUEST_PAYLOAD_SCHEMAS,
   OPERATOR_JOB_ACTIONS,

@@ -4580,7 +4580,7 @@ representative-selection determinism, unsupported replay and large-fixture tests
 
 ### Work slices
 
-- [ ] **M08.26A — Shared explorer boundary.** Define bounded pagination,
+- [x] **M08.26A — Shared explorer boundary.** Define bounded pagination,
       authorization, stable identifiers, source/provenance fields and cross-navigation
       contracts without loading unlimited raw rows into the browser.
 - [ ] **M08.26B — Deck Explorer.** Present immutable list, Commander, provenance,

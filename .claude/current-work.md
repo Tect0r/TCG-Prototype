@@ -3173,3 +3173,74 @@ alongside the 5 MEDIUM/LOW findings from the first review pass.
 M08.25 tranche closed. Root status row's "Next tranche" column and
 `IMPLEMENTATION_PLAN.md`'s "next bounded task" section advanced to
 **M08.26A — Shared explorer boundary**.
+
+## M08.26A — Shared explorer boundary
+
+New file `packages/admin-contracts/src/explorers.ts`, the boundary M08.26B–D
+(Deck, Card and Match explorers) are all built against so the three agree on a
+stable cross-navigation reference and on what a piece of evidence may claim
+about its provenance, before any of the three exists.
+
+**Two of the five named concerns — bounded pagination and authorization —
+needed no new code.** `pageRequestSchema`/`pageInfoSchema`/`pageOf`
+(`./pagination.ts`, already fully generic) and the single administrator token
+ADR 0023 §4 fixes (surfaced uniformly as `admin/unauthorized`, `./errors.ts`,
+enforced once in `apps/admin-server/src/service/http.ts`) already cover both;
+writing a second, explorer-specific version of either would be exactly the
+duplication this package's own doc comment (`index.ts`) warns against. The
+file's doc comment records this explicitly rather than leaving the omission
+to look accidental.
+
+**Stable identifiers:** reused rather than restated wherever a restatement
+already existed. Deck identity is `liveMatchDeckHashSchema`
+(`./player-meta.ts`, M08.25A) — imported intra-package, not restated a second
+time. Card identity is `contentIdSchema` (`./content.ts`), the package's
+existing deliberately-shallow stand-in for a `@tcg/card-data`-owned card ID.
+Match identity had no existing restatement anywhere in this package:
+`explorerMatchIdSchema`/`EXPLORER_MATCH_ID_MAX = 128` is new, bounded to match
+`matchId` on `liveMatchEnvelopeSchema` (`packages/match-telemetry/src/schema.ts:250`,
+`z.string().min(1).max(128)`, no regex to restate alongside it).
+
+**Source/provenance:** a `realm`-discriminated union
+(`explorerEvidenceSourceSchema`) rather than one invented shape, because a
+Deck/Match explorer's evidence is a live match (the same `(source,
+contentVersion, rulesVersion)` partition `playerMetaPartitionSchema` already
+keys Player Meta tables by) and a Card explorer's eligible-inclusion evidence
+can also come from an experiment run (`sourceClasses` from `./identity.ts`
+plus `runEnvironmentRefSchema` from `./catalog.ts`, reused whole rather than
+having its `environmentId` regex restated a third time). These are two
+different systems with two different real shapes; a single flattened
+provenance record would have claimed an equivalence neither system actually
+produces.
+
+**Cross-navigation:** `explorerRefSchema`, a `kind`-discriminated union of
+`deckExplorerRefSchema`/`cardExplorerRefSchema`/`matchExplorerRefSchema`, is
+what one explorer hands another to navigate by — a Card explorer's
+"contributing decks" list is `deckExplorerRefSchema[]`, and a mixed "related
+items" panel can hold any of the three kinds side by side without losing
+which stable identifier each one actually is. `explorerRefsSchema` bounds the
+list at `MAX_EXPLORER_REFS = 64`, the same "never an unlimited array" rule
+every other list in this package follows.
+
+Updated `packages/admin-contracts/src/index.ts` to re-export the new module
+(required by `boundary.test.ts`'s barrel-completeness checks — it fails if any
+`export const *Schema` in the package is unreachable from the barrel).
+
+Verified: 17 new focused tests in `explorers.test.ts` (restated match-id-bound
+pin, `EXPLORER_KINDS` literal pin, per-kind ref accept/refuse-extra-field,
+`explorerRefSchema` discriminated round-trip and cross-kind-field refusal,
+`explorerRefsSchema` `MAX_EXPLORER_REFS` bound and mixed-kind acceptance,
+`explorerEvidenceSourceSchema` both realms, cross-realm field leakage refusal,
+empty-`sourceClasses` refusal, unknown-realm refusal, JSON round-trip) pass,
+plus all 18 pre-existing test files in the package (475 tests total across 19
+files) still pass unchanged — including `boundary.test.ts` (19/19), confirming
+the new module adds no forbidden dependency and the barrel now re-exports
+every schema/constant it defines. `npx tsc --noEmit` clean on the package.
+ESLint clean on `explorers.ts`, `explorers.test.ts` and `index.ts`. Prettier
+needed one `--write` pass on `explorers.test.ts` (reflow only); `--check`
+clean after.
+
+Marked M08.26A's work-slice checkbox complete in the milestone file. Root
+status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section are
+untouched — those move only at M08.26F tranche close, per CLAUDE.md. Next
+slice: **M08.26B — Deck Explorer**.
