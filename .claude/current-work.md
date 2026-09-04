@@ -2400,7 +2400,7 @@ matches, in the new `apps/simulator/src/analysis/live-card-evidence.ts`
 milestone's data model has no per-game card play/draw/hold telemetry — a
 `LiveMatchEnvelope` seat carries only a deck snapshot and the match's final
 outcome — so "played, held and unusable" is read as a deck-building
-*eligibility* concept (the slice's own title), not in-game event telemetry:
+_eligibility_ concept (the slice's own title), not in-game event telemetry:
 for each Commander a partition actually saw played, every card in that
 Commander's deckable pool (`CardDatabase.deckable()`) is checked against
 `isColorIdentityLegal`. A card off-colour for the Commander is
@@ -2459,8 +2459,8 @@ gains `uniqueDecks`; `CardEligibilityEntry` gains `decksIncluding` and
 seat's `deck.deckHash`, deduplicated per Commander per partition.
 
 While extending `live-card-evidence.ts`'s `pairKey`/`key.split(...)`
-separator for the new deck-level pair maps, found the *committed* M08.24B
-version of that exact line already contained a literal NUL byte (` `)
+separator for the new deck-level pair maps, found the _committed_ M08.24B
+version of that exact line already contained a literal NUL byte (`�`)
 in place of the space separator in both `pairKey`'s template literal and its
 matching `.split(...)` call — invisible in editors and inert for tests (both
 sides used the same byte consistently, so lookups still matched), but it
@@ -2518,7 +2518,7 @@ mirrors the same honest-narrowing move M08.24B made for `status: 'unusable'`
 and M08.24A made for `clustersUnavailableReason`.
 
 **Exposure and proximity:** "exposure" is the Wilson-bounded (`stats.ts`'s
-`proportion()`) share of a partition's *own* surrenders whose retained
+`proportion()`) share of a partition's _own_ surrenders whose retained
 30-event window (M08.23B's `LiveMatchEventWindow`) contains a given event
 type or card `definitionId` at least once — evidence relative to this
 partition's own surrender population, never an independent whole-match base
@@ -2563,5 +2563,37 @@ one `--write` reflow of the new test file (whitespace/line-wrap only,
 inspected). Tranche-close gates (`check:consistency`, `audit:check`,
 `verify`) and `tcg-reviewer` are deferred to M08.24E, per this milestone's
 work-slice split.
+
+M08.24E is done pending review: revalidated the combined M08.24 tranche diff
+(`live-match-aggregate.ts`, `live-card-evidence.ts`, `live-match-surrender.ts`
+and their tests, plus the `apps/simulator` barrel export) against this
+milestone's acceptance list — source separation, no-stable-player-identity,
+eligibility, exposure denominator, surrender proximity windows, timeout
+exclusion, version filter and sparse-data coverage all present with existing
+focused tests; no gap found on revalidation.
+
+`npm run format:check` flagged two pre-existing unformatted files
+(`.claude/current-work.md`, `docs/milestones/M08-ai-lab-and-player-meta.md`)
+— a real gate failure, not introduced by this run. Ran `prettier --write` on
+both; `current-work.md`'s diff was italics-marker normalization (`*` → `_`)
+only. The milestone file's diff reproduced the exact `--write`/`--check`
+disagreement M08.23E's close already diagnosed and fixed: an inline code
+span (`` `prettier --check` ``) broken across a line, where leading
+whitespace on the continuation line is literal span content, not
+indentation, so the two commands disagreed run to run. Fixed the same way —
+reworded the one sentence so the span stays on one line — and confirmed two
+consecutive `--write` passes both report "unchanged." No test or source
+semantics involved in either fix.
+
+Re-ran `npm run check:consistency` and `npm run audit:check` after the
+formatting fixes: both pass clean; `docs/status-audit.md` needed no
+regeneration, since this tranche adds internal analysis modules only, not
+anything that file tracks. `npm run verify` passes clean (236 test files,
+4775 tests — up from 233/4751 at the M08.23E close — typecheck, lint, format,
+content validation, build). Marked M08.24E and the M08.24 checklist complete
+in the milestone file. Root status row's "Next tranche" column left at
+`M08.24A` rather than advanced to `M08.25A`, per CLAUDE.md: the tranche is
+not marked complete and its successor is not named until `tcg-reviewer`
+returns `VERDICT: APPROVE`.
 
 Slice complete. Next slice: **M08.24E — Tranche close.**

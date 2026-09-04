@@ -4340,9 +4340,9 @@ filter and sparse-data tests.
       M08.24B's committed `pairKey`/`.split(...)` (silently made the file look binary
       to `git diff`/`file`, though functionally inert) as a direct byproduct of
       touching that exact line. 2 new focused tests pass; full `simulator` project
-      (680 tests) passes; both workspaces typecheck clean; ESLint and `prettier
-      --check` clean on the four changed files. See `.claude/current-work.md` for
-      detail.
+      (680 tests) passes; both workspaces typecheck clean; ESLint and
+      `prettier --check` clean on the four changed files. See
+      `.claude/current-work.md` for detail.
 - [x] **M08.24D — Surrender state and exposure windows.** Aggregate voluntary
       surrender by Commander/deck/turn/phase and state, plus exposure-adjusted action
       chain/turn/round proximity carrying exposure and event-distance counts. Exclude
@@ -4374,16 +4374,42 @@ filter and sparse-data tests.
       typechecks clean; ESLint and `prettier --check` clean on the three changed
       files. Tranche-close gates are deferred to M08.24E. See
       `.claude/current-work.md` for detail.
-- [ ] **M08.24E — Tranche close.** Revalidate source separation, eligibility,
+- [x] **M08.24E — Tranche close.** Revalidate source separation, eligibility,
       denominators, version filters, sparse data and surrender proximity through the
       standard tranche-close gate. Do not create the Player Meta page.
+      Done: revalidated the combined M08.24A–D diff (`live-match-aggregate.ts`,
+      `live-card-evidence.ts`, `live-match-surrender.ts` and their tests, all wired
+      into the simulator's barrel export) against this milestone's acceptance list —
+      source separation (`(source, contentVersion, rulesVersion)` partitioning, never
+      pooled), no player-weighted claim, eligibility (`'unusable'`/`inclusion: null`
+      never fabricated), exposure denominator (Wilson-bounded, relative to a
+      partition's own surrenders), surrender proximity windows (events/actions/turns/
+      rounds-ago), timeout exclusion (structural — no pre-action capture exists for a
+      timeout), version filtering and sparse/missing/corrupt-data handling all
+      present. `npm run format:check` flagged two pre-existing unformatted files
+      (`.claude/current-work.md`, this milestone file) — a real gate failure, not
+      introduced by this run; `prettier --write` fixed both. One of the two
+      (`--write`/`--check` disagreeing run to run on this file) reproduced the same
+      inline-code-span-broken-across-a-line instability the M08.23E close already
+      documented and fixed the same way: reworded the one sentence so
+      `` `prettier --check` `` stays on one line, confirmed two consecutive `--write`
+      passes both report "unchanged." No test or source semantics involved in either
+      fix. 79 focused tests pass in `apps/simulator/src/analysis` (6 files, unchanged
+      from each slice's own count). `npm run check:consistency` and
+      `npm run audit:check` both pass clean (no counted fact needs regeneration — this
+      tranche adds internal analysis modules, not anything `docs/status-audit.md`
+      tracks). `npm run verify` passes clean (236 test files, 4775 tests, typecheck,
+      lint, format, content validation, build). Root status row's "Next tranche"
+      column left at `M08.24A` rather than advanced, per CLAUDE.md: the tranche is not
+      marked complete and its successor is not named until `tcg-reviewer` returns
+      `VERDICT: APPROVE`. See `.claude/current-work.md` for detail.
 
 ### Checklist
 
-- [ ] Selection, deck, card, pair, matchup, duration and termination aggregates.
-- [ ] Match-weighted and unique-deck-weighted only.
-- [ ] Exposure-adjusted surrender proximity with correlation semantics.
-- [ ] AI and human never pooled.
+- [x] Selection, deck, card, pair, matchup, duration and termination aggregates.
+- [x] Match-weighted and unique-deck-weighted only.
+- [x] Exposure-adjusted surrender proximity with correlation semantics.
+- [x] AI and human never pooled.
 
 ## M08.25 — Player Meta dashboard
 
