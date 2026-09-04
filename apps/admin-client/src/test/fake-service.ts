@@ -19,6 +19,8 @@ import {
   adaptiveRunSummarySchema,
   catalogFilterSchema,
   catalogJobViewSchema,
+  playerMetaResultTableSchema,
+  playerMetaRunSummarySchema,
   resultArtifactListingSchema,
   resultArtifactSchema,
   resultSummarySchema,
@@ -46,6 +48,9 @@ import {
   type JobProgressView,
   type JobStatus,
   type OperatorJobAction,
+  type PlayerMetaResultTable,
+  type PlayerMetaResultTableName,
+  type PlayerMetaRunSummary,
   type Progress,
   type PresetCatalog,
   type PresetChoice,
@@ -156,6 +161,17 @@ export interface FakeLab {
    * it, mirroring `AdaptiveResultReader`'s own job-free resolution.
    */
   seedAdaptiveRun(experimentId: string, options?: SeedAdaptiveRunOptions): void;
+  /**
+   * Replaces what `playerMetaRunSummary`/`playerMetaResultTable` answer
+   * (M08.25C). Unlike `seedAdaptiveRun`, there is no identifier to key this
+   * by — a Player Meta read has neither a job nor an `experimentId` — so
+   * this fake holds exactly one summary and one table set at a time,
+   * mirroring `PlayerMetaResultReader`'s own single configured root. Unseeded
+   * tables and an unseeded summary answer their default fixture rather than
+   * a refusal, since the real reader's root is always configured; there is
+   * no "not found" for a directory that is always resolved.
+   */
+  seedPlayerMeta(options?: SeedPlayerMetaOptions): void;
 }
 
 export interface SeedAdaptiveRunOptions {
@@ -164,6 +180,14 @@ export interface SeedAdaptiveRunOptions {
     AdaptiveRunSummary | { readonly refuse: AdminErrorCode; readonly message?: string };
   /** What `adaptiveResultTable` answers for this run, per table name. Unseeded tables answer empty. */
   readonly tables?: Readonly<Partial<Record<AdaptiveResultTableName, AdaptiveResultTable>>>;
+}
+
+export interface SeedPlayerMetaOptions {
+  /** What `playerMetaRunSummary` answers — a reading, or a named refusal. */
+  readonly summary?:
+    PlayerMetaRunSummary | { readonly refuse: AdminErrorCode; readonly message?: string };
+  /** What `playerMetaResultTable` answers, per table name. Unseeded tables answer their default fixture. */
+  readonly tables?: Readonly<Partial<Record<PlayerMetaResultTableName, PlayerMetaResultTable>>>;
 }
 
 export interface SeedResultOptions {
@@ -298,6 +322,60 @@ export function adaptiveResultTableFixture(
     experimentId,
     table,
     source: { document: 'adaptive-result.json', schemaVersion: 1 },
+    columns,
+    rows,
+    page: {
+      returned: rows.length,
+      limit: PAGE_SIZE_DEFAULT,
+      nextCursor: truncated ? 'more' : null,
+      total: truncated ? rows.length + 1 : rows.length,
+    },
+  });
+}
+
+/* ---------------------------------------------------------- player meta results (M08.25) */
+
+/** A complete, readable Player Meta run summary, for a fixture with nothing wrong with it. */
+export function playerMetaRunSummaryFixture(
+  overrides: Partial<PlayerMetaRunSummary> = {},
+): PlayerMetaRunSummary {
+  return playerMetaRunSummarySchema.parse({
+    source: { recordsRead: 4, recordsSkipped: 0 },
+    partitions: [
+      {
+        partition: { source: 'ai_ai', contentVersion: 1, rulesVersion: '1.0.0' },
+        matches: 4,
+        uniqueDecks: 2,
+        decisiveMatches: 4,
+      },
+    ],
+    tables: [
+      { table: 'commanders', rows: 2 },
+      { table: 'decks', rows: 2 },
+      { table: 'deck_matchups', rows: 1 },
+      { table: 'clusters', rows: 1 },
+      { table: 'cluster_matchups', rows: 1 },
+      { table: 'cards', rows: 2 },
+      { table: 'pairs', rows: 1 },
+      { table: 'duration', rows: 1 },
+      { table: 'terminations', rows: 1 },
+    ],
+    limitations: ['A limitation the fake service publishes with every Player Meta read.'],
+    ...overrides,
+  });
+}
+
+/** One page of one Player Meta result table, shaped exactly as `playerMetaResultTableSchema` requires. */
+export function playerMetaResultTableFixture(
+  table: PlayerMetaResultTableName,
+  columns: readonly ResultColumn[],
+  rows: readonly ResultRow[],
+  options: TableFixtureOptions = {},
+): PlayerMetaResultTable {
+  const truncated = options.truncated ?? false;
+  return playerMetaResultTableSchema.parse({
+    table,
+    source: { recordsRead: rows.length, recordsSkipped: 0 },
     columns,
     rows,
     page: {
@@ -777,6 +855,16 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       readonly tables: Readonly<Partial<Record<AdaptiveResultTableName, AdaptiveResultTable>>>;
     }
   >();
+  /**
+   * The one Player Meta reading this fake holds (M08.25C) — no `Map`, because
+   * there is no identifier to key it by; a Player Meta read has neither a job
+   * nor an `experimentId`.
+   */
+  let playerMeta: {
+    readonly summary:
+      PlayerMetaRunSummary | { readonly refuse: AdminErrorCode; readonly message?: string };
+    readonly tables: Readonly<Partial<Record<PlayerMetaResultTableName, PlayerMetaResultTable>>>;
+  } | null = null;
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -987,6 +1075,12 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
         summary: options.summary ?? adaptiveRunSummaryFixture({ experimentId }),
         tables: options.tables ?? {},
       });
+    },
+    seedPlayerMeta(options = {}) {
+      playerMeta = {
+        summary: options.summary ?? playerMetaRunSummaryFixture(),
+        tables: options.tables ?? {},
+      };
     },
   };
 
@@ -1382,6 +1476,20 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       return answer(
         seeded ??
           adaptiveResultTableFixture(experimentId, table, [plainColumn('key', 'Key', 'text')], []),
+      );
+    }
+
+    if (name === 'playerMetaRunSummary') {
+      const summary = playerMeta?.summary ?? playerMetaRunSummaryFixture();
+      if ('refuse' in summary) return refusal(summary.refuse, 409, summary.message);
+      return answer(summary);
+    }
+
+    if (name === 'playerMetaResultTable') {
+      const table = payload.table as PlayerMetaResultTableName;
+      const seeded = playerMeta?.tables[table];
+      return answer(
+        seeded ?? playerMetaResultTableFixture(table, [plainColumn('key', 'Key', 'text')], []),
       );
     }
 

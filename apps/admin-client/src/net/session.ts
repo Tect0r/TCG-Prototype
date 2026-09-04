@@ -1,4 +1,9 @@
-import { PAGE_SIZE_DEFAULT, catalogFilterSchema, pageRequestSchema } from '@tcg/admin-contracts';
+import {
+  PAGE_SIZE_DEFAULT,
+  catalogFilterSchema,
+  pageRequestSchema,
+  playerMetaFilterSchema,
+} from '@tcg/admin-contracts';
 import type {
   AdaptiveExperimentId,
   AdaptiveResultTable,
@@ -22,6 +27,10 @@ import type {
   JobProgressView,
   OperatorJobAction,
   PageRequestInput,
+  PlayerMetaFilterInput,
+  PlayerMetaResultTable,
+  PlayerMetaResultTableName,
+  PlayerMetaRunSummary,
   PresetCatalog,
   PresetChoice,
   ResultArtifact,
@@ -496,6 +505,38 @@ export class AdminSession {
   ): Promise<AdminOutcome<AdaptiveResultTable>> {
     return this.#call('adaptiveResultTable', {
       experimentId,
+      table,
+      page: pageRequestSchema.parse(page ?? {}),
+    });
+  }
+
+  /* -------------------------------------------------- the player meta reader (M08.25C) */
+
+  /**
+   * A filtered Player Meta headline reading, or the one refusal that says why
+   * there is none.
+   *
+   * Unlike `adaptiveRunSummary`, this takes no run identifier at all — a
+   * Player Meta read has neither a `JobId` nor an `experimentId`, only
+   * `filter` (`PlayerMetaResultReader`, ADR 0023 §5): the server's one
+   * configured default result root already names the whole answer.
+   */
+  async playerMetaRunSummary(
+    filter?: PlayerMetaFilterInput,
+  ): Promise<AdminOutcome<PlayerMetaRunSummary>> {
+    return this.#call('playerMetaRunSummary', {
+      filter: playerMetaFilterSchema.parse(filter ?? {}),
+    });
+  }
+
+  /** One page of one filtered Player Meta result table — mirrors `resultTable`. */
+  async playerMetaResultTable(
+    table: PlayerMetaResultTableName,
+    filter?: PlayerMetaFilterInput,
+    page?: PageRequestInput,
+  ): Promise<AdminOutcome<PlayerMetaResultTable>> {
+    return this.#call('playerMetaResultTable', {
+      filter: playerMetaFilterSchema.parse(filter ?? {}),
       table,
       page: pageRequestSchema.parse(page ?? {}),
     });

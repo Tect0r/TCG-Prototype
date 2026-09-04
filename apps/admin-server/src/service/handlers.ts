@@ -41,6 +41,7 @@ import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js'
 import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
 import { AdaptiveResultReader } from './adaptive-results.js';
+import { PlayerMetaResultReader } from './player-meta-results.js';
 import { ArtifactReader } from './artifacts.js';
 import type { AdminServiceConfig } from './config.js';
 import { ResultReader } from './results.js';
@@ -85,6 +86,7 @@ export class AdminService {
   readonly #queue: JobQueue;
   readonly #results: ResultReader;
   readonly #adaptive: AdaptiveResultReader;
+  readonly #playerMeta: PlayerMetaResultReader;
   readonly #artifacts: ArtifactReader;
   readonly #championships: ChampionshipScheduler;
   readonly #startedAt: string;
@@ -95,6 +97,10 @@ export class AdminService {
     this.#queue = options.queue;
     this.#results = new ResultReader({ store: options.store, roots: options.config.roots });
     this.#adaptive = new AdaptiveResultReader({
+      roots: options.config.roots,
+      resultRootId: options.config.resultRootId,
+    });
+    this.#playerMeta = new PlayerMetaResultReader({
       roots: options.config.roots,
       resultRootId: options.config.resultRootId,
     });
@@ -156,6 +162,9 @@ export class AdminService {
       adaptiveRunSummary: (payload) => this.#adaptive.readSummary(payload.experimentId),
       adaptiveResultTable: (payload) =>
         this.#adaptive.readTable(payload.experimentId, payload.table, payload.page),
+      playerMetaRunSummary: async (payload) => this.#playerMeta.readSummary(payload.filter),
+      playerMetaResultTable: async (payload) =>
+        this.#playerMeta.readTable(payload.table, payload.filter, payload.page),
       resultArtifact: (payload) => this.#artifacts.read(payload.jobId, payload.artifact),
     };
   }

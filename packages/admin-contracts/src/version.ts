@@ -193,8 +193,27 @@ import { adminError, type AdminError } from './errors.js';
  *   Counter run's series, revisions, screening, deck diff or reference-field
  *   evidence would stay unreadable no matter how many times its result
  *   document was regenerated. That is what a contract version is for saying.
+ * - 9 (M08.25C) — the language acquired directory-keyed **Player Meta**
+ *   reads. Two addresses were added, `player-meta-summary` and
+ *   `player-meta-result-table`, so that a filtered read over live matches
+ *   (`player-meta-results.ts`, M08.25B) can be shown a Commander, deck/
+ *   cluster, eligible card, pair, matchup, duration and termination view at
+ *   a time. Neither request names a run identifier at all — a Player Meta
+ *   read has no `experimentId`-shaped sub-path, only a `filter`
+ *   (`playerMetaFilterSchema`) — because the server's one configured
+ *   default result root already names the whole answer; the server
+ *   resolves that root directly rather than through
+ *   `resolveResultLocation`, which requires a relative directory Player
+ *   Meta has no equivalent for.
+ *
+ *   A build speaking 8 could read every catalog job's results and an
+ *   Adaptive Counter run's evidence, and could not reach either new
+ *   address, so no Commander, deck, cluster, card, pair, matchup, duration
+ *   or termination table computed from live matches would be visible no
+ *   matter how many matches had been played. That is what a contract
+ *   version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 8;
+export const ADMIN_CONTRACT_VERSION = 9;
 
 /**
  * The version stamped into a persisted catalog document.

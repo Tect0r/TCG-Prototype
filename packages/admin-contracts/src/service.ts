@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { adaptiveResultTableSchema, adaptiveRunSummarySchema } from './adaptive-results.js';
+import { playerMetaResultTableSchema, playerMetaRunSummarySchema } from './player-meta-results.js';
 import { resultArtifactListingSchema, resultArtifactSchema } from './artifacts.js';
 import {
   catalogBatchViewSchema,
@@ -35,6 +36,8 @@ import {
   listBatchesRequestSchema,
   listJobsRequestSchema,
   operatorJobActionSchema,
+  playerMetaResultTableRequestSchema,
+  playerMetaRunSummaryRequestSchema,
   reorderBatchRequestSchema,
   resultArtifactRequestSchema,
   resultTableRequestSchema,
@@ -496,6 +499,18 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'adaptive-result-table',
     request: adaptiveResultTableRequestSchema,
     response: adaptiveResultTableSchema,
+    mutates: false,
+  }),
+  playerMetaRunSummary: endpoint({
+    route: 'player-meta-summary',
+    request: playerMetaRunSummaryRequestSchema,
+    response: playerMetaRunSummarySchema,
+    mutates: false,
+  }),
+  playerMetaResultTable: endpoint({
+    route: 'player-meta-result-table',
+    request: playerMetaResultTableRequestSchema,
+    response: playerMetaResultTableSchema,
     mutates: false,
   }),
 });

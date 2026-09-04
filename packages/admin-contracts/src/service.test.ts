@@ -60,8 +60,11 @@ describe('the endpoint registry', () => {
     // can be downloaded unchanged. Plus M08.15's one: a finished Commander
     // Search can be turned into a scheduled finalist championship. Plus
     // M08.19C's two: a directory-keyed Adaptive Counter run's headline reading
-    // and one of its result tables can be read without a catalog job.
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(25);
+    // and one of its result tables can be read without a catalog job. Plus
+    // M08.25C's two: a Player Meta headline reading and one of its result
+    // tables can be read the same directory-keyed way, filtered rather than
+    // addressed by any run identifier.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(27);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);

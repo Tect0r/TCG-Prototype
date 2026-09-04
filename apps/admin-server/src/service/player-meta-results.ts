@@ -24,6 +24,7 @@ import {
   type LiveMatchAggregatePartition,
 } from '@tcg/simulator';
 
+import { type ResolvedCatalogRoots } from '../catalog/roots.js';
 import {
   column,
   decodeRowCursor,
@@ -422,4 +423,67 @@ function builtBadly(what: string): AdminError {
       'so it was not sent. This is a defect in the build rather than a problem with the underlying matches.',
     { context: { view: what } },
   );
+}
+
+/* ---------------------------------------------------------- the HTTP reader */
+
+export interface PlayerMetaResultReaderOptions {
+  readonly roots: ResolvedCatalogRoots;
+  readonly resultRootId: string;
+}
+
+/**
+ * The thin HTTP-facing layer for M08.25C's two addresses
+ * (`player-meta-summary`, `player-meta-result-table`), reading `readPlayerMetaSummary`/
+ * `readPlayerMetaTable` above out of the server's one configured default
+ * result root — the same root `AdaptiveResultReader` (`./adaptive-results.ts`)
+ * reads its runs under.
+ *
+ * A Player Meta read has neither a `JobId` nor an `experimentId`-shaped
+ * sub-path: the whole configured root *is* the data (every live match a
+ * `LiveMatchFileStore` has written there), narrowed only by
+ * `playerMetaFilterSchema`. So this resolves `resultRootId` directly against
+ * `ResolvedCatalogRoots.resultRoots` rather than through
+ * `resolveResultLocation`, which requires a relative `directory` Player Meta
+ * has no equivalent for. Per ADR 0023 §5, no request ever names that root —
+ * it is a build-time server setting, never a client-supplied field.
+ */
+export class PlayerMetaResultReader {
+  readonly #roots: ResolvedCatalogRoots;
+  readonly #resultRootId: string;
+
+  constructor(options: PlayerMetaResultReaderOptions) {
+    this.#roots = options.roots;
+    this.#resultRootId = options.resultRootId;
+  }
+
+  readSummary(filter: PlayerMetaFilter): Result<PlayerMetaRunSummary, readonly AdminError[]> {
+    const directory = this.#resolve();
+    if (isErr(directory)) return directory;
+    return readPlayerMetaSummary(directory.value, filter);
+  }
+
+  readTable(
+    table: PlayerMetaResultTableName,
+    filter: PlayerMetaFilter,
+    page: PageRequest,
+  ): Result<PlayerMetaResultTable, readonly AdminError[]> {
+    const directory = this.#resolve();
+    if (isErr(directory)) return directory;
+    return readPlayerMetaTable(directory.value, table, filter, page);
+  }
+
+  #resolve(): Result<string, readonly AdminError[]> {
+    const configured = this.#roots.resultRoots.get(this.#resultRootId);
+    if (configured === undefined) {
+      return err([
+        adminError(
+          'admin/unsafe_result_reference',
+          `No result root named \`${this.#resultRootId}\` is configured, so Player Meta cannot be read.`,
+          { path: 'resultRootId', context: { rootId: this.#resultRootId } },
+        ),
+      ]);
+    }
+    return ok(configured);
+  }
 }

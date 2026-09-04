@@ -2816,4 +2816,72 @@ split.
 
 Slice complete. Next slice: **M08.25C — Choice and outcome views.**
 
-Slice complete. Next slice: **M08.25B — Choice and outcome views.**
+## M08.25C — Choice and outcome views
+
+Rendered exact tables for all nine result tables M08.25B's read model
+already builds (`commanders`, `decks`, `deck_matchups`, `clusters`,
+`cluster_matchups`, `cards`, `pairs`, `duration`, `terminations`), reading
+through two new client endpoints rather than adding a new read model — per
+this slice's own "exact tables, source labels and weighting controls only"
+scope, no filter form and no drill-down.
+
+**Contracts** (`packages/admin-contracts`) — two new addresses,
+`player-meta-summary` and `player-meta-result-table`, both request-scoped by
+`filter` (and `table`/`page` for the table endpoint) only, never a path or
+directory, per ADR 0023 §5's hard shape-key test. `ADMIN_CONTRACT_VERSION`
+bumped 8→9.
+
+**Server** (`apps/admin-server`) — `PlayerMetaResultReader`
+(`service/player-meta-results.ts`) resolves the server's one configured
+`resultRootId` directly via `ResolvedCatalogRoots.resultRoots`, bypassing
+`resolveResultLocation` (built for a client-supplied relative `directory`
+Player Meta has no equivalent for); refuses an unconfigured `resultRootId`
+rather than guessing another root. Wired into `handlers.ts`'s handler map,
+wrapped in `async` to match the map's shape even though the underlying
+reads are synchronous (same asymmetry M08.25B's service functions already
+documented). 2 new focused tests (direct-root read; unconfigured-root
+refusal) added to `player-meta-results.test.ts`, alongside the 10 already
+there — 12 total, all passing.
+
+**Client** (`apps/admin-client`) — `session.ts` grew
+`playerMetaRunSummary`/`playerMetaResultTable` methods; `lib/player-meta-
+view.ts` is a deliberate, unabstracted parallel to `adaptive-view.ts`
+(reading an interval cell's point/bounds/count by column-key convention,
+folding an interval's bound/count columns into one display column,
+formatting a null cell as "Not measured", a truncation note, and
+`sortPlayerMetaRowsByWeight` — a pure descending sort over the already-
+declared `matches`/`uniqueDecks` columns, offered only for `commanders` and
+`clusters` since those are the only two tables where a match-weighted vs.
+unique-deck-weighted view actually differs); `components/
+PlayerMetaDashboard.tsx` (`PlayerMetaPanel`) fetches the summary
+unconditionally on mount with `NO_PLAYER_META_FILTER` (no run identifier or
+form to fill in, unlike `AdaptiveRunPanel`), then fetches all nine tables,
+rendering tab buttons per table and, for `commanders`/`clusters`, a second
+weighting-toggle button group; wired into `ResultsScreen.tsx` alongside the
+existing Adaptive Counter panel. `fake-service.ts` gained `seedPlayerMeta`
+plus `playerMetaRunSummaryFixture`/`playerMetaResultTableFixture`: unlike
+`seedAdaptiveRun`, there is no identifier to key this by — a Player Meta
+read has neither a job nor an `experimentId` — so the fake holds exactly one
+summary and one table set at a time, and an unseeded read answers a valid
+default fixture rather than a refusal, since the real reader's configured
+root never has a "not found" case.
+
+Fixed during focused testing: `TableView`'s unused `table` prop
+(`TS6133`) — resolved by using it in the busy label; a flow test's
+unscoped `getAllByRole('row')` matched `FactTable`'s own `<table>` instead
+of the intended exact table — resolved by scoping through
+`getByRole('table', { name: '<Table> — exact rows' })` first, keyed to
+`ExactTable`'s own caption.
+
+Verified: 95 admin-contracts tests, 660 admin-server tests (33 files,
+including the 2 new `PlayerMetaResultReader` cases above), 335 admin-client
+tests (18 files, including new `player-meta-view.test.ts` (12 tests) and
+`player-meta-flow.test.tsx` (2 tests)) — all pass. `npm run typecheck`
+clean on all three touched workspaces. ESLint clean on every
+changed/created file. `prettier --check` clean after `--write` reflowed
+`player-meta-view.ts` and `player-meta-flow.test.tsx` (diffs inspected:
+reflow only, no behavior change). Tranche-close gates
+(`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are
+deferred to M08.25F, per this milestone's work-slice split.
+
+Slice complete. Next slice: **M08.25D — Surrender evidence views.**

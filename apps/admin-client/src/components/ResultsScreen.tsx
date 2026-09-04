@@ -34,6 +34,7 @@ import { Busy, Empty, Failure } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
 import { ResultDashboard } from './ResultDashboard.js';
 import { AdaptiveRunPanel } from './AdaptiveDashboard.js';
+import { PlayerMetaPanel } from './PlayerMetaDashboard.js';
 
 /**
  * The result catalog: every job this catalog has ever created, completed or
@@ -84,7 +85,7 @@ export function ResultsScreen() {
   const [listFailure, setListFailure] = useState<AdminFailure | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<JobId | null>(null);
-  const [mode, setMode] = useState<'catalog' | 'adaptive'>('catalog');
+  const [mode, setMode] = useState<'catalog' | 'adaptive' | 'player-meta'>('catalog');
 
   const search = useCallback(
     async (next: ResultsFilterState): Promise<void> => {
@@ -153,9 +154,20 @@ export function ResultsScreen() {
         >
           Adaptive Counter run
         </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'player-meta'}
+          className={mode === 'player-meta' ? 'is-current' : ''}
+          onClick={() => {
+            setMode('player-meta');
+          }}
+        >
+          Player Meta
+        </button>
       </div>
 
       {mode === 'adaptive' && <AdaptiveRunPanel />}
+      {mode === 'player-meta' && <PlayerMetaPanel />}
       {mode === 'catalog' && (
         <>
           <FilterPanel

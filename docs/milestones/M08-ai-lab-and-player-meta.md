@@ -4473,9 +4473,17 @@ drill-down tests.
       pass (8 reader, 4 card-database, 13 contract, 10 service);
       admin-contracts, simulator and admin-server typecheck clean; lint and
       format clean. See `.claude/current-work.md` for detail.
-- [ ] **M08.25C — Choice and outcome views.** Render Commander, deck/cluster,
+- [x] **M08.25C — Choice and outcome views.** Render Commander, deck/cluster,
       eligible card, pair, matchup, duration and termination views with exact tables,
       source labels and match/unique-deck weighting controls only.
+      Done: `PlayerMetaDashboard.tsx` renders all nine M08.25B result tables as
+      exact tables, with a match/unique-deck weighting toggle for `commanders`
+      and `clusters` only, reading through two new contract endpoints
+      (`player-meta-summary`, `player-meta-result-table`,
+      `ADMIN_CONTRACT_VERSION` 8→9) and a new `PlayerMetaResultReader` server
+      service. 95 admin-contracts, 660 admin-server and 335 admin-client tests
+      pass; typecheck, lint and format clean on all touched workspaces. See
+      `.claude/current-work.md` for detail.
 - [ ] **M08.25D — Surrender evidence views.** Render turn/phase distributions,
       state summaries and exposure-adjusted recent-card/event tables using enforced
       correlation language and visible support.

@@ -11,7 +11,13 @@ import {
 import { isErr, unwrap } from '@tcg/shared';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
 
-import { readPlayerMetaSummary, readPlayerMetaTable } from './player-meta-results.js';
+import { resolveCatalogRoots } from '../catalog/roots.js';
+
+import {
+  PlayerMetaResultReader,
+  readPlayerMetaSummary,
+  readPlayerMetaTable,
+} from './player-meta-results.js';
 
 /**
  * M08.25B — the Player Meta read model over a resolved root directory of
@@ -253,5 +259,37 @@ describe('pagination', () => {
       pageRequestSchema.parse({ cursor: 'not-a-real-cursor' }),
     );
     expect(isErr(result)).toBe(true);
+  });
+});
+
+describe('PlayerMetaResultReader (M08.25C)', () => {
+  it("reads the server's one configured default result root directly, with no run identifier at all", () => {
+    writeMatch('match_a', envelope('match_a'));
+    const roots = unwrap(
+      resolveCatalogRoots({
+        catalogRoot: join(root, 'catalog'),
+        resultRoots: { default: root },
+      }),
+    );
+    const reader = new PlayerMetaResultReader({ roots, resultRootId: 'default' });
+
+    const summary = unwrap(reader.readSummary(filter));
+    expect(summary.source).toEqual({ recordsRead: 1, recordsSkipped: 0 });
+
+    const table = unwrap(reader.readTable('commanders', filter, page));
+    expect(table.rows.length).toBeGreaterThan(0);
+  });
+
+  it('refuses a resultRootId that is not configured, rather than guessing another root', () => {
+    const roots = unwrap(
+      resolveCatalogRoots({
+        catalogRoot: join(root, 'catalog'),
+        resultRoots: { default: root },
+      }),
+    );
+    const reader = new PlayerMetaResultReader({ roots, resultRootId: 'unconfigured' });
+
+    const refused = reader.readSummary(filter);
+    expect(isErr(refused) && refused.error[0]?.code).toBe('admin/unsafe_result_reference');
   });
 });

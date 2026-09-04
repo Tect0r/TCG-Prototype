@@ -13,6 +13,8 @@ import {
 import { batchIdSchema, jobIdSchema, labelSchema } from './identity.js';
 import { legalJobActions, type JobAction, type JobStatus } from './lifecycle.js';
 import { pageOf, pageRequestSchema } from './pagination.js';
+import { playerMetaFilterSchema } from './player-meta.js';
+import { playerMetaResultTableNameSchema } from './player-meta-results.js';
 import { presetChoiceSchema } from './presets.js';
 import { savedChoiceLabelSchema } from './saved.js';
 import { resultTableNameSchema } from './results.js';
@@ -442,6 +444,37 @@ export type AdaptiveResultTableRequest = z.infer<typeof adaptiveResultTableReque
 export type AdaptiveResultTableRequestInput = z.input<typeof adaptiveResultTableRequestSchema>;
 
 /**
+ * A filtered Player Meta headline reading (M08.25C).
+ *
+ * Carries only `filter`: unlike an Adaptive Counter run, a Player Meta read
+ * has no per-run identifier at all — the server's one configured default
+ * result root already names the whole answer, and `filter` is what narrows
+ * it. Nothing here is shaped like a location either.
+ */
+export const playerMetaRunSummaryRequestSchema = z.strictObject({
+  filter: playerMetaFilterSchema.prefault({}),
+});
+export type PlayerMetaRunSummaryRequest = z.infer<typeof playerMetaRunSummaryRequestSchema>;
+export type PlayerMetaRunSummaryRequestInput = z.input<typeof playerMetaRunSummaryRequestSchema>;
+
+/**
+ * One page of one filtered Player Meta result table (M08.25C).
+ *
+ * `resultTableRequestSchema` restated the way `adaptiveResultTableRequestSchema`
+ * restates it for a directory-keyed run: `table` is named from
+ * `playerMetaResultTableNameSchema`'s closed list, `filter` narrows which
+ * matches are aggregated, and there is nowhere in this shape to put a
+ * location.
+ */
+export const playerMetaResultTableRequestSchema = z.strictObject({
+  filter: playerMetaFilterSchema.prefault({}),
+  table: playerMetaResultTableNameSchema,
+  page: pageRequestSchema.prefault({}),
+});
+export type PlayerMetaResultTableRequest = z.infer<typeof playerMetaResultTableRequestSchema>;
+export type PlayerMetaResultTableRequestInput = z.input<typeof playerMetaResultTableRequestSchema>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -468,6 +501,8 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   resultArtifact: resultArtifactRequestSchema,
   adaptiveRunRef: adaptiveRunRefSchema,
   adaptiveResultTable: adaptiveResultTableRequestSchema,
+  playerMetaRunSummary: playerMetaRunSummaryRequestSchema,
+  playerMetaResultTable: playerMetaResultTableRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;
