@@ -380,6 +380,25 @@ export {
 } from './explorers.js';
 
 export {
+  DECK_EXPLORER_MAX_CARD_ENTRIES,
+  DECK_EXPLORER_MAX_REVISIONS,
+  DECK_EXPLORER_REVISION_CONSTRUCTION_KINDS,
+  DECK_EXPLORER_REVISION_SIDES,
+  deckExplorerCardEntrySchema,
+  deckExplorerIdentitySchema,
+  deckExplorerRevisionConstructionKindSchema,
+  deckExplorerRevisionSchema,
+  deckExplorerRevisionSideSchema,
+  deckExplorerViewSchema,
+  type DeckExplorerCardEntry,
+  type DeckExplorerIdentity,
+  type DeckExplorerRevision,
+  type DeckExplorerRevisionConstructionKind,
+  type DeckExplorerRevisionSide,
+  type DeckExplorerView,
+} from './deck-explorer.js';
+
+export {
   ADMIN_REQUEST_PAYLOAD_NAMES,
   ADMIN_REQUEST_PAYLOAD_SCHEMAS,
   OPERATOR_JOB_ACTIONS,
@@ -408,6 +427,7 @@ export {
   adaptiveResultTableRequestSchema,
   playerMetaRunSummaryRequestSchema,
   playerMetaResultTableRequestSchema,
+  deckExplorerRequestSchema,
   type AdaptiveRunRef,
   type AdaptiveResultTableRequest,
   type AdaptiveResultTableRequestInput,
@@ -415,6 +435,8 @@ export {
   type PlayerMetaRunSummaryRequestInput,
   type PlayerMetaResultTableRequest,
   type PlayerMetaResultTableRequestInput,
+  type DeckExplorerRequest,
+  type DeckExplorerRequestInput,
   type AdminRequestPayloadName,
   type BatchPage,
   type BatchRef,

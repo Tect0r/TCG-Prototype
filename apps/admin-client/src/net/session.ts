@@ -21,10 +21,12 @@ import type {
   CatalogJobView,
   ChoiceEstimate,
   ContentCatalog,
+  DeckExplorerView,
   EnqueuePresetResult,
   JobId,
   JobPage,
   JobProgressView,
+  LiveMatchDeckHash,
   OperatorJobAction,
   PageRequestInput,
   PlayerMetaFilterInput,
@@ -539,6 +541,27 @@ export class AdminSession {
       filter: playerMetaFilterSchema.parse(filter ?? {}),
       table,
       page: pageRequestSchema.parse(page ?? {}),
+    });
+  }
+
+  /* -------------------------------------------------------- the deck explorer (M08.26B) */
+
+  /**
+   * A deck's immutable identity, plus known Adaptive Counter revision lineage
+   * when `adaptiveExperimentId` is named.
+   *
+   * `adaptiveExperimentId` omitted or `null` means "not checked" — the answer
+   * comes back with `knownRevisions: null`, not `[]`. Naming an experiment
+   * whose run cannot be read fails the whole call rather than reporting either
+   * in its place (`deckExplorerRequestSchema`, ADR 0023 §2).
+   */
+  async deckExplorerView(
+    deckHash: LiveMatchDeckHash,
+    adaptiveExperimentId?: AdaptiveExperimentId | null,
+  ): Promise<AdminOutcome<DeckExplorerView>> {
+    return this.#call('deckExplorerView', {
+      deckHash,
+      adaptiveExperimentId: adaptiveExperimentId ?? null,
     });
   }
 

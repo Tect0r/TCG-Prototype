@@ -19,6 +19,7 @@ import {
   adaptiveRunSummarySchema,
   catalogFilterSchema,
   catalogJobViewSchema,
+  deckExplorerViewSchema,
   playerMetaResultTableSchema,
   playerMetaRunSummarySchema,
   resultArtifactListingSchema,
@@ -41,6 +42,7 @@ import {
   type BatchDetail,
   type CatalogJobView,
   type ContentCatalog,
+  type DeckExplorerView,
   type EnqueuePresetResult,
   type ExperimentKind,
   type ExperimentPurpose,
@@ -172,6 +174,20 @@ export interface FakeLab {
    * no "not found" for a directory that is always resolved.
    */
   seedPlayerMeta(options?: SeedPlayerMetaOptions): void;
+  /**
+   * Replaces what `deckExplorerView` answers for one deck hash (M08.26B) —
+   * the real reader answers differently per hash queried against the same
+   * configured root, so this is keyed by `deckHash` like `seedAdaptiveRun` is
+   * keyed by `experimentId`, unlike `seedPlayerMeta`'s one held reading. An
+   * unseeded hash answers `deckExplorerViewFixture(deckHash)` (an observed
+   * identity, no revisions checked) rather than a refusal, mirroring
+   * `seedPlayerMeta`'s own note: the root is always resolved, so there is no
+   * "not found" for the root itself.
+   */
+  seedDeckExplorer(
+    deckHash: string,
+    view?: DeckExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string },
+  ): void;
 }
 
 export interface SeedAdaptiveRunOptions {
@@ -384,6 +400,30 @@ export function playerMetaResultTableFixture(
       nextCursor: truncated ? 'more' : null,
       total: truncated ? rows.length + 1 : rows.length,
     },
+  });
+}
+
+/* ---------------------------------------------------------- deck explorer (M08.26B) */
+
+/** A complete Deck Explorer view: an identity observed once, no revisions checked. */
+export function deckExplorerViewFixture(
+  deckHash: string,
+  overrides: Partial<DeckExplorerView> = {},
+): DeckExplorerView {
+  return deckExplorerViewSchema.parse({
+    deckHash,
+    identity: {
+      commanderId: 'prototype_commander_fake',
+      cards: [{ cardId: 'prototype_card_fake', quantity: 40 }],
+      observedIn: {
+        realm: 'live_match',
+        source: 'ai_ai',
+        contentVersion: 1,
+        rulesVersion: '1.0.0',
+      },
+    },
+    knownRevisions: null,
+    ...overrides,
   });
 }
 
@@ -865,6 +905,11 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       PlayerMetaRunSummary | { readonly refuse: AdminErrorCode; readonly message?: string };
     readonly tables: Readonly<Partial<Record<PlayerMetaResultTableName, PlayerMetaResultTable>>>;
   } | null = null;
+  /** Deck Explorer views (M08.26B), by deck hash — see `FakeLab.seedDeckExplorer`'s own doc comment. */
+  const deckExplorerViews = new Map<
+    string,
+    DeckExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string }
+  >();
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -1081,6 +1126,9 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
         summary: options.summary ?? playerMetaRunSummaryFixture(),
         tables: options.tables ?? {},
       };
+    },
+    seedDeckExplorer(deckHash, view) {
+      deckExplorerViews.set(deckHash, view ?? deckExplorerViewFixture(deckHash));
     },
   };
 
@@ -1491,6 +1539,15 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       return answer(
         seeded ?? playerMetaResultTableFixture(table, [plainColumn('key', 'Key', 'text')], []),
       );
+    }
+
+    if (name === 'deckExplorerView') {
+      const deckHash = String(payload.deckHash ?? '');
+      const seeded = deckExplorerViews.get(deckHash);
+      if (seeded !== undefined && 'refuse' in seeded) {
+        return refusal(seeded.refuse, 409, seeded.message);
+      }
+      return answer(seeded ?? deckExplorerViewFixture(deckHash));
     }
 
     return refusal('admin/unknown_endpoint', 404);

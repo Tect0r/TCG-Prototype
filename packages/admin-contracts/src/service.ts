@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { adaptiveResultTableSchema, adaptiveRunSummarySchema } from './adaptive-results.js';
 import { playerMetaResultTableSchema, playerMetaRunSummarySchema } from './player-meta-results.js';
+import { deckExplorerViewSchema } from './deck-explorer.js';
 import { resultArtifactListingSchema, resultArtifactSchema } from './artifacts.js';
 import {
   catalogBatchViewSchema,
@@ -36,6 +37,7 @@ import {
   listBatchesRequestSchema,
   listJobsRequestSchema,
   operatorJobActionSchema,
+  deckExplorerRequestSchema,
   playerMetaResultTableRequestSchema,
   playerMetaRunSummaryRequestSchema,
   reorderBatchRequestSchema,
@@ -511,6 +513,12 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'player-meta-result-table',
     request: playerMetaResultTableRequestSchema,
     response: playerMetaResultTableSchema,
+    mutates: false,
+  }),
+  deckExplorerView: endpoint({
+    route: 'deck-explorer-view',
+    request: deckExplorerRequestSchema,
+    response: deckExplorerViewSchema,
     mutates: false,
   }),
 });

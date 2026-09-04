@@ -3244,3 +3244,76 @@ Marked M08.26A's work-slice checkbox complete in the milestone file. Root
 status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section are
 untouched — those move only at M08.26F tranche close, per CLAUDE.md. Next
 slice: **M08.26B — Deck Explorer**.
+
+## M08.26B — Deck Explorer
+
+Backend and contract work for this slice (`packages/admin-contracts/src/deck-explorer.ts`,
+`apps/admin-server/src/service/deck-explorer.ts`, `ADMIN_CONTRACT_VERSION` 9→10,
+the `deck-explorer-view` endpoint wired through `service.ts`/`requests.ts`/
+`handlers.ts`/`session.ts`) was already implemented and correct going into this
+session — only the client-side UI remained.
+
+`DeckExplorerReader` (`admin-server`) resolves against the server's one
+configured `resultRootId`, like Adaptive Counter runs and Player Meta reads: no
+`JobId`, keyed only by the deck hash the operator enters. It reads one observed
+live match to answer the immutable card list, Commander and provenance
+(`deckExplorerIdentitySchema`), and — only when an `adaptiveExperimentId` is
+named — pages `revisions` looking for entries that produced this exact deck
+hash. `knownRevisions: null` means "no experiment named, not checked";
+`knownRevisions: []` means "checked, found nothing" — the view schema keeps
+these distinct rather than collapsing "not checked" into an empty list.
+
+New `apps/admin-client/src/lib/deck-explorer-view.ts`: `DECK_EXPLORER_EVIDENCE_TABLES`
+names the four Player Meta tables this panel reuses rather than restates for
+matches, matchup split, cluster and separated AI/human evidence
+(`deck-explorer.ts`'s own doc comment on why those four words are not a
+contract gap) — `deckExplorerEvidenceFilter(deckHash)` narrows
+`playerMetaResultTable`'s existing filter to `{ ...NO_PLAYER_META_FILTER,
+deckHashes: [deckHash] }`, so every cell, drill-down and truncation note for
+them stays `player-meta-view.ts`'s own, reached through the address that
+already exists rather than a second one. `deckExplorerConstructionLabel`/
+`deckExplorerSideLabel` render the revision schema's closed enums in words.
+
+New `apps/admin-client/src/components/DeckExplorerDashboard.tsx`
+(`DeckExplorerPanel`): an entry form (deck hash, required; Adaptive Counter
+experiment ID, optional) validated locally against `deckExplorerIdentitySchema`
+before any request is sent — mirroring `AdaptiveDashboard.tsx`'s typed-entry
+pattern rather than `PlayerMetaDashboard.tsx`'s fetch-on-mount one, since Deck
+Explorer has no default subject. `IdentityView` renders the card list/Commander/
+provenance via `FactTable`, or an honest "no live match played this deck hash
+yet" `Empty` state rather than treating that as a failed read. `RevisionsView`
+renders the three-way `null`/`[]`/populated split explicitly in words ("not
+checked" / "checked — no revision ... names this deck hash" / a table).
+Evidence tabs reuse `player-meta-view.ts`'s `columns`/`rows`/`displayColumns`/
+`formatPlayerMetaCell`/`playerMetaRowDrillTarget`/`playerMetaTruncationNote`
+verbatim; every row's "Exact row" button opens a `FactTable` drill panel
+carrying the same M08.26 Match Explorer disclaimer `AdaptiveDashboard.tsx` and
+`PlayerMetaDashboard.tsx` already use. Wired into `ResultsScreen.tsx` as a
+fourth "Deck Explorer" tab alongside the existing three.
+
+`apps/admin-client/src/test/fake-service.ts` gained `FakeLab.seedDeckExplorer(deckHash,
+view | { refuse })`, keyed by deck hash (like `seedAdaptiveRun` is keyed by
+experiment ID) rather than one held slot (like `seedPlayerMeta`), since the
+real reader answers differently per requested hash even though it resolves
+against one fixed result root — and a `deckExplorerViewFixture` fixture.
+
+Verified: 4 new unit tests in `deck-explorer-view.test.ts` (evidence-table
+naming/labels, the filter's exact shape including the spread base filter, both
+enum-label maps). 7 new integration tests in `deck-explorer-flow.test.tsx` —
+reading and rendering an identity, a malformed hash refused locally with no
+request sent, an honest not-found state, the `null`-versus-`[]` revisions
+split, a populated revision table, evidence-table reuse with drill-down open/
+close, and an `admin/unauthorized` failure state. All 14 pre-existing
+`packages/admin-contracts/src/deck-explorer.test.ts`, 23
+`packages/admin-contracts/src/service.test.ts` and 6
+`apps/admin-server/src/service/deck-explorer.test.ts` tests still pass
+unmodified. `npx tsc --noEmit` clean on `admin-client`, `admin-server` and
+`admin-contracts`. ESLint clean on every new/changed file. Prettier needed one
+`--write` pass on `deck-explorer-flow.test.tsx` and the pre-existing
+`packages/admin-contracts/src/deck-explorer.test.ts` (reflow only); `--check`
+clean after.
+
+Marked M08.26B's work-slice checkbox complete in the milestone file. Root
+status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section are
+untouched — those move only at M08.26F tranche close, per CLAUDE.md. Next
+slice: **M08.26C — Card Explorer**.

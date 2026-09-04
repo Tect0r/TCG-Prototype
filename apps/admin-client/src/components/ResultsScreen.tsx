@@ -34,6 +34,7 @@ import { Busy, Empty, Failure } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
 import { ResultDashboard } from './ResultDashboard.js';
 import { AdaptiveRunPanel } from './AdaptiveDashboard.js';
+import { DeckExplorerPanel } from './DeckExplorerDashboard.js';
 import { PlayerMetaPanel } from './PlayerMetaDashboard.js';
 
 /**
@@ -85,7 +86,9 @@ export function ResultsScreen() {
   const [listFailure, setListFailure] = useState<AdminFailure | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<JobId | null>(null);
-  const [mode, setMode] = useState<'catalog' | 'adaptive' | 'player-meta'>('catalog');
+  const [mode, setMode] = useState<'catalog' | 'adaptive' | 'player-meta' | 'deck-explorer'>(
+    'catalog',
+  );
 
   const search = useCallback(
     async (next: ResultsFilterState): Promise<void> => {
@@ -164,10 +167,21 @@ export function ResultsScreen() {
         >
           Player Meta
         </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'deck-explorer'}
+          className={mode === 'deck-explorer' ? 'is-current' : ''}
+          onClick={() => {
+            setMode('deck-explorer');
+          }}
+        >
+          Deck Explorer
+        </button>
       </div>
 
       {mode === 'adaptive' && <AdaptiveRunPanel />}
       {mode === 'player-meta' && <PlayerMetaPanel />}
+      {mode === 'deck-explorer' && <DeckExplorerPanel />}
       {mode === 'catalog' && (
         <>
           <FilterPanel

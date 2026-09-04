@@ -212,8 +212,26 @@ import { adminError, type AdminError } from './errors.js';
  *   or termination table computed from live matches would be visible no
  *   matter how many matches had been played. That is what a contract
  *   version is for saying.
+ * - 10 (M08.26B) — the language acquired the **Deck Explorer**. One address
+ *   was added, `deck-explorer-view`, naming a deck hash and (optionally) an
+ *   Adaptive Counter experiment ID to cross-check its revision lineage
+ *   against. It carries only what has no existing address: an exact card
+ *   list and Commander read from one observed live match plus that match's
+ *   provenance, and — only when an experiment is named — the lineage
+ *   entries in that run that produced this exact deck hash. The matches,
+ *   matchup split, cluster and separated AI/human evidence the milestone's
+ *   own line also asks for are not new: they are `player-meta-result-table`
+ *   (version 9) with `filter.deckHashes` narrowed to this one hash, so this
+ *   version adds no second copy of that reduction.
+ *
+ *   A build speaking 9 could read every Player Meta table filtered to one
+ *   deck hash, and could not reach the new address, so no deck's exact card
+ *   list, Commander, observed provenance or revision lineage would be
+ *   visible no matter how many matches played that deck or how many
+ *   Adaptive Counter runs produced it. That is what a contract version is
+ *   for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 9;
+export const ADMIN_CONTRACT_VERSION = 10;
 
 /**
  * The version stamped into a persisted catalog document.

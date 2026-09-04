@@ -41,6 +41,7 @@ import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js'
 import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
 import { AdaptiveResultReader } from './adaptive-results.js';
+import { DeckExplorerReader } from './deck-explorer.js';
 import { PlayerMetaResultReader } from './player-meta-results.js';
 import { ArtifactReader } from './artifacts.js';
 import type { AdminServiceConfig } from './config.js';
@@ -87,6 +88,7 @@ export class AdminService {
   readonly #results: ResultReader;
   readonly #adaptive: AdaptiveResultReader;
   readonly #playerMeta: PlayerMetaResultReader;
+  readonly #deckExplorer: DeckExplorerReader;
   readonly #artifacts: ArtifactReader;
   readonly #championships: ChampionshipScheduler;
   readonly #startedAt: string;
@@ -101,6 +103,10 @@ export class AdminService {
       resultRootId: options.config.resultRootId,
     });
     this.#playerMeta = new PlayerMetaResultReader({
+      roots: options.config.roots,
+      resultRootId: options.config.resultRootId,
+    });
+    this.#deckExplorer = new DeckExplorerReader({
       roots: options.config.roots,
       resultRootId: options.config.resultRootId,
     });
@@ -165,6 +171,7 @@ export class AdminService {
       playerMetaRunSummary: async (payload) => this.#playerMeta.readSummary(payload.filter),
       playerMetaResultTable: async (payload) =>
         this.#playerMeta.readTable(payload.table, payload.filter, payload.page),
+      deckExplorerView: (payload) => this.#deckExplorer.readView(payload),
       resultArtifact: (payload) => this.#artifacts.read(payload.jobId, payload.artifact),
     };
   }

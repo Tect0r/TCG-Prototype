@@ -4583,9 +4583,18 @@ representative-selection determinism, unsupported replay and large-fixture tests
 - [x] **M08.26A — Shared explorer boundary.** Define bounded pagination,
       authorization, stable identifiers, source/provenance fields and cross-navigation
       contracts without loading unlimited raw rows into the browser.
-- [ ] **M08.26B — Deck Explorer.** Present immutable list, Commander, provenance,
+- [x] **M08.26B — Deck Explorer.** Present immutable list, Commander, provenance,
       construction, known revisions, matches, matchup split, cluster and separated AI
-      and human evidence with bounded navigation.
+      and human evidence with bounded navigation. Evidence note: `deck-explorer-view`
+      (contract version 10) reads one observed live match for identity/provenance and,
+      when named, an Adaptive Counter experiment's revision lineage for this hash
+      (`null`/`[]`/populated kept distinct); matches, matchup split, cluster and
+      AI/human evidence are the existing `player-meta-result-table` filtered to one
+      deck hash, not a second implementation. `DeckExplorerPanel`
+      (`apps/admin-client/src/components/DeckExplorerDashboard.tsx`) wired into
+      `ResultsScreen.tsx`. 11 new focused tests pass (4 unit + 7 integration); all
+      pre-existing `deck-explorer`/`service` tests (43) still pass; typecheck and
+      ESLint clean on every touched workspace.
 - [ ] **M08.26C — Card Explorer.** Present eligible inclusion by source and
       Commander, draw/play/dead-hand evidence, partners/replacements, contributing
       decks/matches and explicit insufficient-data states.

@@ -13,7 +13,7 @@ import {
 import { batchIdSchema, jobIdSchema, labelSchema } from './identity.js';
 import { legalJobActions, type JobAction, type JobStatus } from './lifecycle.js';
 import { pageOf, pageRequestSchema } from './pagination.js';
-import { playerMetaFilterSchema } from './player-meta.js';
+import { liveMatchDeckHashSchema, playerMetaFilterSchema } from './player-meta.js';
 import { playerMetaResultTableNameSchema } from './player-meta-results.js';
 import { presetChoiceSchema } from './presets.js';
 import { savedChoiceLabelSchema } from './saved.js';
@@ -475,6 +475,24 @@ export type PlayerMetaResultTableRequest = z.infer<typeof playerMetaResultTableR
 export type PlayerMetaResultTableRequestInput = z.input<typeof playerMetaResultTableRequestSchema>;
 
 /**
+ * One deck's Deck Explorer view (M08.26B): its exact card list, Commander,
+ * observed provenance and — only when named — its Adaptive Counter revision
+ * lineage.
+ *
+ * `adaptiveExperimentId` defaults to `null`, meaning "do not check revision
+ * lineage at all," never "checked, found nothing" — see
+ * `deck-explorer.ts`'s doc comment for why the two must never be confused.
+ * Nothing here is shaped like a location either: the server resolves both
+ * the live-match store and the named experiment's run directory itself.
+ */
+export const deckExplorerRequestSchema = z.strictObject({
+  deckHash: liveMatchDeckHashSchema,
+  adaptiveExperimentId: adaptiveExperimentIdSchema.nullable().default(null),
+});
+export type DeckExplorerRequest = z.infer<typeof deckExplorerRequestSchema>;
+export type DeckExplorerRequestInput = z.input<typeof deckExplorerRequestSchema>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -503,6 +521,7 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   adaptiveResultTable: adaptiveResultTableRequestSchema,
   playerMetaRunSummary: playerMetaRunSummaryRequestSchema,
   playerMetaResultTable: playerMetaResultTableRequestSchema,
+  deckExplorerView: deckExplorerRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;
