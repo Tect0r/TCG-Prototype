@@ -2726,4 +2726,94 @@ two new test files (diffs inspected: reflow only, no behavior change).
 Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
 `tcg-reviewer` are deferred to M08.25E, per this milestone's work-slice split.
 
+## M08.25B — Player Meta read model
+
+Built the directory-in, pure table-builder service the milestone's own
+M08.25B sentence names: a simulator-side envelope reader plus an admin-
+server service that turns M08.24's live-match aggregates into bounded
+result tables, with no HTTP endpoint and no client UI, per M08.19A/B's own
+read-model-before-render split.
+
+**The reader** — `readLiveMatchEnvelopes`
+(`apps/simulator/src/analysis/live-match-read.ts`) — walks a resolved root
+directory's `<matchId>/envelope.json` files (`LiveMatchFileStore`'s own
+on-disk layout, confirmed by reading
+`apps/multiplayer-server/src/live-match-store.ts` in full) synchronously,
+matching `@tcg/simulator`'s own tolerant-read idiom
+(`reporting/sinks.ts`'s `readJsonl`) rather than `apps/admin-server`'s async
+one — a different package's convention. A missing `envelope.json`,
+unparseable JSON or a document `parseLiveMatchEnvelope` refuses is skipped
+and reported by `matchId` and reason rather than aborting the whole read.
+Lives in `@tcg/simulator`, not `apps/admin-server`, per ADR 0023 §2: the
+admin server depends on `@tcg/simulator` only, and `@tcg/simulator` already
+depends on `@tcg/match-telemetry`.
+
+**Card-database resolution** — `currentLiveMatchCardDatabases`
+(`apps/simulator/src/analysis/live-match-card-databases.ts`) — resolves the
+one honest `CardDatabase` a batch of matches can be evaluated against:
+today's bundled database, keyed by today's `CARD_SCHEMA_VERSION`, and only
+when every match shares exactly one `formatId` that is also bundled
+(`bundledFormat(formatId) !== undefined`, checked before calling
+`formatDatabase()` rather than catching a throw, since `formatIdSchema` is a
+bare regex-bound string, not an enum — a syntactically valid but unbundled
+format would otherwise throw). Any other case returns an empty map, letting
+`aggregateLiveMatches`/`aggregateLiveCardEvidence`'s existing
+`clustersUnavailableReason`/`unavailableReason` degrade honestly rather than
+fabricating a merged or historical database.
+
+**The client contract** — `player-meta-results.ts`
+(`packages/admin-contracts/src/player-meta-results.ts`) — is thinner than
+its `adaptive-results.ts` sibling: `playerMetaResultSourceSchema` is
+`{recordsRead, recordsSkipped}` rather than `{document, schemaVersion}`,
+since a Player Meta read has no single canonical document, only however
+many envelopes a directory holds; `playerMetaRunSummarySchema` has no
+`jobId`/`experimentId` and no `evidenceStanding` at all. Nine result tables
+(`PLAYER_META_RESULT_TABLE_NAMES`) map the milestone's seven named evidence
+categories onto concrete row shapes, splitting "deck/cluster" into
+`decks`/`clusters` and "matchup" into `deck_matchups`/`cluster_matchups`
+because their row shapes differ (the same reason the offline system keeps
+separate `pilots`/`agent_classes` tables). Every row carries its own
+`source`/`contentVersion`/`rulesVersion` partition columns
+(`playerMetaPartitionSchema`, restating `liveMatchProvenanceSchema
+.rulesVersion`'s bound per ADR 0001) rather than a table being scoped to one
+partition, so a filtered query's whole result set is visible in one page.
+
+**The server service** — `apps/admin-server/src/service/player-meta-
+results.ts` — `readPlayerMetaSummary`/`readPlayerMetaTable` are plain
+synchronous functions (the underlying read is genuinely synchronous;
+wrapping it in `async` purely for stylistic parity with
+`adaptive-results.ts` would have been unwarranted) that filter
+(`filterLiveMatches`, M08.25A) before aggregating (`aggregateLiveMatches`,
+`aggregateLiveCardEvidence`, M08.24), never recomputing anything
+`@tcg/simulator` already owns, per ADR 0023 §2. Unlike Adaptive Counter,
+there is no "no result" refusal — an empty or all-zero directory is a valid
+answer; the only refusal is `builtBadly()`, an internal schema-validation
+defect. A first pass omitted the `winRateGames` column that `spreadRate`'s
+fourth key requires, which the table contract's own "every cell belongs to
+a declared column" refinement caught during focused testing; fixed by
+declaring it alongside `interval('winRate', ...)` at all five call sites
+(`commanders`, `decks`, `deck_matchups`, `clusters`, `cluster_matchups`).
+
+Verified: 35 new focused tests pass — 8 in `live-match-read.test.ts`
+(empty/missing root, happy path, damaged-tail tolerance: missing envelope,
+truncated JSON, unreadable schema version, schema-invalid document, mixed
+good/bad batch), 4 in `live-match-card-databases.test.ts` (single-format
+resolution, zero matches, multi-format refusal, unbundled-format refusal
+with no throw), 13 in `player-meta-results.test.ts` (admin-contracts:
+partition bound restatement, table round-trip/refinement/bounds, table-name
+enum, summary shape and its missing fields, limitation path refusal,
+partition-count bound), 10 in `player-meta-results.test.ts` (admin-server:
+empty-root all-zero answer, summary partitioning and filtering, damaged-
+match skip counting, commanders table shape and zero-observation null
+handling, duration/terminations table row counts, cursor pagination and
+garbled-cursor refusal). `npm run typecheck` clean on `@tcg/admin-contracts`,
+`@tcg/simulator` and `apps/admin-server`. ESLint clean on all ten
+changed/created files. `prettier --check` clean after `--write` reflowed
+five of them (diffs inspected: reflow only, no behavior change).
+Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
+`tcg-reviewer` are deferred to M08.25E, per this milestone's work-slice
+split.
+
+Slice complete. Next slice: **M08.25C — Choice and outcome views.**
+
 Slice complete. Next slice: **M08.25B — Choice and outcome views.**

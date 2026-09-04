@@ -460,6 +460,23 @@ export {
 } from './adaptive-results.js';
 
 export {
+  MAX_PLAYER_META_PARTITIONS,
+  PLAYER_META_RESULT_TABLE_NAMES,
+  playerMetaPartitionSchema,
+  playerMetaPartitionSummarySchema,
+  playerMetaResultSourceSchema,
+  playerMetaResultTableNameSchema,
+  playerMetaResultTableSchema,
+  playerMetaRunSummarySchema,
+  type PlayerMetaPartition,
+  type PlayerMetaPartitionSummary,
+  type PlayerMetaResultSource,
+  type PlayerMetaResultTable,
+  type PlayerMetaResultTableName,
+  type PlayerMetaRunSummary,
+} from './player-meta-results.js';
+
+export {
   ADMIN_API_ROOT,
   ADMIN_API_VERSION_SEGMENT,
   ADMIN_ENDPOINTS,

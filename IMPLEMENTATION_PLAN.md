@@ -223,13 +223,22 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.25A — Player Meta query and filter surface.** Add bounded service and
-client contracts for content version, date, source, Commander, deck cluster,
-termination and private test label, retaining evidence class and denominator.
-Its scope and checklist are in
+**M08.25C — Choice and outcome views.** Render Commander, deck/cluster,
+eligible card, pair, matchup, duration and termination views with exact
+tables, source labels and match/unique-deck weighting controls only. Its
+scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0825--player-meta-dashboard).
-This is the first slice of M08.25, unrelated to the still-unscoped 3–4 seat
+This is the third slice of M08.25, unrelated to the still-unscoped 3–4 seat
 source-classification gap below.
+
+**M08.25B shipped 2026-09-04** — the directory-in, pure table-builder read
+model: `readLiveMatchEnvelopes`/`currentLiveMatchCardDatabases`
+(`apps/simulator/src/analysis/`), nine result tables in
+`packages/admin-contracts/src/player-meta-results.ts`, and
+`readPlayerMetaSummary`/`readPlayerMetaTable`
+(`apps/admin-server/src/service/player-meta-results.ts`) — no HTTP endpoint,
+no client UI, per plan. See `.claude/current-work.md` and the M08 milestone
+file for detail.
 
 **M08.25A shipped 2026-09-04, narrowed rather than blocked** —
 `playerMetaFilterSchema` (`packages/admin-contracts/src/player-meta.ts`) and

@@ -309,6 +309,14 @@ export {
   type UnmatchedSurrenderCapture,
 } from './analysis/live-match-surrender.js';
 
+export {
+  readLiveMatchEnvelopes,
+  type ReadLiveMatchEnvelopesResult,
+  type SkippedLiveMatch,
+} from './analysis/live-match-read.js';
+
+export { currentLiveMatchCardDatabases } from './analysis/live-match-card-databases.js';
+
 export { cardPairs, cardPairSchema, type CardPair } from './analysis/pairs.js';
 
 export {

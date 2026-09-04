@@ -4450,16 +4450,39 @@ drill-down tests.
       (14 contract, 8 filter function); admin-contracts and simulator typecheck
       clean; boundary tests confirm no forbidden dependency was added. See
       `.claude/current-work.md` for detail.
-- [ ] **M08.25B — Choice and outcome views.** Render Commander, deck/cluster,
+- [x] **M08.25B — Player Meta read model.** Build the directory-in, pure
+      table-builder service that turns M08.24's live-match aggregates into
+      bounded result tables for Commander, deck/cluster, eligible card, pair,
+      matchup, duration and termination evidence, plus the simulator-side
+      envelope reader it reads through — no HTTP endpoint, no client UI.
+      Done: `readLiveMatchEnvelopes` (`apps/simulator/src/analysis/
+      live-match-read.ts`) synchronously walks `LiveMatchFileStore`'s
+      `<matchId>/envelope.json` layout, skipping a damaged match rather than
+      aborting the read; `currentLiveMatchCardDatabases`
+      (`live-match-card-databases.ts`) resolves today's bundled database only
+      when every match shares one bundled `formatId`, else an empty map — both
+      live in `@tcg/simulator` per ADR 0023 §2. `player-meta-results.ts`
+      (`packages/admin-contracts`) adds nine result tables spanning the seven
+      named evidence categories (deck/cluster and matchup each split into two,
+      since their row shapes differ), every row carrying its own
+      `source`/`contentVersion`/`rulesVersion` partition columns rather than a
+      partition-scoped table. `apps/admin-server/src/service/
+      player-meta-results.ts` composes M08.25A's filter with M08.24's
+      aggregates into `readPlayerMetaSummary`/`readPlayerMetaTable`; an empty
+      directory is a valid all-zero answer, not a refusal. 35 focused tests
+      pass (8 reader, 4 card-database, 13 contract, 10 service);
+      admin-contracts, simulator and admin-server typecheck clean; lint and
+      format clean. See `.claude/current-work.md` for detail.
+- [ ] **M08.25C — Choice and outcome views.** Render Commander, deck/cluster,
       eligible card, pair, matchup, duration and termination views with exact tables,
       source labels and match/unique-deck weighting controls only.
-- [ ] **M08.25C — Surrender evidence views.** Render turn/phase distributions,
+- [ ] **M08.25D — Surrender evidence views.** Render turn/phase distributions,
       state summaries and exposure-adjusted recent-card/event tables using enforced
       correlation language and visible support.
-- [ ] **M08.25D — States, accessibility and drill-down.** Design empty, sparse,
+- [ ] **M08.25E — States, accessibility and drill-down.** Design empty, sparse,
       corrupt and unauthorized states; verify keyboard/screen-reader access and link
       aggregate rows to the exact bounded evidence available at this stage.
-- [ ] **M08.25E — Tranche close.** Revalidate every filter, denominator, source
+- [ ] **M08.25F — Tranche close.** Revalidate every filter, denominator, source
       label, state and correlation phrase through the standard tranche-close gate.
       Do not start the explorers.
 
