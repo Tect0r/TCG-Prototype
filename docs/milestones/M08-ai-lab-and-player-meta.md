@@ -4510,9 +4510,24 @@ drill-down tests.
       admin-contracts, 14 admin-server and 14 admin-client tests pass across the
       touched files; admin-contracts/simulator/admin-server/admin-client
       typecheck clean. See `.claude/current-work.md` for detail.
-- [ ] **M08.25E — States, accessibility and drill-down.** Design empty, sparse,
+- [x] **M08.25E — States, accessibility and drill-down.** Design empty, sparse,
       corrupt and unauthorized states; verify keyboard/screen-reader access and link
       aggregate rows to the exact bounded evidence available at this stage.
+      Done: empty and unauthorized were already generic (`Empty`/`Failure` on any
+      `AdminOutcome`) and sparse was already handled at the cell level
+      (`formatRate`/`isInsufficient` reading a zero-observation interval as
+      "Insufficient data — no games recorded") — each got test coverage only, no
+      new branching. Corrupt is new: `SummaryFacts` now shows a `role="note"`
+      paragraph naming a `recordsSkipped > 0` count as evidence for review, never
+      a verdict about the surviving rows. Drill-down is new:
+      `playerMetaRowDrillTarget`/`PlayerMetaDrillTarget`
+      (`lib/player-meta-view.ts`) mirror `adaptive-view.ts`'s own drill helper;
+      `PlayerMetaDashboard.tsx` wires an "Exact row" button per row (titled by a
+      new `exactRowTitle` switch, one arm per table) into a `role="region"` drill
+      panel with the fixed Match Explorer disclaimer, reset on tab/weighting
+      change. 21 admin-client tests pass (14 `player-meta-view.test.ts` + 7
+      `player-meta-flow.test.tsx`, both up from before this slice); admin-client
+      typecheck, lint and format clean. See `.claude/current-work.md` for detail.
 - [ ] **M08.25F — Tranche close.** Revalidate every filter, denominator, source
       label, state and correlation phrase through the standard tranche-close gate.
       Do not start the explorers.

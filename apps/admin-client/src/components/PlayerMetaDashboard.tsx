@@ -6,6 +6,7 @@ import {
   type PlayerMetaResultTable,
   type PlayerMetaResultTableName,
   type PlayerMetaRunSummary,
+  type ResultRow,
 } from '@tcg/admin-contracts';
 
 import {
@@ -13,8 +14,10 @@ import {
   displayColumns,
   formatPlayerMetaCell,
   hasPlayerMetaWeighting,
+  playerMetaRowDrillTarget,
   playerMetaTruncationNote,
   sortPlayerMetaRowsByWeight,
+  type PlayerMetaDrillTarget,
   type PlayerMetaWeighting,
 } from '../lib/player-meta-view.js';
 import type { AdminOutcome } from '../net/transport.js';
@@ -38,7 +41,29 @@ import { FactTable, type Fact } from './FactTable.js';
  * additionally get a match/unique-deck weighting control
  * (`hasPlayerMetaWeighting`), the only two tables where that toggle is
  * meaningful (`player-meta-view.ts`'s own note on why `cards`/`pairs` do
- * not need one). No drill-down here: that is M08.25E's job.
+ * not need one).
+ *
+ * M08.25E adds the four states this read model can be in that M08.25B/C/D
+ * had not yet designed for, plus the drill-down every sibling dashboard
+ * already offers:
+ *
+ * - Empty and unauthorized were already generic (`Empty`/`Failure` render
+ *   for any `AdminOutcome`) — this slice only adds test coverage for them,
+ *   never new branching.
+ * - Sparse is likewise already handled at the cell level: a zero-observation
+ *   interval already reads as "Insufficient data — no games recorded"
+ *   (`formatRate`/`isInsufficient` in `dashboard-view.ts`) rather than a
+ *   fabricated proportion; this slice adds test coverage only.
+ * - Corrupt is new: `summary.source.recordsSkipped` was already computed by
+ *   `player-meta-results.ts`'s tolerant reader and shown as a bare count in
+ *   `SummaryFacts`, but nothing named what a skipped record means. A skipped
+ *   count above zero now gets its own descriptive note — evidence for
+ *   review, never a verdict that the surviving rows are unaffected.
+ * - Drill-down reuses `playerMetaRowDrillTarget` the way `AdaptiveDashboard.tsx`
+ *   reuses `adaptiveRowDrillTarget`: a row's "Exact row" button opens the
+ *   exact facts it was drawn from, with the same fixed disclaimer that an
+ *   individual match or replay is not browsable from this screen yet
+ *   (M08.26's Match Explorer).
  */
 
 type TableOutcome = AdminOutcome<PlayerMetaResultTable>;
@@ -77,6 +102,7 @@ export function PlayerMetaPanel() {
     {},
   );
   const [weighting, setWeighting] = useState<PlayerMetaWeighting>('matches');
+  const [drill, setDrill] = useState<PlayerMetaDrillTarget | null>(null);
 
   useEffect(() => {
     void session.playerMetaRunSummary(NO_PLAYER_META_FILTER).then(setSummary);
@@ -133,6 +159,7 @@ export function PlayerMetaPanel() {
                 className={view === table ? 'is-current' : ''}
                 onClick={() => {
                   setView(table);
+                  setDrill(null);
                 }}
               >
                 {TAB_LABELS[table]}
@@ -148,6 +175,7 @@ export function PlayerMetaPanel() {
                 className={weighting === 'matches' ? 'is-current' : ''}
                 onClick={() => {
                   setWeighting('matches');
+                  setDrill(null);
                 }}
               >
                 By matches
@@ -158,6 +186,7 @@ export function PlayerMetaPanel() {
                 className={weighting === 'unique' ? 'is-current' : ''}
                 onClick={() => {
                   setWeighting('unique');
+                  setDrill(null);
                 }}
               >
                 By unique decks
@@ -165,7 +194,30 @@ export function PlayerMetaPanel() {
             </div>
           )}
 
-          <TableView table={view} outcome={tables[view]} weighting={weighting} />
+          <TableView table={view} outcome={tables[view]} weighting={weighting} onDrill={setDrill} />
+
+          {drill !== null && (
+            <div className="dashboard__drill" role="region" aria-label={drill.title}>
+              <div className="dashboard__drill-head">
+                <h4>{drill.title}</h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrill(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <FactTable caption={drill.title} facts={drill.facts} />
+              <p className="panel__note">
+                This is the exact row a bar or cell summarizes — not a further aggregate. Opening
+                one contributing match or its replay is not available from this screen: that needs a
+                listing over the run's match records, which is M08.26&apos;s Match Explorer to
+                build.
+              </p>
+            </div>
+          )}
         </>
       )}
     </section>
@@ -180,6 +232,15 @@ function SummaryFacts({ summary }: { readonly summary: PlayerMetaRunSummary }) {
   ];
   return (
     <>
+      {summary.source.recordsSkipped > 0 && (
+        <p className="dashboard__truncation" role="note">
+          {summary.source.recordsSkipped} match record
+          {summary.source.recordsSkipped === 1 ? '' : 's'} could not be read and were skipped rather
+          than aborting this read — the {summary.source.recordsRead} record
+          {summary.source.recordsRead === 1 ? '' : 's'} below are what survived, never a complete
+          population. This is evidence for review, not a verdict about the tables below.
+        </p>
+      )}
       <FactTable caption="What this read has found so far" facts={facts} />
       {summary.partitions.length > 0 && (
         <table className="dashboard__bars">
@@ -222,12 +283,53 @@ function SummaryFacts({ summary }: { readonly summary: PlayerMetaRunSummary }) {
   );
 }
 
+/**
+ * The title a row's drill-down opens under — names the row's own identifying
+ * column(s) per table shape, mirroring `AdaptiveDashboard.tsx`'s own
+ * `exactRowTitle`. `duration` and `surrender_state` carry one row per
+ * partition rather than a per-entity identifier, so those two name the
+ * partition's source label instead.
+ */
+function exactRowTitle(table: PlayerMetaResultTableName, row: ResultRow): string {
+  switch (table) {
+    case 'commanders':
+      return `${String(row.commanderId)} — Commander row`;
+    case 'decks':
+      return `${String(row.deckHash)} — deck row`;
+    case 'deck_matchups':
+      return `${String(row.deckHash)} vs ${String(row.opponentDeckHash)} — matchup row`;
+    case 'clusters':
+      return `${String(row.clusterId)} — cluster row`;
+    case 'cluster_matchups':
+      return `${String(row.clusterId)} vs ${String(row.opponentClusterId)} — cluster matchup row`;
+    case 'cards':
+      return `${String(row.commanderId)} — ${String(row.cardId)} — card row`;
+    case 'pairs':
+      return `${String(row.commanderId)} — ${String(row.cardIdA)} + ${String(row.cardIdB)} — pair row`;
+    case 'duration':
+      return `${String(row.source)} — duration row`;
+    case 'terminations':
+      return `${String(row.origin)} — termination row`;
+    case 'surrender_turns':
+      return `Turn ${String(row.turn)} — surrender row`;
+    case 'surrender_phases':
+      return `${String(row.phase)} — surrender row`;
+    case 'surrender_state':
+      return `${String(row.source)} — surrender state row`;
+    case 'surrender_exposure_cards':
+    case 'surrender_exposure_events':
+      return `${String(row.key)} — exposure row`;
+  }
+}
+
 function ExactTable({
   table,
   weighting,
+  onDrill,
 }: {
   readonly table: PlayerMetaResultTable;
   readonly weighting: PlayerMetaWeighting;
+  readonly onDrill: (target: PlayerMetaDrillTarget) => void;
 }) {
   const columns = displayColumns(table);
   const rows = sortPlayerMetaRowsByWeight(table.table, table.rows, weighting);
@@ -242,6 +344,7 @@ function ExactTable({
                 {column.label}
               </th>
             ))}
+            <th scope="col"> </th>
           </tr>
         </thead>
         <tbody>
@@ -250,6 +353,16 @@ function ExactTable({
               {columns.map((column) => (
                 <td key={column.key}>{formatPlayerMetaCell(table, row, column)}</td>
               ))}
+              <td>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDrill(playerMetaRowDrillTarget(table, row, exactRowTitle(table.table, row)));
+                  }}
+                >
+                  Exact row
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -262,10 +375,12 @@ function TableView({
   table,
   outcome,
   weighting,
+  onDrill,
 }: {
   readonly table: PlayerMetaResultTableName;
   readonly outcome: TableOutcome | undefined;
   readonly weighting: PlayerMetaWeighting;
+  readonly onDrill: (target: PlayerMetaDrillTarget) => void;
 }) {
   if (outcome === undefined) return <Busy label={`Reading ${TAB_LABELS[table]}…`} />;
   if (!outcome.ok) {
@@ -290,7 +405,7 @@ function TableView({
           {note}
         </p>
       )}
-      <ExactTable table={outcome.value} weighting={weighting} />
+      <ExactTable table={outcome.value} weighting={weighting} onDrill={onDrill} />
     </div>
   );
 }

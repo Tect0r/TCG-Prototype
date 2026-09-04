@@ -16,12 +16,21 @@ import { formatRate, type RateReading } from './dashboard-view.js';
  * `interval(key, …)` naming convention
  * `apps/admin-server/src/service/player-meta-results.ts` uses.
  *
- * Deliberately narrower than `adaptive-view.ts`: no drill-down (M08.25E's
- * job) and no series tally (a Player Meta table has no generation/block
- * concept to tally over). `sortPlayerMetaRowsByWeight` is this slice's one
- * addition — a plain descending sort by whichever already-declared count
- * column the caller picked, never a number the server did not already
- * compute (CLAUDE.md: automated signals are evidence, never a verdict).
+ * Deliberately narrower than `adaptive-view.ts`: no series tally (a Player
+ * Meta table has no generation/block concept to tally over).
+ * `sortPlayerMetaRowsByWeight` is M08.25C's one addition — a plain
+ * descending sort by whichever already-declared count column the caller
+ * picked, never a number the server did not already compute (CLAUDE.md:
+ * automated signals are evidence, never a verdict).
+ *
+ * `playerMetaRowDrillTarget` (M08.25E) is the drill-down every Player Meta
+ * table shares, mirroring `adaptive-view.ts`'s own `adaptiveRowDrillTarget`:
+ * it reaches the exact row a bar or cell summarizes, never a match or a
+ * replay — the same boundary `ResultDashboard.tsx`'s `rowDrillTarget` and
+ * `adaptive-view.ts`'s `adaptiveRowDrillTarget` both draw, for the reason
+ * their doc comments give: individual matches and replays are a directory
+ * listing this app deliberately does not serve yet (M08.26's Match
+ * Explorer).
  */
 
 /** Reads an interval reading out of a Player Meta table row, by the column's own declared bounds. */
@@ -65,6 +74,31 @@ export function formatPlayerMetaCell(
   if (column.kind === 'interval') return formatRate(readPlayerMetaRate(table, row, column.key));
   const value = row[column.key];
   return value === null ? 'Not measured' : String(value);
+}
+
+/** What a row's drill-down opens: the title a caller gave it, plus every displayed column's exact fact. */
+export interface PlayerMetaDrillTarget {
+  readonly title: string;
+  readonly facts: readonly { readonly label: string; readonly value: string }[];
+}
+
+/** The exact row a table cell was drawn from — an interval folded into one rate fact, per `displayColumns`. */
+export function playerMetaRowDrillTarget(
+  table: PlayerMetaResultTable,
+  row: ResultRow,
+  title: string,
+): PlayerMetaDrillTarget {
+  const facts = displayColumns(table).map((column) => {
+    if (column.kind === 'interval') {
+      return {
+        label: column.label,
+        value: formatRate(readPlayerMetaRate(table, row, column.key)),
+      };
+    }
+    const value = row[column.key];
+    return { label: column.label, value: value === null ? 'Not measured' : String(value) };
+  });
+  return { title, facts };
 }
 
 /** The columns a generic exact-table view should print — an interval's own bound/count columns are folded into its one cell. */

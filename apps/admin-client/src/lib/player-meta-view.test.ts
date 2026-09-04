@@ -7,6 +7,7 @@ import {
   displayColumns,
   formatPlayerMetaCell,
   hasPlayerMetaWeighting,
+  playerMetaRowDrillTarget,
   playerMetaTruncationNote,
   readPlayerMetaRate,
   sortPlayerMetaRowsByWeight,
@@ -134,6 +135,43 @@ describe('sortPlayerMetaRowsByWeight', () => {
   it('leaves row order untouched for a table with no weighting column', () => {
     const sorted = sortPlayerMetaRowsByWeight('decks', rows, 'matches');
     expect(sorted).toEqual(rows);
+  });
+});
+
+describe('playerMetaRowDrillTarget', () => {
+  it('reaches every displayed column of the exact row, an interval folded into one rate fact', () => {
+    const table: PlayerMetaResultTable = {
+      table: 'commanders',
+      source: { recordsRead: 40, recordsSkipped: 0 },
+      columns: [...RATE_COLUMNS],
+      rows: [],
+      page: { returned: 0, limit: 50, nextCursor: null, total: 0 },
+    };
+    const row: ResultRow = {
+      rate: 0.6,
+      rateLow: 0.5,
+      rateHigh: 0.7,
+      rateGames: 40,
+      commanderId: 'commander_1',
+    };
+    const target = playerMetaRowDrillTarget(table, row, 'commander_1 — Commander row');
+    expect(target.title).toBe('commander_1 — Commander row');
+    expect(target.facts).toEqual([
+      { label: 'Win rate', value: expect.stringMatching(/%/) },
+      { label: 'Commander', value: 'commander_1' },
+    ]);
+  });
+
+  it('reads a null cell as "Not measured", never the literal word "null"', () => {
+    const table: PlayerMetaResultTable = {
+      table: 'commanders',
+      source: { recordsRead: 0, recordsSkipped: 0 },
+      columns: [COMMANDER_ID_COLUMN],
+      rows: [],
+      page: { returned: 0, limit: 50, nextCursor: null, total: 0 },
+    };
+    const target = playerMetaRowDrillTarget(table, { commanderId: null }, 'exact row');
+    expect(target.facts).toEqual([{ label: 'Commander', value: 'Not measured' }]);
   });
 });
 

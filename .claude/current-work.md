@@ -2984,3 +2984,84 @@ milestone's work-slice split.
 
 Slice complete. Next slice: **M08.25E — States, accessibility and
 drill-down.**
+
+M08.25E is implemented: the four states this read model can be in
+(empty, sparse, corrupt, unauthorized) plus a drill-down over every Player
+Meta table's exact rows.
+
+Scoping: rather than inventing new abstractions, each named state was traced
+to its existing mechanism first. Empty (`Empty` component on a
+zero-row table) and unauthorized (`Failure` on any `AdminOutcome` carrying
+`admin/unauthorized`) were already generic and needed test coverage only, no
+new branching — the same generic `Busy`/`Empty`/`Failure` set every sibling
+dashboard already reuses. Sparse was likewise already handled at the cell
+level: a zero-observation interval already reads through `formatRate`/
+`isInsufficient` as "Insufficient data — no games recorded" rather than a
+fabricated proportion — test coverage only. Corrupt was the one genuinely
+undesigned state: `summary.source.recordsSkipped` was already computed by
+`player-meta-results.ts`'s tolerant reader and shown as a bare count in
+`SummaryFacts`, but nothing named what a skipped record means for the rows
+below it. Drill-down was genuinely new: no `PlayerMetaDrillTarget`/
+`playerMetaRowDrillTarget` existed before this slice.
+
+**Client** (`apps/admin-client`) — `lib/player-meta-view.ts` gains
+`PlayerMetaDrillTarget` (`{ title, facts }`) and `playerMetaRowDrillTarget(table,
+row, title)`, mirroring `adaptive-view.ts`'s `AdaptiveDrillTarget`/
+`adaptiveRowDrillTarget` exactly: it reads every column `displayColumns`
+would show, folding an interval into one rate fact via `formatRate`/
+`readPlayerMetaRate`, and prints "Not measured" for a null cell rather than
+the literal word "null". Nothing here reaches a match or a replay — the same
+boundary `adaptive-view.ts` and `ResultDashboard.tsx`'s own drill helpers
+draw, because browsing an individual match or its replay is not a directory
+listing this app serves yet (M08.26's Match Explorer).
+
+`components/PlayerMetaDashboard.tsx`: `PlayerMetaPanel` gains a `drill`
+state (`PlayerMetaDrillTarget | null`), reset on every tab and weighting
+change so a stale row's facts never survive a view switch. `ExactTable` gets
+a trailing "Exact row" button per row, calling the new
+`exactRowTitle(table, row)` switch (one arm per `PlayerMetaResultTableName`,
+naming the row's own identifying column(s) — `commanderId`, `deckHash` (+
+`opponentDeckHash` for matchups), `clusterId` (+ `opponentClusterId`),
+`cardId`/`cardIdA`+`cardIdB`, `origin`, `turn`, `phase`, or `key` for the two
+exposure tables; `duration` and `surrender_state` carry one row per
+partition rather than a per-entity key, so those two name the partition's
+`source` label instead) before handing off to `playerMetaRowDrillTarget`.
+The drill panel itself (`role="region"` with `aria-label={drill.title}`, a
+`FactTable`, a Close button, and the fixed Match Explorer disclaimer) mirrors
+`AdaptiveDashboard.tsx`'s drill panel JSX verbatim in structure.
+`SummaryFacts` gains a `role="note"` paragraph shown only when
+`summary.source.recordsSkipped > 0`, naming the skipped count and stating
+plainly that the surviving read is not a complete population — evidence for
+review, never a verdict that the surviving rows are unaffected
+(CLAUDE.md: automated signals are evidence, never a verdict). Updated the
+file's top doc comment to describe all four states and the drill-down,
+removing the stale "No drill-down here: that is M08.25E's job" deferral
+line.
+
+Tests: `lib/player-meta-view.test.ts` gains a `playerMetaRowDrillTarget`
+describe block (2 tests: reaches every displayed column with an interval
+folded into one rate fact; reads a null cell as "Not measured"), mirroring
+`adaptive-view.test.ts`'s own test shape — 14 tests in that file now (was
+12). `player-meta-flow.test.tsx` gains 5 integration tests: empty state
+("This query matched no row for this table." for a table seeded with zero
+rows); sparse cell (a zero-`winRateGames` row renders "Insufficient data —
+no games recorded"); corrupt state (a summary seeded with
+`recordsSkipped: 2` shows the new skipped-record note); unauthorized
+(`service.lab.seedPlayerMeta({ summary: { refuse: 'admin/unauthorized' } })`
+renders a `role="alert"` containing the code, via the existing generic
+`Failure` path — no per-panel special-casing added, matching every other
+screen in this app); and drill-down (clicking "Exact row" opens a
+`role="region"` panel naming the row and containing "Match Explorer", then
+Close removes it) — 7 tests in that file now (was 2).
+
+Verified: 21 admin-client tests (14 `player-meta-view.test.ts` + 7
+`player-meta-flow.test.tsx`) — all pass. `npx tsc --noEmit -p .` on
+`apps/admin-client` clean. ESLint clean on all four
+changed/created files. `prettier --check` flagged
+`PlayerMetaDashboard.tsx` and `player-meta-flow.test.tsx`; `prettier --write`
+applied, then the full focused suite (21 tests) rerun unchanged to confirm
+the reflow changed no behavior. Tranche-close gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.25F, per this
+milestone's work-slice split.
+
+Slice complete. Next slice: **M08.25F — Tranche close.**
