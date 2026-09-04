@@ -399,6 +399,31 @@ export {
 } from './deck-explorer.js';
 
 export {
+  CARD_EXPLORER_ELIGIBILITY_STATUSES,
+  CARD_EXPLORER_MAX_CONTRIBUTING_DECKS,
+  CARD_EXPLORER_MAX_CONTRIBUTING_MATCHES,
+  CARD_EXPLORER_MAX_INCLUSIONS,
+  CARD_EXPLORER_MAX_PARTNERS,
+  CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS,
+  cardExplorerContributingDeckSchema,
+  cardExplorerContributingMatchSchema,
+  cardExplorerEligibilityStatusSchema,
+  cardExplorerExperimentEvidenceSchema,
+  cardExplorerInclusionSchema,
+  cardExplorerPartnerSchema,
+  cardExplorerUnavailablePartitionSchema,
+  cardExplorerViewSchema,
+  type CardExplorerContributingDeck,
+  type CardExplorerContributingMatch,
+  type CardExplorerEligibilityStatus,
+  type CardExplorerExperimentEvidence,
+  type CardExplorerInclusion,
+  type CardExplorerPartner,
+  type CardExplorerUnavailablePartition,
+  type CardExplorerView,
+} from './card-explorer.js';
+
+export {
   ADMIN_REQUEST_PAYLOAD_NAMES,
   ADMIN_REQUEST_PAYLOAD_SCHEMAS,
   OPERATOR_JOB_ACTIONS,
@@ -428,6 +453,7 @@ export {
   playerMetaRunSummaryRequestSchema,
   playerMetaResultTableRequestSchema,
   deckExplorerRequestSchema,
+  cardExplorerRequestSchema,
   type AdaptiveRunRef,
   type AdaptiveResultTableRequest,
   type AdaptiveResultTableRequestInput,
@@ -437,6 +463,8 @@ export {
   type PlayerMetaResultTableRequestInput,
   type DeckExplorerRequest,
   type DeckExplorerRequestInput,
+  type CardExplorerRequest,
+  type CardExplorerRequestInput,
   type AdminRequestPayloadName,
   type BatchPage,
   type BatchRef,

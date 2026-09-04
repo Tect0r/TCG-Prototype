@@ -230,8 +230,24 @@ import { adminError, type AdminError } from './errors.js';
  *   visible no matter how many matches played that deck or how many
  *   Adaptive Counter runs produced it. That is what a contract version is
  *   for saying.
+ * - 11 (M08.26C) — the language acquired the **Card Explorer**. One address
+ *   was added, `card-explorer-view`, naming a card ID and (optionally) a
+ *   `jobId` to cross-check its draw/play/dead-hand evidence against. It
+ *   carries eligible inclusion by source and Commander, partners and
+ *   unavailable-partition evidence read from live matches, contributing
+ *   decks and matches, and — only when a job is named — that job's `'cards'`
+ *   table row for this card. Replacement evidence is named by the milestone
+ *   but has no structured, queryable form anywhere in this codebase yet
+ *   (`card-explorer.ts`'s doc comment); it carries no field here and is
+ *   recorded as a deferred gap rather than an invented shape.
+ *
+ *   A build speaking 10 could read a deck's exact identity and revision
+ *   lineage, and could not reach the new address, so no card's eligible
+ *   inclusion, partners, draw/play/dead-hand evidence or contributing decks
+ *   and matches would be visible no matter how many matches or jobs existed.
+ *   That is what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 10;
+export const ADMIN_CONTRACT_VERSION = 11;
 
 /**
  * The version stamped into a persisted catalog document.

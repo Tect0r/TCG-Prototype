@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { adaptiveResultTableSchema, adaptiveRunSummarySchema } from './adaptive-results.js';
 import { playerMetaResultTableSchema, playerMetaRunSummarySchema } from './player-meta-results.js';
 import { deckExplorerViewSchema } from './deck-explorer.js';
+import { cardExplorerViewSchema } from './card-explorer.js';
 import { resultArtifactListingSchema, resultArtifactSchema } from './artifacts.js';
 import {
   catalogBatchViewSchema,
@@ -38,6 +39,7 @@ import {
   listJobsRequestSchema,
   operatorJobActionSchema,
   deckExplorerRequestSchema,
+  cardExplorerRequestSchema,
   playerMetaResultTableRequestSchema,
   playerMetaRunSummaryRequestSchema,
   reorderBatchRequestSchema,
@@ -519,6 +521,12 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'deck-explorer-view',
     request: deckExplorerRequestSchema,
     response: deckExplorerViewSchema,
+    mutates: false,
+  }),
+  cardExplorerView: endpoint({
+    route: 'card-explorer-view',
+    request: cardExplorerRequestSchema,
+    response: cardExplorerViewSchema,
     mutates: false,
   }),
 });

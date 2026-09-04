@@ -4595,9 +4595,28 @@ representative-selection determinism, unsupported replay and large-fixture tests
       `ResultsScreen.tsx`. 11 new focused tests pass (4 unit + 7 integration); all
       pre-existing `deck-explorer`/`service` tests (43) still pass; typecheck and
       ESLint clean on every touched workspace.
-- [ ] **M08.26C — Card Explorer.** Present eligible inclusion by source and
+- [x] **M08.26C — Card Explorer.** Present eligible inclusion by source and
       Commander, draw/play/dead-hand evidence, partners/replacements, contributing
-      decks/matches and explicit insufficient-data states.
+      decks/matches and explicit insufficient-data states. Evidence note:
+      `card-explorer-view` (contract version 11) reads a card ID's eligible
+      inclusion, partners and unavailable partitions from
+      `aggregateLiveCardEvidence` over the server's one configured live-match
+      root, and contributing decks/matches from the same envelope scan
+      `deck-explorer.ts` uses, filtered to seats whose deck included the named
+      card; when a `jobId` is named, `experimentEvidence.row` reuses that job's
+      own `'cards'` table row verbatim rather than restating its fields
+      (`null`/checked-empty/populated kept distinct at both the object and row
+      level). Replacements are named by the milestone but have no structured,
+      queryable form anywhere in this codebase yet
+      (`apps/simulator/src/analysis/replacement.ts`/`counters.ts` only produce
+      Markdown prose) — recorded as a deliberately deferred gap
+      (`card-explorer.ts`'s own doc comment), not an invented shape; the exact
+      next question for whichever slice picks it up. `CardExplorerPanel`
+      (`apps/admin-client/src/components/CardExplorerDashboard.tsx`) wired into
+      `ResultsScreen.tsx`. 34 new focused tests pass (16 admin-contracts schema
+      + 7 admin-server reader + 5 admin-client unit + 6 admin-client
+      integration); pre-existing `deck-explorer`/`service` tests still pass;
+      typecheck and ESLint clean on every touched workspace.
 - [ ] **M08.26D — Match Explorer.** Add the filterable match table, termination
       context, event timeline, deck snapshots, selected diagnostics and authorized
       replay/surrender links, including unsupported-artifact states.

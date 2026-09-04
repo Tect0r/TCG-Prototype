@@ -10,6 +10,7 @@ import {
   catalogJobViewSchema,
   MAX_JOBS_PER_BATCH,
 } from './catalog.js';
+import { contentIdSchema } from './content.js';
 import { batchIdSchema, jobIdSchema, labelSchema } from './identity.js';
 import { legalJobActions, type JobAction, type JobStatus } from './lifecycle.js';
 import { pageOf, pageRequestSchema } from './pagination.js';
@@ -493,6 +494,24 @@ export type DeckExplorerRequest = z.infer<typeof deckExplorerRequestSchema>;
 export type DeckExplorerRequestInput = z.input<typeof deckExplorerRequestSchema>;
 
 /**
+ * One card's Card Explorer view (M08.26C): eligible inclusion, partners and
+ * unavailable partitions read from live matches, plus — only when a `jobId`
+ * is named — draw/play/dead-hand evidence read from that job's `'cards'`
+ * result table.
+ *
+ * `jobId` defaults to `null`, meaning "do not check job-sourced evidence at
+ * all," never "checked, found nothing" — the same rule
+ * `deckExplorerRequestSchema.adaptiveExperimentId` already follows, extended
+ * here to a single-object answer (`card-explorer.ts`'s doc comment).
+ */
+export const cardExplorerRequestSchema = z.strictObject({
+  cardId: contentIdSchema,
+  jobId: jobIdSchema.nullable().default(null),
+});
+export type CardExplorerRequest = z.infer<typeof cardExplorerRequestSchema>;
+export type CardExplorerRequestInput = z.input<typeof cardExplorerRequestSchema>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -522,6 +541,7 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   playerMetaRunSummary: playerMetaRunSummaryRequestSchema,
   playerMetaResultTable: playerMetaResultTableRequestSchema,
   deckExplorerView: deckExplorerRequestSchema,
+  cardExplorerView: cardExplorerRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;

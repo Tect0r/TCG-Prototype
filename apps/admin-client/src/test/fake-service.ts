@@ -19,6 +19,7 @@ import {
   adaptiveRunSummarySchema,
   catalogFilterSchema,
   catalogJobViewSchema,
+  cardExplorerViewSchema,
   deckExplorerViewSchema,
   playerMetaResultTableSchema,
   playerMetaRunSummarySchema,
@@ -40,6 +41,7 @@ import {
   type MatchCountEstimate,
   type PresetExpansion,
   type BatchDetail,
+  type CardExplorerView,
   type CatalogJobView,
   type ContentCatalog,
   type DeckExplorerView,
@@ -187,6 +189,20 @@ export interface FakeLab {
   seedDeckExplorer(
     deckHash: string,
     view?: DeckExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string },
+  ): void;
+  /**
+   * Replaces what `cardExplorerView` answers for one card ID (M08.26C) —
+   * keyed by `cardId` for the same reason `seedDeckExplorer` is keyed by
+   * `deckHash`: the real reader answers differently per identifier queried
+   * against the same configured root. An unseeded card ID answers
+   * `cardExplorerViewFixture(cardId)` (no inclusion, partner or contributing
+   * evidence, `experimentEvidence` not checked) rather than a refusal, for
+   * the same reason `seedDeckExplorer`'s own note gives: the root is always
+   * resolved, so there is no "not found" for the root itself.
+   */
+  seedCardExplorer(
+    cardId: string,
+    view?: CardExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string },
   ): void;
 }
 
@@ -423,6 +439,25 @@ export function deckExplorerViewFixture(
       },
     },
     knownRevisions: null,
+    ...overrides,
+  });
+}
+
+/* ---------------------------------------------------------- card explorer (M08.26C) */
+
+/** A complete Card Explorer view: no inclusion, partner or contributing evidence, nothing checked. */
+export function cardExplorerViewFixture(
+  cardId: string,
+  overrides: Partial<CardExplorerView> = {},
+): CardExplorerView {
+  return cardExplorerViewSchema.parse({
+    cardId,
+    inclusions: [],
+    partners: [],
+    unavailablePartitions: [],
+    experimentEvidence: null,
+    contributingDecks: [],
+    contributingMatches: [],
     ...overrides,
   });
 }
@@ -910,6 +945,11 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     string,
     DeckExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string }
   >();
+  /** Card Explorer views (M08.26C), by card ID — see `FakeLab.seedCardExplorer`'s own doc comment. */
+  const cardExplorerViews = new Map<
+    string,
+    CardExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string }
+  >();
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -1129,6 +1169,9 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     },
     seedDeckExplorer(deckHash, view) {
       deckExplorerViews.set(deckHash, view ?? deckExplorerViewFixture(deckHash));
+    },
+    seedCardExplorer(cardId, view) {
+      cardExplorerViews.set(cardId, view ?? cardExplorerViewFixture(cardId));
     },
   };
 
@@ -1548,6 +1591,15 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
         return refusal(seeded.refuse, 409, seeded.message);
       }
       return answer(seeded ?? deckExplorerViewFixture(deckHash));
+    }
+
+    if (name === 'cardExplorerView') {
+      const cardId = String(payload.cardId ?? '');
+      const seeded = cardExplorerViews.get(cardId);
+      if (seeded !== undefined && 'refuse' in seeded) {
+        return refusal(seeded.refuse, 409, seeded.message);
+      }
+      return answer(seeded ?? cardExplorerViewFixture(cardId));
     }
 
     return refusal('admin/unknown_endpoint', 404);

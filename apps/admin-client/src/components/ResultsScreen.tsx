@@ -34,6 +34,7 @@ import { Busy, Empty, Failure } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
 import { ResultDashboard } from './ResultDashboard.js';
 import { AdaptiveRunPanel } from './AdaptiveDashboard.js';
+import { CardExplorerPanel } from './CardExplorerDashboard.js';
 import { DeckExplorerPanel } from './DeckExplorerDashboard.js';
 import { PlayerMetaPanel } from './PlayerMetaDashboard.js';
 
@@ -86,9 +87,9 @@ export function ResultsScreen() {
   const [listFailure, setListFailure] = useState<AdminFailure | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<JobId | null>(null);
-  const [mode, setMode] = useState<'catalog' | 'adaptive' | 'player-meta' | 'deck-explorer'>(
-    'catalog',
-  );
+  const [mode, setMode] = useState<
+    'catalog' | 'adaptive' | 'player-meta' | 'deck-explorer' | 'card-explorer'
+  >('catalog');
 
   const search = useCallback(
     async (next: ResultsFilterState): Promise<void> => {
@@ -177,11 +178,22 @@ export function ResultsScreen() {
         >
           Deck Explorer
         </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'card-explorer'}
+          className={mode === 'card-explorer' ? 'is-current' : ''}
+          onClick={() => {
+            setMode('card-explorer');
+          }}
+        >
+          Card Explorer
+        </button>
       </div>
 
       {mode === 'adaptive' && <AdaptiveRunPanel />}
       {mode === 'player-meta' && <PlayerMetaPanel />}
       {mode === 'deck-explorer' && <DeckExplorerPanel />}
+      {mode === 'card-explorer' && <CardExplorerPanel />}
       {mode === 'catalog' && (
         <>
           <FilterPanel

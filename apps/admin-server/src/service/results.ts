@@ -13,6 +13,8 @@ import {
   type ResultSummary,
   type ResultTable,
   type ResultTableName,
+  type RunEnvironmentRef,
+  type SourceClass,
 } from '@tcg/admin-contracts';
 import { err, isErr, ok, type Result } from '@tcg/shared';
 import { ABNORMAL_TERMINATIONS, experimentPaths } from '@tcg/simulator';
@@ -731,6 +733,42 @@ export class ResultReader {
     const validated = resultTableSchema.safeParse(value);
     if (!validated.success) return err([builtBadly(jobId, table)]);
     return ok(validated.data);
+  }
+
+  /**
+   * A job's `sourceClasses` and one anchoring environment, for
+   * `experimentExplorerEvidenceSchema` (`./card-explorer.ts`'s Card
+   * Explorer). Reuses `#open` rather than `readSummary`, because this
+   * provenance stamp needs neither the calibration-standing gate nor the
+   * rest of a full result summary — only the catalog document already
+   * opened and read has, and the run identity `readSummary` reads separately
+   * anyway.
+   *
+   * `identity.environments` holds 1–16 refs (`runIdentitySchema`); this picks
+   * the first one as a narrow, documented anchor for a single-environment
+   * provenance stamp — the same "first stable thing found, not a claim about
+   * every environment" convention `deck-explorer.ts`'s lowest-`matchId`
+   * anchor already sets for this codebase.
+   */
+  async readProvenance(
+    jobId: JobId,
+  ): Promise<
+    Result<{ sourceClasses: readonly SourceClass[]; environment: RunEnvironmentRef }, readonly AdminError[]>
+  > {
+    const open = await this.#open(jobId);
+    if (isErr(open)) return open;
+
+    const identity = await readRunIdentity(open.value.directory, { jobId });
+    if (isErr(identity)) return err(identity.error);
+
+    const environment = identity.value.environments[0];
+    if (environment === undefined) {
+      return err([
+        noResult(jobId, 'The run this job indexes names no environment, so it has no provenance to read.'),
+      ]);
+    }
+
+    return ok({ sourceClasses: open.value.job.sourceClasses, environment });
   }
 
   /**

@@ -17,6 +17,7 @@ import type {
   BatchId,
   BatchPage,
   Capabilities,
+  CardExplorerView,
   CatalogFilterInput,
   CatalogJobView,
   ChoiceEstimate,
@@ -562,6 +563,27 @@ export class AdminSession {
     return this.#call('deckExplorerView', {
       deckHash,
       adaptiveExperimentId: adaptiveExperimentId ?? null,
+    });
+  }
+
+  /* -------------------------------------------------------- the card explorer (M08.26C) */
+
+  /**
+   * A card's eligible-inclusion and partner evidence across live matches, plus
+   * one named job's draw/play/dead-hand evidence when `jobId` is named.
+   *
+   * `jobId` omitted or `null` means "not checked" — the answer comes back with
+   * `experimentEvidence: null`, not a populated entry with an empty row. Naming
+   * a job whose run cannot be read fails the whole call rather than reporting
+   * either in its place (`cardExplorerRequestSchema`, ADR 0023 §2).
+   */
+  async cardExplorerView(
+    cardId: string,
+    jobId?: JobId | null,
+  ): Promise<AdminOutcome<CardExplorerView>> {
+    return this.#call('cardExplorerView', {
+      cardId,
+      jobId: jobId ?? null,
     });
   }
 

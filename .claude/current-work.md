@@ -3317,3 +3317,88 @@ Marked M08.26B's work-slice checkbox complete in the milestone file. Root
 status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section are
 untouched — those move only at M08.26F tranche close, per CLAUDE.md. Next
 slice: **M08.26C — Card Explorer**.
+
+## M08.26C — Card Explorer
+
+Contract and server work for this slice
+(`packages/admin-contracts/src/card-explorer.ts`,
+`apps/admin-server/src/service/card-explorer.ts`, `ADMIN_CONTRACT_VERSION`
+10→11, the `card-explorer-view` endpoint wired through
+`service.ts`/`requests.ts`/`handlers.ts`/`session.ts`) was already implemented
+and correct going into this session, including the 7 admin-server reader
+tests; only the admin-contracts schema tests and the entire admin-client UI
+stack remained.
+
+New `packages/admin-contracts/src/card-explorer.test.ts` (16 tests): restated
+literals, `cardExplorerInclusionSchema`, `cardExplorerPartnerSchema`,
+`cardExplorerUnavailablePartitionSchema`,
+`cardExplorerExperimentEvidenceSchema` (the `null`/checked-empty/populated
+three-way split at both the object and row level),
+`cardExplorerContributingDeckSchema`/`cardExplorerContributingMatchSchema`,
+`cardExplorerRequestSchema` and `cardExplorerViewSchema`, including the five
+separate max-bound refusal assertions.
+
+New `apps/admin-client/src/lib/card-explorer-view.ts`:
+`cardExplorerEligibilityLabel` renders the three eligibility statuses in
+words; `formatCardExplorerRate` names a `null` rate "Not applicable —
+structurally ineligible" rather than a fabricated zero, reusing
+`dashboard-view.ts`'s `formatPercent` for the populated case;
+`resultRowFacts` renders `experimentEvidence.row` (a reused, generic
+`ResultRow`) as ordered label/value facts with a null cell reading "Not
+measured" — deliberately simpler than `player-meta-view.ts`'s
+`playerMetaRowDrillTarget`, which needs `ResultColumn[]` metadata Card
+Explorer's reused row has no equivalent of.
+
+New `apps/admin-client/src/components/CardExplorerDashboard.tsx`
+(`CardExplorerPanel`): an entry form (card ID, required, validated locally
+against `contentIdSchema`; job ID, optional, validated against `jobIdSchema`)
+before any request is sent, mirroring Deck Explorer's typed-entry pattern.
+`InclusionsView`/`PartnersView` render tables of eligible Commanders/partners
+by source, or an honest `Empty` state. `UnavailablePartitionsView` lists
+reasons, or renders nothing when empty. `ExperimentEvidenceView` renders the
+three-way split explicitly in words: `experimentEvidence === null` → "not
+checked"; `.row === null` → `Empty` "checked — the named job's own `cards`
+table has no row for this card"; a populated row → `FactTable` via
+`resultRowFacts`. `ContributingDecksView`/`ContributingMatchesView` are simple
+tables or `Empty`. Wired into `ResultsScreen.tsx` as a fifth tab alongside the
+existing four. Replacements are named by the milestone but have no
+structured, queryable form anywhere in this codebase yet
+(`apps/simulator/src/analysis/replacement.ts`/`counters.ts` only produce
+Markdown prose) — recorded as a deliberately deferred gap
+(`card-explorer.ts`'s own doc comment, restated in the component's doc
+comment and the milestone evidence note), not an invented shape; the exact
+next question for whichever slice picks it up.
+
+`apps/admin-client/src/test/fake-service.ts` gained
+`FakeLab.seedCardExplorer(cardId, view | { refuse })`, keyed by card ID (like
+`seedDeckExplorer` is keyed by deck hash) — an unseeded card ID answers
+`cardExplorerViewFixture(cardId)` (no inclusion/partner/contributing
+evidence, `experimentEvidence` not checked) rather than a refusal, since the
+root is always resolved and there is no "not found" for the root itself.
+
+Verified: 5 new unit tests in `card-explorer-view.test.ts` (all three
+eligibility labels, populated/null rate formatting, `resultRowFacts` ordering
+and its null-cell case). 6 new integration tests in
+`card-explorer-flow.test.tsx` — reading and rendering inclusion evidence,
+a malformed card ID refused locally with no request sent, an honest
+no-live-match-includes-this-card empty state, the
+not-checked-versus-checked-empty experiment evidence split, a populated
+experiment evidence row rendered as facts, and an `admin/unauthorized`
+failure state. Fixed two test-authoring bugs found while writing the flow
+test, no production code involved: a second `openCard()` call that re-typed
+into the "Card ID" field without clearing it first (fixed by only typing the
+newly relevant field on the second interaction, mirroring
+`deck-explorer-flow.test.tsx`'s own "distinguishes known revisions" test);
+and `userEvent.type(element, '')`, which throws because an empty string is
+not a valid key-sequence descriptor (fixed by simply not calling `.type()` on
+a field meant to stay empty). All pre-existing `deck-explorer`/`service`
+tests still pass unmodified. `npx tsc --noEmit` clean on `admin-contracts`,
+`admin-server` and `admin-client`. ESLint reports no issues on every new/
+changed file.
+
+Marked M08.26C's work-slice checkbox complete in the milestone file
+(correcting an arithmetic slip in the evidence note's test count from 32 to
+the actual 34: 16 admin-contracts + 7 admin-server + 5 admin-client unit + 6
+admin-client integration). Root status row and `IMPLEMENTATION_PLAN.md`'s
+"next bounded task" section are untouched — those move only at M08.26F
+tranche close, per CLAUDE.md. Next slice: **M08.26D — Match Explorer**.
