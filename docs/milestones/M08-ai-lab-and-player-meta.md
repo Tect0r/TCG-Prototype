@@ -4433,9 +4433,23 @@ drill-down tests.
 
 ### Work slices
 
-- [ ] **M08.25A — Player Meta query and filter surface.** Add bounded service and
+- [x] **M08.25A — Player Meta query and filter surface.** Add bounded service and
       client contracts for content version, date, source, Commander, deck cluster,
       termination and private test label, retaining evidence class and denominator.
+      Done: narrowed to the five dimensions the telemetry schema actually models
+      (content version, source, Commander, deck cluster as `deckHashes`,
+      termination) — date and private test label have no backing schema field
+      anywhere and are recorded as the next unscoped design question in
+      `IMPLEMENTATION_PLAN.md` rather than invented. `playerMetaFilterSchema` in
+      `packages/admin-contracts/src/player-meta.ts` (client contract, ADR
+      0001-restated enums/hash bound) pairs with `filterLiveMatches` in
+      `apps/simulator/src/analysis/live-match-filter.ts` (service contract): the
+      latter only narrows which envelopes reach `partitionLiveMatches`/
+      `aggregateLiveMatches`, so filtering cannot touch M08.24's partition-keyed
+      evidence class or match/unique-deck denominators. 22 focused tests pass
+      (14 contract, 8 filter function); admin-contracts and simulator typecheck
+      clean; boundary tests confirm no forbidden dependency was added. See
+      `.claude/current-work.md` for detail.
 - [ ] **M08.25B — Choice and outcome views.** Render Commander, deck/cluster,
       eligible card, pair, matchup, duration and termination views with exact tables,
       source labels and match/unique-deck weighting controls only.

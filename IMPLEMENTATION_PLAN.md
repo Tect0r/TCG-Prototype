@@ -231,6 +231,41 @@ Its scope and checklist are in
 This is the first slice of M08.25, unrelated to the still-unscoped 3–4 seat
 source-classification gap below.
 
+**M08.25A shipped 2026-09-04, narrowed rather than blocked** —
+`playerMetaFilterSchema` (`packages/admin-contracts/src/player-meta.ts`) and
+`filterLiveMatches` (`apps/simulator/src/analysis/live-match-filter.ts`)
+cover the five filter dimensions the live-match telemetry contract actually
+models (content version, source, Commander, deck cluster, termination); the
+gap that narrowed it is recorded here rather than guessed at. Two of the
+seven filter dimensions M08.25's prose names — "date" and "private test
+label" — have no backing field anywhere in the live-match telemetry contract.
+`liveMatchEnvelopeSchema` (`packages/match-telemetry/src/schema.ts`) carries
+no timestamp of any kind; nothing written during M08.21's scope needed one,
+and no later tranche added one. No concept of a "private" or "staff-only"
+test match exists anywhere in the schema, the live-match store
+(`apps/multiplayer-server/src/live-match-store.ts`), or any earlier milestone
+record — it appears nowhere but this one sentence in M08.25's own prose.
+Filtering by "deck cluster" is a related, smaller substitution rather than a
+gap: it is filtered by `deckHashes` (the stable primitive underneath a
+cluster) instead of a cluster identifier, because `clusterDecks()`
+(`apps/simulator/src/analysis/clusters.ts`) assigns `cluster_01`,
+`cluster_02`, ... by sorted position within one clustering call, not a
+persistent cross-call identity a filter could name honestly.
+
+**Next action:** before a later slice adds "date" or "private test label" as
+real `playerMetaFilterSchema`/`filterLiveMatches` fields, decide (a) what a
+live match's timestamp is — captured at `buildLiveMatchRecord()`
+(`apps/multiplayer-server/src/live-match-record.ts`) and added to
+`liveMatchEnvelopeSchema` as a new versioned field, versus derived later from
+some other durable record — and (b) whether "private test" is a real,
+recordable distinction at all (a designated staff/test seat kind? a
+launch-config flag stamped into `provenance`?) or whether M08.25's prose is
+describing a need better met by the existing `source` split. Filtering by a
+persistent deck-cluster identity (rather than raw `deckHashes`) is a smaller,
+related, still-unscoped question for whichever slice gives clusters one.
+Neither blocks M08.25B–E, which consume the five real filter dimensions this
+slice shipped.
+
 **M08.24 closed 2026-09-04** (`tcg-reviewer` `VERDICT: APPROVE` on the first
 pass, no fix cycle needed; two non-blocking LOW findings accepted as
 residual risk — a lockfile hunk records `apps/admin-server` gaining

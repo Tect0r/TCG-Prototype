@@ -51,7 +51,12 @@ import { jobStatusSchema } from './lifecycle.js';
 /** A filter names at most this many values for one field. Bounded like everything else. */
 export const MAX_FILTER_VALUES = 16;
 
-const valueSet = <T extends z.ZodType>(item: T) =>
+/**
+ * Exported so a second filter contract (`player-meta.ts`'s `playerMetaFilterSchema`,
+ * M08.25A) builds its own value-set fields against the same bound and the same
+ * distinctness rule, rather than a second, possibly-drifting copy of this helper.
+ */
+export const valueSet = <T extends z.ZodType>(item: T) =>
   z
     .array(item)
     .max(MAX_FILTER_VALUES)

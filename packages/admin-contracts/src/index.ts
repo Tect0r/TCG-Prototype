@@ -336,6 +336,24 @@ export {
 } from './filters.js';
 
 export {
+  LIVE_MATCH_DECK_HASH_LENGTH,
+  LIVE_MATCH_SOURCES,
+  LIVE_MATCH_TERMINATION_ORIGINS,
+  NO_PLAYER_META_FILTER,
+  liveMatchContentVersionSchema,
+  liveMatchDeckHashSchema,
+  liveMatchSourceSchema,
+  liveMatchTerminationOriginSchema,
+  playerMetaFilterSchema,
+  type LiveMatchContentVersion,
+  type LiveMatchDeckHash,
+  type LiveMatchSource,
+  type LiveMatchTerminationOrigin,
+  type PlayerMetaFilter,
+  type PlayerMetaFilterInput,
+} from './player-meta.js';
+
+export {
   ADMIN_REQUEST_PAYLOAD_NAMES,
   ADMIN_REQUEST_PAYLOAD_SCHEMAS,
   OPERATOR_JOB_ACTIONS,

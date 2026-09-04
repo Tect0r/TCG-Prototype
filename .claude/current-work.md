@@ -2632,3 +2632,98 @@ LOW findings for the next tranche that touches this code:
 M08.24 tranche-close record committed and pushed. M08.24 is complete.
 
 Slice complete. Next slice: **M08.24E — Tranche close.**
+
+## M08.25A — Player Meta query and filter surface
+
+M08.25's own prose asks for Player Meta filters by "content version, date,
+source, Commander, deck cluster, termination and private test label."
+Investigating the scope before writing any contract found that two of those
+seven have no backing field anywhere in the codebase: `liveMatchEnvelopeSchema`
+(`packages/match-telemetry/src/schema.ts`) carries no timestamp of any kind —
+confirmed by reading the schema in full and grepping
+`apps/multiplayer-server/src/live-match-record.ts` and `live-match-store.ts`
+for anything timestamp-shaped — and no concept of a "private" or "staff-only"
+test match exists anywhere in the schema, the live-match store, or any earlier
+milestone record; the phrase appears nowhere but this one sentence in M08.25's
+own prose. Per CLAUDE.md's "do not silently invent unresolved rules," this was
+raised to the user rather than guessed at. The user chose to narrow scope: ship
+contracts for the five filter dimensions that are real, and record the
+date/private-test-label gap as the next unscoped design question in
+`IMPLEMENTATION_PLAN.md`, mirroring how M08.19A (`cd7070b`) recorded its own
+blocked-on-design-decision note.
+
+**Deck cluster is filtered by deck hash, not by a cluster identifier.**
+`clusterDecks()` (`apps/simulator/src/analysis/clusters.ts`) assigns each
+cluster an id (`cluster_01`, `cluster_02`, ...) by its sorted position within
+one clustering call, not a persistent cross-call identity two different
+requests could agree names the same group of decks. `deckHashes` — the stable
+primitive already underneath a cluster (`Cluster.deckHashes`) — is the
+filterable field instead; a caller that wants "this cluster" reads its member
+hashes off an already-fetched `LiveMatchClusterView` and passes those hashes
+back. Filtering by a real, persistent cluster identity stays a smaller,
+related, unscoped question for whichever slice gives clusters one.
+
+**The client contract** — `playerMetaFilterSchema`
+(`packages/admin-contracts/src/player-meta.ts`) — restates `LiveMatchSource`,
+`LiveMatchTerminationOrigin`, the `contentVersion` bound and the deck-hash
+length/alphabet (`DECK_FINGERPRINT_LENGTH` from `@tcg/deck`) rather than
+importing `@tcg/match-telemetry`, per the same ADR 0001 reasoning
+`adaptive-results.ts` already documents for `adaptiveExperimentIdSchema`: a
+`@tcg/match-telemetry`-owned shape is a word this package names, never an
+import that would put it on `@tcg/admin-contracts`'s dependency graph.
+`boundary.test.ts`'s "declared dependencies are exactly zod and the shared
+issue vocabulary" check enforces this; it still passes unchanged. The filter's
+five fields (`contentVersions`, `sources`, `commanderIds`, `deckHashes`,
+`terminations`) reuse `filters.ts`'s existing `valueSet` helper (exported for
+this reuse rather than duplicated) and `content.ts`'s `contentIdSchema` for
+`commanderIds` — the same identifier bound `catalogFilterSchema.commanderIds`
+already uses. Same semantics as `catalogFilterSchema`: OR within a field, AND
+across fields, absent field matches everything, `{}` is `NO_PLAYER_META_FILTER`.
+
+**The service contract** — `filterLiveMatches`
+(`apps/simulator/src/analysis/live-match-filter.ts`) — is the one place that
+actually reads a `LiveMatchEnvelope` to decide whether it matches, per ADR
+0023 §2. It is linked to the admin-contracts schema only by both restating the
+same five field names over the same primitive types (no import runs between
+the two packages; `@tcg/simulator` does not and must not depend on
+`@tcg/admin-contracts`), so a parsed `PlayerMetaFilter` is structurally
+assignable to `LiveMatchFilter` without translation. It narrows only *which*
+envelopes reach `partitionLiveMatches`/`aggregateLiveMatches`
+(`./live-match-aggregate.ts`) — partitioning, weighting and every other
+computed field are untouched, which is what "retaining evidence class and
+denominator" means in the milestone's own scope sentence: a filter cannot
+touch, widen or collapse M08.24C's partition-keyed `source` or its
+match-weighted/unique-deck-weighted counts, because it runs before either is
+computed. Commander and deck-hash filters match on either seat (the same
+"matches any environment" reading `catalogFilterSchema`'s own doc comment
+gives for `commanderIds`/`preconIds`).
+
+**No HTTP endpoint, no file-enumeration or store wiring in this slice.**
+`live-match-aggregate.ts`'s own M08.24A doc comment named M08.25A as "the
+tranche that turns this into a query surface," but the milestone's own
+work-slice sentence for M08.25A is narrower — "service and client contracts"
+— and the codebase's established split (M08.19A/B: contracts now, execution-
+shaped wiring later) is the precedent this slice follows rather than reading
+past its own stated scope. Registering a real `ADMIN_ENDPOINTS` address
+(`packages/admin-contracts/src/service.ts`) and reading live-match records off
+`LiveMatchFileStore` (`apps/multiplayer-server/src/live-match-store.ts`) into
+`apps/admin-server` stay for whichever slice actually renders a view against
+them (M08.25B onward).
+
+Verified: 22 new focused tests (14 in `player-meta.test.ts` — unfiltered
+query, field combinations, `MAX_FILTER_VALUES` bound, distinctness, unknown-
+field refusal, deck-hash length/alphabet, restated-literal pinning; 8 in
+`live-match-filter.test.ts` — unfiltered pass-through, per-field narrowing
+including either-seat Commander/deck-hash matching, OR-within/AND-across
+combination) pass, plus the pre-existing `filters.test.ts` (22),
+`boundary.test.ts` (19, confirming no forbidden dependency was added),
+`live-match-aggregate.test.ts` (8), `live-card-evidence.test.ts` (7) and
+`live-match-surrender.test.ts` (9) all still pass unchanged — 87 tests total
+across the two affected workspaces. `npm run typecheck` clean on both
+`@tcg/admin-contracts` and `@tcg/simulator`. ESLint clean on all seven
+changed/created files. `prettier --check` clean after `--write` reflowed the
+two new test files (diffs inspected: reflow only, no behavior change).
+Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
+`tcg-reviewer` are deferred to M08.25E, per this milestone's work-slice split.
+
+Slice complete. Next slice: **M08.25B — Choice and outcome views.**

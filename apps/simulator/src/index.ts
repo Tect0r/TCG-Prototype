@@ -276,6 +276,12 @@ export {
 } from './analysis/live-match-aggregate.js';
 
 export {
+  NO_LIVE_MATCH_FILTER,
+  filterLiveMatches,
+  type LiveMatchFilter,
+} from './analysis/live-match-filter.js';
+
+export {
   aggregateLiveCardEvidence,
   type CardEligibilityEntry,
   type CardEligibilityStatus,
