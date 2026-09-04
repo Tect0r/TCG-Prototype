@@ -53,7 +53,21 @@ const TAB_LABELS: Readonly<Record<PlayerMetaResultTableName, string>> = {
   pairs: 'Pairs',
   duration: 'Duration',
   terminations: 'Terminations',
+  surrender_turns: 'Surrender turns',
+  surrender_phases: 'Surrender phases',
+  surrender_state: 'Surrender state',
+  surrender_exposure_cards: 'Surrender exposure — cards',
+  surrender_exposure_events: 'Surrender exposure — events',
 };
+
+/** M08.25D's five surrender tables — the only tabs that need the exposure/proximity caption below. */
+const SURRENDER_TABLES: ReadonlySet<PlayerMetaResultTableName> = new Set([
+  'surrender_turns',
+  'surrender_phases',
+  'surrender_state',
+  'surrender_exposure_cards',
+  'surrender_exposure_events',
+]);
 
 export function PlayerMetaPanel() {
   const session = useAdminSession();
@@ -263,6 +277,14 @@ function TableView({
   const note = playerMetaTruncationNote(outcome.value, 'rows');
   return (
     <div className="dashboard__view">
+      {SURRENDER_TABLES.has(table) && (
+        <p className="panel__note" role="note">
+          Structural state and event/card figures from surrenders only — never board, Health or
+          resource numbers. A card or event listed here was <em>exposed</em> to a surrendering
+          player, in proximity to their concession; this is evidence for review, never a stated
+          cause.
+        </p>
+      )}
       {note !== null && (
         <p className="dashboard__truncation" role="note">
           {note}

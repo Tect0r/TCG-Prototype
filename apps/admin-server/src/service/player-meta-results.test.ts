@@ -9,7 +9,11 @@ import {
   type PlayerMetaFilter,
 } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
-import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
+import {
+  freezeLiveMatchDeckSnapshot,
+  type LiveMatchEnvelope,
+  type LiveMatchPreActionCapture,
+} from '@tcg/match-telemetry';
 
 import { resolveCatalogRoots } from '../catalog/roots.js';
 
@@ -87,6 +91,61 @@ function writeMatch(matchId: string, match: LiveMatchEnvelope): void {
   const directory = join(root, matchId);
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, 'envelope.json'), JSON.stringify(match), 'utf8');
+}
+
+const idleCombat = {
+  attacks: [],
+  awaitingDefenders: [],
+  submissions: [],
+  blocks: [],
+  combatantInstanceIds: [],
+  damageResolved: false,
+};
+
+function surrenderCapture(
+  matchId: string,
+  overrides: Partial<LiveMatchPreActionCapture> = {},
+): LiveMatchPreActionCapture {
+  return {
+    schemaVersion: 3,
+    matchId,
+    playerId: 'player_1',
+    origin: 'concede_action',
+    turn: 3,
+    phase: 'main_1',
+    activePlayerId: 'player_1',
+    sequence: 12,
+    pendingChoice: null,
+    combat: idleCombat,
+    reactionWindow: null,
+    eventWindow: {
+      recentEvents: [
+        {
+          type: 'unit_deployed',
+          sequence: 12,
+          cause: { actionType: null, sourceInstanceId: null, resolutionId: null },
+          playerId: 'player_2',
+          instanceId: 'unit_9',
+          definitionId: 'prototype_scout',
+        },
+      ],
+      eventDistances: [{ sequence: 12, eventsAgo: 0, actionsAgo: 0, turnsAgo: 0 }],
+      currentTurnWindow: { turn: 3, startSequence: 8, endSequence: 12 },
+      previousTurnWindow: { turn: 2, startSequence: 5, endSequence: 7 },
+    },
+    provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.0.0' },
+    deck: freezeLiveMatchDeckSnapshot({
+      commanderId: 'prototype_commander_blue',
+      cards: [{ cardId: 'prototype_drone', quantity: 40 }],
+    }),
+    ...overrides,
+  };
+}
+
+function writeCapture(matchId: string, capture: LiveMatchPreActionCapture): void {
+  const directory = join(root, matchId);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, 'pre-action-capture.json'), JSON.stringify(capture), 'utf8');
 }
 
 describe('an empty root', () => {
@@ -214,6 +273,67 @@ describe('the terminations table', () => {
     const table = unwrap(readPlayerMetaTable(root, 'terminations', filter, page));
     const origins = table.rows.map((row) => row.origin).sort();
     expect(origins).toEqual(['abandoned_unrecordable', 'rules_victory']);
+  });
+});
+
+describe('the surrender tables (M08.25D)', () => {
+  it('reports turn, phase, state and exposure rows for a matched capture', () => {
+    writeMatch(
+      'match_a',
+      envelope('match_a', {
+        terminationOrigin: 'concede_action',
+        outcome: {
+          outcome: 'win',
+          winnerId: 'player_2',
+          loserIds: ['player_1'],
+          reason: 'concede',
+          finalTurn: 3,
+          finalSequence: 12,
+          diagnostics: null,
+        },
+      }),
+    );
+    writeCapture('match_a', surrenderCapture('match_a'));
+
+    const turns = unwrap(readPlayerMetaTable(root, 'surrender_turns', filter, page));
+    expect(turns.rows).toEqual([expect.objectContaining({ turn: 3, surrenders: 1 })]);
+
+    const phases = unwrap(readPlayerMetaTable(root, 'surrender_phases', filter, page));
+    expect(phases.rows).toEqual([expect.objectContaining({ phase: 'main_1', surrenders: 1 })]);
+
+    const state = unwrap(readPlayerMetaTable(root, 'surrender_state', filter, page));
+    expect(state.rows).toEqual([
+      expect.objectContaining({
+        total: 1,
+        inCombat: 0,
+        reactionWindowOpen: 0,
+        pendingChoiceOpen: 0,
+      }),
+    ]);
+
+    const events = unwrap(readPlayerMetaTable(root, 'surrender_exposure_events', filter, page));
+    expect(events.rows).toHaveLength(1);
+    expect(events.rows[0]?.key).toBe('unit_deployed');
+    expect(events.rows[0]).toHaveProperty('exposureRate');
+
+    const cards = unwrap(readPlayerMetaTable(root, 'surrender_exposure_cards', filter, page));
+    expect(cards.rows).toHaveLength(1);
+    expect(cards.rows[0]?.key).toBe('prototype_scout');
+  });
+
+  it('has no surrender rows when no match ended in a voluntary surrender', () => {
+    writeMatch('match_a', envelope('match_a'));
+
+    for (const table of [
+      'surrender_turns',
+      'surrender_phases',
+      'surrender_state',
+      'surrender_exposure_cards',
+      'surrender_exposure_events',
+    ] as const) {
+      const built = unwrap(readPlayerMetaTable(root, table, filter, page));
+      expect(built.rows).toEqual([]);
+    }
   });
 });
 

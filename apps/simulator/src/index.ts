@@ -315,6 +315,12 @@ export {
   type SkippedLiveMatch,
 } from './analysis/live-match-read.js';
 
+export {
+  readLiveMatchPreActionCaptures,
+  type ReadLiveMatchPreActionCapturesResult,
+  type SkippedLiveMatchCapture,
+} from './analysis/live-match-surrender-read.js';
+
 export { currentLiveMatchCardDatabases } from './analysis/live-match-card-databases.js';
 
 export { cardPairs, cardPairSchema, type CardPair } from './analysis/pairs.js';

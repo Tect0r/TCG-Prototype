@@ -16,12 +16,15 @@ import { err, isErr, ok, type Result } from '@tcg/shared';
 import {
   aggregateLiveCardEvidence,
   aggregateLiveMatches,
+  aggregateLiveMatchSurrenders,
   currentLiveMatchCardDatabases,
   filterLiveMatches,
   readLiveMatchEnvelopes,
+  readLiveMatchPreActionCaptures,
   type LiveCardEvidence,
   type LiveMatchAggregate,
   type LiveMatchAggregatePartition,
+  type LiveMatchSurrenderAggregate,
 } from '@tcg/simulator';
 
 import { type ResolvedCatalogRoots } from '../catalog/roots.js';
@@ -102,6 +105,12 @@ const PLAYER_META_RUN_LIMITATIONS: readonly string[] = [
   'Cluster and eligible-card tables are empty for any partition whose matches span more than one game ' +
     'format, or name a format this build does not have bundled — a card database could not be ' +
     'resolved for that partition, so nothing here fabricates cluster or eligibility evidence for it.',
+  'Surrender tables come only from matches that ended in an explicit concede or a leave-triggered ' +
+    'concession — a timed-out or otherwise abandoned match produces no pre-action capture and ' +
+    'contributes no evidence to these tables. State and exposure figures describe what a surrendering ' +
+    'player was structurally facing (phase, combat, an open Reaction window or pending choice) and which ' +
+    'events or cards were present in their retained window; they name exposure and proximity, never a ' +
+    'cause, and must not be read as one.',
 ];
 
 /* -------------------------------------------------------------- the reader */
@@ -109,6 +118,7 @@ const PLAYER_META_RUN_LIMITATIONS: readonly string[] = [
 interface OpenPlayerMeta {
   readonly aggregates: readonly LiveMatchAggregate[];
   readonly cardEvidence: readonly LiveCardEvidence[];
+  readonly surrenders: readonly LiveMatchSurrenderAggregate[];
   readonly recordsRead: number;
   readonly recordsSkipped: number;
 }
@@ -117,10 +127,12 @@ function openPlayerMeta(rootDirectory: string, filter: PlayerMetaFilter): OpenPl
   const read = readLiveMatchEnvelopes(rootDirectory);
   const matches = filterLiveMatches(read.matches, filter);
   const databases = currentLiveMatchCardDatabases(matches);
+  const captures = readLiveMatchPreActionCaptures(rootDirectory).captures;
 
   return {
     aggregates: aggregateLiveMatches(matches, { cardDatabasesByContentVersion: databases }),
     cardEvidence: aggregateLiveCardEvidence(matches, { cardDatabasesByContentVersion: databases }),
+    surrenders: aggregateLiveMatchSurrenders(captures, matches).aggregates,
     recordsRead: matches.length,
     recordsSkipped: read.skipped.length,
   };
@@ -143,7 +155,8 @@ export function readPlayerMetaSummary(
     })),
     tables: PLAYER_META_RESULT_TABLE_NAMES.map((table) => ({
       table,
-      rows: buildPlayerMetaTable(table, open.aggregates, open.cardEvidence).rows.length,
+      rows: buildPlayerMetaTable(table, open.aggregates, open.cardEvidence, open.surrenders).rows
+        .length,
     })),
     limitations: PLAYER_META_RUN_LIMITATIONS,
   };
@@ -169,7 +182,7 @@ export function readPlayerMetaTable(
     offset = decoded.value;
   }
 
-  const built = buildPlayerMetaTable(table, open.aggregates, open.cardEvidence);
+  const built = buildPlayerMetaTable(table, open.aggregates, open.cardEvidence, open.surrenders);
   const rows = built.rows.slice(offset, offset + page.limit);
   const consumed = offset + rows.length;
   const value = {
@@ -208,6 +221,7 @@ function buildPlayerMetaTable(
   table: PlayerMetaResultTableName,
   aggregates: readonly LiveMatchAggregate[],
   cardEvidence: readonly LiveCardEvidence[],
+  surrenders: readonly LiveMatchSurrenderAggregate[],
 ): BuiltTable {
   switch (table) {
     case 'commanders':
@@ -408,7 +422,117 @@ function buildPlayerMetaTable(
           })),
         ),
       };
+
+    case 'surrender_turns':
+      return {
+        columns: [
+          ...PARTITION_COLUMNS,
+          column('turn', 'Turn', 'number'),
+          column('surrenders', 'Surrenders', 'count'),
+        ],
+        rows: surrenders.flatMap((aggregate) =>
+          aggregate.turns.map((entry) => ({
+            ...partitionCells(aggregate.partition),
+            turn: entry.turn,
+            surrenders: entry.surrenders,
+          })),
+        ),
+      };
+
+    case 'surrender_phases':
+      return {
+        columns: [
+          ...PARTITION_COLUMNS,
+          column('phase', 'Phase', 'identifier'),
+          column('surrenders', 'Surrenders', 'count'),
+        ],
+        rows: surrenders.flatMap((aggregate) =>
+          aggregate.phases.map((entry) => ({
+            ...partitionCells(aggregate.partition),
+            phase: entry.phase,
+            surrenders: entry.surrenders,
+          })),
+        ),
+      };
+
+    case 'surrender_state':
+      return {
+        columns: [
+          ...PARTITION_COLUMNS,
+          column('total', 'Surrenders', 'count'),
+          column('inCombat', 'In combat', 'count'),
+          column('reactionWindowOpen', 'Reaction window open', 'count'),
+          column('pendingChoiceOpen', 'Pending choice open', 'count'),
+          column('pendingChoiceTypes', 'Pending choice types', 'text'),
+        ],
+        rows: surrenders.map((aggregate) => ({
+          ...partitionCells(aggregate.partition),
+          total: aggregate.state.total,
+          inCombat: aggregate.state.inCombat,
+          reactionWindowOpen: aggregate.state.reactionWindowOpen,
+          pendingChoiceOpen: aggregate.state.pendingChoiceOpen,
+          pendingChoiceTypes: aggregate.state.pendingChoiceTypes
+            .map((entry) => `${entry.choiceType}:${String(entry.surrenders)}`)
+            .join(', ')
+            .slice(0, 200),
+        })),
+      };
+
+    case 'surrender_exposure_cards':
+      return {
+        columns: surrenderExposureColumns('Card'),
+        rows: surrenders.flatMap((aggregate) =>
+          aggregate.exposure.recentCards.map((entry) => surrenderExposureRow(aggregate, entry)),
+        ),
+      };
+
+    case 'surrender_exposure_events':
+      return {
+        columns: surrenderExposureColumns('Event type'),
+        rows: surrenders.flatMap((aggregate) =>
+          aggregate.exposure.recentEventTypes.map((entry) =>
+            surrenderExposureRow(aggregate, entry),
+          ),
+        ),
+      };
   }
+}
+
+function surrenderExposureColumns(keyLabel: string): readonly ResultColumn[] {
+  return [
+    ...PARTITION_COLUMNS,
+    column('key', keyLabel, 'identifier'),
+    column('exposures', 'Exposures', 'count'),
+    interval('exposureRate', 'Exposure rate'),
+    column('exposureRateGames', 'Surrenders', 'count'),
+    column('eventsAgoMean', 'Events ago (mean)', 'number'),
+    column('actionsAgoMean', 'Actions ago (mean)', 'number'),
+    column('turnsAgoMean', 'Turns ago (mean)', 'number'),
+    column('roundsAgoMean', 'Rounds ago (mean)', 'number'),
+  ];
+}
+
+/**
+ * One exposure row — never a whole-match population rate, per
+ * `SurrenderProximityEntry`'s own doc comment. `exposureRate` is Wilson-bounded
+ * over this partition's own surrenders, so it is never zero-observation the
+ * way `spreadRateOrInsufficient`'s guard exists for; a card or event type
+ * only appears here because at least one surrender was exposed to it.
+ */
+function surrenderExposureRow(
+  aggregate: LiveMatchSurrenderAggregate,
+  entry: LiveMatchSurrenderAggregate['exposure']['recentCards'][number],
+): ResultRow {
+  return {
+    ...partitionCells(aggregate.partition),
+    key: entry.key,
+    exposures: entry.exposures,
+    ...spreadRate('exposureRate', entry.exposureRate),
+    eventsAgoMean: entry.eventsAgo.mean,
+    actionsAgoMean: entry.actionsAgo.mean,
+    turnsAgoMean: entry.turnsAgo.mean,
+    roundsAgoMean: entry.roundsAgo.mean,
+  };
 }
 
 /**

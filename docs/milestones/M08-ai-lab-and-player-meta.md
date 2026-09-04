@@ -4456,7 +4456,7 @@ drill-down tests.
       matchup, duration and termination evidence, plus the simulator-side
       envelope reader it reads through — no HTTP endpoint, no client UI.
       Done: `readLiveMatchEnvelopes` (`apps/simulator/src/analysis/
-      live-match-read.ts`) synchronously walks `LiveMatchFileStore`'s
+    live-match-read.ts`) synchronously walks `LiveMatchFileStore`'s
       `<matchId>/envelope.json` layout, skipping a damaged match rather than
       aborting the read; `currentLiveMatchCardDatabases`
       (`live-match-card-databases.ts`) resolves today's bundled database only
@@ -4467,7 +4467,7 @@ drill-down tests.
       since their row shapes differ), every row carrying its own
       `source`/`contentVersion`/`rulesVersion` partition columns rather than a
       partition-scoped table. `apps/admin-server/src/service/
-      player-meta-results.ts` composes M08.25A's filter with M08.24's
+    player-meta-results.ts` composes M08.25A's filter with M08.24's
       aggregates into `readPlayerMetaSummary`/`readPlayerMetaTable`; an empty
       directory is a valid all-zero answer, not a refusal. 35 focused tests
       pass (8 reader, 4 card-database, 13 contract, 10 service);
@@ -4484,9 +4484,32 @@ drill-down tests.
       service. 95 admin-contracts, 660 admin-server and 335 admin-client tests
       pass; typecheck, lint and format clean on all touched workspaces. See
       `.claude/current-work.md` for detail.
-- [ ] **M08.25D — Surrender evidence views.** Render turn/phase distributions,
+- [x] **M08.25D — Surrender evidence views.** Render turn/phase distributions,
       state summaries and exposure-adjusted recent-card/event tables using enforced
       correlation language and visible support.
+      Done: `readLiveMatchPreActionCaptures` (`apps/simulator/src/analysis/
+    live-match-surrender-read.ts`) reads `LiveMatchFileStore`'s optional
+      `pre-action-capture.json`, mirroring `live-match-read.ts`'s tolerant-read
+      idiom — a match that never surrendered is silently skipped, only a
+      present-but-unreadable capture is reported. `player-meta-results.ts`
+      (`packages/admin-contracts`) widens `PLAYER_META_RESULT_TABLE_NAMES` from
+      nine to fourteen (`surrender_turns`, `surrender_phases`, `surrender_state`,
+      `surrender_exposure_cards`, `surrender_exposure_events`), reusing the
+      existing `player-meta-summary`/`player-meta-result-table` endpoints, so
+      `ADMIN_CONTRACT_VERSION` stays at 9 (M08.19C→M08.19D precedent: widening a
+      served-table enum on an existing address is not a new contract language).
+      `apps/admin-server/src/service/player-meta-results.ts` wires
+      `aggregateLiveMatchSurrenders` (M08.24) over the captures matched against
+      the already-filtered live matches into five new table cases, plus a
+      `PLAYER_META_RUN_LIMITATIONS` entry stating surrender tables only ever cover
+      an explicit concede/leave-triggered concession and that exposure/proximity
+      figures name proximity, never a cause. `PlayerMetaDashboard.tsx` renders all
+      fourteen tables as exact tables and shows a correlation-language caption
+      directly above the five surrender tables in addition to the always-visible
+      `summary.limitations` list. 8 simulator (new capture reader), 13
+      admin-contracts, 14 admin-server and 14 admin-client tests pass across the
+      touched files; admin-contracts/simulator/admin-server/admin-client
+      typecheck clean. See `.claude/current-work.md` for detail.
 - [ ] **M08.25E — States, accessibility and drill-down.** Design empty, sparse,
       corrupt and unauthorized states; verify keyboard/screen-reader access and link
       aggregate rows to the exact bounded evidence available at this stage.

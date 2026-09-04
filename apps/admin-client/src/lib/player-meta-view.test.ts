@@ -85,7 +85,7 @@ describe('formatPlayerMetaCell', () => {
 });
 
 describe('PLAYER_META_DASHBOARD_TABLES', () => {
-  it('names all nine tables the summary can report rows for', () => {
+  it('names every table the summary can report rows for', () => {
     expect([...PLAYER_META_DASHBOARD_TABLES]).toEqual([
       'commanders',
       'decks',
@@ -96,6 +96,11 @@ describe('PLAYER_META_DASHBOARD_TABLES', () => {
       'pairs',
       'duration',
       'terminations',
+      'surrender_turns',
+      'surrender_phases',
+      'surrender_state',
+      'surrender_exposure_cards',
+      'surrender_exposure_events',
     ]);
   });
 });

@@ -82,7 +82,7 @@ export function displayColumns(table: {
   return table.columns.filter((column) => !consumed.has(column.key));
 }
 
-/** All nine tables `PLAYER_META_RESULT_TABLE_NAMES` names, in that order. */
+/** Every table `PLAYER_META_RESULT_TABLE_NAMES` names, in that order. */
 export const PLAYER_META_DASHBOARD_TABLES: readonly PlayerMetaResultTableName[] = [
   'commanders',
   'decks',
@@ -93,6 +93,11 @@ export const PLAYER_META_DASHBOARD_TABLES: readonly PlayerMetaResultTableName[] 
   'pairs',
   'duration',
   'terminations',
+  'surrender_turns',
+  'surrender_phases',
+  'surrender_state',
+  'surrender_exposure_cards',
+  'surrender_exposure_events',
 ];
 
 /** Match-weighted or unique-deck-weighted — the only two denominators M08.24/25 ever computes (`PLAYER_META_RUN_LIMITATIONS`). */

@@ -140,6 +140,11 @@ describe('a Player Meta result table', () => {
       'pairs',
       'duration',
       'terminations',
+      'surrender_turns',
+      'surrender_phases',
+      'surrender_state',
+      'surrender_exposure_cards',
+      'surrender_exposure_events',
     ]);
     expect(playerMetaResultTableSchema.safeParse(table({ table: 'not_a_table' })).success).toBe(
       false,

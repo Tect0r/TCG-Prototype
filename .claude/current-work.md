@@ -2687,7 +2687,7 @@ actually reads a `LiveMatchEnvelope` to decide whether it matches, per ADR
 same five field names over the same primitive types (no import runs between
 the two packages; `@tcg/simulator` does not and must not depend on
 `@tcg/admin-contracts`), so a parsed `PlayerMetaFilter` is structurally
-assignable to `LiveMatchFilter` without translation. It narrows only *which*
+assignable to `LiveMatchFilter` without translation. It narrows only _which_
 envelopes reach `partitionLiveMatches`/`aggregateLiveMatches`
 (`./live-match-aggregate.ts`) — partitioning, weighting and every other
 computed field are untouched, which is what "retaining evidence class and
@@ -2885,3 +2885,102 @@ reflow only, no behavior change). Tranche-close gates
 deferred to M08.25F, per this milestone's work-slice split.
 
 Slice complete. Next slice: **M08.25D — Surrender evidence views.**
+
+M08.25D is implemented: turn/phase distributions, state summaries and
+exposure-adjusted recent-card/event tables for a voluntary surrender, in
+enforced exposure/proximity language, never causal.
+
+**Simulator** (`apps/simulator`) — new `analysis/live-match-surrender-read.ts`
+(`readLiveMatchPreActionCaptures`) mirrors `live-match-read.ts`'s tolerant-read
+idiom exactly for `LiveMatchFileStore`'s optional `pre-action-capture.json`:
+lives in `@tcg/simulator` per ADR 0023 §2, synchronous per this package's own
+convention. The one deliberate difference from the envelope reader: a _missing_
+capture is the expected case (most matches never surrender), so it is skipped
+silently rather than reported — only a _present but unreadable_ capture lands
+in `skipped`, the same treatment an unparseable/schema-invalid envelope gets.
+Wired into the simulator's barrel export. 8 new focused tests in
+`live-match-surrender-read.test.ts` (empty/missing root, happy path, a match
+that never surrendered, unparseable JSON, a future schema version, an
+invalid-schema capture, and that a damaged match does not stop the read from
+finding a later good one).
+
+**Contracts** (`packages/admin-contracts`) — `player-meta-results.ts` widens
+`PLAYER_META_RESULT_TABLE_NAMES` from 9 to 14, adding `surrender_turns`,
+`surrender_phases`, `surrender_state`, `surrender_exposure_cards`,
+`surrender_exposure_events`, sourced from M08.24's existing
+`aggregateLiveMatchSurrenders`. Both new tables reuse the existing
+`player-meta-summary`/`player-meta-result-table` addresses rather than adding
+one, so — per the M08.19C→M08.19D precedent (widening `AdaptiveResultTableName`
+to add `cycles` on existing addresses did not bump the contract version) —
+`ADMIN_CONTRACT_VERSION` stays at 9. `playerMetaRunSummarySchema.tables`'s
+existing bound (`.max(PLAYER_META_RESULT_TABLE_NAMES.length)`) auto-scales; no
+other schema change. Updated the file's own name-drift-guard test to the full
+14-name list.
+
+**Server** (`apps/admin-server`) — `service/player-meta-results.ts` reads
+`readLiveMatchPreActionCaptures` alongside the existing envelope read in
+`openPlayerMeta()`, aggregates the captures against the already-filtered
+matches via `aggregateLiveMatchSurrenders`, and threads the resulting
+`LiveMatchSurrenderAggregate[]` into `buildPlayerMetaTable` as a fourth
+argument. Five new `switch` cases build `surrender_turns`/`surrender_phases`
+(one row per turn/phase per partition), `surrender_state` (in-combat, open
+Reaction window, open pending choice and its types, all counts), and
+`surrender_exposure_cards`/`surrender_exposure_events` (a shared
+`surrenderExposureRow` helper reading each entry's Wilson-bounded
+`exposureRate` via the ordinary `spreadRate` — deliberately not
+`spreadRateOrInsufficient`, since `exposureRate.total` is the partition's own
+surrender count and can never be a zero-observation case for an aggregate that
+exists at all — plus events/actions/turns/rounds-ago means). A new
+`PLAYER_META_RUN_LIMITATIONS` entry states the surrender tables' scope
+(explicit concede/leave-triggered concession only, never a timed-out or
+otherwise abandoned match) and enforces the exposure/proximity framing:
+"they name exposure and proximity, never a cause, and must not be read as
+one" (CLAUDE.md: automated/statistical signals are evidence for review, never
+an automatic verdict). 2 new integration tests added to
+`player-meta-results.test.ts` (a matched capture reporting turn/phase/state/
+exposure rows correctly, including that `surrenders` from `readCapture`'s
+`matchId` correctly joins to its envelope; and that a directory with no
+surrendered match reports empty rows for all five tables) — 14 total in that
+file, all passing. One debugging note: the first version of the new fixture
+used `outcome: null` with `terminationOrigin: 'concede_action'`, which
+`liveMatchEnvelopeSchema`'s own refinement rejects (a null outcome requires
+`abandoned_unrecordable`); fixed by using a complete win-outcome object,
+matching the existing `winOutcome` fixture pattern already in the file.
+
+**Client** (`apps/admin-client`) — `lib/player-meta-view.ts`'s
+`PLAYER_META_DASHBOARD_TABLES` widened to the same 14 names (no other function
+in that file needed a change: `hasPlayerMetaWeighting`/
+`sortPlayerMetaRowsByWeight` are `Partial`-keyed no-ops for the five new
+tables, and `formatPlayerMetaCell`/`displayColumns` already handle an interval
+column generically). `components/PlayerMetaDashboard.tsx`'s `TAB_LABELS`
+widened to match; `TableView` now renders a correlation-language caption
+(reusing the existing `panel__note` class, no new CSS) directly above any of
+the five surrender tables, stating plainly that a listed card or event was
+_exposed_ to — in proximity to, never a stated cause of — a surrendering
+player's concession. This is in addition to, not instead of, the always-visible
+`summary.limitations` list `SummaryFacts` already renders (which now includes
+the new server-side limitation sentence); the per-tab caption was kept because
+M08.25D's own acceptance line calls for correlation language directly on the
+surrender views themselves, not only in the general limitations list. Updated
+`lib/player-meta-view.test.ts`'s exact-list assertion to the 14-name list; no
+change needed to `player-meta-flow.test.tsx` (it does not enumerate tabs) or
+to `test/fake-service.ts` (its `playerMetaResultTable` fallback already
+answers any unseeded table name generically).
+
+Verified: 8 simulator tests (new file), 13 admin-contracts tests (whole
+`player-meta-results.test.ts`), 14 admin-server tests (whole
+`player-meta-results.test.ts`, was 12), 14 admin-client tests (12
+`player-meta-view.test.ts` + 2 `player-meta-flow.test.tsx`) — all pass.
+`npm run typecheck` (via direct `tsc -p` on each touched workspace's own
+`tsconfig.json`) clean on `apps/simulator`, `packages/admin-contracts`,
+`apps/admin-server`, `apps/admin-client`. ESLint clean on every
+changed/created file. `prettier --check` flagged 3 files
+(`live-match-surrender-read.test.ts`, `player-meta-results.test.ts` in
+admin-server, and this milestone's own markdown file); `prettier --write`
+applied, diffs re-verified as reflow-only by rerunning the affected test
+files (22 pass, unchanged). Tranche-close gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.25F, per this
+milestone's work-slice split.
+
+Slice complete. Next slice: **M08.25E — States, accessibility and
+drill-down.**

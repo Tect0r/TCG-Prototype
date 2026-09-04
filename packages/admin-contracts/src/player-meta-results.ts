@@ -70,6 +70,20 @@ export type PlayerMetaPartition = z.infer<typeof playerMetaPartitionSchema>;
  * `duration` is one row per partition (`LiveMatchDurationStats`); and
  * `terminations` is one row per partition × termination origin
  * (`TerminationOriginCount`).
+ *
+ * M08.25D adds five more, all read from `aggregateLiveMatchSurrenders`
+ * (`analysis/live-match-surrender.ts`, M08.24D) rather than a whole-match
+ * population: `surrender_turns` and `surrender_phases` are one row per
+ * partition × turn (or phase) a voluntary surrender happened on
+ * (`SurrenderTurnEntry`, `SurrenderPhaseEntry`); `surrender_state` is one row
+ * per partition summarizing structural state at the surrender instant —
+ * never board, Health or resource numbers, which a pre-action capture does
+ * not carry (`SurrenderStateSummary`'s own doc comment); `surrender_exposure_cards`
+ * and `surrender_exposure_events` are one row per partition × card (or event
+ * type) that appeared in a surrendering player's retained event window
+ * (`SurrenderProximityEntry`), reported as *exposure*, never *cause* — the
+ * same restraint `live-match-surrender.ts`'s own doc comment requires of this
+ * exact computation.
  */
 export const PLAYER_META_RESULT_TABLE_NAMES = [
   'commanders',
@@ -81,6 +95,11 @@ export const PLAYER_META_RESULT_TABLE_NAMES = [
   'pairs',
   'duration',
   'terminations',
+  'surrender_turns',
+  'surrender_phases',
+  'surrender_state',
+  'surrender_exposure_cards',
+  'surrender_exposure_events',
 ] as const;
 export const playerMetaResultTableNameSchema = z.enum(PLAYER_META_RESULT_TABLE_NAMES);
 export type PlayerMetaResultTableName = z.infer<typeof playerMetaResultTableNameSchema>;
