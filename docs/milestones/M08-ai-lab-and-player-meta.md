@@ -4399,10 +4399,15 @@ filter and sparse-data tests.
       `npm run audit:check` both pass clean (no counted fact needs regeneration — this
       tranche adds internal analysis modules, not anything `docs/status-audit.md`
       tracks). `npm run verify` passes clean (236 test files, 4775 tests, typecheck,
-      lint, format, content validation, build). Root status row's "Next tranche"
-      column left at `M08.24A` rather than advanced, per CLAUDE.md: the tranche is not
-      marked complete and its successor is not named until `tcg-reviewer` returns
-      `VERDICT: APPROVE`. See `.claude/current-work.md` for detail.
+      lint, format, content validation, build). `tcg-reviewer` reviewed the full
+      commit range (`855eed5..c5f0007`) plus this close-record diff, independently
+      re-ran the focused suite and all three gates, and returned
+      **`VERDICT: APPROVE`** on the first pass with two non-blocking LOW findings (a
+      `package-lock.json` drift from the declared `package.json` dependencies, and a
+      surrender-capture cross-check gap for `provenance`/`deck.deckHash`) recorded in
+      `.claude/current-work.md` for the next tranche that touches this code. M08.24 is
+      complete; root status row's "Next tranche" column now names `M08.25A`. See
+      `.claude/current-work.md` for detail.
 
 ### Checklist
 

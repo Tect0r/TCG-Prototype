@@ -2596,4 +2596,39 @@ in the milestone file. Root status row's "Next tranche" column left at
 not marked complete and its successor is not named until `tcg-reviewer`
 returns `VERDICT: APPROVE`.
 
+`tcg-reviewer` reviewed the full tranche commit range (`855eed5..c5f0007`)
+plus the close-record diff, independently re-ran the focused analysis suite
+(6 files, 79 tests), `check:consistency`, `audit:check` and `verify` (236
+test files), and read all three new modules and their tests in full rather
+than trusting the close-record prose. It specifically tried to reproduce
+each failure mode this tranche's acceptance list guards against —
+`inclusion: 0` for an unusable card, a whole-match (rather than
+partition-own-surrenders) exposure rate, silent timeout inclusion, divergent
+partitioning across the three modules, and AI/human pooling — and could not
+reproduce any of them. Returned **`VERDICT: APPROVE`**, with two non-blocking
+LOW findings for the next tranche that touches this code:
+
+- `package-lock.json`'s `apps/admin-server` entry gained
+  `@tcg/card-data`/`@tcg/deck-generator`/`@tcg/match-telemetry` in commit
+  `f4a6044`, while `apps/admin-server/package.json` declares none of them
+  (untouched by this tranche) and, conversely, `apps/simulator/package.json`'s
+  own new `@tcg/match-telemetry` dependency is missing from the lock's
+  `apps/simulator` entry. The lock currently asserts exactly the direct
+  `admin-server` dependency ADR 0023 §2 says the admin server must not gain —
+  harmless today (`npm ci --dry-run` and `npm run verify` both pass) but
+  misleading to a future lock-based dependency-graph read. Fix by running
+  `npm install` at the root and committing only the corrected lock, next time
+  these files are touched.
+- `live-match-surrender.ts` cross-checks a matched capture's `origin` against
+  its envelope's `terminationOrigin` and reports a mismatch in `unmatched`,
+  but does not similarly cross-check `provenance` or `deck.deckHash` — both
+  present on `LiveMatchPreActionCapture` — against the envelope's own values.
+  A capture joined to an envelope from a different content version is
+  silently attributed to that (wrong) partition instead of reported
+  `unmatched` the way the other three anomaly classes (no envelope, origin
+  mismatch, unseated player) already are. Add a fourth `unmatched` reason for
+  this next time the file is touched.
+
+M08.24 tranche-close record committed and pushed. M08.24 is complete.
+
 Slice complete. Next slice: **M08.24E — Tranche close.**

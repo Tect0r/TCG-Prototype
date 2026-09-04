@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-03)   | M08.24A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-04)   | M08.25A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,13 +223,36 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.24A — Source-separated match and deck aggregates.** Aggregate Commander
-selection, exact decks, clusters, matchups, duration and termination by
-content/version/source while keeping human, mixed and AI evidence distinct.
+**M08.25A — Player Meta query and filter surface.** Add bounded service and
+client contracts for content version, date, source, Commander, deck cluster,
+termination and private test label, retaining evidence class and denominator.
 Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0824--player-meta-aggregates).
-This is the first slice of M08.24, unrelated to the still-unscoped 3–4 seat
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0825--player-meta-dashboard).
+This is the first slice of M08.25, unrelated to the still-unscoped 3–4 seat
 source-classification gap below.
+
+**M08.24 closed 2026-09-04** (`tcg-reviewer` `VERDICT: APPROVE` on the first
+pass, no fix cycle needed; two non-blocking LOW findings accepted as
+residual risk — a lockfile hunk records `apps/admin-server` gaining
+`@tcg/card-data`/`@tcg/deck-generator`/`@tcg/match-telemetry` in
+`package-lock.json` while `apps/admin-server/package.json` declares none of
+them and `apps/simulator/package.json`'s own new `@tcg/match-telemetry`
+dependency is missing from the lock's `apps/simulator` entry (harmless today
+— `npm ci --dry-run` and `npm run verify` both pass — but a future lock-based
+dependency-graph read would see the ADR 0023 §2 boundary violation the source
+does not have; fix by re-running `npm install` at the root next time these
+files are touched); `live-match-surrender.ts` cross-checks a capture's
+`origin` against its matched envelope but not its `provenance`/`deck.deckHash`,
+so a capture joined to an envelope from a different content version is
+silently attributed to the wrong partition instead of reported `unmatched`
+like the other three anomaly classes already are): source-separated match,
+deck, card and pair aggregates over live matches, eligibility-aware inclusion
+(`status: 'unusable'` always carries `inclusion: null`, never a fabricated
+0%), match-weighted and unique-deck-weighted views with no fabricated
+player-weighted claim, and Wilson-bounded surrender exposure/proximity
+windows relative to a partition's own surrenders, with structurally exclusive
+timeout terminations. No Player Meta page, per this tranche's own exclusion.
+Details in [`.claude/current-work.md`](.claude/current-work.md).
 
 **Also still open, unrelated to M08.24's own scope:** `liveMatchEnvelopeSchema`
 (`packages/match-telemetry/src/schema.ts`) covers exactly two seats — the
