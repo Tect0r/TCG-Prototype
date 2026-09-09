@@ -4008,3 +4008,118 @@ apps/admin-server/tsconfig.json` — both clean. New exports
 alphabetical-by-domain block style as the surrounding exports.
 
 Next slice: **M08.27C — Coverage model and page.**
+
+## M08.27C — Coverage model (2026-09-09)
+
+Third slice of M08.27. Scope per the milestone file: "Measure the whole
+card/mechanic vocabulary across eligibility, inclusion, draw, play,
+activation, trigger, target and observation, preserving reasons for
+unavailable coverage." Three scope-narrowing decisions were made up front
+via `AskUserQuestion`, all still standing and recorded here so a future
+slice does not silently reopen them:
+
+1. **`target` deferred.** No telemetry counter anywhere in `@tcg/simulator`
+   records a per-target outcome — `DEAD_HAND_CATEGORIES`'s `no_legal_target`
+   records a dead-hand *reason*, never a targeting decision. A `target`
+   column here could only ever report `unavailable` for the whole
+   vocabulary, a constant rather than a measurement. Recorded as an open gap
+   in both `coverage.ts`'s doc comment and the milestone file, not built as
+   a fake column. `CATALOG_COVERAGE_STAGES` therefore lists seven stages,
+   not eight.
+2. **The mechanic vocabulary is `@tcg/card-data`'s support registry, never a
+   free-form tag.** `MECHANIC_SUPPORT_LIST`/`mechanicsUsedBy`/`mechanicKey`
+   supply every `MECHANIC_KINDS` entry (effect, static effect, trigger,
+   keyword, condition, value, cost) with its own `telemetry` support level
+   already attached, so "no counter observes this" and "no card uses this"
+   are both genuine `unavailable` reasons rather than silence.
+3. **Split: model only this slice, page next.** `packages/admin-contracts/
+   src/coverage.ts` (schema) and `apps/admin-server/src/service/coverage.ts`
+   (`computeCatalogCoverage`, `computePlayerMetaCoverage`) shipped; no HTTP
+   route or UI page exists yet — that is a separate, not-yet-started
+   follow-up slice, the same model/page split M08.26 used across its A-E
+   slices.
+
+**Two domains, never merged — the same split `comparison-deltas.ts` draws.**
+A catalog report (`CoverageIdentity` `{domain: 'catalog', jobId}`) is
+simulated play against one resolved, content-addressed `CardDatabase`
+(`ResultReader.readResolvedEnvironment`); a Player Meta report
+(`{domain: 'player_meta', partition}`) is human play against whatever this
+build has bundled today. Player Meta reports only `observation` — the
+milestone's own language calls human telemetry "another observation source,
+not an automatic balance score" — never blended with or recomputed from a
+catalog run's numbers.
+
+**Catalog stages read two different sources, on purpose.** `eligibility` is
+computed fresh every time from the environment's `poolCardIds`/
+`commanderCardIds` and `isColorIdentityLegal`, independent of whether a card
+was ever played — this is the exact gap the file exists to close, since
+M08.12 seeds the `cards` result table only from decks that ran at least one
+copy, so a card in zero decks has no row and the table alone is silent about
+it rather than honest. `inclusion`/`draw`/`play`/`activation`/`trigger` read
+the `cards` table itself (`ResultReader.readTable`, paginated to
+`PAGE_SIZE_MAX`) — a row's presence already implies `decksIncluding > 0`
+(M08.12's own seeding rule), so `inclusion` is `reached` whenever any row
+exists; a rowless card is `not_reached` on all five, never `unavailable` —
+absence *is* the measurement, not a data gap.
+
+**A mechanic's status is coarser than a card's**, deliberately: no counter is
+scoped to one mechanic ID, so the only honest question is "was any card
+carrying this mechanic ever played this run" — `reached` if at least one
+using card has a `cards` row, `not_reached` if every using card is rowless,
+`unavailable` if `telemetry === 'none'` or zero cards in the vocabulary
+carry it at all. This says a mechanic's *cards* were in play, not that the
+mechanic itself fired — no counter here counts that, and the doc comment
+says so rather than implying more precision than the data supports.
+
+**Player Meta `observation` reuses M08.24B's per-Commander evidence rather
+than re-deriving it.** `PlayerMetaResultReader.readCardEvidence` (new this
+slice, a narrow wrapper the same shape as `readSummary`/`readTable`) returns
+`LiveCardEvidence`, already eligibility-aware; a card is `reached` if any
+Commander this partition saw played actually included it
+(`CommanderCardEvidence.status === 'played'`), otherwise `not_reached` —
+whether the negative reason is "never included" (`held`) or "off-colour
+everywhere" (`unusable`), both are genuine measurable negatives, not gaps.
+
+**zod v4 gotcha: `z.record(enumSchema, valueSchema)` infers exhaustive, not
+partial.** `unavailableReasons` on `catalogCardCoverageSchema` needs to be a
+sparse map — present only for stages actually reported `unavailable` on
+that card — but `z.record` with an enum key type infers
+`Record<AllKeys, Value>` (every key required) in the installed zod 4.4.3,
+unlike `z.record(z.string(), value)` which stays open. Fixed with
+`z.partialRecord(catalogCoverageStageSchema, z.string())`, which exists in
+this zod version and infers `Partial<Record<...>>` as intended. Worth
+remembering for any future sparse-map-keyed-by-enum field in this codebase.
+
+**Verification (focused, not full gate — reserved for M08.27F).**
+`npx vitest run packages/admin-contracts/src/coverage.test.ts
+apps/admin-server/src/service/coverage.test.ts` — 23/23 passing (17
+schema-level admin-contracts tests covering the discriminated identity union,
+card/mechanic/report shapes and their strict-object rejections; 6
+admin-server tests covering `computeCatalogCoverage` against a real
+`environmentConfigForFormat('precon_wave_1', ...)` fixture — no resolved
+environment, played-vs-unplayed card, eligibility independent of play, every
+`MECHANIC_KINDS` entry present — and `computePlayerMetaCoverage` against real
+bundled precon fixtures (`precon_bastion_guardians`, `precon_goblin_swarm`)
+for the no-match and played-card cases). Re-ran alongside
+`results.test.ts`/`comparison-deltas.test.ts`/`card-explorer.test.ts` (54/54)
+to confirm no regression from the `readResolvedEnvironment`/`cardShape`
+additions those files' fixtures needed. `npx tsc --noEmit -p
+packages/admin-contracts/tsconfig.json` and `npx tsc --noEmit -p
+apps/admin-server/tsconfig.json` — both clean.
+
+New exports from `@tcg/admin-contracts`: `COVERAGE_STATUSES`,
+`coverageStatusSchema`, `CoverageStatus`, `CATALOG_COVERAGE_STAGES`,
+`catalogCoverageStageSchema`, `CatalogCoverageStage`,
+`PLAYER_META_COVERAGE_STAGES`, `playerMetaCoverageStageSchema`,
+`PlayerMetaCoverageStage`, `coverageIdentitySchema`, `CoverageIdentity`,
+`catalogCardCoverageSchema`, `CatalogCardCoverage`,
+`catalogMechanicCoverageSchema`, `CatalogMechanicCoverage`,
+`catalogCoverageReportSchema`, `CatalogCoverageReport`,
+`playerMetaCardCoverageSchema`, `PlayerMetaCardCoverage`,
+`playerMetaCoverageReportSchema`, `PlayerMetaCoverageReport`. New
+`PlayerMetaResultReader.readCardEvidence` method in
+`packages/admin-contracts/src/player-meta-results.ts`.
+
+Next slice: **M08.27C's page** (not yet named/started), or **M08.27D — Data
+Health model and page**, at the owner's discretion — the milestone file
+still lists D next in sequence; the page half of C is an inserted follow-up.

@@ -655,6 +655,30 @@ export {
 } from './comparison-deltas.js';
 
 export {
+  CATALOG_COVERAGE_STAGES,
+  COVERAGE_STATUSES,
+  PLAYER_META_COVERAGE_STAGES,
+  catalogCardCoverageSchema,
+  catalogCoverageReportSchema,
+  catalogCoverageStageSchema,
+  catalogMechanicCoverageSchema,
+  coverageIdentitySchema,
+  coverageStatusSchema,
+  playerMetaCardCoverageSchema,
+  playerMetaCoverageReportSchema,
+  playerMetaCoverageStageSchema,
+  type CatalogCardCoverage,
+  type CatalogCoverageReport,
+  type CatalogCoverageStage,
+  type CatalogMechanicCoverage,
+  type CoverageIdentity,
+  type CoverageStatus,
+  type PlayerMetaCardCoverage,
+  type PlayerMetaCoverageReport,
+  type PlayerMetaCoverageStage,
+} from './coverage.js';
+
+export {
   ADMIN_API_ROOT,
   ADMIN_API_VERSION_SEGMENT,
   ADMIN_ENDPOINTS,

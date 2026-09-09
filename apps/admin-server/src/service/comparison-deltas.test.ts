@@ -137,6 +137,7 @@ function baseAggregate(): Record<string, unknown> {
         gamesDrawn: 12,
         activationsPerMatch: 0.3,
         averageEnergySpent: 2.1,
+        averageTriggers: 0.4,
         deadInHandShare: 0.1,
         mechanicallyUnusableShare: 0.05,
         strategicallyUnusedShare: 0.05,

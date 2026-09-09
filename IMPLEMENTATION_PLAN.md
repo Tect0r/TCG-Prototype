@@ -223,22 +223,37 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.27B — Version deltas.** Compute precon/Commander matchup, inclusion,
-duration, termination, deck-family and surrender-pattern deltas with exact
-support and missing-metric behavior, built on the M08.27A compatibility gate
-(`packages/admin-contracts/src/comparison.ts`) — call
-`decideCatalogEnvironmentComparison`/`decidePlayerMetaComparison` before
-computing any delta rather than reimplementing compatibility logic. Its scope
-and checklist are in
+**M08.27C's page, or M08.27D — Data Health model and page.** M08.27C's
+coverage *model* shipped 2026-09-09 (below); its page half is a follow-up
+slice not yet named or started, inserted ahead of D in practice even though
+the milestone file still lists D next in sequence. Whichever the owner
+picks, its scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
-Note the gap M08.27A recorded rather than papering over: under today's
-Player Meta telemetry (`contentVersion` restates the coarse
-`CARD_SCHEMA_VERSION`, and `liveMatchEnvelopeSchema` has no timestamp,
-M08.25A), a `compatible` verdict is not reachable there except by way of an
-identical-partition refusal — every genuinely differing Player Meta pair is
-`refused` or `deliberately_different`. M08.27B should decide whether that is
-acceptable for this milestone's scope or whether it needs its own smallest
-fix; either way, record the decision rather than silently building past it.
+A coverage page would read `computeCatalogCoverage`/`computePlayerMetaCoverage`
+(`apps/admin-server/src/service/coverage.ts`) rather than reimplementing
+their stage logic.
+
+**M08.27C's model shipped 2026-09-09** — `packages/admin-contracts/src/
+coverage.ts` (schema: `CoverageStatus`, `CoverageIdentity`,
+`CatalogCardCoverage`, `CatalogMechanicCoverage`, `CatalogCoverageReport`,
+`PlayerMetaCardCoverage`, `PlayerMetaCoverageReport`) and `apps/admin-server/
+src/service/coverage.ts` (`computeCatalogCoverage`, `computePlayerMetaCoverage`),
+covering eligibility, inclusion, draw, play, activation, trigger and
+observation over `@tcg/card-data`'s own mechanic vocabulary
+(`MECHANIC_SUPPORT_LIST`). `target` is recorded as an open gap, not a
+constant column — no telemetry counter in `@tcg/simulator` records a
+targeting decision today. Full narrative, including the model/page split
+decision and a zod v4 `z.record`-with-enum exhaustiveness gotcha, in
+`.claude/current-work.md`'s M08.27C entry.
+
+**M08.27B shipped 2026-09-09** — precon/Commander matchup, inclusion,
+duration, termination, deck-family and surrender-pattern deltas
+(`packages/admin-contracts/src/comparison-deltas.ts`,
+`apps/admin-server/src/service/comparison-deltas.ts`), built on the M08.27A
+compatibility gate. It left the Player Meta reachability gap M08.27A
+recorded (a `compatible` verdict is not reachable there except by an
+identical-partition refusal) as an accepted, documented limit rather than a
+fix — see `.claude/current-work.md`'s M08.27B entry.
 
 **M08.27A shipped 2026-09-09** — the compatibility gate itself:
 `comparisonDecisionSchema` and the two domain decision functions

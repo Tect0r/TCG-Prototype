@@ -17,7 +17,12 @@ import {
   type SourceClass,
 } from '@tcg/admin-contracts';
 import { err, isErr, ok, type Result } from '@tcg/shared';
-import { ABNORMAL_TERMINATIONS, experimentPaths } from '@tcg/simulator';
+import {
+  ABNORMAL_TERMINATIONS,
+  experimentPaths,
+  resolvedEnvironmentSchema,
+  type ResolvedEnvironment,
+} from '@tcg/simulator';
 import { z } from 'zod';
 
 import { readDocumentText } from '../catalog/files.js';
@@ -147,6 +152,8 @@ const cardShape = z.object({
   gamesDrawn: z.number(),
   activationsPerMatch: z.number(),
   averageEnergySpent: z.number(),
+  /** M08.27C — added for `./coverage.ts`'s `trigger` stage; mirrors `@tcg/simulator`'s own unversioned field. */
+  averageTriggers: z.number(),
   deadInHandShare: z.number(),
   mechanicallyUnusableShare: z.number(),
   strategicallyUnusedShare: z.number(),
@@ -366,6 +373,7 @@ function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
           column('gamesDrawn', 'Games drawn', 'count'),
           column('activationsPerMatch', 'Activations per match', 'number'),
           column('averageEnergySpent', 'Energy spent', 'number'),
+          column('averageTriggers', 'Triggers per match', 'number'),
           column('deadInHandShare', 'Dead in hand', 'proportion'),
           column('mechanicallyUnusableShare', 'Mechanically unusable', 'proportion'),
           column('strategicallyUnusedShare', 'Strategically unused', 'proportion'),
@@ -387,6 +395,7 @@ function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
           gamesDrawn: card.gamesDrawn,
           activationsPerMatch: card.activationsPerMatch,
           averageEnergySpent: card.averageEnergySpent,
+          averageTriggers: card.averageTriggers,
           deadInHandShare: card.deadInHandShare,
           mechanicallyUnusableShare: card.mechanicallyUnusableShare,
           strategicallyUnusedShare: card.strategicallyUnusedShare,
@@ -775,6 +784,56 @@ export class ResultReader {
     }
 
     return ok({ sourceClasses: open.value.job.sourceClasses, environment });
+  }
+
+  /**
+   * The run's resolved, content-addressed environment snapshot — every card
+   * definition, pool and Commander set the match could reach, exactly as
+   * `experiment.ts` wrote it for the primary environment (`./coverage.ts`'s
+   * whole reason for reading it). Reuses `#open` for the directory alone, the
+   * same way `readProvenance` does; a run whose summary this build cannot
+   * parse still names a directory, and the snapshot beside it is a different
+   * file with its own independent read and validation below.
+   */
+  async readResolvedEnvironment(
+    jobId: JobId,
+  ): Promise<Result<ResolvedEnvironment, readonly AdminError[]>> {
+    const open = await this.#open(jobId);
+    if (isErr(open)) return open;
+
+    const text = await readDocumentText(experimentPaths(open.value.directory).resolvedEnvironment);
+    if (text === null) {
+      return err([
+        noResult(
+          jobId,
+          'The run this job indexes has no resolved environment snapshot, so its whole card vocabulary cannot be read.',
+        ),
+      ]);
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return err([
+        noResult(
+          jobId,
+          'The run this job indexes has a resolved environment snapshot that is not readable JSON.',
+        ),
+      ]);
+    }
+
+    const snapshot = resolvedEnvironmentSchema.safeParse(parsed);
+    if (!snapshot.success) {
+      return err([
+        noResult(
+          jobId,
+          'The run this job indexes has a resolved environment snapshot that does not match the shape this build reads.',
+        ),
+      ]);
+    }
+
+    return ok(snapshot.data);
   }
 
   /**
