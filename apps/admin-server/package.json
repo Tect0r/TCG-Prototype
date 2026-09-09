@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@tcg/admin-contracts": "*",
-    "@tcg/card-data": "*",
     "@tcg/shared": "*",
     "@tcg/simulator": "*",
     "zod": "^4.0.0"

@@ -4790,7 +4790,9 @@ math, missing metric, coverage, corrupt record and annotation-immutability tests
       read every card and mechanic's three-valued status. See
       `.claude/current-work.md`'s M08.27C entries for the full scope
       narrative, including a pre-existing, unrelated admin-server boundary-test
-      defect discovered (not introduced) while verifying this slice.
+      defect discovered (not introduced) while verifying this slice — corrected
+      2026-09-09 in a dedicated slice, see `.claude/current-work.md`'s
+      "M08.27 boundary correction" entry.
 - [ ] **M08.27D — Data Health model and page.** Surface corrupt/skipped records,
       failures, abnormal/stalled matches, exclusions, replicate disagreement, seat
       bias, pilot sensitivity, unsupported mechanics and replay status from recorded

@@ -1,12 +1,4 @@
 import {
-  CardDatabase,
-  MECHANIC_SUPPORT_LIST,
-  isColorIdentityLegal,
-  mechanicKey,
-  mechanicsUsedBy,
-  type CardDefinition,
-} from '@tcg/card-data';
-import {
   NO_PLAYER_META_FILTER,
   PAGE_SIZE_MAX,
   adminError,
@@ -24,6 +16,14 @@ import {
   type ResultRow,
 } from '@tcg/admin-contracts';
 import { err, isErr, ok, type Result } from '@tcg/shared';
+import {
+  CardDatabase,
+  MECHANIC_SUPPORT_LIST,
+  isColorIdentityLegal,
+  mechanicKey,
+  mechanicsUsedBy,
+  type CardDefinition,
+} from '@tcg/simulator';
 
 import type { PlayerMetaResultReader } from './player-meta-results.js';
 import type { ResultReader } from './results.js';

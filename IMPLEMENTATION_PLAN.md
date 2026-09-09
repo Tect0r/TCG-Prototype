@@ -223,11 +223,20 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.27D — Data Health model and page,** or a dedicated correction slice
-for the `coverage.ts` → `@tcg/card-data` boundary violation M08.27C's page
-slice discovered (see below), at the owner's discretion. Scope and checklist
-for D are in
+**M08.27D — Data Health model and page.** Scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
+
+**The `coverage.ts` → `@tcg/card-data` boundary violation was corrected
+2026-09-09**, chosen over starting M08.27D via `AskUserQuestion` since it
+blocked `npm run verify`'s full gate. `apps/simulator/src/index.ts` now
+re-exports `CardDatabase`, `MECHANIC_SUPPORT_LIST`, `isColorIdentityLegal`,
+`mechanicKey`, `mechanicsUsedBy` and `CardDefinition` from `@tcg/card-data` —
+the same pattern M09.8 already uses for `@tcg/deck-generator` — so
+`apps/admin-server/src/service/coverage.ts` reaches them through
+`@tcg/simulator` instead. `apps/admin-server/package.json` no longer
+declares `@tcg/card-data` (only `coverage.test.ts`, excluded from the
+boundary scan, still imports it directly). Full narrative in
+`.claude/current-work.md`'s "M08.27 boundary correction" entry.
 
 **M08.27C's page shipped 2026-09-09** — HTTP route wiring
 (`packages/admin-contracts`, `apps/admin-server`), an `apps/admin-client`

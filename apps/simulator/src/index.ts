@@ -131,6 +131,19 @@ export {
   type MutationResult,
 } from './deck-search/mutate.js';
 
+// Re-exported since M08.27's correction slice: ADR 0023 lets `apps/admin-server`
+// reach only this package, `@tcg/admin-contracts`, `@tcg/shared` and `zod` — so
+// a coverage report over color-identity eligibility and the mechanic support
+// registry needs these here rather than a direct `@tcg/card-data` import.
+export {
+  CardDatabase,
+  MECHANIC_SUPPORT_LIST,
+  isColorIdentityLegal,
+  mechanicKey,
+  mechanicsUsedBy,
+  type CardDefinition,
+} from '@tcg/card-data';
+
 export {
   SEARCH_CHECKPOINT_VERSION,
   fitnessSchema,

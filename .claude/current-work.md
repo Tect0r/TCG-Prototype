@@ -4208,3 +4208,46 @@ tranche close):**
 Next slice: **M08.27D — Data Health model and page**, or a dedicated
 correction slice for the `coverage.ts` → `@tcg/card-data` boundary violation
 noted above, at the owner's discretion.
+
+## M08.27 boundary correction (2026-09-09)
+
+Chosen over M08.27D via `AskUserQuestion`, since the violation blocked
+`npm run verify`'s full gate and the plan said it should land before the
+M08.27 tranche closes.
+
+**Fix:** `apps/admin-server/src/service/coverage.ts` imported `CardDatabase`,
+`MECHANIC_SUPPORT_LIST`, `isColorIdentityLegal`, `mechanicKey` and
+`mechanicsUsedBy` (plus the `CardDefinition` type) directly from
+`@tcg/card-data`, which ADR 0023's admin-server boundary rule forbids
+(production source may import only `@tcg/admin-contracts`, `@tcg/shared`,
+`@tcg/simulator` and `zod`). `apps/simulator/src/index.ts` now re-exports
+all six from `@tcg/card-data` — the same re-export pattern M09.8 already
+established for `@tcg/deck-generator` (`generateDeck`, `checkDeck`, etc.,
+just above the new block in `index.ts`) — and `coverage.ts`'s import moved
+to `@tcg/simulator`. `apps/admin-server/package.json` dropped its
+`@tcg/card-data` dependency entry (the boundary test requires the manifest's
+`dependencies` to be exactly `@tcg/admin-contracts`/`@tcg/shared`/
+`@tcg/simulator`/`zod`, with no `devDependencies` at all); `npm install` at
+the repo root synced `package-lock.json` (4-line diff). `coverage.test.ts`
+still imports `@tcg/card-data` directly for its own fixtures — untouched,
+since `boundary.test.ts`'s `sourceFiles()` scan excludes `*.test.ts` files by
+design, so a test file naming the package doesn't need it declared.
+
+**Verification (focused):**
+- `npx vitest run apps/admin-server/src/boundary.test.ts
+  apps/admin-server/src/service/coverage.test.ts` — 34/34 tests passing
+  (previously 2 failing in `boundary.test.ts`: the `@tcg/card-data` import
+  scan and the exact-dependencies check).
+- `npx vitest run apps/admin-server/src` — 39/39 files, 721/721 tests passing
+  (up from the pre-slice 38/39 files, 719/721 — both previously-failing
+  boundary tests now pass, nothing else regressed).
+- `npx tsc --noEmit -p apps/admin-server/tsconfig.json` and `npx tsc --noEmit
+  -p apps/simulator/tsconfig.json` — both clean.
+- `npx eslint apps/simulator/src/index.ts
+  apps/admin-server/src/service/coverage.ts` — clean.
+
+Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
+verify` — reserved for the M08.27 tranche-close run per the working
+protocol; this was a normal slice, not a tranche close.
+
+Next slice: **M08.27D — Data Health model and page**.
