@@ -4,6 +4,11 @@ import { adaptiveResultTableSchema, adaptiveRunSummarySchema } from './adaptive-
 import { playerMetaResultTableSchema, playerMetaRunSummarySchema } from './player-meta-results.js';
 import { deckExplorerViewSchema } from './deck-explorer.js';
 import { cardExplorerViewSchema } from './card-explorer.js';
+import {
+  matchExplorerEventTimelineSchema,
+  matchExplorerListSchema,
+  matchExplorerViewSchema,
+} from './match-explorer.js';
 import { resultArtifactListingSchema, resultArtifactSchema } from './artifacts.js';
 import {
   catalogBatchViewSchema,
@@ -40,6 +45,9 @@ import {
   operatorJobActionSchema,
   deckExplorerRequestSchema,
   cardExplorerRequestSchema,
+  matchExplorerListRequestSchema,
+  matchExplorerViewRequestSchema,
+  matchExplorerEventTimelineRequestSchema,
   playerMetaResultTableRequestSchema,
   playerMetaRunSummaryRequestSchema,
   reorderBatchRequestSchema,
@@ -527,6 +535,24 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'card-explorer-view',
     request: cardExplorerRequestSchema,
     response: cardExplorerViewSchema,
+    mutates: false,
+  }),
+  matchExplorerList: endpoint({
+    route: 'match-explorer-list',
+    request: matchExplorerListRequestSchema,
+    response: matchExplorerListSchema,
+    mutates: false,
+  }),
+  matchExplorerView: endpoint({
+    route: 'match-explorer-view',
+    request: matchExplorerViewRequestSchema,
+    response: matchExplorerViewSchema,
+    mutates: false,
+  }),
+  matchExplorerEventTimeline: endpoint({
+    route: 'match-explorer-event-timeline',
+    request: matchExplorerEventTimelineRequestSchema,
+    response: matchExplorerEventTimelineSchema,
     mutates: false,
   }),
 });

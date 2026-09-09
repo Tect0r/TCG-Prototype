@@ -24,10 +24,14 @@ import type {
   ContentCatalog,
   DeckExplorerView,
   EnqueuePresetResult,
+  ExplorerMatchId,
   JobId,
   JobPage,
   JobProgressView,
   LiveMatchDeckHash,
+  MatchExplorerEventTimeline,
+  MatchExplorerList,
+  MatchExplorerView,
   OperatorJobAction,
   PageRequestInput,
   PlayerMetaFilterInput,
@@ -584,6 +588,41 @@ export class AdminSession {
     return this.#call('cardExplorerView', {
       cardId,
       jobId: jobId ?? null,
+    });
+  }
+
+  /* -------------------------------------------------------- the match explorer (M08.26D) */
+
+  /**
+   * A filtered, paginated page of the match list — reuses `playerMetaFilter`
+   * verbatim, the same query Player Meta's own filter already answers.
+   */
+  async matchExplorerList(
+    filter?: PlayerMetaFilterInput,
+    page?: PageRequestInput,
+  ): Promise<AdminOutcome<MatchExplorerList>> {
+    return this.#call('matchExplorerList', {
+      filter: playerMetaFilterSchema.parse(filter ?? {}),
+      page: pageRequestSchema.parse(page ?? {}),
+    });
+  }
+
+  /**
+   * One match's full view: termination context, deck snapshots, artifact
+   * availability and selected decision diagnostics.
+   */
+  async matchExplorerView(matchId: ExplorerMatchId): Promise<AdminOutcome<MatchExplorerView>> {
+    return this.#call('matchExplorerView', { matchId });
+  }
+
+  /** One page of one match's flattened raw-event timeline. */
+  async matchExplorerEventTimeline(
+    matchId: ExplorerMatchId,
+    page?: PageRequestInput,
+  ): Promise<AdminOutcome<MatchExplorerEventTimeline>> {
+    return this.#call('matchExplorerEventTimeline', {
+      matchId,
+      page: pageRequestSchema.parse(page ?? {}),
     });
   }
 

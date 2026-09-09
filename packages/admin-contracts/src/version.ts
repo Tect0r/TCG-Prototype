@@ -246,8 +246,26 @@ import { adminError, type AdminError } from './errors.js';
  *   inclusion, partners, draw/play/dead-hand evidence or contributing decks
  *   and matches would be visible no matter how many matches or jobs existed.
  *   That is what a contract version is for saying.
+ * - 12 (M08.26D) — the language acquired the **Match Explorer**. Three
+ *   addresses were added, `match-explorer-list`, `match-explorer-view` and
+ *   `match-explorer-event-timeline`, so a live match can be found by the
+ *   same filter Player Meta already reads (`playerMetaFilterSchema`), then
+ *   opened for its termination context, deck snapshots, artifact
+ *   availability and — when a voluntary termination kept one — its
+ *   selected decision diagnostics, with its raw-event log paged as a
+ *   flattened result table. Catalog/simulator batch-job match records
+ *   (`matches.jsonl`, `replays/`) are a second, unrelated evidence source
+ *   this version does not open; `match-explorer.ts`'s doc comment records
+ *   that as a deliberately deferred gap, not an oversight.
+ *
+ *   A build speaking 11 could read a card's eligible inclusion, partners and
+ *   evidence, and could not reach any of the three new addresses, so no
+ *   match could be found by filter, opened for its own termination context
+ *   and deck snapshots, or have its raw-event log paged, no matter how many
+ *   live matches were played. That is what a contract version is for
+ *   saying.
  */
-export const ADMIN_CONTRACT_VERSION = 11;
+export const ADMIN_CONTRACT_VERSION = 12;
 
 /**
  * The version stamped into a persisted catalog document.

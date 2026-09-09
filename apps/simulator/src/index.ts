@@ -321,6 +321,12 @@ export {
   type SkippedLiveMatchCapture,
 } from './analysis/live-match-surrender-read.js';
 
+export {
+  isSafeLiveMatchId,
+  readLiveMatchRawEvent,
+  readLiveMatchReplay,
+} from './analysis/live-match-artifact-read.js';
+
 export { currentLiveMatchCardDatabases } from './analysis/live-match-card-databases.js';
 
 export { cardPairs, cardPairSchema, type CardPair } from './analysis/pairs.js';

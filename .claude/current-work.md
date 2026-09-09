@@ -3402,3 +3402,82 @@ the actual 34: 16 admin-contracts + 7 admin-server + 5 admin-client unit + 6
 admin-client integration). Root status row and `IMPLEMENTATION_PLAN.md`'s
 "next bounded task" section are untouched — those move only at M08.26F
 tranche close, per CLAUDE.md. Next slice: **M08.26D — Match Explorer**.
+
+## M08.26D — Match Explorer
+
+This slice's implementation (`packages/admin-contracts/src/match-explorer.ts`,
+`apps/admin-server/src/service/match-explorer.ts`,
+`apps/simulator/src/analysis/live-match-artifact-read.ts`,
+`apps/admin-client/src/lib/match-explorer-view.ts` and
+`.../components/MatchExplorerDashboard.tsx`, plus every wiring file —
+`requests.ts`/`service.ts`/`version.ts`/`index.ts` in `admin-contracts`,
+`handlers.ts` in `admin-server`, `session.ts`/`fake-service.ts`/
+`ResultsScreen.tsx` in `admin-client`, `index.ts` in `simulator`) was already
+present, untracked, in the working tree at the start of this session — the
+work of an earlier, uncommitted session. This session's job was to inspect it
+against the milestone's own acceptance line and current `HEAD`, run its
+verification for real rather than trust the prior claim, and close the slice.
+
+Confirmed the design against M08.26D's own line ("filterable match table,
+termination context, event timeline, deck snapshots, selected diagnostics and
+authorized replay/surrender links, including unsupported-artifact states"):
+`match-explorer-list`/`match-explorer-view`/`match-explorer-event-timeline`
+(`ADMIN_CONTRACT_VERSION` 11→12) read the same live-match evidence Deck
+Explorer (M08.26B) and Card Explorer (M08.26C) already read — never a
+catalog/simulator job's own `matches.jsonl`/`replays/`, which the file's own
+doc comment records as a deliberately deferred second evidence source (no
+existing reader anywhere in `@tcg/simulator`, materially larger than one
+slice), not an invented shape. The filterable list reuses
+`playerMetaFilterSchema` verbatim rather than a second filter shape. The
+one-match view carries full deck snapshots, a three-state artifact-
+availability record (`present`/`not_retained`/`not_applicable` — the last
+exists only for `preActionCapture` on a match whose termination was never
+voluntary) and, only when a voluntary-termination pre-action capture exists,
+structural-state-only decision diagnostics
+(`inCombat`/`reactionWindowOpen`/`pendingChoiceOpen`) mirroring
+`SurrenderStateSummary`'s own scope rather than exposing
+`LiveMatchPreActionCapture`'s full engine-owned nested state, which this
+package cannot import. The raw-event timeline flattens `GameEvent` to
+`{sequence, type, summary}` — the same `resultRowSchema`/`resultCellSchema`
+reduction `card-explorer.ts`'s `experimentEvidence.row` already leans on —
+rather than restating `@tcg/rules-engine`'s fifty-plus-member union; its page
+is `null` exactly when `status !== 'present'`, never an empty page that could
+be mistaken for a match with zero events. New
+`apps/simulator/src/analysis/live-match-artifact-read.ts` reads one match's
+optional `raw-event.json`/`replay.json` directly (one match, not a
+whole-directory scan) with its own defensive `isSafeLiveMatchId` path check
+(ADR 0023 §5) layered on top of the caller's own pre-resolved, proven-real
+`matchId`; a present-but-corrupted artifact reads as absent, mirroring
+`live-match-read.ts`'s existing tolerant-read idiom. `MatchExplorerPanel`
+(`apps/admin-client/src/components/MatchExplorerDashboard.tsx`) wired into
+`ResultsScreen.tsx` as a fifth tab, following the exact typed-entry/filter
+pattern the four existing tabs already set. Cross-navigation refs are
+deliberately not wired here, matching Deck/Card Explorer's own precedent —
+that stays M08.26E's job.
+
+Verified: ran the actual test suites rather than trusting the untracked
+state. 56 focused tests pass (22 new in `packages/admin-contracts/src/match-explorer.test.ts`
+covering restated literals, artifact-status/outcome/event-timeline schemas
+including the `page`-null-iff-`not-present` refinement, and JSON round-trip;
+13 new in `apps/admin-server/src/service/match-explorer.test.ts` covering all
+three artifact states including `not_applicable` on a non-voluntary
+termination even with a stray capture file present, flattened-event summaries,
+pagination and cursor round-tripping, and `matchNotFound`; 13 new in
+`apps/admin-client/src/lib/match-explorer-view.test.ts` covering every label
+map and the filter-parsing helper's accept/refuse paths; 8 new integration
+tests in `apps/admin-client/src/match-explorer-flow.test.tsx` covering listing,
+local filter refusal before any request is sent, and the event-timeline gate
+on a present raw-event artifact). The full `admin-contracts`/`admin-server`/
+`admin-client`/`simulator` suites (213 test files, 4282 tests) pass with no
+regression. `npm run typecheck` clean across every workspace. `eslint` reports
+no issues on every new/changed file. `prettier --check` found 4 of the new
+files unformatted (`match-explorer.ts`/`.test.ts` in both `admin-server` and
+`admin-contracts`) — a real gate failure on newly-authored files, not
+pre-existing; ran `prettier --write` on exactly those 4 files (reflow only,
+confirmed no behavior change by rerunning the 56 focused tests), `--check`
+clean after.
+
+Marked M08.26D's work-slice checkbox complete in the milestone file. Root
+status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section are
+untouched — those move only at M08.26F tranche close, per CLAUDE.md. Next
+slice: **M08.26E — Representative selection and cross-navigation**.

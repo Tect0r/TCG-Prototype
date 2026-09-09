@@ -50,7 +50,7 @@ const CAPABILITIES = {
 };
 
 describe('the endpoint registry', () => {
-  it('names twenty-eight endpoints, and every one of them has both schemas', () => {
+  it('names thirty-one endpoints, and every one of them has both schemas', () => {
     // Thirteen from M08.6, plus M08.8's four: the builder has to be told what
     // content exists, has to show an exact total *before* anything is enqueued,
     // and has to keep a filled-in form somewhere the browser is not. Plus
@@ -65,8 +65,14 @@ describe('the endpoint registry', () => {
     // tables can be read the same directory-keyed way, filtered rather than
     // addressed by any run identifier. Plus M08.26B's one: a deck's exact
     // card list, Commander, provenance and (optionally) revision lineage,
-    // named by deck hash rather than by run identifier.
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(28);
+    // named by deck hash rather than by run identifier. Plus M08.26C's one:
+    // a card's eligible-inclusion, partner and evidence view, named by content
+    // ID rather than by run identifier (uncounted here until now — a latent
+    // miscount from that slice, corrected in the same edit that adds the next
+    // three). Plus M08.26D's three: a filterable match list, one match's
+    // seats, artifacts and diagnostics, and its event timeline paged apart
+    // from the rest of the view.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(32);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);

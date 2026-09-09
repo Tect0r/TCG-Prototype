@@ -43,6 +43,7 @@ import type { JobQueue } from '../run/queue.js';
 import { AdaptiveResultReader } from './adaptive-results.js';
 import { CardExplorerReader } from './card-explorer.js';
 import { DeckExplorerReader } from './deck-explorer.js';
+import { MatchExplorerReader } from './match-explorer.js';
 import { PlayerMetaResultReader } from './player-meta-results.js';
 import { ArtifactReader } from './artifacts.js';
 import type { AdminServiceConfig } from './config.js';
@@ -91,6 +92,7 @@ export class AdminService {
   readonly #playerMeta: PlayerMetaResultReader;
   readonly #deckExplorer: DeckExplorerReader;
   readonly #cardExplorer: CardExplorerReader;
+  readonly #matchExplorer: MatchExplorerReader;
   readonly #artifacts: ArtifactReader;
   readonly #championships: ChampionshipScheduler;
   readonly #startedAt: string;
@@ -116,6 +118,10 @@ export class AdminService {
       roots: options.config.roots,
       resultRootId: options.config.resultRootId,
       store: options.store,
+    });
+    this.#matchExplorer = new MatchExplorerReader({
+      roots: options.config.roots,
+      resultRootId: options.config.resultRootId,
     });
     this.#artifacts = new ArtifactReader({ store: options.store, roots: options.config.roots });
     this.#championships = new ChampionshipScheduler({
@@ -180,6 +186,9 @@ export class AdminService {
         this.#playerMeta.readTable(payload.table, payload.filter, payload.page),
       deckExplorerView: (payload) => this.#deckExplorer.readView(payload),
       cardExplorerView: (payload) => this.#cardExplorer.readView(payload),
+      matchExplorerList: (payload) => this.#matchExplorer.readList(payload),
+      matchExplorerView: (payload) => this.#matchExplorer.readView(payload),
+      matchExplorerEventTimeline: (payload) => this.#matchExplorer.readEventTimeline(payload),
       resultArtifact: (payload) => this.#artifacts.read(payload.jobId, payload.artifact),
     };
   }

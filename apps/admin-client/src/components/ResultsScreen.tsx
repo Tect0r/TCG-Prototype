@@ -36,6 +36,7 @@ import { ResultDashboard } from './ResultDashboard.js';
 import { AdaptiveRunPanel } from './AdaptiveDashboard.js';
 import { CardExplorerPanel } from './CardExplorerDashboard.js';
 import { DeckExplorerPanel } from './DeckExplorerDashboard.js';
+import { MatchExplorerPanel } from './MatchExplorerDashboard.js';
 import { PlayerMetaPanel } from './PlayerMetaDashboard.js';
 
 /**
@@ -88,7 +89,7 @@ export function ResultsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<JobId | null>(null);
   const [mode, setMode] = useState<
-    'catalog' | 'adaptive' | 'player-meta' | 'deck-explorer' | 'card-explorer'
+    'catalog' | 'adaptive' | 'player-meta' | 'deck-explorer' | 'card-explorer' | 'match-explorer'
   >('catalog');
 
   const search = useCallback(
@@ -188,12 +189,23 @@ export function ResultsScreen() {
         >
           Card Explorer
         </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'match-explorer'}
+          className={mode === 'match-explorer' ? 'is-current' : ''}
+          onClick={() => {
+            setMode('match-explorer');
+          }}
+        >
+          Match Explorer
+        </button>
       </div>
 
       {mode === 'adaptive' && <AdaptiveRunPanel />}
       {mode === 'player-meta' && <PlayerMetaPanel />}
       {mode === 'deck-explorer' && <DeckExplorerPanel />}
       {mode === 'card-explorer' && <CardExplorerPanel />}
+      {mode === 'match-explorer' && <MatchExplorerPanel />}
       {mode === 'catalog' && (
         <>
           <FilterPanel

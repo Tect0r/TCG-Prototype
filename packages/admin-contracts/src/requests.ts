@@ -11,6 +11,7 @@ import {
   MAX_JOBS_PER_BATCH,
 } from './catalog.js';
 import { contentIdSchema } from './content.js';
+import { explorerMatchIdSchema } from './explorers.js';
 import { batchIdSchema, jobIdSchema, labelSchema } from './identity.js';
 import { legalJobActions, type JobAction, type JobStatus } from './lifecycle.js';
 import { pageOf, pageRequestSchema } from './pagination.js';
@@ -512,6 +513,40 @@ export type CardExplorerRequest = z.infer<typeof cardExplorerRequestSchema>;
 export type CardExplorerRequestInput = z.input<typeof cardExplorerRequestSchema>;
 
 /**
+ * A filtered Match Explorer list (M08.26D).
+ *
+ * `filter` reuses `playerMetaFilterSchema` verbatim, for the same reason
+ * `deckExplorerRequestSchema` reuses no second filter shape: a match list
+ * narrowed by content version, source, Commander, deck or termination is
+ * exactly the query Player Meta's own filter already answers.
+ */
+export const matchExplorerListRequestSchema = z.strictObject({
+  filter: playerMetaFilterSchema.prefault({}),
+  page: pageRequestSchema.prefault({}),
+});
+export type MatchExplorerListRequest = z.infer<typeof matchExplorerListRequestSchema>;
+export type MatchExplorerListRequestInput = z.input<typeof matchExplorerListRequestSchema>;
+
+/** One match's Match Explorer view (M08.26D): termination context, deck snapshots, artifact availability and selected decision diagnostics. */
+export const matchExplorerViewRequestSchema = z.strictObject({
+  matchId: explorerMatchIdSchema,
+});
+export type MatchExplorerViewRequest = z.infer<typeof matchExplorerViewRequestSchema>;
+export type MatchExplorerViewRequestInput = z.input<typeof matchExplorerViewRequestSchema>;
+
+/** One page of one match's flattened raw-event timeline (M08.26D). */
+export const matchExplorerEventTimelineRequestSchema = z.strictObject({
+  matchId: explorerMatchIdSchema,
+  page: pageRequestSchema.prefault({}),
+});
+export type MatchExplorerEventTimelineRequest = z.infer<
+  typeof matchExplorerEventTimelineRequestSchema
+>;
+export type MatchExplorerEventTimelineRequestInput = z.input<
+  typeof matchExplorerEventTimelineRequestSchema
+>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -542,6 +577,9 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   playerMetaResultTable: playerMetaResultTableRequestSchema,
   deckExplorerView: deckExplorerRequestSchema,
   cardExplorerView: cardExplorerRequestSchema,
+  matchExplorerList: matchExplorerListRequestSchema,
+  matchExplorerView: matchExplorerViewRequestSchema,
+  matchExplorerEventTimeline: matchExplorerEventTimelineRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;

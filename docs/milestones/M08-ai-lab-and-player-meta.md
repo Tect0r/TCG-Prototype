@@ -4617,9 +4617,33 @@ representative-selection determinism, unsupported replay and large-fixture tests
       + 7 admin-server reader + 5 admin-client unit + 6 admin-client
       integration); pre-existing `deck-explorer`/`service` tests still pass;
       typecheck and ESLint clean on every touched workspace.
-- [ ] **M08.26D — Match Explorer.** Add the filterable match table, termination
+- [x] **M08.26D — Match Explorer.** Add the filterable match table, termination
       context, event timeline, deck snapshots, selected diagnostics and authorized
-      replay/surrender links, including unsupported-artifact states.
+      replay/surrender links, including unsupported-artifact states. Evidence note:
+      `match-explorer-list`/`match-explorer-view`/`match-explorer-event-timeline`
+      (contract version 12) read the same live-match evidence Deck/Card Explorer
+      already read — never a catalog/simulator job's own `matches.jsonl`/`replays/`,
+      recorded as a deliberately deferred second evidence source
+      (`match-explorer.ts`'s own doc comment), not an invented shape. The
+      filterable list reuses `playerMetaFilterSchema` verbatim; the one-match view
+      carries full deck snapshots, a three-state artifact-availability record
+      (`present`/`not_retained`/`not_applicable` — the last exists only for
+      `preActionCapture` on a non-voluntary termination) and, only when a
+      voluntary-termination capture exists, structural-state-only decision
+      diagnostics mirroring `SurrenderStateSummary`'s own scope; the raw-event
+      timeline flattens `GameEvent` to `{sequence, type, summary}` rather than
+      restating the fifty-plus-member union. New
+      `apps/simulator/src/analysis/live-match-artifact-read.ts` reads one match's
+      optional `raw-event.json`/`replay.json` with defensive `matchId` path-safety
+      (ADR 0023 §5) on top of the caller's own pre-resolved match ID.
+      `MatchExplorerPanel` (`apps/admin-client/src/components/MatchExplorerDashboard.tsx`)
+      wired into `ResultsScreen.tsx` as a fifth tab. 56 new focused tests pass (22
+      admin-contracts schema + 13 admin-server reader + 13 admin-client unit + 8
+      admin-client integration); the full `admin-contracts`/`admin-server`/
+      `admin-client`/`simulator` suites (213 files, 4282 tests) pass unchanged;
+      typecheck clean across every workspace; ESLint clean on every touched file;
+      `prettier --write` applied to 4 newly-authored files (reflow only, no
+      behavior change), `--check` clean after.
 - [ ] **M08.26E — Representative selection and cross-navigation.** Select closest,
       upset, shortest, longest, one-sided, pre-adaptation, deterministic ordinary and
       every abnormal match reproducibly; prove all three explorers cross-navigate

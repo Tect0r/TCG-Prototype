@@ -21,6 +21,9 @@ import {
   catalogJobViewSchema,
   cardExplorerViewSchema,
   deckExplorerViewSchema,
+  matchExplorerRowSchema,
+  matchExplorerViewSchema,
+  playerMetaFilterSchema,
   playerMetaResultTableSchema,
   playerMetaRunSummarySchema,
   resultArtifactListingSchema,
@@ -51,7 +54,11 @@ import {
   type JobOrigin,
   type JobProgressView,
   type JobStatus,
+  type MatchExplorerFlattenedEvent,
+  type MatchExplorerRow,
+  type MatchExplorerView,
   type OperatorJobAction,
+  type PlayerMetaFilter,
   type PlayerMetaResultTable,
   type PlayerMetaResultTableName,
   type PlayerMetaRunSummary,
@@ -203,6 +210,27 @@ export interface FakeLab {
   seedCardExplorer(
     cardId: string,
     view?: CardExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string },
+  ): void;
+  /**
+   * Replaces what `matchExplorerView`/`matchExplorerList`/`matchExplorerEventTimeline`
+   * answer for one match ID (M08.26D) — keyed by `matchId` like `seedDeckExplorer`
+   * is keyed by `deckHash`. Unlike Deck/Card Explorer, an **unseeded** match ID
+   * answers an `admin/no_result` refusal rather than a default fixture: a live
+   * match either exists in the configured result root's record or it does not,
+   * mirroring `MatchExplorerReader.readMatchExplorerView`'s own
+   * `findMatchExplorerMatch` check. There is no "root is always resolved" logic
+   * here, because the resolved thing is one match among many, not the root
+   * itself — see `seedDeckExplorer`'s own note for the contrasting case.
+   *
+   * `events` seeds the flattened raw-event timeline `matchExplorerEventTimeline`
+   * pages over; it is read only when the seeded view's `artifacts.rawEvent` is
+   * `'present'` — the same "no page without a present artifact" rule
+   * `matchExplorerEventTimelineSchema`'s own refinement enforces server-side.
+   */
+  seedMatchExplorer(
+    matchId: string,
+    view?: MatchExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string },
+    events?: readonly MatchExplorerFlattenedEvent[],
   ): void;
 }
 
@@ -459,6 +487,98 @@ export function cardExplorerViewFixture(
     contributingDecks: [],
     contributingMatches: [],
     ...overrides,
+  });
+}
+
+/* -------------------------------------------------------- match explorer (M08.26D) */
+
+/**
+ * A complete Match Explorer view: a rules-victory match with two full deck
+ * snapshots, no retained artifacts, and no decision diagnostics (there is no
+ * pre-action capture for a non-voluntary termination, so `preActionCapture`
+ * reads `'not_applicable'` by default — see `match-explorer.ts`'s file doc
+ * comment on the three artifact states).
+ */
+export function matchExplorerViewFixture(
+  matchId: string,
+  overrides: Partial<MatchExplorerView> = {},
+): MatchExplorerView {
+  return matchExplorerViewSchema.parse({
+    matchId,
+    terminationOrigin: 'rules_victory',
+    actionCount: 12,
+    seats: [
+      {
+        seatIndex: 0,
+        playerId: 'player_1',
+        kind: 'human',
+        deck: {
+          commanderId: 'prototype_commander_fake',
+          cards: [{ cardId: 'prototype_card_fake', quantity: 40 }],
+          deckHash: '0123456789abcdef',
+        },
+      },
+      {
+        seatIndex: 1,
+        playerId: 'player_2',
+        kind: 'bot',
+        deck: {
+          commanderId: 'prototype_commander_fake_two',
+          cards: [{ cardId: 'prototype_card_fake', quantity: 40 }],
+          deckHash: 'fedcba9876543210',
+        },
+      },
+    ],
+    outcome: {
+      outcome: 'win',
+      winnerId: 'player_1',
+      loserIds: ['player_2'],
+      reason: 'health_depleted',
+      finalTurn: 6,
+      finalSequence: 42,
+      diagnostics: null,
+    },
+    artifacts: {
+      rawEvent: 'not_retained',
+      replay: 'not_retained',
+      preActionCapture: 'not_applicable',
+    },
+    decisionDiagnostics: null,
+    observedIn: {
+      realm: 'live_match',
+      source: 'ai_ai',
+      contentVersion: 1,
+      rulesVersion: '1.0.0',
+    },
+    ...overrides,
+  });
+}
+
+/** The list-row shape a Match Explorer view reduces to — the fake's own listing reads this, not a second stored shape. */
+export function matchExplorerRowFromView(view: MatchExplorerView): MatchExplorerRow {
+  const [seatA, seatB] = view.seats;
+  return matchExplorerRowSchema.parse({
+    matchId: view.matchId,
+    terminationOrigin: view.terminationOrigin,
+    actionCount: view.actionCount,
+    seats: [
+      {
+        seatIndex: seatA.seatIndex,
+        playerId: seatA.playerId,
+        kind: seatA.kind,
+        commanderId: seatA.deck.commanderId,
+        deckHash: seatA.deck.deckHash,
+      },
+      {
+        seatIndex: seatB.seatIndex,
+        playerId: seatB.playerId,
+        kind: seatB.kind,
+        commanderId: seatB.deck.commanderId,
+        deckHash: seatB.deck.deckHash,
+      },
+    ],
+    outcome: view.outcome,
+    observedIn: view.observedIn,
   });
 }
 
@@ -950,6 +1070,17 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     string,
     CardExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string }
   >();
+  /**
+   * Match Explorer views (M08.26D), by match ID — see `FakeLab.seedMatchExplorer`'s
+   * own doc comment for why an unseeded ID refuses rather than answering a
+   * default fixture, unlike `deckExplorerViews`/`cardExplorerViews` above.
+   */
+  const matchExplorerViews = new Map<
+    string,
+    MatchExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string }
+  >();
+  /** Flattened raw-event pages (M08.26D), by match ID — see `FakeLab.seedMatchExplorer`. */
+  const matchExplorerEvents = new Map<string, readonly MatchExplorerFlattenedEvent[]>();
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -1173,6 +1304,10 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     seedCardExplorer(cardId, view) {
       cardExplorerViews.set(cardId, view ?? cardExplorerViewFixture(cardId));
     },
+    seedMatchExplorer(matchId, view, events) {
+      matchExplorerViews.set(matchId, view ?? matchExplorerViewFixture(matchId));
+      if (events !== undefined) matchExplorerEvents.set(matchId, events);
+    },
   };
 
   const matchesFilter = (job: CatalogJobView, filter: CatalogFilter): boolean => {
@@ -1206,6 +1341,32 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       filter.commanderIds.length > 0 &&
       !content.commanderIds.some((id) => filter.commanderIds.includes(id))
     ) {
+      return false;
+    }
+    return true;
+  };
+
+  const matchesPlayerMetaFilter = (row: MatchExplorerRow, filter: PlayerMetaFilter): boolean => {
+    if (
+      filter.contentVersions.length > 0 &&
+      !filter.contentVersions.includes(row.observedIn.contentVersion)
+    ) {
+      return false;
+    }
+    if (filter.sources.length > 0 && !filter.sources.includes(row.observedIn.source)) return false;
+    if (
+      filter.commanderIds.length > 0 &&
+      !row.seats.some((seat) => filter.commanderIds.includes(seat.commanderId))
+    ) {
+      return false;
+    }
+    if (
+      filter.deckHashes.length > 0 &&
+      !row.seats.some((seat) => filter.deckHashes.includes(seat.deckHash))
+    ) {
+      return false;
+    }
+    if (filter.terminations.length > 0 && !filter.terminations.includes(row.terminationOrigin)) {
       return false;
     }
     return true;
@@ -1600,6 +1761,83 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
         return refusal(seeded.refuse, 409, seeded.message);
       }
       return answer(seeded ?? cardExplorerViewFixture(cardId));
+    }
+
+    if (name === 'matchExplorerList') {
+      const filter = playerMetaFilterSchema.parse(payload.filter ?? {});
+      const page = (payload.page ?? {}) as {
+        readonly limit?: number;
+        readonly cursor?: string | null;
+      };
+      const limit = page.limit ?? PAGE_SIZE_DEFAULT;
+      const matching = [...matchExplorerViews.values()]
+        .filter((seeded): seeded is MatchExplorerView => !('refuse' in seeded))
+        .map((view) => matchExplorerRowFromView(view))
+        .filter((row) => matchesPlayerMetaFilter(row, filter))
+        .sort((a, b) => a.matchId.localeCompare(b.matchId));
+      const offset = decodeOffset(page.cursor ?? null);
+      const items = matching.slice(offset, offset + limit);
+      const consumed = offset + items.length;
+      return answer({
+        items,
+        page: {
+          returned: items.length,
+          limit,
+          nextCursor: consumed < matching.length ? encodeOffset(consumed) : null,
+          total: matching.length,
+        },
+      });
+    }
+
+    if (name === 'matchExplorerView') {
+      const matchId = String(payload.matchId ?? '');
+      const seeded = matchExplorerViews.get(matchId);
+      if (seeded === undefined) {
+        return refusal(
+          'admin/no_result',
+          404,
+          `No live match with id \`${matchId}\` was found in the configured result root, so the Match Explorer cannot show it.`,
+        );
+      }
+      if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
+      return answer(seeded);
+    }
+
+    if (name === 'matchExplorerEventTimeline') {
+      const matchId = String(payload.matchId ?? '');
+      const seeded = matchExplorerViews.get(matchId);
+      if (seeded === undefined) {
+        return refusal(
+          'admin/no_result',
+          404,
+          `No live match with id \`${matchId}\` was found in the configured result root, so the Match Explorer cannot show it.`,
+        );
+      }
+      if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
+      if (seeded.artifacts.rawEvent !== 'present') {
+        return answer({ status: seeded.artifacts.rawEvent, page: null });
+      }
+      const events = matchExplorerEvents.get(matchId) ?? [];
+      const page = (payload.page ?? {}) as {
+        readonly limit?: number;
+        readonly cursor?: string | null;
+      };
+      const limit = page.limit ?? PAGE_SIZE_DEFAULT;
+      const offset = decodeOffset(page.cursor ?? null);
+      const items = events.slice(offset, offset + limit);
+      const consumed = offset + items.length;
+      return answer({
+        status: 'present',
+        page: {
+          items,
+          page: {
+            returned: items.length,
+            limit,
+            nextCursor: consumed < events.length ? encodeOffset(consumed) : null,
+            total: events.length,
+          },
+        },
+      });
     }
 
     return refusal('admin/unknown_endpoint', 404);
