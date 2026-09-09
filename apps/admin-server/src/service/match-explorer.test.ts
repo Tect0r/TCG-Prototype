@@ -201,6 +201,7 @@ describe('MatchExplorerReader.readList (M08.26D)', () => {
         kind: 'human',
         commanderId: 'prototype_commander_blue',
         deckHash: TARGET_DECK.deckHash,
+        deckRef: { kind: 'deck', deckHash: TARGET_DECK.deckHash },
       },
       {
         seatIndex: 1,
@@ -208,6 +209,7 @@ describe('MatchExplorerReader.readList (M08.26D)', () => {
         kind: 'bot',
         commanderId: 'prototype_commander_red',
         deckHash: OPPONENT_DECK.deckHash,
+        deckRef: { kind: 'deck', deckHash: OPPONENT_DECK.deckHash },
       },
     ]);
     expect(list.page).toEqual({ returned: 2, limit: 50, nextCursor: null, total: 2 });
@@ -276,9 +278,13 @@ describe('MatchExplorerReader.readView (M08.26D)', () => {
       kind: 'human',
       deck: {
         commanderId: 'prototype_commander_blue',
-        cards: TARGET_DECK.cards,
+        cards: TARGET_DECK.cards.map((card) => ({
+          ...card,
+          cardRef: { kind: 'card', cardId: card.cardId },
+        })),
         deckHash: TARGET_DECK.deckHash,
       },
+      deckRef: { kind: 'deck', deckHash: TARGET_DECK.deckHash },
     });
     expect(view.outcome).toEqual(concedeOutcome);
     expect(view.artifacts).toEqual({

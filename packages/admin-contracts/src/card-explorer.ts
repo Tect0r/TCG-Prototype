@@ -5,9 +5,12 @@ import { jobIdSchema } from './identity.js';
 import { liveMatchDeckHashSchema } from './player-meta.js';
 import { resultRowSchema } from './results.js';
 import {
+  cardExplorerRefSchema,
+  deckExplorerRefSchema,
   experimentExplorerEvidenceSchema,
   explorerMatchIdSchema,
   liveMatchExplorerEvidenceSchema,
+  matchExplorerRefSchema,
 } from './explorers.js';
 
 /**
@@ -77,6 +80,16 @@ import {
  * occurrence. Both are bounded lists, not an unpaginated index — a card
  * played in more matches than the bound is a truncation the view says so
  * about, not a silently partial answer.
+ *
+ * ## Cross-navigation (M08.26E)
+ *
+ * `cardExplorerPartnerSchema.ref` is a `cardExplorerRefSchema` for the
+ * partner card itself, `cardExplorerContributingDeckSchema.ref` is a
+ * `deckExplorerRefSchema` for its deck hash, and
+ * `cardExplorerContributingMatchSchema.ref` is a `matchExplorerRefSchema` for
+ * its match — each restates a field the entry already carries
+ * (`partnerCardId`, `deckHash`, `matchId`) as the typed reference every
+ * explorer agrees on, never a second identifier.
  */
 
 /* ------------------------------------------------------------- inclusion */
@@ -120,6 +133,7 @@ export const cardExplorerPartnerSchema = z.strictObject({
   decksIncludingBoth: z.number().int().min(0),
   supportByUniqueDeck: z.number().min(0).max(1),
   observedIn: liveMatchExplorerEvidenceSchema,
+  ref: cardExplorerRefSchema,
 });
 export type CardExplorerPartner = z.infer<typeof cardExplorerPartnerSchema>;
 
@@ -161,6 +175,7 @@ export const cardExplorerContributingDeckSchema = z.strictObject({
   deckHash: liveMatchDeckHashSchema,
   commanderId: contentIdSchema,
   observedIn: liveMatchExplorerEvidenceSchema,
+  ref: deckExplorerRefSchema,
 });
 export type CardExplorerContributingDeck = z.infer<typeof cardExplorerContributingDeckSchema>;
 
@@ -169,6 +184,7 @@ export const cardExplorerContributingMatchSchema = z.strictObject({
   deckHash: liveMatchDeckHashSchema,
   commanderId: contentIdSchema,
   observedIn: liveMatchExplorerEvidenceSchema,
+  ref: matchExplorerRefSchema,
 });
 export type CardExplorerContributingMatch = z.infer<typeof cardExplorerContributingMatchSchema>;
 
@@ -187,7 +203,9 @@ export const cardExplorerViewSchema = z.strictObject({
     .max(CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS),
   /** `null` versus a present-but-possibly-`row: null` value — see file doc comment. */
   experimentEvidence: cardExplorerExperimentEvidenceSchema.nullable(),
-  contributingDecks: z.array(cardExplorerContributingDeckSchema).max(CARD_EXPLORER_MAX_CONTRIBUTING_DECKS),
+  contributingDecks: z
+    .array(cardExplorerContributingDeckSchema)
+    .max(CARD_EXPLORER_MAX_CONTRIBUTING_DECKS),
   contributingMatches: z
     .array(cardExplorerContributingMatchSchema)
     .max(CARD_EXPLORER_MAX_CONTRIBUTING_MATCHES),

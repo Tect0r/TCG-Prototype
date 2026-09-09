@@ -75,7 +75,8 @@ function inclusionsAndPartnersOf(
     if (entry.commanders === null) {
       unavailablePartitions.push({
         observedIn,
-        reason: entry.unavailableReason ?? 'This partition has no card database for its content version.',
+        reason:
+          entry.unavailableReason ?? 'This partition has no card database for its content version.',
       });
       continue;
     }
@@ -107,6 +108,7 @@ function inclusionsAndPartnersOf(
           decksIncludingBoth: pair.decksIncludingBoth,
           supportByUniqueDeck: pair.supportByUniqueDeck,
           observedIn,
+          ref: { kind: 'card', cardId: partnerCardId },
         });
       }
     }
@@ -139,6 +141,7 @@ function contributingOf(
           deckHash: seat.deck.deckHash,
           commanderId: seat.deck.commanderId,
           observedIn,
+          ref: { kind: 'match', matchId: match.matchId },
         });
       }
 
@@ -151,6 +154,7 @@ function contributingOf(
           deckHash: seat.deck.deckHash,
           commanderId: seat.deck.commanderId,
           observedIn,
+          ref: { kind: 'deck', deckHash: seat.deck.deckHash },
         });
       }
     }

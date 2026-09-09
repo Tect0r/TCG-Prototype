@@ -20,7 +20,10 @@ const VALID_OBSERVED_IN = {
   contentVersion: 3,
   rulesVersion: '1.4.0',
 };
-const VALID_CARDS = [{ cardId: VALID_CARD_ID, quantity: 1 }];
+const VALID_CARDS = [
+  { cardId: VALID_CARD_ID, quantity: 1, ref: { kind: 'card' as const, cardId: VALID_CARD_ID } },
+];
+const VALID_ANCHOR_MATCH = { kind: 'match' as const, matchId: 'match_a' };
 
 const VALID_REVISION = {
   side: 'incumbent' as const,
@@ -42,14 +45,15 @@ describe('restated literal values', () => {
 
 describe('deckExplorerCardEntrySchema', () => {
   it('accepts a valid entry and refuses a zero or over-bound quantity', () => {
+    const ref = { kind: 'card' as const, cardId: VALID_CARD_ID };
     expect(
-      deckExplorerCardEntrySchema.safeParse({ cardId: VALID_CARD_ID, quantity: 1 }).success,
+      deckExplorerCardEntrySchema.safeParse({ cardId: VALID_CARD_ID, quantity: 1, ref }).success,
     ).toBe(true);
     expect(
-      deckExplorerCardEntrySchema.safeParse({ cardId: VALID_CARD_ID, quantity: 0 }).success,
+      deckExplorerCardEntrySchema.safeParse({ cardId: VALID_CARD_ID, quantity: 0, ref }).success,
     ).toBe(false);
     expect(
-      deckExplorerCardEntrySchema.safeParse({ cardId: VALID_CARD_ID, quantity: 100 }).success,
+      deckExplorerCardEntrySchema.safeParse({ cardId: VALID_CARD_ID, quantity: 100, ref }).success,
     ).toBe(false);
   });
 });
@@ -61,6 +65,7 @@ describe('deckExplorerIdentitySchema', () => {
         commanderId: VALID_CARD_ID,
         cards: VALID_CARDS,
         observedIn: VALID_OBSERVED_IN,
+        anchorMatch: VALID_ANCHOR_MATCH,
       }).success,
     ).toBe(true);
   });
@@ -176,6 +181,7 @@ describe('deckExplorerViewSchema', () => {
           commanderId: VALID_CARD_ID,
           cards: VALID_CARDS,
           observedIn: VALID_OBSERVED_IN,
+          anchorMatch: VALID_ANCHOR_MATCH,
         },
         knownRevisions: [VALID_REVISION],
       }).success,

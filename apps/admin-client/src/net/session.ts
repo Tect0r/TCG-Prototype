@@ -32,6 +32,7 @@ import type {
   MatchExplorerEventTimeline,
   MatchExplorerList,
   MatchExplorerView,
+  MatchRepresentativesView,
   OperatorJobAction,
   PageRequestInput,
   PlayerMetaFilterInput,
@@ -622,6 +623,25 @@ export class AdminSession {
   ): Promise<AdminOutcome<MatchExplorerEventTimeline>> {
     return this.#call('matchExplorerEventTimeline', {
       matchId,
+      page: pageRequestSchema.parse(page ?? {}),
+    });
+  }
+
+  /**
+   * The seven representative-match categories plus a paginated abnormal-match
+   * list, over the same `playerMetaFilter` every other explorer list reads.
+   * `adaptiveExperimentId` stays `null` unless the caller names one — the same
+   * "not attempted" versus "attempted, found nothing" discipline Deck
+   * Explorer's `knownRevisions` and Card Explorer's `jobId` already use.
+   */
+  async matchRepresentatives(
+    filter?: PlayerMetaFilterInput,
+    adaptiveExperimentId?: AdaptiveExperimentId | null,
+    page?: PageRequestInput,
+  ): Promise<AdminOutcome<MatchRepresentativesView>> {
+    return this.#call('matchRepresentatives', {
+      filter: playerMetaFilterSchema.parse(filter ?? {}),
+      adaptiveExperimentId: adaptiveExperimentId ?? null,
       page: pageRequestSchema.parse(page ?? {}),
     });
   }

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import {
   contentIdSchema,
@@ -7,8 +7,10 @@ import {
   type CardExplorerContributingMatch,
   type CardExplorerInclusion,
   type CardExplorerPartner,
+  type CardExplorerRef,
   type CardExplorerUnavailablePartition,
   type CardExplorerView,
+  type ExplorerRef,
   type JobId,
 } from '@tcg/admin-contracts';
 
@@ -33,8 +35,24 @@ import { FactTable } from './FactTable.js';
  * part of this view: that evidence has no structured, queryable form
  * anywhere yet, and is recorded as the deliberately deferred next question
  * rather than invented here.
+ *
+ * Cross-navigation (M08.26E): `pendingRef` is a `CardExplorerRef` queued by
+ * another explorer panel's "Open in Card Explorer" button; consuming it opens
+ * that card ID the same way the form's own submit does. Each contributing
+ * deck carries an "Open in Deck Explorer" button and each contributing match
+ * an "Open in Match Explorer" button, both calling `onNavigate`.
  */
-export function CardExplorerPanel() {
+export interface CardExplorerPanelProps {
+  readonly pendingRef?: CardExplorerRef | null;
+  readonly onConsumeRef?: () => void;
+  readonly onNavigate?: ((ref: ExplorerRef) => void) | undefined;
+}
+
+export function CardExplorerPanel({
+  pendingRef = null,
+  onConsumeRef,
+  onNavigate,
+}: CardExplorerPanelProps = {}) {
   const session = useAdminSession();
   const [cardInput, setCardInput] = useState('');
   const [jobInput, setJobInput] = useState('');
@@ -50,6 +68,16 @@ export function CardExplorerPanel() {
     },
     [session],
   );
+
+  useEffect(() => {
+    if (pendingRef === null) return;
+    setCardInput(pendingRef.cardId);
+    open(pendingRef.cardId, null);
+    onConsumeRef?.();
+    // `open` is stable for the life of this screen; only `pendingRef` should
+    // retrigger this effect, exactly once per queued ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRef]);
 
   return (
     <section className="panel" aria-labelledby="card-explorer">
@@ -124,29 +152,31 @@ export function CardExplorerPanel() {
           }}
         />
       )}
-      {view !== null && view.ok && <CardExplorerView view={view.value} />}
+      {view !== null && view.ok && <CardExplorerView view={view.value} onNavigate={onNavigate} />}
     </section>
   );
 }
 
-function CardExplorerView({ view }: { readonly view: CardExplorerView }) {
+function CardExplorerView({
+  view,
+  onNavigate,
+}: {
+  readonly view: CardExplorerView;
+  readonly onNavigate?: ((ref: ExplorerRef) => void) | undefined;
+}) {
   return (
     <>
       <InclusionsView inclusions={view.inclusions} />
-      <PartnersView partners={view.partners} />
+      <PartnersView partners={view.partners} onNavigate={onNavigate} />
       <UnavailablePartitionsView partitions={view.unavailablePartitions} />
       <ExperimentEvidenceView view={view} />
-      <ContributingDecksView decks={view.contributingDecks} />
-      <ContributingMatchesView matches={view.contributingMatches} />
+      <ContributingDecksView decks={view.contributingDecks} onNavigate={onNavigate} />
+      <ContributingMatchesView matches={view.contributingMatches} onNavigate={onNavigate} />
     </>
   );
 }
 
-function InclusionsView({
-  inclusions,
-}: {
-  readonly inclusions: readonly CardExplorerInclusion[];
-}) {
+function InclusionsView({ inclusions }: { readonly inclusions: readonly CardExplorerInclusion[] }) {
   if (inclusions.length === 0) {
     return <Empty>No live match this server finds includes this card under any Commander.</Empty>;
   }
@@ -188,7 +218,13 @@ function InclusionsView({
   );
 }
 
-function PartnersView({ partners }: { readonly partners: readonly CardExplorerPartner[] }) {
+function PartnersView({
+  partners,
+  onNavigate,
+}: {
+  readonly partners: readonly CardExplorerPartner[];
+  readonly onNavigate?: ((ref: ExplorerRef) => void) | undefined;
+}) {
   if (partners.length === 0) {
     return <Empty>No live match this server finds pairs this card with another.</Empty>;
   }
@@ -202,6 +238,7 @@ function PartnersView({ partners }: { readonly partners: readonly CardExplorerPa
             <th scope="col">Partner card</th>
             <th scope="col">By matches</th>
             <th scope="col">By unique decks</th>
+            <th scope="col"> </th>
           </tr>
         </thead>
         <tbody>
@@ -214,6 +251,18 @@ function PartnersView({ partners }: { readonly partners: readonly CardExplorerPa
               </td>
               <td>
                 {formatCardExplorerRate(entry.supportByUniqueDeck)} ({entry.decksIncludingBoth})
+              </td>
+              <td>
+                {onNavigate !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNavigate(entry.ref);
+                    }}
+                  >
+                    Open in Card Explorer
+                  </button>
+                )}
               </td>
             </tr>
           ))}
@@ -267,8 +316,10 @@ function ExperimentEvidenceView({ view }: { readonly view: CardExplorerView }) {
 
 function ContributingDecksView({
   decks,
+  onNavigate,
 }: {
   readonly decks: readonly CardExplorerContributingDeck[];
+  readonly onNavigate?: ((ref: ExplorerRef) => void) | undefined;
 }) {
   if (decks.length === 0) {
     return <Empty>No contributing deck recorded for this card.</Empty>;
@@ -281,6 +332,7 @@ function ContributingDecksView({
           <tr>
             <th scope="col">Deck hash</th>
             <th scope="col">Commander</th>
+            <th scope="col"> </th>
           </tr>
         </thead>
         <tbody>
@@ -288,6 +340,18 @@ function ContributingDecksView({
             <tr key={entry.deckHash}>
               <td>{entry.deckHash}</td>
               <td>{entry.commanderId}</td>
+              <td>
+                {onNavigate !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNavigate(entry.ref);
+                    }}
+                  >
+                    Open in Deck Explorer
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -298,8 +362,10 @@ function ContributingDecksView({
 
 function ContributingMatchesView({
   matches,
+  onNavigate,
 }: {
   readonly matches: readonly CardExplorerContributingMatch[];
+  readonly onNavigate?: ((ref: ExplorerRef) => void) | undefined;
 }) {
   if (matches.length === 0) {
     return <Empty>No contributing match recorded for this card.</Empty>;
@@ -313,6 +379,7 @@ function ContributingMatchesView({
             <th scope="col">Match</th>
             <th scope="col">Deck hash</th>
             <th scope="col">Commander</th>
+            <th scope="col"> </th>
           </tr>
         </thead>
         <tbody>
@@ -321,6 +388,18 @@ function ContributingMatchesView({
               <td>{entry.matchId}</td>
               <td>{entry.deckHash}</td>
               <td>{entry.commanderId}</td>
+              <td>
+                {onNavigate !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNavigate(entry.ref);
+                    }}
+                  >
+                    Open in Match Explorer
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

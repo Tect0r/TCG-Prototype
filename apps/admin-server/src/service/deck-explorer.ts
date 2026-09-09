@@ -85,6 +85,7 @@ function readDeckExplorerIdentity(
     cards: found.seat.deck.cards.map((entry) => ({
       cardId: entry.cardId,
       quantity: entry.quantity,
+      ref: { kind: 'card', cardId: entry.cardId },
     })),
     observedIn: {
       realm: 'live_match',
@@ -92,6 +93,7 @@ function readDeckExplorerIdentity(
       contentVersion: found.match.provenance.contentVersion,
       rulesVersion: found.match.provenance.rulesVersion,
     },
+    anchorMatch: { kind: 'match', matchId: found.match.matchId },
   };
 }
 

@@ -547,6 +547,26 @@ export type MatchExplorerEventTimelineRequestInput = z.input<
 >;
 
 /**
+ * A Match Representatives read (M08.26E): the seven singular representative
+ * matches plus the abnormal-match list, over the same `playerMetaFilterSchema`
+ * every other explorer address reuses.
+ *
+ * `adaptiveExperimentId` defaults to `null`, meaning "do not attempt
+ * pre-adaptation selection at all," never "attempted, found none" — the same
+ * discipline `deckExplorerRequestSchema.adaptiveExperimentId` and
+ * `cardExplorerRequestSchema.jobId` already establish. `page` pages only
+ * `abnormalMatches`; the seven singular representatives are never paginated
+ * because there is always exactly one slot per kind.
+ */
+export const matchRepresentativesRequestSchema = z.strictObject({
+  filter: playerMetaFilterSchema.prefault({}),
+  adaptiveExperimentId: adaptiveExperimentIdSchema.nullable().default(null),
+  page: pageRequestSchema.prefault({}),
+});
+export type MatchRepresentativesRequest = z.infer<typeof matchRepresentativesRequestSchema>;
+export type MatchRepresentativesRequestInput = z.input<typeof matchRepresentativesRequestSchema>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -580,6 +600,7 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   matchExplorerList: matchExplorerListRequestSchema,
   matchExplorerView: matchExplorerViewRequestSchema,
   matchExplorerEventTimeline: matchExplorerEventTimelineRequestSchema,
+  matchRepresentatives: matchRepresentativesRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;

@@ -5,7 +5,9 @@ import {
   adaptiveExperimentIdSchema,
   liveMatchDeckHashSchema,
   type AdaptiveExperimentId,
+  type DeckExplorerRef,
   type DeckExplorerView,
+  type ExplorerRef,
   type LiveMatchDeckHash,
   type PlayerMetaResultTable,
   type PlayerMetaResultTableName,
@@ -52,11 +54,27 @@ import { FactTable, type Fact } from './FactTable.js';
  * identifier, here a deck hash plus an optional Adaptive Counter experiment
  * ID — because a deck read has neither a `JobId` nor a catalog row to select
  * from.
+ *
+ * Cross-navigation (M08.26E): `pendingRef` is a `DeckExplorerRef` queued by
+ * another explorer panel's "Open in Deck Explorer" button; consuming it opens
+ * that hash the same way the form's own submit does. Each card in this deck's
+ * identity carries its own "Open in Card Explorer" button, calling `onNavigate`
+ * with a `CardExplorerRef` for that card ID.
  */
 
 type EvidenceOutcome = AdminOutcome<PlayerMetaResultTable>;
 
-export function DeckExplorerPanel() {
+export interface DeckExplorerPanelProps {
+  readonly pendingRef?: DeckExplorerRef | null;
+  readonly onConsumeRef?: () => void;
+  readonly onNavigate?: ((ref: ExplorerRef) => void) | undefined;
+}
+
+export function DeckExplorerPanel({
+  pendingRef = null,
+  onConsumeRef,
+  onNavigate,
+}: DeckExplorerPanelProps = {}) {
   const session = useAdminSession();
   const [hashInput, setHashInput] = useState('');
   const [experimentInput, setExperimentInput] = useState('');
@@ -82,6 +100,16 @@ export function DeckExplorerPanel() {
     },
     [session],
   );
+
+  useEffect(() => {
+    if (pendingRef === null) return;
+    setHashInput(pendingRef.deckHash);
+    open(pendingRef.deckHash, null);
+    onConsumeRef?.();
+    // `open` is stable for the life of this screen; only `pendingRef` should
+    // retrigger this effect, exactly once per queued ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRef]);
 
   useEffect(() => {
     if (deckHash === null || view === null || !view.ok) return;
@@ -181,7 +209,7 @@ export function DeckExplorerPanel() {
       )}
       {view !== null && view.ok && (
         <>
-          <IdentityView view={view.value} />
+          <IdentityView view={view.value} onNavigate={onNavigate} />
           <RevisionsView view={view.value} />
 
           <div className="dashboard__tabs" role="group" aria-label="Deck evidence">
@@ -263,7 +291,13 @@ export function DeckExplorerPanel() {
   );
 }
 
-function IdentityView({ view }: { readonly view: DeckExplorerView }) {
+function IdentityView({
+  view,
+  onNavigate,
+}: {
+  readonly view: DeckExplorerView;
+  readonly onNavigate?: ((ref: ExplorerRef) => void) | undefined;
+}) {
   if (view.identity === null) {
     return (
       <Empty>
@@ -284,6 +318,18 @@ function IdentityView({ view }: { readonly view: DeckExplorerView }) {
   return (
     <>
       <FactTable caption="This deck's identity" facts={facts} />
+      {onNavigate !== undefined && (
+        <p className="builder__actions">
+          <button
+            type="button"
+            onClick={() => {
+              onNavigate(identity.anchorMatch);
+            }}
+          >
+            Open the observed match in Match Explorer
+          </button>
+        </p>
+      )}
       <div className="dashboard__heatmap-wrap">
         <table className="dashboard__bars">
           <caption className="visually-hidden">This deck&apos;s exact card list</caption>
@@ -291,6 +337,7 @@ function IdentityView({ view }: { readonly view: DeckExplorerView }) {
             <tr>
               <th scope="col">Card</th>
               <th scope="col">Quantity</th>
+              <th scope="col"> </th>
             </tr>
           </thead>
           <tbody>
@@ -298,6 +345,18 @@ function IdentityView({ view }: { readonly view: DeckExplorerView }) {
               <tr key={entry.cardId}>
                 <td>{entry.cardId}</td>
                 <td>{entry.quantity}</td>
+                <td>
+                  {onNavigate !== undefined && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate(entry.ref);
+                      }}
+                    >
+                      Open in Card Explorer
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

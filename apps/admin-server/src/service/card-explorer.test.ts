@@ -7,7 +7,12 @@ import { isErr, unwrap } from '@tcg/shared';
 import { experimentPaths } from '@tcg/simulator';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
 
-import { makeTestCatalog, testConfig, testIdentity, type TestCatalog } from '../catalog/test-catalog.js';
+import {
+  makeTestCatalog,
+  testConfig,
+  testIdentity,
+  type TestCatalog,
+} from '../catalog/test-catalog.js';
 
 import { CardExplorerReader } from './card-explorer.js';
 
@@ -221,9 +226,7 @@ async function seedJob(
 describe('CardExplorerReader (M08.26C)', () => {
   it('reports a played card’s inclusion, its partner and its contributing deck/match, leaving experimentEvidence null when no job was named', async () => {
     await writeMatch('match_a', envelope('match_a'));
-    const view = unwrap(
-      await reader().readView({ cardId: 'arcane_snare', jobId: null }),
-    );
+    const view = unwrap(await reader().readView({ cardId: 'arcane_snare', jobId: null }));
 
     const blue = view.inclusions.find((entry) => entry.commanderId === 'chief_containment_scholar');
     expect(blue?.status).toBe('played');
@@ -253,6 +256,7 @@ describe('CardExplorerReader (M08.26C)', () => {
           contentVersion: 5,
           rulesVersion: '1.0.0',
         },
+        ref: { kind: 'match', matchId: 'match_a' },
       },
     ]);
 
@@ -261,10 +265,15 @@ describe('CardExplorerReader (M08.26C)', () => {
   });
 
   it('reports a held legal card as inclusion 0 (not unusable) and an off-colour card as unusable with a null inclusion rate', async () => {
-    await writeMatch('match_a', envelope('match_a', { seats: [
-      { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: blueDeckWithoutSnare() },
-      { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
-    ] }));
+    await writeMatch(
+      'match_a',
+      envelope('match_a', {
+        seats: [
+          { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: blueDeckWithoutSnare() },
+          { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
+        ],
+      }),
+    );
 
     const held = unwrap(await reader().readView({ cardId: 'archive_acolyte', jobId: null }));
     const heldBlue = held.inclusions.find(
@@ -288,7 +297,9 @@ describe('CardExplorerReader (M08.26C)', () => {
   it('reports an unavailable partition, with a stated reason, when no card database is supplied for its content version', async () => {
     await writeMatch(
       'match_a',
-      envelope('match_a', { provenance: { softwareVersion: '1.0.0', contentVersion: 999, rulesVersion: '1.0.0' } }),
+      envelope('match_a', {
+        provenance: { softwareVersion: '1.0.0', contentVersion: 999, rulesVersion: '1.0.0' },
+      }),
     );
 
     const view = unwrap(await reader().readView({ cardId: 'arcane_snare', jobId: null }));

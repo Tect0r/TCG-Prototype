@@ -74,6 +74,7 @@ function seatSummaryOf(seat: LiveMatchEnvelope['seats'][number]): MatchExplorerS
     kind: seat.kind,
     commanderId: seat.deck.commanderId,
     deckHash: seat.deck.deckHash,
+    deckRef: { kind: 'deck', deckHash: seat.deck.deckHash },
   };
 }
 
@@ -84,9 +85,14 @@ function seatOf(seat: LiveMatchEnvelope['seats'][number]): MatchExplorerSeat {
     kind: seat.kind,
     deck: {
       commanderId: seat.deck.commanderId,
-      cards: seat.deck.cards.map((entry) => ({ cardId: entry.cardId, quantity: entry.quantity })),
+      cards: seat.deck.cards.map((entry) => ({
+        cardId: entry.cardId,
+        quantity: entry.quantity,
+        cardRef: { kind: 'card', cardId: entry.cardId },
+      })),
       deckHash: seat.deck.deckHash,
     },
+    deckRef: { kind: 'deck', deckHash: seat.deck.deckHash },
   };
 }
 

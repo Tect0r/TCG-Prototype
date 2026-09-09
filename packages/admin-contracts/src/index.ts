@@ -468,6 +468,23 @@ export {
 } from './match-explorer.js';
 
 export {
+  REPRESENTATIVE_MATCH_KINDS,
+  REPRESENTATIVE_MATCH_ENTRY_COUNT,
+  representativeMatchKindSchema,
+  representativeMatchSchema,
+  representativeMatchEntrySchema,
+  abnormalMatchEntrySchema,
+  abnormalMatchListSchema,
+  matchRepresentativesViewSchema,
+  type RepresentativeMatchKind,
+  type RepresentativeMatch,
+  type RepresentativeMatchEntry,
+  type AbnormalMatchEntry,
+  type AbnormalMatchList,
+  type MatchRepresentativesView,
+} from './match-representatives.js';
+
+export {
   ADMIN_REQUEST_PAYLOAD_NAMES,
   ADMIN_REQUEST_PAYLOAD_SCHEMAS,
   OPERATOR_JOB_ACTIONS,
@@ -501,6 +518,7 @@ export {
   matchExplorerListRequestSchema,
   matchExplorerViewRequestSchema,
   matchExplorerEventTimelineRequestSchema,
+  matchRepresentativesRequestSchema,
   type AdaptiveRunRef,
   type AdaptiveResultTableRequest,
   type AdaptiveResultTableRequestInput,
@@ -518,6 +536,8 @@ export {
   type MatchExplorerViewRequestInput,
   type MatchExplorerEventTimelineRequest,
   type MatchExplorerEventTimelineRequestInput,
+  type MatchRepresentativesRequest,
+  type MatchRepresentativesRequestInput,
   type AdminRequestPayloadName,
   type BatchPage,
   type BatchRef,

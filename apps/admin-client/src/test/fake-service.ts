@@ -23,6 +23,8 @@ import {
   deckExplorerViewSchema,
   matchExplorerRowSchema,
   matchExplorerViewSchema,
+  matchRepresentativesViewSchema,
+  REPRESENTATIVE_MATCH_KINDS,
   playerMetaFilterSchema,
   playerMetaResultTableSchema,
   playerMetaRunSummarySchema,
@@ -57,6 +59,7 @@ import {
   type MatchExplorerFlattenedEvent,
   type MatchExplorerRow,
   type MatchExplorerView,
+  type MatchRepresentativesView,
   type OperatorJobAction,
   type PlayerMetaFilter,
   type PlayerMetaResultTable,
@@ -231,6 +234,19 @@ export interface FakeLab {
     matchId: string,
     view?: MatchExplorerView | { readonly refuse: AdminErrorCode; readonly message?: string },
     events?: readonly MatchExplorerFlattenedEvent[],
+  ): void;
+  /**
+   * Replaces what `matchRepresentatives` answers (M08.26E). Like
+   * `seedPlayerMeta`, there is no identifier to key this by — a
+   * representatives read is keyed by filter/`adaptiveExperimentId`, not one
+   * stable ID — so this fake holds exactly one held reading at a time. An
+   * unseeded read answers `matchRepresentativesViewFixture()` (all seven
+   * categories `null`, an empty abnormal-match page) rather than a refusal,
+   * mirroring `seedPlayerMeta`'s own "root is always resolved" note.
+   */
+  seedMatchRepresentatives(
+    view?:
+      MatchRepresentativesView | { readonly refuse: AdminErrorCode; readonly message?: string },
   ): void;
 }
 
@@ -458,13 +474,20 @@ export function deckExplorerViewFixture(
     deckHash,
     identity: {
       commanderId: 'prototype_commander_fake',
-      cards: [{ cardId: 'prototype_card_fake', quantity: 40 }],
+      cards: [
+        {
+          cardId: 'prototype_card_fake',
+          quantity: 40,
+          ref: { kind: 'card', cardId: 'prototype_card_fake' },
+        },
+      ],
       observedIn: {
         realm: 'live_match',
         source: 'ai_ai',
         contentVersion: 1,
         rulesVersion: '1.0.0',
       },
+      anchorMatch: { kind: 'match', matchId: `${deckHash}_anchor_fake` },
     },
     knownRevisions: null,
     ...overrides,
@@ -514,9 +537,16 @@ export function matchExplorerViewFixture(
         kind: 'human',
         deck: {
           commanderId: 'prototype_commander_fake',
-          cards: [{ cardId: 'prototype_card_fake', quantity: 40 }],
+          cards: [
+            {
+              cardId: 'prototype_card_fake',
+              quantity: 40,
+              cardRef: { kind: 'card', cardId: 'prototype_card_fake' },
+            },
+          ],
           deckHash: '0123456789abcdef',
         },
+        deckRef: { kind: 'deck', deckHash: '0123456789abcdef' },
       },
       {
         seatIndex: 1,
@@ -524,9 +554,16 @@ export function matchExplorerViewFixture(
         kind: 'bot',
         deck: {
           commanderId: 'prototype_commander_fake_two',
-          cards: [{ cardId: 'prototype_card_fake', quantity: 40 }],
+          cards: [
+            {
+              cardId: 'prototype_card_fake',
+              quantity: 40,
+              cardRef: { kind: 'card', cardId: 'prototype_card_fake' },
+            },
+          ],
           deckHash: 'fedcba9876543210',
         },
+        deckRef: { kind: 'deck', deckHash: 'fedcba9876543210' },
       },
     ],
     outcome: {
@@ -568,6 +605,7 @@ export function matchExplorerRowFromView(view: MatchExplorerView): MatchExplorer
         kind: seatA.kind,
         commanderId: seatA.deck.commanderId,
         deckHash: seatA.deck.deckHash,
+        deckRef: seatA.deckRef,
       },
       {
         seatIndex: seatB.seatIndex,
@@ -575,10 +613,34 @@ export function matchExplorerRowFromView(view: MatchExplorerView): MatchExplorer
         kind: seatB.kind,
         commanderId: seatB.deck.commanderId,
         deckHash: seatB.deck.deckHash,
+        deckRef: seatB.deckRef,
       },
     ],
     outcome: view.outcome,
     observedIn: view.observedIn,
+  });
+}
+
+/* ---------------------------------------------------- match representatives (M08.26E) */
+
+/**
+ * A complete `matchRepresentatives` view: all seven categories checked and
+ * found empty, `adaptiveExperimentId` echoed as `null` (pre-adaptation never
+ * attempted), and an empty abnormal-match page — the same "checked this kind,
+ * found none" default `match-representatives.ts`'s own doc comment describes,
+ * never a partial or reordered list of categories.
+ */
+export function matchRepresentativesViewFixture(
+  overrides: Partial<MatchRepresentativesView> = {},
+): MatchRepresentativesView {
+  return matchRepresentativesViewSchema.parse({
+    adaptiveExperimentId: null,
+    representatives: REPRESENTATIVE_MATCH_KINDS.map((kind) => ({ kind, match: null })),
+    abnormalMatches: {
+      items: [],
+      page: { returned: 0, limit: PAGE_SIZE_DEFAULT, nextCursor: null, total: 0 },
+    },
+    ...overrides,
   });
 }
 
@@ -1081,6 +1143,15 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
   >();
   /** Flattened raw-event pages (M08.26D), by match ID — see `FakeLab.seedMatchExplorer`. */
   const matchExplorerEvents = new Map<string, readonly MatchExplorerFlattenedEvent[]>();
+  /**
+   * The one `matchRepresentatives` reading this fake holds (M08.26E) — no
+   * `Map`, mirroring `playerMeta` above: a representatives read is keyed by
+   * filter/`adaptiveExperimentId`, not one stable ID.
+   */
+  let matchRepresentatives:
+    | MatchRepresentativesView
+    | { readonly refuse: AdminErrorCode; readonly message?: string }
+    | null = null;
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -1307,6 +1378,9 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     seedMatchExplorer(matchId, view, events) {
       matchExplorerViews.set(matchId, view ?? matchExplorerViewFixture(matchId));
       if (events !== undefined) matchExplorerEvents.set(matchId, events);
+    },
+    seedMatchRepresentatives(view) {
+      matchRepresentatives = view ?? matchRepresentativesViewFixture();
     },
   };
 
@@ -1838,6 +1912,12 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
           },
         },
       });
+    }
+
+    if (name === 'matchRepresentatives') {
+      const seeded = matchRepresentatives ?? matchRepresentativesViewFixture();
+      if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
+      return answer(seeded);
     }
 
     return refusal('admin/unknown_endpoint', 404);

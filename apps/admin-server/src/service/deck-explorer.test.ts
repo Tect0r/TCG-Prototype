@@ -158,7 +158,13 @@ describe('DeckExplorerReader (M08.26B)', () => {
 
     expect(view.identity).not.toBeNull();
     expect(view.identity?.commanderId).toBe('prototype_commander_blue');
-    expect(view.identity?.cards).toEqual([{ cardId: 'prototype_drone', quantity: 40 }]);
+    expect(view.identity?.cards).toEqual([
+      {
+        cardId: 'prototype_drone',
+        quantity: 40,
+        ref: { kind: 'card', cardId: 'prototype_drone' },
+      },
+    ]);
     expect(view.identity?.observedIn).toEqual({
       realm: 'live_match',
       source: 'human_ai',

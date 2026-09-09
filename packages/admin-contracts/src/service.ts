@@ -9,6 +9,7 @@ import {
   matchExplorerListSchema,
   matchExplorerViewSchema,
 } from './match-explorer.js';
+import { matchRepresentativesViewSchema } from './match-representatives.js';
 import { resultArtifactListingSchema, resultArtifactSchema } from './artifacts.js';
 import {
   catalogBatchViewSchema,
@@ -48,6 +49,7 @@ import {
   matchExplorerListRequestSchema,
   matchExplorerViewRequestSchema,
   matchExplorerEventTimelineRequestSchema,
+  matchRepresentativesRequestSchema,
   playerMetaResultTableRequestSchema,
   playerMetaRunSummaryRequestSchema,
   reorderBatchRequestSchema,
@@ -553,6 +555,12 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'match-explorer-event-timeline',
     request: matchExplorerEventTimelineRequestSchema,
     response: matchExplorerEventTimelineSchema,
+    mutates: false,
+  }),
+  matchRepresentatives: endpoint({
+    route: 'match-representatives',
+    request: matchRepresentativesRequestSchema,
+    response: matchRepresentativesViewSchema,
     mutates: false,
   }),
 });

@@ -44,6 +44,7 @@ import { AdaptiveResultReader } from './adaptive-results.js';
 import { CardExplorerReader } from './card-explorer.js';
 import { DeckExplorerReader } from './deck-explorer.js';
 import { MatchExplorerReader } from './match-explorer.js';
+import { MatchRepresentativesReader } from './match-representatives.js';
 import { PlayerMetaResultReader } from './player-meta-results.js';
 import { ArtifactReader } from './artifacts.js';
 import type { AdminServiceConfig } from './config.js';
@@ -93,6 +94,7 @@ export class AdminService {
   readonly #deckExplorer: DeckExplorerReader;
   readonly #cardExplorer: CardExplorerReader;
   readonly #matchExplorer: MatchExplorerReader;
+  readonly #matchRepresentatives: MatchRepresentativesReader;
   readonly #artifacts: ArtifactReader;
   readonly #championships: ChampionshipScheduler;
   readonly #startedAt: string;
@@ -120,6 +122,10 @@ export class AdminService {
       store: options.store,
     });
     this.#matchExplorer = new MatchExplorerReader({
+      roots: options.config.roots,
+      resultRootId: options.config.resultRootId,
+    });
+    this.#matchRepresentatives = new MatchRepresentativesReader({
       roots: options.config.roots,
       resultRootId: options.config.resultRootId,
     });
@@ -189,6 +195,7 @@ export class AdminService {
       matchExplorerList: (payload) => this.#matchExplorer.readList(payload),
       matchExplorerView: (payload) => this.#matchExplorer.readView(payload),
       matchExplorerEventTimeline: (payload) => this.#matchExplorer.readEventTimeline(payload),
+      matchRepresentatives: (payload) => this.#matchRepresentatives.readView(payload),
       resultArtifact: (payload) => this.#artifacts.read(payload.jobId, payload.artifact),
     };
   }

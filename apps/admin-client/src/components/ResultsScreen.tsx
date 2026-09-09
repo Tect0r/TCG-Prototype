@@ -10,6 +10,7 @@ import {
   type CatalogJobView,
   type ExperimentKind,
   type ExperimentPurpose,
+  type ExplorerRef,
   type JobId,
   type JobStatus,
   type ResultArtifactListing,
@@ -91,6 +92,26 @@ export function ResultsScreen() {
   const [mode, setMode] = useState<
     'catalog' | 'adaptive' | 'player-meta' | 'deck-explorer' | 'card-explorer' | 'match-explorer'
   >('catalog');
+  /**
+   * A ref queued by one explorer panel's "Open in X Explorer" button
+   * (M08.26E), consumed by the panel it names then cleared — the shared
+   * cross-navigation handoff every explorer panel routes through, since only
+   * `ResultsScreen` outlives a `mode` switch.
+   */
+  const [pendingRef, setPendingRef] = useState<ExplorerRef | null>(null);
+  const navigate = useCallback((ref: ExplorerRef) => {
+    setMode(
+      ref.kind === 'deck'
+        ? 'deck-explorer'
+        : ref.kind === 'card'
+          ? 'card-explorer'
+          : 'match-explorer',
+    );
+    setPendingRef(ref);
+  }, []);
+  const consumeRef = useCallback(() => {
+    setPendingRef(null);
+  }, []);
 
   const search = useCallback(
     async (next: ResultsFilterState): Promise<void> => {
@@ -203,9 +224,27 @@ export function ResultsScreen() {
 
       {mode === 'adaptive' && <AdaptiveRunPanel />}
       {mode === 'player-meta' && <PlayerMetaPanel />}
-      {mode === 'deck-explorer' && <DeckExplorerPanel />}
-      {mode === 'card-explorer' && <CardExplorerPanel />}
-      {mode === 'match-explorer' && <MatchExplorerPanel />}
+      {mode === 'deck-explorer' && (
+        <DeckExplorerPanel
+          pendingRef={pendingRef?.kind === 'deck' ? pendingRef : null}
+          onConsumeRef={consumeRef}
+          onNavigate={navigate}
+        />
+      )}
+      {mode === 'card-explorer' && (
+        <CardExplorerPanel
+          pendingRef={pendingRef?.kind === 'card' ? pendingRef : null}
+          onConsumeRef={consumeRef}
+          onNavigate={navigate}
+        />
+      )}
+      {mode === 'match-explorer' && (
+        <MatchExplorerPanel
+          pendingRef={pendingRef?.kind === 'match' ? pendingRef : null}
+          onConsumeRef={consumeRef}
+          onNavigate={navigate}
+        />
+      )}
       {mode === 'catalog' && (
         <>
           <FilterPanel

@@ -3,7 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import { renderAdmin, stubLayout } from './test/harness.js';
-import { cardExplorerViewFixture, contentCatalogFixture, fakeService } from './test/fake-service.js';
+import {
+  cardExplorerViewFixture,
+  contentCatalogFixture,
+  deckExplorerViewFixture,
+  fakeService,
+  matchExplorerViewFixture,
+} from './test/fake-service.js';
 
 /**
  * The Card Explorer panel (M08.26C): an entry form for a card ID (and an
@@ -15,6 +21,12 @@ import { cardExplorerViewFixture, contentCatalogFixture, fakeService } from './t
 const main = () => screen.getByRole('main');
 const VALID_CARD = 'arcane_snare';
 const VALID_JOB = 'job_00000000000000000000000000000000';
+const LIVE_MATCH_EVIDENCE = {
+  realm: 'live_match' as const,
+  source: 'ai_ai' as const,
+  contentVersion: 1,
+  rulesVersion: '1.0.0',
+};
 
 async function openCardExplorer() {
   stubLayout('wide');
@@ -179,5 +191,93 @@ describe('opening the Card Explorer', () => {
 
     const alert = await within(main()).findByRole('alert');
     expect(alert).toHaveTextContent('admin/unauthorized');
+  });
+});
+
+describe('cross-navigating from the Card Explorer (M08.26E)', () => {
+  it('opens a partner card in the Card Explorer, pre-populated', async () => {
+    const { service } = await openCardExplorer();
+    service.lab.seedCardExplorer(
+      VALID_CARD,
+      cardExplorerViewFixture(VALID_CARD, {
+        partners: [
+          {
+            commanderId: 'chief_containment_scholar',
+            partnerCardId: 'archive_acolyte',
+            matchesIncludingBoth: 3,
+            support: 0.3,
+            decksIncludingBoth: 2,
+            supportByUniqueDeck: 0.25,
+            observedIn: LIVE_MATCH_EVIDENCE,
+            ref: { kind: 'card', cardId: 'archive_acolyte' },
+          },
+        ],
+      }),
+    );
+    service.lab.seedCardExplorer('archive_acolyte', cardExplorerViewFixture('archive_acolyte'));
+
+    await openCard(service);
+    await userEvent.click(
+      await within(main()).findByRole('button', { name: 'Open in Card Explorer' }),
+    );
+
+    expect(await within(main()).findByLabelText('Card ID')).toHaveValue('archive_acolyte');
+    expect(
+      service.requests.filter((request) => request.path.includes('card-explorer-view')),
+    ).toHaveLength(2);
+  });
+
+  it('opens a contributing deck in the Deck Explorer, pre-populated', async () => {
+    const { service } = await openCardExplorer();
+    service.lab.seedCardExplorer(
+      VALID_CARD,
+      cardExplorerViewFixture(VALID_CARD, {
+        contributingDecks: [
+          {
+            deckHash: '0123456789abcdef',
+            commanderId: 'chief_containment_scholar',
+            observedIn: LIVE_MATCH_EVIDENCE,
+            ref: { kind: 'deck', deckHash: '0123456789abcdef' },
+          },
+        ],
+      }),
+    );
+    service.lab.seedDeckExplorer('0123456789abcdef', deckExplorerViewFixture('0123456789abcdef'));
+
+    await openCard(service);
+    await userEvent.click(
+      await within(main()).findByRole('button', { name: 'Open in Deck Explorer' }),
+    );
+
+    expect(within(main()).getByRole('heading', { level: 2, name: 'Deck Explorer' })).toBeVisible();
+    expect(await within(main()).findByLabelText('Deck hash')).toHaveValue('0123456789abcdef');
+  });
+
+  it('opens a contributing match in the Match Explorer, pre-populated', async () => {
+    const { service } = await openCardExplorer();
+    service.lab.seedCardExplorer(
+      VALID_CARD,
+      cardExplorerViewFixture(VALID_CARD, {
+        contributingMatches: [
+          {
+            matchId: 'match_from_card',
+            deckHash: '0123456789abcdef',
+            commanderId: 'chief_containment_scholar',
+            observedIn: LIVE_MATCH_EVIDENCE,
+            ref: { kind: 'match', matchId: 'match_from_card' },
+          },
+        ],
+      }),
+    );
+    service.lab.seedMatchExplorer('match_from_card', matchExplorerViewFixture('match_from_card'));
+
+    await openCard(service);
+    await userEvent.click(
+      await within(main()).findByRole('button', { name: 'Open in Match Explorer' }),
+    );
+
+    expect(
+      await within(main()).findByRole('region', { name: 'Match match_from_card' }),
+    ).toBeVisible();
   });
 });

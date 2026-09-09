@@ -2,7 +2,11 @@ import { z } from 'zod';
 
 import { contentIdSchema } from './content.js';
 import { liveMatchDeckHashSchema } from './player-meta.js';
-import { liveMatchExplorerEvidenceSchema } from './explorers.js';
+import {
+  cardExplorerRefSchema,
+  liveMatchExplorerEvidenceSchema,
+  matchExplorerRefSchema,
+} from './explorers.js';
 
 /**
  * M08.26B — the Deck Explorer.
@@ -83,6 +87,20 @@ import { liveMatchExplorerEvidenceSchema } from './explorers.js';
  * evidence, not a second copy of the engine's own revision record.
  * `DECK_EXPLORER_REVISION_SIDES` restates that file's module-private
  * `ADAPTIVE_SIDES`.
+ *
+ * ## Cross-navigation (M08.26E)
+ *
+ * `deckExplorerCardEntrySchema.ref` is a `cardExplorerRefSchema` alongside
+ * every entry's `cardId`, so a client can jump from a deck's card list into
+ * Card Explorer without re-deriving a reference from a bare content ID.
+ * `deckExplorerIdentitySchema.anchorMatch` is a `matchExplorerRefSchema`
+ * pointing at the exact live match this identity was read from — the same
+ * "which one envelope anchors this identity read" match named above, now
+ * exposed as a typed reference rather than only implied by `observedIn`'s
+ * partition (which carries no `matchId`). Neither field is the general
+ * representative-match-selection framework this milestone's M08.26E slice
+ * also owns — a card list's own card refs and one deck's one anchor match are
+ * fixed, structural pointers, never a selection over many candidates.
  */
 
 /* -------------------------------------------------------------- identity */
@@ -91,6 +109,7 @@ import { liveMatchExplorerEvidenceSchema } from './explorers.js';
 export const deckExplorerCardEntrySchema = z.strictObject({
   cardId: contentIdSchema,
   quantity: z.number().int().min(1).max(99),
+  ref: cardExplorerRefSchema,
 });
 export type DeckExplorerCardEntry = z.infer<typeof deckExplorerCardEntrySchema>;
 
@@ -102,6 +121,8 @@ export const deckExplorerIdentitySchema = z.strictObject({
   cards: z.array(deckExplorerCardEntrySchema).min(1).max(DECK_EXPLORER_MAX_CARD_ENTRIES),
   /** The one observed live match this exact card list and Commander were read from. */
   observedIn: liveMatchExplorerEvidenceSchema,
+  /** Cross-navigation to that same observed match in Match Explorer. See file doc comment. */
+  anchorMatch: matchExplorerRefSchema,
 });
 export type DeckExplorerIdentity = z.infer<typeof deckExplorerIdentitySchema>;
 

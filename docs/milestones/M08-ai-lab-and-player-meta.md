@@ -4644,10 +4644,46 @@ representative-selection determinism, unsupported replay and large-fixture tests
       typecheck clean across every workspace; ESLint clean on every touched file;
       `prettier --write` applied to 4 newly-authored files (reflow only, no
       behavior change), `--check` clean after.
-- [ ] **M08.26E — Representative selection and cross-navigation.** Select closest,
+- [x] **M08.26E — Representative selection and cross-navigation.** Select closest,
       upset, shortest, longest, one-sided, pre-adaptation, deterministic ordinary and
       every abnormal match reproducibly; prove all three explorers cross-navigate
-      without leaking hidden information.
+      without leaking hidden information. New `matchRepresentativesViewSchema`
+      (`packages/admin-contracts/src/match-representatives.ts`) covers the 7
+      `REPRESENTATIVE_MATCH_KINDS` (closest/largest_upset/most_one_sided/shortest/
+      longest/pre_adaptation/random_ordinary), each an honest `null` when no match
+      qualifies, plus a paginated `abnormalMatches` list (disconnect/server-failure/
+      unrecordable). `apps/admin-server/src/service/match-representatives.ts` selects
+      deterministically off the same live-match record the other three explorers
+      read, filtered by source/termination/content-version/commander/deck-hash and
+      an optional Adaptive Counter experiment ID for pre-adaptation. Cross-navigation
+      is carried entirely by server-provided `ref`/`cardRef`/`deckRef`/`anchorMatch`
+      fields already embedded in each view schema — `explorerRefSchema`
+      (`packages/admin-contracts/src/explorers.ts`) — never reconstructed
+      client-side, so a panel can only navigate to what the server actually
+      disclosed. `ResultsScreen.tsx`'s lifted `navigate`/`pendingRef`/`consumeRef`
+      switches the destination tab and pre-populates its input; each panel's own
+      `pendingRef` effect then calls its own `open(...)`, so hidden information
+      never crosses a panel boundary — the Representatives tab's own "Open" stays
+      inside Match Explorer by design (it calls the panel's local `open`, not
+      `onNavigate`). Wired pairs: Deck Explorer → Match Explorer (anchor match) and
+      → Card Explorer (per-card); Card Explorer → Card Explorer (partners), → Deck
+      Explorer (contributing decks) and → Match Explorer (contributing matches);
+      Match Explorer → Deck Explorer (per-seat). Card Explorer → Deck Explorer and
+      Match Explorer → Card Explorer are reached by bridging through a second
+      explorer, not a direct button, which is sufficient to prove the three-way
+      cross-navigation invariant. 24 new focused tests pass (11 admin-contracts
+      schema + 12 admin-server selection/pagination/authorization + 1 admin-client
+      label-lookup unit) plus 10 new admin-client integration tests proving actual
+      cross-navigation round-trips and the Representatives panel's seven-category
+      and abnormal-match rendering (3 in `card-explorer-flow.test.tsx`, 2 in
+      `deck-explorer-flow.test.tsx`, 5 in `match-explorer-flow.test.tsx`); the
+      combined `admin-contracts`/`admin-server`/`admin-client` suites (85 files,
+      1635 tests) pass unchanged; typecheck clean in `admin-client`; ESLint clean
+      on every touched file; `prettier --write` applied only to the newly-added
+      lines in `deck-explorer-flow.test.tsx` and `match-explorer-flow.test.tsx`
+      (no pre-existing line touched); `card-explorer-flow.test.tsx` carries
+      pre-existing, unrelated formatting drift left untouched, and the new code
+      added to it is independently prettier-clean.
 - [ ] **M08.26F — Tranche close.** Revalidate pagination, authorization, hidden
       data, deterministic representatives, unsupported replays and large fixtures
       through the standard tranche-close gate.

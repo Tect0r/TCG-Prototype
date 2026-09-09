@@ -3481,3 +3481,78 @@ Marked M08.26D's work-slice checkbox complete in the milestone file. Root
 status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section are
 untouched — those move only at M08.26F tranche close, per CLAUDE.md. Next
 slice: **M08.26E — Representative selection and cross-navigation**.
+
+M08.26E is implemented: representative-match selection and proven three-way
+cross-navigation. New `matchRepresentativesViewSchema`
+(`packages/admin-contracts/src/match-representatives.ts`) covers all 7
+`REPRESENTATIVE_MATCH_KINDS` (closest/largest_upset/most_one_sided/shortest/
+longest/pre_adaptation/random_ordinary), each honestly `null` when no live
+match qualifies, plus a paginated `abnormalMatches` list (disconnect/
+server-failure/unrecordable). New `apps/admin-server/src/service/
+match-representatives.ts` selects deterministically off the same live-match
+record the other three explorers already read, filtered by source/
+termination/content-version/commander/deck-hash and an optional Adaptive
+Counter experiment ID for pre-adaptation selection. `RepresentativesPanel`
+(`apps/admin-client/src/components/MatchExplorerDashboard.tsx`) is a second
+inner tab of the Match Explorer alongside the existing match list.
+
+Cross-navigation itself was already wired by earlier slices (A–D) via
+server-provided `ref`/`cardRef`/`deckRef`/`anchorMatch` fields embedded
+directly in each view schema (`explorerRefSchema`,
+`packages/admin-contracts/src/explorers.ts`) — never reconstructed
+client-side, so a panel can only navigate to what the server actually
+disclosed, and `ResultsScreen.tsx`'s lifted `navigate`/`pendingRef`/
+`consumeRef` state switches the destination tab and pre-populates its input.
+This slice's actual gap, found by re-reading the milestone's acceptance line
+("prove ... cross-navigate"), was that none of it had test coverage: zero
+tests exercised the Representatives panel, and zero integration tests proved
+an actual cross-navigation round-trip between panels. Added:
+
+- `card-explorer-flow.test.tsx`: 3 new tests — partner card → Card Explorer,
+  contributing deck → Deck Explorer, contributing match → Match Explorer, each
+  asserting the destination panel is showing and pre-populated with the right
+  value (not just that a click didn't error).
+- `deck-explorer-flow.test.tsx`: 2 new tests — observed match → Match
+  Explorer, a card in the deck → Card Explorer.
+- `match-explorer-flow.test.tsx`: 1 new test — a seat's deck → Deck Explorer;
+  plus a new "Representative matches tab" describe block (4 tests): all seven
+  categories render with an honest per-category "No eligible match" empty
+  state and an honest abnormal-matches empty state when nothing was seeded; a
+  populated representative's "Open" stays inside Match Explorer (proving the
+  Representatives tab's own `onOpen` is intentionally local, not
+  `onNavigate` — hidden information never needs to leave this panel just to
+  view a match already surfaced by it); the abnormal-match list pages via
+  "Show more" (re-seeding between clicks so the fake service's
+  pagination-blind dispatch returns distinct data, which also proved the
+  button correctly disappears once `nextCursor` is `null`); and the
+  representatives filter form locally refuses a malformed deck hash without
+  sending a request.
+
+Confirmed wired pairs: Deck Explorer → Match Explorer (anchor match) and →
+Card Explorer (per-card); Card Explorer → Card Explorer (partners), → Deck
+Explorer (contributing decks), → Match Explorer (contributing matches); Match
+Explorer → Deck Explorer (per-seat). Card Explorer → Deck Explorer and Match
+Explorer → Card Explorer are only reachable by bridging through a second
+explorer rather than a direct button on today's panels — sufficient to prove
+the three-way cross-navigation invariant (every explorer can reach and be
+reached from the other two without leaking hidden information), so no new
+button was added to force a redundant direct edge.
+
+Verified: 11 new admin-contracts schema tests, 12 new admin-server
+selection/pagination/authorization tests, 1 new admin-client label-lookup
+unit test (24 total), plus 10 new admin-client integration tests listed
+above. The combined `admin-contracts`/`admin-server`/`admin-client` suites
+pass at 85 test files, 1635 tests, no regression. `npm run typecheck` clean
+in `admin-client`. `eslint` reports no issues on any touched file. `prettier
+--write` applied only to the newly-added lines in `deck-explorer-flow.test.tsx`
+and `match-explorer-flow.test.tsx` (verified by diff: insertions only, no
+pre-existing line altered); `card-explorer-flow.test.tsx` carries pre-existing,
+unrelated formatting drift (predates this slice) that was deliberately left
+untouched per CLAUDE.md's preserve-unrelated-changes rule — its own new code
+is independently prettier-clean, confirmed by diffing against `prettier`'s
+output without writing it.
+
+Marked M08.26E's work-slice checkbox complete in the milestone file. Root
+status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section are
+untouched — those move only at M08.26F tranche close, per CLAUDE.md. Next
+slice: **M08.26F — Tranche close**.

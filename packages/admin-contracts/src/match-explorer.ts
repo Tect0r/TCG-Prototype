@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 import { contentIdSchema } from './content.js';
-import { explorerMatchIdSchema, liveMatchExplorerEvidenceSchema } from './explorers.js';
+import {
+  cardExplorerRefSchema,
+  deckExplorerRefSchema,
+  explorerMatchIdSchema,
+  liveMatchExplorerEvidenceSchema,
+} from './explorers.js';
 import { pageOf } from './pagination.js';
 import { liveMatchDeckHashSchema, liveMatchTerminationOriginSchema } from './player-meta.js';
 
@@ -47,9 +52,12 @@ import { liveMatchDeckHashSchema, liveMatchTerminationOriginSchema } from './pla
  * evidence-source field `deck-explorer.ts`/`card-explorer.ts` already attach
  * to a live-match observation. `explorerMatchIdSchema` (`./explorers.ts`) is
  * this match's own stable identifier. Cross-navigation refs
- * (`explorerRefSchema`) are not emitted by this view, matching the precedent
- * Deck and Card Explorer already set: wiring them is M08.26E's job, not
- * pre-empted here.
+ * (`explorerRefSchema`) are wired in by M08.26E: `matchExplorerSeatSummarySchema`/
+ * `matchExplorerSeatSchema.deckRef` is a `deckExplorerRefSchema` alongside the
+ * seat's `deckHash`, and `matchExplorerDeckEntrySchema.cardRef` is a
+ * `cardExplorerRefSchema` alongside each card entry's `cardId` — restating an
+ * identifier the row already carries as the typed reference every explorer
+ * agrees on, never a second identifier.
  *
  * ## Selected decision diagnostics: the structural scope a capture actually carries
  *
@@ -168,6 +176,7 @@ export const MATCH_EXPLORER_MAX_DECK_ENTRIES = 64;
 export const matchExplorerDeckEntrySchema = z.strictObject({
   cardId: contentIdSchema,
   quantity: z.number().int().min(1),
+  cardRef: cardExplorerRefSchema,
 });
 export type MatchExplorerDeckEntry = z.infer<typeof matchExplorerDeckEntrySchema>;
 
@@ -188,6 +197,7 @@ export const matchExplorerSeatSummarySchema = z.strictObject({
   kind: matchExplorerParticipantKindSchema,
   commanderId: contentIdSchema,
   deckHash: liveMatchDeckHashSchema,
+  deckRef: deckExplorerRefSchema,
 });
 export type MatchExplorerSeatSummary = z.infer<typeof matchExplorerSeatSummarySchema>;
 
@@ -197,6 +207,7 @@ export const matchExplorerSeatSchema = z.strictObject({
   playerId: matchExplorerParticipantIdSchema,
   kind: matchExplorerParticipantKindSchema,
   deck: matchExplorerDeckSnapshotSchema,
+  deckRef: deckExplorerRefSchema,
 });
 export type MatchExplorerSeat = z.infer<typeof matchExplorerSeatSchema>;
 

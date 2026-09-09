@@ -37,9 +37,17 @@ const VALID_EVIDENCE = {
 
 const VALID_DECK_SNAPSHOT = {
   commanderId: 'chief_containment_scholar',
-  cards: [{ cardId: 'arcane_snare', quantity: 2 }],
+  cards: [
+    {
+      cardId: 'arcane_snare',
+      quantity: 2,
+      cardRef: { kind: 'card' as const, cardId: 'arcane_snare' },
+    },
+  ],
   deckHash: VALID_DECK_HASH,
 };
+
+const VALID_DECK_REF = { kind: 'deck' as const, deckHash: VALID_DECK_HASH };
 
 const VALID_SEAT_SUMMARY = {
   seatIndex: 0 as const,
@@ -47,6 +55,7 @@ const VALID_SEAT_SUMMARY = {
   kind: 'human' as const,
   commanderId: 'chief_containment_scholar',
   deckHash: VALID_DECK_HASH,
+  deckRef: VALID_DECK_REF,
 };
 
 const OTHER_SEAT_SUMMARY = { ...VALID_SEAT_SUMMARY, seatIndex: 1 as const, playerId: 'player_2' };
@@ -56,6 +65,7 @@ const VALID_SEAT = {
   playerId: 'player_1',
   kind: 'human' as const,
   deck: VALID_DECK_SNAPSHOT,
+  deckRef: VALID_DECK_REF,
 };
 
 const OTHER_SEAT = { ...VALID_SEAT, seatIndex: 1 as const, playerId: 'player_2' };

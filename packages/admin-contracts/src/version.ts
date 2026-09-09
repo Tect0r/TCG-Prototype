@@ -264,8 +264,26 @@ import { adminError, type AdminError } from './errors.js';
  *   and deck snapshots, or have its raw-event log paged, no matter how many
  *   live matches were played. That is what a contract version is for
  *   saying.
+ * - 13 (M08.26E) — the language acquired representative match selection and
+ *   cross-navigation. One address was added, `match-representatives`, naming
+ *   the same `playerMetaFilterSchema` filter every explorer reuses and
+ *   (optionally) an `adaptiveExperimentId` to cross-check for a
+ *   pre-adaptation change. It carries the seven singular representative
+ *   matches (closest, largest upset, most one-sided, shortest, longest,
+ *   pre-adaptation, a deterministic random ordinary sample) and the bounded,
+ *   paged list of every abnormal match. Every representative and abnormal
+ *   entry also carries `matchExplorerRefSchema` (`./explorers.ts`), and the
+ *   Deck, Card and Match Explorer views themselves now carry the same
+ *   cross-navigation refs their own doc comments deferred to this version.
+ *
+ *   A build speaking 12 could find, list and open live matches directly, and
+ *   could not reach the new address or follow a typed cross-navigation
+ *   reference from one explorer's view into another, so no representative
+ *   match would be surfaced automatically no matter how many matches existed,
+ *   and every explorer's evidence would remain a dead end. That is what a
+ *   contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 12;
+export const ADMIN_CONTRACT_VERSION = 13;
 
 /**
  * The version stamped into a persisted catalog document.

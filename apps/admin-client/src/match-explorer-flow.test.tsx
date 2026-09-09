@@ -2,13 +2,24 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
+import { PAGE_SIZE_DEFAULT, REPRESENTATIVE_MATCH_KINDS } from '@tcg/admin-contracts';
+
 import { renderAdmin, stubLayout } from './test/harness.js';
 import {
   contentCatalogFixture,
+  deckExplorerViewFixture,
   fakeService,
   matchExplorerViewFixture,
+  matchRepresentativesViewFixture,
   type FakeService,
 } from './test/fake-service.js';
+
+const LIVE_MATCH_EVIDENCE = {
+  realm: 'live_match' as const,
+  source: 'ai_ai' as const,
+  contentVersion: 1,
+  rulesVersion: '1.0.0',
+};
 
 /**
  * The Match Explorer panel (M08.26D): a filterable match table read off the
@@ -188,5 +199,150 @@ describe('browsing the Match Explorer', () => {
 
     const alert = await within(main()).findByRole('alert');
     expect(alert).toHaveTextContent('admin/unauthorized');
+  });
+});
+
+describe('cross-navigating from the Match Explorer (M08.26E)', () => {
+  it("opens a seat's deck in the Deck Explorer, pre-populated", async () => {
+    const { service } = await openMatchExplorer((fake) => {
+      fake.lab.seedMatchExplorer('match_1', matchExplorerViewFixture('match_1'));
+    });
+    service.lab.seedDeckExplorer('0123456789abcdef', deckExplorerViewFixture('0123456789abcdef'));
+
+    await userEvent.click(await within(main()).findByRole('button', { name: /match_1/ }));
+    const detail = await within(main()).findByRole('region', { name: 'Match match_1' });
+    const openDeckButtons = within(detail).getAllByRole('button', {
+      name: 'Open in Deck Explorer',
+    });
+    await userEvent.click(openDeckButtons[0] as HTMLElement);
+
+    expect(within(main()).getByRole('heading', { level: 2, name: 'Deck Explorer' })).toBeVisible();
+    expect(await within(main()).findByLabelText('Deck hash')).toHaveValue('0123456789abcdef');
+  });
+});
+
+describe('the Representative matches tab (M08.26E)', () => {
+  async function openRepresentatives(seed?: (service: FakeService) => void) {
+    const opened = await openMatchExplorer(seed);
+    await userEvent.click(within(main()).getByRole('button', { name: 'Representative matches' }));
+    return opened;
+  }
+
+  it('shows all seven categories, each honestly empty when nothing was seeded', async () => {
+    await openRepresentatives();
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Show representatives' }));
+
+    for (const label of [
+      'Closest matchup',
+      'Largest upset',
+      'Most one-sided',
+      'Shortest',
+      'Longest',
+      'Pre-adaptation',
+      'Deterministic ordinary sample',
+    ]) {
+      expect(await within(main()).findByText(label)).toBeVisible();
+    }
+    expect(within(main()).getAllByText('No eligible match found for this category.')).toHaveLength(
+      7,
+    );
+    expect(
+      await within(main()).findByText(
+        /No abnormal match — disconnect, server failure or unrecordable — matches this filter/,
+      ),
+    ).toBeVisible();
+  });
+
+  it('opens a populated representative match without leaving the Match Explorer', async () => {
+    await openRepresentatives((fake) => {
+      fake.lab.seedMatchExplorer('match_rep', matchExplorerViewFixture('match_rep'));
+      fake.lab.seedMatchRepresentatives(
+        matchRepresentativesViewFixture({
+          representatives: REPRESENTATIVE_MATCH_KINDS.map((kind) => ({
+            kind,
+            match:
+              kind === 'closest'
+                ? {
+                    kind: 'closest' as const,
+                    ref: { kind: 'match' as const, matchId: 'match_rep' },
+                    observedIn: LIVE_MATCH_EVIDENCE,
+                    reason: 'Nearly equal matchup strength.',
+                  }
+                : null,
+          })),
+        }),
+      );
+    });
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Show representatives' }));
+    expect(await within(main()).findByText('Nearly equal matchup strength.')).toBeVisible();
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Open' }));
+
+    expect(await within(main()).findByRole('region', { name: 'Match match_rep' })).toBeVisible();
+  });
+
+  it('lists every abnormal match this filter finds, and pages through more', async () => {
+    const { service } = await openRepresentatives((fake) => {
+      fake.lab.seedMatchExplorer('match_abnormal_1', matchExplorerViewFixture('match_abnormal_1'));
+      fake.lab.seedMatchExplorer('match_abnormal_2', matchExplorerViewFixture('match_abnormal_2'));
+      fake.lab.seedMatchRepresentatives(
+        matchRepresentativesViewFixture({
+          abnormalMatches: {
+            items: [
+              {
+                ref: { kind: 'match', matchId: 'match_abnormal_1' },
+                observedIn: LIVE_MATCH_EVIDENCE,
+                reason: 'Disconnected mid-match.',
+              },
+            ],
+            page: { returned: 1, limit: PAGE_SIZE_DEFAULT, nextCursor: 'more', total: 2 },
+          },
+        }),
+      );
+    });
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Show representatives' }));
+    expect(await within(main()).findByText('Disconnected mid-match.')).toBeVisible();
+
+    service.lab.seedMatchRepresentatives(
+      matchRepresentativesViewFixture({
+        abnormalMatches: {
+          items: [
+            {
+              ref: { kind: 'match', matchId: 'match_abnormal_2' },
+              observedIn: LIVE_MATCH_EVIDENCE,
+              reason: 'Server failure mid-match.',
+            },
+          ],
+          page: { returned: 1, limit: PAGE_SIZE_DEFAULT, nextCursor: null, total: 2 },
+        },
+      }),
+    );
+    await userEvent.click(within(main()).getByRole('button', { name: 'Show more' }));
+
+    expect(await within(main()).findByText('Server failure mid-match.')).toBeVisible();
+    expect(within(main()).getByText('Disconnected mid-match.')).toBeVisible();
+    expect(within(main()).queryByRole('button', { name: 'Show more' })).toBeNull();
+  });
+
+  it('rejects a malformed deck hash in the representatives filter without sending a request', async () => {
+    const { service } = await openRepresentatives();
+    const before = service.requests.filter((request) =>
+      request.path.includes('match-representatives'),
+    ).length;
+
+    await userEvent.type(
+      within(main()).getByLabelText('Deck hashes (comma-separated)'),
+      'not-a-hash',
+    );
+    await userEvent.click(within(main()).getByRole('button', { name: 'Show representatives' }));
+
+    expect(await within(main()).findByRole('alert')).toBeVisible();
+    const after = service.requests.filter((request) =>
+      request.path.includes('match-representatives'),
+    ).length;
+    expect(after).toBe(before);
   });
 });

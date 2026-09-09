@@ -6,9 +6,11 @@ import type { ResultColumn, ResultRow } from '@tcg/admin-contracts';
 
 import { renderAdmin, stubLayout } from './test/harness.js';
 import {
+  cardExplorerViewFixture,
   contentCatalogFixture,
   deckExplorerViewFixture,
   fakeService,
+  matchExplorerViewFixture,
   playerMetaResultTableFixture,
 } from './test/fake-service.js';
 
@@ -173,5 +175,42 @@ describe('opening the Deck Explorer', () => {
 
     const alert = await within(main()).findByRole('alert');
     expect(alert).toHaveTextContent('admin/unauthorized');
+  });
+});
+
+describe('cross-navigating from the Deck Explorer (M08.26E)', () => {
+  it('opens the observed match in the Match Explorer, pre-populated', async () => {
+    const { service } = await openDeckExplorer();
+    service.lab.seedDeckExplorer(VALID_HASH, deckExplorerViewFixture(VALID_HASH));
+    const anchorMatchId = `${VALID_HASH}_anchor_fake`;
+    service.lab.seedMatchExplorer(anchorMatchId, matchExplorerViewFixture(anchorMatchId));
+
+    await openDeck(service);
+    await userEvent.click(
+      await within(main()).findByRole('button', {
+        name: 'Open the observed match in Match Explorer',
+      }),
+    );
+
+    expect(
+      await within(main()).findByRole('region', { name: `Match ${anchorMatchId}` }),
+    ).toBeVisible();
+  });
+
+  it('opens a card in this deck in the Card Explorer, pre-populated', async () => {
+    const { service } = await openDeckExplorer();
+    service.lab.seedDeckExplorer(VALID_HASH, deckExplorerViewFixture(VALID_HASH));
+    service.lab.seedCardExplorer(
+      'prototype_card_fake',
+      cardExplorerViewFixture('prototype_card_fake'),
+    );
+
+    await openDeck(service);
+    await userEvent.click(
+      await within(main()).findByRole('button', { name: 'Open in Card Explorer' }),
+    );
+
+    expect(within(main()).getByRole('heading', { level: 2, name: 'Card Explorer' })).toBeVisible();
+    expect(await within(main()).findByLabelText('Card ID')).toHaveValue('prototype_card_fake');
   });
 });

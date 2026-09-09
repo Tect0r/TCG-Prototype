@@ -59,6 +59,7 @@ const VALID_PARTNER = {
   decksIncludingBoth: 2,
   supportByUniqueDeck: 0.25,
   observedIn: VALID_LIVE_MATCH_EVIDENCE,
+  ref: { kind: 'card' as const, cardId: 'archive_acolyte' },
 };
 
 const VALID_UNAVAILABLE_PARTITION = {
@@ -70,6 +71,7 @@ const VALID_CONTRIBUTING_DECK = {
   deckHash: '0123456789abcdef',
   commanderId: 'chief_containment_scholar',
   observedIn: VALID_LIVE_MATCH_EVIDENCE,
+  ref: { kind: 'deck' as const, deckHash: '0123456789abcdef' },
 };
 
 const VALID_CONTRIBUTING_MATCH = {
@@ -77,6 +79,7 @@ const VALID_CONTRIBUTING_MATCH = {
   deckHash: '0123456789abcdef',
   commanderId: 'chief_containment_scholar',
   observedIn: VALID_LIVE_MATCH_EVIDENCE,
+  ref: { kind: 'match' as const, matchId: 'match_a' },
 };
 
 describe('restated literal values', () => {
@@ -240,15 +243,21 @@ describe('cardExplorerViewSchema', () => {
   });
 
   it('refuses more entries than each bound allows', () => {
-    const manyInclusions = Array.from({ length: CARD_EXPLORER_MAX_INCLUSIONS + 1 }, () => VALID_INCLUSION);
+    const manyInclusions = Array.from(
+      { length: CARD_EXPLORER_MAX_INCLUSIONS + 1 },
+      () => VALID_INCLUSION,
+    );
     expect(
       cardExplorerViewSchema.safeParse({ ...emptyView, inclusions: manyInclusions }).success,
     ).toBe(false);
 
-    const manyPartners = Array.from({ length: CARD_EXPLORER_MAX_PARTNERS + 1 }, () => VALID_PARTNER);
-    expect(
-      cardExplorerViewSchema.safeParse({ ...emptyView, partners: manyPartners }).success,
-    ).toBe(false);
+    const manyPartners = Array.from(
+      { length: CARD_EXPLORER_MAX_PARTNERS + 1 },
+      () => VALID_PARTNER,
+    );
+    expect(cardExplorerViewSchema.safeParse({ ...emptyView, partners: manyPartners }).success).toBe(
+      false,
+    );
 
     const manyUnavailable = Array.from(
       { length: CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS + 1 },
