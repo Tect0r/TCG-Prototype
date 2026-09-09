@@ -18,6 +18,7 @@ import type {
   BatchPage,
   Capabilities,
   CardExplorerView,
+  CatalogCoverageReport,
   CatalogFilterInput,
   CatalogJobView,
   ChoiceEstimate,
@@ -35,7 +36,9 @@ import type {
   MatchRepresentativesView,
   OperatorJobAction,
   PageRequestInput,
+  PlayerMetaCoverageReport,
   PlayerMetaFilterInput,
+  PlayerMetaPartition,
   PlayerMetaResultTable,
   PlayerMetaResultTableName,
   PlayerMetaRunSummary,
@@ -644,6 +647,26 @@ export class AdminSession {
       adaptiveExperimentId: adaptiveExperimentId ?? null,
       page: pageRequestSchema.parse(page ?? {}),
     });
+  }
+
+  /* -------------------------------------------------------- coverage (M08.27C) */
+
+  /**
+   * One catalog run's whole card and mechanic vocabulary Coverage report,
+   * named by `jobId`.
+   */
+  async catalogCoverageView(jobId: JobId): Promise<AdminOutcome<CatalogCoverageReport>> {
+    return this.#call('catalogCoverageView', { jobId });
+  }
+
+  /**
+   * One Player Meta partition's card observation Coverage report, named by
+   * the exact `(source, contentVersion, rulesVersion)` partition.
+   */
+  async playerMetaCoverageView(
+    partition: PlayerMetaPartition,
+  ): Promise<AdminOutcome<PlayerMetaCoverageReport>> {
+    return this.#call('playerMetaCoverageView', { partition });
   }
 
   /**

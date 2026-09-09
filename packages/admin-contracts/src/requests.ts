@@ -16,7 +16,10 @@ import { batchIdSchema, jobIdSchema, labelSchema } from './identity.js';
 import { legalJobActions, type JobAction, type JobStatus } from './lifecycle.js';
 import { pageOf, pageRequestSchema } from './pagination.js';
 import { liveMatchDeckHashSchema, playerMetaFilterSchema } from './player-meta.js';
-import { playerMetaResultTableNameSchema } from './player-meta-results.js';
+import {
+  playerMetaPartitionSchema,
+  playerMetaResultTableNameSchema,
+} from './player-meta-results.js';
 import { presetChoiceSchema } from './presets.js';
 import { savedChoiceLabelSchema } from './saved.js';
 import { resultTableNameSchema } from './results.js';
@@ -567,6 +570,32 @@ export type MatchRepresentativesRequest = z.infer<typeof matchRepresentativesReq
 export type MatchRepresentativesRequestInput = z.input<typeof matchRepresentativesRequestSchema>;
 
 /**
+ * One catalog run's whole card and mechanic vocabulary Coverage report
+ * (M08.27C), named by `jobId` — `computeCatalogCoverage` reads the run's own
+ * resolved environment and `'cards'` table, so nothing here is shaped like a
+ * location either.
+ */
+export const catalogCoverageRequestSchema = z.strictObject({
+  jobId: jobIdSchema,
+});
+export type CatalogCoverageRequest = z.infer<typeof catalogCoverageRequestSchema>;
+export type CatalogCoverageRequestInput = z.input<typeof catalogCoverageRequestSchema>;
+
+/**
+ * One Player Meta partition's card observation Coverage report (M08.27C),
+ * named by the exact `(source, contentVersion, rulesVersion)` partition
+ * rather than a `playerMetaFilterSchema` filter —
+ * `computePlayerMetaCoverage` answers one partition at a time, the same way
+ * `matchExplorerViewRequestSchema` names one exact match rather than a
+ * filtered list.
+ */
+export const playerMetaCoverageRequestSchema = z.strictObject({
+  partition: playerMetaPartitionSchema,
+});
+export type PlayerMetaCoverageRequest = z.infer<typeof playerMetaCoverageRequestSchema>;
+export type PlayerMetaCoverageRequestInput = z.input<typeof playerMetaCoverageRequestSchema>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -601,6 +630,8 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   matchExplorerView: matchExplorerViewRequestSchema,
   matchExplorerEventTimeline: matchExplorerEventTimelineRequestSchema,
   matchRepresentatives: matchRepresentativesRequestSchema,
+  catalogCoverageView: catalogCoverageRequestSchema,
+  playerMetaCoverageView: playerMetaCoverageRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;

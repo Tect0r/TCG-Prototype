@@ -4774,18 +4774,23 @@ math, missing metric, coverage, corrupt record and annotation-immutability tests
 - [x] **M08.27B — Version deltas.** Compute precon/Commander matchup, inclusion,
       duration, termination, deck-family and surrender-pattern deltas with exact
       support and missing-metric behavior.
-- [ ] **M08.27C — Coverage model and page.** Measure the whole card/mechanic
+- [x] **M08.27C — Coverage model and page.** Measure the whole card/mechanic
       vocabulary across eligibility, inclusion, draw, play, activation, trigger,
       target and observation, preserving reasons for unavailable coverage.
-      Split by owner decision 2026-09-09: **the model shipped** this slice —
-      `packages/admin-contracts/src/coverage.ts` (schema) and
-      `apps/admin-server/src/service/coverage.ts` (`computeCatalogCoverage`,
-      `computePlayerMetaCoverage`) — covering eligibility, inclusion, draw,
-      play, activation, trigger and observation. `target` is recorded as an
-      open gap rather than a constant column: no telemetry counter in
-      `@tcg/simulator` records a targeting decision today. The page is a
-      separate, not-yet-started follow-up slice. See
-      `.claude/current-work.md`'s M08.27C entry for the full scope narrative.
+      Split by owner decision 2026-09-09 into a model slice and a page slice,
+      both now shipped: the model — `packages/admin-contracts/src/coverage.ts`
+      (schema) and `apps/admin-server/src/service/coverage.ts`
+      (`computeCatalogCoverage`, `computePlayerMetaCoverage`) — covers
+      eligibility, inclusion, draw, play, activation, trigger and observation.
+      `target` is recorded as an open gap rather than a constant column: no
+      telemetry counter in `@tcg/simulator` records a targeting decision
+      today. The page — HTTP route wiring, an `apps/admin-client` session
+      method, `CoverageDashboard.tsx`'s Catalog/Player Meta sub-tabs, and
+      fake-service seeding — lets an operator open either domain's report and
+      read every card and mechanic's three-valued status. See
+      `.claude/current-work.md`'s M08.27C entries for the full scope
+      narrative, including a pre-existing, unrelated admin-server boundary-test
+      defect discovered (not introduced) while verifying this slice.
 - [ ] **M08.27D — Data Health model and page.** Surface corrupt/skipped records,
       failures, abnormal/stalled matches, exclusions, replicate disagreement, seat
       bias, pilot sensitivity, unsupported mechanics and replay status from recorded

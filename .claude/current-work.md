@@ -4123,3 +4123,88 @@ New exports from `@tcg/admin-contracts`: `COVERAGE_STATUSES`,
 Next slice: **M08.27C's page** (not yet named/started), or **M08.27D — Data
 Health model and page**, at the owner's discretion — the milestone file
 still lists D next in sequence; the page half of C is an inserted follow-up.
+
+## M08.27C page — Coverage UI (2026-09-09)
+
+Follow-up to the model slice above, chosen over M08.27D via `AskUserQuestion`.
+Wires the model into an operator-facing page across all three packages: HTTP
+route contracts and handler dispatch, an `admin-client` session method, view
+helpers, a dashboard component, `ResultsScreen` tab wiring, `fake-service`
+seeding, and tests spanning `packages/admin-contracts`, `apps/admin-server`
+and `apps/admin-client`.
+
+**`packages/admin-contracts`:** `catalogCoverageView`/`playerMetaCoverageView`
+endpoints added to `requests.ts`/`service.ts`/`index.ts`, `ADMIN_CONTRACT_VERSION`
+bumped 13→14 (`version.ts`), with matching `service.test.ts`/`coverage.test.ts`
+coverage.
+
+**`apps/admin-server`:** both endpoints wired into `handlers.ts`'s `#handlers()`
+map, calling the pre-existing `computeCatalogCoverage`/`computePlayerMetaCoverage`
+from `./coverage.ts` — no change to `coverage.ts` itself this slice.
+
+**`apps/admin-client`:**
+- `net/session.ts`: `catalogCoverageView(jobId)` and
+  `playerMetaCoverageView(partition)` methods.
+- `lib/coverage-view.ts` (new) + `coverage-view.test.ts` (new, 6 tests): pure
+  formatting helpers — `coverageStatusLabel`, `catalogCoverageStageLabel`,
+  `catalogStageTally`, `playerMetaObservationTally`, `catalogStageTallyFacts` —
+  keeping the three-valued `reached`/`not_reached`/`unavailable` status visible
+  rather than collapsed into a pass/fail count, matching every other
+  `*-view.ts` helper's convention in this app.
+- `components/CoverageDashboard.tsx` (new): `CoveragePanel`, a domain sub-tab
+  toggle between a Catalog run (entered by Job ID, the same required-ID form
+  pattern `AdaptiveRunPanel`/`CardExplorerPanel` use) and a Player Meta
+  partition (entered by source/contentVersion/rulesVersion — no filter form,
+  since `computePlayerMetaCoverage` answers exactly one partition, not a
+  search). Card/mechanic tables render columns from `CATALOG_COVERAGE_STAGES`
+  dynamically rather than hardcoding six column names. Deliberately excluded
+  from `ExplorerRef` cross-navigation (confirmed by reading `ResultsScreen.tsx`'s
+  `navigate` callback, which only handles `'deck' | 'card' | 'match'`).
+- `components/ResultsScreen.tsx`: new "Coverage" tab button and
+  `{mode === 'coverage' && <CoveragePanel />}` wiring.
+- `test/fake-service.ts`: `FakeLab.seedCatalogCoverage(jobId, report?)` (Map
+  keyed by job ID, unseeded key answers the default empty fixture — the Deck/
+  Card Explorer "root is always resolved" pattern) and
+  `seedPlayerMetaCoverage(report?)` (single held reading, no Map — the Player
+  Meta/Match Representatives pattern, since a partition is a filter tuple, not
+  a stable ID); `catalogCoverageReportFixture`/`playerMetaCoverageReportFixture`
+  fixture builders; dispatch cases for both endpoints.
+- `coverage-flow.test.tsx` (new, 8 tests): end-to-end through `fakeService()` —
+  reading and rendering both domains' reports, malformed-Job-ID and
+  missing-rules-version form-validation refusal without a request, unseeded-ID
+  and unseeded-partition default-fixture fallback, and the `Failure`
+  component's retry path.
+
+**Verification (focused, per package, not the full gate — reserved for
+tranche close):**
+- `packages/admin-contracts`: `npx vitest run packages/admin-contracts/src` —
+  26 files, 581 tests passing (unchanged from the model slice's own count,
+  confirming the page's contract additions didn't regress anything already
+  covered). `npx tsc --noEmit` clean.
+- `apps/admin-server`: `npx vitest run apps/admin-server/src` — 38/39 files,
+  719/721 tests passing. **2 pre-existing failures**, not introduced by this
+  slice: `boundary.test.ts` fails because `apps/admin-server/src/service/
+  coverage.ts` (shipped in the M08.27C *model* slice, commit `48b962c`, not
+  touched this slice) imports `CardDatabase`, `MECHANIC_SUPPORT_LIST`,
+  `isColorIdentityLegal`, `mechanicKey`, `mechanicsUsedBy` and `CardDefinition`
+  directly from `@tcg/card-data`, which ADR 0023's admin-server boundary rule
+  forbids (production source may import only `@tcg/admin-contracts`,
+  `@tcg/shared`, `@tcg/simulator` and `zod`). Confirmed pre-existing via `git
+  status --short` showing no diff to `coverage.ts`/`boundary.test.ts`/
+  `package.json` from this session's own changes. **Not fixed here** — a
+  proper fix means extending `@tcg/simulator`'s public export surface to cover
+  color-identity legality and mechanic-support lookups so admin-server never
+  reaches into `@tcg/card-data` directly, which is out of scope for a UI-wiring
+  slice. Recommend a dedicated correction slice before the M08.27 tranche
+  closes, since `npm run verify`'s full gate will otherwise fail on this same
+  boundary test.
+- `apps/admin-client`: `npx vitest run --project admin-client
+  apps/admin-client/src` — 27 files, 410 tests passing (up from the pre-slice
+  26/402: +1 file/+8 tests for `coverage-flow.test.tsx`, plus the +6 tests
+  already counted in `coverage-view.test.ts`). `npx tsc --noEmit` clean.
+  `npx eslint` clean on every file this slice touched or added, across all
+  three packages.
+
+Next slice: **M08.27D — Data Health model and page**, or a dedicated
+correction slice for the `coverage.ts` → `@tcg/card-data` boundary violation
+noted above, at the owner's discretion.

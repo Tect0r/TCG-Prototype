@@ -10,6 +10,7 @@ import {
   matchExplorerViewSchema,
 } from './match-explorer.js';
 import { matchRepresentativesViewSchema } from './match-representatives.js';
+import { catalogCoverageReportSchema, playerMetaCoverageReportSchema } from './coverage.js';
 import { resultArtifactListingSchema, resultArtifactSchema } from './artifacts.js';
 import {
   catalogBatchViewSchema,
@@ -50,6 +51,8 @@ import {
   matchExplorerViewRequestSchema,
   matchExplorerEventTimelineRequestSchema,
   matchRepresentativesRequestSchema,
+  catalogCoverageRequestSchema,
+  playerMetaCoverageRequestSchema,
   playerMetaResultTableRequestSchema,
   playerMetaRunSummaryRequestSchema,
   reorderBatchRequestSchema,
@@ -561,6 +564,18 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'match-representatives',
     request: matchRepresentativesRequestSchema,
     response: matchRepresentativesViewSchema,
+    mutates: false,
+  }),
+  catalogCoverageView: endpoint({
+    route: 'catalog-coverage-view',
+    request: catalogCoverageRequestSchema,
+    response: catalogCoverageReportSchema,
+    mutates: false,
+  }),
+  playerMetaCoverageView: endpoint({
+    route: 'player-meta-coverage-view',
+    request: playerMetaCoverageRequestSchema,
+    response: playerMetaCoverageReportSchema,
     mutates: false,
   }),
 });

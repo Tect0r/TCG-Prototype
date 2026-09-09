@@ -41,6 +41,7 @@ import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js'
 import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
 import { AdaptiveResultReader } from './adaptive-results.js';
+import { computeCatalogCoverage, computePlayerMetaCoverage } from './coverage.js';
 import { CardExplorerReader } from './card-explorer.js';
 import { DeckExplorerReader } from './deck-explorer.js';
 import { MatchExplorerReader } from './match-explorer.js';
@@ -197,6 +198,9 @@ export class AdminService {
       matchExplorerEventTimeline: (payload) => this.#matchExplorer.readEventTimeline(payload),
       matchRepresentatives: (payload) => this.#matchRepresentatives.readView(payload),
       resultArtifact: (payload) => this.#artifacts.read(payload.jobId, payload.artifact),
+      catalogCoverageView: (payload) => computeCatalogCoverage(this.#results, payload.jobId),
+      playerMetaCoverageView: async (payload) =>
+        computePlayerMetaCoverage(this.#playerMeta, payload.partition),
     };
   }
 

@@ -39,6 +39,7 @@ import { CardExplorerPanel } from './CardExplorerDashboard.js';
 import { DeckExplorerPanel } from './DeckExplorerDashboard.js';
 import { MatchExplorerPanel } from './MatchExplorerDashboard.js';
 import { PlayerMetaPanel } from './PlayerMetaDashboard.js';
+import { CoveragePanel } from './CoverageDashboard.js';
 
 /**
  * The result catalog: every job this catalog has ever created, completed or
@@ -90,7 +91,13 @@ export function ResultsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<JobId | null>(null);
   const [mode, setMode] = useState<
-    'catalog' | 'adaptive' | 'player-meta' | 'deck-explorer' | 'card-explorer' | 'match-explorer'
+    | 'catalog'
+    | 'adaptive'
+    | 'player-meta'
+    | 'deck-explorer'
+    | 'card-explorer'
+    | 'match-explorer'
+    | 'coverage'
   >('catalog');
   /**
    * A ref queued by one explorer panel's "Open in X Explorer" button
@@ -220,9 +227,20 @@ export function ResultsScreen() {
         >
           Match Explorer
         </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'coverage'}
+          className={mode === 'coverage' ? 'is-current' : ''}
+          onClick={() => {
+            setMode('coverage');
+          }}
+        >
+          Coverage
+        </button>
       </div>
 
       {mode === 'adaptive' && <AdaptiveRunPanel />}
+      {mode === 'coverage' && <CoveragePanel />}
       {mode === 'player-meta' && <PlayerMetaPanel />}
       {mode === 'deck-explorer' && (
         <DeckExplorerPanel

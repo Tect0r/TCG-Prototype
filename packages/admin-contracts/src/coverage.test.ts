@@ -8,6 +8,7 @@ import {
   playerMetaCardCoverageSchema,
   playerMetaCoverageReportSchema,
 } from './coverage.js';
+import { catalogCoverageRequestSchema, playerMetaCoverageRequestSchema } from './requests.js';
 import type { PlayerMetaPartition } from './player-meta-results.js';
 
 function partition(overrides: Partial<PlayerMetaPartition> = {}): PlayerMetaPartition {
@@ -174,6 +175,46 @@ describe('playerMetaCardCoverageSchema and playerMetaCoverageReportSchema', () =
       identity: { domain: 'catalog', jobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
       cards: [],
       unavailableReason: null,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('catalogCoverageRequestSchema', () => {
+  it('accepts a bare jobId', () => {
+    const result = catalogCoverageRequestSchema.safeParse({
+      jobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a request with no jobId', () => {
+    expect(catalogCoverageRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects an extra field', () => {
+    const result = catalogCoverageRequestSchema.safeParse({
+      jobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      path: '/etc/passwd',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('playerMetaCoverageRequestSchema', () => {
+  it('accepts an exact partition', () => {
+    const result = playerMetaCoverageRequestSchema.safeParse({ partition: partition() });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a request with no partition', () => {
+    expect(playerMetaCoverageRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects an extra field', () => {
+    const result = playerMetaCoverageRequestSchema.safeParse({
+      partition: partition(),
+      filter: {},
     });
     expect(result.success).toBe(false);
   });

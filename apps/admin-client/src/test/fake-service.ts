@@ -17,6 +17,7 @@ import {
   adminError,
   adaptiveResultTableSchema,
   adaptiveRunSummarySchema,
+  catalogCoverageReportSchema,
   catalogFilterSchema,
   catalogJobViewSchema,
   cardExplorerViewSchema,
@@ -25,6 +26,7 @@ import {
   matchExplorerViewSchema,
   matchRepresentativesViewSchema,
   REPRESENTATIVE_MATCH_KINDS,
+  playerMetaCoverageReportSchema,
   playerMetaFilterSchema,
   playerMetaResultTableSchema,
   playerMetaRunSummarySchema,
@@ -47,6 +49,7 @@ import {
   type PresetExpansion,
   type BatchDetail,
   type CardExplorerView,
+  type CatalogCoverageReport,
   type CatalogJobView,
   type ContentCatalog,
   type DeckExplorerView,
@@ -61,7 +64,9 @@ import {
   type MatchExplorerView,
   type MatchRepresentativesView,
   type OperatorJobAction,
+  type PlayerMetaCoverageReport,
   type PlayerMetaFilter,
+  type PlayerMetaPartition,
   type PlayerMetaResultTable,
   type PlayerMetaResultTableName,
   type PlayerMetaRunSummary,
@@ -247,6 +252,33 @@ export interface FakeLab {
   seedMatchRepresentatives(
     view?:
       MatchRepresentativesView | { readonly refuse: AdminErrorCode; readonly message?: string },
+  ): void;
+  /**
+   * Replaces what `catalogCoverageView` answers for one job ID (M08.27C) —
+   * keyed by `jobId` like `seedCardExplorer` is keyed by `cardId`:
+   * `computeCatalogCoverage` answers differently per run read against the
+   * same configured result root. An unseeded job ID answers
+   * `catalogCoverageReportFixture(jobId)` (empty `cards`/`mechanics`, no
+   * `unavailableReason`) rather than a refusal, mirroring
+   * `seedCardExplorer`'s own "root is always resolved" note.
+   */
+  seedCatalogCoverage(
+    jobId: string,
+    report?: CatalogCoverageReport | { readonly refuse: AdminErrorCode; readonly message?: string },
+  ): void;
+  /**
+   * Replaces what `playerMetaCoverageView` answers (M08.27C). Like
+   * `seedPlayerMeta`, there is no identifier to key this by — a Player Meta
+   * coverage read is named by the exact partition in the request, not a
+   * stable ID this fake holds separately — so this fake holds exactly one
+   * reading at a time. An unseeded read answers
+   * `playerMetaCoverageReportFixture(partition)`, built from the requested
+   * partition (empty `cards`, no `unavailableReason`), mirroring
+   * `seedPlayerMeta`'s own "root is always resolved" note.
+   */
+  seedPlayerMetaCoverage(
+    report?:
+      PlayerMetaCoverageReport | { readonly refuse: AdminErrorCode; readonly message?: string },
   ): void;
 }
 
@@ -640,6 +672,43 @@ export function matchRepresentativesViewFixture(
       items: [],
       page: { returned: 0, limit: PAGE_SIZE_DEFAULT, nextCursor: null, total: 0 },
     },
+    ...overrides,
+  });
+}
+
+/* -------------------------------------------------------------- coverage (M08.27C) */
+
+/**
+ * A complete `catalogCoverageView` report for one job: empty `cards` and
+ * `mechanics`, `unavailableReason` null — the same "checked, found nothing to
+ * report" default `matchRepresentativesViewFixture` uses, not a fabricated
+ * per-card status.
+ */
+export function catalogCoverageReportFixture(
+  jobId: string,
+  overrides: Partial<CatalogCoverageReport> = {},
+): CatalogCoverageReport {
+  return catalogCoverageReportSchema.parse({
+    identity: { domain: 'catalog', jobId },
+    cards: [],
+    mechanics: [],
+    unavailableReason: null,
+    ...overrides,
+  });
+}
+
+/**
+ * A complete `playerMetaCoverageView` report for one partition: empty
+ * `cards`, `unavailableReason` null.
+ */
+export function playerMetaCoverageReportFixture(
+  partition: PlayerMetaPartition,
+  overrides: Partial<PlayerMetaCoverageReport> = {},
+): PlayerMetaCoverageReport {
+  return playerMetaCoverageReportSchema.parse({
+    identity: { domain: 'player_meta', partition },
+    cards: [],
+    unavailableReason: null,
     ...overrides,
   });
 }
@@ -1152,6 +1221,19 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     | MatchRepresentativesView
     | { readonly refuse: AdminErrorCode; readonly message?: string }
     | null = null;
+  /** Catalog Coverage reports (M08.27C), by job ID — see `FakeLab.seedCatalogCoverage`. */
+  const catalogCoverage = new Map<
+    string,
+    CatalogCoverageReport | { readonly refuse: AdminErrorCode; readonly message?: string }
+  >();
+  /**
+   * The one Player Meta Coverage reading this fake holds (M08.27C) — no
+   * `Map`, mirroring `playerMeta` above: see `FakeLab.seedPlayerMetaCoverage`.
+   */
+  let playerMetaCoverage:
+    | PlayerMetaCoverageReport
+    | { readonly refuse: AdminErrorCode; readonly message?: string }
+    | null = null;
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -1381,6 +1463,12 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     },
     seedMatchRepresentatives(view) {
       matchRepresentatives = view ?? matchRepresentativesViewFixture();
+    },
+    seedCatalogCoverage(jobId, report) {
+      catalogCoverage.set(jobId, report ?? catalogCoverageReportFixture(jobId));
+    },
+    seedPlayerMetaCoverage(report) {
+      playerMetaCoverage = report ?? null;
     },
   };
 
@@ -1916,6 +2004,20 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
 
     if (name === 'matchRepresentatives') {
       const seeded = matchRepresentatives ?? matchRepresentativesViewFixture();
+      if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
+      return answer(seeded);
+    }
+
+    if (name === 'catalogCoverageView') {
+      const jobId = String(payload.jobId ?? '');
+      const seeded = catalogCoverage.get(jobId) ?? catalogCoverageReportFixture(jobId);
+      if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
+      return answer(seeded);
+    }
+
+    if (name === 'playerMetaCoverageView') {
+      const partition = payload.partition as PlayerMetaPartition;
+      const seeded = playerMetaCoverage ?? playerMetaCoverageReportFixture(partition);
       if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
       return answer(seeded);
     }

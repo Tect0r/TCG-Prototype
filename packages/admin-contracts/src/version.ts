@@ -282,8 +282,25 @@ import { adminError, type AdminError } from './errors.js';
  *   match would be surfaced automatically no matter how many matches existed,
  *   and every explorer's evidence would remain a dead end. That is what a
  *   contract version is for saying.
+ * - 14 (M08.27C) — the language acquired **Coverage**. Two addresses were
+ *   added, `catalog-coverage-view` (naming a `jobId`) and
+ *   `player-meta-coverage-view` (naming a `PlayerMetaPartition`), each
+ *   answering how much of the whole card and mechanic vocabulary a format
+ *   admits was actually exercised, and where it was not, why not. The
+ *   catalog report carries every card's status at six funnel stages
+ *   (eligibility, inclusion, draw, play, activation, trigger) plus every
+ *   mechanic's status; the Player Meta report carries every card's
+ *   observation status within one exact partition. Both use the same
+ *   three-valued status (`reached`/`not_reached`/`unavailable`) `coverage.ts`
+ *   defines, never a fabricated number.
+ *
+ *   A build speaking 13 could find, list and open live matches, follow
+ *   cross-navigation references, and surface representative matches, and
+ *   could not reach either new address, so no card or mechanic's coverage
+ *   status would be visible no matter how many runs or partitions existed.
+ *   That is what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 13;
+export const ADMIN_CONTRACT_VERSION = 14;
 
 /**
  * The version stamped into a persisted catalog document.

@@ -50,7 +50,7 @@ const CAPABILITIES = {
 };
 
 describe('the endpoint registry', () => {
-  it('names thirty-three endpoints, and every one of them has both schemas', () => {
+  it('names thirty-five endpoints, and every one of them has both schemas', () => {
     // Thirteen from M08.6, plus M08.8's four: the builder has to be told what
     // content exists, has to show an exact total *before* anything is enqueued,
     // and has to keep a filled-in form somewhere the browser is not. Plus
@@ -73,7 +73,9 @@ describe('the endpoint registry', () => {
     // seats, artifacts and diagnostics, and its event timeline paged apart
     // from the rest of the view. Plus M08.26E's one: the seven representative
     // matches and the abnormal-match list, filtered the same way as the list.
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(33);
+    // Plus M08.27C's two: a catalog run's Coverage report named by job ID, and
+    // a Player Meta partition's Coverage report named by its exact partition.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(35);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);

@@ -223,15 +223,29 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.27C's page, or M08.27D — Data Health model and page.** M08.27C's
-coverage *model* shipped 2026-09-09 (below); its page half is a follow-up
-slice not yet named or started, inserted ahead of D in practice even though
-the milestone file still lists D next in sequence. Whichever the owner
-picks, its scope and checklist are in
+**M08.27D — Data Health model and page,** or a dedicated correction slice
+for the `coverage.ts` → `@tcg/card-data` boundary violation M08.27C's page
+slice discovered (see below), at the owner's discretion. Scope and checklist
+for D are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
-A coverage page would read `computeCatalogCoverage`/`computePlayerMetaCoverage`
-(`apps/admin-server/src/service/coverage.ts`) rather than reimplementing
-their stage logic.
+
+**M08.27C's page shipped 2026-09-09** — HTTP route wiring
+(`packages/admin-contracts`, `apps/admin-server`), an `apps/admin-client`
+session method, `lib/coverage-view.ts` formatting helpers,
+`components/CoverageDashboard.tsx` (Catalog run / Player Meta partition
+sub-tabs), `ResultsScreen` tab wiring, `fake-service` seeding and tests
+spanning all three packages. Verification found `apps/admin-server/src/
+boundary.test.ts` failing 2 tests, **pre-existing from the M08.27C model
+slice** (commit `48b962c`, not touched this slice): `coverage.ts` imports
+`CardDatabase`/`MECHANIC_SUPPORT_LIST`/`isColorIdentityLegal`/`mechanicKey`/
+`mechanicsUsedBy`/`CardDefinition` directly from `@tcg/card-data`, which ADR
+0023's admin-server boundary rule forbids. Not fixed this slice — a proper
+fix needs `@tcg/simulator` to export color-identity legality and
+mechanic-support lookups so admin-server never reaches `@tcg/card-data`
+directly, out of scope for UI wiring. `npm run verify`'s full gate will fail
+on this same boundary test until it is corrected, so it should land before
+the M08.27 tranche closes. Full narrative in `.claude/current-work.md`'s
+"M08.27C page" entry.
 
 **M08.27C's model shipped 2026-09-09** — `packages/admin-contracts/src/
 coverage.ts` (schema: `CoverageStatus`, `CoverageIdentity`,
