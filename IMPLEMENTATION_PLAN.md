@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-04)   | M08.26A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-04)   | M08.27A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,13 +223,39 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.26A — Shared explorer boundary.** Define bounded pagination,
-authorization, stable identifiers, source/provenance fields and
-cross-navigation contracts without loading unlimited raw rows into the
-browser. Its scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0826--deck-card-and-match-explorers).
-This is the first slice of M08.26, unrelated to the still-unscoped 3–4 seat
+**M08.27A — Comparison compatibility gate.** Define compatible versus refused
+result pairs and the explicit deliberately-different path carrying both
+hashes, versions and declared change before computing any delta. Its scope
+and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
+This is the first slice of M08.27, unrelated to the still-unscoped 3–4 seat
 source-classification gap below.
+
+**M08.26 closed 2026-09-09** (`tcg-reviewer` `VERDICT: APPROVE` on the third
+pass, after two review/fix cycles on the tranche-close diff). First pass found
+two genuine defects the A-E slices had missed: `card-explorer.ts` built its
+`inclusions`/`partners`/`unavailablePartitions` arrays from an unbounded
+upstream reduction, never actually enforcing the contract's own caps; and
+`match-representatives.ts`'s tie-break compared the wrong field, leaving
+`selectClosest` non-deterministic on the closest-match tie that
+`proportionDifference`'s symmetric-negation identity makes the structural norm
+whenever an upset exists. Both were fixed with new regression tests, each
+confirmed to fail against the reverted defect first. The second pass then
+found a HIGH-severity defect introduced by that very fix (`observedInKey`
+built its cache key with literal NUL-byte separators compared via
+`localeCompare`, which treats NUL as an ICU-ignorable collation element and so
+was not a real total order) and a MEDIUM-severity defect in the same diff (the
+new truncation sorted alphabetically rather than by evidence strength,
+reintroducing the arbitrary-sample problem it was meant to fix) — both
+corrected and re-verified, including discovering and correcting a
+self-introduced tautological regression test (a naive "first N ids" fixture
+that happened to survive even the broken alphabetical sort, due to a
+lexicographic quirk of numeric id suffixes) before the third pass confirmed
+everything genuine. One non-blocking LOW finding from the third pass (a
+tautological assertion in `card-explorer.test.ts`) was recorded as a deferred
+note rather than fixed. Full three-cycle narrative in
+`.claude/current-work.md`'s M08.26F entry and the M08 milestone file's M08.26F
+evidence note.
 
 **M08.25 closed 2026-09-04** (`tcg-reviewer` `VERDICT: CHANGES REQUIRED` on
 the first pass — one HIGH finding: the `cards`/`pairs` result tables showed

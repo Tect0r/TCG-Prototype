@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { type JobId } from '@tcg/admin-contracts';
+import { CARD_EXPLORER_MAX_PARTNERS, type JobId } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
 import { experimentPaths } from '@tcg/simulator';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
@@ -262,6 +262,71 @@ describe('CardExplorerReader (M08.26C)', () => {
 
     expect(view.unavailablePartitions).toEqual([]);
     expect(view.experimentEvidence).toBeNull();
+  });
+
+  it('bounds partners at CARD_EXPLORER_MAX_PARTNERS rather than failing the view when a card co-occurred with far more than that many others under one Commander, keeping the strongest-evidence partners rather than an arbitrary sample', async () => {
+    const partnerCount = CARD_EXPLORER_MAX_PARTNERS + 10;
+    const syntheticPartners = Array.from({ length: partnerCount }, (_, index) => ({
+      cardId: `synthetic_partner_${index}`,
+      quantity: 1,
+    }));
+    const denseDeck = freezeLiveMatchDeckSnapshot({
+      commanderId: 'chief_containment_scholar',
+      cards: [{ cardId: 'veteran_guard', quantity: 1 }, ...syntheticPartners],
+    });
+    await writeMatch(
+      'match_a',
+      envelope('match_a', {
+        seats: [
+          { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: denseDeck },
+          { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
+        ],
+      }),
+    );
+
+    // A second match repeats only the last five synthetic partners — chosen
+    // because plain alphabetical ordering of `synthetic_partner_<n>` ids
+    // (comparing "10" before "2", etc.) already keeps low-numbered ids in
+    // its top 64 and would pass even a broken, non-strength-aware sort. The
+    // last five co-occur with `veteran_guard` twice while every other
+    // synthetic partner co-occurs once — strictly stronger evidence that
+    // must survive the cap ahead of any tied, single-match partner.
+    const strongestPartnerIds = syntheticPartners.slice(-5).map((entry) => entry.cardId);
+    const repeatDeck = freezeLiveMatchDeckSnapshot({
+      commanderId: 'chief_containment_scholar',
+      cards: [
+        { cardId: 'veteran_guard', quantity: 1 },
+        ...strongestPartnerIds.map((cardId) => ({ cardId, quantity: 1 })),
+      ],
+    });
+    await writeMatch(
+      'match_b',
+      envelope('match_b', {
+        seats: [
+          { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: repeatDeck },
+          { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeck() },
+        ],
+      }),
+    );
+
+    const first = unwrap(await reader().readView({ cardId: 'veteran_guard', jobId: null }));
+    expect(first.partners).toHaveLength(CARD_EXPLORER_MAX_PARTNERS);
+    const partnerIds = new Set(first.partners.map((entry) => entry.partnerCardId));
+    expect(partnerIds.size).toBe(CARD_EXPLORER_MAX_PARTNERS);
+    for (const strongId of strongestPartnerIds) {
+      expect(partnerIds.has(strongId)).toBe(true);
+    }
+    const keptCounts = first.partners.map((entry) => entry.matchesIncludingBoth);
+    const weakestKept = Math.min(...keptCounts);
+    expect(weakestKept).toBeGreaterThanOrEqual(1);
+    // Every kept entry's strength is at least the weakest kept entry's —
+    // i.e. no excluded partner (necessarily strength 1) outranks a kept one.
+    for (const entry of first.partners) {
+      expect(entry.matchesIncludingBoth).toBeGreaterThanOrEqual(weakestKept);
+    }
+
+    const second = unwrap(await reader().readView({ cardId: 'veteran_guard', jobId: null }));
+    expect(second.partners).toEqual(first.partners);
   });
 
   it('reports a held legal card as inclusion 0 (not unusable) and an off-colour card as unusable with a null inclusion rate', async () => {

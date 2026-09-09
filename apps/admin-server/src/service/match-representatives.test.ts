@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   NO_PLAYER_META_FILTER,
   PAGE_SIZE_DEFAULT,
+  PAGE_SIZE_MAX,
   adaptiveExperimentIdSchema,
 } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
@@ -13,7 +14,12 @@ import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-
 
 import { resolveCatalogRoots, type ResolvedCatalogRoots } from '../catalog/roots.js';
 
-import { MatchRepresentativesReader } from './match-representatives.js';
+import {
+  commanderRecordsOf,
+  decisiveMatchesOf,
+  MatchRepresentativesReader,
+  selectClosest,
+} from './match-representatives.js';
 
 /**
  * M08.26E — the Match Representatives read model over the same live-match
@@ -196,6 +202,36 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     expect(byKind.get('largest_upset')?.ref).toEqual({ kind: 'match', matchId: 'match_d' });
     expect(byKind.get('most_one_sided')?.ref?.kind).toBe('match');
     expect(byKind.get('closest')).not.toBeNull();
+  });
+
+  it('picks closest by |skew| deterministically, independent of input order, when a favourite-win and the upset share the exact same skew magnitude with opposite sign', () => {
+    // Every favourite-win match against a given opponent and the set's one
+    // upset between the same two Commanders are mathematically guaranteed to
+    // share |skew| (proportionDifference(A, B).point === -proportionDifference(B, A).point),
+    // so this tie is not a contrived edge case — it is the normal shape of
+    // this fixture (and of `match_a`..`match_d` above). This bypasses the
+    // filesystem entirely rather than trying to force a write order:
+    // `readLiveMatchEnvelopes` reads via unsorted `readdirSync`, whose order
+    // is filesystem-dependent and not something a test may assume — on one
+    // Windows/NTFS box observed during development it happened to always
+    // return entries alphabetically regardless of write order, which would
+    // make a filesystem-level reproduction of this bug silently pass even
+    // when broken. Calling `selectClosest` directly with an explicitly
+    // reversed array is the only reliable way to prove order-independence.
+    const matches = [
+      envelope('match_a', { outcome: outcomeOf('player_1', 'player_2') }), // blue (favourite) beats red
+      envelope('match_b', { outcome: outcomeOf('player_1', 'player_2') }),
+      envelope('match_c', { outcome: outcomeOf('player_1', 'player_2') }),
+      envelope('match_d', { outcome: outcomeOf('player_2', 'player_1') }), // red (underdog) beats blue: the upset
+    ];
+    const decisive = decisiveMatchesOf(matches);
+    const records = commanderRecordsOf(decisive);
+
+    const forward = selectClosest(decisive, records);
+    const reversed = selectClosest([...decisive].reverse(), records);
+
+    expect(forward?.match.matchId).toBe('match_a');
+    expect(reversed?.match.matchId).toBe('match_a');
   });
 
   it('selects shortest and longest by actionCount among completed matches', async () => {
@@ -440,6 +476,52 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     );
     expect(second.abnormalMatches.items).toHaveLength(1);
     expect(second.abnormalMatches.page.nextCursor).toBeNull();
+  });
+
+  it('bounds a genuinely large abnormal-match set at PAGE_SIZE_MAX rather than the browser ever seeing more', async () => {
+    const total = PAGE_SIZE_MAX + 5;
+    for (let index = 0; index < total; index += 1) {
+      const matchId = `match_${String(index).padStart(4, '0')}`;
+      writeMatch(
+        matchId,
+        envelope(matchId, {
+          terminationOrigin: 'server_failure',
+          outcome: {
+            ...outcomeOf('player_1', 'player_2'),
+            reason: 'engine_error',
+            diagnostics: 'boom',
+          },
+        }),
+      );
+    }
+
+    const first = unwrap(
+      await reader().readView({
+        filter: NO_PLAYER_META_FILTER,
+        adaptiveExperimentId: null,
+        page: { limit: PAGE_SIZE_MAX, cursor: null },
+      }),
+    );
+    expect(first.abnormalMatches.items).toHaveLength(PAGE_SIZE_MAX);
+    expect(first.abnormalMatches.page.nextCursor).not.toBeNull();
+    expect(first.abnormalMatches.page.total).toBe(total);
+
+    const second = unwrap(
+      await reader().readView({
+        filter: NO_PLAYER_META_FILTER,
+        adaptiveExperimentId: null,
+        page: { limit: PAGE_SIZE_MAX, cursor: first.abnormalMatches.page.nextCursor },
+      }),
+    );
+    expect(second.abnormalMatches.items).toHaveLength(5);
+    expect(second.abnormalMatches.page.nextCursor).toBeNull();
+
+    const seenIds = new Set(
+      [...first.abnormalMatches.items, ...second.abnormalMatches.items].map(
+        (entry) => entry.ref.matchId,
+      ),
+    );
+    expect(seenIds.size).toBe(total);
   });
 
   it('refuses a resultRootId that is not configured, rather than guessing another root', async () => {

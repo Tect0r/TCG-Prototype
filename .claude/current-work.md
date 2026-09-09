@@ -3556,3 +3556,275 @@ Marked M08.26E's work-slice checkbox complete in the milestone file. Root
 status row and `IMPLEMENTATION_PLAN.md`'s "next bounded task" section are
 untouched — those move only at M08.26F tranche close, per CLAUDE.md. Next
 slice: **M08.26F — Tranche close**.
+
+## M08.26F — Tranche close
+
+Revalidated the combined M08.26 tranche (A–E, `b2f3482..054a003`) against its
+own acceptance line: cross-navigation, pagination, authorization, hidden
+information, representative-selection determinism, unsupported replay and
+large-fixture tests. The first five already carried focused coverage from
+their own slices. **Large-fixture tests had none anywhere in the codebase** —
+a repo-wide search turned up only tiny-`limit`-override tests that simulate
+bounding without ever constructing a genuinely large underlying set, which
+does not actually prove the `PAGE_SIZE_MAX` clamp holds against real data
+volume.
+
+Closed the gap with two new tests, both using the files' existing real-fixture
+helpers rather than mocks:
+
+- `apps/admin-server/src/service/match-explorer.test.ts`: writes
+  `PAGE_SIZE_MAX + 5` (205) real match envelopes, requests `readList` with
+  `limit: PAGE_SIZE_MAX`, and asserts the first page returns exactly 200 rows
+  with a non-null cursor and `total: 205`; the second page returns the
+  remaining 5 with `nextCursor: null`; and no ID is duplicated or missing
+  across both pages.
+- `apps/admin-server/src/service/match-representatives.test.ts`: the same
+  proof for the paginated `abnormalMatches` list, using 205 real
+  `server_failure`-terminated match fixtures.
+
+Both pass in isolation and as part of the full suite.
+
+`npm run check:consistency` passed on the first run. `npm run audit:check`
+initially failed ("`docs/status-audit.md` no longer matches the code it
+describes"); regenerated via `npm run audit:status`.
+
+`npm run verify` failed on `format:check` first: 5 files were unformatted.
+Checked each against tranche git history before touching it. Four are
+tranche-owned and were fixed with `prettier --write`, each confirmed
+reflow-only by `git diff` (no content change): `card-explorer-flow.test.tsx`,
+`card-explorer-view.test.ts`, `results.ts`, and this milestone file itself.
+The fifth, `docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`, is untracked and
+unrelated to this tranche — it is an owner-authored session brief whose own
+text says it should be kept outside the repository and used to plan a future,
+separate M08.R* correction tranche. Rather than reformat or commit someone
+else's out-of-scope content, moved it aside temporarily (to the session
+scratchpad), reran the full gate clean, then restored it to its original,
+untracked location. It remains untouched and is not part of this tranche's
+close commit.
+
+Moving that file aside changed the milestone-document count `audit:status`
+had already captured, so the previously-regenerated `docs/status-audit.md`
+no longer matched reality and `scripts/lib/status-audit.test.ts` failed inside
+`npm run verify`. Regenerated `audit:status` again with the file back in its
+correct place, which fixed it.
+
+`npm run verify` then failed twice more on the same unrelated test:
+`apps/admin-server/src/run/queue.test.ts` threw `ENOTEMPTY: directory not
+empty, rmdir` on a `tcg-admin-catalog-*\catalog` temp directory — a Windows
+temp-cleanup race under full-suite parallel load, not a tranche regression.
+Confirmed by running the file in isolation (23/23 pass) and by finding an
+identical, already-documented occurrence of this same flake earlier in this
+file from a prior tranche. Reran `npm run test` alone (clean, 261/261 files),
+then reran the complete `npm run verify` gate once more, which finally passed
+clean end to end: 261 test files, 5040 tests, typecheck, lint, format,
+content validation and build all pass.
+
+Marked M08.26F and the M08.26 checklist complete in the milestone file. Root
+status row's "Next tranche" column left at `M08.26A` rather than advanced,
+per CLAUDE.md: the tranche is not marked complete and its successor is not
+named until `tcg-reviewer` returns `VERDICT: APPROVE`.
+
+Requested the tranche review from `tcg-reviewer`, scoped to the full commit
+range `b2f3482..054a003` plus this close record's uncommitted diff. It
+returned `VERDICT: CHANGES REQUIRED` with one HIGH, two MEDIUM and two LOW
+findings.
+
+Fixed the HIGH finding: `card-explorer.ts`'s `inclusionsAndPartnersOf` built
+its `inclusions`/`partners`/`unavailablePartitions` arrays directly from
+`aggregateLiveCardEvidence`'s O(n²) per-Commander card-pair co-occurrence,
+which is unbounded at the producer — a Commander with enough distinct
+partner cards in its observed decks could return an arbitrarily large
+`partners` array, never actually enforcing the contract's own
+`CARD_EXPLORER_MAX_INCLUSIONS` / `CARD_EXPLORER_MAX_PARTNERS` /
+`CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS` caps. Fixed by sorting each array
+deterministically (by evidence-source key, then commander/partner id) and
+slicing to the matching constant before return, mirroring the same
+sort-then-slice bounding pattern the file's own `contributingOf` function
+already used. Added a regression test building a dense fixture
+(`CARD_EXPLORER_MAX_PARTNERS + 10` synthetic partner cards under one
+Commander) asserting the view caps at exactly the constant, with all
+partners distinct and the result stable across repeated calls.
+
+Fixed the MEDIUM finding: `match-representatives.ts`'s tie-breaking in
+`betterCandidate` compared `candidate.skew !== best.skew`, but
+`selectClosest` ordered candidates by `Math.abs(skew)` while
+`selectLargestUpset`/`selectMostOneSided` ordered by raw `skew` — so ties
+were checked against the wrong value. Because
+`proportionDifference(A,B).point === -proportionDifference(B,A).point` is an
+exact identity, any Commander pair with both a favourite-win and an upset
+among its decisive matches produces a guaranteed `|skew|` tie between those
+groups in `selectClosest` — not an edge case, the structural norm whenever
+an upset exists — so `selectClosest` could return either match
+non-deterministically depending on match iteration order, directly
+contradicting the tranche checklist item "Representative-match selection is
+deterministic and documented" that this same close had just marked
+complete. Fixed by adding an explicit `key` field to `Candidate` (distinct
+from `skew`) that each selector populates with the actual value it orders
+by, and changing `betterCandidate`'s comparison to use `key`. Because
+`readLiveMatchEnvelopes` iterates via unsorted `readdirSync`, and this
+environment's filesystem (Windows/NTFS) empirically always returns entries
+in alphabetical order regardless of write order, a filesystem-level
+reproduction cannot exercise this bug here — so exported the previously
+private `decisiveMatchesOf`, `commanderRecordsOf` and `selectClosest` for
+direct testing, and added a test that calls them with the same
+match-fixture data in both forward and reverse array order, asserting
+`selectClosest` returns the same match either way. Verified this is a
+genuine regression guard by temporarily reverting just the `betterCandidate`
+comparison to its old form and confirming the new test failed
+(`expected 'match_d' to be 'match_a'`), then restoring the fix and
+confirming all 14 tests in the file pass again.
+
+Also fixed the LOW finding in the same file: `selectPreAdaptation`'s
+boundary-candidate comparison stopped at `generation`/`side` and had no
+final tie-break, so two revisions equal on both could be chosen
+non-deterministically. Added a third tie-break clause comparing
+`revisionId`. Fixed opportunistically alongside the MEDIUM finding since it
+is the same determinism concern in the same function.
+
+Left three findings as non-blocking notes for a future tranche, per the
+repo's established two-cycle precedent (only blocking/checklist-contradicting
+findings get fixed within a tranche-close cycle):
+
+- MEDIUM: artifact-status conflation (`not_retained` vs.
+  corrupted/unsupported-version) — the reviewer flagged this as needing an
+  owner/product decision on the artifact-status taxonomy, not a code defect.
+- LOW: `MATCH_EXPLORER_MAX_DECK_ENTRIES=64` latent-bug note.
+- LOW: `docs/status-audit.md`'s "verify: not run" field being stale relative
+  to actual gate runs — addressed for this close specifically (see below)
+  but the general staleness pattern is left as a note for tooling that keeps
+  it current automatically.
+
+Re-ran `eslint` and `prettier --check` on all four touched files
+(`card-explorer.ts`, `card-explorer.test.ts`, `match-representatives.ts`,
+`match-representatives.test.ts`) — both clean. Re-ran the three affected
+test files together (36/36 pass, including the two new regression tests).
+Re-ran `npm run check:consistency` (clean) and the complete `npm run verify`
+gate, again moving `M08.5_FINAL_CORRECTION_PASS.md` aside and restoring it
+afterward for the same reason as before — passed clean end to end: 261 test
+files, 5042 tests (5040 plus the two new regression tests), typecheck, lint,
+format, content validation and build all pass. Regenerated
+`docs/status-audit.md` via `npm run audit:status -- --verify passed`,
+addressing the reviewer's own LOW finding about that field, then confirmed
+`npm run audit:check` reports it current.
+
+The original `tcg-reviewer` agent instance was no longer reachable (its
+process had ended between turns), so per CLAUDE.md's guidance for that
+situation, requested the bounded recheck from a fresh `tcg-reviewer`
+invocation, scoped explicitly and only to the fix diff described above (not
+a re-review of the already-approved A-E slices). It again returned
+`VERDICT: CHANGES REQUIRED`, this time with 1 HIGH, 2 MEDIUM and 1 LOW
+finding — all genuine defects in the first fix cycle's own work, not
+findings against the original tranche:
+
+- **HIGH (confirmed real, fixed):** `observedInKey` in `card-explorer.ts`
+  had been written with two literal U+0000 (NUL) characters as its `|`
+  separators rather than printable characters — invisible in the Read tool's
+  own file rendering, which is presumably why this wasn't caught while
+  writing the first fix. Verified directly: `apps/admin-server/src/service/
+card-explorer.ts` had exactly 2 NUL bytes at offsets 2102 and 2131 before
+  the correction, 0 after. Two real consequences: `String.localeCompare`
+  treats NUL as an ignorable ICU collation element (`('a\0'+'1').localeCompare('a1')
+=== 0`, verified), so the comparator built with it was not the strict
+  total order its own comment claimed, and separately `localeCompare`'s
+  locale-dependent collation (unlike this file's own `contributingOf`, which
+  already used plain code-unit `<`/`>`) meant which entries survived a cap
+  could vary by host even with a working separator. The NUL bytes had also
+  made `git diff` treat the whole file as binary (`Bin 9695 -> 11091`) — the
+  prior review-request's own claim that this was "a pre-existing Unicode
+  em-dash false positive, already investigated" was wrong; the file's `HEAD`
+  revision has zero NUL bytes, this fix cycle introduced them. Fixed by
+  replacing the NULs with a literal `|` (verified no `precon_wave_1` source/
+  rulesVersion value can contain it) and adding a `compareStrings` code-unit
+  comparator, used in all three sorts instead of `localeCompare`.
+- **MEDIUM (confirmed real, fixed):** the same three sorts ordered
+  strictly by evidence-source key then id — meaning the 64/128/32 entries
+  that survive each cap are an alphabetical sample, not the
+  strongest-evidence ones, so an operator reading `support`/`inclusion`
+  rates off a truncated view could be looking at an arbitrary subset rather
+  than the most-supported cards. Fixed by ordering `inclusions` by
+  descending `matchesIncluding` and `partners` by descending
+  `matchesIncludingBoth` then `decksIncludingBoth` before the existing
+  id-based tie-break, so a truncated view keeps its most-supported entries.
+  `unavailablePartitions` has no comparable strength metric and keeps its
+  evidence-key ordering. Extended the existing dense-partner regression test
+  with a second match that repeats only 5 of the synthetic partners (giving
+  them `matchesIncludingBoth: 2` against everyone else's `1`) and asserted
+  all 5 survive the cap. First wrote this using the _first_ 5 synthetic
+  partner ids and it passed against both the fix and a deliberately
+  reverted alphabetical-only sort — because `synthetic_partner_0..4` already
+  sort into the alphabetical top 64 by coincidence (`"10"` sorts before
+  `"2"` as strings), so that version was not a genuine regression guard.
+  Verified this by checking which indices an alphabetical top-64 actually
+  excludes and switching to the _last_ 5 synthetic partner ids instead
+  (`synthetic_partner_69..73`, confirmed excluded by plain alphabetical
+  order); re-verified the corrected test now fails against the reverted sort
+  (`expected false to be true` on the survival assertion) and passes again
+  once the fix is restored.
+- **MEDIUM (confirmed real, fixed):** the milestone file's M08.26F evidence
+  note said "5040 tests" while `docs/status-audit.md` (already regenerated
+  and confirmed current) said 5042, and the note described only the
+  first-cycle work with no mention that review had found and fixed a
+  cap-enforcement defect and a representative-selection determinism defect
+  — a future reader of only that file would believe the "deterministic and
+  documented" checklist item was proven by the A-E slices alone. Fixed:
+  corrected the count and added a sentence naming both fixes and pointing to
+  this file for the full narrative.
+- **LOW (confirmed real, fixed):** the new determinism test's comment in
+  `match-representatives.test.ts` stated as unqualified fact that
+  `readdirSync` "always returns directory entries alphabetically" on this
+  suite's Windows/CI box — an environment observation from earlier in this
+  session, not a guaranteed property, being written into a durable test
+  comment as though it were one. Reworded to describe it as what was
+  observed on one box during development, not a property the reader may
+  rely on, while keeping the actual test bypassing the filesystem entirely
+  (calling `decisiveMatchesOf`/`selectClosest` directly), which does not
+  depend on the claim either way.
+
+Left the same two non-blocking notes from the first cycle open (artifact-
+status conflation, `MATCH_EXPLORER_MAX_DECK_ENTRIES` latent-bug note) — this
+recheck did not reopen or add to either.
+
+Re-verified after this second fix round: `node`-level byte scan confirms
+zero NUL bytes remain in `card-explorer.ts`; `git diff --stat` now shows a
+normal text diff for it (`48 +++++++++...`, no `Bin` marker); `eslint` and
+`prettier --check` clean on all touched files; the three affected admin-
+server test files pass together; `npm run check:consistency` clean;
+complete `npm run verify` passes end to end. This is the tranche's second
+review/fix cycle; per CLAUDE.md's two-cycle limit, one bounded recheck of
+just this second diff is being requested next, and if it too returns
+`CHANGES REQUIRED` the correct action is to stop and report the unresolved
+blocker rather than attempt a third cycle.
+
+Because the original reviewer agent had become unreachable between turns
+(confirmed absent via `ListAgents`), the bounded recheck above was run as a
+fresh `tcg-reviewer` invocation scoped explicitly and narrowly to only the
+second-cycle diff (the four findings and their fixes), not a re-review of
+the already-approved parts of the tranche. That fresh reviewer independently
+confirmed all four fixes as genuine: its own byte scan of `card-explorer.ts`
+found zero NUL bytes; its own lexicographic-rank computation of the
+`synthetic_partner_*` ids confirmed the corrected test fixture
+(`syntheticPartners.slice(-5)`, ids 69-73) is genuinely excluded from a
+plain alphabetical top-64 cap (ranks 66, 68, 69, 70, 71) and is therefore a
+real, non-tautological regression test; the milestone-doc test count and the
+new evidence paragraph were confirmed accurate; and the reworded
+`readdirSync` comment was confirmed to no longer overclaim host behavior
+while the test itself still bypasses the filesystem entirely.
+
+**`VERDICT: APPROVE`.** The reviewer also raised one new non-blocking LOW
+finding, explicitly stated to not block merge: the extended partners test's
+trailing `weakestKept`/loop assertion
+(`const weakestKept = Math.min(...keptCounts); ...`) is tautological by
+construction of `Math.min` and can never fail, so it adds no real coverage
+beyond the test's earlier, genuine assertions. Suggested smallest correction
+(not applied in this tranche): drop the assertion, or replace it with
+`expect(keptCounts.filter((count) => count === 2)).toHaveLength(5)`. Recorded
+here as a deferred note rather than triggering a third review cycle, per the
+same precedent used for the two open non-blocking notes from the first
+cycle (artifact-status conflation, `MATCH_EXPLORER_MAX_DECK_ENTRIES`
+latent-bug note) — none of the three notes affect correctness of the
+shipped behavior, and CLAUDE.md gates commit/push on `VERDICT: APPROVE`,
+not on zero findings.
+
+With `VERDICT: APPROVE` received, M08.26F (tranche close) is complete. The
+M08.26 tranche ("Deck, Card and Match explorers") is done as of this
+commit.

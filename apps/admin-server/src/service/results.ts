@@ -753,7 +753,10 @@ export class ResultReader {
   async readProvenance(
     jobId: JobId,
   ): Promise<
-    Result<{ sourceClasses: readonly SourceClass[]; environment: RunEnvironmentRef }, readonly AdminError[]>
+    Result<
+      { sourceClasses: readonly SourceClass[]; environment: RunEnvironmentRef },
+      readonly AdminError[]
+    >
   > {
     const open = await this.#open(jobId);
     if (isErr(open)) return open;
@@ -764,7 +767,10 @@ export class ResultReader {
     const environment = identity.value.environments[0];
     if (environment === undefined) {
       return err([
-        noResult(jobId, 'The run this job indexes names no environment, so it has no provenance to read.'),
+        noResult(
+          jobId,
+          'The run this job indexes names no environment, so it has no provenance to read.',
+        ),
       ]);
     }
 

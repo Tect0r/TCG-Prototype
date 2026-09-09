@@ -4613,8 +4613,7 @@ representative-selection determinism, unsupported replay and large-fixture tests
       (`card-explorer.ts`'s own doc comment), not an invented shape; the exact
       next question for whichever slice picks it up. `CardExplorerPanel`
       (`apps/admin-client/src/components/CardExplorerDashboard.tsx`) wired into
-      `ResultsScreen.tsx`. 34 new focused tests pass (16 admin-contracts schema
-      + 7 admin-server reader + 5 admin-client unit + 6 admin-client
+      `ResultsScreen.tsx`. 34 new focused tests pass (16 admin-contracts schema + 7 admin-server reader + 5 admin-client unit + 6 admin-client
       integration); pre-existing `deck-explorer`/`service` tests still pass;
       typecheck and ESLint clean on every touched workspace.
 - [x] **M08.26D — Match Explorer.** Add the filterable match table, termination
@@ -4684,16 +4683,71 @@ representative-selection determinism, unsupported replay and large-fixture tests
       (no pre-existing line touched); `card-explorer-flow.test.tsx` carries
       pre-existing, unrelated formatting drift left untouched, and the new code
       added to it is independently prettier-clean.
-- [ ] **M08.26F — Tranche close.** Revalidate pagination, authorization, hidden
+- [x] **M08.26F — Tranche close.** Revalidate pagination, authorization, hidden
       data, deterministic representatives, unsupported replays and large fixtures
-      through the standard tranche-close gate.
+      through the standard tranche-close gate. Evidence note: revalidated
+      A-E against the tranche acceptance line; pagination, authorization,
+      hidden-information and representative-determinism each already carried
+      focused coverage from their own slices, but "large-fixture tests" had
+      none anywhere in the codebase (existing pagination tests only used tiny
+      `limit` overrides, never a genuinely large underlying set). Closed the
+      gap with two new real-fixture tests: `match-explorer.test.ts` writes
+      `PAGE_SIZE_MAX + 5` (205) match envelopes and proves `readList` bounds
+      the first page at exactly `PAGE_SIZE_MAX` with a non-null cursor and
+      correct `total`, then the second page returns the remaining 5 with
+      `nextCursor: null` and no duplicate/missing IDs across both pages;
+      `match-representatives.test.ts` does the same for the paginated
+      `abnormalMatches` list using 205 real `server_failure`-terminated
+      fixtures. `prettier --write` reformatted 4 tranche-owned files flagged
+      by `format:check` (`card-explorer-flow.test.tsx`,
+      `card-explorer-view.test.ts`, `results.ts`, and this milestone file
+      itself) — each confirmed reflow-only via `git diff`, no behavior
+      change. `docs/status-audit.md` regenerated via `npm run audit:status`.
+      `npm run check:consistency`, `npm run audit:check` and `npm run verify`
+      all pass clean (261 test files, 5042 tests, typecheck/lint/format/build
+      all clean) after one retry of a pre-existing Windows-only
+      `queue.test.ts` `ENOTEMPTY` temp-directory flake unrelated to any
+      tranche file (documented precedent for the same flake exists earlier in
+      `.claude/current-work.md`). An untracked, out-of-scope owner brief
+      (`docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`) was temporarily
+      moved aside and restored to unblock repo-wide `prettier --check .`
+      without altering or committing it. `tcg-reviewer`'s tranche review then
+      found and this close fixed two genuine defects the A-E slices had
+      missed: `card-explorer.ts` built its `inclusions`/`partners`/
+      `unavailablePartitions` arrays from an unbounded upstream reduction,
+      never actually enforcing the contract's own caps (fixed by sorting on
+      strongest evidence first, then slicing to each constant); and
+      `match-representatives.ts`'s tie-break compared the wrong field,
+      leaving `selectClosest` non-deterministic on the closest-match tie that
+      `proportionDifference`'s symmetric-negation identity makes the
+      structural norm whenever an upset exists — the exact scenario the
+      "Representative-match selection is deterministic and documented"
+      checklist item below claims is covered (fixed by giving each selector
+      an explicit ordering `key`). Both fixes carry new regression tests,
+      each confirmed to fail against the reverted defect before the fix was
+      restored. A second review cycle on that fix diff found and this close
+      fixed a HIGH-severity defect introduced by the first fix itself
+      (`observedInKey` built its cache key with literal NUL-byte separators
+      compared via `localeCompare`, which treats NUL as an ICU-ignorable
+      collation element and so was not a real total order) plus a
+      MEDIUM-severity defect in the same diff (the new inclusions/partners
+      truncation sorted alphabetically rather than by evidence strength,
+      reintroducing the arbitrary-sample problem it was meant to fix) —
+      both corrected and re-verified. A third, bounded recheck of that
+      second diff returned `VERDICT: APPROVE`, independently confirming
+      both corrections (including its own byte scan finding zero NUL bytes
+      and its own lexicographic check confirming the regression test's
+      fixture is genuinely non-tautological), with one non-blocking LOW
+      finding recorded as a deferred note rather than fixed. See
+      `.claude/current-work.md`'s M08.26F entry for the full three-cycle
+      review/fix narrative.
 
 ### Checklist
 
-- [ ] Three explorers that cross-navigate.
-- [ ] Representative-match selection is deterministic and documented.
-- [ ] Hidden information stays behind authorization.
-- [ ] Bounded pagination everywhere.
+- [x] Three explorers that cross-navigate.
+- [x] Representative-match selection is deterministic and documented.
+- [x] Hidden information stays behind authorization.
+- [x] Bounded pagination everywhere.
 
 ## M08.27 — Version comparison, coverage and data health
 

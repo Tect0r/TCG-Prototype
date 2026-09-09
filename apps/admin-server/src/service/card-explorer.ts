@@ -3,6 +3,9 @@ import {
   cardExplorerViewSchema,
   CARD_EXPLORER_MAX_CONTRIBUTING_DECKS,
   CARD_EXPLORER_MAX_CONTRIBUTING_MATCHES,
+  CARD_EXPLORER_MAX_INCLUSIONS,
+  CARD_EXPLORER_MAX_PARTNERS,
+  CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS,
   PAGE_SIZE_MAX,
   type AdminError,
   type CardExplorerContributingDeck,
@@ -55,6 +58,20 @@ function liveMatchEvidenceOfMatch(match: LiveMatchEnvelope) {
     contentVersion: match.provenance.contentVersion,
     rulesVersion: match.provenance.rulesVersion,
   };
+}
+
+function observedInKey(observedIn: {
+  source: string;
+  contentVersion: number;
+  rulesVersion: string;
+}) {
+  return `${observedIn.source}|${observedIn.contentVersion}|${observedIn.rulesVersion}`;
+}
+
+// Code-unit comparison, matching `contributingOf`'s own convention below —
+// never `localeCompare`, whose ICU collation is host-dependent.
+function compareStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function inclusionsAndPartnersOf(
@@ -114,7 +131,36 @@ function inclusionsAndPartnersOf(
     }
   }
 
-  return { inclusions, partners, unavailablePartitions };
+  // Deterministic, bounded output: never let an unbounded upstream reduction
+  // (one entry per co-occurring partner card, per Commander, per partition)
+  // fail the whole view against the contract's own caps. Order by strongest
+  // evidence first so a truncated view keeps its most-supported entries
+  // rather than an arbitrary alphabetical sample, then cap at the same
+  // constant the schema enforces. Remaining ties broken by code-unit
+  // comparison so the kept prefix cannot depend on host collation.
+  inclusions.sort(
+    (left, right) =>
+      right.matchesIncluding - left.matchesIncluding ||
+      compareStrings(observedInKey(left.observedIn), observedInKey(right.observedIn)) ||
+      compareStrings(left.commanderId, right.commanderId),
+  );
+  partners.sort(
+    (left, right) =>
+      right.matchesIncludingBoth - left.matchesIncludingBoth ||
+      right.decksIncludingBoth - left.decksIncludingBoth ||
+      compareStrings(observedInKey(left.observedIn), observedInKey(right.observedIn)) ||
+      compareStrings(left.commanderId, right.commanderId) ||
+      compareStrings(left.partnerCardId, right.partnerCardId),
+  );
+  unavailablePartitions.sort((left, right) =>
+    compareStrings(observedInKey(left.observedIn), observedInKey(right.observedIn)),
+  );
+
+  return {
+    inclusions: inclusions.slice(0, CARD_EXPLORER_MAX_INCLUSIONS),
+    partners: partners.slice(0, CARD_EXPLORER_MAX_PARTNERS),
+    unavailablePartitions: unavailablePartitions.slice(0, CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS),
+  };
 }
 
 function contributingOf(

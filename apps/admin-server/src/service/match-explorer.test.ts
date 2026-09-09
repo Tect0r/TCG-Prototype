@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { NO_PLAYER_META_FILTER, PAGE_SIZE_DEFAULT } from '@tcg/admin-contracts';
+import { NO_PLAYER_META_FILTER, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
 import {
   freezeLiveMatchDeckSnapshot,
@@ -251,6 +251,40 @@ describe('MatchExplorerReader.readList (M08.26D)', () => {
     );
     expect(second.items.map((row) => row.matchId)).toEqual(['match_c']);
     expect(second.page.nextCursor).toBeNull();
+  });
+
+  it('bounds a genuinely large match set at PAGE_SIZE_MAX rather than the browser ever seeing more', async () => {
+    const total = PAGE_SIZE_MAX + 5;
+    for (let index = 0; index < total; index += 1) {
+      const matchId = `match_${String(index).padStart(4, '0')}`;
+      writeMatch(matchId, envelope(matchId));
+    }
+
+    const first = unwrap(
+      await reader().readList({
+        filter: NO_PLAYER_META_FILTER,
+        page: { limit: PAGE_SIZE_MAX, cursor: null },
+      }),
+    );
+    expect(first.items).toHaveLength(PAGE_SIZE_MAX);
+    expect(first.page).toEqual({
+      returned: PAGE_SIZE_MAX,
+      limit: PAGE_SIZE_MAX,
+      nextCursor: expect.any(String),
+      total,
+    });
+
+    const second = unwrap(
+      await reader().readList({
+        filter: NO_PLAYER_META_FILTER,
+        page: { limit: PAGE_SIZE_MAX, cursor: first.page.nextCursor },
+      }),
+    );
+    expect(second.items).toHaveLength(5);
+    expect(second.page.nextCursor).toBeNull();
+
+    const seenIds = new Set([...first.items, ...second.items].map((row) => row.matchId));
+    expect(seenIds.size).toBe(total);
   });
 
   it('refuses a resultRootId that is not configured, rather than guessing another root', async () => {

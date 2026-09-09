@@ -9,9 +9,9 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `cbc35bd3f9745e7cd15fb3caa38e9c7175e87e79`  |
+| Commit           | `054a003c31dce46d3a01c492d80ec5c1257ce31d`  |
 | Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-09-04                                  |
+| Taken on         | 2026-09-09                                  |
 | Node             | v24.15.0                                    |
 | `npm run verify` | passed at this commit                       |
 
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 18      | 342      |
-| admin-server   | 33      | 663      |
-| packages       | 103     | 2422     |
+| admin-client   | 25      | 396      |
+| admin-server   | 37      | 705      |
+| packages       | 108     | 2502     |
 | scripts        | 4       | 69       |
 | server         | 21      | 381      |
 | simulator      | 46      | 717      |
 | web-client     | 20      | 272      |
-| **total**      | **245** | **4866** |
+| **total**      | **261** | **5042** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -106,7 +106,7 @@ The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contr
 
 | Constant                   | Value | Pins                                                                                                                                   |
 | -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_CONTRACT_VERSION`   | 9     | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `ADMIN_CONTRACT_VERSION`   | 13    | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
 | `CATALOG_DOCUMENT_VERSION` | 4     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments
@@ -290,7 +290,7 @@ No question the plan calls open is missing or answered in the question file.
 | Root files                               | `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`, `README.md`, `eslint.config.js`, `package-lock.json`, `package.json`, `tsconfig.base.json`, `tsconfig.json`, `vitest.config.ts`                                                                                                                                                                                                                                                          |
 | Root Markdown beyond the three permitted | none                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Architecture decision records            | 24                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Milestone documents                      | 9                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Milestone documents                      | 10                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Architecture decision records
 

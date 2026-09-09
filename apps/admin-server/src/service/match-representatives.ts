@@ -59,7 +59,8 @@ function refOf(match: LiveMatchEnvelope): { kind: 'match'; matchId: string } {
   return { kind: 'match', matchId: match.matchId };
 }
 
-function decisiveMatchesOf(matches: readonly LiveMatchEnvelope[]): LiveMatchEnvelope[] {
+/** Exported only so tests can prove selection is independent of input order without depending on a filesystem's own directory-listing order (never guaranteed — see `betterCandidate`'s doc comment). */
+export function decisiveMatchesOf(matches: readonly LiveMatchEnvelope[]): LiveMatchEnvelope[] {
   return matches.filter(
     (match) =>
       match.outcome !== null && match.outcome.outcome === 'win' && match.outcome.winnerId !== null,
@@ -80,8 +81,10 @@ interface CommanderRecord {
   total: number;
 }
 
-/** Each Commander's overall decisive win/loss record across the filtered set — the input `proportion()` needs, never a per-match margin (there is none). */
-function commanderRecordsOf(decisive: readonly LiveMatchEnvelope[]): Map<string, CommanderRecord> {
+/** Each Commander's overall decisive win/loss record across the filtered set — the input `proportion()` needs, never a per-match margin (there is none). Exported for the same order-independence testing reason as `decisiveMatchesOf`. */
+export function commanderRecordsOf(
+  decisive: readonly LiveMatchEnvelope[],
+): Map<string, CommanderRecord> {
   const records = new Map<string, CommanderRecord>();
   for (const match of decisive) {
     const { winner, loser } = decisiveSeatsOf(match);
@@ -112,27 +115,30 @@ function skewOf(match: LiveMatchEnvelope, records: ReadonlyMap<string, Commander
 interface Candidate {
   readonly match: LiveMatchEnvelope;
   readonly skew: number;
+  /** The value `prefer` actually orders on — not always `skew` itself (e.g. `closest` orders on `|skew|`). Tie-breaking must compare this, not `skew`, or equal-magnitude opposite-sign candidates never reach the `matchId` tie-break. */
+  readonly key: number;
 }
 
 function betterCandidate(
   candidate: Candidate,
   best: Candidate | null,
-  prefer: (skew: number, bestSkew: number) => boolean,
+  prefer: (key: number, bestKey: number) => boolean,
 ): boolean {
   if (best === null) return true;
-  if (candidate.skew !== best.skew) return prefer(candidate.skew, best.skew);
+  if (candidate.key !== best.key) return prefer(candidate.key, best.key);
   return candidate.match.matchId < best.match.matchId;
 }
 
-function selectClosest(
+/** Exported for the same order-independence testing reason as `decisiveMatchesOf`. */
+export function selectClosest(
   decisive: readonly LiveMatchEnvelope[],
   records: ReadonlyMap<string, CommanderRecord>,
 ): Candidate | null {
   let best: Candidate | null = null;
   for (const match of decisive) {
-    const candidate: Candidate = { match, skew: skewOf(match, records) };
-    if (betterCandidate(candidate, best, (skew, bestSkew) => Math.abs(skew) < Math.abs(bestSkew)))
-      best = candidate;
+    const skew = skewOf(match, records);
+    const candidate: Candidate = { match, skew, key: Math.abs(skew) };
+    if (betterCandidate(candidate, best, (key, bestKey) => key < bestKey)) best = candidate;
   }
   return best;
 }
@@ -145,8 +151,8 @@ function selectLargestUpset(
   for (const match of decisive) {
     const skew = skewOf(match, records);
     if (skew >= 0) continue;
-    const candidate: Candidate = { match, skew };
-    if (betterCandidate(candidate, best, (s, bestSkew) => s < bestSkew)) best = candidate;
+    const candidate: Candidate = { match, skew, key: skew };
+    if (betterCandidate(candidate, best, (key, bestKey) => key < bestKey)) best = candidate;
   }
   return best;
 }
@@ -159,8 +165,8 @@ function selectMostOneSided(
   for (const match of decisive) {
     const skew = skewOf(match, records);
     if (skew <= 0) continue;
-    const candidate: Candidate = { match, skew };
-    if (betterCandidate(candidate, best, (s, bestSkew) => s > bestSkew)) best = candidate;
+    const candidate: Candidate = { match, skew, key: skew };
+    if (betterCandidate(candidate, best, (key, bestKey) => key > bestKey)) best = candidate;
   }
   return best;
 }
@@ -266,7 +272,10 @@ async function selectPreAdaptation(
       boundary === null ||
       candidate.generation > boundary.revision.generation ||
       (candidate.generation === boundary.revision.generation &&
-        candidate.side < boundary.revision.side)
+        candidate.side < boundary.revision.side) ||
+      (candidate.generation === boundary.revision.generation &&
+        candidate.side === boundary.revision.side &&
+        candidate.revisionId < boundary.revision.revisionId)
     ) {
       boundary = { revision: candidate, supersededBy: successor.revisionId };
     }

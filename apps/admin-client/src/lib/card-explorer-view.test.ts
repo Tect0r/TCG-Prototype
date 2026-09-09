@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { cardExplorerEligibilityLabel, formatCardExplorerRate, resultRowFacts } from './card-explorer-view.js';
+import {
+  cardExplorerEligibilityLabel,
+  formatCardExplorerRate,
+  resultRowFacts,
+} from './card-explorer-view.js';
 
 describe('cardExplorerEligibilityLabel', () => {
   it('labels every eligibility status in words', () => {

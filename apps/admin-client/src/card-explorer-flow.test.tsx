@@ -39,11 +39,7 @@ async function openCardExplorer() {
   return { ...harness, service };
 }
 
-async function openCard(
-  service: ReturnType<typeof fakeService>,
-  cardId = VALID_CARD,
-  jobId = '',
-) {
+async function openCard(service: ReturnType<typeof fakeService>, cardId = VALID_CARD, jobId = '') {
   await userEvent.type(within(main()).getByLabelText('Card ID'), cardId);
   if (jobId !== '') {
     await userEvent.type(
@@ -147,9 +143,7 @@ describe('opening the Card Explorer', () => {
     );
     await userEvent.click(within(main()).getByRole('button', { name: 'Open' }));
 
-    expect(
-      await within(main()).findByText(/checked — the named job's own/),
-    ).toBeVisible();
+    expect(await within(main()).findByText(/checked — the named job's own/)).toBeVisible();
   });
 
   it('renders a populated experiment evidence row as facts', async () => {
