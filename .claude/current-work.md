@@ -3907,3 +3907,104 @@ pilot-input/full-content non-dominance edge case, both domains).
 alphabetical-by-domain block style as the surrounding exports.
 
 Next slice: **M08.27B — Version deltas.**
+
+## M08.27B — Version deltas (2026-09-09)
+
+Second slice of M08.27. Scope per the milestone file: "Compute precon/
+Commander matchup, inclusion, duration, termination, deck-family and
+surrender-pattern deltas with exact support and missing-metric behavior,"
+built on M08.27A's compatibility gate. Model/computation-only — no HTTP
+endpoint or UI wiring belongs to this slice.
+
+**Two domains stay two domains here too**, exactly as `comparison.ts` keeps
+them apart. `packages/admin-contracts/src/comparison-deltas.ts` defines
+`comparisonDeltaIdentitySchema` as a discriminated union on `domain`
+(`catalog`, keyed by two `JobId`s; `player_meta`, keyed by two
+`PlayerMetaPartition`s) rather than one shape with both fields optional, so a
+caller can no more hand a catalog table a Player Meta identity than
+`decideCatalogEnvironmentComparison` can be handed one. Nine named delta
+tables (`COMPARISON_DELTA_TABLE_NAMES`): `deck_matchups`,
+`commander_matchups`, `card_inclusion`, `duration`, `terminations`,
+`deck_family` (catalog); `surrender_turns`, `surrender_phases`,
+`surrender_state` (Player Meta). `comparisonDeltaTableSchema` carries its own
+`ComparisonDecision` rather than assuming the caller already has it, and its
+own refinements make a refused-but-populated table unspellable (`refused` →
+zero columns, zero rows) and every cell traceable to a declared column.
+
+**Deck-family is not a separate mechanism.** No table, field or constant
+named "deck family" exists anywhere else in the repository — the milestone
+names the concept, but nothing before this slice defines it. The `decks`
+table (`apps/admin-server/src/service/results.ts`'s `deckShape`) already
+carries two identities for the same row: `deckHash` (content-addressed,
+expected to move whenever compared content differs) and `deckId` (the
+caller-authored slot identity a deck source assigns once and a re-run of the
+same experiment configuration keeps stable). So "deck-family appearance or
+disappearance" is the generic keyed delta below applied to `decks` with
+`deckId` as the key instead of `deckHash` — no bespoke shape needed. `presence`
+(`baseline_only` / `candidate_only` / `both`) on every keyed table makes that
+signal explicit rather than leaving a caller to infer it from a missing row.
+
+**Surrender-pattern is scoped to structure, not exposure.**
+`live-match-surrender.ts`'s own doc comment already draws a line between
+surrender *state* (phase, combat, reaction window, pending choice —
+structural facts about the moment of surrender) and surrender *exposure*
+(which cards or event types were recently seen beforehand — a claim closer to
+cause). `surrender_turns`/`surrender_phases`/`surrender_state` diff the state
+side only; the exposure tables (`surrender_exposure_cards`,
+`surrender_exposure_events`) are left out of this slice's scope rather than
+silently folded in, since an exposure-rate delta is a materially different
+question (recency-weighted evidence, not a count) that deserves its own named
+decision if the milestone wants it.
+
+**The Player Meta `compatible`-unreachability gap carries through as-is,
+unchanged.** M08.27A already named it: `decidePlayerMetaComparison` can
+return `refused` or `deliberately_different` but never `compatible`, because
+`(contentVersion, rulesVersion)` cannot distinguish a balance-only change from
+no change at all. M08.27B computes deltas from whatever verdict the gate
+returns — it does not change which verdicts are reachable. Every
+`surrender_*` delta this build can produce is therefore `deliberately_different`
+(declared) or `refused`; that is a property of the gate, not a defect here,
+and closing it is out of scope for a slice titled "compute deltas."
+
+**No bounds on a delta, by design.** A keyed metric sourced from an
+`interval` column (a Wilson-bounded rate) is diffed on its point estimate and
+support only — `baseline<Key>`, `candidate<Key>`, `delta<Key>`,
+`baseline<Key>Games`, `candidate<Key>Games` — never a new low/high pair.
+Subtracting two independent Wilson intervals is not itself a Wilson interval,
+and fabricating one here would duplicate a statistic `@tcg/simulator` alone
+owns computing. Missing-metric behavior matches the rest of the package: a
+metric present on only one side reads `null` on the other with `0` support
+(`spreadRateOrInsufficient`'s convention), and `delta<Key>` is `null`
+whenever either side is `null`.
+
+**Bug found and fixed in this slice: the delta transport's column cap was
+wrong.** `resultColumnSchema`'s host table (`results.ts`) caps a *source*
+table at `MAX_RESULT_COLUMNS = 48`. A delta table fans each source column out
+into up to five of its own (`baseline<Key>`, `candidate<Key>`, `delta<Key>`,
+plus a support pair for an interval metric), so `cards`' 21 source columns
+(2 interval + 16 standalone + 1 key) need up to 60 delta columns — already
+past 48 before any wider table is considered. Reusing `MAX_RESULT_COLUMNS`
+for the delta schema was wrong on its face, not just tight for this one
+table; fixed by introducing a dedicated `MAX_COMPARISON_DELTA_COLUMNS = 250`
+in `comparison-deltas.ts`, exported from `index.ts` alongside
+`MAX_COMPARISON_DELTA_ROWS`.
+
+**Verification (focused, not full gate — reserved for M08.27F).**
+`npx vitest run apps/admin-server/src/service/comparison-deltas.test.ts
+packages/admin-contracts/src/comparison-deltas.test.ts` — 17/17 passing (7
+schema-level admin-contracts tests covering the discriminated union and its
+three refinements; 10 admin-server tests covering `computeCatalogComparisonDelta`
+and `computePlayerMetaComparisonDelta` across compatible/refused/
+deliberately-different verdicts, keyed presence, zero-support-as-null,
+duration-from-run-readings, and cross-source refusal). `npx tsc --noEmit -p
+packages/admin-contracts/tsconfig.json` and `npx tsc --noEmit -p
+apps/admin-server/tsconfig.json` — both clean. New exports
+(`comparisonDeltaTableNameSchema`, `comparisonDeltaIdentitySchema`,
+`comparisonDeltaTableSchema`, `ComparisonDeltaTableName`,
+`ComparisonDeltaIdentity`, `ComparisonDeltaTable`,
+`COMPARISON_DELTA_TABLE_NAMES`, `CATALOG_COMPARISON_DELTA_TABLES`,
+`PLAYER_META_COMPARISON_DELTA_TABLES`, `MAX_COMPARISON_DELTA_ROWS`,
+`MAX_COMPARISON_DELTA_COLUMNS`) added to `index.ts` in the same
+alphabetical-by-domain block style as the surrounding exports.
+
+Next slice: **M08.27C — Coverage model and page.**

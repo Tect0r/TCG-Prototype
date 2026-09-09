@@ -641,6 +641,20 @@ export {
 } from './comparison.js';
 
 export {
+  CATALOG_COMPARISON_DELTA_TABLES,
+  COMPARISON_DELTA_TABLE_NAMES,
+  MAX_COMPARISON_DELTA_COLUMNS,
+  MAX_COMPARISON_DELTA_ROWS,
+  PLAYER_META_COMPARISON_DELTA_TABLES,
+  comparisonDeltaIdentitySchema,
+  comparisonDeltaTableNameSchema,
+  comparisonDeltaTableSchema,
+  type ComparisonDeltaIdentity,
+  type ComparisonDeltaTable,
+  type ComparisonDeltaTableName,
+} from './comparison-deltas.js';
+
+export {
   ADMIN_API_ROOT,
   ADMIN_API_VERSION_SEGMENT,
   ADMIN_ENDPOINTS,

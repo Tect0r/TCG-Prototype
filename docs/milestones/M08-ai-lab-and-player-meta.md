@@ -4771,7 +4771,7 @@ math, missing metric, coverage, corrupt record and annotation-immutability tests
 - [x] **M08.27A — Comparison compatibility gate.** Define compatible versus
       refused result pairs and the explicit deliberately-different path carrying
       both hashes, versions and declared change before computing any delta.
-- [ ] **M08.27B — Version deltas.** Compute precon/Commander matchup, inclusion,
+- [x] **M08.27B — Version deltas.** Compute precon/Commander matchup, inclusion,
       duration, termination, deck-family and surrender-pattern deltas with exact
       support and missing-metric behavior.
 - [ ] **M08.27C — Coverage model and page.** Measure the whole card/mechanic
