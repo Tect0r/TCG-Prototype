@@ -632,6 +632,15 @@ export {
 } from './player-meta-results.js';
 
 export {
+  comparisonDecisionSchema,
+  declaredChangeSchema,
+  decideCatalogEnvironmentComparison,
+  decidePlayerMetaComparison,
+  type ComparisonDecision,
+  type DeclaredChange,
+} from './comparison.js';
+
+export {
   ADMIN_API_ROOT,
   ADMIN_API_VERSION_SEGMENT,
   ADMIN_ENDPOINTS,

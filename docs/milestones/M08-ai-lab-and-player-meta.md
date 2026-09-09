@@ -4768,7 +4768,7 @@ math, missing metric, coverage, corrupt record and annotation-immutability tests
 
 ### Work slices
 
-- [ ] **M08.27A — Comparison compatibility gate.** Define compatible versus
+- [x] **M08.27A — Comparison compatibility gate.** Define compatible versus
       refused result pairs and the explicit deliberately-different path carrying
       both hashes, versions and declared change before computing any delta.
 - [ ] **M08.27B — Version deltas.** Compute precon/Commander matchup, inclusion,

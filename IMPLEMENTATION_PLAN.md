@@ -223,13 +223,30 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.27A — Comparison compatibility gate.** Define compatible versus refused
-result pairs and the explicit deliberately-different path carrying both
-hashes, versions and declared change before computing any delta. Its scope
+**M08.27B — Version deltas.** Compute precon/Commander matchup, inclusion,
+duration, termination, deck-family and surrender-pattern deltas with exact
+support and missing-metric behavior, built on the M08.27A compatibility gate
+(`packages/admin-contracts/src/comparison.ts`) — call
+`decideCatalogEnvironmentComparison`/`decidePlayerMetaComparison` before
+computing any delta rather than reimplementing compatibility logic. Its scope
 and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
-This is the first slice of M08.27, unrelated to the still-unscoped 3–4 seat
-source-classification gap below.
+Note the gap M08.27A recorded rather than papering over: under today's
+Player Meta telemetry (`contentVersion` restates the coarse
+`CARD_SCHEMA_VERSION`, and `liveMatchEnvelopeSchema` has no timestamp,
+M08.25A), a `compatible` verdict is not reachable there except by way of an
+identical-partition refusal — every genuinely differing Player Meta pair is
+`refused` or `deliberately_different`. M08.27B should decide whether that is
+acceptable for this milestone's scope or whether it needs its own smallest
+fix; either way, record the decision rather than silently building past it.
+
+**M08.27A shipped 2026-09-09** — the compatibility gate itself:
+`comparisonDecisionSchema` and the two domain decision functions
+(`decideCatalogEnvironmentComparison`, `decidePlayerMetaComparison`) in the
+new `packages/admin-contracts/src/comparison.ts`. Full narrative, including
+the scope decision to cover both the catalog and Player Meta identities
+rather than only one, and the honest Player Meta reachability gap above, in
+`.claude/current-work.md`'s M08.27A entry.
 
 **M08.26 closed 2026-09-09** (`tcg-reviewer` `VERDICT: APPROVE` on the third
 pass, after two review/fix cycles on the tranche-close diff). First pass found

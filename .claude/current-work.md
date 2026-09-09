@@ -3828,3 +3828,82 @@ not on zero findings.
 With `VERDICT: APPROVE` received, M08.26F (tranche close) is complete. The
 M08.26 tranche ("Deck, Card and Match explorers") is done as of this
 commit.
+
+## M08.27A — Comparison compatibility gate (2026-09-09)
+
+First slice of M08.27 ("Version comparison, coverage and data health").
+Scope per the milestone file: "Define compatible versus refused result pairs
+and the explicit deliberately-different path carrying both hashes, versions
+and declared change before computing any delta." No delta math, coverage or
+Data Health work belongs to this slice — those are M08.27B–D.
+
+**Scope decision, recorded rather than silently assumed.** The milestone's
+own delta list (precon/Commander matchup, card inclusion, duration,
+termination, deck-family, surrender-pattern) and its "both hashes and
+versions" phrasing map onto two different identities this package already
+has, not one: `RunIdentity`'s `EnvironmentContentHashes` (catalog/AI-Lab
+results — four content hashes, no surrender concept anywhere in
+`apps/simulator/src/telemetry/schema.ts`) and `PlayerMetaPartition`
+(`source`/`contentVersion`/`rulesVersion` — no hash field at all; surrender
+evidence only exists here, in `analysis/live-match-surrender*.ts`, operating
+on `LiveMatchEnvelope`). Building the gate for only one domain would have
+left the other's delta slices (B onward) with no compatibility check to call.
+So `packages/admin-contracts/src/comparison.ts` defines one shared verdict
+type, `comparisonDecisionSchema` (`compatible | refused | deliberately_different`,
+styled after `apps/simulator/src/adaptive/promote.ts`'s
+`AdaptivePromotionDecision` discriminated union), and two domain-specific
+pure decision functions that each read their own domain's real signal:
+
+- `decideCatalogEnvironmentComparison(baseline, candidate, declaredChange?)` —
+  compares two `EnvironmentContentHashes` already matched by `environmentId`
+  by the caller. `fullContentHash` equal → `refused` (byte-identical, nothing
+  to compare). `mechanicsHash` and `pilotInputHash` both equal → `compatible`
+  (would replay and decide identically; only presentation differs, which
+  "cannot change a match" per the schema's own doc comment). Otherwise a
+  non-empty `declaredChange` → `deliberately_different`; empty/absent →
+  `refused`. Each hash is compared against its own documented meaning, never
+  derived from another — `computeEnvironmentHashes`
+  (`apps/simulator/src/content-hash.ts`) hashes `{mechanics, presentation}`
+  into `fullContentHash` but *not* `cardPilotMetadata`, so a pilot-input-only
+  change can leave `fullContentHash` unchanged while `pilotInputHash` moves;
+  the gate checks both explicitly rather than assuming one implies the other.
+- `decidePlayerMetaComparison(baseline, candidate, declaredChange?)` —
+  different `source` → always `refused`, never overridable by a declared
+  change (a population-level confound between `human_human`/`human_ai`/
+  `ai_ai`). Identical `(contentVersion, rulesVersion)` → `refused` (nothing
+  to compare). Otherwise, non-empty `declaredChange` → `deliberately_different`;
+  empty/absent → `refused`.
+
+**Honest gap, not a fabricated field.** `contentVersion` restates
+`CARD_SCHEMA_VERSION` (currently `5`) — a coarse data-format/migration
+version, not a per-balance-patch counter — and `liveMatchEnvelopeSchema` has
+no timestamp (already an open M08.25A gap). A card-balance-only change can
+leave both `contentVersion` and `rulesVersion` unmoved on either side of it,
+so `decidePlayerMetaComparison` has no signal to tell "before the patch" from
+"after the patch" apart when nothing else differs — it can only ever refuse
+an identical partition or require a human to declare a version difference
+they already know exists. The practical consequence, stated plainly in
+`comparison.ts`'s file doc comment rather than hidden: under today's Player
+Meta telemetry, a `compatible` verdict is not reachable except by way of the
+identical-partition refusal — every genuinely differing Player Meta pair this
+build can classify is `refused` or `deliberately_different`, never
+`compatible`. This is a real limitation of the current telemetry schema, not
+of the gate; closing it (a timestamp field, or a finer content signature) is
+future work for whichever slice picks it up, most plausibly alongside
+M08.27B once delta math needs to reason about partial-period data the same
+way.
+
+**Verification (focused, not full gate — reserved for M08.27F).**
+`npx vitest run packages/admin-contracts/src/comparison.test.ts` — 13/13
+passing (compatible, refused-identical, refused-cross-source,
+refused-undeclared-difference, deliberately-different-declared, and the
+pilot-input/full-content non-dominance edge case, both domains).
+`npx vitest run packages/admin-contracts/src` — full package regression,
+24 files / 551 tests passing, no existing test touched or broken.
+`npm run typecheck --workspace=@tcg/admin-contracts` — clean. New exports
+(`comparisonDecisionSchema`, `declaredChangeSchema`,
+`decideCatalogEnvironmentComparison`, `decidePlayerMetaComparison`,
+`ComparisonDecision`, `DeclaredChange`) added to `index.ts` in the same
+alphabetical-by-domain block style as the surrounding exports.
+
+Next slice: **M08.27B — Version deltas.**
