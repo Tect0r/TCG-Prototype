@@ -191,7 +191,12 @@ export class AdminService {
         this.#adaptive.readTable(payload.experimentId, payload.table, payload.page),
       playerMetaRunSummary: async (payload) => this.#playerMeta.readSummary(payload.filter),
       playerMetaResultTable: async (payload) =>
-        this.#playerMeta.readTable(payload.table, payload.filter, payload.page, payload.subjectDeckHash),
+        this.#playerMeta.readTable(
+          payload.table,
+          payload.filter,
+          payload.page,
+          payload.subjectDeckHash,
+        ),
       deckExplorerView: (payload) => this.#deckExplorer.readView(payload),
       cardExplorerView: (payload) => this.#cardExplorer.readView(payload),
       matchExplorerList: (payload) => this.#matchExplorer.readList(payload),

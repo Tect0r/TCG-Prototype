@@ -323,16 +323,16 @@ function ReplacementEvidenceView({ view }: { readonly view: CardExplorerView }) 
   if (view.replacementEvidence === null) {
     return (
       <p className="panel__note" role="note">
-        Replacement evidence: not checked — name a job ID above to cross-check this card against
-        its own controlled replacement comparisons.
+        Replacement evidence: not checked — name a job ID above to cross-check this card against its
+        own controlled replacement comparisons.
       </p>
     );
   }
   if (view.replacementEvidence.rows.length === 0) {
     return (
       <Empty>
-        Replacement evidence: checked — the named job&apos;s own <code>replacements</code> table
-        has no comparison naming this card.
+        Replacement evidence: checked — the named job&apos;s own <code>replacements</code> table has
+        no comparison naming this card.
       </Empty>
     );
   }
@@ -340,8 +340,8 @@ function ReplacementEvidenceView({ view }: { readonly view: CardExplorerView }) 
     <div className="dashboard__heatmap-wrap">
       <p className="panel__note" role="note">
         Comparative evidence from controlled replacement comparisons, never a causal claim or a
-        recommendation. A row marked insufficient data reports its comparison rather than a
-        verdict the sample cannot support.
+        recommendation. A row marked insufficient data reports its comparison rather than a verdict
+        the sample cannot support.
       </p>
       {view.replacementEvidence.rows.map((row: ResultRow, index) => (
         <FactTable
@@ -423,8 +423,8 @@ function ContributingMatchesView({
           </tr>
         </thead>
         <tbody>
-          {matches.map((entry) => (
-            <tr key={entry.matchId}>
+          {matches.map((entry, index) => (
+            <tr key={`${entry.matchId}:${entry.deckHash}:${index}`}>
               <td>{entry.matchId}</td>
               <td>{entry.deckHash}</td>
               <td>{entry.commanderId}</td>

@@ -9,7 +9,7 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `614e9432f30c27437f81dbb3195bbcb0c2530d33`  |
+| Commit           | `f1b0fc90b1c844708015b4353ab95fa9b017b542`  |
 | Working tree     | dirty — the audit includes uncommitted work |
 | Taken on         | 2026-09-10                                  |
 | Node             | v24.15.0                                    |
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 29      | 430      |
-| admin-server   | 41      | 740      |
-| packages       | 113     | 2578     |
+| admin-client   | 29      | 435      |
+| admin-server   | 45      | 785      |
+| packages       | 113     | 2585     |
 | scripts        | 4       | 69       |
 | server         | 21      | 381      |
 | simulator      | 46      | 717      |
 | web-client     | 20      | 272      |
-| **total**      | **274** | **5187** |
+| **total**      | **278** | **5244** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -106,7 +106,7 @@ The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contr
 
 | Constant                   | Value | Pins                                                                                                                                   |
 | -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_CONTRACT_VERSION`   | 14    | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `ADMIN_CONTRACT_VERSION`   | 16    | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
 | `CATALOG_DOCUMENT_VERSION` | 4     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments

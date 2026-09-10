@@ -184,9 +184,7 @@ describe('opening the Card Explorer', () => {
     const { service } = await openCardExplorer();
     service.lab.seedCardExplorer(VALID_CARD, cardExplorerViewFixture(VALID_CARD));
     await openCard(service);
-    expect(
-      await within(main()).findByText(/Replacement evidence: not checked/),
-    ).toBeVisible();
+    expect(await within(main()).findByText(/Replacement evidence: not checked/)).toBeVisible();
 
     service.lab.seedCardExplorer(
       VALID_CARD,
@@ -248,6 +246,37 @@ describe('opening the Card Explorer', () => {
 
     expect(await within(main()).findByText('replacementCardId')).toBeVisible();
     expect(within(main()).getByText('banner_keeper')).toBeVisible();
+  });
+
+  it('renders two contributing-match rows for one match when both seats hold the card, never collapsed by matchId', async () => {
+    const { service } = await openCardExplorer();
+    service.lab.seedCardExplorer(
+      VALID_CARD,
+      cardExplorerViewFixture(VALID_CARD, {
+        contributingMatches: [
+          {
+            matchId: 'match_both_seats',
+            deckHash: 'b100000000000000',
+            commanderId: 'chief_containment_scholar',
+            observedIn: LIVE_MATCH_EVIDENCE,
+            ref: { kind: 'match', matchId: 'match_both_seats' },
+          },
+          {
+            matchId: 'match_both_seats',
+            deckHash: 'ed00000000000000',
+            commanderId: 'goblin_warboss',
+            observedIn: LIVE_MATCH_EVIDENCE,
+            ref: { kind: 'match', matchId: 'match_both_seats' },
+          },
+        ],
+      }),
+    );
+
+    await openCard(service);
+
+    expect(await within(main()).findByText('chief_containment_scholar')).toBeVisible();
+    expect(within(main()).getByText('goblin_warboss')).toBeVisible();
+    expect(within(main()).getAllByText('match_both_seats')).toHaveLength(2);
   });
 
   it('shows the failure state when the read is refused as unauthorized', async () => {

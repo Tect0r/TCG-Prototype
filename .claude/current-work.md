@@ -5224,4 +5224,91 @@ checked with its evidence, alongside `M08.R1`. `IMPLEMENTATION_PLAN.md`'s
 `### Tranche A review` as the next slice; the root Status table is untouched
 (tranche-close only).
 
-Next slice: M08.R2 — Card replacement evidence (Correction Tranche A).
+## Tranche A review — tranche-close run (2026-09-10)
+
+Tranche-close for Correction Tranche A. Reviewed the complete Card and Deck
+Explorer flows against the correction brief's named risk categories: mixed
+decks, mirrored decks, both-seat card occurrence, truncated result limits, no
+data, unsupported schema data. Read every existing test file first rather
+than reimplementing: mixed decks, no data, and unsupported/missing-schema
+data already had adequate coverage from M08.R1's and M08.R2's own test
+additions. Three genuine gaps remained, closed with 3 new tests (no
+production-code changes — the implementation already behaved correctly in
+all three cases):
+
+1. `apps/admin-server/src/service/player-meta-results.test.ts` — a mirror
+   match (subject deck facing itself) scopes to exactly one deck row and one
+   self-matchup row via `subjectDeckHash`, with no duplication.
+2. `apps/admin-server/src/service/card-explorer.test.ts` — both seats of one
+   match holding the selected card produce two distinct `contributingMatches`
+   entries (same `matchId`, different `deckHash`/`commanderId`), confirming
+   `contributingOf` iterates per-seat rather than per-match.
+3. `apps/admin-server/src/service/card-explorer.test.ts` —
+   `replacementEvidence` is bounded at `CARD_EXPLORER_MAX_REPLACEMENTS` (64),
+   keeping the strongest-impact rows rather than an arbitrary sample.
+
+Running the full `npm run verify` gate (not required until tranche close)
+surfaced 6 pre-existing files from M08.R1/M08.R2 that had never been run
+through Prettier — reformatted with `npx prettier --write`
+(whitespace/markdown-emphasis only, no behavior change): both admin-client
+Card Explorer files, `admin-server/src/service/{handlers,player-meta-results}.ts`,
+and the M08 milestone file / `IMPLEMENTATION_PLAN.md` themselves.
+`npm run audit:status` regenerated `docs/status-audit.md` for the new test
+counts, later regenerated a second time with `--verify passed` to attest the
+gate that passed this session.
+
+**Opus review (`tcg-reviewer`), cycle 1.** Reviewed the complete tranche
+commit range: `a767469` (M08.R1) + `f1b0fc9` (M08.R2) + the uncommitted
+close-record diff above. Confirmed the underlying implementation correct
+(deck scoping touches only structured `Cluster.deckHashes`, never the
+truncated display string; `subjectDeckHash` defaults to `null` everywhere,
+leaving every existing caller byte-identical; `replacements` is additive
+with `.default([])`, so pre-M08.R2 summaries still read; the six reformatted
+files are formatting-only by whitespace-normalized comparison). Returned
+`VERDICT: CHANGES REQUIRED` with two findings in the close-record diff
+itself (not the shipped M08.R1/M08.R2 code):
+
+- MEDIUM: `ContributingMatchesView` (`CardExplorerDashboard.tsx`) keyed
+  rendered rows on `entry.matchId` alone — collides in exactly the both-seat
+  case the tranche's own new server test just certified, risking dropped or
+  misattributed rows on re-render.
+- LOW: the new mirror-match test's `matches: 2` assertion didn't record that
+  `matches` is a seat-appearance tally (not a distinct-match count), leaving
+  the reading looking like an off-by-one rather than documented behavior.
+
+**Fixes applied.** Keyed `ContributingMatchesView`'s rows on
+`` `${matchId}:${deckHash}:${index}` `` (index needed because matchId+deckHash
+alone still collides in an exact self-mirror match where both seats hold the
+card in identical decks); added a client test in
+`apps/admin-client/src/card-explorer-flow.test.tsx` asserting two rows render
+distinctly for one matchId. Expanded the mirror-match test's comment in
+`player-meta-results.test.ts` to state the seat-appearance-tally semantics
+explicitly, citing `deckSelection` in `live-match-aggregate.ts`. Reran all
+affected focused tests clean (card-explorer-flow.test.tsx 12/12,
+player-meta-results.test.ts 18/18, card-explorer.test.ts 13/13), then all
+four gates again: `check:consistency`, `audit:check`, and a full `npm run
+verify` (one confirmed-unrelated Windows temp-dir `ENOTEMPTY` rmdir flake in
+`apps/admin-server/src/run/queue.test.ts` on the first attempt — that file is
+untouched by this tranche and passed 23/23 twice in isolation; the full
+rerun of `verify` afterward passed with zero failures).
+
+**Opus review, cycle 2 (bounded recheck).** Reviewed only the fix delta.
+Confirmed both findings resolved and the residual observation on
+`findReplacementEvidence`'s intermediate array (accumulates before bounding,
+but the underlying `summary.json` is already bounded and the alternative
+risks discarding the strongest-impact row before sorting) needs no action.
+`VERDICT: APPROVE`, no remaining findings.
+
+**Root record.** `docs/milestones/M08-ai-lab-and-player-meta.md`'s
+`### Correction Tranche A — Explorer truthfulness` section gained a
+"Tranche A review" entry documenting the gap analysis, the reviewer findings
+and fixes, and the gate results; the section now reads "Correction Tranche A
+is complete." `IMPLEMENTATION_PLAN.md`'s "next bounded task" section
+documents the same and names `M08.R3` (Correction Tranche B) as the next
+slice, not yet started. Root Status table untouched (M08's row was already
+"Complete" with no next-tranche pointer; the correction pass is tracked only
+in the narrative section, consistent with the milestone file's own
+approach).
+
+Next slice: M08.R3 — Adaptive job contracts and catalog persistence
+(Correction Tranche B). Not started this session.

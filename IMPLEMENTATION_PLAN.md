@@ -226,7 +226,7 @@ now records the correction rather than the guess.
 **M08.R1 shipped (2026-09-10)** — the first slice of a post-hoc correction
 pass over the closed M08 tranches above, begun at the owner's direction. Fixed
 Deck Explorer's reuse of the generic Player Meta table: it was narrowing which
-*matches* to include but not which aggregate rows counted as *subject*, so
+_matches_ to include but not which aggregate rows counted as _subject_, so
 opponent decks/matchups/clusters leaked into "This deck" evidence; a
 retry-path bug also discarded the selected Adaptive Counter experiment ID.
 Added `subjectDeckHash` to `playerMetaResultTableRequestSchema` (contract
@@ -245,7 +245,7 @@ Explorer replacement evidence and the actual contract: `@tcg/simulator`'s
 run's `summary.json`, but no `ResultTableName` let a reader page through it.
 Added `'replacements'` as a 12th `RESULT_TABLE_NAMES` entry, built it in
 `buildTable`, and added `cardExplorerReplacementEvidenceSchema` as a bounded
-*array* of rows (`CARD_EXPLORER_MAX_REPLACEMENTS = 64`, not a single nullable
+_array_ of rows (`CARD_EXPLORER_MAX_REPLACEMENTS = 64`, not a single nullable
 row — one card can be the subject of several distinct comparisons per run).
 Contract version 15→16. `findReplacementEvidence` pages the named job's
 table, filters to the requested `subjectCardId`, and orders by strongest
@@ -261,10 +261,25 @@ focused tests pass; pre-existing suites across all three touched workspaces
 (675 tests) pass unchanged; typecheck and ESLint clean on
 `admin-contracts`/`admin-server`/`admin-client`. Full narrative in
 [the M08 milestone file's M08.R2 entry](docs/milestones/M08-ai-lab-and-player-meta.md#correction-tranche-a--explorer-truthfulness).
-**Next slice: `### Tranche A review`** (the correction brief's own
-tranche-close step for Correction Tranche A — revalidate the combined
-M08.R1+M08.R2 diff and run the required consistency/audit/full-verify gates
-before that tranche can be marked complete).
+**Correction Tranche A review shipped (2026-09-10)** — the tranche-close run
+for Correction Tranche A. Closed three test-coverage gaps against the
+correction brief's named risk categories (mirrored decks, both-seat card
+occurrence, replacement-evidence truncation); mixed decks, no data, and
+unsupported-schema data already had adequate coverage. `tcg-reviewer` (Opus)
+reviewed the complete tranche commit range (`a767469`+`f1b0fc9`+this
+close-record diff), found the implementation correct, and flagged two
+close-record diff issues — a duplicate React key in
+`ContributingMatchesView` for the exact both-seat case this tranche
+certified, and an underdocumented seat-appearance-tally assertion — both
+fixed and rechecked to `VERDICT: APPROVE`. All four gates pass: focused
+tests, `check:consistency`, `audit:check`, `verify` (one confirmed-unrelated
+Windows temp-dir flake on the first attempt, clean rerun). Full narrative in
+[the M08 milestone file's Tranche A review entry](docs/milestones/M08-ai-lab-and-player-meta.md#correction-tranche-a--explorer-truthfulness).
+
+**Correction Tranche A is complete.** **Next slice: `M08.R3`** (Correction
+Tranche B, Adaptive job contracts and catalog persistence — see
+`docs/milestones/M08-ai-lab-and-player-meta.md`'s correction pass section).
+Do not start it in this session.
 
 **M08 is complete (2026-09-10).** M08.28F closed the milestone: every other
 `### Checklist` in the milestone file was already checked from earlier

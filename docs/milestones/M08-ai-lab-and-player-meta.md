@@ -5127,7 +5127,7 @@ milestone file, following the normal one-slice-per-session workflow.
 - [x] **M08.R1 — Deck Explorer row-subject scoping.** `DeckExplorerPanel`
       (M08.26B) reuses the generic `player-meta-result-table` endpoint,
       filtered to one deck hash via `deckExplorerEvidenceFilter`. That filter
-      narrows which *matches* are included (either seat, per
+      narrows which _matches_ are included (either seat, per
       `matchesEitherSeat`), but `aggregatePartition` builds `deckUsage`,
       `deckMatchups` and cluster entries for **both** seats as subject — so
       the reused table surfaced the opponent's deck, matchups and cluster
@@ -5147,7 +5147,7 @@ milestone file, following the normal one-slice-per-session workflow.
       operating on the structured `Cluster.deckHashes` array, never the
       truncated display string. Opponent identity is preserved as a
       dimension on the surviving rows (`opponentDeckHash`,
-      `opponentClusterId`); only unrelated *subject* rows are dropped. A
+      `opponentClusterId`); only unrelated _subject_ rows are dropped. A
       `null` `subjectDeckHash` (every existing caller, including the general
       Player Meta Dashboard) is unaffected — `readPlayerMetaTable`/
       `PlayerMetaResultReader.readTable` pass the aggregates through
@@ -5227,3 +5227,50 @@ milestone file, following the normal one-slice-per-session workflow.
       `CardExplorerReplacementEvidence` were defined but not exported from
       `packages/admin-contracts/src/index.ts`, caught by admin-server's own
       typecheck).
+- [x] **Tranche A review — tranche-close revalidation.** Reviewed the
+      combined M08.R1+M08.R2 Card and Deck Explorer flows against the
+      correction brief's named risk categories (mixed decks, mirrored decks,
+      both-seat card occurrence, truncated result limits, no data,
+      unsupported schema data). Mixed decks, no data, and unsupported/
+      missing-schema data already had adequate coverage from M08.R1/M08.R2's
+      own tests; closed three genuine gaps with new tests, no production
+      code changes needed since the implementation already behaved
+      correctly in all three cases: a mirror match (subject deck facing
+      itself) scopes to exactly one deck row and one self-matchup row, with
+      `matches: 2` (a seat-appearance tally, documented in the test comment,
+      not a distinct-match count) and no duplication
+      (`player-meta-results.test.ts`); both seats of one match holding the
+      selected card produce two distinct `contributingMatches` entries (same
+      `matchId`, different `deckHash`/`commanderId`), never collapsed or
+      duplicated by `matchId` alone (`card-explorer.test.ts`); and
+      `replacementEvidence` is bounded at `CARD_EXPLORER_MAX_REPLACEMENTS`
+      (64), keeping the strongest-impact comparisons rather than an
+      arbitrary sample (`card-explorer.test.ts`). `tcg-reviewer` (Opus)
+      reviewed the complete tranche commit range (`a767469` M08.R1 +
+      `f1b0fc9` M08.R2 + this close-record diff) and confirmed the
+      underlying implementation correct, but flagged two issues in the
+      close-record diff itself, both fixed and rechecked in the same
+      session: a MEDIUM finding that `ContributingMatchesView`
+      (`apps/admin-client/src/components/CardExplorerDashboard.tsx`) keyed
+      its rendered rows on `entry.matchId` alone, which collides in exactly
+      the both-seat case this tranche just certified server-side — fixed by
+      keying on a `matchId`+`deckHash`+index composite and adding a client
+      test (`card-explorer-flow.test.tsx`) asserting two rows render
+      distinctly rather than collapsing; and a LOW finding that the new
+      mirror-match test's `matches: 2` assertion didn't record that
+      "Matches" is a seat-appearance tally — fixed by expanding the test's
+      comment. The second review cycle returned `VERDICT: APPROVE` with no
+      remaining findings. Six pre-existing files from M08.R1/M08.R2 that had
+      never been run through Prettier were also reformatted
+      (whitespace/markdown-emphasis only, confirmed behavior-identical by
+      the reviewer). All four required gates pass: focused tests (31
+      admin-server + 12 admin-client, all touched files),
+      `npm run check:consistency` (no inconsistency), `npm run audit:check`
+      (current, verify attested `passed`), and `npm run verify` (full clean
+      pass — one unrelated Windows temp-dir `ENOTEMPTY` flake in
+      `apps/admin-server/src/run/queue.test.ts` on the first attempt,
+      confirmed unrelated by rerunning that file alone twice clean, then a
+      full rerun of `verify` passed with zero failures).
+
+**Correction Tranche A is complete.** Next: `M08.R3` (Correction Tranche B,
+Adaptive job contracts and catalog persistence).

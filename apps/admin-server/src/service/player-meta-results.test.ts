@@ -547,6 +547,45 @@ describe('subject-scoped reads for one deck (M08.R1)', () => {
     const withNullSubject = unwrap(readPlayerMetaTable(root, 'decks', filter, bigPage, null));
     expect(withNullSubject.rows).toEqual(withoutSubject.rows);
   });
+
+  it('scopes a mirror match (subject deck facing itself) to exactly one deck row and one self-matchup row, with no duplication', () => {
+    const subjectHash = subjectDeck().deckHash;
+
+    writeMatch(
+      'match_mirror',
+      realEnvelope('match_mirror', {
+        seats: [
+          { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: subjectDeck() },
+          { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: subjectDeck() },
+        ],
+      }),
+    );
+
+    const bigPage = pageRequestSchema.parse({ limit: PAGE_SIZE_MAX });
+
+    const decks = unwrap(readPlayerMetaTable(root, 'decks', filter, bigPage, subjectHash));
+    expect(decks.rows).toHaveLength(1);
+    expect(decks.rows[0]?.deckHash).toBe(subjectHash);
+    // `matches` tallies seat appearances of the deck, not distinct match IDs
+    // (see `deckSelection` in live-match-aggregate.ts) — one mirror match
+    // legitimately reads as 2 here, since the subject deck sat both seats.
+    expect(decks.rows[0]?.matches).toBe(2);
+
+    const matchups = unwrap(
+      readPlayerMetaTable(root, 'deck_matchups', filter, bigPage, subjectHash),
+    );
+    expect(matchups.rows).toHaveLength(1);
+    expect(matchups.rows[0]).toMatchObject({
+      deckHash: subjectHash,
+      opponentDeckHash: subjectHash,
+    });
+
+    const clusters = unwrap(readPlayerMetaTable(root, 'clusters', filter, bigPage, subjectHash));
+    expect(clusters.rows.length).toBeGreaterThan(0);
+    for (const row of clusters.rows) {
+      expect(String(row.deckHashes).split(', ')).toContain(subjectHash);
+    }
+  });
 });
 
 describe('PlayerMetaResultReader (M08.25C)', () => {

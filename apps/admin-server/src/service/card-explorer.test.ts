@@ -2,7 +2,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { CARD_EXPLORER_MAX_PARTNERS, type JobId } from '@tcg/admin-contracts';
+import {
+  CARD_EXPLORER_MAX_PARTNERS,
+  CARD_EXPLORER_MAX_REPLACEMENTS,
+  type JobId,
+} from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
 import { experimentPaths } from '@tcg/simulator';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
@@ -398,6 +402,72 @@ describe('CardExplorerReader (M08.26C)', () => {
     expect(view.unavailablePartitions).toHaveLength(1);
     expect(view.unavailablePartitions[0]?.observedIn.contentVersion).toBe(999);
     expect(view.unavailablePartitions[0]?.reason.length).toBeGreaterThan(0);
+  });
+
+  it('models both seats of one match holding the selected card as two distinct contributing entries, never collapsed by matchId alone', async () => {
+    // Both decks legitimately hold `veteran_guard` (a neutral card) under two
+    // different Commanders, in the same match — the exact shape M08.R2's
+    // acceptance text calls out for `contributingOf`.
+    const blueDeck = freezeLiveMatchDeckSnapshot({
+      commanderId: 'chief_containment_scholar',
+      cards: [{ cardId: 'veteran_guard', quantity: 40 }],
+    });
+    const redDeckWithGuard = freezeLiveMatchDeckSnapshot({
+      commanderId: 'goblin_warboss',
+      cards: [{ cardId: 'veteran_guard', quantity: 40 }],
+    });
+    await writeMatch(
+      'match_both_seats',
+      envelope('match_both_seats', {
+        seats: [
+          { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: blueDeck },
+          { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: redDeckWithGuard },
+        ],
+      }),
+    );
+
+    const view = unwrap(await reader().readView({ cardId: 'veteran_guard', jobId: null }));
+
+    const matchesForThisMatch = view.contributingMatches.filter(
+      (entry) => entry.matchId === 'match_both_seats',
+    );
+    expect(matchesForThisMatch).toHaveLength(2);
+    expect(new Set(matchesForThisMatch.map((entry) => entry.commanderId))).toEqual(
+      new Set(['chief_containment_scholar', 'goblin_warboss']),
+    );
+    expect(new Set(matchesForThisMatch.map((entry) => entry.deckHash))).toEqual(
+      new Set([blueDeck.deckHash, redDeckWithGuard.deckHash]),
+    );
+
+    const decksForThisCard = view.contributingDecks.map((entry) => entry.deckHash);
+    expect(decksForThisCard).toContain(blueDeck.deckHash);
+    expect(decksForThisCard).toContain(redDeckWithGuard.deckHash);
+  });
+
+  it('bounds replacementEvidence at CARD_EXPLORER_MAX_REPLACEMENTS, keeping the strongest-impact comparisons rather than an arbitrary sample', async () => {
+    await writeMatch('match_a', envelope('match_a'));
+    const weakRows = Array.from({ length: CARD_EXPLORER_MAX_REPLACEMENTS }, (_, index) =>
+      replacementRow({
+        variantDeckHash: `variant_weak_${String(index).padStart(4, '0')}0000000000000000`,
+        impact: 0.01,
+      }),
+    );
+    const strongestVariantHash = 'variant_strongest00000000000000';
+    const jobId = await seedJob({
+      summary: cardsTableSummary({
+        replacements: [
+          ...weakRows,
+          replacementRow({ variantDeckHash: strongestVariantHash, impact: -0.9 }),
+        ],
+      }),
+    });
+
+    const view = unwrap(await reader().readView({ cardId: 'arcane_snare', jobId }));
+
+    expect(view.replacementEvidence?.rows).toHaveLength(CARD_EXPLORER_MAX_REPLACEMENTS);
+    expect(view.replacementEvidence?.rows[0]?.variantDeckHash).toBe(strongestVariantHash);
+    const keptHashes = new Set(view.replacementEvidence?.rows.map((row) => row.variantDeckHash));
+    expect(keptHashes.has(strongestVariantHash)).toBe(true);
   });
 
   it('reads experimentEvidence with a found row, stamped with the job’s own sourceClasses and environment', async () => {

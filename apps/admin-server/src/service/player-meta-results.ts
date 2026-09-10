@@ -287,7 +287,9 @@ export function readPlayerMetaTable(
 ): Result<PlayerMetaResultTable, readonly AdminError[]> {
   const open = openPlayerMeta(rootDirectory, filter);
   const aggregates =
-    subjectDeckHash === null ? open.aggregates : scopeAggregatesToDeck(open.aggregates, subjectDeckHash);
+    subjectDeckHash === null
+      ? open.aggregates
+      : scopeAggregatesToDeck(open.aggregates, subjectDeckHash);
 
   let offset = 0;
   if (page.cursor !== null) {
