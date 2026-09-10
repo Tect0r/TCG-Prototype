@@ -4814,9 +4814,11 @@ math, missing metric, coverage, corrupt record and annotation-immutability tests
       and `components/DataHealthDashboard.tsx`'s two-domain tab dashboard,
       wired into `ResultsScreen.tsx`. See `.claude/current-work.md`'s
       M08.27D model and page entries for the full scope narrative.
-- [ ] **M08.27E — Additive annotations.** Record why a candidate change was tested
+- [x] **M08.27E — Additive annotations.** Record why a candidate change was tested
       without mutating historical raw output, and link annotations to the compatible
-      or deliberately different comparison they qualify.
+      or deliberately different comparison they qualify. Scoped as contracts-plus-
+      persistence only (no HTTP endpoint, no admin-client UI), mirroring M08.27A/B.
+      See `.claude/current-work.md`'s M08.27E entry for the full scope narrative.
 - [ ] **M08.27F — Tranche close.** Revalidate refusal, delta math, missing data,
       coverage, real defects and annotation immutability through the standard
       tranche-close gate.

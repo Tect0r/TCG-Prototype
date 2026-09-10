@@ -4387,3 +4387,88 @@ protocol; this was a normal slice, not a tranche close.
 Next slice: **M08.27E — Additive annotations**, per the M08.27 tranche's
 work-slice list in `docs/milestones/M08-ai-lab-and-player-meta.md`.
 
+## M08.27E — Additive annotations (2026-09-10)
+
+Scope per the milestone file: "Record why a candidate change was tested
+without mutating historical raw output, and link annotations to the
+compatible or deliberately different comparison they qualify."
+
+**Scope decision, recorded rather than silently assumed.** Following the
+M08.27A/M08.27B precedent (both explicitly model/computation-only slices),
+this slice is contracts-plus-persistence only: no HTTP endpoint in
+`apps/admin-server/src/service`, no `apps/admin-client` UI. A comparison
+itself is never persisted — deltas are computed fresh each call — so an
+annotation is the first persisted record in this feature area, and it
+links to a comparison by identity (`ComparisonDeltaIdentity` from M08.27B:
+`catalog` job-pair or `player_meta` partition-pair) rather than to a
+stored row.
+
+**`packages/admin-contracts`:** `comparison.ts`'s inline three-branch
+`comparisonDecisionSchema` union is refactored into three individually
+exported branch schemas (`compatibleComparisonDecisionSchema`,
+`refusedComparisonDecisionSchema`, `deliberatelyDifferentComparisonDecisionSchema`)
+plus a new `annotatableComparisonDecisionSchema` — the same two non-refused
+branches, structurally excluding `refused` from the discriminated union
+rather than merely rejecting it at runtime. The milestone's own wording
+("compatible or deliberately different") makes annotating a refusal a
+non-goal: there is nothing to say about why a change was tested when the
+gate already refused to compare it. New `comparison-annotations.ts` module:
+`comparisonAnnotationDocumentSchema` (`documentVersion`, minted
+`annotationId`, `identity`, `decision: annotatableComparisonDecisionSchema`,
+`note`, `createdAt` — no `updatedAt`, since annotations are never rewritten
+once minted), a `comparisonAnnotationViewSchema` stripping the storage
+version, `comparisonAnnotationViewOf()`, and
+`comparisonAnnotationListSchema` (`items`/`total`/`unreadable`, mirroring
+`SavedChoiceList`). `identity.ts` gained its own `cmpnote` prefix and
+`comparisonAnnotationIdSchema` — its own prefix because an annotation names
+neither a batch, a job nor a saved choice. `version.ts` grew a fifth
+independent version domain, `COMPARISON_ANNOTATION_VERSION = 1`, per ADR
+0023 §7 ("a third artifact with its own lifetime is a reason to add a
+third constant, a second schema inside the same family is not") — a note
+plus a link is a new artifact, not a variant of an existing one.
+
+**`apps/admin-server`:** `CatalogStore` gained
+`createComparisonAnnotation(input)`/`listComparisonAnnotations()` — no
+update or delete method exists anywhere on the interface, the same
+additive-by-omission guarantee `saved.ts` already relies on for saved
+choices. `FileCatalogStore` implements both by mirroring
+`createSavedChoice`/`listSavedChoices` exactly: a `comparison-annotations`
+directory under `catalogRoot`, `MAX_COMPARISON_ANNOTATIONS` (500) checked
+before minting, ID minted by the store and validated, per-path locking,
+atomic write, and a listing that reads every document, counts rather than
+drops an unreadable one, and orders newest-first by `createdAt` then
+`annotationId`.
+
+**Bug caught during this slice, not from user feedback.** The private
+`isLegalId` helper in `file-catalog-store.ts` (used only when reporting an
+unreadable document, so a legitimately-shaped-but-unreadable ID can be
+surfaced instead of nulled out) enumerated `jobIdSchema`/`batchIdSchema`/
+`savedChoiceIdSchema` but had no knowledge of the new `cmpnote_` shape,
+so a well-formed comparison-annotation ID from a newer build was reported
+as `null` instead of surfaced. Caught by the "count a document from a
+newer build rather than dropping it" test failing
+(`unreadable[0]?.id` was `null`, expected `'cmpnote_fromfuture01'`). Fixed
+by adding `comparisonAnnotationIdSchema` as a fourth disjunct.
+
+**Verification (focused, not the full gate — reserved for M08.27F).**
+`npx vitest run packages/admin-contracts/src/comparison.test.ts
+packages/admin-contracts/src/comparison-annotations.test.ts
+packages/admin-contracts/src/version.test.ts` — 46/46 passing.
+`npx vitest run apps/admin-server/src/catalog/comparison-annotations.test.ts
+apps/admin-server/src/catalog/saved-choices.test.ts` — 14/14 passing,
+including a reflection-based test asserting the store exposes exactly
+`createComparisonAnnotation`/`listComparisonAnnotations` and nothing else
+matching `ComparisonAnnotation`. Regression:
+`packages/admin-contracts/src/comparison-deltas.test.ts` — 7/7,
+`packages/admin-contracts/src/identity.test.ts` — 38/38,
+`packages/admin-contracts/src/boundary.test.ts` — 19/19 (barrel
+completeness for the new module and every new `...Schema` export).
+`npx tsc --build packages/admin-contracts apps/admin-server` — clean.
+`npx eslint` clean on every file this slice touched or added.
+
+Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
+verify` — reserved for the M08.27 tranche-close run per the working
+protocol; this was a normal slice, not a tranche close.
+
+Next slice: **M08.27F — Tranche close.**
+

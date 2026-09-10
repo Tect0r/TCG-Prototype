@@ -58,16 +58,46 @@ export type DeclaredChange = z.infer<typeof declaredChangeSchema>;
  * the comparison proceeds on that record rather than on this layer's own
  * judgment.
  */
+/** The `compatible` branch on its own, so a caller can require exactly this verdict without matching a `kind` string by hand. */
+export const compatibleComparisonDecisionSchema = z.strictObject({
+  kind: z.literal('compatible'),
+  note: z.string().min(1).max(400),
+});
+/** The `refused` branch on its own. Never accepted where an annotation is required — see `annotatableComparisonDecisionSchema`. */
+export const refusedComparisonDecisionSchema = z.strictObject({
+  kind: z.literal('refused'),
+  reason: z.string().min(1).max(400),
+});
+/** The `deliberately_different` branch on its own. */
+export const deliberatelyDifferentComparisonDecisionSchema = z.strictObject({
+  kind: z.literal('deliberately_different'),
+  declaredChange: declaredChangeSchema,
+  reason: z.string().min(1).max(400),
+});
+
 export const comparisonDecisionSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('compatible'), note: z.string().min(1).max(400) }),
-  z.strictObject({ kind: z.literal('refused'), reason: z.string().min(1).max(400) }),
-  z.strictObject({
-    kind: z.literal('deliberately_different'),
-    declaredChange: declaredChangeSchema,
-    reason: z.string().min(1).max(400),
-  }),
+  compatibleComparisonDecisionSchema,
+  refusedComparisonDecisionSchema,
+  deliberatelyDifferentComparisonDecisionSchema,
 ]);
 export type ComparisonDecision = z.infer<typeof comparisonDecisionSchema>;
+
+/**
+ * The two branches of `comparisonDecisionSchema` a note may qualify (M08.27E).
+ *
+ * `refused` is deliberately excluded rather than merely discouraged: a
+ * refused comparison was never computed, so a note attached to one would
+ * describe evidence that does not exist. Building the annotation store's
+ * input type on this union — instead of on `comparisonDecisionSchema` plus a
+ * runtime check — makes "an annotation on a refused comparison" a shape that
+ * cannot be constructed, the same idiom `comparisonDeltaTableSchema` uses to
+ * keep a refused table from also carrying rows.
+ */
+export const annotatableComparisonDecisionSchema = z.discriminatedUnion('kind', [
+  compatibleComparisonDecisionSchema,
+  deliberatelyDifferentComparisonDecisionSchema,
+]);
+export type AnnotatableComparisonDecision = z.infer<typeof annotatableComparisonDecisionSchema>;
 
 /**
  * The catalog-domain gate: two environments' content hashes, already

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  annotatableComparisonDecisionSchema,
   comparisonDecisionSchema,
   decideCatalogEnvironmentComparison,
   decidePlayerMetaComparison,
@@ -51,6 +52,34 @@ describe('comparisonDecisionSchema', () => {
         reason: 'content differs',
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('annotatableComparisonDecisionSchema', () => {
+  it('accepts a compatible verdict', () => {
+    expect(
+      annotatableComparisonDecisionSchema.safeParse({ kind: 'compatible', note: 'identical' })
+        .success,
+    ).toBe(true);
+  });
+
+  it('accepts a deliberately-different verdict', () => {
+    expect(
+      annotatableComparisonDecisionSchema.safeParse({
+        kind: 'deliberately_different',
+        declaredChange: 'buffed card X',
+        reason: 'content differs',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a refused verdict, which is not one of its branches', () => {
+    // Not merely a runtime refusal: `refused` is absent from the union's
+    // discriminant literals, so a refused decision has no branch here to
+    // match, the same way `comparisonDecisionSchema` has no fourth verdict.
+    const refused = { kind: 'refused', reason: 'nothing to compare' };
+    expect(comparisonDecisionSchema.safeParse(refused).success).toBe(true);
+    expect(annotatableComparisonDecisionSchema.safeParse(refused).success).toBe(false);
   });
 });
 

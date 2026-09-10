@@ -223,11 +223,27 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.27E — Additive annotations** is the next slice: record why a
-candidate change was tested without mutating historical raw output, and
-link annotations to the compatible or deliberately different comparison
-they qualify. Scope and checklist are in
+**M08.27F — Tranche close** is the next slice: revalidate the combined
+M08.27 tranche diff, run `npm run check:consistency`, `npm run
+audit:check` and `npm run verify`, then request the `tcg-reviewer` pass
+per the working protocol. Scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
+
+**M08.27E shipped 2026-09-10** — additive comparison annotations, scoped
+as contracts-plus-persistence only (no HTTP endpoint, no admin-client UI),
+mirroring the M08.27A/B precedent. `packages/admin-contracts/src/
+comparison.ts` gained `annotatableComparisonDecisionSchema`, structurally
+excluding `refused` from the two decisions worth annotating. New
+`comparison-annotations.ts` defines the persisted document (identity +
+decision + note + `createdAt`, no `updatedAt` — never rewritten once
+minted), its view, and its list shape; `identity.ts` gained the `cmpnote`
+prefix and `version.ts` its fifth independent version domain,
+`COMPARISON_ANNOTATION_VERSION`. `apps/admin-server`'s `CatalogStore`
+gained `createComparisonAnnotation`/`listComparisonAnnotations` with no
+update or delete method anywhere on the interface — additive by omission,
+the same guarantee saved choices already rely on. Full narrative,
+including the `isLegalId` bug caught and fixed during this slice, in
+`.claude/current-work.md`'s "M08.27E" entry.
 
 **M08.27D's page shipped 2026-09-10** — two new `ADMIN_ENDPOINTS`
 (`catalog-data-health-view`, `player-meta-data-health-view`) in

@@ -2,8 +2,10 @@ import { join } from 'node:path';
 
 import {
   CATALOG_DOCUMENT_VERSION,
+  COMPARISON_ANNOTATION_VERSION,
   DIRECT_JOB_ORIGIN,
   JOB_EVENT_VERSION,
+  MAX_COMPARISON_ANNOTATIONS,
   MAX_SAVED_CHOICES,
   NO_ANNOTATIONS,
   NO_CATALOG_FILTER,
@@ -15,6 +17,8 @@ import {
   batchIdSchema,
   catalogBatchDocumentSchema,
   catalogJobDocumentSchema,
+  comparisonAnnotationDocumentSchema,
+  comparisonAnnotationIdSchema,
   fullContentHashesOf,
   isTerminalJobStatus,
   jobEventSchema,
@@ -34,6 +38,7 @@ import {
   type CatalogBatchDocument,
   type CatalogFilter,
   type CatalogJobDocument,
+  type ComparisonAnnotationDocument,
   type EntryTimestamps,
   type JobEvent,
   type JobEventLog,
@@ -68,8 +73,10 @@ import type {
   CatalogPage,
   CatalogResult,
   CatalogStore,
+  ComparisonAnnotationListing,
   JobActionInput,
   NewBatchInput,
+  NewComparisonAnnotationInput,
   NewJobInput,
   NewSavedChoiceInput,
   RecoveredJob,
@@ -168,6 +175,7 @@ export class FileCatalogStore implements CatalogStore {
   readonly #configDir: string;
   readonly #eventDir: string;
   readonly #savedChoiceDir: string;
+  readonly #comparisonAnnotationDir: string;
 
   constructor(options: FileCatalogStoreOptions) {
     this.#roots = options.roots;
@@ -179,6 +187,7 @@ export class FileCatalogStore implements CatalogStore {
     this.#configDir = join(options.roots.catalogRoot, 'configs');
     this.#eventDir = join(options.roots.catalogRoot, 'events');
     this.#savedChoiceDir = join(options.roots.catalogRoot, 'saved-choices');
+    this.#comparisonAnnotationDir = join(options.roots.catalogRoot, 'comparison-annotations');
   }
 
   /** Creates the catalog layout. Separate from the constructor because it does I/O. */
@@ -189,6 +198,7 @@ export class FileCatalogStore implements CatalogStore {
       this.#configDir,
       this.#eventDir,
       this.#savedChoiceDir,
+      this.#comparisonAnnotationDir,
     ]) {
       await ensureDirectory(directory);
     }
@@ -820,6 +830,93 @@ export class FileCatalogStore implements CatalogStore {
     return ok({ items, unreadable });
   }
 
+  /* ----------------------------------------- comparison annotations */
+
+  async createComparisonAnnotation(
+    input: NewComparisonAnnotationInput,
+  ): Promise<CatalogResult<ComparisonAnnotationDocument>> {
+    // The bound is checked before an ID is minted, for the reason
+    // `createSavedChoice` checks it first: a refused annotation leaves
+    // nothing behind at all.
+    const existing = await listDocumentNames(this.#comparisonAnnotationDir);
+    if (existing.length >= MAX_COMPARISON_ANNOTATIONS) {
+      return err([
+        adminError(
+          'admin/catalog_limit',
+          `This catalog already holds ${String(MAX_COMPARISON_ANNOTATIONS)} comparison annotations, ` +
+            'which is the most it lists. Nothing was written.',
+          { context: { limit: MAX_COMPARISON_ANNOTATIONS } },
+        ),
+      ]);
+    }
+
+    const annotationId = this.#mint('cmpnote');
+    if (!comparisonAnnotationIdSchema.safeParse(annotationId).success) {
+      return err([mintingFailed('comparison annotation')]);
+    }
+
+    const now = this.#now();
+    const path = documentPath(this.#comparisonAnnotationDir, annotationId);
+    return this.#locks.run(path, async () => {
+      if (await documentExists(path)) {
+        return err([duplicateId('comparison annotation', annotationId)]);
+      }
+      const validated = comparisonAnnotationDocumentSchema.safeParse({
+        documentVersion: COMPARISON_ANNOTATION_VERSION,
+        annotationId,
+        identity: input.identity,
+        decision: input.decision,
+        note: input.note,
+        createdAt: now,
+      });
+      if (!validated.success) return err(adminSchemaErrors(validated.error));
+      await writeJsonAtomically(path, validated.data);
+      return ok(validated.data);
+    });
+  }
+
+  /**
+   * Every recorded annotation, newest first.
+   *
+   * Newest first for the same reason `listSavedChoices` orders that way: what
+   * an administrator reviewing a comparison wants is the explanation given
+   * most recently, at the top, not a position in a cursor-stable sequence.
+   */
+  async listComparisonAnnotations(): Promise<CatalogResult<ComparisonAnnotationListing>> {
+    const items: ComparisonAnnotationDocument[] = [];
+    const unreadable: UnreadableEntry[] = [];
+
+    for (const name of await listDocumentNames(this.#comparisonAnnotationDir)) {
+      const id = name.slice(0, -'.json'.length);
+      const path = join(this.#comparisonAnnotationDir, name);
+      const read = await this.#locks.run(path, () =>
+        readDocument(path, comparisonAnnotationDocumentSchema, {
+          // An annotation that vanished mid-listing is not a missing *job*,
+          // and `admin/malformed` is the honest code for a document that was
+          // there when the directory was read and is not there now.
+          missingCode: 'admin/malformed',
+          missingMessage: 'This comparison annotation disappeared while it was being listed.',
+          versionField: 'comparisonAnnotation',
+        }),
+      );
+      if (isErr(read)) {
+        unreadable.push({ id: isLegalId(id) ? id : null, errors: read.error });
+        continue;
+      }
+      items.push(read.value);
+    }
+
+    items.sort((left, right) => {
+      const byTime = right.createdAt.localeCompare(left.createdAt);
+      // Ties broken by ID descending, so the order is total and a test that
+      // writes two annotations inside one clock tick still sees a fixed
+      // sequence.
+      return byTime !== 0 ? byTime : right.annotationId.localeCompare(left.annotationId);
+    });
+
+    return ok({ items, unreadable });
+  }
+
   /* ------------------------------------------------------- internals */
 
   #now(): string {
@@ -1060,7 +1157,8 @@ function withStatus(
 const isLegalId = (id: string): boolean =>
   jobIdSchema.safeParse(id).success ||
   batchIdSchema.safeParse(id).success ||
-  savedChoiceIdSchema.safeParse(id).success;
+  savedChoiceIdSchema.safeParse(id).success ||
+  comparisonAnnotationIdSchema.safeParse(id).success;
 
 /**
  * Why `proposed` is not a rearrangement of `current`, or `null` when it is.

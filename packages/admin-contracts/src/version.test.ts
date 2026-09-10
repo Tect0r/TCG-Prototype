@@ -5,10 +5,12 @@ import {
   ADMIN_CONTRACT_VERSION,
   ADMIN_VERSION_FIELDS,
   CATALOG_DOCUMENT_VERSION,
+  COMPARISON_ANNOTATION_VERSION,
   CURRENT_ADMIN_VERSIONS,
   JOB_EVENT_VERSION,
   SAVED_CHOICE_VERSION,
   catalogDocumentVersionSchema,
+  comparisonAnnotationVersionSchema,
   contractVersionSchema,
   isFutureVersion,
   jobEventVersionSchema,
@@ -29,6 +31,7 @@ const SCHEMAS: Readonly<Record<AdminVersionField, z.ZodType<number>>> = {
   catalogDocument: catalogDocumentVersionSchema,
   jobEvent: jobEventVersionSchema,
   savedChoice: savedChoiceVersionSchema,
+  comparisonAnnotation: comparisonAnnotationVersionSchema,
 };
 
 describe('the admin version constants', () => {
@@ -40,7 +43,7 @@ describe('the admin version constants', () => {
     }
   });
 
-  it('are exactly four, and each is owned by a named schema', () => {
+  it('are exactly five, and each is owned by a named schema', () => {
     // A version with no artifact to own it is a number nobody can disagree over.
     // The third joined in M08.2 with the artifact that needed it: the per-job
     // event log is appended to and never rewritten, so a build reads lines
@@ -49,8 +52,13 @@ describe('the admin version constants', () => {
     // saved builder form holds a preset choice and nothing about a run, so its
     // shape moves when a *builder* gains a control, and stamping it with the
     // catalog's number would make adding a knob to a form unread every batch.
+    // The fifth joined in M08.27E on the same test again: a comparison
+    // annotation holds a note and a link to the comparison it qualifies, is
+    // never rewritten once minted, and stamping it with the saved-choice
+    // number would make adding a control to a builder unread every annotation.
     expect([...ADMIN_VERSION_FIELDS].sort()).toEqual([
       'catalogDocument',
+      'comparisonAnnotation',
       'contract',
       'jobEvent',
       'savedChoice',
@@ -67,6 +75,7 @@ describe('the admin version constants', () => {
     expect(CURRENT_ADMIN_VERSIONS.catalogDocument).toBe(CATALOG_DOCUMENT_VERSION);
     expect(CURRENT_ADMIN_VERSIONS.jobEvent).toBe(JOB_EVENT_VERSION);
     expect(CURRENT_ADMIN_VERSIONS.savedChoice).toBe(SAVED_CHOICE_VERSION);
+    expect(CURRENT_ADMIN_VERSIONS.comparisonAnnotation).toBe(COMPARISON_ANNOTATION_VERSION);
   });
 
   it('are frozen, so nothing can move one at runtime', () => {

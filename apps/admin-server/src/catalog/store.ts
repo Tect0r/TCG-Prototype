@@ -1,11 +1,15 @@
 import type {
   AdminError,
   Annotations,
+  AnnotatableComparisonDecision,
   BatchAction,
   BatchId,
   CatalogBatchDocument,
   CatalogFilter,
   CatalogJobDocument,
+  ComparisonAnnotationDocument,
+  ComparisonAnnotationNote,
+  ComparisonDeltaIdentity,
   ExperimentPurpose,
   JobAction,
   JobEventCause,
@@ -197,6 +201,33 @@ export interface SavedChoiceListing {
   readonly unreadable: readonly UnreadableEntry[];
 }
 
+/**
+ * A note to attach to a comparison, as the store is asked for it (M08.27E).
+ *
+ * No ID and no timestamp, for the same reason `NewSavedChoiceInput` carries
+ * neither: minting and stamping are the store's job. `decision` is
+ * `AnnotatableComparisonDecision` rather than `ComparisonDecision` — the
+ * `refused` branch does not exist in this input's type, so there is no
+ * runtime case here that turns a refusal away; the store cannot be handed
+ * one.
+ */
+export interface NewComparisonAnnotationInput {
+  readonly identity: ComparisonDeltaIdentity;
+  readonly decision: AnnotatableComparisonDecision;
+  readonly note: ComparisonAnnotationNote;
+}
+
+/**
+ * Every annotation this build could read, and the ones it could not.
+ *
+ * Unpaginated for the reason `SavedChoiceListing` is: `MAX_COMPARISON_ANNOTATIONS`
+ * already bounds the collection, so "all of them" is a bounded answer.
+ */
+export interface ComparisonAnnotationListing {
+  readonly items: readonly ComparisonAnnotationDocument[];
+  readonly unreadable: readonly UnreadableEntry[];
+}
+
 /* ----------------------------------------------------------------- recovery */
 
 export interface RecoveredJob {
@@ -308,6 +339,21 @@ export interface CatalogStore {
   createSavedChoice(input: NewSavedChoiceInput): Promise<CatalogResult<SavedChoiceDocument>>;
   /** Every kept form, newest first, with the unreadable ones counted rather than dropped. */
   listSavedChoices(): Promise<CatalogResult<SavedChoiceListing>>;
+
+  /* comparison annotations (M08.27E) */
+  /**
+   * Records why a candidate change was tested, next to the comparison it
+   * qualifies. Always creates. There is no update and no delete — the same
+   * shape `createSavedChoice` has, for the same reason: a note that could be
+   * edited in place would need a way to say "this explanation, as it was
+   * originally given" that nothing here has, and this milestone's own
+   * requirement is that an annotation stay additive.
+   */
+  createComparisonAnnotation(
+    input: NewComparisonAnnotationInput,
+  ): Promise<CatalogResult<ComparisonAnnotationDocument>>;
+  /** Every recorded annotation, newest first, with the unreadable ones counted rather than dropped. */
+  listComparisonAnnotations(): Promise<CatalogResult<ComparisonAnnotationListing>>;
 
   /* history and recovery */
   readJobEvents(jobId: JobId): Promise<CatalogResult<JobEventLog>>;

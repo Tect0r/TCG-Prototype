@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { adminError, type AdminError } from './errors.js';
 
 /**
- * The four version domains the admin surface has, and the one rule they all
+ * The five version domains the admin surface has, and the one rule they all
  * obey: a record this build cannot read is refused with a readable message
  * rather than migrated on a guess.
  *
@@ -46,6 +46,12 @@ import { adminError, type AdminError } from './errors.js';
  *   `presetChoice` and nothing about a run, so its shape moves when a *builder*
  *   gains a control — and stamping it with the catalog's number would mean that
  *   adding a knob to a form makes every stored batch and job unreadable.
+ * - **`COMPARISON_ANNOTATION_VERSION`** is what a note an administrator attached
+ *   to a comparison was written in. M08.27E added it under the same test: an
+ *   annotation holds a `note` and a link to the comparison it qualifies, and
+ *   nothing about a run or a builder form, so its shape moves on its own
+ *   schedule — and it is never rewritten once minted, unlike every document the
+ *   other four constants describe.
  *
  * Still no separate constant for the batch document and the job document. They
  * are one family — written by one store, into one directory, in one
@@ -402,12 +408,32 @@ export const JOB_EVENT_VERSION = 1;
  */
 export const SAVED_CHOICE_VERSION = 1;
 
+/**
+ * The version stamped into a comparison annotation (M08.27E).
+ *
+ * - 1 — M08.27E, the first shape. Nothing has been written by an earlier build,
+ *   so there is no older document anywhere and no migration to write.
+ *
+ * **A fifth constant rather than a reuse of `SAVED_CHOICE_VERSION`**, and the
+ * test is the same one `JOB_EVENT_VERSION` and `SAVED_CHOICE_VERSION` were both
+ * added under: *a third artifact with its own lifetime is a reason to add a
+ * third constant; a second schema inside the same family is not.* An
+ * annotation is not a saved choice — it is never opened in a builder, it names
+ * a `ComparisonDeltaIdentity` rather than a `presetChoice`, and it is
+ * append-only where a saved choice is merely un-updatable. Stamping it with
+ * `SAVED_CHOICE_VERSION` would mean that adding a field to a builder form makes
+ * every recorded annotation unreadable, and that reading a saved choice proves
+ * an annotation is readable, which it does not.
+ */
+export const COMPARISON_ANNOTATION_VERSION = 1;
+
 /** Every version the admin surface stamps, in one object. */
 export const CURRENT_ADMIN_VERSIONS = Object.freeze({
   contract: ADMIN_CONTRACT_VERSION,
   catalogDocument: CATALOG_DOCUMENT_VERSION,
   jobEvent: JOB_EVENT_VERSION,
   savedChoice: SAVED_CHOICE_VERSION,
+  comparisonAnnotation: COMPARISON_ANNOTATION_VERSION,
 });
 
 /** Names the version domain an error is about, so a caller can say which failed. */
@@ -423,6 +449,7 @@ const VERSION_LABELS: Readonly<Record<AdminVersionField, string>> = Object.freez
   catalogDocument: 'admin catalog document',
   jobEvent: 'admin job event',
   savedChoice: 'admin saved test configuration',
+  comparisonAnnotation: 'admin comparison annotation',
 });
 
 /**
@@ -437,6 +464,7 @@ export const contractVersionSchema = z.literal(ADMIN_CONTRACT_VERSION);
 export const catalogDocumentVersionSchema = z.literal(CATALOG_DOCUMENT_VERSION);
 export const jobEventVersionSchema = z.literal(JOB_EVENT_VERSION);
 export const savedChoiceVersionSchema = z.literal(SAVED_CHOICE_VERSION);
+export const comparisonAnnotationVersionSchema = z.literal(COMPARISON_ANNOTATION_VERSION);
 
 /**
  * Whether `found` is a readable version number this build is simply too old for.

@@ -38,10 +38,12 @@ export {
   ADMIN_VERSION_FIELDS,
   ADMIN_CONTRACT_VERSION,
   CATALOG_DOCUMENT_VERSION,
+  COMPARISON_ANNOTATION_VERSION,
   CURRENT_ADMIN_VERSIONS,
   JOB_EVENT_VERSION,
   SAVED_CHOICE_VERSION,
   catalogDocumentVersionSchema,
+  comparisonAnnotationVersionSchema,
   contractVersionSchema,
   isFutureVersion,
   jobEventVersionSchema,
@@ -103,6 +105,7 @@ export {
   experimentSlugSchema,
   jobIdSchema,
   labelSchema,
+  comparisonAnnotationIdSchema,
   savedChoiceIdSchema,
   sourceClassSchema,
   sourceClassesSchema,
@@ -111,6 +114,7 @@ export {
   tagSchema,
   timestampSchema,
   type BatchId,
+  type ComparisonAnnotationId,
   type ContentHash,
   type EntryTimestamps,
   type ExperimentKind,
@@ -644,10 +648,15 @@ export {
 } from './player-meta-results.js';
 
 export {
+  annotatableComparisonDecisionSchema,
   comparisonDecisionSchema,
+  compatibleComparisonDecisionSchema,
   declaredChangeSchema,
+  deliberatelyDifferentComparisonDecisionSchema,
+  refusedComparisonDecisionSchema,
   decideCatalogEnvironmentComparison,
   decidePlayerMetaComparison,
+  type AnnotatableComparisonDecision,
   type ComparisonDecision,
   type DeclaredChange,
 } from './comparison.js';
@@ -767,3 +776,16 @@ export {
   type SavedChoiceList,
   type SavedChoiceView,
 } from './saved.js';
+
+export {
+  MAX_COMPARISON_ANNOTATIONS,
+  comparisonAnnotationDocumentSchema,
+  comparisonAnnotationListSchema,
+  comparisonAnnotationNoteSchema,
+  comparisonAnnotationViewOf,
+  comparisonAnnotationViewSchema,
+  type ComparisonAnnotationDocument,
+  type ComparisonAnnotationList,
+  type ComparisonAnnotationNote,
+  type ComparisonAnnotationView,
+} from './comparison-annotations.js';

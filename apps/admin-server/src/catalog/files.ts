@@ -277,6 +277,7 @@ const VERSION_FIELD_NAMES: Readonly<Record<AdminVersionField, string>> = Object.
   catalogDocument: 'documentVersion',
   jobEvent: 'eventVersion',
   savedChoice: 'documentVersion',
+  comparisonAnnotation: 'documentVersion',
 });
 
 /**

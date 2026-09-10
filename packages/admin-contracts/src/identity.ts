@@ -46,6 +46,7 @@ function prefixedId(prefix: string, label: string) {
 export const BATCH_ID_PREFIX = 'batch';
 export const JOB_ID_PREFIX = 'job';
 export const SAVED_CHOICE_ID_PREFIX = 'saved';
+export const COMPARISON_ANNOTATION_ID_PREFIX = 'cmpnote';
 
 /** A test batch: the ordered collection of jobs an administrator chose. */
 export const batchIdSchema = prefixedId(BATCH_ID_PREFIX, 'test batch');
@@ -65,6 +66,21 @@ export type JobId = z.infer<typeof jobIdSchema>;
  */
 export const savedChoiceIdSchema = prefixedId(SAVED_CHOICE_ID_PREFIX, 'saved test configuration');
 export type SavedChoiceId = z.infer<typeof savedChoiceIdSchema>;
+
+/**
+ * A note an administrator attached to a comparison (M08.27E).
+ *
+ * Its own prefix, because it names neither a batch, a job nor a saved choice:
+ * it records why a candidate was judged compatible or deliberately different,
+ * and it can qualify a catalog job-pair or a player-meta partition-pair alike.
+ * The identity carries no lifecycle of its own — there is no method anywhere
+ * in `CatalogStore` that updates or removes one once minted.
+ */
+export const comparisonAnnotationIdSchema = prefixedId(
+  COMPARISON_ANNOTATION_ID_PREFIX,
+  'comparison annotation',
+);
+export type ComparisonAnnotationId = z.infer<typeof comparisonAnnotationIdSchema>;
 
 /**
  * The alphabet an *authored* name uses: lowercase, starting with a letter, with
