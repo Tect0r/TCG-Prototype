@@ -162,6 +162,30 @@ function cardsTableSummary(overrides: Record<string, unknown> = {}): Record<stri
   };
 }
 
+function replacementRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    subjectCardId: 'arcane_snare',
+    replacementCardId: 'banner_keeper',
+    baseDeckHash: 'base0000000000000000000000000000',
+    variantDeckHash: 'variant0000000000000000000000000',
+    baseMatches: 20,
+    variantMatches: 20,
+    direction: 'removal',
+    removedCards: [{ cardId: 'arcane_snare', quantity: 1 }],
+    addedCards: [{ cardId: 'banner_keeper', quantity: 1 }],
+    selectionMethod: 'closest_curve_match',
+    impact: 0.08,
+    low: 0.01,
+    high: 0.15,
+    effectSize: 0.2,
+    effectSizeLabel: 'small',
+    pairedGames: 18,
+    confounds: [],
+    insufficientData: false,
+    ...overrides,
+  };
+}
+
 function rate(point: number, total: number): Record<string, number> {
   return {
     point,
@@ -399,6 +423,55 @@ describe('CardExplorerReader (M08.26C)', () => {
 
     expect(view.experimentEvidence).not.toBeNull();
     expect(view.experimentEvidence?.row).toBeNull();
+  });
+
+  it('reads replacementEvidence with a matching row, stamped with the job’s own sourceClasses and environment', async () => {
+    await writeMatch('match_a', envelope('match_a'));
+    const jobId = await seedJob({
+      summary: cardsTableSummary({ replacements: [replacementRow()] }),
+    });
+
+    const view = unwrap(await reader().readView({ cardId: 'arcane_snare', jobId }));
+
+    expect(view.replacementEvidence?.jobId).toBe(jobId);
+    expect(view.replacementEvidence?.rows).toHaveLength(1);
+    expect(view.replacementEvidence?.rows[0]?.replacementCardId).toBe('banner_keeper');
+    expect(view.replacementEvidence?.observedIn).toEqual({
+      realm: 'experiment',
+      sourceClasses: ['ai', 'precon'],
+      environment: { environmentId: 'baseline', hashes: testIdentity().environments[0]?.hashes },
+    });
+  });
+
+  it('reports replacementEvidence with rows: [] when the named job’s replacements table has no comparison naming this card — checked, not found', async () => {
+    await writeMatch('match_a', envelope('match_a'));
+    const jobId = await seedJob({
+      summary: cardsTableSummary({ replacements: [replacementRow()] }),
+    });
+
+    const view = unwrap(await reader().readView({ cardId: 'no_such_card', jobId }));
+
+    expect(view.replacementEvidence).not.toBeNull();
+    expect(view.replacementEvidence?.rows).toEqual([]);
+  });
+
+  it('orders replacementEvidence rows by strongest paired impact first', async () => {
+    await writeMatch('match_a', envelope('match_a'));
+    const jobId = await seedJob({
+      summary: cardsTableSummary({
+        replacements: [
+          replacementRow({ variantDeckHash: 'variant_weak00000000000000000000', impact: 0.02 }),
+          replacementRow({ variantDeckHash: 'variant_strong00000000000000000', impact: -0.2 }),
+        ],
+      }),
+    });
+
+    const view = unwrap(await reader().readView({ cardId: 'arcane_snare', jobId }));
+
+    expect(view.replacementEvidence?.rows.map((row) => row.variantDeckHash)).toEqual([
+      'variant_strong00000000000000000',
+      'variant_weak00000000000000000000',
+    ]);
   });
 
   it('fails the whole request when the named job cannot be read, rather than reporting experimentEvidence null or row null', async () => {

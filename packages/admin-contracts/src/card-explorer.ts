@@ -53,20 +53,47 @@ import {
  * applies to `knownRevisions`, extended to a single-object answer here rather
  * than an array.
  *
- * ## Replacements: named by the milestone, not built by this slice
+ * ## Replacement evidence (M08.R2)
  *
- * `apps/simulator/src/analysis/replacement.ts`/`counters.ts` compute
- * replacement-impact and counter-breadth evidence, but only as Markdown prose
- * assembled by `reporting/report.ts` — there is no structured, queryable,
- * persisted form anywhere a result reader could page through, unlike every
- * other evidence category this file draws from. Wiring that as structured
- * data across the schema/engine/reporting boundary is materially larger than
- * one work slice and was not asked for by name anywhere else in M08.26.
- * Per `CLAUDE.md`'s "do not silently invent unresolved rules," this is
- * recorded as a deliberately deferred gap rather than a shape invented to
- * fill it — `cardExplorerViewSchema` carries no `replacements` field, and
- * `.claude/current-work.md`'s M08.26C entry names this as the exact next
- * question for whichever slice picks it up.
+ * `apps/simulator/src/analysis/replacement.ts` already computes controlled
+ * replacement-impact comparisons (`ReplacementImpact`) and `experiment.ts`
+ * already writes every one of them into a run's `summary.json`, structured
+ * and `.strictObject`-validated, under a top-level `replacements` key — the
+ * gap M08.26C's own doc comment recorded was never that this evidence was
+ * unstructured, only that no `ResultTableName` let a reader page through it.
+ * M08.R2 closes that gap the same way M08.26C closed the draw/play/dead-hand
+ * one: `'replacements'` joined `RESULT_TABLE_NAMES` (`./results.ts`), and
+ * `cardExplorerReplacementEvidenceSchema.rows` reuses `resultRowSchema`
+ * verbatim, filtered to `subjectCardId === cardId`, for the same reason
+ * `experimentEvidence.row` does — a second, parallel restatement of
+ * `ReplacementImpact`'s seventeen fields is exactly the drift this package's
+ * own rule (see file header) forbids.
+ *
+ * Unlike `experimentEvidence`, this is a bounded *array* of rows rather than
+ * one nullable row: one subject card can be the removal/insertion target of
+ * several distinct base/variant deck comparisons in the same run (different
+ * decks, different replacement cards, different directions), and collapsing
+ * them to a single row would silently keep only one. `.observedIn` is the
+ * same `experimentExplorerEvidenceSchema` `experimentEvidence` already uses.
+ *
+ * This is comparative, observational-of-a-controlled-experiment evidence,
+ * never a causal claim and never a recommendation — `replacementImpact()`'s
+ * own `insufficientData` flag (carried in each row) is the client's signal
+ * to say so rather than to imply a verdict the sample cannot support.
+ *
+ * `null` versus `rows: []` follows the same "checked, not found" discipline
+ * `experimentEvidence` established: `replacementEvidence` is `null` when no
+ * `jobId` was named (nothing was checked), and a present value with
+ * `rows: []` when the named job's `'replacements'` table has no row naming
+ * this card — a run that never compared this specific card is a real result,
+ * not a failed read.
+ *
+ * One match contributing both seats' worth of the same card was the
+ * collapsing failure mode this slice's acceptance text named explicitly —
+ * it does not arise here, because a `'replacements'` row is never a
+ * per-match or per-seat reading at all (only aggregate `baseMatches`/
+ * `variantMatches`/`pairedGames` counts over the whole paired comparison),
+ * so there is no match/seat pair for two rows to collapse into one.
  *
  * ## Contributing decks and matches
  *
@@ -169,6 +196,24 @@ export const cardExplorerExperimentEvidenceSchema = z.strictObject({
 });
 export type CardExplorerExperimentEvidence = z.infer<typeof cardExplorerExperimentEvidenceSchema>;
 
+/* ------------------------------------------------------ replacement evidence */
+
+/** Most replacement-comparison rows one card's view carries. See file doc comment on why this is an array, unlike `experimentEvidence`. */
+export const CARD_EXPLORER_MAX_REPLACEMENTS = 64;
+
+/**
+ * Controlled replacement-comparison evidence for this card, read from one
+ * named job's `'replacements'` result table. See file doc comment for why
+ * `rows` reuses `resultRowSchema` rather than restating `ReplacementImpact`'s
+ * fields, and why it is a bounded array rather than one nullable row.
+ */
+export const cardExplorerReplacementEvidenceSchema = z.strictObject({
+  jobId: jobIdSchema,
+  rows: z.array(resultRowSchema).max(CARD_EXPLORER_MAX_REPLACEMENTS),
+  observedIn: experimentExplorerEvidenceSchema,
+});
+export type CardExplorerReplacementEvidence = z.infer<typeof cardExplorerReplacementEvidenceSchema>;
+
 /* ----------------------------------------------------- contributing decks/matches */
 
 export const cardExplorerContributingDeckSchema = z.strictObject({
@@ -203,6 +248,8 @@ export const cardExplorerViewSchema = z.strictObject({
     .max(CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS),
   /** `null` versus a present-but-possibly-`row: null` value — see file doc comment. */
   experimentEvidence: cardExplorerExperimentEvidenceSchema.nullable(),
+  /** `null` versus a present-but-possibly-`rows: []` value — see file doc comment. */
+  replacementEvidence: cardExplorerReplacementEvidenceSchema.nullable(),
   contributingDecks: z
     .array(cardExplorerContributingDeckSchema)
     .max(CARD_EXPLORER_MAX_CONTRIBUTING_DECKS),

@@ -1,4 +1,5 @@
 import {
+  MAX_CELL_LENGTH,
   PRESET_REGISTRY,
   adminError,
   resultSummarySchema,
@@ -264,6 +265,43 @@ const displacementShape = z.object({
 });
 export type SummaryDisplacement = z.infer<typeof displacementShape>;
 
+/** A `variantCardChangeSchema` entry (`@tcg/simulator`'s `VariantCardChange`), read loosely for the same reason as `flagShape`. */
+const variantCardChangeShape = z.object({
+  cardId: z.string(),
+  quantity: z.number(),
+});
+
+/**
+ * M08.R2 — a `summary.json` top-level `replacements` entry (`@tcg/simulator`'s
+ * `ReplacementImpact`, `analysis/replacement.ts`), read loosely for the same
+ * reason as `flagShape`: a run written before this field existed simply has
+ * none, so `.default([])` on the array rather than a refusal. `paired` is
+ * dropped rather than mirrored — its own schema is `z.unknown()` even in the
+ * simulator, so it carries nothing this table's own `impact`/`low`/`high`/
+ * `pairedGames`/`insufficientData` fields do not already state exactly.
+ */
+const replacementShape = z.object({
+  subjectCardId: z.string(),
+  replacementCardId: z.string().nullable(),
+  baseDeckHash: z.string(),
+  variantDeckHash: z.string(),
+  baseMatches: z.number(),
+  variantMatches: z.number(),
+  direction: z.string(),
+  removedCards: z.array(variantCardChangeShape),
+  addedCards: z.array(variantCardChangeShape),
+  selectionMethod: z.string(),
+  impact: z.number(),
+  low: z.number(),
+  high: z.number(),
+  effectSize: z.number(),
+  effectSizeLabel: z.string(),
+  pairedGames: z.number(),
+  confounds: z.array(z.string()),
+  insufficientData: z.boolean(),
+});
+export type SummaryReplacement = z.infer<typeof replacementShape>;
+
 const summaryFileSchema = z.object({
   schemaVersion: z.number(),
   configHash: z.string(),
@@ -279,6 +317,7 @@ const summaryFileSchema = z.object({
   searchHistory: z.array(generationReportShape).default([]),
   flags: z.array(flagShape).default([]),
   displacement: z.array(displacementShape).default([]),
+  replacements: z.array(replacementShape).default([]),
 });
 type SummaryFile = z.infer<typeof summaryFileSchema>;
 
@@ -342,6 +381,7 @@ function spreadRateOrInsufficient(key: string, rate: Proportion): ResultRow {
 
 function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
   const { run, decks, matchups, cards, commanders, commanderMatchups } = summary.aggregate;
+  const { replacements } = summary;
   switch (table) {
     case 'decks':
       return {
@@ -586,6 +626,57 @@ function buildTable(table: ResultTableName, summary: SummaryFile): BuiltTable {
           commanderCount: entry.commanderCount,
           meanPairwiseDistance: entry.meanPairwiseDistance,
           archiveSize: entry.archiveSize,
+        })),
+      };
+
+    case 'replacements':
+      // One row per controlled comparison, never per match or seat — see
+      // `RESULT_TABLE_NAMES`'s own doc comment on why the seat-collapsing
+      // risk other explorer tables guard against does not apply here.
+      return {
+        columns: [
+          column('subjectCardId', 'Subject card', 'identifier'),
+          column('replacementCardId', 'Replacement card', 'identifier'),
+          column('baseDeckHash', 'Base deck', 'identifier'),
+          column('variantDeckHash', 'Variant deck', 'identifier'),
+          column('direction', 'Direction', 'text'),
+          column('baseMatches', 'Base games', 'count'),
+          column('variantMatches', 'Variant games', 'count'),
+          column('removedCards', 'Removed', 'text'),
+          column('addedCards', 'Added', 'text'),
+          column('selectionMethod', 'Selection method', 'text'),
+          interval('impact', 'Paired win-rate impact'),
+          column('pairedGames', 'Paired games', 'count'),
+          column('effectSize', 'Effect size', 'number'),
+          column('effectSizeLabel', 'Effect size label', 'text'),
+          column('confounds', 'Confounds', 'text'),
+          column('insufficientData', 'Insufficient data', 'flag'),
+        ],
+        rows: replacements.map((entry) => ({
+          subjectCardId: entry.subjectCardId,
+          replacementCardId: entry.replacementCardId,
+          baseDeckHash: entry.baseDeckHash,
+          variantDeckHash: entry.variantDeckHash,
+          direction: entry.direction,
+          baseMatches: entry.baseMatches,
+          variantMatches: entry.variantMatches,
+          removedCards: entry.removedCards
+            .map((change) => `${change.cardId} x${change.quantity}`)
+            .join(', ')
+            .slice(0, MAX_CELL_LENGTH),
+          addedCards: entry.addedCards
+            .map((change) => `${change.cardId} x${change.quantity}`)
+            .join(', ')
+            .slice(0, MAX_CELL_LENGTH),
+          selectionMethod: entry.selectionMethod,
+          impact: entry.impact,
+          impactLow: entry.low,
+          impactHigh: entry.high,
+          pairedGames: entry.pairedGames,
+          effectSize: entry.effectSize,
+          effectSizeLabel: entry.effectSizeLabel,
+          confounds: entry.confounds.join('; ').slice(0, MAX_CELL_LENGTH),
+          insufficientData: entry.insufficientData,
         })),
       };
   }
@@ -1022,6 +1113,7 @@ function rowCounts(summary: SummaryFile): { table: ResultTableName; rows: number
     'commander_matchups',
     'commander_generations',
     'search_generations',
+    'replacements',
   ];
   return names.map((table) => ({ table, rows: buildTable(table, summary).rows.length }));
 }

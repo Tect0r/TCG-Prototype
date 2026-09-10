@@ -333,8 +333,25 @@ import { adminError, type AdminError } from './errors.js';
  *   one deck as subject, so a client using this address for a per-deck view
  *   would keep receiving every opponent's own row alongside it, however many
  *   more matches were played. That is what a contract version is for saying.
+ * - 16 (M08.R2) — `result-table` gained a twelfth name, `replacements`,
+ *   exposing `@tcg/simulator`'s controlled replacement-impact comparisons
+ *   (`ReplacementImpact`) that `experiment.ts` already wrote into every run's
+ *   `summary.json`, structured, but that no `ResultTableName` let a reader
+ *   page through — the exact gap the M08.26C Card Explorer record named as
+ *   deferred. `card-explorer-view` correspondingly gained
+ *   `replacementEvidence`, a bounded array of that table's own rows filtered
+ *   to the requested card, following the same `null`-versus-checked-and-empty
+ *   discipline `experimentEvidence` already established, present only when a
+ *   `jobId` is named.
+ *
+ *   A build speaking 15 could read every other result table and every other
+ *   Card Explorer field, and could not reach the `replacements` table by name
+ *   or see any replacement-comparison evidence on a Card Explorer view no
+ *   matter how many controlled comparisons a named job's run had recorded —
+ *   the milestone's "partners and replacements" line would stay half true.
+ *   That is what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 15;
+export const ADMIN_CONTRACT_VERSION = 16;
 
 /**
  * The version stamped into a persisted catalog document.

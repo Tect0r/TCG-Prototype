@@ -142,6 +142,18 @@ export type ResultRow = z.infer<typeof resultRowSchema>;
  * population each Commander held — and the second is one row per generation
  * of the run's own diversity and convergence readings. Neither exists for a
  * batch, comparison or robustness run, whose `searchHistory` is empty.
+ *
+ * `replacements` arrived with M08.R2, exposing `@tcg/simulator`'s own
+ * `ReplacementImpact[]` (`analysis/replacement.ts`) — already computed,
+ * already `.strictObject`-validated and already written into every run's
+ * `summary.json` under the top-level `replacements` key, but with no
+ * `ResultTableName` a reader could page through before this version. One row
+ * is one controlled replacement comparison (a subject card removed or
+ * inserted, paired against the deck's unmodified arm), never a per-match or
+ * per-seat row, so the "two seats of one match both hold the subject card"
+ * collapsing risk `card-explorer.ts`'s own doc comment discusses for its
+ * *contributing*-match rows does not arise here. Empty for any run whose
+ * `kind` never requested a replacement comparison.
  */
 export const RESULT_TABLE_NAMES = [
   'decks',
@@ -155,6 +167,7 @@ export const RESULT_TABLE_NAMES = [
   'commander_matchups',
   'commander_generations',
   'search_generations',
+  'replacements',
 ] as const;
 export const resultTableNameSchema = z.enum(RESULT_TABLE_NAMES);
 export type ResultTableName = z.infer<typeof resultTableNameSchema>;

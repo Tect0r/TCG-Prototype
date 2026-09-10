@@ -14,8 +14,9 @@ import {
 /**
  * The Card Explorer panel (M08.26C): an entry form for a card ID (and an
  * optional job ID), eligible-inclusion and partner evidence across live
- * matches, the `experimentEvidence` `null`/checked-empty/populated three-way
- * split, and contributing decks/matches.
+ * matches, the `experimentEvidence` and `replacementEvidence` (M08.R2)
+ * `null`/checked-empty/populated three-way splits, and contributing
+ * decks/matches.
  */
 
 const main = () => screen.getByRole('main');
@@ -113,7 +114,9 @@ describe('opening the Card Explorer', () => {
     const { service } = await openCardExplorer();
     service.lab.seedCardExplorer(VALID_CARD, cardExplorerViewFixture(VALID_CARD));
     await openCard(service);
-    expect(await within(main()).findByText(/not checked/)).toBeVisible();
+    expect(
+      await within(main()).findByText(/Draw\/play\/dead-hand evidence: not checked/),
+    ).toBeVisible();
 
     service.lab.seedCardExplorer(
       VALID_CARD,
@@ -175,6 +178,76 @@ describe('opening the Card Explorer', () => {
 
     expect(await within(main()).findByText('deadInHandShare')).toBeVisible();
     expect(within(main()).getByText('0.25')).toBeVisible();
+  });
+
+  it('distinguishes replacement evidence not checked from checked-and-empty', async () => {
+    const { service } = await openCardExplorer();
+    service.lab.seedCardExplorer(VALID_CARD, cardExplorerViewFixture(VALID_CARD));
+    await openCard(service);
+    expect(
+      await within(main()).findByText(/Replacement evidence: not checked/),
+    ).toBeVisible();
+
+    service.lab.seedCardExplorer(
+      VALID_CARD,
+      cardExplorerViewFixture(VALID_CARD, {
+        replacementEvidence: {
+          jobId: VALID_JOB,
+          rows: [],
+          observedIn: {
+            realm: 'experiment',
+            sourceClasses: ['ai'],
+            environment: {
+              environmentId: 'baseline',
+              hashes: {
+                mechanicsHash: '1111111111111111',
+                pilotInputHash: '2222222222222222',
+                presentationHash: '3333333333333333',
+                fullContentHash: '4444444444444444',
+              },
+            },
+          },
+        },
+      }),
+    );
+    await userEvent.type(
+      within(main()).getByLabelText('Job ID (optional, for draw/play/dead-hand evidence)'),
+      VALID_JOB,
+    );
+    await userEvent.click(within(main()).getByRole('button', { name: 'Open' }));
+
+    expect(await within(main()).findByText(/no comparison naming this card/)).toBeVisible();
+  });
+
+  it('renders a populated replacement evidence row as facts', async () => {
+    const { service } = await openCardExplorer();
+    service.lab.seedCardExplorer(
+      VALID_CARD,
+      cardExplorerViewFixture(VALID_CARD, {
+        replacementEvidence: {
+          jobId: VALID_JOB,
+          rows: [{ subjectCardId: VALID_CARD, replacementCardId: 'banner_keeper', impact: 0.08 }],
+          observedIn: {
+            realm: 'experiment',
+            sourceClasses: ['ai'],
+            environment: {
+              environmentId: 'baseline',
+              hashes: {
+                mechanicsHash: '1111111111111111',
+                pilotInputHash: '2222222222222222',
+                presentationHash: '3333333333333333',
+                fullContentHash: '4444444444444444',
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    await openCard(service, VALID_CARD, VALID_JOB);
+
+    expect(await within(main()).findByText('replacementCardId')).toBeVisible();
+    expect(within(main()).getByText('banner_keeper')).toBeVisible();
   });
 
   it('shows the failure state when the read is refused as unauthorized', async () => {

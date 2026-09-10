@@ -5163,3 +5163,67 @@ milestone file, following the normal one-slice-per-session workflow.
       pre-existing `player-meta-results`/`requests`/`deck-explorer-flow`
       suites (32 tests) pass unchanged. Typecheck and ESLint clean on
       `admin-contracts`/`admin-server`/`admin-client`.
+- [x] **M08.R2 — Card replacement evidence.** The reviewed M08 record described
+      Card Explorer replacement evidence in prose but left it without a
+      structured query/result contract or rendered result. `@tcg/simulator`'s
+      `ReplacementImpact[]` (`analysis/replacement.ts`) was already computed
+      and already written into every run's `summary.json` under a top-level
+      `replacements` key, but no `ResultTableName` let a reader page through
+      it and the Card Explorer never asked for it. Closed the gap rather than
+      building new evidence: added `'replacements'` as a 12th
+      `RESULT_TABLE_NAMES` entry (`packages/admin-contracts/src/results.ts`)
+      with 16 columns (subject/replacement card, base/variant deck hashes,
+      direction, base/variant match counts, removed/added card-change lists
+      joined to bounded cell text, selection method, paired win-rate impact
+      as an interval, paired games, effect size and label, confounds, and an
+      `insufficientData` flag), built in
+      `apps/admin-server/src/service/results.ts`'s `buildTable` from a new
+      top-level `replacements` field on `summaryFileSchema` (defaulting to
+      `[]` for any run whose `kind` never requested a replacement
+      comparison). Added `cardExplorerReplacementEvidenceSchema`
+      (`packages/admin-contracts/src/card-explorer.ts`) as a bounded
+      **array** of rows (`CARD_EXPLORER_MAX_REPLACEMENTS = 64`), not a single
+      nullable row like `experimentEvidence` — one card can be the subject of
+      several distinct comparisons (different base/variant decks, different
+      replacement cards, different directions) in one run, and collapsing to
+      one row would silently drop information. `replacementEvidence` joined
+      `cardExplorerViewSchema`; bumped `ADMIN_CONTRACT_VERSION` 15→16.
+      Server-side, `findReplacementEvidence`
+      (`apps/admin-server/src/service/card-explorer.ts`) pages the named
+      job's `'replacements'` table, keeps every row whose `subjectCardId`
+      matches the requested card, and orders by strongest paired impact
+      (`Math.abs(impact)` descending) with a deterministic code-unit tiebreak
+      on replacement card/base deck/variant deck — never `localeCompare`.
+      `replacementEvidence` stays `null` when no job is named, distinct from
+      a present value with `rows: []` when a job was checked and found
+      nothing, mirroring `experimentEvidence`'s `row: null` discipline. On
+      the acceptance concern that one match could contribute both seats
+      containing the selected card and get collapsed or duplicated by
+      matchId alone: this cannot arise here by construction — a
+      `'replacements'` row is an aggregate per-comparison statistic
+      (`baseMatches`/`variantMatches`/`pairedGames` counts), never a
+      per-match or per-seat row, so there is no matchId to collapse on; this
+      reasoning is documented in three places (`results.ts` and
+      `card-explorer.ts` doc comments in `admin-contracts`, and the
+      `buildTable` `case 'replacements':` comment in `admin-server`) rather
+      than left implicit. Client-side, `CardExplorerDashboard.tsx` renders
+      the same three-way split as `experimentEvidence` (not checked /
+      checked-and-empty / populated facts) with an explicit disclaimer that
+      the result is comparative evidence, never a causal claim or a
+      recommendation. 12 new focused tests pass: 3 admin-server reader tests
+      (found row stamped with the job's own sourceClasses/environment,
+      checked-and-empty when no comparison names the card, strongest-impact
+      ordering) + 2 admin-server `buildTable` tests for the new table +
+      1 admin-server row-count test updated for the 12th table + 3
+      admin-contracts schema tests (empty/populated rows, refuses a
+      live-match-realm `observedIn`, refuses an over-bound rows array) + 1
+      admin-contracts `null`-vs-`rows:[]` fixture test + 1 admin-contracts
+      `RESULT_TABLE_NAMES` list test + 2 admin-client flow tests (three-way
+      split, populated row renders as facts). Pre-existing suites in all
+      three touched workspaces (675 tests total across `admin-contracts`,
+      `admin-server`, `admin-client`) pass unchanged. Typecheck and ESLint
+      clean on `admin-contracts`/`admin-server`/`admin-client` (also fixed a
+      missing barrel re-export: `CARD_EXPLORER_MAX_REPLACEMENTS` and
+      `CardExplorerReplacementEvidence` were defined but not exported from
+      `packages/admin-contracts/src/index.ts`, caught by admin-server's own
+      typecheck).

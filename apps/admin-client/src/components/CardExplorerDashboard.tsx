@@ -12,6 +12,7 @@ import {
   type CardExplorerView,
   type ExplorerRef,
   type JobId,
+  type ResultRow,
 } from '@tcg/admin-contracts';
 
 import {
@@ -30,11 +31,14 @@ import { FactTable } from './FactTable.js';
  * named job when a `jobId` is given.
  *
  * Entered the same way the Deck Explorer is — by typing an identifier — a
- * card read has neither a `JobId` nor a catalog row to select from. See
- * `card-explorer.ts` (`@tcg/admin-contracts`) for why replacements are not
- * part of this view: that evidence has no structured, queryable form
- * anywhere yet, and is recorded as the deliberately deferred next question
- * rather than invented here.
+ * card read has neither a `JobId` nor a catalog row to select from.
+ *
+ * `replacementEvidence` (M08.R2) renders the same three-way split
+ * `experimentEvidence` established — not checked / checked-and-empty /
+ * populated — except populated is a list of rows rather than one, since a
+ * card can be the subject of several distinct replacement comparisons in one
+ * run. See `card-explorer.ts` (`@tcg/admin-contracts`) for why this is
+ * comparative evidence only, never a recommendation.
  *
  * Cross-navigation (M08.26E): `pendingRef` is a `CardExplorerRef` queued by
  * another explorer panel's "Open in Card Explorer" button; consuming it opens
@@ -170,6 +174,7 @@ function CardExplorerView({
       <PartnersView partners={view.partners} onNavigate={onNavigate} />
       <UnavailablePartitionsView partitions={view.unavailablePartitions} />
       <ExperimentEvidenceView view={view} />
+      <ReplacementEvidenceView view={view} />
       <ContributingDecksView decks={view.contributingDecks} onNavigate={onNavigate} />
       <ContributingMatchesView matches={view.contributingMatches} onNavigate={onNavigate} />
     </>
@@ -311,6 +316,41 @@ function ExperimentEvidenceView({ view }: { readonly view: CardExplorerView }) {
       caption="Draw/play/dead-hand evidence"
       facts={resultRowFacts(view.experimentEvidence.row)}
     />
+  );
+}
+
+function ReplacementEvidenceView({ view }: { readonly view: CardExplorerView }) {
+  if (view.replacementEvidence === null) {
+    return (
+      <p className="panel__note" role="note">
+        Replacement evidence: not checked — name a job ID above to cross-check this card against
+        its own controlled replacement comparisons.
+      </p>
+    );
+  }
+  if (view.replacementEvidence.rows.length === 0) {
+    return (
+      <Empty>
+        Replacement evidence: checked — the named job&apos;s own <code>replacements</code> table
+        has no comparison naming this card.
+      </Empty>
+    );
+  }
+  return (
+    <div className="dashboard__heatmap-wrap">
+      <p className="panel__note" role="note">
+        Comparative evidence from controlled replacement comparisons, never a causal claim or a
+        recommendation. A row marked insufficient data reports its comparison rather than a
+        verdict the sample cannot support.
+      </p>
+      {view.replacementEvidence.rows.map((row: ResultRow, index) => (
+        <FactTable
+          key={index}
+          caption={`Replacement comparison ${index + 1}`}
+          facts={resultRowFacts(row)}
+        />
+      ))}
+    </div>
   );
 }
 

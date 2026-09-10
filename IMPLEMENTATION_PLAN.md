@@ -237,9 +237,34 @@ client with the retry fix. 6 new focused tests pass; pre-existing
 unchanged; typecheck and ESLint clean on `admin-contracts`/`admin-server`/
 `admin-client`. Full narrative in
 [the M08 milestone file's M08.R1 entry](docs/milestones/M08-ai-lab-and-player-meta.md#correction-tranche-a--explorer-truthfulness).
-**Next slice: M08.R2 — Card replacement evidence** (structured
-replacement-evidence contract/reader/endpoint/rendering for Card Explorer,
-replacing the current prose-only description).
+
+**M08.R2 shipped (2026-09-10)** — second slice of the same correction pass.
+Closed the gap between the reviewed M08 record's prose description of Card
+Explorer replacement evidence and the actual contract: `@tcg/simulator`'s
+`ReplacementImpact[]` was already computed and already written into every
+run's `summary.json`, but no `ResultTableName` let a reader page through it.
+Added `'replacements'` as a 12th `RESULT_TABLE_NAMES` entry, built it in
+`buildTable`, and added `cardExplorerReplacementEvidenceSchema` as a bounded
+*array* of rows (`CARD_EXPLORER_MAX_REPLACEMENTS = 64`, not a single nullable
+row — one card can be the subject of several distinct comparisons per run).
+Contract version 15→16. `findReplacementEvidence` pages the named job's
+table, filters to the requested `subjectCardId`, and orders by strongest
+paired impact with a deterministic tiebreak; `null` (not checked) stays
+distinct from `rows: []` (checked, none found), mirroring
+`experimentEvidence`. The one-match-two-seats collapsing risk the correction
+brief named does not apply — a `'replacements'` row is aggregate
+per-comparison statistics, never per-match/per-seat — and that reasoning is
+documented inline rather than left implicit. Client renders the same
+not-checked/checked-empty/populated three-way split as `experimentEvidence`,
+with an explicit comparative-evidence-not-causation disclaimer. 12 new
+focused tests pass; pre-existing suites across all three touched workspaces
+(675 tests) pass unchanged; typecheck and ESLint clean on
+`admin-contracts`/`admin-server`/`admin-client`. Full narrative in
+[the M08 milestone file's M08.R2 entry](docs/milestones/M08-ai-lab-and-player-meta.md#correction-tranche-a--explorer-truthfulness).
+**Next slice: `### Tranche A review`** (the correction brief's own
+tranche-close step for Correction Tranche A — revalidate the combined
+M08.R1+M08.R2 diff and run the required consistency/audit/full-verify gates
+before that tranche can be marked complete).
 
 **M08 is complete (2026-09-10).** M08.28F closed the milestone: every other
 `### Checklist` in the milestone file was already checked from earlier

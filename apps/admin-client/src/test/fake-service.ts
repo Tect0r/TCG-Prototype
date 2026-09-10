@@ -566,6 +566,7 @@ export function cardExplorerViewFixture(
     partners: [],
     unavailablePartitions: [],
     experimentEvidence: null,
+    replacementEvidence: null,
     contributingDecks: [],
     contributingMatches: [],
     ...overrides,

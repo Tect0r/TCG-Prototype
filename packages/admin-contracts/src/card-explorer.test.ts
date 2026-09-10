@@ -6,12 +6,14 @@ import {
   CARD_EXPLORER_MAX_CONTRIBUTING_MATCHES,
   CARD_EXPLORER_MAX_INCLUSIONS,
   CARD_EXPLORER_MAX_PARTNERS,
+  CARD_EXPLORER_MAX_REPLACEMENTS,
   CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS,
   cardExplorerContributingDeckSchema,
   cardExplorerContributingMatchSchema,
   cardExplorerExperimentEvidenceSchema,
   cardExplorerInclusionSchema,
   cardExplorerPartnerSchema,
+  cardExplorerReplacementEvidenceSchema,
   cardExplorerUnavailablePartitionSchema,
   cardExplorerViewSchema,
 } from './card-explorer.js';
@@ -168,6 +170,48 @@ describe('cardExplorerExperimentEvidenceSchema', () => {
   });
 });
 
+describe('cardExplorerReplacementEvidenceSchema', () => {
+  it('accepts rows: [] (checked, no comparison found) and a populated rows array', () => {
+    expect(
+      cardExplorerReplacementEvidenceSchema.safeParse({
+        jobId: VALID_JOB_ID,
+        rows: [],
+        observedIn: VALID_EXPERIMENT_EVIDENCE_SOURCE,
+      }).success,
+    ).toBe(true);
+    expect(
+      cardExplorerReplacementEvidenceSchema.safeParse({
+        jobId: VALID_JOB_ID,
+        rows: [{ subjectCardId: VALID_CARD_ID, impact: 0.1, insufficientData: false }],
+        observedIn: VALID_EXPERIMENT_EVIDENCE_SOURCE,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('refuses a live-match-realm evidence entry — replacement evidence is only ever traced to a job', () => {
+    expect(
+      cardExplorerReplacementEvidenceSchema.safeParse({
+        jobId: VALID_JOB_ID,
+        rows: [],
+        observedIn: VALID_LIVE_MATCH_EVIDENCE,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('refuses more rows than CARD_EXPLORER_MAX_REPLACEMENTS allows', () => {
+    const manyRows = Array.from({ length: CARD_EXPLORER_MAX_REPLACEMENTS + 1 }, () => ({
+      subjectCardId: VALID_CARD_ID,
+    }));
+    expect(
+      cardExplorerReplacementEvidenceSchema.safeParse({
+        jobId: VALID_JOB_ID,
+        rows: manyRows,
+        observedIn: VALID_EXPERIMENT_EVIDENCE_SOURCE,
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe('cardExplorerContributingDeckSchema / cardExplorerContributingMatchSchema', () => {
   it('accept well-formed entries', () => {
     expect(cardExplorerContributingDeckSchema.safeParse(VALID_CONTRIBUTING_DECK).success).toBe(
@@ -202,6 +246,7 @@ describe('cardExplorerViewSchema', () => {
     partners: [],
     unavailablePartitions: [],
     experimentEvidence: null,
+    replacementEvidence: null,
     contributingDecks: [],
     contributingMatches: [],
   };
@@ -224,6 +269,20 @@ describe('cardExplorerViewSchema', () => {
     expect(checkedEmpty.experimentEvidence?.row).toBeNull();
   });
 
+  it('distinguishes replacementEvidence null (no job named) from a present value with rows: [] (checked, none found)', () => {
+    const notChecked = cardExplorerViewSchema.parse(emptyView);
+    const checkedEmpty = cardExplorerViewSchema.parse({
+      ...emptyView,
+      replacementEvidence: {
+        jobId: VALID_JOB_ID,
+        rows: [],
+        observedIn: VALID_EXPERIMENT_EVIDENCE_SOURCE,
+      },
+    });
+    expect(notChecked.replacementEvidence).toBeNull();
+    expect(checkedEmpty.replacementEvidence?.rows).toEqual([]);
+  });
+
   it('accepts a full view with every field populated', () => {
     expect(
       cardExplorerViewSchema.safeParse({
@@ -234,6 +293,11 @@ describe('cardExplorerViewSchema', () => {
         experimentEvidence: {
           jobId: VALID_JOB_ID,
           row: { definitionId: VALID_CARD_ID },
+          observedIn: VALID_EXPERIMENT_EVIDENCE_SOURCE,
+        },
+        replacementEvidence: {
+          jobId: VALID_JOB_ID,
+          rows: [{ subjectCardId: VALID_CARD_ID, impact: 0.1, insufficientData: false }],
           observedIn: VALID_EXPERIMENT_EVIDENCE_SOURCE,
         },
         contributingDecks: [VALID_CONTRIBUTING_DECK],

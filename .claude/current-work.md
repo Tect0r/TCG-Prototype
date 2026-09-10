@@ -5150,4 +5150,78 @@ Explorer truthfulness` section with `M08.R1` checked and its evidence.
 shipment and names `M08.R2 — Card replacement evidence` as the next slice;
 the root Status table is untouched (tranche-close only).
 
+## M08.R2 — Card replacement evidence (2026-09-10)
+
+Second slice of the same correction pass. The reviewed M08 record described
+Card Explorer replacement evidence in prose but left it without a structured
+query/result contract or rendered result. Revalidated the current code first:
+`@tcg/simulator`'s `ReplacementImpact[]` (`analysis/replacement.ts`) was
+already zod-validated and already written into every run's `summary.json`
+under a top-level `replacements` key (confirmed directly in
+`apps/simulator/src/analysis/experiment.ts`) — the actual gap was narrower
+than the record suggested: no `ResultTableName` let a reader page through it,
+and the Card Explorer never asked for it.
+
+**Fix.** Added `'replacements'` as a 12th `RESULT_TABLE_NAMES` entry
+(`packages/admin-contracts/src/results.ts`), documenting why the "two seats
+of one match both holding the subject card" collapsing risk named in the
+correction brief does not apply to this table (it is aggregate
+per-comparison statistics, never per-match/per-seat). Built the table in
+`apps/admin-server/src/service/results.ts`'s `buildTable` (16 columns: card
+identities, deck hashes, direction, match counts, removed/added card-change
+lists joined to bounded cell text, selection method, paired win-rate impact
+as an interval via the existing `interval()` helper, paired games, effect
+size/label, confounds, `insufficientData`) from a new top-level
+`replacements: z.array(replacementShape).default([])` field on
+`summaryFileSchema`. Added `cardExplorerReplacementEvidenceSchema`
+(`packages/admin-contracts/src/card-explorer.ts`) as a bounded **array** of
+rows (`CARD_EXPLORER_MAX_REPLACEMENTS = 64`) rather than a single nullable
+row like `experimentEvidence.row` — one card can be the subject of several
+distinct comparisons in one run, so a single-row design would silently drop
+evidence. Joined `replacementEvidence` onto `cardExplorerViewSchema`; bumped
+`ADMIN_CONTRACT_VERSION` 15→16. Server-side,
+`findReplacementEvidence` (`apps/admin-server/src/service/card-explorer.ts`)
+pages the named job's `'replacements'` table, keeps every row whose
+`subjectCardId` matches the requested card, and sorts by strongest paired
+impact (`Math.abs(impact)` descending) with the same code-unit tiebreak
+convention (`compareStrings`, never `localeCompare`) the file's other
+sorters use. `replacementEvidence` stays `null` when no job is named,
+distinct from a present value with `rows: []` when checked and nothing was
+found — mirrors `experimentEvidence`'s existing `null`-vs-checked-empty
+discipline. Wired into `readCardExplorerView` alongside the existing
+`findExperimentEvidence` call. Client-side, `CardExplorerDashboard.tsx`
+renders the same three-way split (not checked / checked-and-empty /
+populated facts) with an explicit "comparative evidence, never a causal
+claim or a recommendation" disclaimer, matching the brief's "do not infer
+causation" and "do not fabricate a recommendation" constraints.
+
+**Verification (focused, no full gate — reserved for tranche close).**
+`npx vitest run` (from repo root) across the three touched workspaces: 675
+tests pass, including 12 new — 3 admin-server `CardExplorerReader` tests
+(found row stamped with the job's own sourceClasses/environment,
+checked-and-empty when no comparison names the card, strongest-impact-first
+ordering), 2 new admin-server `buildTable`/`readTable` tests for the
+`'replacements'` table itself (empty-when-absent, one comparison's
+card-change lists join correctly to cell text), 1 admin-server row-count
+test updated for the new 12th table name, 3 admin-contracts schema tests
+(accepts empty/populated rows, refuses a live-match-realm `observedIn`,
+refuses an over-bound rows array), 1 admin-contracts `null`-vs-`rows:[]`
+fixture test, 1 admin-contracts `RESULT_TABLE_NAMES` list test, 2
+admin-client flow tests (three-way split text, populated row renders as
+facts) — the two `experimentEvidence` tests reusing a bare `/not checked/`
+regex needed tightening to `/Draw\/play\/dead-hand evidence: not checked/`
+and `/Replacement evidence: not checked/` once a second "not checked" panel
+existed on the same page. `typecheck` clean on all three touched workspaces
+after fixing one omission caught by admin-server's own typecheck:
+`CARD_EXPLORER_MAX_REPLACEMENTS` and `CardExplorerReplacementEvidence` were
+defined in `card-explorer.ts` but not re-exported from
+`packages/admin-contracts/src/index.ts`. ESLint clean on every touched file.
+
+**Root record.** `docs/milestones/M08-ai-lab-and-player-meta.md`'s
+`### Correction Tranche A — Explorer truthfulness` section gained `M08.R2`
+checked with its evidence, alongside `M08.R1`. `IMPLEMENTATION_PLAN.md`'s
+"next bounded task" section now documents M08.R2's shipment and names
+`### Tranche A review` as the next slice; the root Status table is untouched
+(tranche-close only).
+
 Next slice: M08.R2 — Card replacement evidence (Correction Tranche A).

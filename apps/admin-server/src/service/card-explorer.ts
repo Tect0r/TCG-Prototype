@@ -5,6 +5,7 @@ import {
   CARD_EXPLORER_MAX_CONTRIBUTING_MATCHES,
   CARD_EXPLORER_MAX_INCLUSIONS,
   CARD_EXPLORER_MAX_PARTNERS,
+  CARD_EXPLORER_MAX_REPLACEMENTS,
   CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS,
   PAGE_SIZE_MAX,
   type AdminError,
@@ -13,6 +14,7 @@ import {
   type CardExplorerExperimentEvidence,
   type CardExplorerInclusion,
   type CardExplorerPartner,
+  type CardExplorerReplacementEvidence,
   type CardExplorerRequest,
   type CardExplorerUnavailablePartition,
   type CardExplorerView,
@@ -245,6 +247,62 @@ async function findExperimentEvidence(
   });
 }
 
+/**
+ * M08.R2 — every row of one named job's `'replacements'` table naming this
+ * card as `subjectCardId`. Collects across every page rather than stopping at
+ * the first match (unlike `findExperimentEvidence`'s single-row lookup),
+ * because one card can be the subject of several distinct comparisons in the
+ * same run — see `card-explorer.ts` (`@tcg/admin-contracts`) for why this is
+ * a bounded array rather than one nullable row.
+ */
+async function findReplacementEvidence(
+  results: ResultReader,
+  jobId: JobId,
+  cardId: string,
+): Promise<Result<CardExplorerReplacementEvidence, readonly AdminError[]>> {
+  const provenance = await results.readProvenance(jobId);
+  if (isErr(provenance)) return provenance;
+
+  const matched: ResultRow[] = [];
+  let cursor: string | null = null;
+
+  for (;;) {
+    const page = await results.readTable(jobId, 'replacements', { limit: PAGE_SIZE_MAX, cursor });
+    if (isErr(page)) return page;
+
+    for (const row of page.value.rows) {
+      if (row.subjectCardId === cardId) matched.push(row);
+    }
+
+    cursor = page.value.page.nextCursor;
+    if (cursor === null) break;
+  }
+
+  // Strongest evidence first — largest-magnitude paired impact — with a
+  // deterministic, host-independent tiebreak, the same convention
+  // `inclusionsAndPartnersOf` above applies to its own sorted lists.
+  matched.sort((left, right) => {
+    const leftImpact = typeof left.impact === 'number' ? Math.abs(left.impact) : -1;
+    const rightImpact = typeof right.impact === 'number' ? Math.abs(right.impact) : -1;
+    if (rightImpact !== leftImpact) return rightImpact - leftImpact;
+    return (
+      compareStrings(String(left.replacementCardId ?? ''), String(right.replacementCardId ?? '')) ||
+      compareStrings(String(left.baseDeckHash ?? ''), String(right.baseDeckHash ?? '')) ||
+      compareStrings(String(left.variantDeckHash ?? ''), String(right.variantDeckHash ?? ''))
+    );
+  });
+
+  return ok({
+    jobId,
+    rows: matched.slice(0, CARD_EXPLORER_MAX_REPLACEMENTS),
+    observedIn: {
+      realm: 'experiment',
+      sourceClasses: [...provenance.value.sourceClasses],
+      environment: provenance.value.environment,
+    },
+  });
+}
+
 async function readCardExplorerView(
   rootDirectory: string,
   results: ResultReader,
@@ -263,10 +321,15 @@ async function readCardExplorerView(
   const { contributingDecks, contributingMatches } = contributingOf(request.cardId, read.matches);
 
   let experimentEvidence: CardExplorerExperimentEvidence | null = null;
+  let replacementEvidence: CardExplorerReplacementEvidence | null = null;
   if (request.jobId !== null) {
     const found = await findExperimentEvidence(results, request.jobId, request.cardId);
     if (isErr(found)) return found;
     experimentEvidence = found.value;
+
+    const foundReplacements = await findReplacementEvidence(results, request.jobId, request.cardId);
+    if (isErr(foundReplacements)) return foundReplacements;
+    replacementEvidence = foundReplacements.value;
   }
 
   const parsed = cardExplorerViewSchema.safeParse({
@@ -275,6 +338,7 @@ async function readCardExplorerView(
     partners,
     unavailablePartitions,
     experimentEvidence,
+    replacementEvidence,
     contributingDecks,
     contributingMatches,
   });

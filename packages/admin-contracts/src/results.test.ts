@@ -177,6 +177,7 @@ describe('a result table', () => {
       'commander_matchups',
       'commander_generations',
       'search_generations',
+      'replacements',
     ]);
     expect(resultTableSchema.safeParse(table({ table: 'replays' })).success).toBe(false);
   });

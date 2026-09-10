@@ -311,6 +311,9 @@ describe('a run summary', () => {
       { table: 'commander_matchups', rows: 0 },
       { table: 'commander_generations', rows: 0 },
       { table: 'search_generations', rows: 0 },
+      // A batch run without a `replacements` field (M08.R2) reads as empty,
+      // not a refusal — the field defaults to `[]` in the summary schema.
+      { table: 'replacements', rows: 0 },
     ]);
   });
 
@@ -550,6 +553,52 @@ describe('a result table', () => {
       expect(row?.inclusionWinRateLift).toBeNull();
       expect(row?.eligibleDecks).toBe(2);
       expect(row?.inclusionAmongEligibleShare).toBe(1);
+    });
+  });
+
+  describe('the replacements table (M08.R2)', () => {
+    it('reads a summary with no replacements field as empty, not a refusal', async () => {
+      const jobId = await seedRun();
+      const table = unwrap(await reader.readTable(jobId, 'replacements', page));
+      expect(table.rows).toEqual([]);
+      expect(table.columns.map((column) => column.key)).toContain('subjectCardId');
+    });
+
+    it('reads one comparison, joining its card-change lists into cell text', async () => {
+      const jobId = await seedRun({
+        summary: summaryDocument({
+          replacements: [
+            {
+              subjectCardId: 'arcane_snare',
+              replacementCardId: 'banner_keeper',
+              baseDeckHash: 'base0000000000000000000000000000',
+              variantDeckHash: 'variant0000000000000000000000000',
+              baseMatches: 20,
+              variantMatches: 20,
+              direction: 'removal',
+              removedCards: [{ cardId: 'arcane_snare', quantity: 1 }],
+              addedCards: [{ cardId: 'banner_keeper', quantity: 1 }],
+              selectionMethod: 'closest_curve_match',
+              impact: 0.08,
+              low: 0.01,
+              high: 0.15,
+              effectSize: 0.2,
+              effectSizeLabel: 'small',
+              pairedGames: 18,
+              confounds: [],
+              insufficientData: false,
+            },
+          ],
+        }),
+      });
+      const table = unwrap(await reader.readTable(jobId, 'replacements', page));
+      const row = table.rows.find((entry) => entry.subjectCardId === 'arcane_snare');
+      expect(row?.replacementCardId).toBe('banner_keeper');
+      expect(row?.removedCards).toBe('arcane_snare x1');
+      expect(row?.addedCards).toBe('banner_keeper x1');
+      expect(row?.impact).toBe(0.08);
+      expect(row?.impactLow).toBe(0.01);
+      expect(row?.impactHigh).toBe(0.15);
     });
   });
 

@@ -408,6 +408,7 @@ export {
   CARD_EXPLORER_MAX_CONTRIBUTING_MATCHES,
   CARD_EXPLORER_MAX_INCLUSIONS,
   CARD_EXPLORER_MAX_PARTNERS,
+  CARD_EXPLORER_MAX_REPLACEMENTS,
   CARD_EXPLORER_MAX_UNAVAILABLE_PARTITIONS,
   cardExplorerContributingDeckSchema,
   cardExplorerContributingMatchSchema,
@@ -415,6 +416,7 @@ export {
   cardExplorerExperimentEvidenceSchema,
   cardExplorerInclusionSchema,
   cardExplorerPartnerSchema,
+  cardExplorerReplacementEvidenceSchema,
   cardExplorerUnavailablePartitionSchema,
   cardExplorerViewSchema,
   type CardExplorerContributingDeck,
@@ -423,6 +425,7 @@ export {
   type CardExplorerExperimentEvidence,
   type CardExplorerInclusion,
   type CardExplorerPartner,
+  type CardExplorerReplacementEvidence,
   type CardExplorerUnavailablePartition,
   type CardExplorerView,
 } from './card-explorer.js';
