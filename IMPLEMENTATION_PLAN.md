@@ -223,11 +223,27 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.28D — End-to-end recovery matrix** is the next slice: exercise every
-primary and advanced test style, partial/resumed work, human ingestion,
-surrender capture, explorer drill-down and before/after comparison across
-real boundaries. Scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+**M08.28E — Visual and operator documentation pass** is the next slice:
+inspect representative wide and narrow rendered surfaces, record unavailable
+visual tooling honestly, and update user-facing run/deployment instructions
+without duplicating the canonical milestone record. Scope and checklist are
+in [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+
+**M08.28D shipped 2026-09-10** —
+`apps/admin-server/src/e2e-recovery-matrix.test.ts` (16 tests) runs every
+primary and advanced experiment kind (batch, search, robustness, comparison,
+replacement) end to end against the real card pool and real precons, refuses
+the reserved `adaptive_counter` preset, resumes a paused multi-worker run
+onto a fresh store instance, and exercises human ingestion, surrender
+capture, explorer drill-down and before/after Player Meta comparison across
+their real boundaries. The comparison dimension surfaced two unrelated
+defects: its declared-change card was banned in every one of its four
+reference precons (emptying the shared population in both arms, 0 matches),
+and `searchBothEnvironments` defaults to `true`, running a full displacement
+search on top of the reference matches — the actual reason the dimension
+took upward of ten minutes rather than seconds. Both are fixed in the test's
+own config; neither is a rules-engine or simulator defect. Full narrative in
+`.claude/current-work.md`'s "M08.28D" entry.
 
 **M08.28C shipped 2026-09-10** — new
 `apps/admin-server/src/secret-leak-boundary.test.ts` (6 tests) turns ADR

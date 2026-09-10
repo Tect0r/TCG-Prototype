@@ -4873,3 +4873,78 @@ verify`, `tcg-reviewer` — reserved for the M08.28 tranche-close run
 close.
 
 Next slice: **M08.28D — End-to-end recovery matrix.**
+
+## M08.28D — End-to-end recovery matrix (2026-09-10)
+
+`apps/admin-server/src/e2e-recovery-matrix.test.ts` (16 tests) was already
+substantially written from an earlier, interrupted session. It runs each of
+the five experiment kinds (batch, search, robustness, comparison,
+replacement) through a real `ExperimentRunner` against the real card pool
+and real precons, confirms the reserved `adaptive_counter` preset is refused
+before anything runs, pauses a real multi-worker run mid-batch and resumes it
+on a fresh store instance onto the real completed total, ingests a real human
+match with a surrender capture and reads it back through the Player Meta
+read model, the free aggregation functions and the explorer drill-down (deck
+identity, card result table, event timeline, abnormal-match list) sharing one
+live-match root, and computes a real before/after Player Meta delta across
+two declared content versions while refusing both a byte-identical
+comparison and a population-confounded one.
+
+Fifteen of sixteen tests passed on the first run this session; the
+comparison dimension hung well past its 120s timeout, actually finishing
+(when left to run) around 677s. Two distinct, unrelated defects were layered
+under that one symptom:
+
+1. `comparisonConfig`'s candidate environment banned `ENVIRONMENT.pool[0]`
+   (`throwing_knife`) as its declared change. Direct inspection of the four
+   reference precons' bundled card lists (`bundledPrecon(...).cardIds`)
+   showed `throwing_knife` is played by *all four* — so
+   `freezeReferencePopulation` correctly excluded every reference deck from
+   the candidate arm, leaving 0 legal decks in both arms and 0 matches
+   (`manifest.matches` asserted `> 0` and failed). Fixed by banning
+   `border_recruit` instead, a card confirmed to be played by exactly one of
+   the four, which excludes only that one deck and leaves three legal in
+   both arms.
+2. `searchBothEnvironments` defaults to `true` on a comparison config and
+   runs a full displacement search — a population-based search
+   (`populationSize` x `generations` x `opponentsPerEvaluation` x
+   `gamesPerOpponent`, times `replicates`) executed twice, once per
+   environment — entirely on top of the reference-deck matches the test
+   actually cares about. This, not the reference decks or the matchup
+   itself, was the real reason the dimension took upward of ten minutes:
+   an isolated timing probe showed `diffEnvironments`,
+   `checkDeclaredChanges` and `freezeReferencePopulation` all complete in
+   under 40ms against the real 148-card pool, and a full run with the
+   search disabled (`searchBothEnvironments: false`) and the population bug
+   still present finished in ~120ms flat (0 matches, correctly reproducing
+   defect 1 in isolation). Fixed by setting `searchBothEnvironments: false`
+   on the test's comparison config — the displacement-search feature is
+   real and unaffected, and out of this slice's scope, which only needs the
+   baseline/candidate reference comparison to really run.
+
+The user independently flagged that the deck-out rule
+(`emptyDeckDrawLoses`, confirmed `true` by default in
+`packages/rules-engine/src/config.ts` and documented in
+`docs/rules/confirmed-rules.md`) should keep any real game well under the
+engine's 200-turn cap, which correctly ruled out "slow but legitimate long
+games" as an explanation and redirected the investigation to comparison's
+pre-match setup and search-side costs instead of the match-running loop.
+
+A scratch diagnostic file (`apps/admin-server/src/debug-ban.test.ts`,
+never part of the deliverable) was used throughout to isolate each
+hypothesis in seconds rather than re-running the full ~11-minute failure;
+it was deleted before the final verification pass and is not part of this
+commit.
+
+**Verification (focused, not the full gate — reserved for M08.28F).**
+`npx vitest run apps/admin-server/src/e2e-recovery-matrix.test.ts` — 16/16
+passing in ~17s (comparison dimension: ~1.2s). `npx tsc --noEmit` on
+`apps/admin-server` — clean. `npx eslint
+apps/admin-server/src/e2e-recovery-matrix.test.ts` — no issues.
+
+Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
+verify`, `tcg-reviewer` — reserved for the M08.28 tranche-close run
+(M08.28F) per the working protocol; this was a normal slice, not a tranche
+close.
+
+Next slice: **M08.28E — Visual and operator documentation pass.**

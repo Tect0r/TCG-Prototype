@@ -4955,9 +4955,35 @@ expansion, public feedback, matchmaking or automated rebalance work.
       issues on the changed files. Tranche-close gates (`check:consistency`,
       `audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.28F,
       per this milestone's work-slice split.
-- [ ] **M08.28D — End-to-end recovery matrix.** Exercise every primary and
+- [x] **M08.28D — End-to-end recovery matrix.** Exercise every primary and
       advanced test style, partial/resumed work, human ingestion, surrender capture,
       explorer drill-down and before/after comparison across real boundaries.
+      `apps/admin-server/src/e2e-recovery-matrix.test.ts` (16 tests) runs each of
+      batch, search, robustness, comparison and replacement end to end against
+      real precons and the real card pool, refuses the reserved `adaptive_counter`
+      preset, resumes a paused multi-worker run onto a fresh store instance,
+      ingests a real human match with surrender capture through the Player Meta
+      read model and explorer drill-down, and computes a real before/after
+      Player Meta delta while refusing a byte-identical or population-confounded
+      comparison. The comparison dimension's config banned a card
+      (`throwing_knife`) that every one of its four reference precons happened
+      to share, so `freezeReferencePopulation` correctly emptied the shared
+      population in both arms (0 legal decks, 0 matches) — fixed by banning
+      `border_recruit`, a card unique to one of the four, confirmed by direct
+      inspection of the bundled precons' card lists. A second, larger defect
+      surfaced alongside it: `searchBothEnvironments` defaults to `true` and ran
+      a full displacement search (population x generations x opponents x games,
+      twice, once per environment, plus replicates) on top of the reference
+      matches, which was the real reason this dimension took upward of ten
+      minutes rather than the single-digit seconds every other dimension
+      finishes in; the test now sets `searchBothEnvironments: false` since only
+      the baseline/candidate reference comparison is this slice's concern. The
+      displacement-search feature itself is real, unrelated to the empty-population
+      bug, and out of this slice's scope. 16/16 tests pass in ~17s,
+      `apps/admin-server` typechecks clean and `eslint` reports no issues on the
+      changed file. Tranche-close gates (`check:consistency`, `audit:check`,
+      `verify`) and `tcg-reviewer` are deferred to M08.28F, per this milestone's
+      work-slice split.
 - [ ] **M08.28E — Visual and operator documentation pass.** Inspect representative
       wide and narrow rendered surfaces, record unavailable visual tooling honestly,
       and update user-facing run/deployment instructions without duplicating the
