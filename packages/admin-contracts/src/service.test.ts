@@ -75,7 +75,10 @@ describe('the endpoint registry', () => {
     // matches and the abnormal-match list, filtered the same way as the list.
     // Plus M08.27C's two: a catalog run's Coverage report named by job ID, and
     // a Player Meta partition's Coverage report named by its exact partition.
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(35);
+    // Plus M08.27D's two: a catalog run's Data Health report named by job ID,
+    // and a Player Meta partition's Data Health report named by its exact
+    // partition.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(37);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);

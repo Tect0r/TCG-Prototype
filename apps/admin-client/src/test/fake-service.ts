@@ -18,6 +18,7 @@ import {
   adaptiveResultTableSchema,
   adaptiveRunSummarySchema,
   catalogCoverageReportSchema,
+  catalogDataHealthReportSchema,
   catalogFilterSchema,
   catalogJobViewSchema,
   cardExplorerViewSchema,
@@ -27,6 +28,7 @@ import {
   matchRepresentativesViewSchema,
   REPRESENTATIVE_MATCH_KINDS,
   playerMetaCoverageReportSchema,
+  playerMetaDataHealthReportSchema,
   playerMetaFilterSchema,
   playerMetaResultTableSchema,
   playerMetaRunSummarySchema,
@@ -50,6 +52,7 @@ import {
   type BatchDetail,
   type CardExplorerView,
   type CatalogCoverageReport,
+  type CatalogDataHealthReport,
   type CatalogJobView,
   type ContentCatalog,
   type DeckExplorerView,
@@ -65,6 +68,7 @@ import {
   type MatchRepresentativesView,
   type OperatorJobAction,
   type PlayerMetaCoverageReport,
+  type PlayerMetaDataHealthReport,
   type PlayerMetaFilter,
   type PlayerMetaPartition,
   type PlayerMetaResultTable,
@@ -279,6 +283,29 @@ export interface FakeLab {
   seedPlayerMetaCoverage(
     report?:
       PlayerMetaCoverageReport | { readonly refuse: AdminErrorCode; readonly message?: string },
+  ): void;
+  /**
+   * Replaces what `catalogDataHealthView` answers for one job ID (M08.27D) —
+   * keyed by `jobId` like `seedCatalogCoverage`. An unseeded job ID answers
+   * `catalogDataHealthReportFixture(jobId)` (every category zeroed, no
+   * `unavailableReason`) rather than a refusal, mirroring
+   * `seedCatalogCoverage`'s own "root is always resolved" note.
+   */
+  seedCatalogDataHealth(
+    jobId: string,
+    report?:
+      CatalogDataHealthReport | { readonly refuse: AdminErrorCode; readonly message?: string },
+  ): void;
+  /**
+   * Replaces what `playerMetaDataHealthView` answers (M08.27D). Like
+   * `seedPlayerMetaCoverage`, there is no identifier to key this by, so this
+   * fake holds exactly one reading at a time. An unseeded read answers
+   * `playerMetaDataHealthReportFixture(partition)`, built from the requested
+   * partition (every category zeroed, no `unavailableReason`).
+   */
+  seedPlayerMetaDataHealth(
+    report?:
+      PlayerMetaDataHealthReport | { readonly refuse: AdminErrorCode; readonly message?: string },
   ): void;
 }
 
@@ -708,6 +735,58 @@ export function playerMetaCoverageReportFixture(
   return playerMetaCoverageReportSchema.parse({
     identity: { domain: 'player_meta', partition },
     cards: [],
+    unavailableReason: null,
+    ...overrides,
+  });
+}
+
+/* -------------------------------------------------------------- data health (M08.27D) */
+
+/**
+ * A complete `catalogDataHealthView` report for one job: every category
+ * zeroed and measured, `unavailableReason` null throughout — the same
+ * "checked, found nothing to report" default `catalogCoverageReportFixture`
+ * uses, not a fabricated `unavailable`.
+ */
+export function catalogDataHealthReportFixture(
+  jobId: string,
+  overrides: Partial<CatalogDataHealthReport> = {},
+): CatalogDataHealthReport {
+  return catalogDataHealthReportSchema.parse({
+    identity: { domain: 'catalog', jobId },
+    recoveredRecords: { count: 0, entries: [] },
+    failures: { count: 0, byKind: {}, unavailableReason: null },
+    stalled: { count: 0, byKind: {}, unavailableReason: null },
+    exclusions: { count: 0, entries: [], unavailableReason: null },
+    replicateDisagreement: { count: 0, entries: [], unavailableReason: null },
+    seatBias: { count: 0, entries: [], unavailableReason: null },
+    pilotSensitivity: { count: 0, entries: [], unavailableReason: null },
+    unsupportedMechanics: { count: 0, entries: [], unavailableReason: null },
+    replayStatus: { matchesChecked: 0, withReplay: 0, withoutReplay: 0, unavailableReason: null },
+    unavailableReason: null,
+    ...overrides,
+  });
+}
+
+/**
+ * A complete `playerMetaDataHealthView` report for one partition: every
+ * category zeroed and measured, `unavailableReason` null throughout.
+ */
+export function playerMetaDataHealthReportFixture(
+  partition: PlayerMetaPartition,
+  overrides: Partial<PlayerMetaDataHealthReport> = {},
+): PlayerMetaDataHealthReport {
+  return playerMetaDataHealthReportSchema.parse({
+    identity: { domain: 'player_meta', partition },
+    recoveredRecords: { count: 0, entries: [] },
+    failures: { count: 0, byKind: {}, unavailableReason: null },
+    stalled: { count: 0, byKind: {}, unavailableReason: null },
+    exclusions: { count: 0, entries: [] },
+    replicateDisagreement: { count: 0, entries: [], unavailableReason: null },
+    seatBias: { count: 0, entries: [], unavailableReason: null },
+    pilotSensitivity: { count: 0, entries: [], unavailableReason: null },
+    unsupportedMechanics: { count: 0, entries: [], unavailableReason: null },
+    replayStatus: { matchesChecked: 0, withReplay: 0, withoutReplay: 0, unavailableReason: null },
     unavailableReason: null,
     ...overrides,
   });
@@ -1234,6 +1313,20 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     | PlayerMetaCoverageReport
     | { readonly refuse: AdminErrorCode; readonly message?: string }
     | null = null;
+  /** Catalog Data Health reports (M08.27D), by job ID — see `FakeLab.seedCatalogDataHealth`. */
+  const catalogDataHealth = new Map<
+    string,
+    CatalogDataHealthReport | { readonly refuse: AdminErrorCode; readonly message?: string }
+  >();
+  /**
+   * The one Player Meta Data Health reading this fake holds (M08.27D) — no
+   * `Map`, mirroring `playerMetaCoverage` above: see
+   * `FakeLab.seedPlayerMetaDataHealth`.
+   */
+  let playerMetaDataHealth:
+    | PlayerMetaDataHealthReport
+    | { readonly refuse: AdminErrorCode; readonly message?: string }
+    | null = null;
 
   /** A clock that only ever advances, so listings and date-range filters see a real order. */
   let ticks = 0;
@@ -1469,6 +1562,12 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     },
     seedPlayerMetaCoverage(report) {
       playerMetaCoverage = report ?? null;
+    },
+    seedCatalogDataHealth(jobId, report) {
+      catalogDataHealth.set(jobId, report ?? catalogDataHealthReportFixture(jobId));
+    },
+    seedPlayerMetaDataHealth(report) {
+      playerMetaDataHealth = report ?? null;
     },
   };
 
@@ -2018,6 +2117,20 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     if (name === 'playerMetaCoverageView') {
       const partition = payload.partition as PlayerMetaPartition;
       const seeded = playerMetaCoverage ?? playerMetaCoverageReportFixture(partition);
+      if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
+      return answer(seeded);
+    }
+
+    if (name === 'catalogDataHealthView') {
+      const jobId = String(payload.jobId ?? '');
+      const seeded = catalogDataHealth.get(jobId) ?? catalogDataHealthReportFixture(jobId);
+      if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
+      return answer(seeded);
+    }
+
+    if (name === 'playerMetaDataHealthView') {
+      const partition = payload.partition as PlayerMetaPartition;
+      const seeded = playerMetaDataHealth ?? playerMetaDataHealthReportFixture(partition);
       if ('refuse' in seeded) return refusal(seeded.refuse, 409, seeded.message);
       return answer(seeded);
     }

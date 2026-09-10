@@ -596,6 +596,30 @@ export type PlayerMetaCoverageRequest = z.infer<typeof playerMetaCoverageRequest
 export type PlayerMetaCoverageRequestInput = z.input<typeof playerMetaCoverageRequestSchema>;
 
 /**
+ * One catalog run's Data Health report (M08.27D), named by `jobId` — the same
+ * "read the run's own resolved environment and tables" shape
+ * `catalogCoverageRequestSchema` already uses, since `computeCatalogDataHealth`
+ * reads through the same `ResultReader`.
+ */
+export const catalogDataHealthRequestSchema = z.strictObject({
+  jobId: jobIdSchema,
+});
+export type CatalogDataHealthRequest = z.infer<typeof catalogDataHealthRequestSchema>;
+export type CatalogDataHealthRequestInput = z.input<typeof catalogDataHealthRequestSchema>;
+
+/**
+ * One Player Meta partition's Data Health report (M08.27D), named by the
+ * exact `(source, contentVersion, rulesVersion)` partition — mirrors
+ * `playerMetaCoverageRequestSchema`, since `computePlayerMetaDataHealth`
+ * answers one partition at a time.
+ */
+export const playerMetaDataHealthRequestSchema = z.strictObject({
+  partition: playerMetaPartitionSchema,
+});
+export type PlayerMetaDataHealthRequest = z.infer<typeof playerMetaDataHealthRequestSchema>;
+export type PlayerMetaDataHealthRequestInput = z.input<typeof playerMetaDataHealthRequestSchema>;
+
+/**
  * Every request payload the admin contract defines, in one object.
  *
  * Exported so a boundary test can be total over them — "no request payload admits
@@ -632,6 +656,8 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   matchRepresentatives: matchRepresentativesRequestSchema,
   catalogCoverageView: catalogCoverageRequestSchema,
   playerMetaCoverageView: playerMetaCoverageRequestSchema,
+  catalogDataHealthView: catalogDataHealthRequestSchema,
+  playerMetaDataHealthView: playerMetaDataHealthRequestSchema,
 });
 
 export type AdminRequestPayloadName = keyof typeof ADMIN_REQUEST_PAYLOAD_SCHEMAS;

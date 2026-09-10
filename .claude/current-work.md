@@ -4326,3 +4326,64 @@ Next slice: **M08.27D's page** — HTTP route wiring, an `apps/admin-client`
 session method, a `DataHealthDashboard` component, `fake-service` seeding
 and tests, matching M08.27C's page slice.
 
+## M08.27D page — Data Health dashboard (2026-09-10)
+
+Wires the model slice above onto the transport and UI, mirroring M08.27C's
+own model/page split exactly.
+
+**`packages/admin-contracts`:** `catalogDataHealthRequestSchema`
+(`{jobId}`) and `playerMetaDataHealthRequestSchema` (`{partition}`) added
+to `requests.ts`, plus both to `ADMIN_REQUEST_PAYLOAD_SCHEMAS`. Two new
+`ADMIN_ENDPOINTS` entries in `service.ts` — `catalogDataHealthView`
+(`catalog-data-health-view`) and `playerMetaDataHealthView`
+(`player-meta-data-health-view`), both `mutates: false`. `index.ts` exports
+the new request schemas/types. `service.test.ts`'s endpoint-count
+assertion moved from 35 to 37.
+
+**`apps/admin-server`:** `handlers.ts`'s `#handlers()` map gained
+`catalogDataHealthView`/`playerMetaDataHealthView`, each delegating
+straight to the model slice's `computeCatalogDataHealth`/
+`computePlayerMetaDataHealth` — no new logic, since the mapped-type
+handler signature already forces the compiler to catch a missing case.
+
+**`apps/admin-client`:** `session.ts` gained `catalogDataHealthView(jobId)`
+and `playerMetaDataHealthView(partition)`. New `lib/data-health-view.ts` —
+pure formatting helpers (`terminationBucketFact`, `flagBucketFact`,
+`replicateDisagreementFact`, `replayStatusFact`, `flagEntryLabel`,
+`catalogDataHealthFacts`, `playerMetaDataHealthFacts`) that render each of
+the nine categories as measured or `Unavailable: <reason>`, never a
+fabricated zero — same discipline as `coverage-view.ts`. New
+`components/DataHealthDashboard.tsx` — `DataHealthPanel` tab-switches
+between a Catalog run (entered by Job ID) and a Player Meta partition
+(entered by source/contentVersion/rulesVersion), each showing a
+`FactTable` summary plus detail tables for recovered records, exclusions,
+replicate disagreement, seat bias, pilot sensitivity and unsupported
+mechanics — detail tables render nothing when their entries array is
+empty. Wired into `ResultsScreen.tsx` as a new "Data Health" tab.
+`test/fake-service.ts` gained `seedCatalogDataHealth`/
+`seedPlayerMetaDataHealth`, matching fixture functions, and dispatch
+handling for both new endpoint names.
+
+**Test-query fix caught during review, not from user feedback:** three
+`data-health-flow.test.tsx` assertions originally searched the whole
+document for the exact string `'0 (none by kind)'`, which renders twice on
+a fully-zeroed report (the Failures and Stalled rows both show it) and
+would have thrown testing-library's ambiguous-match error. Fixed by
+locating the `'Failures'` label first, calling `.closest('tr')`, and
+asserting on that row alone.
+
+**Verification (focused, not the full gate — reserved for tranche close):**
+- `npx vitest run packages/admin-contracts/src apps/admin-server/src
+  apps/admin-client/src` — 96 files, 1765 tests passing, including the two
+  new files (`lib/data-health-view.test.ts`, `data-health-flow.test.tsx`).
+- `npx tsc --build packages/admin-contracts apps/admin-server
+  apps/admin-client` — clean.
+- `npx eslint` clean on every file this slice touched or added.
+
+Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
+verify` — reserved for the M08.27 tranche-close run per the working
+protocol; this was a normal slice, not a tranche close.
+
+Next slice: **M08.27E — Additive annotations**, per the M08.27 tranche's
+work-slice list in `docs/milestones/M08-ai-lab-and-player-meta.md`.
+

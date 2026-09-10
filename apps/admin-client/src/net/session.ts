@@ -19,6 +19,7 @@ import type {
   Capabilities,
   CardExplorerView,
   CatalogCoverageReport,
+  CatalogDataHealthReport,
   CatalogFilterInput,
   CatalogJobView,
   ChoiceEstimate,
@@ -37,6 +38,7 @@ import type {
   OperatorJobAction,
   PageRequestInput,
   PlayerMetaCoverageReport,
+  PlayerMetaDataHealthReport,
   PlayerMetaFilterInput,
   PlayerMetaPartition,
   PlayerMetaResultTable,
@@ -667,6 +669,26 @@ export class AdminSession {
     partition: PlayerMetaPartition,
   ): Promise<AdminOutcome<PlayerMetaCoverageReport>> {
     return this.#call('playerMetaCoverageView', { partition });
+  }
+
+  /* ----------------------------------------------------- data health (M08.27D) */
+
+  /**
+   * One catalog run's Data Health report, named by `jobId` — can this run's
+   * numbers be trusted, and where the answer is no, why not.
+   */
+  async catalogDataHealthView(jobId: JobId): Promise<AdminOutcome<CatalogDataHealthReport>> {
+    return this.#call('catalogDataHealthView', { jobId });
+  }
+
+  /**
+   * One Player Meta partition's Data Health report, named by the exact
+   * `(source, contentVersion, rulesVersion)` partition.
+   */
+  async playerMetaDataHealthView(
+    partition: PlayerMetaPartition,
+  ): Promise<AdminOutcome<PlayerMetaDataHealthReport>> {
+    return this.#call('playerMetaDataHealthView', { partition });
   }
 
   /**

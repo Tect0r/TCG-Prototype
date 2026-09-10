@@ -223,11 +223,24 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.27D's page** (HTTP route wiring, an `apps/admin-client` session
-method, a `DataHealthDashboard` component, `fake-service` seeding and tests)
-is the next slice — the model half shipped 2026-09-10, mirroring the split
-M08.27C already used. Scope and checklist are in
+**M08.27E — Additive annotations** is the next slice: record why a
+candidate change was tested without mutating historical raw output, and
+link annotations to the compatible or deliberately different comparison
+they qualify. Scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
+
+**M08.27D's page shipped 2026-09-10** — two new `ADMIN_ENDPOINTS`
+(`catalog-data-health-view`, `player-meta-data-health-view`) in
+`packages/admin-contracts`, matching request schemas and handlers in
+`apps/admin-server/src/service/handlers.ts` delegating straight to the
+model slice's compute functions, two `AdminSession` methods in
+`apps/admin-client/src/net/session.ts`, `lib/data-health-view.ts`'s
+formatting helpers (never a fabricated zero — measured or `Unavailable:
+<reason>` for each of the nine categories), and
+`components/DataHealthDashboard.tsx`'s two-domain tab dashboard (Catalog
+run by Job ID, Player Meta partition by source/contentVersion/
+rulesVersion), wired into `ResultsScreen.tsx` and `test/fake-service.ts`.
+Full narrative in `.claude/current-work.md`'s "M08.27D page" entry.
 
 **M08.27D's model shipped 2026-09-10** — `packages/admin-contracts/src/
 data-health.ts` (schema: the catalog/player_meta `DataHealthIdentity` split,

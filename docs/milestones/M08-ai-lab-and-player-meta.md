@@ -4793,11 +4793,11 @@ math, missing metric, coverage, corrupt record and annotation-immutability tests
       defect discovered (not introduced) while verifying this slice — corrected
       2026-09-09 in a dedicated slice, see `.claude/current-work.md`'s
       "M08.27 boundary correction" entry.
-- [ ] **M08.27D — Data Health model and page.** Surface corrupt/skipped records,
+- [x] **M08.27D — Data Health model and page.** Surface corrupt/skipped records,
       failures, abnormal/stalled matches, exclusions, replicate disagreement, seat
       bias, pilot sensitivity, unsupported mechanics and replay status from recorded
-      evidence. Split by owner decision 2026-09-10: **the model shipped** this
-      slice — `packages/admin-contracts/src/data-health.ts` (schema: the
+      evidence. Split by owner decision 2026-09-10: **the model** —
+      `packages/admin-contracts/src/data-health.ts` (schema: the
       catalog/player_meta `DataHealthIdentity` split, nine named categories) and
       `apps/admin-server/src/service/data-health.ts`
       (`computeCatalogDataHealth`, `computePlayerMetaDataHealth`), reading
@@ -4807,9 +4807,13 @@ math, missing metric, coverage, corrupt record and annotation-immutability tests
       private file read. Replicate disagreement, seat bias, pilot sensitivity
       and unsupported mechanics are structurally `unavailable` for Player
       Meta, and catalog replay status is structurally `unavailable` for this
-      build, both with named reasons rather than a fabricated zero. The page
-      is a separate, not-yet-started follow-up slice. See
-      `.claude/current-work.md`'s M08.27D entry for the full scope narrative.
+      build, both with named reasons rather than a fabricated zero. **The
+      page** shipped 2026-09-10 — two new `ADMIN_ENDPOINTS`
+      (`catalog-data-health-view`, `player-meta-data-health-view`), two
+      `AdminSession` methods, `lib/data-health-view.ts`'s formatting helpers
+      and `components/DataHealthDashboard.tsx`'s two-domain tab dashboard,
+      wired into `ResultsScreen.tsx`. See `.claude/current-work.md`'s
+      M08.27D model and page entries for the full scope narrative.
 - [ ] **M08.27E — Additive annotations.** Record why a candidate change was tested
       without mutating historical raw output, and link annotations to the compatible
       or deliberately different comparison they qualify.

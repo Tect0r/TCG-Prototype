@@ -42,6 +42,7 @@ import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
 import { AdaptiveResultReader } from './adaptive-results.js';
 import { computeCatalogCoverage, computePlayerMetaCoverage } from './coverage.js';
+import { computeCatalogDataHealth, computePlayerMetaDataHealth } from './data-health.js';
 import { CardExplorerReader } from './card-explorer.js';
 import { DeckExplorerReader } from './deck-explorer.js';
 import { MatchExplorerReader } from './match-explorer.js';
@@ -201,6 +202,9 @@ export class AdminService {
       catalogCoverageView: (payload) => computeCatalogCoverage(this.#results, payload.jobId),
       playerMetaCoverageView: async (payload) =>
         computePlayerMetaCoverage(this.#playerMeta, payload.partition),
+      catalogDataHealthView: (payload) => computeCatalogDataHealth(this.#results, payload.jobId),
+      playerMetaDataHealthView: async (payload) =>
+        computePlayerMetaDataHealth(this.#playerMeta, payload.partition),
     };
   }
 

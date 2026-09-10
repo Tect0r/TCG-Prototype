@@ -40,6 +40,7 @@ import { DeckExplorerPanel } from './DeckExplorerDashboard.js';
 import { MatchExplorerPanel } from './MatchExplorerDashboard.js';
 import { PlayerMetaPanel } from './PlayerMetaDashboard.js';
 import { CoveragePanel } from './CoverageDashboard.js';
+import { DataHealthPanel } from './DataHealthDashboard.js';
 
 /**
  * The result catalog: every job this catalog has ever created, completed or
@@ -98,6 +99,7 @@ export function ResultsScreen() {
     | 'card-explorer'
     | 'match-explorer'
     | 'coverage'
+    | 'data-health'
   >('catalog');
   /**
    * A ref queued by one explorer panel's "Open in X Explorer" button
@@ -237,10 +239,21 @@ export function ResultsScreen() {
         >
           Coverage
         </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'data-health'}
+          className={mode === 'data-health' ? 'is-current' : ''}
+          onClick={() => {
+            setMode('data-health');
+          }}
+        >
+          Data Health
+        </button>
       </div>
 
       {mode === 'adaptive' && <AdaptiveRunPanel />}
       {mode === 'coverage' && <CoveragePanel />}
+      {mode === 'data-health' && <DataHealthPanel />}
       {mode === 'player-meta' && <PlayerMetaPanel />}
       {mode === 'deck-explorer' && (
         <DeckExplorerPanel
