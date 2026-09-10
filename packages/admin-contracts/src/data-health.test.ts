@@ -22,7 +22,11 @@ function emptyBucket(): { count: number; entries: never[]; unavailableReason: nu
   return { count: 0, entries: [], unavailableReason: null };
 }
 
-function emptyTermination(): { count: number; byKind: Record<string, number>; unavailableReason: null } {
+function emptyTermination(): {
+  count: number;
+  byKind: Record<string, number>;
+  unavailableReason: null;
+} {
   return { count: 0, byKind: {}, unavailableReason: null };
 }
 
@@ -32,7 +36,12 @@ function unavailableReplay(): {
   withoutReplay: number;
   unavailableReason: string;
 } {
-  return { matchesChecked: 0, withReplay: 0, withoutReplay: 0, unavailableReason: 'no reader exists' };
+  return {
+    matchesChecked: 0,
+    withReplay: 0,
+    withoutReplay: 0,
+    unavailableReason: 'no reader exists',
+  };
 }
 
 describe('dataHealthIdentitySchema', () => {
@@ -45,7 +54,10 @@ describe('dataHealthIdentitySchema', () => {
   });
 
   it('accepts a Player Meta identity', () => {
-    const result = dataHealthIdentitySchema.safeParse({ domain: 'player_meta', partition: partition() });
+    const result = dataHealthIdentitySchema.safeParse({
+      domain: 'player_meta',
+      partition: partition(),
+    });
     expect(result.success).toBe(true);
   });
 
@@ -172,7 +184,12 @@ describe('catalogDataHealthReportSchema', () => {
         replicateDisagreement: {
           count: 1,
           entries: [
-            { definitionId: 'card_forest', betweenReplicateVariation: 0.08, replicates: 3, shareDelta: -0.02 },
+            {
+              definitionId: 'card_forest',
+              betweenReplicateVariation: 0.08,
+              replicates: 3,
+              shareDelta: -0.02,
+            },
           ],
           unavailableReason: null,
         },

@@ -288,23 +288,34 @@ import { adminError, type AdminError } from './errors.js';
  *   match would be surfaced automatically no matter how many matches existed,
  *   and every explorer's evidence would remain a dead end. That is what a
  *   contract version is for saying.
- * - 14 (M08.27C) — the language acquired **Coverage**. Two addresses were
- *   added, `catalog-coverage-view` (naming a `jobId`) and
- *   `player-meta-coverage-view` (naming a `PlayerMetaPartition`), each
- *   answering how much of the whole card and mechanic vocabulary a format
- *   admits was actually exercised, and where it was not, why not. The
+ * - 14 (M08.27C, M08.27D) — the language acquired **Coverage** and **Data
+ *   Health**. M08.27C added two addresses, `catalog-coverage-view` (naming a
+ *   `jobId`) and `player-meta-coverage-view` (naming a `PlayerMetaPartition`),
+ *   each answering how much of the whole card and mechanic vocabulary a
+ *   format admits was actually exercised, and where it was not, why not. The
  *   catalog report carries every card's status at six funnel stages
  *   (eligibility, inclusion, draw, play, activation, trigger) plus every
  *   mechanic's status; the Player Meta report carries every card's
  *   observation status within one exact partition. Both use the same
  *   three-valued status (`reached`/`not_reached`/`unavailable`) `coverage.ts`
- *   defines, never a fabricated number.
+ *   defines, never a fabricated number. M08.27D then added two more,
+ *   `catalog-data-health-view` and `player-meta-data-health-view`, each
+ *   answering the same domain split for nine named categories — corrupt or
+ *   skipped records, failures, abnormal and stalled matches, excluded
+ *   comparisons, replicate disagreement, seat bias, pilot sensitivity,
+ *   unsupported mechanics and deterministic replay status — again as a
+ *   measured value or an `unavailable` status with a named reason, never a
+ *   fabricated zero. Both slices shipped inside the same unreleased tranche
+ *   before this build was ever run against another, so one version number
+ *   covers both rather than moving twice for work no other build ever saw
+ *   split in half.
  *
  *   A build speaking 13 could find, list and open live matches, follow
  *   cross-navigation references, and surface representative matches, and
- *   could not reach either new address, so no card or mechanic's coverage
- *   status would be visible no matter how many runs or partitions existed.
- *   That is what a contract version is for saying.
+ *   could not reach any of these four new addresses, so no card or
+ *   mechanic's coverage status, and no data-health category, would be
+ *   visible no matter how many runs or partitions existed. That is what a
+ *   contract version is for saying.
  */
 export const ADMIN_CONTRACT_VERSION = 14;
 

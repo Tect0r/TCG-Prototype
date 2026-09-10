@@ -11,7 +11,12 @@ import { experimentPaths } from '@tcg/simulator';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
 
 import { resolveCatalogRoots } from '../catalog/roots.js';
-import { makeTestCatalog, testConfig, testIdentity, type TestCatalog } from '../catalog/test-catalog.js';
+import {
+  makeTestCatalog,
+  testConfig,
+  testIdentity,
+  type TestCatalog,
+} from '../catalog/test-catalog.js';
 
 import { computeCatalogDataHealth, computePlayerMetaDataHealth } from './data-health.js';
 import { PlayerMetaResultReader } from './player-meta-results.js';
@@ -137,7 +142,13 @@ async function seedRun(options: {
   const paths = experimentPaths(full);
   await writeFile(
     paths.summary,
-    JSON.stringify(summaryDocument({ terminations: options.terminations, flags: options.flags, displacement: options.displacement })),
+    JSON.stringify(
+      summaryDocument({
+        terminations: options.terminations,
+        flags: options.flags,
+        displacement: options.displacement,
+      }),
+    ),
     'utf8',
   );
   await writeFile(
@@ -265,7 +276,12 @@ describe('computeCatalogDataHealth', () => {
     const result = unwrap(await computeCatalogDataHealth(reader, jobId));
     expect(result.replicateDisagreement.count).toBe(1);
     expect(result.replicateDisagreement.entries).toEqual([
-      { definitionId: 'card_noisy', betweenReplicateVariation: 0.09, replicates: 3, shareDelta: -0.03 },
+      {
+        definitionId: 'card_noisy',
+        betweenReplicateVariation: 0.09,
+        replicates: 3,
+        shareDelta: -0.03,
+      },
     ]);
   });
 
@@ -342,7 +358,11 @@ describe('computePlayerMetaDataHealth', () => {
       matchId,
       source: p.source,
       formatId: 'precon_wave_1',
-      provenance: { softwareVersion: '1.0.0', contentVersion: p.contentVersion, rulesVersion: p.rulesVersion },
+      provenance: {
+        softwareVersion: '1.0.0',
+        contentVersion: p.contentVersion,
+        rulesVersion: p.rulesVersion,
+      },
       seats: baseSeats(),
       actionCount: 40,
       terminationOrigin: 'concede_action',
@@ -364,7 +384,11 @@ describe('computePlayerMetaDataHealth', () => {
       matchId,
       source: p.source,
       formatId: 'precon_wave_1',
-      provenance: { softwareVersion: '1.0.0', contentVersion: p.contentVersion, rulesVersion: p.rulesVersion },
+      provenance: {
+        softwareVersion: '1.0.0',
+        contentVersion: p.contentVersion,
+        rulesVersion: p.rulesVersion,
+      },
       seats: baseSeats(),
       actionCount: 12,
       terminationOrigin: 'server_failure',
@@ -386,7 +410,11 @@ describe('computePlayerMetaDataHealth', () => {
       matchId,
       source: p.source,
       formatId: 'precon_wave_1',
-      provenance: { softwareVersion: '1.0.0', contentVersion: p.contentVersion, rulesVersion: p.rulesVersion },
+      provenance: {
+        softwareVersion: '1.0.0',
+        contentVersion: p.contentVersion,
+        rulesVersion: p.rulesVersion,
+      },
       seats: baseSeats(),
       actionCount: 8,
       terminationOrigin: 'disconnect_timeout',
@@ -408,7 +436,11 @@ describe('computePlayerMetaDataHealth', () => {
       matchId,
       source: p.source,
       formatId: 'precon_wave_1',
-      provenance: { softwareVersion: '1.0.0', contentVersion: p.contentVersion, rulesVersion: p.rulesVersion },
+      provenance: {
+        softwareVersion: '1.0.0',
+        contentVersion: p.contentVersion,
+        rulesVersion: p.rulesVersion,
+      },
       seats: baseSeats(),
       actionCount: 0,
       terminationOrigin: 'abandoned_unrecordable',
@@ -473,7 +505,7 @@ describe('computePlayerMetaDataHealth', () => {
     expect(result.unsupportedMechanics.unavailableReason).toEqual(expect.any(String));
   });
 
-  it('measures replayStatus over this partition\'s abnormal-origin matches only', () => {
+  it("measures replayStatus over this partition's abnormal-origin matches only", () => {
     const p = partition();
     writeMatch('match_ordinary', ordinaryEnvelope('match_ordinary', p));
     writeMatch('match_failure', serverFailureEnvelope('match_failure', p));
@@ -487,7 +519,7 @@ describe('computePlayerMetaDataHealth', () => {
     });
   });
 
-  it('reports every partition\'s skipped-envelope list identically, root-wide', () => {
+  it("reports every partition's skipped-envelope list identically, root-wide", () => {
     const p = partition();
     writeMatch('match_a', ordinaryEnvelope('match_a', p));
     const brokenDirectory = join(root, 'match_broken');

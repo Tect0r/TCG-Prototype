@@ -412,4 +412,3 @@ function ReplicateDisagreementTable({
     </div>
   );
 }
-

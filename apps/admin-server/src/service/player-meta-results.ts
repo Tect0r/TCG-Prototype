@@ -672,7 +672,9 @@ export class PlayerMetaResultReader {
   }
 
   /** `cardEvidence` alone, for `./coverage.ts`'s observation stage — narrower than a full `readTable` page. */
-  readCardEvidence(filter: PlayerMetaFilter): Result<readonly LiveCardEvidence[], readonly AdminError[]> {
+  readCardEvidence(
+    filter: PlayerMetaFilter,
+  ): Result<readonly LiveCardEvidence[], readonly AdminError[]> {
     const directory = this.#resolve();
     if (isErr(directory)) return directory;
     return ok(openPlayerMeta(directory.value, filter).cardEvidence);

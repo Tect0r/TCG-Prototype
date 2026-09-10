@@ -129,7 +129,10 @@ export const playerMetaCardCoverageSchema = z.strictObject({
 export type PlayerMetaCardCoverage = z.infer<typeof playerMetaCardCoverageSchema>;
 
 export const playerMetaCoverageReportSchema = z.strictObject({
-  identity: z.strictObject({ domain: z.literal('player_meta'), partition: playerMetaPartitionSchema }),
+  identity: z.strictObject({
+    domain: z.literal('player_meta'),
+    partition: playerMetaPartitionSchema,
+  }),
   cards: z.array(playerMetaCardCoverageSchema),
   /** Set, with `cards` empty, exactly when no card database could be resolved for this partition (`currentLiveMatchCardDatabases`'s mixed-format or unbundled-format refusal). */
   unavailableReason: z.string().nullable(),

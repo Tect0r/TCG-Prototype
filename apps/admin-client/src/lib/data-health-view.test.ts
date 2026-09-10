@@ -12,7 +12,9 @@ import {
   terminationBucketFact,
 } from './data-health-view.js';
 
-function terminationBucket(overrides: Partial<DataHealthTerminationBucket> = {}): DataHealthTerminationBucket {
+function terminationBucket(
+  overrides: Partial<DataHealthTerminationBucket> = {},
+): DataHealthTerminationBucket {
   return { count: 0, byKind: {}, unavailableReason: null, ...overrides };
 }
 
@@ -23,7 +25,10 @@ function flagBucket(overrides: Partial<DataHealthFlagBucket> = {}): DataHealthFl
 describe('terminationBucketFact', () => {
   it('summarizes a measured bucket by kind', () => {
     expect(
-      terminationBucketFact('Failures', terminationBucket({ count: 3, byKind: { engine_error: 2, pilot_error: 1 } })),
+      terminationBucketFact(
+        'Failures',
+        terminationBucket({ count: 3, byKind: { engine_error: 2, pilot_error: 1 } }),
+      ),
     ).toEqual({ label: 'Failures', value: '3 (engine_error: 2, pilot_error: 1)' });
   });
 
@@ -67,7 +72,9 @@ describe('replicateDisagreementFact', () => {
   });
 
   it('reports unavailable with its reason', () => {
-    expect(replicateDisagreementFact({ count: 0, unavailableReason: 'no replicate concept' })).toEqual({
+    expect(
+      replicateDisagreementFact({ count: 0, unavailableReason: 'no replicate concept' }),
+    ).toEqual({
       label: 'Replicate disagreement',
       value: 'Unavailable',
       note: 'no replicate concept',
@@ -78,7 +85,12 @@ describe('replicateDisagreementFact', () => {
 describe('replayStatusFact', () => {
   it('reports a measured reading', () => {
     expect(
-      replayStatusFact({ matchesChecked: 4, withReplay: 3, withoutReplay: 1, unavailableReason: null }),
+      replayStatusFact({
+        matchesChecked: 4,
+        withReplay: 3,
+        withoutReplay: 1,
+        unavailableReason: null,
+      }),
     ).toEqual({ label: 'Deterministic replay', value: '3 of 4 checked kept a replay' });
   });
 
@@ -140,7 +152,10 @@ describe('catalogDataHealthFacts', () => {
 describe('playerMetaDataHealthFacts', () => {
   it('names all nine categories, with exclusions as a plain count', () => {
     const facts = playerMetaDataHealthFacts({
-      identity: { domain: 'player_meta', partition: { source: 'ai_ai', contentVersion: 1, rulesVersion: '1.0.0' } },
+      identity: {
+        domain: 'player_meta',
+        partition: { source: 'ai_ai', contentVersion: 1, rulesVersion: '1.0.0' },
+      },
       recoveredRecords: { count: 0, entries: [] },
       failures: terminationBucket(),
       stalled: terminationBucket(),

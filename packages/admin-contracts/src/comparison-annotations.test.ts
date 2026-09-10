@@ -22,7 +22,11 @@ function document(
   return {
     documentVersion: 1,
     annotationId: 'cmpnote_aaaaaa',
-    identity: { domain: 'catalog', baselineJobId: 'job_baseline1', candidateJobId: 'job_candidat1' },
+    identity: {
+      domain: 'catalog',
+      baselineJobId: 'job_baseline1',
+      candidateJobId: 'job_candidat1',
+    },
     decision: { kind: 'compatible', note: 'presentation only' },
     note: 'Confirmed with the balance team before shipping.',
     createdAt: '2026-09-10T09:00:00.000Z',
@@ -54,12 +58,17 @@ describe('comparisonAnnotationDocumentSchema', () => {
   });
 
   it('rejects a refused decision: the shape does not exist in this schema', () => {
-    const withRefused = { ...document(), decision: { kind: 'refused', reason: 'nothing to compare' } };
+    const withRefused = {
+      ...document(),
+      decision: { kind: 'refused', reason: 'nothing to compare' },
+    };
     expect(comparisonAnnotationDocumentSchema.safeParse(withRefused).success).toBe(false);
   });
 
   it('rejects an empty note', () => {
-    expect(comparisonAnnotationDocumentSchema.safeParse(document({ note: '' })).success).toBe(false);
+    expect(comparisonAnnotationDocumentSchema.safeParse(document({ note: '' })).success).toBe(
+      false,
+    );
   });
 
   it('rejects an unstamped document version', () => {

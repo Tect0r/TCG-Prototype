@@ -162,7 +162,10 @@ export const playerMetaMatchRecordSchema = z.strictObject({
 export type PlayerMetaMatchRecord = z.infer<typeof playerMetaMatchRecordSchema>;
 
 export const playerMetaDataHealthReportSchema = z.strictObject({
-  identity: z.strictObject({ domain: z.literal('player_meta'), partition: playerMetaPartitionSchema }),
+  identity: z.strictObject({
+    domain: z.literal('player_meta'),
+    partition: playerMetaPartitionSchema,
+  }),
   recoveredRecords: z.strictObject({
     count: z.number().int().min(0),
     entries: z.array(playerMetaMatchRecordSchema),

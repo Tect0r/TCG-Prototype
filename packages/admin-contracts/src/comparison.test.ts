@@ -31,10 +31,12 @@ function partition(overrides: Partial<PlayerMetaPartition> = {}): PlayerMetaPart
 
 describe('comparisonDecisionSchema', () => {
   it('accepts all three verdicts', () => {
-    expect(comparisonDecisionSchema.safeParse({ kind: 'compatible', note: 'identical' }).success).toBe(
+    expect(
+      comparisonDecisionSchema.safeParse({ kind: 'compatible', note: 'identical' }).success,
+    ).toBe(true);
+    expect(comparisonDecisionSchema.safeParse({ kind: 'refused', reason: 'why' }).success).toBe(
       true,
     );
-    expect(comparisonDecisionSchema.safeParse({ kind: 'refused', reason: 'why' }).success).toBe(true);
     expect(
       comparisonDecisionSchema.safeParse({
         kind: 'deliberately_different',
@@ -138,7 +140,11 @@ describe('decidePlayerMetaComparison', () => {
   it('always refuses a cross-source pair, declared change or not', () => {
     const baseline = partition({ source: 'human_human' });
     const candidate = partition({ source: 'ai_ai' });
-    const decision = decidePlayerMetaComparison(baseline, candidate, 'different population entirely');
+    const decision = decidePlayerMetaComparison(
+      baseline,
+      candidate,
+      'different population entirely',
+    );
     expect(decision.kind).toBe('refused');
   });
 

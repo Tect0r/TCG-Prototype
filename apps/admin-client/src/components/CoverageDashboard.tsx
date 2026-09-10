@@ -309,9 +309,7 @@ function PlayerMetaCoveragePanel() {
         )}
       </form>
 
-      {partition !== null && report === null && (
-        <Busy label="Reading this partition's coverage…" />
-      )}
+      {partition !== null && report === null && <Busy label="Reading this partition's coverage…" />}
       {report !== null && !report.ok && (
         <Failure
           title="This partition's coverage could not be shown"

@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { JobId, PlayerMetaPartition } from '@tcg/admin-contracts';
-import { CARD_SCHEMA_VERSION, CardDatabase, isColorIdentityLegal, type CardDefinition } from '@tcg/card-data';
+import {
+  CARD_SCHEMA_VERSION,
+  CardDatabase,
+  isColorIdentityLegal,
+  type CardDefinition,
+} from '@tcg/card-data';
 import { unwrap } from '@tcg/shared';
 import {
   environmentConfigForFormat,
@@ -17,7 +22,12 @@ import {
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
 
 import { resolveCatalogRoots } from '../catalog/roots.js';
-import { makeTestCatalog, testConfig, testIdentity, type TestCatalog } from '../catalog/test-catalog.js';
+import {
+  makeTestCatalog,
+  testConfig,
+  testIdentity,
+  type TestCatalog,
+} from '../catalog/test-catalog.js';
 
 import { computeCatalogCoverage, computePlayerMetaCoverage } from './coverage.js';
 import { PlayerMetaResultReader } from './player-meta-results.js';
@@ -230,7 +240,9 @@ describe('computeCatalogCoverage', () => {
       const card = database.get(id);
       return (
         card !== undefined &&
-        commanders.some((commander) => isColorIdentityLegal(card.colorIdentity, commander.colorIdentity))
+        commanders.some((commander) =>
+          isColorIdentityLegal(card.colorIdentity, commander.colorIdentity),
+        )
       );
     });
     if (eligible === undefined) throw new Error('fixture has no eligible pool card');
@@ -286,7 +298,11 @@ describe('computePlayerMetaCoverage', () => {
       matchId,
       source: p.source,
       formatId: 'precon_wave_1',
-      provenance: { softwareVersion: '1.0.0', contentVersion: p.contentVersion, rulesVersion: p.rulesVersion },
+      provenance: {
+        softwareVersion: '1.0.0',
+        contentVersion: p.contentVersion,
+        rulesVersion: p.rulesVersion,
+      },
       seats: [
         {
           seatIndex: 0,

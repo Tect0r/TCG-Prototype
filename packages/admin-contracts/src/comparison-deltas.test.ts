@@ -20,7 +20,11 @@ describe('comparisonDeltaTableSchema', () => {
   it('accepts a catalog delta table with a compatible decision and matching cells', () => {
     const result = comparisonDeltaTableSchema.safeParse({
       table: 'deck_matchups',
-      identity: { domain: 'catalog', baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+      identity: {
+        domain: 'catalog',
+        baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
       decision: compatible,
       columns: [{ key: 'deckHash', label: 'Deck', kind: 'identifier', bounds: null }],
       rows: [{ deckHash: 'abc' }],
@@ -57,7 +61,11 @@ describe('comparisonDeltaTableSchema', () => {
   it('rejects a Player Meta table paired with a catalog identity', () => {
     const result = comparisonDeltaTableSchema.safeParse({
       table: 'surrender_state',
-      identity: { domain: 'catalog', baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+      identity: {
+        domain: 'catalog',
+        baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
       decision: compatible,
       columns: [],
       rows: [],
@@ -68,7 +76,11 @@ describe('comparisonDeltaTableSchema', () => {
   it('rejects a refused decision that still carries computed rows', () => {
     const result = comparisonDeltaTableSchema.safeParse({
       table: 'terminations',
-      identity: { domain: 'catalog', baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+      identity: {
+        domain: 'catalog',
+        baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
       decision: refused,
       columns: [{ key: 'kind', label: 'Termination', kind: 'identifier', bounds: null }],
       rows: [{ kind: 'timeout' }],
@@ -79,7 +91,11 @@ describe('comparisonDeltaTableSchema', () => {
   it('accepts a refused decision with an empty payload', () => {
     const result = comparisonDeltaTableSchema.safeParse({
       table: 'terminations',
-      identity: { domain: 'catalog', baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+      identity: {
+        domain: 'catalog',
+        baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
       decision: refused,
       columns: [],
       rows: [],
@@ -90,7 +106,11 @@ describe('comparisonDeltaTableSchema', () => {
   it('rejects a row cell with no declared column', () => {
     const result = comparisonDeltaTableSchema.safeParse({
       table: 'deck_family',
-      identity: { domain: 'catalog', baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+      identity: {
+        domain: 'catalog',
+        baselineJobId: 'job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        candidateJobId: 'job_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
       decision: compatible,
       columns: [{ key: 'deckId', label: 'Deck', kind: 'identifier', bounds: null }],
       rows: [{ deckId: 'd1', presence: 'both' }],

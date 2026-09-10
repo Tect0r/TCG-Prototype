@@ -49,7 +49,11 @@ export function replicateDisagreementFact(bucket: {
   readonly unavailableReason: string | null;
 }): Fact {
   if (bucket.unavailableReason !== null) {
-    return { label: 'Replicate disagreement', value: 'Unavailable', note: bucket.unavailableReason };
+    return {
+      label: 'Replicate disagreement',
+      value: 'Unavailable',
+      note: bucket.unavailableReason,
+    };
   }
   return { label: 'Replicate disagreement', value: `${bucket.count}` };
 }

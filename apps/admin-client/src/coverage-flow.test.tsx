@@ -68,9 +68,9 @@ describe('opening the Catalog run coverage tab', () => {
 
     expect(await within(main()).findByText('arcane_snare')).toBeVisible();
     expect(within(main()).getByText('keyword:flying')).toBeVisible();
-    expect(
-      service.requests.some((request) => request.path.includes('catalog-coverage-view')),
-    ).toBe(true);
+    expect(service.requests.some((request) => request.path.includes('catalog-coverage-view'))).toBe(
+      true,
+    );
   });
 
   it('refuses a malformed job ID without sending a request', async () => {
@@ -80,9 +80,9 @@ describe('opening the Catalog run coverage tab', () => {
     await userEvent.click(within(main()).getByRole('button', { name: 'Open' }));
 
     expect(await within(main()).findByRole('alert')).toBeVisible();
-    expect(
-      service.requests.some((request) => request.path.includes('catalog-coverage-view')),
-    ).toBe(false);
+    expect(service.requests.some((request) => request.path.includes('catalog-coverage-view'))).toBe(
+      false,
+    );
   });
 
   it('falls back to the empty default fixture for an unseeded job ID', async () => {

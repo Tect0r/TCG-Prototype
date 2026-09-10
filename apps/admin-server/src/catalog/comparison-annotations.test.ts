@@ -209,6 +209,9 @@ describe('comparison annotations', () => {
     const annotationMethods = [...methodNames].filter((name) =>
       name.includes('ComparisonAnnotation'),
     );
-    expect(annotationMethods.sort()).toEqual(['createComparisonAnnotation', 'listComparisonAnnotations']);
+    expect(annotationMethods.sort()).toEqual([
+      'createComparisonAnnotation',
+      'listComparisonAnnotations',
+    ]);
   });
 });

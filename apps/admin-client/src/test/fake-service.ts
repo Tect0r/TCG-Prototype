@@ -4,7 +4,7 @@ import {
   ARTIFACT_MEDIA_TYPES,
   applyBatchTransition,
   applyJobTransition,
-  CURRENT_ADMIN_VERSIONS,
+  CURRENT_CAPABILITY_VERSIONS,
   MAX_FILTER_VALUES,
   MAX_JOBS_PER_BATCH,
   PAGE_SIZE_DEFAULT,
@@ -1147,7 +1147,7 @@ export function searchGenerationsTableFixture(
 
 export function capabilitiesFixture(overrides: Partial<Capabilities> = {}): Capabilities {
   return {
-    versions: { ...CURRENT_ADMIN_VERSIONS },
+    versions: { ...CURRENT_CAPABILITY_VERSIONS },
     access: { loopback: true, authenticationRequired: false },
     limits: {
       maxRequestBytes: 131_072,

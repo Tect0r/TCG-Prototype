@@ -1,5 +1,5 @@
 import {
-  CATALOG_COMPARISON_DELTA_TABLES,
+  type CATALOG_COMPARISON_DELTA_TABLES,
   NO_PLAYER_META_FILTER,
   PAGE_SIZE_MAX,
   adminError,
@@ -56,13 +56,19 @@ const CATALOG_TABLE_KEYS: Record<Exclude<CatalogDeltaTableName, 'duration'>, rea
   deck_family: ['deckId'],
 };
 
-const PLAYER_META_TABLE_SOURCE: Record<'surrender_turns' | 'surrender_phases' | 'surrender_state', PlayerMetaResultTableName> = {
+const PLAYER_META_TABLE_SOURCE: Record<
+  'surrender_turns' | 'surrender_phases' | 'surrender_state',
+  PlayerMetaResultTableName
+> = {
   surrender_turns: 'surrender_turns',
   surrender_phases: 'surrender_phases',
   surrender_state: 'surrender_state',
 };
 
-const PLAYER_META_TABLE_KEYS: Record<'surrender_turns' | 'surrender_phases' | 'surrender_state', readonly string[]> = {
+const PLAYER_META_TABLE_KEYS: Record<
+  'surrender_turns' | 'surrender_phases' | 'surrender_state',
+  readonly string[]
+> = {
   surrender_turns: ['turn'],
   surrender_phases: ['phase'],
   surrender_state: [],
@@ -171,7 +177,12 @@ function buildDeltaTable(
     if (keyColumns.includes(col.key)) continue;
     if (consumedKeys.has(col.key)) continue;
     if (intervalMetrics.some((metric) => metric.key === col.key)) continue;
-    if (col.kind === 'count' || col.kind === 'number' || col.kind === 'proportion' || col.kind === 'milliseconds') {
+    if (
+      col.kind === 'count' ||
+      col.kind === 'number' ||
+      col.kind === 'proportion' ||
+      col.kind === 'milliseconds'
+    ) {
       standaloneMetrics.push(col);
     } else {
       passthroughColumns.push(col);
@@ -188,22 +199,72 @@ function buildDeltaTable(
   }
   for (const metric of intervalMetrics) {
     const name = capitalize(metric.key);
-    columns.push({ key: `baseline${name}`, label: `Baseline ${metric.label}`, kind: 'proportion', bounds: null });
-    columns.push({ key: `candidate${name}`, label: `Candidate ${metric.label}`, kind: 'proportion', bounds: null });
-    columns.push({ key: `delta${name}`, label: `${metric.label} delta`, kind: 'number', bounds: null });
-    columns.push({ key: `baseline${name}Games`, label: `Baseline ${metric.label} support`, kind: 'count', bounds: null });
-    columns.push({ key: `candidate${name}Games`, label: `Candidate ${metric.label} support`, kind: 'count', bounds: null });
+    columns.push({
+      key: `baseline${name}`,
+      label: `Baseline ${metric.label}`,
+      kind: 'proportion',
+      bounds: null,
+    });
+    columns.push({
+      key: `candidate${name}`,
+      label: `Candidate ${metric.label}`,
+      kind: 'proportion',
+      bounds: null,
+    });
+    columns.push({
+      key: `delta${name}`,
+      label: `${metric.label} delta`,
+      kind: 'number',
+      bounds: null,
+    });
+    columns.push({
+      key: `baseline${name}Games`,
+      label: `Baseline ${metric.label} support`,
+      kind: 'count',
+      bounds: null,
+    });
+    columns.push({
+      key: `candidate${name}Games`,
+      label: `Candidate ${metric.label} support`,
+      kind: 'count',
+      bounds: null,
+    });
   }
   for (const metric of standaloneMetrics) {
     const name = capitalize(metric.key);
-    columns.push({ key: `baseline${name}`, label: `Baseline ${metric.label}`, kind: metric.kind, bounds: null });
-    columns.push({ key: `candidate${name}`, label: `Candidate ${metric.label}`, kind: metric.kind, bounds: null });
-    columns.push({ key: `delta${name}`, label: `${metric.label} delta`, kind: 'number', bounds: null });
+    columns.push({
+      key: `baseline${name}`,
+      label: `Baseline ${metric.label}`,
+      kind: metric.kind,
+      bounds: null,
+    });
+    columns.push({
+      key: `candidate${name}`,
+      label: `Candidate ${metric.label}`,
+      kind: metric.kind,
+      bounds: null,
+    });
+    columns.push({
+      key: `delta${name}`,
+      label: `${metric.label} delta`,
+      kind: 'number',
+      bounds: null,
+    });
   }
   for (const passthrough of passthroughColumns) {
     const name = capitalize(passthrough.key);
-    columns.push({ key: `baseline${name}`, label: `Baseline ${passthrough.label}`, kind: passthrough.kind, bounds: null });
-    columns.push({ key: `candidate${name}`, label: `Candidate ${passthrough.label}`, kind: passthrough.kind, bounds: null });
+    columns.push({
+      key: `baseline${name}`,
+      label: `Baseline ${passthrough.label}`,
+      kind: passthrough.kind,
+      bounds: null,
+    });
+    columns.push({
+      key: `candidate${name}`,
+      label: `Candidate ${passthrough.label}`,
+      kind: passthrough.kind,
+      bounds: null,
+    });
   }
 
   function buildRow(baseRow: ResultRow | undefined, candRow: ResultRow | undefined): ResultRow {
@@ -221,13 +282,16 @@ function buildDeltaTable(
     }
     for (const metric of intervalMetrics) {
       const name = capitalize(metric.key);
-      const baselineGames = baseRow === undefined ? 0 : (numberOrNull(baseRow[`${metric.key}Games`]) ?? 0);
-      const candidateGames = candRow === undefined ? 0 : (numberOrNull(candRow[`${metric.key}Games`]) ?? 0);
+      const baselineGames =
+        baseRow === undefined ? 0 : (numberOrNull(baseRow[`${metric.key}Games`]) ?? 0);
+      const candidateGames =
+        candRow === undefined ? 0 : (numberOrNull(candRow[`${metric.key}Games`]) ?? 0);
       const baselinePoint = baselineGames === 0 ? null : numberOrNull(baseRow?.[metric.key]);
       const candidatePoint = candidateGames === 0 ? null : numberOrNull(candRow?.[metric.key]);
       row[`baseline${name}`] = baselinePoint;
       row[`candidate${name}`] = candidatePoint;
-      row[`delta${name}`] = baselinePoint !== null && candidatePoint !== null ? candidatePoint - baselinePoint : null;
+      row[`delta${name}`] =
+        baselinePoint !== null && candidatePoint !== null ? candidatePoint - baselinePoint : null;
       row[`baseline${name}Games`] = baselineGames;
       row[`candidate${name}Games`] = candidateGames;
     }
@@ -252,8 +316,12 @@ function buildDeltaTable(
   if (keyColumns.length === 0) {
     rows.push(buildRow(baseline.rows[0], candidate.rows[0]));
   } else {
-    const baselineByKey = new Map(baseline.rows.map((row) => [rowKey(row, keyColumns), row] as const));
-    const candidateByKey = new Map(candidate.rows.map((row) => [rowKey(row, keyColumns), row] as const));
+    const baselineByKey = new Map(
+      baseline.rows.map((row) => [rowKey(row, keyColumns), row] as const),
+    );
+    const candidateByKey = new Map(
+      candidate.rows.map((row) => [rowKey(row, keyColumns), row] as const),
+    );
     const allKeys = [...new Set([...baselineByKey.keys(), ...candidateByKey.keys()])].sort();
     for (const key of allKeys) {
       rows.push(buildRow(baselineByKey.get(key), candidateByKey.get(key)));
@@ -264,9 +332,16 @@ function buildDeltaTable(
 }
 
 function durationSource(summary: ResultSummary): DeltaSource {
-  const selected = summary.readings.filter((reading) => DURATION_READING_KEYS.includes(reading.key));
+  const selected = summary.readings.filter((reading) =>
+    DURATION_READING_KEYS.includes(reading.key),
+  );
   return {
-    columns: selected.map((reading) => ({ key: reading.key, label: reading.label, kind: reading.kind, bounds: null })),
+    columns: selected.map((reading) => ({
+      key: reading.key,
+      label: reading.label,
+      kind: reading.kind,
+      bounds: null,
+    })),
     rows: [Object.fromEntries(selected.map((reading) => [reading.key, reading.value]))],
   };
 }
@@ -359,7 +434,11 @@ export async function computeCatalogComparisonDelta(
   }
 
   if (table === 'duration') {
-    const built = buildDeltaTable([], durationSource(baselineSummary.value), durationSource(candidateSummary.value));
+    const built = buildDeltaTable(
+      [],
+      durationSource(baselineSummary.value),
+      durationSource(candidateSummary.value),
+    );
     return validate({ table, identity, decision, columns: built.columns, rows: built.rows });
   }
 

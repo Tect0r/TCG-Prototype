@@ -384,10 +384,7 @@ export {
   type FlagReason,
 } from './analysis/flags.js';
 
-export {
-  displacementSchema,
-  type Displacement,
-} from './analysis/displacement.js';
+export { displacementSchema, type Displacement } from './analysis/displacement.js';
 
 export {
   cohensH,

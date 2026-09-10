@@ -52,14 +52,19 @@ function emptyTally(): { reached: number; not_reached: number; unavailable: numb
 }
 
 /** How many cards in this report landed at each status, for one catalog stage. */
-export function catalogStageTally(cards: readonly CatalogCardCoverage[], stage: CatalogCoverageStage): CoverageTally {
+export function catalogStageTally(
+  cards: readonly CatalogCardCoverage[],
+  stage: CatalogCoverageStage,
+): CoverageTally {
   const tally = emptyTally();
   for (const card of cards) tally[card[stage]] += 1;
   return tally;
 }
 
 /** How many cards in this report landed at each observation status (Player Meta domain). */
-export function playerMetaObservationTally(cards: readonly PlayerMetaCardCoverage[]): CoverageTally {
+export function playerMetaObservationTally(
+  cards: readonly PlayerMetaCardCoverage[],
+): CoverageTally {
   const tally = emptyTally();
   for (const card of cards) tally[card.observation] += 1;
   return tally;

@@ -25,7 +25,10 @@ describe('coverageIdentitySchema', () => {
   });
 
   it('accepts a Player Meta identity', () => {
-    const result = coverageIdentitySchema.safeParse({ domain: 'player_meta', partition: partition() });
+    const result = coverageIdentitySchema.safeParse({
+      domain: 'player_meta',
+      partition: partition(),
+    });
     expect(result.success).toBe(true);
   });
 

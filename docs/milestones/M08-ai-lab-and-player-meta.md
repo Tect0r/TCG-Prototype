@@ -4819,16 +4819,28 @@ math, missing metric, coverage, corrupt record and annotation-immutability tests
       or deliberately different comparison they qualify. Scoped as contracts-plus-
       persistence only (no HTTP endpoint, no admin-client UI), mirroring M08.27A/B.
       See `.claude/current-work.md`'s M08.27E entry for the full scope narrative.
-- [ ] **M08.27F — Tranche close.** Revalidate refusal, delta math, missing data,
+- [x] **M08.27F — Tranche close.** Revalidated refusal, delta math, missing data,
       coverage, real defects and annotation immutability through the standard
-      tranche-close gate.
+      tranche-close gate. `npm run check:consistency`, `npm run audit:check`
+      and `npm run verify` all pass clean (274/274 test files, 5187/5187
+      tests). The full-repo gate caught three defects no slice's own focused
+      checks could see: a type-only-import lint failure, 25 tranche files
+      never previously run through `prettier --check`, and a real regression
+      in `apps/admin-client/src/test/fake-service.ts` (`capabilitiesFixture`
+      spread the five-field `CURRENT_ADMIN_VERSIONS` into a four-field
+      `z.strictObject`, once M08.27E added `comparisonAnnotation`). All three
+      fixed; production code was already correct via the dedicated
+      `CURRENT_CAPABILITY_VERSIONS` constant. `tcg-reviewer` also caught the
+      `ADMIN_CONTRACT_VERSION = 14` doc comment omitting M08.27D's two
+      data-health addresses — corrected. See `.claude/current-work.md`'s
+      M08.27F entry for the full scope narrative.
 
 ### Checklist
 
-- [ ] Baseline comparison with refusal of incompatible runs.
-- [ ] Coverage across the whole card and mechanic vocabulary.
-- [ ] Data Health page over real recorded defects.
-- [ ] Annotations additive; raw output immutable.
+- [x] Baseline comparison with refusal of incompatible runs.
+- [x] Coverage across the whole card and mechanic vocabulary.
+- [x] Data Health page over real recorded defects.
+- [x] Annotations additive; raw output immutable.
 
 ## M08.28 — Operational hardening and milestone acceptance
 

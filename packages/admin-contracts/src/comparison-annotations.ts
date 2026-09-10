@@ -4,7 +4,10 @@ import {
   annotatableComparisonDecisionSchema,
   type AnnotatableComparisonDecision,
 } from './comparison.js';
-import { comparisonDeltaIdentitySchema, type ComparisonDeltaIdentity } from './comparison-deltas.js';
+import {
+  comparisonDeltaIdentitySchema,
+  type ComparisonDeltaIdentity,
+} from './comparison-deltas.js';
 import { comparisonAnnotationIdSchema, timestampSchema } from './identity.js';
 import { comparisonAnnotationVersionSchema } from './version.js';
 

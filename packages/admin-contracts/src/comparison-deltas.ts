@@ -172,7 +172,8 @@ export const comparisonDeltaTableSchema = z
     },
   )
   .refine(
-    (value) => value.decision.kind !== 'refused' || (value.columns.length === 0 && value.rows.length === 0),
+    (value) =>
+      value.decision.kind !== 'refused' || (value.columns.length === 0 && value.rows.length === 0),
     {
       message: 'A refused comparison must carry no computed columns or rows: nothing was diffed.',
       path: ['decision'],
@@ -180,7 +181,9 @@ export const comparisonDeltaTableSchema = z
   )
   .refine(
     (value) =>
-      value.rows.every((row) => Object.keys(row).every((key) => value.columns.some((c) => c.key === key))),
+      value.rows.every((row) =>
+        Object.keys(row).every((key) => value.columns.some((c) => c.key === key)),
+      ),
     { message: 'Every cell must belong to a declared column.', path: ['rows'] },
   );
 export type ComparisonDeltaTable = z.infer<typeof comparisonDeltaTableSchema>;

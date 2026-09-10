@@ -14,9 +14,17 @@ import {
 } from '@tcg/match-telemetry';
 
 import { resolveCatalogRoots } from '../catalog/roots.js';
-import { makeTestCatalog, testConfig, testIdentity, type TestCatalog } from '../catalog/test-catalog.js';
+import {
+  makeTestCatalog,
+  testConfig,
+  testIdentity,
+  type TestCatalog,
+} from '../catalog/test-catalog.js';
 
-import { computeCatalogComparisonDelta, computePlayerMetaComparisonDelta } from './comparison-deltas.js';
+import {
+  computeCatalogComparisonDelta,
+  computePlayerMetaComparisonDelta,
+} from './comparison-deltas.js';
 import { PlayerMetaResultReader } from './player-meta-results.js';
 import { ResultReader } from './results.js';
 
@@ -147,7 +155,9 @@ function baseAggregate(): Record<string, unknown> {
   };
 }
 
-function summaryDocument(aggregate: Record<string, unknown> = baseAggregate()): Record<string, unknown> {
+function summaryDocument(
+  aggregate: Record<string, unknown> = baseAggregate(),
+): Record<string, unknown> {
   return {
     schemaVersion: 7,
     configHash: 'abcdef0123456789',
@@ -263,7 +273,8 @@ describe('computeCatalogComparisonDelta', () => {
   it('reads a zero-support metric as null on both sides rather than a fabricated point difference', async () => {
     const baselineJobId = await seedRun({ directory: 'baseline', hashes: BASELINE_HASHES });
     const candidateAggregate = baseAggregate();
-    const candidateCard = (candidateAggregate as { cards: Array<Record<string, unknown>> }).cards[0];
+    const candidateCard = (candidateAggregate as { cards: Array<Record<string, unknown>> })
+      .cards[0];
     if (candidateCard === undefined) throw new Error('fixture card missing');
     candidateCard.winRateWhenIncluded = rate(0.7, 30);
     const candidateJobId = await seedRun({
@@ -453,7 +464,11 @@ describe('computePlayerMetaComparisonDelta', () => {
       matchId,
       source: p.source,
       formatId: 'precon_wave_1',
-      provenance: { softwareVersion: '1.0.0', contentVersion: p.contentVersion, rulesVersion: p.rulesVersion },
+      provenance: {
+        softwareVersion: '1.0.0',
+        contentVersion: p.contentVersion,
+        rulesVersion: p.rulesVersion,
+      },
       seats: [
         {
           seatIndex: 0,
@@ -515,7 +530,11 @@ describe('computePlayerMetaComparisonDelta', () => {
         currentTurnWindow: { turn, startSequence: 8, endSequence: 12 },
         previousTurnWindow: { turn: turn - 1, startSequence: 5, endSequence: 7 },
       },
-      provenance: { softwareVersion: '1.0.0', contentVersion: p.contentVersion, rulesVersion: p.rulesVersion },
+      provenance: {
+        softwareVersion: '1.0.0',
+        contentVersion: p.contentVersion,
+        rulesVersion: p.rulesVersion,
+      },
       deck: freezeLiveMatchDeckSnapshot({
         commanderId: 'prototype_commander_blue',
         cards: [{ cardId: 'prototype_drone', quantity: 40 }],
@@ -577,7 +596,11 @@ describe('computePlayerMetaComparisonDelta', () => {
     writeMatch('match_b', envelope('match_b', { contentVersion: 6 }, { matchId: 'match_b' }));
     writeCapture(
       'match_b',
-      surrenderCapture('match_b', { contentVersion: 6 }, { matchId: 'match_b', phase: 'main_2', turn: 5 }),
+      surrenderCapture(
+        'match_b',
+        { contentVersion: 6 },
+        { matchId: 'match_b', phase: 'main_2', turn: 5 },
+      ),
     );
 
     const turns = unwrap(
@@ -591,18 +614,44 @@ describe('computePlayerMetaComparisonDelta', () => {
     );
     expect(turns.decision).toMatchObject({ kind: 'deliberately_different' });
     const turnRows = new Map(turns.rows.map((row) => [row.turn, row]));
-    expect(turnRows.get(3)).toMatchObject({ presence: 'baseline_only', baselineSurrenders: 1, candidateSurrenders: null });
-    expect(turnRows.get(5)).toMatchObject({ presence: 'candidate_only', baselineSurrenders: null, candidateSurrenders: 1 });
+    expect(turnRows.get(3)).toMatchObject({
+      presence: 'baseline_only',
+      baselineSurrenders: 1,
+      candidateSurrenders: null,
+    });
+    expect(turnRows.get(5)).toMatchObject({
+      presence: 'candidate_only',
+      baselineSurrenders: null,
+      candidateSurrenders: 1,
+    });
 
     const phases = unwrap(
-      computePlayerMetaComparisonDelta(reader(), 'surrender_phases', baseline, candidate, 'declared'),
+      computePlayerMetaComparisonDelta(
+        reader(),
+        'surrender_phases',
+        baseline,
+        candidate,
+        'declared',
+      ),
     );
     const phaseRows = new Map(phases.rows.map((row) => [row.phase, row]));
-    expect(phaseRows.get('main_1')).toMatchObject({ presence: 'baseline_only', baselineSurrenders: 1 });
-    expect(phaseRows.get('main_2')).toMatchObject({ presence: 'candidate_only', candidateSurrenders: 1 });
+    expect(phaseRows.get('main_1')).toMatchObject({
+      presence: 'baseline_only',
+      baselineSurrenders: 1,
+    });
+    expect(phaseRows.get('main_2')).toMatchObject({
+      presence: 'candidate_only',
+      candidateSurrenders: 1,
+    });
 
     const state = unwrap(
-      computePlayerMetaComparisonDelta(reader(), 'surrender_state', baseline, candidate, 'declared'),
+      computePlayerMetaComparisonDelta(
+        reader(),
+        'surrender_state',
+        baseline,
+        candidate,
+        'declared',
+      ),
     );
     expect(state.rows).toHaveLength(1);
     expect(state.rows[0]).toMatchObject({ baselineTotal: 1, candidateTotal: 1, deltaTotal: 0 });

@@ -3864,7 +3864,7 @@ pure decision functions that each read their own domain's real signal:
   `refused`. Each hash is compared against its own documented meaning, never
   derived from another — `computeEnvironmentHashes`
   (`apps/simulator/src/content-hash.ts`) hashes `{mechanics, presentation}`
-  into `fullContentHash` but *not* `cardPilotMetadata`, so a pilot-input-only
+  into `fullContentHash` but _not_ `cardPilotMetadata`, so a pilot-input-only
   change can leave `fullContentHash` unchanged while `pilotInputHash` moves;
   the gate checks both explicitly rather than assuming one implies the other.
 - `decidePlayerMetaComparison(baseline, candidate, declaredChange?)` —
@@ -3946,8 +3946,8 @@ signal explicit rather than leaving a caller to infer it from a missing row.
 
 **Surrender-pattern is scoped to structure, not exposure.**
 `live-match-surrender.ts`'s own doc comment already draws a line between
-surrender *state* (phase, combat, reaction window, pending choice —
-structural facts about the moment of surrender) and surrender *exposure*
+surrender _state_ (phase, combat, reaction window, pending choice —
+structural facts about the moment of surrender) and surrender _exposure_
 (which cards or event types were recently seen beforehand — a claim closer to
 cause). `surrender_turns`/`surrender_phases`/`surrender_state` diff the state
 side only; the exposure tables (`surrender_exposure_cards`,
@@ -3978,7 +3978,7 @@ metric present on only one side reads `null` on the other with `0` support
 whenever either side is `null`.
 
 **Bug found and fixed in this slice: the delta transport's column cap was
-wrong.** `resultColumnSchema`'s host table (`results.ts`) caps a *source*
+wrong.** `resultColumnSchema`'s host table (`results.ts`) caps a _source_
 table at `MAX_RESULT_COLUMNS = 48`. A delta table fans each source column out
 into up to five of its own (`baseline<Key>`, `candidate<Key>`, `delta<Key>`,
 plus a support pair for an interval metric), so `cards`' 21 source columns
@@ -4020,7 +4020,7 @@ slice does not silently reopen them:
 
 1. **`target` deferred.** No telemetry counter anywhere in `@tcg/simulator`
    records a per-target outcome — `DEAD_HAND_CATEGORIES`'s `no_legal_target`
-   records a dead-hand *reason*, never a targeting decision. A `target`
+   records a dead-hand _reason_, never a targeting decision. A `target`
    column here could only ever report `unavailable` for the whole
    vocabulary, a constant rather than a measurement. Recorded as an open gap
    in both `coverage.ts`'s doc comment and the milestone file, not built as
@@ -4033,7 +4033,7 @@ slice does not silently reopen them:
    already attached, so "no counter observes this" and "no card uses this"
    are both genuine `unavailable` reasons rather than silence.
 3. **Split: model only this slice, page next.** `packages/admin-contracts/
-   src/coverage.ts` (schema) and `apps/admin-server/src/service/coverage.ts`
+src/coverage.ts` (schema) and `apps/admin-server/src/service/coverage.ts`
    (`computeCatalogCoverage`, `computePlayerMetaCoverage`) shipped; no HTTP
    route or UI page exists yet — that is a separate, not-yet-started
    follow-up slice, the same model/page split M08.26 used across its A-E
@@ -4060,14 +4060,14 @@ the `cards` table itself (`ResultReader.readTable`, paginated to
 `PAGE_SIZE_MAX`) — a row's presence already implies `decksIncluding > 0`
 (M08.12's own seeding rule), so `inclusion` is `reached` whenever any row
 exists; a rowless card is `not_reached` on all five, never `unavailable` —
-absence *is* the measurement, not a data gap.
+absence _is_ the measurement, not a data gap.
 
 **A mechanic's status is coarser than a card's**, deliberately: no counter is
 scoped to one mechanic ID, so the only honest question is "was any card
 carrying this mechanic ever played this run" — `reached` if at least one
 using card has a `cards` row, `not_reached` if every using card is rowless,
 `unavailable` if `telemetry === 'none'` or zero cards in the vocabulary
-carry it at all. This says a mechanic's *cards* were in play, not that the
+carry it at all. This says a mechanic's _cards_ were in play, not that the
 mechanic itself fired — no counter here counts that, and the doc comment
 says so rather than implying more precision than the data supports.
 
@@ -4143,6 +4143,7 @@ map, calling the pre-existing `computeCatalogCoverage`/`computePlayerMetaCoverag
 from `./coverage.ts` — no change to `coverage.ts` itself this slice.
 
 **`apps/admin-client`:**
+
 - `net/session.ts`: `catalogCoverageView(jobId)` and
   `playerMetaCoverageView(partition)` methods.
 - `lib/coverage-view.ts` (new) + `coverage-view.test.ts` (new, 6 tests): pure
@@ -4177,6 +4178,7 @@ from `./coverage.ts` — no change to `coverage.ts` itself this slice.
 
 **Verification (focused, per package, not the full gate — reserved for
 tranche close):**
+
 - `packages/admin-contracts`: `npx vitest run packages/admin-contracts/src` —
   26 files, 581 tests passing (unchanged from the model slice's own count,
   confirming the page's contract additions didn't regress anything already
@@ -4184,13 +4186,13 @@ tranche close):**
 - `apps/admin-server`: `npx vitest run apps/admin-server/src` — 38/39 files,
   719/721 tests passing. **2 pre-existing failures**, not introduced by this
   slice: `boundary.test.ts` fails because `apps/admin-server/src/service/
-  coverage.ts` (shipped in the M08.27C *model* slice, commit `48b962c`, not
+coverage.ts` (shipped in the M08.27C _model_ slice, commit `48b962c`, not
   touched this slice) imports `CardDatabase`, `MECHANIC_SUPPORT_LIST`,
   `isColorIdentityLegal`, `mechanicKey`, `mechanicsUsedBy` and `CardDefinition`
   directly from `@tcg/card-data`, which ADR 0023's admin-server boundary rule
   forbids (production source may import only `@tcg/admin-contracts`,
   `@tcg/shared`, `@tcg/simulator` and `zod`). Confirmed pre-existing via `git
-  status --short` showing no diff to `coverage.ts`/`boundary.test.ts`/
+status --short` showing no diff to `coverage.ts`/`boundary.test.ts`/
   `package.json` from this session's own changes. **Not fixed here** — a
   proper fix means extending `@tcg/simulator`'s public export surface to cover
   color-identity legality and mechanic-support lookups so admin-server never
@@ -4199,7 +4201,7 @@ tranche close):**
   closes, since `npm run verify`'s full gate will otherwise fail on this same
   boundary test.
 - `apps/admin-client`: `npx vitest run --project admin-client
-  apps/admin-client/src` — 27 files, 410 tests passing (up from the pre-slice
+apps/admin-client/src` — 27 files, 410 tests passing (up from the pre-slice
   26/402: +1 file/+8 tests for `coverage-flow.test.tsx`, plus the +6 tests
   already counted in `coverage-view.test.ts`). `npx tsc --noEmit` clean.
   `npx eslint` clean on every file this slice touched or added, across all
@@ -4234,17 +4236,18 @@ since `boundary.test.ts`'s `sourceFiles()` scan excludes `*.test.ts` files by
 design, so a test file naming the package doesn't need it declared.
 
 **Verification (focused):**
+
 - `npx vitest run apps/admin-server/src/boundary.test.ts
-  apps/admin-server/src/service/coverage.test.ts` — 34/34 tests passing
+apps/admin-server/src/service/coverage.test.ts` — 34/34 tests passing
   (previously 2 failing in `boundary.test.ts`: the `@tcg/card-data` import
   scan and the exact-dependencies check).
 - `npx vitest run apps/admin-server/src` — 39/39 files, 721/721 tests passing
   (up from the pre-slice 38/39 files, 719/721 — both previously-failing
   boundary tests now pass, nothing else regressed).
 - `npx tsc --noEmit -p apps/admin-server/tsconfig.json` and `npx tsc --noEmit
-  -p apps/simulator/tsconfig.json` — both clean.
+-p apps/simulator/tsconfig.json` — both clean.
 - `npx eslint apps/simulator/src/index.ts
-  apps/admin-server/src/service/coverage.ts` — clean.
+apps/admin-server/src/service/coverage.ts` — clean.
 
 Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
 verify` — reserved for the M08.27 tranche-close run per the working
@@ -4282,6 +4285,7 @@ admin-contracts/src/index.ts`.
 `computeCatalogDataHealth`/`computePlayerMetaDataHealth`, each reading
 evidence through a new narrow reader method rather than a second, private
 file read:
+
 - `ResultReader.readDataHealthEvidence` (`results.ts`) — extended
   `summaryFileSchema` with `flags`/`displacement` (both computed
   unconditionally by `computeFlags`, so `.default([])` rather than
@@ -4310,12 +4314,13 @@ method, no UI component — those are the declared page-slice follow-up,
 matching the split `./coverage.ts`'s own page slice already drew.
 
 **Verification (focused, not the full gate — reserved for tranche close):**
+
 - `npx vitest run packages/admin-contracts/src/data-health.test.ts
-  apps/admin-server/src/service/data-health.test.ts` — 33/33 tests passing
+apps/admin-server/src/service/data-health.test.ts` — 33/33 tests passing
   (22 contract/schema tests, 11 computation tests covering both domains'
   measured, structurally-unavailable and evidence-unreadable paths).
 - `npx vitest run packages/admin-contracts/src apps/admin-server/src
-  apps/simulator/src` — 113 files, 2052 tests passing, confirming the
+apps/simulator/src` — 113 files, 2052 tests passing, confirming the
   `summaryFileSchema`/`manifestCountsSchema` extensions and the new
   simulator re-export introduced no regression.
 - `npx tsc --noEmit` clean on `packages/admin-contracts`,
@@ -4373,11 +4378,12 @@ locating the `'Failures'` label first, calling `.closest('tr')`, and
 asserting on that row alone.
 
 **Verification (focused, not the full gate — reserved for tranche close):**
+
 - `npx vitest run packages/admin-contracts/src apps/admin-server/src
-  apps/admin-client/src` — 96 files, 1765 tests passing, including the two
+apps/admin-client/src` — 96 files, 1765 tests passing, including the two
   new files (`lib/data-health-view.test.ts`, `data-health-flow.test.tsx`).
 - `npx tsc --build packages/admin-contracts apps/admin-server
-  apps/admin-client` — clean.
+apps/admin-client` — clean.
 - `npx eslint` clean on every file this slice touched or added.
 
 Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
@@ -4472,3 +4478,132 @@ protocol; this was a normal slice, not a tranche close.
 
 Next slice: **M08.27F — Tranche close.**
 
+## M08.27F — Tranche close (2026-09-10)
+
+Tranche range `8ce28a0..614e943` (M08.27A through M08.27E, 48 files,
++7707/-31), revalidated as a whole and run through the standard tranche-close
+gate.
+
+**`npm run check:consistency`** — clean: 49 Markdown documents (9 active),
+303 internal links, 109 path references, 46 documented values, 5 count
+claims, 155 playable cards, 5 owner decisions, no inconsistency found.
+
+**`npm run audit:check`** — failed on the first pass (`docs/status-audit.md`
+stale against the tranche's new tests). Regenerated via `npm run
+audit:status` per the "derived facts are never hand-edited" rule — 5187
+tests in 274 files at `614e943` — then `audit:check` passed clean.
+
+**`npm run verify` — three real defects caught by running the full gate,
+none visible to any slice's own focused checks because none of them ran the
+whole repository together:**
+
+1. **Lint: a value-only import used solely as a type.**
+   `apps/admin-server/src/service/comparison-deltas.ts` imported
+   `CATALOG_COMPARISON_DELTA_TABLES` as a value but used it only in
+   `typeof CATALOG_COMPARISON_DELTA_TABLES` — `@typescript-eslint/
+consistent-type-imports` failed. Fixed with `eslint --fix`, which moved
+   it to an inline `type` import; no behavior change.
+2. **Format: 25 tranche files never run through `prettier --check` before.**
+   Every file M08.27A-E touched, plus `.claude/current-work.md`, failed
+   `format:check` — normal slices never run the full-repo gate, so this had
+   never been caught. Fixed with `prettier --write` scoped to exactly those
+   25 files (never the two unrelated untracked milestone drafts also
+   flagged, which predate this tranche) — style only, e.g. wrapped long
+   object literals and `*emphasis*` → `_emphasis_` in prose; no prose
+   meaning changed. A second pass then covered the two untracked drafts too
+   (`docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`,
+   `docs/milestones/M10-prepared-reactions-and-neutral-spells.md`), since
+   `prettier --check .` scans the whole working tree regardless of git
+   tracking and the gate cannot pass while they remain unformatted; both
+   are untracked and unrelated to M08.27, so only their style changed.
+3. **Real regression: `capabilitiesSchema.versions` is `z.strictObject` with
+   exactly four keys, but the test fixture spread all five.** M08.27E added
+   a fifth version domain, `comparisonAnnotation`, to `CURRENT_ADMIN_VERSIONS`
+   (`packages/admin-contracts/src/version.ts`) — correct, since it is a real,
+   independent version domain per ADR 0023 §7. Production code
+   (`apps/admin-server/src/service/handlers.ts`) was already immune: its
+   capabilities response builds `versions` from `CURRENT_CAPABILITY_VERSIONS`
+   (`service.ts`), a separate constant that explicitly names only the four
+   fields `capabilitiesSchema` accepts, so a comparison-annotation version
+   was never going to reach that endpoint — which is correct, since M08.27E
+   shipped no HTTP surface for annotations. But
+   `apps/admin-client/src/test/fake-service.ts`'s `capabilitiesFixture`
+   spread the wider `CURRENT_ADMIN_VERSIONS` directly, so from M08.27E
+   onward every test using that fixture sent a `versions` object with an
+   extra `comparisonAnnotation` key that `capabilitiesSchema`'s strict object
+   rejects — breaking capabilities validation for every admin-client test
+   that renders past the connection gate. Each slice's own focused
+   `apps/admin-client` runs happened to predate this drift or scope
+   narrowly enough to miss it; the full suite caught all 213 downstream
+   failures across 16 files at once (every `*-flow.test.tsx`, `net/
+session.test.ts`, `net/transport.test.ts` — anything rendering past
+   the capabilities gate). Fixed by switching the fixture to
+   `CURRENT_CAPABILITY_VERSIONS`, matching production's own source of
+   truth instead of the wider constant. Confirmed: `npx vitest run
+apps/admin-client/src` — 29/29 files, 430/430 tests passing.
+
+**Full gate, final state:** `npm run verify` — `content:check` clean (2
+sets, 211 cards, one pre-existing `Dread Sovereign` unsupported-mechanic
+warning, unchanged by this tranche), `typecheck` clean across every
+workspace and the root `tsconfig.json`, `lint` clean, `format:check` clean,
+`validate:content` clean, `test` — **274/274 files, 5187/5187 tests
+passing**, `build` clean (admin-client bundle carries the standard >500kB
+chunk-size advisory, unrelated to this tranche).
+
+**Durable-record updates from this run, not yet marking the tranche
+complete:** `docs/status-audit.md` regenerated (see above). This
+`current-work.md` entry. The M08.27 checklist, the milestone file's
+tranche-level checkbox and `IMPLEMENTATION_PLAN.md`'s status row are held
+uncommitted pending the `tcg-reviewer` verdict per the working protocol —
+they move only after `VERDICT: APPROVE`.
+
+Next: request `tcg-reviewer` review of the `8ce28a0..614e943` commit range
+plus this uncommitted close-record diff (the fake-service.ts fix, the
+prettier formatting, and `docs/status-audit.md`).
+
+**`tcg-reviewer` first pass: `VERDICT: CHANGES REQUIRED`, four findings.**
+Two MEDIUM record-completeness gaps — the M08.27 tranche checklist and
+`IMPLEMENTATION_PLAN.md`'s status row had not been advanced in this
+close-record diff, and `packages/admin-contracts/src/version.ts`'s
+`ADMIN_CONTRACT_VERSION = 14` doc comment described only M08.27C's two
+coverage endpoints, omitting that M08.27D also shipped under version 14
+(the two data-health endpoints, added without a version bump because both
+slices shipped inside the same unreleased tranche). One MEDIUM
+audit-accuracy gap — `docs/status-audit.md` had been regenerated without
+recording that `npm run verify` had in fact passed, since `audit:status`
+defaults to "not run" rather than assuming success; fix is the
+`--verify passed` flag. One LOW audit-accuracy gap — the two unrelated,
+untracked milestone drafts inflate the filesystem-based "Milestone
+documents" count.
+
+**Fixes applied:** milestone file's M08.27F checkbox and its four
+tranche-checklist items marked complete with a completion note; the
+version.ts doc comment rewritten to name both M08.27C and M08.27D and
+describe all four new endpoints; `IMPLEMENTATION_PLAN.md`'s status row and
+"next bounded task" section updated to point at M08.28A.
+
+For the LOW finding, first attempted moving the two untracked drafts out
+of `docs/milestones/` before regenerating the audit (to get a count
+excluding them), then moving them back. This was wrong: it left
+`docs/status-audit.md` describing a filesystem state (drafts absent) that
+no longer matched the real, final working tree (drafts present) — exactly
+the staleness `scripts/lib/status-audit.test.ts` exists to catch, and the
+full `npm run verify` re-run caught it (1 test failed: "the written audit
+
+> still describes the code it was generated from", expected 11 milestone
+> documents, file said 9). The count is filesystem-based by design and the
+> two drafts are real files on disk regardless of git-tracking status, so
+> the correct fix is simply to let the audit report the true current count
+> (11) rather than manufacture a temporary state to shrink it. Regenerated
+> `docs/status-audit.md` with the drafts in place via `npm run audit:status
+-- --verify passed` — 5187 tests in 274 files at `614e943`, 11 milestone
+> documents, `npm run verify | passed at this commit`.
+
+**Full gate, re-confirmed at the true final state:** `npm run verify` —
+exit 0, `test` 274/274 files, 5187/5187 tests passing. (An intermediate
+run against the drafts-absent-then-restored state failed exactly the one
+test described above; this final run is against the actual committed-tree
+state and is clean.)
+
+Next: send `tcg-reviewer` (same agent, resumed — not a fresh agent) a
+bounded recheck request scoped to the record diff plus `version.ts`.

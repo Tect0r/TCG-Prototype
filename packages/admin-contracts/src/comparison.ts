@@ -120,7 +120,8 @@ export function decideCatalogEnvironmentComparison(
   if (baseline.fullContentHash === candidate.fullContentHash) {
     return {
       kind: 'refused',
-      reason: 'Baseline and candidate resolved to byte-identical content; there is nothing to compare.',
+      reason:
+        'Baseline and candidate resolved to byte-identical content; there is nothing to compare.',
     };
   }
 
@@ -184,7 +185,8 @@ export function decidePlayerMetaComparison(
     return {
       kind: 'deliberately_different',
       declaredChange: trimmed,
-      reason: 'Content version and/or rules version differ between baseline and candidate partitions.',
+      reason:
+        'Content version and/or rules version differ between baseline and candidate partitions.',
     };
   }
 

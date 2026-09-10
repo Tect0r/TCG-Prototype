@@ -127,7 +127,10 @@ export async function computeCatalogDataHealth(
     identity: { domain: 'catalog', jobId },
     recoveredRecords: {
       count: evidence.value.recoveredLines.length,
-      entries: evidence.value.recoveredLines.map((entry) => ({ line: entry.line, reason: entry.reason })),
+      entries: evidence.value.recoveredLines.map((entry) => ({
+        line: entry.line,
+        reason: entry.reason,
+      })),
     },
     failures: terminationBucket(evidence.value.denominators.abnormalByKind, CATALOG_FAILURE_KINDS),
     stalled: terminationBucket(evidence.value.denominators.abnormalByKind, CATALOG_STALL_KINDS),
@@ -153,8 +156,8 @@ const PLAYER_META_FAILURE_ORIGINS = ['server_failure'] as const;
 const PLAYER_META_STALL_ORIGINS = ['disconnect_timeout', 'abandoned_unrecordable'] as const;
 
 const UNAVAILABLE_PLAYER_META_ANALYSIS_REASON =
-  '`computeFlags` runs only over a catalog batch\'s own aggregate, pairs and support reading, never over ' +
-  'live-match telemetry — the same domain gap `./coverage.ts`\'s own doc comment names for `target`.';
+  "`computeFlags` runs only over a catalog batch's own aggregate, pairs and support reading, never over " +
+  "live-match telemetry — the same domain gap `./coverage.ts`'s own doc comment names for `target`.";
 
 /** A fully zeroed, wholly `unavailable` Player Meta report — this partition's evidence could not be read at all. */
 function unavailablePlayerMetaReport(
@@ -171,11 +174,15 @@ function unavailablePlayerMetaReport(
       count: 0,
       entries: [],
       unavailableReason:
-        "No replicate concept for human play — each live match is a singleton game, never one of a " +
+        'No replicate concept for human play — each live match is a singleton game, never one of a ' +
         "definitionId's named replicates.",
     },
     seatBias: { count: 0, entries: [], unavailableReason: UNAVAILABLE_PLAYER_META_ANALYSIS_REASON },
-    pilotSensitivity: { count: 0, entries: [], unavailableReason: UNAVAILABLE_PLAYER_META_ANALYSIS_REASON },
+    pilotSensitivity: {
+      count: 0,
+      entries: [],
+      unavailableReason: UNAVAILABLE_PLAYER_META_ANALYSIS_REASON,
+    },
     unsupportedMechanics: {
       count: 0,
       entries: [],
@@ -214,9 +221,11 @@ export function computePlayerMetaDataHealth(
     return ok(validated.data);
   }
 
-  function originBucket(
-    origins: readonly string[],
-  ): { count: number; byKind: Record<string, number>; unavailableReason: null } {
+  function originBucket(origins: readonly string[]): {
+    count: number;
+    byKind: Record<string, number>;
+    unavailableReason: null;
+  } {
     const byKind: Record<string, number> = {};
     let count = 0;
     for (const origin of origins) {
@@ -251,11 +260,15 @@ export function computePlayerMetaDataHealth(
       count: 0,
       entries: [],
       unavailableReason:
-        "No replicate concept for human play — each live match is a singleton game, never one of a " +
+        'No replicate concept for human play — each live match is a singleton game, never one of a ' +
         "definitionId's named replicates.",
     },
     seatBias: { count: 0, entries: [], unavailableReason: UNAVAILABLE_PLAYER_META_ANALYSIS_REASON },
-    pilotSensitivity: { count: 0, entries: [], unavailableReason: UNAVAILABLE_PLAYER_META_ANALYSIS_REASON },
+    pilotSensitivity: {
+      count: 0,
+      entries: [],
+      unavailableReason: UNAVAILABLE_PLAYER_META_ANALYSIS_REASON,
+    },
     unsupportedMechanics: {
       count: 0,
       entries: [],

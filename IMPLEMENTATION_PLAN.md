@@ -38,7 +38,7 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-04)   | M08.27A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-04)   | M08.28A      |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
 **M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
@@ -223,11 +223,28 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.27F — Tranche close** is the next slice: revalidate the combined
-M08.27 tranche diff, run `npm run check:consistency`, `npm run
-audit:check` and `npm run verify`, then request the `tcg-reviewer` pass
-per the working protocol. Scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
+**M08.28A — Resource priority and process separation** is the next slice:
+enforce and document simulator priority below live multiplayer work on
+shared machines, without moving simulator CPU into the live event loop.
+Scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+
+**M08.27F closed the M08.27 tranche, 2026-09-10** — compatible/refused/
+deliberately-different comparison, delta math, coverage, data health and
+annotation immutability all revalidated together. `npm run
+check:consistency`, `npm run audit:check` and `npm run verify` all pass
+clean (274/274 test files, 5187/5187 tests). The full-repo gate — run for
+the first time across the whole tranche rather than per slice — caught
+three defects invisible to any slice's own focused checks: a type-only-
+import lint failure, 25 tranche files never previously run through
+`prettier --check`, and a real regression in `apps/admin-client/src/
+test/fake-service.ts` (`capabilitiesFixture` spread the newly-five-field
+`CURRENT_ADMIN_VERSIONS` into a four-field `z.strictObject`, once M08.27E
+added `comparisonAnnotation`); production code was already correct via
+the dedicated `CURRENT_CAPABILITY_VERSIONS` constant. `tcg-reviewer` also
+caught `ADMIN_CONTRACT_VERSION = 14`'s doc comment omitting M08.27D's two
+data-health addresses, corrected in the same run. Full narrative in
+`.claude/current-work.md`'s M08.27F entry.
 
 **M08.27E shipped 2026-09-10** — additive comparison annotations, scoped
 as contracts-plus-persistence only (no HTTP endpoint, no admin-client UI),
