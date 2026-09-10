@@ -119,7 +119,7 @@ describe('every retained artifact stays inside a configured root (M08.28B)', () 
     // string, so there is no untrusted input for it to compose with either.
     const lock = sourceFiles().find((file) => file.name === 'lock.ts');
     expect(lock).toBeDefined();
-    expect(lock!.text).toContain("join(catalogRoot, ORCHESTRATOR_LOCK_FILE)");
+    expect(lock!.text).toContain('join(catalogRoot, ORCHESTRATOR_LOCK_FILE)');
     expect(lock!.text).toContain("ORCHESTRATOR_LOCK_FILE = 'orchestrator.lock'");
   });
 
@@ -179,9 +179,9 @@ describe('every retained artifact stays inside a configured root (M08.28B)', () 
     const iface = sourceFiles().find((file) => file.name === 'store.ts');
     expect(iface).toBeDefined();
     for (const forbidden of ['delete', 'remove', 'move(']) {
-      expect(`store.ts: ${forbidden}: ${String(iface!.text.toLowerCase().includes(forbidden))}`).toBe(
-        `store.ts: ${forbidden}: false`,
-      );
+      expect(
+        `store.ts: ${forbidden}: ${String(iface!.text.toLowerCase().includes(forbidden))}`,
+      ).toBe(`store.ts: ${forbidden}: false`);
     }
   });
 });

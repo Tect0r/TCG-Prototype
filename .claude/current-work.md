@@ -4780,7 +4780,7 @@ going forward.
   and before the request body is read, with no route-name-conditioned
   bypass anywhere in the file.
 - **Aggregate-only exports.** `apps/simulator/src/analysis/
-  live-match-surrender.ts` (M08.24D) computes `unmatched` — a diagnostic
+live-match-surrender.ts` (M08.24D) computes `unmatched` — a diagnostic
   list carrying a raw `playerId` and `matchId` for a capture that could not
   be attributed — as a field distinct from `aggregates`, which excludes
   `playerId` entirely. Grepped `player-meta-results.ts`,
@@ -4898,7 +4898,7 @@ under that one symptom:
 1. `comparisonConfig`'s candidate environment banned `ENVIRONMENT.pool[0]`
    (`throwing_knife`) as its declared change. Direct inspection of the four
    reference precons' bundled card lists (`bundledPrecon(...).cardIds`)
-   showed `throwing_knife` is played by *all four* — so
+   showed `throwing_knife` is played by _all four_ — so
    `freezeReferencePopulation` correctly excluded every reference deck from
    the candidate arm, leaving 0 legal decks in both arms and 0 matches
    (`manifest.matches` asserted `> 0` and failed). Fixed by banning
@@ -5027,3 +5027,66 @@ for the M08.28 tranche-close run (M08.28F) per the working protocol; this was
 a normal slice, not a tranche close.
 
 Next slice: **M08.28F — Milestone close.**
+
+## M08.28F — Milestone close (2026-09-10)
+
+Tranche-close run for M08.28, and milestone close for M08 as a whole.
+Revalidated every remaining checklist, version decision, exclusion and open
+decision; regenerated/confirmed the audit; ran all close gates; obtained
+Opus review; committed the record.
+
+**Checklist revalidation.** Every `### Checklist` in
+`docs/milestones/M08-ai-lab-and-player-meta.md` outside M08.28 was already
+checked from its own tranche close. Only M08.28's own five items and the
+M08.28F slice checkbox remained unchecked. Each of the five is satisfied by
+evidence its own slice already recorded and is not reimplemented here:
+process priority (M08.28A), retention/export source scan (M08.28B), secret
+and hidden-artifact leak scan with its one fixed unscrubbed-forward defect
+(M08.28C), the real end-to-end recovery matrix across every primary/advanced
+test style and recovery path (M08.28D), and the structural visual/operator
+documentation pass (M08.28E). A fresh scan for any flagged open owner
+decision, version constant or exclusion anywhere in the file found none —
+the file's own "Versions", "Exclusions honoured" and checklist sections for
+every prior tranche are already closed.
+
+**Gates.** `npm run check:consistency` — 49 Markdown documents (9 active),
+311 internal links, 46 documented values, 5 count claims, 155 cards in
+playable sets, 5 owner decisions on the plan's short list, no inconsistency
+found (path-reference count moved 113 → 115 as this record's own prose added
+references; still no inconsistency). `npm run audit:check` —
+`docs/status-audit.md` already current both times, nothing to regenerate.
+`npm run verify` failed twice before passing clean, both times on
+`format:check` alone, never on typecheck, lint, tests or build. First: three
+of M08.28's own new test files (`e2e-recovery-matrix.test.ts`,
+`retention-boundary.test.ts`, `secret-leak-boundary.test.ts`) and this file
+itself had never been run through Prettier — caught locally before the first
+review pass. Second: `tcg-reviewer`'s first pass caught that the milestone
+file's own new M08.28F prose (added after that first `prettier --write`) had
+never itself been reformatted, and that this record asserted `verify` had
+passed and review had concluded before either genuinely had — a real,
+correctly-flagged instance of exactly the overclaiming this protocol exists
+to prevent. Both fixed with `npx prettier --write` on exactly the flagged
+files (diffed to confirm whitespace/line-wrap only, no logic touched) and by
+rewriting the premature claims to state only what had actually happened at
+the time of writing. Final clean rerun: 278 test files, 5222 tests,
+typecheck, lint, format and build all clean, exit 0.
+
+**Review.** `tcg-reviewer` (Opus) reviewed the complete M08.28 tranche commit
+range (`11730ca..HEAD` before this close commit) plus this close record's
+uncommitted diff, across two cycles: first pass `VERDICT: CHANGES REQUIRED`
+(the stale-format-gate finding and the premature-claim finding above, both
+material and both fixed); second pass, scoped to those two findings plus the
+new diff, independently reran all four gates, confirmed the record's numbers
+and that the three test files carried no logic change on this cycle, and
+confirmed no premature language remained — `VERDICT: APPROVE`, no material
+findings remaining.
+
+**Root record.** `IMPLEMENTATION_PLAN.md`'s status row now reads M08
+Complete (2026-09-10), next tranche `—`. Its "next bounded task" section
+reports no next milestone is yet named in the committed plan: the open
+owner decisions (Q4, Q44, Q45, Q46) remain, and two untracked session-brief
+files sit in `docs/milestones/` (`M08.5_FINAL_CORRECTION_PASS.md`,
+`M10-prepared-reactions-and-neutral-spells.md`) that are explicitly not part
+of this plan yet — starting either is the owner's call, not made here.
+
+Next milestone: none scheduled in the committed plan. Report to the owner.

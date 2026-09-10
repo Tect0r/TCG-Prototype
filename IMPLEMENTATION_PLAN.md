@@ -38,10 +38,10 @@ implementation slice.
 | [M07 Documentation consolidation](docs/milestones/M07-documentation-consolidation.md)                                                                   | Complete (2026-08-14) | —            |
 | [M07.8 Final consistency pass](docs/milestones/M07-documentation-consolidation.md#m078--final-consistency-and-playtest-readiness-pass--done-2026-08-14) | Complete (2026-08-14) | —            |
 | [M07.9 Card schema version correction](docs/milestones/M07-documentation-consolidation.md#m079--the-card-schema-version-correction--done-2026-08-14)    | Complete (2026-08-14) | —            |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Active (2026-09-04)   | M08.28A      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                                                                             | Complete (2026-09-10) | —            |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                                                                           | Complete (2026-08-21) | —            |
 
-**M08 is active and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
+**M08 is complete (2026-09-10) and M09 is complete (2026-08-21).** M08.0 opened the AI Lab
 milestone — its record, its scope and
 [ADR 0023](docs/architecture/0023-admin-lab-boundary.md) — and stopped there. The
 owner then chose **M09 Play Against AI** to run first, because it turns the
@@ -223,11 +223,40 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.28F — Milestone close** is the next slice: revalidate every remaining
-M08 checklist, version decision, exclusion and open decision, regenerate the
-final audit, run all close gates, obtain final Opus approval, commit the
-record and confirm a clean tree. Scope and checklist are in
-[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+**M08 is complete (2026-09-10).** M08.28F closed the milestone: every other
+`### Checklist` in the milestone file was already checked from earlier
+tranches; only M08.28's own five items and the close slice itself remained,
+and each was satisfied by evidence its own slice (M08.28A–E) already
+recorded. No open owner decision, version constant or exclusion anywhere in
+the file needed revisiting. `npm run check:consistency` and
+`npm run audit:check` passed clean, and `npm run verify` passed (278 test
+files, 5222 tests, typecheck, lint, format and build all clean) after fixing
+two rounds of `format:check` failures — first on three of M08.28's own new
+test files and `.claude/current-work.md`, which had never been run through
+Prettier, then on this close record's own new prose once `tcg-reviewer`'s
+first review pass caught that it had reintroduced the same failure and had
+also asserted verify-passed and review-concluded before either had. Both
+fixed; `tcg-reviewer` (Opus) reviewed the full M08.28 tranche commit range
+plus this close record over two cycles — first pass `CHANGES REQUIRED` on
+exactly those two findings, second pass `VERDICT: APPROVE` with no material
+findings remaining. Full narrative in
+[the M08 milestone file's M08.28F entry](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance)
+and `.claude/current-work.md`'s "M08.28F" entry.
+
+**No next milestone is yet named in this plan.** The committed record has no
+scheduled successor to M08: `docs/open-questions.md` still carries Q4
+(`resilient` implement-or-remove), Q44 (multiple blockers per attacker), Q45
+(Barrier ordering against future prevention/reduction effects) and Q46
+(whether Reactions may carry interactive additional costs) as open owner
+decisions, none of which blocks anything active. Two untracked, uncommitted
+session briefs currently sit in `docs/milestones/` —
+`M08.5_FINAL_CORRECTION_PASS.md` and `M10-prepared-reactions-and-neutral-spells.md`
+— but neither is part of this plan: the first is explicitly marked as a
+session brief to keep outside the repository, and the second is explicitly a
+draft not to start while M08 (or a correction pass on it) is active and says
+to add its status row only "when M10 is scheduled." Starting either is the
+owner's decision, not this session's; this report names the situation rather
+than starting anything.
 
 **M08.28E shipped 2026-09-10** — no visual-regression tooling exists in this
 repository (confirmed again: no Playwright, Puppeteer, Storybook or

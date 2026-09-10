@@ -5027,18 +5027,61 @@ expansion, public feedback, matchmaking or automated rebalance work.
       links to ADR 0023 and this milestone file rather than restating either.
       Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
       `tcg-reviewer` are deferred to M08.28F, per this milestone's work-slice split.
-- [ ] **M08.28F — Milestone close.** Revalidate every remaining M08 checklist,
+- [x] **M08.28F — Milestone close.** Revalidate every remaining M08 checklist,
       version decision, exclusion and open decision; regenerate the final audit,
       run all close gates, obtain final Opus approval, commit the record and confirm
       a clean tree. Report the next genuine milestone without starting it.
+      Every other `### Checklist` in this file (M08.1 through M08.27) was already
+      checked; only M08.28's own five items and this slice remained. Each is
+      satisfied by evidence already recorded in its own slice, re-confirmed rather
+      than reimplemented: priority lowering in M08.28A, the retention/export
+      source scan in M08.28B, the leak-boundary scan and its one fixed
+      unscrubbed-forward defect in M08.28C, the real end-to-end recovery matrix
+      in M08.28D, and the structural visual/documentation pass in M08.28E. No
+      open owner decision, version constant or exclusion anywhere in this file
+      needed revisiting — a fresh scan found none flagged.
+      `npm run audit:status -- --check` reported `docs/status-audit.md`
+      already current (no drift to regenerate). `npm run check:consistency`
+      — 49 Markdown documents (9
+      active), 311 internal links, 115 path references, 46 documented values, 5
+      count claims, 155 cards in playable sets, 5 owner decisions on the plan's
+      short list, no inconsistency found. `npm run verify` failed twice before
+      passing, both times on `format:check` alone, never on typecheck, lint,
+      tests or build: first on three of M08.28's own new test files
+      (`e2e-recovery-matrix.test.ts`, `retention-boundary.test.ts`,
+      `secret-leak-boundary.test.ts`) and `.claude/current-work.md`, none of
+      which had ever been run through Prettier; then, after `tcg-reviewer`'s
+      first pass caught it, on this file's own new M08.28F prose, added after
+      that first `prettier --write` and never itself reformatted. Both fixes
+      were `prettier --write` on exactly the flagged files, confirmed by diff
+      to be whitespace/line-wrap only with no logic touched. The rerun after
+      both fixes: `npx prettier --check .` clean across the whole tree, then
+      `npm run verify` exit 0 — 278 test files, 5222 tests, typecheck, lint,
+      format and build all clean — and `npm run check:consistency` still no
+      inconsistency found (49 documents, 311 links, 115 path references, 46
+      documented values, 5 count claims, 155 cards, 5 owner decisions). This
+      slice's own `npm run audit:status -- --check` confirmed no drift either
+      time. `tcg-reviewer` (Opus) reviewed the complete M08.28 tranche commit
+      range plus this close record's uncommitted diff; first pass
+      `CHANGES REQUIRED` on exactly the stale-format-gate finding above and
+      this paragraph's earlier, premature claim that verify had passed and
+      review had concluded before either had — both fixed above. Second pass,
+      scoped to those two findings plus the new diff: independently reran
+      `prettier --check`, `verify`, `check:consistency` and `audit:check`,
+      confirmed the record's numbers matched exactly, confirmed the three test
+      files carried no logic change on this cycle, and confirmed no dangling
+      "resolved below" language or pre-asserted verdict remained —
+      `VERDICT: APPROVE`, no material findings. Tree confirmed clean by
+      `git status --short` after the close commit below, aside from the two
+      untracked owner session briefs this tranche never touched.
 
 ### Checklist
 
-- [ ] Simulator work yields to live multiplayer work on a shared machine.
-- [ ] Retention, archive and export bounded; deletion safe or absent.
-- [ ] No secret or hidden artifact leaks into any public surface.
-- [ ] End-to-end flows for every test style and every recovery path.
-- [ ] Visual checks recorded honestly, including unavailable tooling.
+- [x] Simulator work yields to live multiplayer work on a shared machine.
+- [x] Retention, archive and export bounded; deletion safe or absent.
+- [x] No secret or hidden artifact leaks into any public surface.
+- [x] End-to-end flows for every test style and every recovery path.
+- [x] Visual checks recorded honestly, including unavailable tooling.
 
 ---
 

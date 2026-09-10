@@ -32,7 +32,11 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { FileCatalogStore } from './catalog/file-catalog-store.js';
-import { resolveCatalogRoots, resolveResultLocation, type ResolvedCatalogRoots } from './catalog/roots.js';
+import {
+  resolveCatalogRoots,
+  resolveResultLocation,
+  type ResolvedCatalogRoots,
+} from './catalog/roots.js';
 import { makeTestCatalog, testConfig, type TestCatalog } from './catalog/test-catalog.js';
 import { PRESET_FORMAT_ID } from './lab/expand.js';
 import { estimateExperiment } from './lab/estimate.js';
@@ -40,11 +44,18 @@ import { ExperimentRunner } from './run/job-runner.js';
 import { countCommittedRecords } from './run/progress.js';
 import { JobQueue } from './run/queue.js';
 import { CardExplorerReader } from './service/card-explorer.js';
-import { computeCatalogComparisonDelta, computePlayerMetaComparisonDelta } from './service/comparison-deltas.js';
+import {
+  computeCatalogComparisonDelta,
+  computePlayerMetaComparisonDelta,
+} from './service/comparison-deltas.js';
 import { DeckExplorerReader } from './service/deck-explorer.js';
 import { MatchExplorerReader } from './service/match-explorer.js';
 import { MatchRepresentativesReader } from './service/match-representatives.js';
-import { PlayerMetaResultReader, readPlayerMetaSummary, readPlayerMetaTable } from './service/player-meta-results.js';
+import {
+  PlayerMetaResultReader,
+  readPlayerMetaSummary,
+  readPlayerMetaTable,
+} from './service/player-meta-results.js';
 import { ResultReader } from './service/results.js';
 
 /**
@@ -203,7 +214,9 @@ describe('every primary and advanced test style really runs, end to end', () => 
   }
 
   async function runDirectory(jobId: JobId): Promise<string> {
-    return unwrap(await resolveResultLocation(catalog.roots, { rootId: 'local', directory: jobId }));
+    return unwrap(
+      await resolveResultLocation(catalog.roots, { rootId: 'local', directory: jobId }),
+    );
   }
 
   it.each([
@@ -212,29 +225,33 @@ describe('every primary and advanced test style really runs, end to end', () => 
     ['robustness', robustnessConfig],
     ['comparison', comparisonConfig],
     ['replacement', replacementConfig],
-  ] as const)('completes a real %s run and indexes it from what it wrote', async (kind, build) => {
-    const config = build(`matrix-${kind}`);
-    const jobId = await seedRealJob(config, `A real ${kind} run`);
-    const runner = new ExperimentRunner({
-      store: catalog.store,
-      roots: catalog.roots,
-      resultRootId: 'local',
-      pollEveryMs: 20,
-    });
-    const outcome = unwrap(await runner.run(jobId));
+  ] as const)(
+    'completes a real %s run and indexes it from what it wrote',
+    async (kind, build) => {
+      const config = build(`matrix-${kind}`);
+      const jobId = await seedRealJob(config, `A real ${kind} run`);
+      const runner = new ExperimentRunner({
+        store: catalog.store,
+        roots: catalog.roots,
+        resultRootId: 'local',
+        pollEveryMs: 20,
+      });
+      const outcome = unwrap(await runner.run(jobId));
 
-    expect(outcome.status).toBe('completed');
-    expect(outcome.failure).toBeNull();
+      expect(outcome.status).toBe('completed');
+      expect(outcome.failure).toBeNull();
 
-    const job = unwrap(await catalog.store.readJob(jobId));
-    expect(job.status).toBe('completed');
-    const directory = await runDirectory(jobId);
-    const manifest = JSON.parse(await readFile(experimentPaths(directory).manifest, 'utf8')) as {
-      readonly matches: number;
-    };
-    expect(manifest.matches).toBeGreaterThan(0);
-    expect(job.progress.completedMatches).toBe(manifest.matches);
-  }, 120_000);
+      const job = unwrap(await catalog.store.readJob(jobId));
+      expect(job.status).toBe('completed');
+      const directory = await runDirectory(jobId);
+      const manifest = JSON.parse(await readFile(experimentPaths(directory).manifest, 'utf8')) as {
+        readonly matches: number;
+      };
+      expect(manifest.matches).toBeGreaterThan(0);
+      expect(job.progress.completedMatches).toBe(manifest.matches);
+    },
+    120_000,
+  );
 
   it('refuses the reserved adaptive_counter preset before anything can run', () => {
     expect(() =>
@@ -265,7 +282,9 @@ describe('partial work survives a restart, and a fresh process finishes it', () 
     new Promise((settle) => setTimeout(settle, milliseconds));
 
   async function runDirectory(jobId: JobId): Promise<string> {
-    return unwrap(await resolveResultLocation(catalog.roots, { rootId: 'local', directory: jobId }));
+    return unwrap(
+      await resolveResultLocation(catalog.roots, { rootId: 'local', directory: jobId }),
+    );
   }
 
   it('pauses a real multi-worker run, restarts onto a new store instance, and resumes to the real total', async () => {
@@ -288,7 +307,12 @@ describe('partial work survives a restart, and a fresh process finishes it', () 
         label: 'A real pause, a real restart',
         purpose: 'exploration',
         sourceClasses: ['ai', 'precon'],
-        config: testConfig({ id: 'matrix-restart', gamesPerPairing: 12, mirrorSeats: true, workers: 2 }),
+        config: testConfig({
+          id: 'matrix-restart',
+          gamesPerPairing: 12,
+          mirrorSeats: true,
+          workers: 2,
+        }),
       }),
     );
     unwrap(await catalog.store.applyBatchAction(batch.batchId, 'enqueue'));
@@ -376,10 +400,7 @@ const FIXTURE_DECK_SEAT_1 = freezeLiveMatchDeckSnapshot({
   cards: [{ cardId: 'prototype_scout', quantity: 40 }],
 });
 
-function envelope(
-  matchId: string,
-  overrides: Partial<LiveMatchEnvelope> = {},
-): LiveMatchEnvelope {
+function envelope(matchId: string, overrides: Partial<LiveMatchEnvelope> = {}): LiveMatchEnvelope {
   return {
     schemaVersion: 3,
     matchId,
@@ -498,7 +519,10 @@ describe('human ingestion, surrender capture and explorer drill-down share one l
     writeMatch(
       liveRoot,
       SURRENDER_MATCH_ID,
-      envelope(SURRENDER_MATCH_ID, { terminationOrigin: 'concede_action', outcome: surrenderOutcome }),
+      envelope(SURRENDER_MATCH_ID, {
+        terminationOrigin: 'concede_action',
+        outcome: surrenderOutcome,
+      }),
     );
     writeCapture(liveRoot, SURRENDER_MATCH_ID, surrenderCapture(SURRENDER_MATCH_ID));
     writeMatch(liveRoot, PLAIN_MATCH_ID, envelope(PLAIN_MATCH_ID));
@@ -519,25 +543,41 @@ describe('human ingestion, surrender capture and explorer drill-down share one l
   });
 
   it('surfaces the real surrender capture through the surrender tables', () => {
-    const turns = unwrap(readPlayerMetaTable(liveRoot, 'surrender_turns', NO_PLAYER_META_FILTER, { limit: 50, cursor: null }));
+    const turns = unwrap(
+      readPlayerMetaTable(liveRoot, 'surrender_turns', NO_PLAYER_META_FILTER, {
+        limit: 50,
+        cursor: null,
+      }),
+    );
     expect(turns.rows).toEqual([expect.objectContaining({ turn: 3, surrenders: 1 })]);
 
-    const phases = unwrap(readPlayerMetaTable(liveRoot, 'surrender_phases', NO_PLAYER_META_FILTER, { limit: 50, cursor: null }));
+    const phases = unwrap(
+      readPlayerMetaTable(liveRoot, 'surrender_phases', NO_PLAYER_META_FILTER, {
+        limit: 50,
+        cursor: null,
+      }),
+    );
     expect(phases.rows).toEqual([expect.objectContaining({ phase: 'main_1', surrenders: 1 })]);
   });
 
   it('reads a real deck identity for the drilled-down deck hash', async () => {
     const reader = new DeckExplorerReader({ roots: liveRoots, resultRootId: 'live' });
     const view = unwrap(
-      await reader.readView(deckExplorerRequestSchema.parse({ deckHash: FIXTURE_DECK_SEAT_0.deckHash })),
+      await reader.readView(
+        deckExplorerRequestSchema.parse({ deckHash: FIXTURE_DECK_SEAT_0.deckHash }),
+      ),
     );
     expect(view.deckHash).toBe(FIXTURE_DECK_SEAT_0.deckHash);
     expect(view.identity).not.toBeNull();
     expect(view.identity?.commanderId).toBe('prototype_commander_blue');
   });
 
-  it('combines live-match evidence with a real job\'s result table for one card', async () => {
-    const reader = new CardExplorerReader({ roots: liveRoots, resultRootId: 'live', store: catalog.store });
+  it("combines live-match evidence with a real job's result table for one card", async () => {
+    const reader = new CardExplorerReader({
+      roots: liveRoots,
+      resultRootId: 'live',
+      store: catalog.store,
+    });
     const view = unwrap(
       await reader.readView(
         cardExplorerRequestSchema.parse({ cardId: 'prototype_drone', jobId: explorerJobId }),
@@ -574,14 +614,14 @@ describe('human ingestion, surrender capture and explorer drill-down share one l
       ),
     );
     expect(['present', 'not_retained']).toContain(timeline.status);
-    expect(timeline.status === 'present' ? timeline.page !== null : timeline.page === null).toBe(true);
+    expect(timeline.status === 'present' ? timeline.page !== null : timeline.page === null).toBe(
+      true,
+    );
   });
 
   it('carries every representative kind and pages the abnormal-match list', async () => {
     const reader = new MatchRepresentativesReader({ roots: liveRoots, resultRootId: 'live' });
-    const view = unwrap(
-      await reader.readView(matchRepresentativesRequestSchema.parse({})),
-    );
+    const view = unwrap(await reader.readView(matchRepresentativesRequestSchema.parse({})));
     expect(view.representatives).toHaveLength(REPRESENTATIVE_MATCH_ENTRY_COUNT);
     expect(view.abnormalMatches.items).toBeInstanceOf(Array);
     expect(view.abnormalMatches.page).toBeDefined();
@@ -607,7 +647,9 @@ describe('before/after comparison crosses catalog and Player Meta domains for re
     });
 
     async function seed(config: ExperimentConfig, label: string): Promise<JobId> {
-      const batch = unwrap(await catalog.store.createBatch({ label: 'Recovery matrix comparison' }));
+      const batch = unwrap(
+        await catalog.store.createBatch({ label: 'Recovery matrix comparison' }),
+      );
       const job = unwrap(
         await catalog.store.createJob({
           batchId: batch.batchId,
@@ -625,7 +667,10 @@ describe('before/after comparison crosses catalog and Player Meta domains for re
 
     baselineJobId = await seed(batchConfig('matrix-cmp-baseline'), 'Baseline environment');
     candidateJobId = await seed(
-      batchConfig('matrix-cmp-candidate', CANDIDATE_ENVIRONMENT_CONFIG, { kind: 'generated', count: 4 }),
+      batchConfig('matrix-cmp-candidate', CANDIDATE_ENVIRONMENT_CONFIG, {
+        kind: 'generated',
+        count: 4,
+      }),
       'Candidate environment, cards banned',
     );
 
@@ -673,12 +718,23 @@ describe('before/after comparison crosses catalog and Player Meta domains for re
   it('computes a real Player Meta delta once a declared change crosses two content versions', () => {
     const reader = new PlayerMetaResultReader({
       roots: unwrap(
-        resolveCatalogRoots({ catalogRoot: join(liveBase, 'catalog2'), resultRoots: { live: liveRoot } }),
+        resolveCatalogRoots({
+          catalogRoot: join(liveBase, 'catalog2'),
+          resultRoots: { live: liveRoot },
+        }),
       ),
       resultRootId: 'live',
     });
-    const baseline: PlayerMetaPartition = { source: 'human_human', contentVersion: 5, rulesVersion: '1.0.0' };
-    const candidate: PlayerMetaPartition = { source: 'human_human', contentVersion: 6, rulesVersion: '1.0.0' };
+    const baseline: PlayerMetaPartition = {
+      source: 'human_human',
+      contentVersion: 5,
+      rulesVersion: '1.0.0',
+    };
+    const candidate: PlayerMetaPartition = {
+      source: 'human_human',
+      contentVersion: 6,
+      rulesVersion: '1.0.0',
+    };
 
     const undeclared = unwrap(
       computePlayerMetaComparisonDelta(reader, 'surrender_state', baseline, candidate),
@@ -703,12 +759,23 @@ describe('before/after comparison crosses catalog and Player Meta domains for re
   it('refuses a population-confounded Player Meta comparison across different sources', () => {
     const reader = new PlayerMetaResultReader({
       roots: unwrap(
-        resolveCatalogRoots({ catalogRoot: join(liveBase, 'catalog3'), resultRoots: { live: liveRoot } }),
+        resolveCatalogRoots({
+          catalogRoot: join(liveBase, 'catalog3'),
+          resultRoots: { live: liveRoot },
+        }),
       ),
       resultRootId: 'live',
     });
-    const humanBaseline: PlayerMetaPartition = { source: 'human_human', contentVersion: 5, rulesVersion: '1.0.0' };
-    const aiCandidate: PlayerMetaPartition = { source: 'ai_ai', contentVersion: 5, rulesVersion: '1.0.0' };
+    const humanBaseline: PlayerMetaPartition = {
+      source: 'human_human',
+      contentVersion: 5,
+      rulesVersion: '1.0.0',
+    };
+    const aiCandidate: PlayerMetaPartition = {
+      source: 'ai_ai',
+      contentVersion: 5,
+      rulesVersion: '1.0.0',
+    };
 
     const result = unwrap(
       computePlayerMetaComparisonDelta(

@@ -71,9 +71,9 @@ describe('nothing but the entry point logs, anywhere in this workspace (M08.28C)
     // every other source file rather than assumed of them.
     for (const file of sourceFiles()) {
       const allowed = file.name === ENTRY;
-      expect(`${file.name}: ${String(/console\.(?:log|warn|error|info|debug)\(/.test(file.text))}`).toBe(
-        `${file.name}: ${String(allowed)}`,
-      );
+      expect(
+        `${file.name}: ${String(/console\.(?:log|warn|error|info|debug)\(/.test(file.text))}`,
+      ).toBe(`${file.name}: ${String(allowed)}`);
     }
   });
 
@@ -112,9 +112,9 @@ describe('no forwarded exception message reaches an administrator unscrubbed (AD
     for (const name of FORWARDS_ANOTHER_LAYERS_MESSAGE) {
       const file = files.find((candidate) => candidate.name === name);
       expect(file).toBeDefined();
-      expect(`${name}: ${String(/instanceof Error \? (?:cause|error)\.message/.test(file!.text))}`).toBe(
-        `${name}: true`,
-      );
+      expect(
+        `${name}: ${String(/instanceof Error \? (?:cause|error)\.message/.test(file!.text))}`,
+      ).toBe(`${name}: true`);
     }
   });
 
@@ -129,9 +129,9 @@ describe('no forwarded exception message reaches an administrator unscrubbed (AD
       // and never turned into an `AdminError`; see the check below that
       // confirms it stays that way.
       if (file.name === 'priority.ts') continue;
-      expect(`${file.name}: ${String(/instanceof Error \? (?:cause|error)\.message/.test(file.text))}`).toBe(
-        `${file.name}: false`,
-      );
+      expect(
+        `${file.name}: ${String(/instanceof Error \? (?:cause|error)\.message/.test(file.text))}`,
+      ).toBe(`${file.name}: false`);
     }
   });
 
