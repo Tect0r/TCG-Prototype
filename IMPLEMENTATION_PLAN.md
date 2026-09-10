@@ -223,11 +223,32 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.28C — Secret and hidden-artifact leak audit** is the next slice:
-prove private snapshots, tokens and secrets stay out of logs, player
-bundles, unauthenticated endpoints and aggregate-only exports; correct only
-findings inside M08 ownership. Scope and checklist are in
+**M08.28D — End-to-end recovery matrix** is the next slice: exercise every
+primary and advanced test style, partial/resumed work, human ingestion,
+surrender capture, explorer drill-down and before/after comparison across
+real boundaries. Scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+
+**M08.28C shipped 2026-09-10** — new
+`apps/admin-server/src/secret-leak-boundary.test.ts` (6 tests) turns ADR
+0023 §4's and §5's remaining narrative claims into executable checks: no
+source file besides `main.ts` logs anything; every one of the five sites
+that forwards another layer's exception message across the admin boundary
+(`expand.ts`, `adaptive-choice.ts`, `job-runner.ts`, `handlers.ts` x2,
+`duplicate.ts`) wraps it in `scrubRefusal`, and `priority.ts`'s excluded
+OS-error reason never reaches an `AdminError`; the aggregate-only report
+builders name no `playerId` field and `player-meta-results.ts` reads only
+`aggregateLiveMatchSurrenders`'s `.aggregates`, never `.unmatched`; and
+`http.ts` gates every route through one `authorized(` call site, after
+routing and before the body is read. The scan found one genuine, in-scope
+defect — `duplicate.ts`'s `duplicateConfig` re-parses an edited
+configuration through the same `parseExperimentConfig` that `expand.ts`
+already wraps in `scrubRefusal`, but forwarded that catch's message
+unscrubbed — and fixed it the same way. Player bundles and the uniform
+auth gate were already covered by prior milestones and re-confirmed rather
+than retested. Documented in
+[ADR 0023 §10](docs/architecture/0023-admin-lab-boundary.md#10-every-forwarded-exception-is-scrubbed-once-at-one-boundary-on-every-path-that-crosses-it-m0828c).
+Full narrative in `.claude/current-work.md`'s "M08.28C" entry.
 
 **M08.28B shipped 2026-09-10** — new
 `apps/admin-server/src/retention-boundary.test.ts` (6 tests) turns ADR 0023

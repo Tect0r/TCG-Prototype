@@ -1,5 +1,7 @@
 import { parseExperimentConfig, type ExperimentConfig } from '@tcg/simulator';
 
+import { scrubRefusal } from './expand.js';
+
 /**
  * What a copy of a queued job actually is (M08.9).
  *
@@ -86,12 +88,19 @@ export function duplicateConfig(
         }),
       };
     } catch (cause) {
+      // This re-parse crosses the same simulator-to-admin boundary
+      // `expand.ts`'s `validated()` scrubs before forwarding (ADR 0023 §5):
+      // both catch a `parseExperimentConfig` throw and hand its message to an
+      // administrator. Scrubbed here for the same reason, not because
+      // today's config schema is known to name a path.
       return {
         ok: false,
         problem: {
-          message: `A copy of this job could not be configured: ${
-            cause instanceof Error ? cause.message : String(cause)
-          }`,
+          message: scrubRefusal(
+            `A copy of this job could not be configured: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`,
+          ),
         },
       };
     }

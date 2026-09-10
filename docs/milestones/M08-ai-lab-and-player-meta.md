@@ -4919,9 +4919,42 @@ expansion, public feedback, matchmaking or automated rebalance work.
       issues on the changed file. Tranche-close gates (`check:consistency`,
       `audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.28F,
       per this milestone's work-slice split.
-- [ ] **M08.28C — Secret and hidden-artifact leak audit.** Prove private snapshots,
+- [x] **M08.28C — Secret and hidden-artifact leak audit.** Prove private snapshots,
       tokens and secrets stay out of logs, player bundles, unauthenticated endpoints
       and aggregate-only exports; correct only findings inside M08 ownership.
+      New `apps/admin-server/src/secret-leak-boundary.test.ts` (6 tests) turns
+      §4's and §5's remaining narrative claims into executable checks, in the
+      same source-scanning style as `boundary.test.ts` and
+      `retention-boundary.test.ts`: no non-test source file under
+      `apps/admin-server` calls a `console` method or writes to
+      `process.stdout`/`process.stderr` except `main.ts`'s own startup
+      banner; every one of the five sites that forwards another layer's
+      exception message across the admin boundary (`expand.ts`,
+      `adaptive-choice.ts`, `job-runner.ts`, `handlers.ts` x2, `duplicate.ts`)
+      wraps it in `scrubRefusal`, and `priority.ts`'s OS-error reason —
+      excluded from that list — never reaches an `AdminError`; the
+      aggregate-only report builders (`player-meta-results.ts`,
+      `comparison-deltas.ts`, `coverage.ts`, `data-health.ts`) name no
+      `playerId` field, and `player-meta-results.ts` reads only
+      `aggregateLiveMatchSurrenders`'s `.aggregates`, never its `.unmatched`
+      diagnostic list; and `http.ts` calls `authorized(` from exactly one
+      call site, after routing and before the request body is read, with no
+      route-name-conditioned bypass. The audit found one genuine, in-scope
+      defect: `apps/admin-server/src/lab/duplicate.ts`'s `duplicateConfig`
+      re-parses an edited configuration through the same
+      `parseExperimentConfig` that `expand.ts`'s `validated()` already
+      wraps in `scrubRefusal`, but forwarded that catch's message unscrubbed
+      — the one inconsistent site among five that all cross the same
+      boundary. Fixed by applying the same wrap. Player bundles, the uniform
+      `authorized()` gate and token handling were already covered by prior
+      milestones (`admin-client/src/boundary.test.ts`, `boundary.test.ts`)
+      and re-confirmed here rather than retested. Documented in
+      [ADR 0023 §10](../architecture/0023-admin-lab-boundary.md#10-every-forwarded-exception-is-scrubbed-once-at-one-boundary-on-every-path-that-crosses-it-m0828c).
+      6/6 new tests pass, the full `apps/admin-server` suite (759 tests)
+      passes, `apps/admin-server` typechecks clean and `eslint` reports no
+      issues on the changed files. Tranche-close gates (`check:consistency`,
+      `audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.28F,
+      per this milestone's work-slice split.
 - [ ] **M08.28D — End-to-end recovery matrix.** Exercise every primary and
       advanced test style, partial/resumed work, human ingestion, surrender capture,
       explorer drill-down and before/after comparison across real boundaries.

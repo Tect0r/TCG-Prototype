@@ -4743,4 +4743,133 @@ verify`, `tcg-reviewer` — reserved for the M08.28 tranche-close run
 (M08.28F) per the working protocol; this was a normal slice, not a tranche
 close.
 
-Next slice: **M08.28B — Retention, archive and export boundaries.**
+Next slice: **M08.28C — Secret and hidden-artifact leak audit.**
+
+## M08.28C — Secret and hidden-artifact leak audit (2026-09-10)
+
+Scope: "Prove private snapshots, tokens and secrets stay out of logs, player
+bundles, unauthenticated endpoints and aggregate-only exports; correct only
+findings inside M08 ownership." Unlike M08.28A/B, this slice's own text asks
+for an audit first and a fix only where the audit finds one — so the work
+was: read every candidate site named by the scope's four nouns (logs,
+tokens, player bundles, unauthenticated endpoints, aggregate-only exports)
+against ADR 0023 §4/§5 and M08.24D's own aggregate-only doc comments, fix
+whatever disagreed, and write the source-scan that keeps the agreement true
+going forward.
+
+**Audit findings, by scope area:**
+
+- **Logs.** `main.ts` is the only file in `apps/admin-server` that calls a
+  `console` method anywhere, and `boundary.test.ts` already confirmed its
+  one banner never interpolates a token or a configured root. No other file
+  logs at all — confirmed by grep across the whole workspace, not just
+  assumed from `main.ts`'s own restraint.
+- **Tokens.** `service/config.ts` reports only `configuredLength` (a
+  number) on a token-shape failure, never the token itself;
+  `service/handlers.ts`'s `capabilities` handler reports only a boolean
+  (`authenticationRequired`); `admin-client`'s token lives behind a private
+  `#token` field with no public accessor and is never logged (re-confirmed
+  against `admin-client/src/boundary.test.ts`'s existing coverage rather
+  than retested).
+- **Player bundles.** Already isolated by ADR 0023 §1 (a separate app, no
+  admin route inside `@tcg/web-client`) and already tested by
+  `admin-client/src/boundary.test.ts` (no `localStorage`/cookie storage, no
+  `console.*` anywhere in admin-client source). Re-confirmed, not retested.
+- **Unauthenticated endpoints.** `service/http.ts` calls `authorized(`
+  from exactly one call site in `serve()`, positioned after `resolveRoute`
+  and before the request body is read, with no route-name-conditioned
+  bypass anywhere in the file.
+- **Aggregate-only exports.** `apps/simulator/src/analysis/
+  live-match-surrender.ts` (M08.24D) computes `unmatched` — a diagnostic
+  list carrying a raw `playerId` and `matchId` for a capture that could not
+  be attributed — as a field distinct from `aggregates`, which excludes
+  `playerId` entirely. Grepped `player-meta-results.ts`,
+  `comparison-deltas.ts`, `coverage.ts` and `data-health.ts`: none names
+  `playerId`, and `player-meta-results.ts` reads only
+  `aggregateLiveMatchSurrenders(captures, matches).aggregates` — the
+  `.unmatched` list is computed but never read by anything the admin
+  server exposes.
+
+**The one genuine defect**, found while checking every site that catches an
+exception thrown by another layer (the simulator's
+`parseExperimentConfig`, in every case) and forwards its `.message` toward
+an administrator. Five such sites exist: `lab/expand.ts`'s `validated()`,
+`lab/adaptive-choice.ts`, `run/job-runner.ts`'s `runFailed`, and two call
+sites in `service/handlers.ts` — all five already wrap the message in
+`scrubRefusal` (ADR 0023 §5), because that message can legitimately name
+the filesystem path this ADR resolves against and never surfaces. The
+sixth, `lab/duplicate.ts`'s `duplicateConfig`, re-parses an edited copy of
+a configuration through the same `parseExperimentConfig` for the same
+reason (confirming the edit didn't break validity) and, until this slice,
+returned that catch's message unscrubbed — the one site among six with
+the same shape that disagreed with the rest. `run/priority.ts` reads an
+OS-error reason too, but only `main.ts`'s startup `console.warn` ever
+reads it — it never becomes an `AdminError`, so it was excluded from the
+audit rather than overlooked.
+
+Fixed by importing `scrubRefusal` into `duplicate.ts` and wrapping the
+catch branch's message the same way `expand.ts` does, with a comment
+naming the parallel so a future reader does not mistake it for defensive
+code guarding a currently-impossible case. Nothing in today's
+`experimentSlugSchema` is known to build a path-shaped failure message —
+its regex-failure text is a static string — so this fix is not repairing
+an exploitable leak with today's schema; it is closing the one
+inconsistency among otherwise-uniform call sites, because the boundary
+this ADR draws is "every message that crosses it is scrubbed," not "every
+message known to be unsafe today is scrubbed."
+
+New `apps/admin-server/src/secret-leak-boundary.test.ts` (6 tests), in the
+same source-scanning idiom as `boundary.test.ts` and
+`retention-boundary.test.ts`:
+
+1. Sanity check the scan has enough files to mean anything, plus a
+   workspace-wide "no file but `main.ts` calls `console.*` or writes to
+   `process.stdout`/`process.stderr`" pair of assertions.
+2. Every one of the five named forwarding sites is confirmed to still
+   match the forwarding pattern (so the named list cannot go stale
+   silently), no sixth file matches the pattern unexpectedly, and
+   `scrubRefusal(` appears within a small window of every match — a
+   proximity check rather than a full parser, because `job-runner.ts`
+   assigns the message to a local `const` one statement before wrapping it,
+   while the other four wrap it inline.
+3. `priority.ts` never builds an `adminError`, and `main.ts` reads its
+   `reason` field without ever calling `adminError(` either.
+4. `player-meta-results.ts`, `comparison-deltas.ts`, `coverage.ts` and
+   `data-health.ts` contain no `playerId` string at all.
+5. `player-meta-results.ts` contains the exact
+   `aggregateLiveMatchSurrenders(captures, matches).aggregates` read and no
+   `.unmatched` reference.
+6. `http.ts` contains exactly two occurrences of `authorized(` (the call
+   site and the function's own declaration), no route-name-conditioned
+   bypass pattern, and the call site sits after `resolveRoute` and before
+   `readBody` in source order.
+
+An early draft of test 2's proximity check computed an "enclosing
+statement" boundary by searching backward for the nearest `return`/`throw`
+before each match; this failed on `job-runner.ts`, whose match sits inside
+a plain `const message = …` assignment with no `return`/`throw` of its own
+nearby, so the computed window started from an unrelated earlier
+statement and the assertion `statementStart >= 0` failed outright.
+Replaced with a fixed ±200-character window around each match — simpler,
+and sufficient because every one of the five files has exactly one match
+per catch site, so a wider window cannot borrow a different site's wrap.
+
+Documented in
+[ADR 0023 §10](../docs/architecture/0023-admin-lab-boundary.md#10-every-forwarded-exception-is-scrubbed-once-at-one-boundary-on-every-path-that-crosses-it-m0828c),
+a new section naming the one inconsistent site, the fix, and the two
+narrative claims (no logs outside `main.ts`; the surrender view stays
+aggregate) the same scan now checks as executable fact.
+
+**Verification (focused, not the full gate — reserved for M08.28F).**
+`npx vitest run apps/admin-server/src/secret-leak-boundary.test.ts
+apps/admin-server/src/lab/duplicate.test.ts` — 17/17 passing. Regression:
+`npx vitest run apps/admin-server` — 44/44 files, 759/759 tests passing.
+`npx tsc --build apps/admin-server` — clean. `npx eslint` clean on
+`lab/duplicate.ts` and `secret-leak-boundary.test.ts`.
+
+Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
+verify`, `tcg-reviewer` — reserved for the M08.28 tranche-close run
+(M08.28F) per the working protocol; this was a normal slice, not a tranche
+close.
+
+Next slice: **M08.28D — End-to-end recovery matrix.**

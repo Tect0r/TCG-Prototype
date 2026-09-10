@@ -260,6 +260,42 @@ Retention and archival features, if ever needed, are future tranches with
 their own confirmation, exact targeting and recoverability — not something
 this boundary silently permits today.
 
+### 10. Every forwarded exception is scrubbed once, at one boundary, on every path that crosses it (M08.28C)
+
+§4 already claims the token appears in no log line; §5 already claims a
+resolved location never leaves the process. Both were narrative claims until
+M08.28C checked them the way §8 and §9 checked their own: against the
+sources rather than against prose. `apps/admin-server/src/secret-leak-boundary.test.ts`
+is now the executable check, following `boundary.test.ts` and
+`retention-boundary.test.ts`'s established source-scanning idiom.
+
+The scan found the boundary held everywhere except one site.
+`apps/admin-server/src/lab/expand.ts`'s `validated()` was already the model:
+it catches whatever the simulator's `parseExperimentConfig` throws while
+expanding a preset choice and wraps the message in `scrubRefusal` (§5) before
+handing it to an administrator, because that message can name the very
+filesystem path this ADR resolves paths against and never surfaces. Four
+other sites do the same for the same reason — `adaptive-choice.ts`,
+`job-runner.ts`'s `runFailed`, and two call sites in `handlers.ts`. A fifth,
+`apps/admin-server/src/lab/duplicate.ts`'s `duplicateConfig`, re-parses an
+edited configuration through the same function for the same reason
+(confirming an edited copy is still valid) and, until M08.28C, forwarded that
+catch's message unscrubbed. Nothing in this workspace's own schemas is known
+to build a path-shaped message from that particular call site today; the fix
+applies the same wrap anyway, because the boundary this ADR draws is "every
+message that crosses it is scrubbed," not "every message known to be unsafe
+today is scrubbed" — the latter needs updating by hand every time a schema
+changes, and a promise like that rots exactly the way the milestone's own
+scope text warns against.
+
+Two further properties the same scan confirms rather than assumes: no source
+file in `apps/admin-server` calls a `console` method except `main.ts`'s own
+startup banner (§4), and the surrender-exposure view M08.24D built
+(`apps/simulator/src/analysis/live-match-surrender.ts`) stays aggregate in
+this server's hands — `player-meta-results.ts` reads only its `.aggregates`
+field, never the separate `.unmatched` diagnostic list that carries a raw
+`playerId`, and no aggregate-only report file names `playerId` at all.
+
 ## Consequences
 
 - Three new workspaces to build, typecheck, lint and test, and a new Vitest
