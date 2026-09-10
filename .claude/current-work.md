@@ -4948,3 +4948,82 @@ verify`, `tcg-reviewer` — reserved for the M08.28 tranche-close run
 close.
 
 Next slice: **M08.28E — Visual and operator documentation pass.**
+
+## M08.28E — Visual and operator documentation pass (2026-09-10)
+
+Two parts: inspect representative wide and narrow rendered surfaces (record
+unavailable tooling honestly, never claim inspection that did not happen),
+and update the user-facing run instructions without duplicating the
+canonical milestone record.
+
+**Visual inspection.** Called `tabs_context_mcp` at the start of this slice
+and again immediately before writing this record — both times the Chrome
+browser-automation extension was not connected, so no rendered browser
+window was ever opened and nothing in this slice is asserted about how a
+screen looks. Confirmed no visual-regression tooling exists anywhere in the
+repository (`grep -ril "playwright|puppeteer|storybook|screenshot"
+package.json` across every workspace, no hits) — unchanged since M09.19
+recorded the same fact for `apps/web-client`.
+
+What was verified instead, against the real running process rather than a
+fixture: `npm run start:admin` against a temporary catalog and result root
+bound `127.0.0.1:8788`, logged no token configured, priority lowered, 0 jobs
+resumed. `npm run dev:admin` started beside it on `localhost:5174`. `curl`
+confirmed the client serves real markup (`GET /` → 200, a real
+`<script src="/src/main.tsx">` document), the dev proxy reaches the live
+service through it (`GET /api/capabilities` → 200 through the proxy), and
+the service's own POST-only envelope contract is still enforced (`GET /`
+direct to the service → 405 `admin/unknown_endpoint`). Both processes were
+then stopped; nothing from this smoke check is retained as a fixture or a
+test.
+
+Structural wide/narrow coverage already exists for every representative
+surface and needed re-running rather than building: `shell-flow.test.tsx`
+drives `AdminShell` through both `useLayoutMode` arrangements (14
+assertions), requiring every destination and connection control present,
+reachable and correctly oriented in each — the exact property `lib/layout.ts`
+was built to make checkable, per its own header, back in M08.7. The other
+eleven flow suites (`adaptive-`, `builder-`, `card-explorer-`, `coverage-`,
+`dashboard-`, `data-health-`, `deck-explorer-`, `match-explorer-`,
+`player-meta-`, `queue-`, `results-flow.test.tsx`) each drive their own
+screen through both layout modes at least once. `npx vitest run
+apps/admin-client/src` — 29 files, 430/430 tests passing (one unrelated
+jsdom `Not implemented: navigation to another Document` stderr line from
+`results-flow.test.tsx`'s download test, not a failure).
+
+This is jsdom structure — labels, roles, tab order, document order, presence
+in both modes — never a pixel or a rendered layout. Spacing, wrapping,
+overflow and colour contrast at either width remain unverified by anything
+in this repository, which is exactly the gap M09.19 already recorded for the
+player client's bot panel; this slice closes nothing new here, it confirms
+the same honest boundary holds for the admin surfaces too.
+
+**Run instructions.** `README.md` had zero mentions of the admin service or
+client despite `npm run start:admin` and `npm run dev:admin` already existing
+as root scripts since earlier M08 tranches — a real documentation gap, not a
+stale claim. Added a `## Running the AI Lab (admin tooling)` section: the two
+run commands, the two required root environment variables
+(`TCG_ADMIN_CATALOG_ROOT`, `TCG_ADMIN_RESULT_ROOT` — both absolute, no
+default, an unset root is refused rather than chosen for the operator), the
+default host/port (`127.0.0.1:8788`, one above the match server's), the
+non-loopback token requirement (`TCG_ADMIN_TOKEN`, 32+ characters, ADR 0023
+§4), and links to ADR 0023 and the M08 milestone file for rationale and
+feature scope rather than restating either — satisfying "without duplicating
+the canonical milestone record."
+
+**Verification (focused, not the full gate — reserved for M08.28F).** `npx
+vitest run apps/admin-client/src` — 29/29 files, 430/430 tests passing.
+Manual process check: `npm run start:admin` and `npm run dev:admin` both
+boot clean against a temporary catalog/result root; `curl` confirms the
+client serves and its dev proxy reaches the live service; both processes
+stopped afterward.
+
+Also ran `npm run check:consistency` informally as a sanity check on the new
+README/milestone links and anchors (49 documents, 311 internal links, no
+inconsistency found) — not claimed as the tranche-close gate, since
+`audit:check` and `verify` were not run and the required Opus review has not
+happened. `npm run audit:check` and `npm run verify` are not run — reserved
+for the M08.28 tranche-close run (M08.28F) per the working protocol; this was
+a normal slice, not a tranche close.
+
+Next slice: **M08.28F — Milestone close.**

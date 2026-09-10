@@ -4984,10 +4984,49 @@ expansion, public feedback, matchmaking or automated rebalance work.
       changed file. Tranche-close gates (`check:consistency`, `audit:check`,
       `verify`) and `tcg-reviewer` are deferred to M08.28F, per this milestone's
       work-slice split.
-- [ ] **M08.28E — Visual and operator documentation pass.** Inspect representative
+- [x] **M08.28E — Visual and operator documentation pass.** Inspect representative
       wide and narrow rendered surfaces, record unavailable visual tooling honestly,
       and update user-facing run/deployment instructions without duplicating the
       canonical milestone record.
+      **No visual-regression tooling exists in this repository** — no Playwright,
+      Puppeteer, Storybook or screenshot-diff dependency in any workspace's
+      `package.json`, confirmed again this session, unchanged since M09.19 recorded
+      the same fact for `apps/web-client`. **The Chrome browser-automation extension
+      was not connected this session** (`tabs_context_mcp` reported it twice, at the
+      start of this slice and again immediately before writing this record), so no
+      rendered browser window was opened and nothing here is asserted about how a
+      screen looks. What was verified instead: the admin service was started against
+      a temporary catalog and result root
+      (`npm run start:admin` — bound `127.0.0.1:8788`, no token, priority lowered,
+      0 jobs resumed) and the client's dev server was started beside it
+      (`npm run dev:admin` — `localhost:5174`); the client served real markup
+      (`GET /` → 200, real `<script src="/src/main.tsx">` document) and the dev
+      proxy reached the live service through it (`GET /api/capabilities` → 200
+      through the proxy; `GET /` direct to the service → 405 `admin/unknown_endpoint`,
+      confirming the POST-only envelope contract is still enforced). Both processes
+      were then stopped; nothing from this smoke check is retained as a fixture.
+      **Structural wide/narrow coverage already exists for every representative
+      surface** and was re-run rather than rebuilt: `AdminShell`'s own
+      `shell-flow.test.tsx` drives both `useLayoutMode` arrangements (14 assertions)
+      and requires every destination and connection control present, reachable and
+      correctly oriented in each — the property M08.7 built the layout hook to make
+      checkable in the first place, per `lib/layout.ts`'s own header. Every one of
+      the other eleven flow suites (`adaptive-`, `builder-`, `card-explorer-`,
+      `coverage-`, `dashboard-`, `data-health-`, `deck-explorer-`, `match-explorer-`,
+      `player-meta-`, `queue-`, `results-flow.test.tsx`) drives its own screen
+      through both layout modes at least once. `npx vitest run apps/admin-client/src`
+      — 29 files, 430/430 tests passing, re-confirming this coverage is intact
+      rather than merely present. This is jsdom structure — labels, roles, tab
+      order, document order, presence in both modes — never a pixel or a rendered
+      layout; nothing here checks spacing, wrapping, overflow or contrast at either
+      width, and that gap is unchanged from the one M09.19 already recorded for the
+      player client. New `## Running the AI Lab (admin tooling)` section in
+      `README.md` gives the two run commands, the two required root environment
+      variables (no default — an unset root is refused, never chosen for the
+      operator), the default host/port, the non-loopback token requirement, and
+      links to ADR 0023 and this milestone file rather than restating either.
+      Tranche-close gates (`check:consistency`, `audit:check`, `verify`) and
+      `tcg-reviewer` are deferred to M08.28F, per this milestone's work-slice split.
 - [ ] **M08.28F — Milestone close.** Revalidate every remaining M08 checklist,
       version decision, exclusion and open decision; regenerate the final audit,
       run all close gates, obtain final Opus approval, commit the record and confirm

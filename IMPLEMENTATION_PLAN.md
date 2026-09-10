@@ -223,11 +223,31 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.28E — Visual and operator documentation pass** is the next slice:
-inspect representative wide and narrow rendered surfaces, record unavailable
-visual tooling honestly, and update user-facing run/deployment instructions
-without duplicating the canonical milestone record. Scope and checklist are
-in [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+**M08.28F — Milestone close** is the next slice: revalidate every remaining
+M08 checklist, version decision, exclusion and open decision, regenerate the
+final audit, run all close gates, obtain final Opus approval, commit the
+record and confirm a clean tree. Scope and checklist are in
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+
+**M08.28E shipped 2026-09-10** — no visual-regression tooling exists in this
+repository (confirmed again: no Playwright, Puppeteer, Storybook or
+screenshot-diff dependency in any workspace) and the Chrome browser-automation
+extension was not connected this session, so no rendered browser window was
+opened and nothing is asserted about how a screen looks. The admin service and
+client were started against a temporary catalog/result root and confirmed
+live — the client served real markup, its dev proxy reached the running
+service, and the service still enforces its POST-only envelope contract —
+then stopped. Structural wide/narrow coverage already exists for every
+representative surface (`AdminShell`'s own layout-mode suite plus all eleven
+screen flow suites) and was re-run rather than rebuilt: 29 files, 430/430
+`apps/admin-client` tests passing. That coverage is jsdom structure, never a
+pixel or a rendered layout — spacing, wrapping, overflow and contrast at
+either width remain unverified, unchanged from what M09.19 already recorded
+for the player client. New `## Running the AI Lab (admin tooling)` section in
+`README.md` gives the two run commands, the two required root environment
+variables, the default host/port, the non-loopback token requirement, and
+links to ADR 0023 and the M08 milestone file rather than restating either.
+Full narrative in `.claude/current-work.md`'s "M08.28E" entry.
 
 **M08.28D shipped 2026-09-10** —
 `apps/admin-server/src/e2e-recovery-matrix.test.ts` (16 tests) runs every

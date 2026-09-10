@@ -184,6 +184,34 @@ If step 3 fails with a connection error, the client is not pointing at the
 running server: check `VITE_MATCH_SERVER_URL` and the server's startup line,
 which prints the address it actually bound.
 
+## Running the AI Lab (admin tooling)
+
+A separate admin service and client run local balance experiments against the
+simulator — batches, searches, robustness and comparison runs, replacement
+checks, human match ingestion and Player Meta — without touching the player
+client or the match server.
+
+```bash
+TCG_ADMIN_CATALOG_ROOT=/absolute/path/to/catalog \
+TCG_ADMIN_RESULT_ROOT=/absolute/path/to/results \
+npm run start:admin
+npm run dev:admin
+```
+
+Both roots are required and absolute; there is no default, so a lab this
+repository starts for you never picks where your experiments are written. The
+service defaults to `127.0.0.1:8788` — one port above the match server — and
+the client's dev proxy reads the same `TCG_ADMIN_HOST`/`TCG_ADMIN_PORT` keys,
+so one setting moves both ends.
+
+Binding anywhere other than loopback refuses to start unless
+`TCG_ADMIN_TOKEN` (32+ characters, set out of band in the environment) is also
+configured — there is no insecure mode and no generated-and-printed token. See
+[ADR 0023](docs/architecture/0023-admin-lab-boundary.md) for the full access,
+retention and process-separation rationale, and
+[the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md) for
+what the lab can do.
+
 ## Useful commands
 
 ```bash
