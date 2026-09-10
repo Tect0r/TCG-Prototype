@@ -4885,10 +4885,40 @@ expansion, public feedback, matchmaking or automated rebalance work.
       issues on the changed files. Tranche-close gates
       (`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are
       deferred to M08.28F, per this milestone's work-slice split.
-- [ ] **M08.28B — Retention, archive and export boundaries.** Bound every retained
+- [x] **M08.28B — Retention, archive and export boundaries.** Bound every retained
       artifact and export path. Add deletion only if separately confirmed, exactly
       targeted, recoverable where practical and path-boundary tested; otherwise keep
       deletion absent.
+      New `apps/admin-server/src/retention-boundary.test.ts` (6 tests) turns §3's
+      and §5's narrative claims into executable checks, in the same source-scanning
+      style as `boundary.test.ts`: every catalog document ID schema
+      (`batchIdSchema`, `jobIdSchema`, `savedChoiceIdSchema`,
+      `comparisonAnnotationIdSchema`) rejects traversal and case-collision inputs;
+      `file-catalog-store.ts`'s six document directories are each derived from
+      `options.roots.catalogRoot` alone; the orchestrator lock joins the catalog
+      root to a fixed filename only; no non-test source file under
+      `apps/admin-server` deletes, removes or renames away a retained artifact
+      except `files.ts`'s own temp-file cleanup and `lock.ts`'s
+      ownership-checked removal of its own lock file (both asserted by target,
+      not merely absence); and `store.ts`'s interface itself has no delete,
+      remove or move method. Every export read already resolved to one of two
+      safe patterns — `resolveResultLocation`'s symlink-aware containment check
+      for untrusted stored locations (`results.ts`, `artifacts.ts`,
+      `adaptive-results.ts`), or a direct, argument-free
+      `resultRoots.get(resultRootId)` for the single configured default root
+      (`card-explorer.ts`, `deck-explorer.ts`, `match-explorer.ts`,
+      `match-representatives.ts`, `player-meta-results.ts`) — and
+      `artifacts.ts` already bounds download size (`MAX_ARTIFACT_BYTES`). No
+      deletion feature was added: the milestone's own standing preference
+      (omission over an unsafe delete button, stated at §3 and reaffirmed
+      earlier in this file) already resolves that question, and the scan
+      proves the codebase still honors it. Documented in
+      [ADR 0023 §9](../architecture/0023-admin-lab-boundary.md#9-every-retained-artifact-and-export-path-is-bound-and-deletion-stays-absent-m0828b).
+      6/6 new tests pass, the full `apps/admin-server` suite (749 tests)
+      passes, `apps/admin-server` typechecks clean and `eslint` reports no
+      issues on the changed file. Tranche-close gates (`check:consistency`,
+      `audit:check`, `verify`) and `tcg-reviewer` are deferred to M08.28F,
+      per this milestone's work-slice split.
 - [ ] **M08.28C — Secret and hidden-artifact leak audit.** Prove private snapshots,
       tokens and secrets stay out of logs, player bundles, unauthenticated endpoints
       and aggregate-only exports; correct only findings inside M08 ownership.

@@ -4658,4 +4658,89 @@ Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
 verify` — reserved for the M08.28 tranche-close run per the working
 protocol; this was a normal slice, not a tranche close.
 
+## M08.28B — Retention, archive and export boundaries (2026-09-10)
+
+Scope: "Bound every retained artifact and export path. Add deletion only if
+separately confirmed, exactly targeted, recoverable where practical and
+path-boundary tested; otherwise keep deletion absent." The milestone file
+itself pre-resolves the central question three separate places (the
+catalog-store section, the M08.28 tranche intro, and the draft-batch
+discussion): the standing preference is omission over an unsafe delete
+button, and ADR 0023 §3/§5 already state the properties that make this
+possible. Nothing in the existing codebase needed new production code —
+every catalog write already derives its directory from `catalogRoot` alone
+plus a schema-bound ID, and every export read already resolves through one
+of two safe patterns. What this slice adds is an executable check that
+those claims still hold, so a future change that violates them fails a test
+rather than only a narrative review.
+
+New `apps/admin-server/src/retention-boundary.test.ts` (6 tests), written
+in the same source-scanning idiom `boundary.test.ts` already established
+(read and comment-strip every non-test `.ts` file, assert structural
+absence/presence properties against the stripped source):
+
+1. Sanity check that the scan has enough files to mean anything.
+2. Every catalog ID schema (`batchIdSchema`, `jobIdSchema`,
+   `savedChoiceIdSchema`, `comparisonAnnotationIdSchema`) rejects `../`,
+   `a/b`, `a\b`, `..`, `.` and uppercase — the alphabet a traversal or a
+   case-collision could be built from.
+3. `file-catalog-store.ts`'s six private `#___Dir` fields are each assigned
+   exactly once, in the constructor, and each assignment expression
+   contains `options.roots.catalogRoot` — a document's directory can never
+   come from a method argument.
+4. `lock.ts` joins the catalog root to the fixed constant
+   `ORCHESTRATOR_LOCK_FILE = 'orchestrator.lock'`, never a variable
+   segment.
+5. No non-test source file performs `rm(`, `unlink`, `rmdir`,
+   `rmSync`, `unlinkSync` or `rmdirSync`, except two reviewed exceptions
+   asserted by target rather than mere absence: `files.ts`'s atomic write
+   removes only its own `.tmp` file (`temporary`) on a failed write, and
+   `lock.ts`'s `release()` removes only its own `path`, immediately after a
+   PID-and-host ownership check the test also asserts is present and
+   guarding that exact call. Discovered the `lock.ts` exception by grep
+   before writing this assertion — it is real production code, not a gap
+   in the test, and deletes only ephemeral process-coordination state, not
+   any retained artifact (batch, job, saved choice, annotation, result).
+6. `store.ts`'s `CatalogStore` interface contains no `delete`, `remove` or
+   `move(` — the property ADR 0023 §3 already claims in prose, checked
+   against the interface itself so any future implementation inherits it.
+
+Export-read audit (no test needed — already covered by
+`roots.test.ts`'s existing `resolveResultLocation` coverage, so this slice
+only had to confirm every service file actually uses one of the two safe
+patterns rather than rolling its own): `resolveResultLocation`'s
+symlink-aware containment check for reads keyed by an untrusted stored
+`rootId` + `directory` (`results.ts`, `artifacts.ts`,
+`adaptive-results.ts`), and a direct, argument-free
+`resultRoots.get(resultRootId)` for the single configured default root,
+where no untrusted segment is ever appended (`card-explorer.ts`,
+`deck-explorer.ts`, `match-explorer.ts`, `match-representatives.ts`,
+`player-meta-results.ts`). `artifacts.ts` also already bounds download size
+(`MAX_ARTIFACT_BYTES`), the one export path where an unbounded read, not
+just an unbounded path, was possible.
+
+Documented in
+[ADR 0023 §9](../docs/architecture/0023-admin-lab-boundary.md#9-every-retained-artifact-and-export-path-is-bound-and-deletion-stays-absent-m0828b),
+a new section naming the catalog-write mechanism, both export-read
+patterns and which files use which, and recording the no-deletion decision
+with its rationale.
+
+**Verification (focused, not the full gate — reserved for M08.28F).** First
+run of the new test file caught two real gaps before they became false
+negatives: the initial draft only named `files.ts` as an `rm(` exception
+and would have failed against `lock.ts`'s legitimate call, fixed by adding
+`lock.ts` as a second named exception asserted by target and by its
+ownership-check guard; and `tsc` caught `arg` possibly `undefined` from
+`matchAll`'s capture group typing (`noUncheckedIndexedAccess`), fixed with
+a `(arg ?? '').trim()` fallback. After both fixes: `npx vitest run
+apps/admin-server/src/retention-boundary.test.ts` — 6/6 passing. Regression:
+`npx vitest run apps/admin-server` — 43/43 files, 749/749 tests passing.
+`npx tsc --build apps/admin-server` — clean. `npx eslint` clean on
+`retention-boundary.test.ts`.
+
+Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
+verify`, `tcg-reviewer` — reserved for the M08.28 tranche-close run
+(M08.28F) per the working protocol; this was a normal slice, not a tranche
+close.
+
 Next slice: **M08.28B — Retention, archive and export boundaries.**

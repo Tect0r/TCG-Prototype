@@ -223,12 +223,31 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.28B — Retention, archive and export boundaries** is the next slice:
-bound every retained artifact and export path, adding deletion only if
-separately confirmed, exactly targeted, recoverable where practical and
-path-boundary tested — otherwise keep deletion absent. Scope and checklist
-are in
+**M08.28C — Secret and hidden-artifact leak audit** is the next slice:
+prove private snapshots, tokens and secrets stay out of logs, player
+bundles, unauthenticated endpoints and aggregate-only exports; correct only
+findings inside M08 ownership. Scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+
+**M08.28B shipped 2026-09-10** — new
+`apps/admin-server/src/retention-boundary.test.ts` (6 tests) turns ADR 0023
+§3's and §5's narrative claims into executable checks: every catalog ID
+schema rejects traversal and case-collision inputs, `file-catalog-store.ts`'s
+six document directories all derive from `catalogRoot` alone, the
+orchestrator lock uses a fixed filename, no source file deletes a retained
+artifact (the only two `rm` calls — `files.ts`'s temp-file cleanup and
+`lock.ts`'s ownership-checked removal of its own lock file — are asserted
+by exact target), and `store.ts`'s interface has no delete/remove/move
+method. Every export read already resolved through
+`resolveResultLocation`'s symlink-aware check (`results.ts`, `artifacts.ts`,
+`adaptive-results.ts`) or a direct `resultRoots.get()` for the single
+configured default root (`card-explorer.ts`, `deck-explorer.ts`,
+`match-explorer.ts`, `match-representatives.ts`,
+`player-meta-results.ts`). No deletion feature was added — the milestone's
+own standing preference (omission over an unsafe delete button) already
+answered that question. Documented in
+[ADR 0023 §9](docs/architecture/0023-admin-lab-boundary.md#9-every-retained-artifact-and-export-path-is-bound-and-deletion-stays-absent-m0828b).
+Full narrative in `.claude/current-work.md`'s "M08.28B" entry.
 
 **M08.28A shipped 2026-09-10** — `apps/admin-server/src/run/priority.ts`'s
 `lowerSimulatorProcessPriority()` lowers the admin server's own OS process

@@ -208,6 +208,58 @@ starts regardless, because a shared machine staying responsive is an operational
 property, not a security or correctness boundary this ADR's other sections
 guard.
 
+### 9. Every retained artifact and export path is bound, and deletion stays absent (M08.28B)
+
+§3 and §5 already state the two properties this section closes the loop on:
+the catalog carries no delete, remove or move, and every path is resolved
+against a configured root before use. Both were narrative claims until
+M08.28B; `apps/admin-server/src/retention-boundary.test.ts` is now the
+executable check, following the same source-scanning idiom
+`boundary.test.ts` already established for this workspace's other structural
+absence properties.
+
+**Catalog writes.** A catalog document's directory is never a request
+argument. `file-catalog-store.ts` assigns its six document directories once,
+in the constructor, each derived from `options.roots.catalogRoot` alone, and
+every `documentPath` call composes onto one of those six fields. The
+remaining variable is the document ID, and every catalog ID schema
+(`batchIdSchema`, `jobIdSchema`, `savedChoiceIdSchema`,
+`comparisonAnnotationIdSchema`, all in `packages/admin-contracts`) is built
+from `prefixedId`, whose body alphabet is `[a-z0-9]{6,40}` — no `.`, `/`,
+`\`, `..` and no uppercase. There is no untrusted segment for a catalog
+write to escape a root with, because there is no segment that was not
+minted by the server itself.
+
+**Export reads.** Two patterns cover every result read in the service
+layer, and each file uses exactly one:
+
+- `resolveResultLocation` (§5's symlink-aware, double-`realpath`
+  containment check) for every read that resolves an untrusted stored
+  `rootId` plus relative `directory` — `results.ts`, `artifacts.ts` and
+  `adaptive-results.ts`.
+- `this.#roots.resultRoots.get(this.#resultRootId)` for reads of the single
+  server-configured default live-match root, where no untrusted segment is
+  ever appended and the returned path is the configuration verbatim —
+  `card-explorer.ts`, `deck-explorer.ts`, `match-explorer.ts`,
+  `match-representatives.ts` and `player-meta-results.ts`.
+
+`artifacts.ts` additionally bounds a downloaded artifact's size
+(`MAX_ARTIFACT_BYTES`), the one export path where an unbounded read, not
+just an unbounded path, was possible.
+
+**Deletion stays absent.** M08.28's own text is the standing preference:
+omission over an unsafe delete button. The scan confirms it holds as fact,
+not merely as intent — across every non-test source file in
+`apps/admin-server`, the only two `rm` calls are `files.ts`'s cleanup of its
+own temp file after a failed atomic write, and `lock.ts`'s removal of the
+orchestrator's own lock file in `release()`, gated by a PID-and-host
+ownership check. Neither touches a batch, a job, a saved choice, an
+annotation or a result, and `store.ts`'s interface itself has no delete,
+remove or move method for any future implementation to add one behind.
+Retention and archival features, if ever needed, are future tranches with
+their own confirmation, exact targeting and recoverability — not something
+this boundary silently permits today.
+
 ## Consequences
 
 - Three new workspaces to build, typecheck, lint and test, and a new Vitest
