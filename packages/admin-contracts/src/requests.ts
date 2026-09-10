@@ -468,13 +468,26 @@ export type PlayerMetaRunSummaryRequestInput = z.input<typeof playerMetaRunSumma
  * `resultTableRequestSchema` restated the way `adaptiveResultTableRequestSchema`
  * restates it for a directory-keyed run: `table` is named from
  * `playerMetaResultTableNameSchema`'s closed list, `filter` narrows which
- * matches are aggregated, and there is nowhere in this shape to put a
+ * *matches* are aggregated, and there is nowhere in this shape to put a
  * location.
+ *
+ * `subjectDeckHash` (M08.R1) is a second, independent narrowing: which side of
+ * each aggregated `matches`/`deckMatchups`/cluster row counts as the *subject*.
+ * `filter.deckHashes` alone answers "which matches involve this deck at
+ * all" — both seats, by design, because the Player Meta dashboard wants every
+ * deck and matchup a filtered match set touches. The Deck Explorer wants only
+ * one deck's own row plus its opponents named as opponents, never an
+ * opponent's own row relabelled as "this deck." `null` (the default) leaves
+ * every table exactly as unscoped as it always was; naming a hash scopes
+ * `decks` to that hash, `deck_matchups` to that hash as the subject side, and
+ * `clusters`/`cluster_matchups` to the cluster(s) that hash's own structured
+ * membership actually belongs to.
  */
 export const playerMetaResultTableRequestSchema = z.strictObject({
   filter: playerMetaFilterSchema.prefault({}),
   table: playerMetaResultTableNameSchema,
   page: pageRequestSchema.prefault({}),
+  subjectDeckHash: liveMatchDeckHashSchema.nullable().prefault(null),
 });
 export type PlayerMetaResultTableRequest = z.infer<typeof playerMetaResultTableRequestSchema>;
 export type PlayerMetaResultTableRequestInput = z.input<typeof playerMetaResultTableRequestSchema>;

@@ -5109,3 +5109,57 @@ which exact decks, cards, matches and replays produced it.
 M08 is accepted when every tranche checklist above is complete, `npm run verify`
 passes, the consistency and audit checks pass, and the tree is clean after the
 final record commit.
+
+---
+
+## Correction pass over closed M08 tranches
+
+A post-hoc review of the closed tranches above found gaps that shipped without
+being caught by their own slice's focused tests. Corrections are numbered
+`M08.R1`–`M08.R14` rather than reusing or renumbering any tranche above, so a
+correction never collides with or rewrites the historical `M08.5` tranche name
+("Runner lifecycle, recovery and resource bounds") or any other already-closed
+slice. Each correction is its own bounded work slice under this same
+milestone file, following the normal one-slice-per-session workflow.
+
+### Correction Tranche A — Explorer truthfulness
+
+- [x] **M08.R1 — Deck Explorer row-subject scoping.** `DeckExplorerPanel`
+      (M08.26B) reuses the generic `player-meta-result-table` endpoint,
+      filtered to one deck hash via `deckExplorerEvidenceFilter`. That filter
+      narrows which *matches* are included (either seat, per
+      `matchesEitherSeat`), but `aggregatePartition` builds `deckUsage`,
+      `deckMatchups` and cluster entries for **both** seats as subject — so
+      the reused table surfaced the opponent's deck, matchups and cluster
+      rows under the "This deck" label, not only the selected deck's own.
+      Separately, the panel's retry action called `open(deckHash, null)`,
+      always discarding a selected Adaptive Counter experiment ID on retry.
+      Evidence note: added `subjectDeckHash` (nullable, defaults to `null`)
+      to `playerMetaResultTableRequestSchema`
+      (`packages/admin-contracts/src/requests.ts`; contract version 15),
+      distinct from `filter.deckHashes` — the former narrows which matches
+      are read, the latter narrows which aggregate rows are shown as
+      subject. Server-side, `readPlayerMetaTable`
+      (`apps/admin-server/src/service/player-meta-results.ts`) applies a new
+      `scopeAggregatesToDeck` step before `buildPlayerMetaTable`, filtering
+      `deckUsage`/`deckMatchups` to the named deck hash and filtering
+      `clusters`/cluster `matchups` to clusters containing that deck hash —
+      operating on the structured `Cluster.deckHashes` array, never the
+      truncated display string. Opponent identity is preserved as a
+      dimension on the surviving rows (`opponentDeckHash`,
+      `opponentClusterId`); only unrelated *subject* rows are dropped. A
+      `null` `subjectDeckHash` (every existing caller, including the general
+      Player Meta Dashboard) is unaffected — `readPlayerMetaTable`/
+      `PlayerMetaResultReader.readTable` pass the aggregates through
+      unscoped. `DeckExplorerPanel` now threads `deckHash` as
+      `subjectDeckHash` on every evidence fetch and keeps `experimentId` in
+      component state so retry calls `open(deckHash, experimentId)` instead
+      of discarding it. 6 new focused tests pass (2 admin-server fixture
+      tests over real `precon_wave_1` decks proving no unrelated subject
+      row survives scoping while opponent/cluster identity is preserved + 3
+      admin-contracts schema tests for `subjectDeckHash`'s default/accept/
+      refuse behavior + 2 admin-client integration tests for the
+      `subjectDeckHash` wiring and the retry-preserves-experiment-ID fix);
+      pre-existing `player-meta-results`/`requests`/`deck-explorer-flow`
+      suites (32 tests) pass unchanged. Typecheck and ESLint clean on
+      `admin-contracts`/`admin-server`/`admin-client`.

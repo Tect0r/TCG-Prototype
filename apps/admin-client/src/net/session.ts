@@ -542,16 +542,24 @@ export class AdminSession {
     });
   }
 
-  /** One page of one filtered Player Meta result table — mirrors `resultTable`. */
+  /**
+   * One page of one filtered Player Meta result table — mirrors `resultTable`.
+   *
+   * `subjectDeckHash` (M08.R1) scopes `decks`/`deck_matchups`/`clusters`/
+   * `cluster_matchups` to one deck as subject rather than every deck the
+   * `filter` matched touched — see `requests.ts`'s doc comment on the field.
+   */
   async playerMetaResultTable(
     table: PlayerMetaResultTableName,
     filter?: PlayerMetaFilterInput,
     page?: PageRequestInput,
+    subjectDeckHash: LiveMatchDeckHash | null = null,
   ): Promise<AdminOutcome<PlayerMetaResultTable>> {
     return this.#call('playerMetaResultTable', {
       filter: playerMetaFilterSchema.parse(filter ?? {}),
       table,
       page: pageRequestSchema.parse(page ?? {}),
+      subjectDeckHash,
     });
   }
 

@@ -232,14 +232,62 @@ export function readPlayerMetaSummary(
   return ok(validated.data);
 }
 
-/** Reads one bounded page of one Player Meta result table for a filtered query. */
+/**
+ * Narrows `deckUsage`, `deckMatchups` and clustering to one deck as *subject*
+ * (M08.R1). `filter.deckHashes` upstream only ever chose which *matches* to
+ * include — by design, either seat — so every deck and cluster those matches
+ * touch still comes back from `openPlayerMeta` unscoped; a `decks`/
+ * `deck_matchups`/`clusters`/`cluster_matchups` table built straight from it
+ * would carry an opponent's own row alongside the requested deck's.
+ *
+ * Cluster scoping reads `Cluster.deckHashes` — the structured membership
+ * array — never the display row's truncated, comma-joined string built later
+ * in `buildPlayerMetaTable`, which is exactly the "do not filter
+ * human-readable/truncated strings" boundary this correction exists to hold.
+ */
+function scopeAggregatesToDeck(
+  aggregates: readonly LiveMatchAggregate[],
+  deckHash: string,
+): readonly LiveMatchAggregate[] {
+  return aggregates.map((aggregate) => {
+    const deckUsage = aggregate.deckUsage.filter((entry) => entry.deckHash === deckHash);
+    const deckMatchups = aggregate.deckMatchups.filter((entry) => entry.deckHash === deckHash);
+
+    if (aggregate.clusters === null) return { ...aggregate, deckUsage, deckMatchups };
+
+    const subjectClusterIds = new Set(
+      aggregate.clusters.clusters
+        .filter((cluster) => cluster.deckHashes.includes(deckHash))
+        .map((cluster) => cluster.id),
+    );
+    const clusters = {
+      ...aggregate.clusters,
+      clusters: aggregate.clusters.clusters.filter((cluster) => subjectClusterIds.has(cluster.id)),
+      matchups: aggregate.clusters.matchups.filter((matchup) =>
+        subjectClusterIds.has(matchup.clusterId),
+      ),
+    };
+    return { ...aggregate, deckUsage, deckMatchups, clusters };
+  });
+}
+
+/**
+ * Reads one bounded page of one Player Meta result table for a filtered
+ * query. `subjectDeckHash` (M08.R1), when named, scopes `decks`,
+ * `deck_matchups`, `clusters` and `cluster_matchups` to that one deck as
+ * subject — see `scopeAggregatesToDeck`. `null` (the default) leaves every
+ * table exactly as unscoped as `openPlayerMeta`'s own filtered match set.
+ */
 export function readPlayerMetaTable(
   rootDirectory: string,
   table: PlayerMetaResultTableName,
   filter: PlayerMetaFilter,
   page: PageRequest,
+  subjectDeckHash: string | null = null,
 ): Result<PlayerMetaResultTable, readonly AdminError[]> {
   const open = openPlayerMeta(rootDirectory, filter);
+  const aggregates =
+    subjectDeckHash === null ? open.aggregates : scopeAggregatesToDeck(open.aggregates, subjectDeckHash);
 
   let offset = 0;
   if (page.cursor !== null) {
@@ -248,7 +296,7 @@ export function readPlayerMetaTable(
     offset = decoded.value;
   }
 
-  const built = buildPlayerMetaTable(table, open.aggregates, open.cardEvidence, open.surrenders);
+  const built = buildPlayerMetaTable(table, aggregates, open.cardEvidence, open.surrenders);
   const rows = built.rows.slice(offset, offset + page.limit);
   const consumed = offset + rows.length;
   const value = {
@@ -665,10 +713,11 @@ export class PlayerMetaResultReader {
     table: PlayerMetaResultTableName,
     filter: PlayerMetaFilter,
     page: PageRequest,
+    subjectDeckHash: string | null = null,
   ): Result<PlayerMetaResultTable, readonly AdminError[]> {
     const directory = this.#resolve();
     if (isErr(directory)) return directory;
-    return readPlayerMetaTable(directory.value, table, filter, page);
+    return readPlayerMetaTable(directory.value, table, filter, page, subjectDeckHash);
   }
 
   /** `cardEvidence` alone, for `./coverage.ts`'s observation stage — narrower than a full `readTable` page. */

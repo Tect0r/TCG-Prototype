@@ -441,6 +441,114 @@ describe('pagination', () => {
   });
 });
 
+describe('subject-scoped reads for one deck (M08.R1)', () => {
+  const subjectDeck = () =>
+    freezeLiveMatchDeckSnapshot({
+      commanderId: 'chief_containment_scholar',
+      cards: [{ cardId: 'veteran_guard', quantity: 40 }],
+    });
+  const opponentDeck = () =>
+    freezeLiveMatchDeckSnapshot({
+      commanderId: 'goblin_warboss',
+      cards: [{ cardId: 'veteran_guard', quantity: 40 }],
+    });
+  const unrelatedDeck = () =>
+    freezeLiveMatchDeckSnapshot({
+      commanderId: 'bastion_commander',
+      cards: [{ cardId: 'veteran_guard', quantity: 40 }],
+    });
+
+  function realEnvelope(
+    matchId: string,
+    overrides: Partial<LiveMatchEnvelope> = {},
+  ): LiveMatchEnvelope {
+    return {
+      schemaVersion: 3,
+      matchId,
+      source: 'human_human',
+      formatId: 'precon_wave_1',
+      provenance: { softwareVersion: '1.0.0', contentVersion: 5, rulesVersion: '1.0.0' },
+      seats: [
+        { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: subjectDeck() },
+        { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: opponentDeck() },
+      ],
+      actionCount: 40,
+      terminationOrigin: 'rules_victory',
+      outcome: winOutcome,
+      ...overrides,
+    };
+  }
+
+  it('narrows decks, deck_matchups, clusters and cluster_matchups to the subject deck, dropping unrelated subject rows', () => {
+    const subjectHash = subjectDeck().deckHash;
+    const opponentHash = opponentDeck().deckHash;
+    const unrelatedHash = unrelatedDeck().deckHash;
+
+    writeMatch('match_subject_vs_opponent', realEnvelope('match_subject_vs_opponent'));
+    writeMatch(
+      'match_opponent_vs_unrelated',
+      realEnvelope('match_opponent_vs_unrelated', {
+        seats: [
+          { seatIndex: 0, playerId: 'player_1', kind: 'human', deck: opponentDeck() },
+          { seatIndex: 1, playerId: 'player_2', kind: 'human', deck: unrelatedDeck() },
+        ],
+      }),
+    );
+
+    const bigPage = pageRequestSchema.parse({ limit: PAGE_SIZE_MAX });
+
+    const unscopedDecks = unwrap(readPlayerMetaTable(root, 'decks', filter, bigPage));
+    const unscopedHashes = new Set(unscopedDecks.rows.map((row) => row.deckHash));
+    expect(unscopedHashes).toEqual(new Set([subjectHash, opponentHash, unrelatedHash]));
+
+    const decks = unwrap(readPlayerMetaTable(root, 'decks', filter, bigPage, subjectHash));
+    expect(decks.rows).toHaveLength(1);
+    expect(decks.rows[0]?.deckHash).toBe(subjectHash);
+
+    const matchups = unwrap(
+      readPlayerMetaTable(root, 'deck_matchups', filter, bigPage, subjectHash),
+    );
+    expect(matchups.rows).toHaveLength(1);
+    expect(matchups.rows[0]).toMatchObject({
+      deckHash: subjectHash,
+      opponentDeckHash: opponentHash,
+    });
+
+    const unscopedClusters = unwrap(readPlayerMetaTable(root, 'clusters', filter, bigPage));
+    expect(unscopedClusters.rows.length).toBeGreaterThanOrEqual(3);
+
+    const clusters = unwrap(readPlayerMetaTable(root, 'clusters', filter, bigPage, subjectHash));
+    expect(clusters.rows.length).toBeGreaterThan(0);
+    for (const row of clusters.rows) {
+      const deckHashes = String(row.deckHashes).split(', ');
+      expect(deckHashes).toContain(subjectHash);
+      expect(deckHashes).not.toContain(unrelatedHash);
+    }
+
+    const subjectClusterIds = new Set(clusters.rows.map((row) => row.clusterId));
+
+    const clusterMatchups = unwrap(
+      readPlayerMetaTable(root, 'cluster_matchups', filter, bigPage, subjectHash),
+    );
+    for (const row of clusterMatchups.rows) {
+      expect(subjectClusterIds.has(row.clusterId)).toBe(true);
+    }
+    const unscopedClusterMatchups = unwrap(
+      readPlayerMetaTable(root, 'cluster_matchups', filter, bigPage),
+    );
+    expect(clusterMatchups.rows.length).toBeLessThan(unscopedClusterMatchups.rows.length);
+  });
+
+  it('leaves the general (non-Deck-Explorer) read unaffected when no subject deck is named', () => {
+    writeMatch('match_subject_vs_opponent', realEnvelope('match_subject_vs_opponent'));
+
+    const bigPage = pageRequestSchema.parse({ limit: PAGE_SIZE_MAX });
+    const withoutSubject = unwrap(readPlayerMetaTable(root, 'decks', filter, bigPage));
+    const withNullSubject = unwrap(readPlayerMetaTable(root, 'decks', filter, bigPage, null));
+    expect(withNullSubject.rows).toEqual(withoutSubject.rows);
+  });
+});
+
 describe('PlayerMetaResultReader (M08.25C)', () => {
   it("reads the server's one configured default result root directly, with no run identifier at all", () => {
     writeMatch('match_a', envelope('match_a'));

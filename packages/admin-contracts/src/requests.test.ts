@@ -19,6 +19,7 @@ import {
   jobRefSchema,
   listBatchesRequestSchema,
   listJobsRequestSchema,
+  playerMetaResultTableRequestSchema,
   resultTableRequestSchema,
   setJobAnnotationsRequestSchema,
 } from './requests.js';
@@ -347,6 +348,32 @@ describe('the payloads M08.6 added', () => {
         jobId: 'job_abc123',
         table: 'cards',
         page: { limit: PAGE_SIZE_MAX + 1 },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('playerMetaResultTableRequestSchema’s subjectDeckHash (M08.R1)', () => {
+  it('defaults to null, meaning "no row-subject scoping", never a fabricated deck', () => {
+    const parsed = playerMetaResultTableRequestSchema.parse({ table: 'decks' });
+    expect(parsed.subjectDeckHash).toBeNull();
+  });
+
+  it('accepts a valid deck hash naming the row subject, distinct from filter.deckHashes', () => {
+    const parsed = playerMetaResultTableRequestSchema.parse({
+      table: 'decks',
+      filter: { deckHashes: ['0123456789abcdef', 'fedcba9876543210'] },
+      subjectDeckHash: '0123456789abcdef',
+    });
+    expect(parsed.subjectDeckHash).toBe('0123456789abcdef');
+    expect(parsed.filter.deckHashes).toEqual(['0123456789abcdef', 'fedcba9876543210']);
+  });
+
+  it('refuses a subjectDeckHash that is not a legal deck hash', () => {
+    expect(
+      playerMetaResultTableRequestSchema.safeParse({
+        table: 'decks',
+        subjectDeckHash: 'not-hex',
       }).success,
     ).toBe(false);
   });

@@ -5090,3 +5090,64 @@ files sit in `docs/milestones/` (`M08.5_FINAL_CORRECTION_PASS.md`,
 of this plan yet — starting either is the owner's call, not made here.
 
 Next milestone: none scheduled in the committed plan. Report to the owner.
+
+## M08.R1 — Deck Explorer row-subject scoping (2026-09-10)
+
+First slice of the owner-authored correction pass over closed M08 tranches
+(`docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`, kept outside the
+repository; conflict-free identifiers `M08.R1`–`M08.R14`, distinct from the
+already-shipped historical M08.5 tranche name). Fixes a leak in the Deck
+Explorer's reused Player Meta evidence tables: `aggregatePartition` builds
+`deckUsage`/`deckMatchups`/`clusters` for both seats as subject, so the
+tables shown under one deck's identity view could include rows about other
+decks entirely, not just the opened one.
+
+**Fix.** Added `scopeAggregatesToDeck(aggregates, deckHash)` in
+`apps/admin-server/src/service/player-meta-results.ts` and a new optional
+5th parameter `subjectDeckHash: string | null = null` on
+`readPlayerMetaTable()`/`PlayerMetaResultReader.readTable()`, applied only
+when set — the general Player Meta Dashboard path (`subjectDeckHash: null`)
+is byte-for-byte unaffected. `handlers.ts`'s `playerMetaResultTable` handler
+passes `payload.subjectDeckHash` through. Added
+`subjectDeckHash: liveMatchDeckHashSchema.nullable().prefault(null)` to
+`playerMetaResultTableRequestSchema` in `packages/admin-contracts/src/requests.ts`;
+bumped `ADMIN_CONTRACT_VERSION` 14→15. `apps/admin-client/src/net/session.ts`'s
+`playerMetaResultTable()` takes the deck hash as a 4th parameter.
+`DeckExplorerDashboard.tsx`'s evidence-fetch effect now passes the opened
+deck hash as `subjectDeckHash` on every reused-table request, and separately
+fixed a retry bug where the Adaptive Counter experiment ID typed before a
+refused read was dropped on "Try again" (`open(deckHash, experimentId)` now
+carries it through).
+
+**Verification (focused, no full gate — reserved for tranche close).**
+`npx vitest run src/deck-explorer-flow.test.tsx` (apps/admin-client): 11/11,
+including two new tests — every reused-evidence request carries
+`subjectDeckHash` equal to the opened hash, and the experiment ID survives a
+retry. `npx vitest run apps/admin-server/src/service/player-meta-results.test.ts`
+(run from repo root; the admin-server subdirectory's own vitest workspace
+config errors on a `web-client` path it does not have) — 17/17, including a
+new `describe` built on real `precon_wave_1` commanders/cards at
+`contentVersion: 5` (needed for `currentLiveMatchCardDatabases()` to resolve
+a bundled database and populate `clusters`/`cluster_matchups`, which the
+file's existing prototype-card fixtures never exercised): one test proving
+`decks`/`deck_matchups`/`clusters`/`cluster_matchups` all scope correctly to
+the subject deck hash while preserving opponent/cluster identity on
+surviving rows, one proving `subjectDeckHash: null` leaves the general read
+unchanged. `npx vitest run packages/admin-contracts/src/requests.test.ts`:
+34/34, including 3 new tests for the schema field (defaults to `null`,
+accepts a hash distinct from `filter.deckHashes`, refuses an invalid hash).
+Reran the pre-existing `player-meta-flow.test.tsx` client suite: 7/7
+unchanged. `typecheck` and ESLint clean on every touched file, all three
+touched workspaces (`admin-contracts`, `admin-server`, `admin-client`).
+`npm run check:consistency` — 49 documents, 312 links, no inconsistency
+found (informational cross-check of the new milestone-file anchor link, not
+a tranche-close gate run).
+
+**Root record.** `docs/milestones/M08-ai-lab-and-player-meta.md` gained a new
+`## Correction pass over closed M08 tranches` / `### Correction Tranche A —
+Explorer truthfulness` section with `M08.R1` checked and its evidence.
+`IMPLEMENTATION_PLAN.md`'s "next bounded task" section now documents M08.R1's
+shipment and names `M08.R2 — Card replacement evidence` as the next slice;
+the root Status table is untouched (tranche-close only).
+
+Next slice: M08.R2 — Card replacement evidence (Correction Tranche A).

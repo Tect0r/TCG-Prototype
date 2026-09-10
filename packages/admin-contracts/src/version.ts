@@ -316,8 +316,25 @@ import { adminError, type AdminError } from './errors.js';
  *   mechanic's coverage status, and no data-health category, would be
  *   visible no matter how many runs or partitions existed. That is what a
  *   contract version is for saying.
+ * - 15 (M08.R1) — `player-meta-result-table` gained `subjectDeckHash`,
+ *   correcting a genuine leak the M08.26B Deck Explorer reuse of this address
+ *   had: `filter.deckHashes` only ever named which *matches* to include (by
+ *   design, both seats), so the `decks`, `deck_matchups`, `clusters` and
+ *   `cluster_matchups` tables it returned carried every deck and cluster a
+ *   filtered match touched, not only the one deck a Deck Explorer request
+ *   named — an opponent's own row rendered under the Deck Explorer's own
+ *   "This deck" label. `subjectDeckHash` is `null` by default, changing no
+ *   existing caller; naming it scopes those four tables to the named deck's
+ *   own row, its own matchups as the subject side, and the cluster(s) that
+ *   deck's structured membership actually belongs to.
+ *
+ *   A build speaking 14 could read every Player Meta table over a filtered
+ *   match set, and could not narrow any of the four deck/cluster tables to
+ *   one deck as subject, so a client using this address for a per-deck view
+ *   would keep receiving every opponent's own row alongside it, however many
+ *   more matches were played. That is what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 14;
+export const ADMIN_CONTRACT_VERSION = 15;
 
 /**
  * The version stamped into a persisted catalog document.

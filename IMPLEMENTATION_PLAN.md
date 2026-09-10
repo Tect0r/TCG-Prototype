@@ -223,6 +223,24 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
+**M08.R1 shipped (2026-09-10)** — the first slice of a post-hoc correction
+pass over the closed M08 tranches above, begun at the owner's direction. Fixed
+Deck Explorer's reuse of the generic Player Meta table: it was narrowing which
+*matches* to include but not which aggregate rows counted as *subject*, so
+opponent decks/matchups/clusters leaked into "This deck" evidence; a
+retry-path bug also discarded the selected Adaptive Counter experiment ID.
+Added `subjectDeckHash` to `playerMetaResultTableRequestSchema` (contract
+version 15) and a `scopeAggregatesToDeck` step in
+`apps/admin-server/src/service/player-meta-results.ts`, wired through the
+client with the retry fix. 6 new focused tests pass; pre-existing
+`player-meta-results`/`requests`/`deck-explorer-flow` suites (32 tests) pass
+unchanged; typecheck and ESLint clean on `admin-contracts`/`admin-server`/
+`admin-client`. Full narrative in
+[the M08 milestone file's M08.R1 entry](docs/milestones/M08-ai-lab-and-player-meta.md#correction-tranche-a--explorer-truthfulness).
+**Next slice: M08.R2 — Card replacement evidence** (structured
+replacement-evidence contract/reader/endpoint/rendering for Card Explorer,
+replacing the current prose-only description).
+
 **M08 is complete (2026-09-10).** M08.28F closed the milestone: every other
 `### Checklist` in the milestone file was already checked from earlier
 tranches; only M08.28's own five items and the close slice itself remained,

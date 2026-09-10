@@ -176,6 +176,53 @@ describe('opening the Deck Explorer', () => {
     const alert = await within(main()).findByRole('alert');
     expect(alert).toHaveTextContent('admin/unauthorized');
   });
+
+  it('narrows each reused evidence read to this deck via subjectDeckHash (M08.R1)', async () => {
+    const { service } = await openDeckExplorer();
+    service.lab.seedDeckExplorer(VALID_HASH, deckExplorerViewFixture(VALID_HASH));
+    service.lab.seedPlayerMeta({
+      tables: { decks: playerMetaResultTableFixture('decks', DECKS_COLUMNS, DECKS_ROWS) },
+    });
+
+    await openDeck(service);
+    await within(main()).findByText('prototype_commander_fake');
+
+    const evidenceRequests = service.requests.filter((request) =>
+      request.path.includes('player-meta-result-table'),
+    );
+    expect(evidenceRequests.length).toBeGreaterThan(0);
+    for (const request of evidenceRequests) {
+      const { payload } = JSON.parse(request.body) as { payload: { subjectDeckHash: unknown } };
+      expect(payload.subjectDeckHash).toBe(VALID_HASH);
+    }
+  });
+
+  it('preserves the selected Adaptive Counter experiment ID across a retry (M08.R1)', async () => {
+    const { service } = await openDeckExplorer();
+    service.lab.seedDeckExplorer(VALID_HASH, { refuse: 'admin/unauthorized' });
+
+    await userEvent.type(
+      within(main()).getByLabelText(
+        'Adaptive Counter experiment ID (optional, for known revisions)',
+      ),
+      'goblin_counter',
+    );
+    await openDeck(service);
+    await within(main()).findByRole('alert');
+
+    service.lab.seedDeckExplorer(VALID_HASH, deckExplorerViewFixture(VALID_HASH));
+    await userEvent.click(within(main()).getByRole('button', { name: 'Try again' }));
+    await within(main()).findByText('prototype_commander_fake');
+
+    const identityRequests = service.requests.filter((request) =>
+      request.path.includes('deck-explorer-view'),
+    );
+    const retryRequest = identityRequests[identityRequests.length - 1];
+    const { payload } = JSON.parse(retryRequest!.body) as {
+      payload: { adaptiveExperimentId: unknown };
+    };
+    expect(payload.adaptiveExperimentId).toBe('goblin_counter');
+  });
 });
 
 describe('cross-navigating from the Deck Explorer (M08.26E)', () => {

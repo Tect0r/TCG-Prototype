@@ -80,6 +80,7 @@ export function DeckExplorerPanel({
   const [experimentInput, setExperimentInput] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [deckHash, setDeckHash] = useState<LiveMatchDeckHash | null>(null);
+  const [experimentId, setExperimentId] = useState<AdaptiveExperimentId | null>(null);
   const [view, setView] = useState<AdminOutcome<DeckExplorerView> | null>(null);
   const [evidenceView, setEvidenceView] = useState<PlayerMetaResultTableName>('decks');
   const [evidence, setEvidence] = useState<
@@ -89,14 +90,15 @@ export function DeckExplorerPanel({
   const [drill, setDrill] = useState<PlayerMetaDrillTarget | null>(null);
 
   const open = useCallback(
-    (hash: LiveMatchDeckHash, experimentId: AdaptiveExperimentId | null) => {
+    (hash: LiveMatchDeckHash, forExperimentId: AdaptiveExperimentId | null) => {
       setDeckHash(hash);
+      setExperimentId(forExperimentId);
       setView(null);
       setEvidence({});
       setEvidenceView('decks');
       setWeighting('matches');
       setDrill(null);
-      void session.deckExplorerView(hash, experimentId).then(setView);
+      void session.deckExplorerView(hash, forExperimentId).then(setView);
     },
     [session],
   );
@@ -116,10 +118,12 @@ export function DeckExplorerPanel({
     let live = true;
     for (const table of DECK_EXPLORER_EVIDENCE_TABLES) {
       void session
-        .playerMetaResultTable(table, deckExplorerEvidenceFilter(deckHash), {
-          limit: PAGE_SIZE_MAX,
-          cursor: null,
-        })
+        .playerMetaResultTable(
+          table,
+          deckExplorerEvidenceFilter(deckHash),
+          { limit: PAGE_SIZE_MAX, cursor: null },
+          deckHash,
+        )
         .then((outcome) => {
           if (live) setEvidence((held) => ({ ...held, [table]: outcome }));
         });
@@ -203,7 +207,7 @@ export function DeckExplorerPanel({
           failure={view.failure}
           onRetry={() => {
             if (deckHash === null) return;
-            open(deckHash, null);
+            open(deckHash, experimentId);
           }}
         />
       )}
