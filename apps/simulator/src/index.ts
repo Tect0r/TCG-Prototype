@@ -385,6 +385,11 @@ export {
 } from './analysis/flags.js';
 
 export {
+  displacementSchema,
+  type Displacement,
+} from './analysis/displacement.js';
+
+export {
   cohensH,
   effectSizeLabel,
   mean,

@@ -223,8 +223,28 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.27D — Data Health model and page.** Scope and checklist are in
+**M08.27D's page** (HTTP route wiring, an `apps/admin-client` session
+method, a `DataHealthDashboard` component, `fake-service` seeding and tests)
+is the next slice — the model half shipped 2026-09-10, mirroring the split
+M08.27C already used. Scope and checklist are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0827--version-comparison-coverage-and-data-health).
+
+**M08.27D's model shipped 2026-09-10** — `packages/admin-contracts/src/
+data-health.ts` (schema: the catalog/player_meta `DataHealthIdentity` split,
+nine named categories: `recoveredRecords`, `failures`, `stalled`,
+`exclusions`, `replicateDisagreement`, `seatBias`, `pilotSensitivity`,
+`unsupportedMechanics`, `replayStatus`) and `apps/admin-server/src/service/
+data-health.ts` (`computeCatalogDataHealth`, `computePlayerMetaDataHealth`).
+New `readDataHealthEvidence` methods on `ResultReader` and
+`PlayerMetaResultReader` read `summary.json`'s `flags`/`displacement` and the
+manifest's `recoveredLines`, and a live-match root's skipped list and replay
+presence, respectively — each domain's own narrow reader, never a second
+private file read. Four categories are structurally `unavailable` for Player
+Meta (no catalog-only analysis reaches live telemetry) and catalog replay
+status is structurally `unavailable` for this build (no per-match replay
+reader exists yet) — both carry a named reason rather than a fabricated
+zero. The page is a separate, not-yet-started follow-up. Full narrative in
+`.claude/current-work.md`'s "M08.27D model" entry.
 
 **The `coverage.ts` → `@tcg/card-data` boundary violation was corrected
 2026-09-09**, chosen over starting M08.27D via `AskUserQuestion` since it

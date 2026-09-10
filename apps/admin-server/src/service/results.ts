@@ -237,6 +237,33 @@ const generationReportShape = z.object({
   archiveSize: z.number(),
 });
 
+/**
+ * M08.27D — a `summary.json` `Flag` (`@tcg/simulator`'s `flags.ts`), read
+ * loosely: `computeFlags` has written this field on every run since before
+ * `SUMMARY_SCHEMA_VERSION` began tracking additions here, so unlike
+ * `calibration` it needs no `.nullish()` refusal, only `.default([])` for the
+ * same reason `commanders` gets one — a run this admin-server has never
+ * itself produced.
+ */
+const flagShape = z.object({
+  level: z.string(),
+  reason: z.string(),
+  subject: z.string(),
+  message: z.string(),
+  sampleSize: z.number(),
+});
+export type SummaryFlag = z.infer<typeof flagShape>;
+
+/** A `summary.json` `displacement` entry (`@tcg/simulator`'s `Displacement`), read loosely for the same reason as `flagShape`. */
+const displacementShape = z.object({
+  definitionId: z.string(),
+  betweenReplicateVariation: z.number(),
+  replicates: z.number(),
+  shareDelta: z.number(),
+  status: z.string(),
+});
+export type SummaryDisplacement = z.infer<typeof displacementShape>;
+
 const summaryFileSchema = z.object({
   schemaVersion: z.number(),
   configHash: z.string(),
@@ -250,6 +277,8 @@ const summaryFileSchema = z.object({
   }),
   calibration: calibrationShape.nullish(),
   searchHistory: z.array(generationReportShape).default([]),
+  flags: z.array(flagShape).default([]),
+  displacement: z.array(displacementShape).default([]),
 });
 type SummaryFile = z.infer<typeof summaryFileSchema>;
 
@@ -257,6 +286,9 @@ type SummaryFile = z.infer<typeof summaryFileSchema>;
 const manifestCountsSchema = z.object({
   failedMatches: z.number().optional(),
   resumedMatches: z.number().optional(),
+  /** M08.27D — `MatchStore.recovered`: a damaged `matches.jsonl` line, tolerated rather than failing the run. */
+  recoveredLines: z.array(z.object({ line: z.number(), reason: z.string() })).optional(),
+  abnormalMatchIds: z.array(z.string()).optional(),
 });
 
 /* ------------------------------------------------------------ the row builder */
@@ -605,6 +637,21 @@ interface OpenRun {
   readonly summary: SummaryFile;
 }
 
+/** M08.27D — see `ResultReader.readDataHealthEvidence`. */
+export interface CatalogDataHealthEvidence {
+  readonly denominators: {
+    readonly matches: number;
+    readonly usableMatches: number;
+    readonly abnormalMatches: number;
+    readonly abnormalByKind: Record<string, number>;
+  };
+  readonly botFailures: number;
+  readonly flags: readonly SummaryFlag[];
+  readonly displacement: readonly SummaryDisplacement[];
+  readonly recoveredLines: readonly { line: number; reason: string }[];
+  readonly abnormalMatchIds: readonly string[];
+}
+
 export class ResultReader {
   readonly #store: CatalogStore;
   readonly #roots: ResolvedCatalogRoots;
@@ -702,6 +749,44 @@ export class ResultReader {
     const validated = resultSummarySchema.safeParse(value);
     if (!validated.success) return err([builtBadly(jobId, 'summary')]);
     return ok(validated.data);
+  }
+
+  /**
+   * M08.27D — the raw evidence a catalog Data Health report is built from:
+   * `flags` and `displacement` (both computed unconditionally, so an empty
+   * array is a measured "none found," never a gap), `abnormalByKind` (the same
+   * split `readSummary` computes), and the manifest's `recoveredLines` /
+   * `abnormalMatchIds`. Skips `readSummary`'s calibration gate — a Data Health
+   * read must work on a run too old to carry one.
+   */
+  async readDataHealthEvidence(
+    jobId: JobId,
+  ): Promise<Result<CatalogDataHealthEvidence, readonly AdminError[]>> {
+    const open = await this.#open(jobId);
+    if (isErr(open)) return open;
+    const { directory, summary } = open.value;
+
+    const counts = await this.#readManifestCounts(directory);
+    const run = summary.aggregate.run;
+
+    const abnormalByKind: Record<string, number> = {};
+    for (const [kind, count] of Object.entries(run.terminations)) {
+      if ((ABNORMAL_TERMINATIONS as readonly string[]).includes(kind)) abnormalByKind[kind] = count;
+    }
+
+    return ok({
+      denominators: {
+        matches: run.matches,
+        usableMatches: run.usableMatches,
+        abnormalMatches: run.abnormalMatches,
+        abnormalByKind,
+      },
+      botFailures: run.botFailures,
+      flags: summary.flags,
+      displacement: summary.displacement,
+      recoveredLines: counts.recoveredLines,
+      abnormalMatchIds: counts.abnormalMatchIds,
+    });
   }
 
   async readTable(
@@ -895,20 +980,31 @@ export class ResultReader {
     return ok({ job: job.value, directory: directory.value, summary: summary.data });
   }
 
-  async #readManifestCounts(
-    directory: string,
-  ): Promise<{ failedMatches: number; resumedMatches: number }> {
+  async #readManifestCounts(directory: string): Promise<{
+    failedMatches: number;
+    resumedMatches: number;
+    recoveredLines: readonly { line: number; reason: string }[];
+    abnormalMatchIds: readonly string[];
+  }> {
+    const empty = {
+      failedMatches: 0,
+      resumedMatches: 0,
+      recoveredLines: [],
+      abnormalMatchIds: [],
+    };
     const text = await readDocumentText(experimentPaths(directory).manifest);
-    if (text === null) return { failedMatches: 0, resumedMatches: 0 };
+    if (text === null) return empty;
     try {
       const parsed = manifestCountsSchema.safeParse(JSON.parse(text));
-      if (!parsed.success) return { failedMatches: 0, resumedMatches: 0 };
+      if (!parsed.success) return empty;
       return {
         failedMatches: parsed.data.failedMatches ?? 0,
         resumedMatches: parsed.data.resumedMatches ?? 0,
+        recoveredLines: parsed.data.recoveredLines ?? [],
+        abnormalMatchIds: parsed.data.abnormalMatchIds ?? [],
       };
     } catch {
-      return { failedMatches: 0, resumedMatches: 0 };
+      return empty;
     }
   }
 }

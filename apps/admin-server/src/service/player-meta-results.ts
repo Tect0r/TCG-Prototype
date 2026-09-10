@@ -6,6 +6,7 @@ import {
   type AdminError,
   type PageRequest,
   type PlayerMetaFilter,
+  type PlayerMetaPartition,
   type PlayerMetaResultTable,
   type PlayerMetaResultTableName,
   type PlayerMetaRunSummary,
@@ -21,10 +22,12 @@ import {
   filterLiveMatches,
   readLiveMatchEnvelopes,
   readLiveMatchPreActionCaptures,
+  readLiveMatchReplay,
   type LiveCardEvidence,
   type LiveMatchAggregate,
   type LiveMatchAggregatePartition,
   type LiveMatchSurrenderAggregate,
+  type SkippedLiveMatch,
 } from '@tcg/simulator';
 
 import { type ResolvedCatalogRoots } from '../catalog/roots.js';
@@ -113,6 +116,21 @@ const PLAYER_META_RUN_LIMITATIONS: readonly string[] = [
     'cause, and must not be read as one.',
 ];
 
+/**
+ * `@tcg/simulator` does not export `LiveMatchEnvelope` itself (it is
+ * `@tcg/match-telemetry`'s, and ADR 0023 forbids this app importing that
+ * package directly) — derived from `readLiveMatchEnvelopes`'s own return type
+ * instead, the same trick `match-representatives.ts` (M08.26E) already uses.
+ */
+type LiveMatchEnvelope = ReturnType<typeof readLiveMatchEnvelopes>['matches'][number];
+
+/** Restates the three abnormal termination origins nobody chose and the rules never concluded — see `match-representatives.ts`'s own `ABNORMAL_TERMINATION_ORIGINS` for the same restatement. */
+const ABNORMAL_TERMINATION_ORIGINS = [
+  'disconnect_timeout',
+  'server_failure',
+  'abandoned_unrecordable',
+] as const;
+
 /* -------------------------------------------------------------- the reader */
 
 interface OpenPlayerMeta {
@@ -135,6 +153,54 @@ function openPlayerMeta(rootDirectory: string, filter: PlayerMetaFilter): OpenPl
     surrenders: aggregateLiveMatchSurrenders(captures, matches).aggregates,
     recordsRead: matches.length,
     recordsSkipped: read.skipped.length,
+  };
+}
+
+/** M08.27D — see `PlayerMetaResultReader.readDataHealthEvidence`. */
+export interface PlayerMetaDataHealthEvidence {
+  readonly matches: readonly LiveMatchEnvelope[];
+  /**
+   * Root-wide, not partition-scoped: a skipped live-match directory could not
+   * be parsed far enough to know which partition it belongs to, so every
+   * partition's Data Health report from this root sees the same list.
+   */
+  readonly skipped: readonly SkippedLiveMatch[];
+  readonly replayStatus: { matchesChecked: number; withReplay: number; withoutReplay: number };
+}
+
+/**
+ * This partition's matches, the root's skipped-record list, and deterministic
+ * replay presence over this partition's abnormal-origin matches (see
+ * `data-health.ts`'s doc comment for why the check is scoped that way).
+ */
+function openDataHealthEvidence(
+  rootDirectory: string,
+  partition: PlayerMetaPartition,
+): PlayerMetaDataHealthEvidence {
+  const read = readLiveMatchEnvelopes(rootDirectory);
+  const matches = read.matches.filter(
+    (match) =>
+      match.source === partition.source &&
+      match.provenance.contentVersion === partition.contentVersion &&
+      match.provenance.rulesVersion === partition.rulesVersion,
+  );
+
+  const abnormal = matches.filter((match) =>
+    (ABNORMAL_TERMINATION_ORIGINS as readonly string[]).includes(match.terminationOrigin),
+  );
+  let withReplay = 0;
+  for (const match of abnormal) {
+    if (readLiveMatchReplay(rootDirectory, match.matchId) !== null) withReplay += 1;
+  }
+
+  return {
+    matches,
+    skipped: read.skipped,
+    replayStatus: {
+      matchesChecked: abnormal.length,
+      withReplay,
+      withoutReplay: abnormal.length - withReplay,
+    },
   };
 }
 
@@ -610,6 +676,15 @@ export class PlayerMetaResultReader {
     const directory = this.#resolve();
     if (isErr(directory)) return directory;
     return ok(openPlayerMeta(directory.value, filter).cardEvidence);
+  }
+
+  /** One partition's raw evidence for `./data-health.ts`'s player_meta report — see `openDataHealthEvidence`. */
+  readDataHealthEvidence(
+    partition: PlayerMetaPartition,
+  ): Result<PlayerMetaDataHealthEvidence, readonly AdminError[]> {
+    const directory = this.#resolve();
+    if (isErr(directory)) return directory;
+    return ok(openDataHealthEvidence(directory.value, partition));
   }
 
   #resolve(): Result<string, readonly AdminError[]> {

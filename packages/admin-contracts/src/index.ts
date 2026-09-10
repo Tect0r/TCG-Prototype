@@ -685,6 +685,29 @@ export {
 } from './coverage.js';
 
 export {
+  catalogDataHealthReportSchema,
+  catalogRecoveredRecordSchema,
+  catalogReplicateDisagreementEntrySchema,
+  dataHealthFlagBucketSchema,
+  dataHealthFlagEntrySchema,
+  dataHealthIdentitySchema,
+  dataHealthReplayStatusSchema,
+  dataHealthTerminationBucketSchema,
+  playerMetaDataHealthReportSchema,
+  playerMetaMatchRecordSchema,
+  type CatalogDataHealthReport,
+  type CatalogRecoveredRecord,
+  type CatalogReplicateDisagreementEntry,
+  type DataHealthFlagBucket,
+  type DataHealthFlagEntry,
+  type DataHealthIdentity,
+  type DataHealthReplayStatus,
+  type DataHealthTerminationBucket,
+  type PlayerMetaDataHealthReport,
+  type PlayerMetaMatchRecord,
+} from './data-health.js';
+
+export {
   ADMIN_API_ROOT,
   ADMIN_API_VERSION_SEGMENT,
   ADMIN_ENDPOINTS,

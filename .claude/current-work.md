@@ -4251,3 +4251,78 @@ verify` — reserved for the M08.27 tranche-close run per the working
 protocol; this was a normal slice, not a tranche close.
 
 Next slice: **M08.27D — Data Health model and page**.
+
+## M08.27D model — Data Health computation (2026-09-10)
+
+Split into a model slice and a page slice, matching the split M08.27C already
+used. Answers a different question from `./coverage.ts`: not "how much of the
+vocabulary did this run exercise" but "can this run's numbers be trusted, and
+where the answer is no, why not."
+
+**`packages/admin-contracts/src/data-health.ts` (new):** the transport — a
+`dataHealthIdentitySchema` discriminated union (`catalog`/`player_meta`, same
+split as `./coverage.ts`), shared pieces (`dataHealthFlagEntrySchema`,
+`dataHealthFlagBucketSchema`, `dataHealthTerminationBucketSchema`,
+`dataHealthReplayStatusSchema`), and `catalogDataHealthReportSchema`/
+`playerMetaDataHealthReportSchema` covering nine named categories:
+`recoveredRecords`, `failures`, `stalled`, `exclusions`,
+`replicateDisagreement`, `seatBias`, `pilotSensitivity`,
+`unsupportedMechanics`, `replayStatus`. Every category is either measured (a
+real count, possibly zero) or carries `unavailableReason` naming why it could
+not be — never a fabricated number. `replicateDisagreement`, `seatBias`,
+`pilotSensitivity` and `unsupportedMechanics` are structurally `unavailable`
+for `player_meta` (`computeFlags` runs only over a catalog batch's aggregate,
+pairs and support reading, never live-match telemetry — the same domain gap
+`./coverage.ts` already names for `target`); catalog `replayStatus` is
+structurally `unavailable` for this build (no per-match replay table or
+reader exists for catalog runs). New exports added to `packages/
+admin-contracts/src/index.ts`.
+
+**`apps/admin-server/src/service/data-health.ts` (new):**
+`computeCatalogDataHealth`/`computePlayerMetaDataHealth`, each reading
+evidence through a new narrow reader method rather than a second, private
+file read:
+- `ResultReader.readDataHealthEvidence` (`results.ts`) — extended
+  `summaryFileSchema` with `flags`/`displacement` (both computed
+  unconditionally by `computeFlags`, so `.default([])` rather than
+  `.nullish()`, matching `commanders`'s existing precedent) and
+  `manifestCountsSchema` with `recoveredLines`/`abnormalMatchIds`
+  (`MatchStore.recovered`). Skips `readSummary`'s calibration gate so a
+  Data Health read works on a run too old to carry one.
+- `PlayerMetaResultReader.readDataHealthEvidence` (`player-meta-results.ts`)
+  — filters `readLiveMatchEnvelopes` to the partition, restates the root's
+  skipped-record list (root-wide, not partition-scoped — a skipped directory
+  couldn't be parsed far enough to know its partition), and checks
+  `readLiveMatchReplay` presence over the partition's abnormal-origin
+  matches only. `apps/simulator/src/index.ts` gained a `displacementSchema`/
+  `Displacement` re-export (`./analysis/displacement.js`) so admin-server
+  never reaches `@tcg/simulator`'s internals directly.
+
+Failure/stall splits use each domain's own vocabulary: catalog reads
+`ABNORMAL_TERMINATIONS`' `engine_error`/`pilot_error`/`illegal_bot_action`
+(failures) vs. `turn_limit`/`action_limit`/`no_progress` (stalls); Player
+Meta reads `LIVE_MATCH_TERMINATION_ORIGINS`' `server_failure` (failure) vs.
+`disconnect_timeout`/`abandoned_unrecordable` (stalls) — there is no shared
+taxonomy between the two domains, so no attempt was made to force one.
+
+**This slice ships the model only.** No HTTP route, no admin-client session
+method, no UI component — those are the declared page-slice follow-up,
+matching the split `./coverage.ts`'s own page slice already drew.
+
+**Verification (focused, not the full gate — reserved for tranche close):**
+- `npx vitest run packages/admin-contracts/src/data-health.test.ts
+  apps/admin-server/src/service/data-health.test.ts` — 33/33 tests passing
+  (22 contract/schema tests, 11 computation tests covering both domains'
+  measured, structurally-unavailable and evidence-unreadable paths).
+- `npx vitest run packages/admin-contracts/src apps/admin-server/src
+  apps/simulator/src` — 113 files, 2052 tests passing, confirming the
+  `summaryFileSchema`/`manifestCountsSchema` extensions and the new
+  simulator re-export introduced no regression.
+- `npx tsc --noEmit` clean on `packages/admin-contracts`,
+  `apps/admin-server` and `apps/simulator` tsconfigs.
+- `npx eslint` clean on every file this slice touched or added.
+
+Next slice: **M08.27D's page** — HTTP route wiring, an `apps/admin-client`
+session method, a `DataHealthDashboard` component, `fake-service` seeding
+and tests, matching M08.27C's page slice.
+
