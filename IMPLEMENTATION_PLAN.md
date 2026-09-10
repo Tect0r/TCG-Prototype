@@ -223,11 +223,25 @@ now records the correction rather than the guess.
 
 ## The next bounded task
 
-**M08.28A — Resource priority and process separation** is the next slice:
-enforce and document simulator priority below live multiplayer work on
-shared machines, without moving simulator CPU into the live event loop.
-Scope and checklist are in
+**M08.28B — Retention, archive and export boundaries** is the next slice:
+bound every retained artifact and export path, adding deletion only if
+separately confirmed, exactly targeted, recoverable where practical and
+path-boundary tested — otherwise keep deletion absent. Scope and checklist
+are in
 [the M08 milestone file](docs/milestones/M08-ai-lab-and-player-meta.md#m0828--operational-hardening-and-milestone-acceptance).
+
+**M08.28A shipped 2026-09-10** — `apps/admin-server/src/run/priority.ts`'s
+`lowerSimulatorProcessPriority()` lowers the admin server's own OS process
+priority to the platform's lowest level (`os.setPriority`, `PRIORITY_LOW`)
+once at startup, before the queue can start a job. ADR 0023 §1 (separate
+processes, no shared event loop) and `run/limits.ts` (one core left free)
+already existed but neither told the OS scheduler which process to favour
+under real contention; every simulator worker thread `workers/pool.ts`
+spawns afterward inherits the lowered priority from the process that
+created it, so the fix needed no change to `workers/pool.ts` itself. A
+failure to lower it is logged and never blocks startup. Documented in
+[ADR 0023 §8](docs/architecture/0023-admin-lab-boundary.md#8-process-separation-makes-yielding-possible-os-process-priority-is-what-actually-does-it-m0828a).
+Full narrative in `.claude/current-work.md`'s "M08.28A" entry.
 
 **M08.27F closed the M08.27 tranche, 2026-09-10** — compatible/refused/
 deliberately-different comparison, delta math, coverage, data health and

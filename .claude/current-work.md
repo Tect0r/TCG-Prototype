@@ -4607,3 +4607,55 @@ state and is clean.)
 
 Next: send `tcg-reviewer` (same agent, resumed — not a fresh agent) a
 bounded recheck request scoped to the record diff plus `version.ts`.
+
+`tcg-reviewer` recheck: **`VERDICT: APPROVE`.** All four findings confirmed
+fixed against the recheck diff. M08.27 tranche-close record committed and
+pushed (`99ea71d`). M08.27 is complete. Root status row's "Next tranche"
+column advanced to `M08.28A`.
+
+## M08.28A — Resource priority and process separation (2026-09-10)
+
+Implemented: `apps/admin-server/src/run/priority.ts`'s
+`lowerSimulatorProcessPriority()`. ADR 0023 §1 already keeps
+`apps/admin-server` and `apps/multiplayer-server` as two processes that
+never share an event loop, and `run/limits.ts` (M08.5) already leaves one
+core free by default — neither answers which process an OS scheduler
+favours when both genuinely compete for the same CPUs on one machine. This
+slice answers that: at startup, before `serviceConfigFromEnvironment`'s
+result is used to open anything, `main.ts` calls
+`lowerSimulatorProcessPriority()`, which lowers the admin server's own OS
+process priority to the platform's lowest level (`os.setPriority`,
+`PRIORITY_LOW` — nice 19 on POSIX, `IDLE_PRIORITY_CLASS` on Windows).
+Deliberately an OS-scheduler decision rather than a change to either event
+loop, per the milestone's own constraint ("without moving simulator CPU
+into the live event loop"): there is no shared loop to yield into, and
+`workers/pool.ts` needed no change at all, because every simulator worker
+thread it spawns afterward inherits the already-lowered priority from the
+process that created it. Lowering one's own priority needs no elevated
+privileges on Windows or POSIX; where a platform refuses it anyway (caught,
+not expected), `main.ts` logs the refusal on `console.warn` and starts the
+service regardless — this protects a shared machine's responsiveness, not
+a security or correctness boundary, so it must never gate startup.
+
+Documented in
+[ADR 0023 §8](../docs/architecture/0023-admin-lab-boundary.md#8-process-separation-makes-yielding-possible-os-process-priority-is-what-actually-does-it-m0828a),
+which also updates the pre-existing Consequences bullet that had named
+M08.28 as the tranche owing this. Startup banner gained one line reporting
+whether priority was lowered, alongside the existing bind/access/worker-
+budget lines — no token, catalog root or result root is ever in that
+banner, and this addition carries neither.
+
+**Verification (focused, not the full gate — reserved for M08.28F).**
+`npx vitest run apps/admin-server/src/run/priority.test.ts` — 3/3 passing,
+covering the success path (`os.setPriority` called once with
+`PRIORITY_LOW`), an `Error` thrown from `setPriority` reported by its
+message, and a non-`Error` throw reported by its string form. Regression:
+`npx vitest run apps/admin-server` — 42/42 files, 743/743 tests passing.
+`npx tsc --build apps/admin-server` — clean. `npx eslint` clean on
+`priority.ts`, `priority.test.ts` and `main.ts`.
+
+Not run: `npm run check:consistency`, `npm run audit:check`, `npm run
+verify` — reserved for the M08.28 tranche-close run per the working
+protocol; this was a normal slice, not a tranche close.
+
+Next slice: **M08.28B — Retention, archive and export boundaries.**

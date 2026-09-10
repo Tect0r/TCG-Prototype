@@ -185,14 +185,38 @@ migration is genuinely available it is implemented deliberately and tested in
 both directions. Any tranche that changes a summary, report or API contract
 states why the adjacent versions did or did not move.
 
+### 8. Process separation makes yielding possible; OS process priority is what actually does it (M08.28A)
+
+§1 keeps `apps/admin-server` and `apps/multiplayer-server` as two processes that
+never share an event loop, and `run/limits.ts` (M08.5) leaves one core free by
+default. Neither answers what happens when both processes _do_ compete for the
+same CPUs on one machine: nothing before M08.28A told the OS scheduler which one
+should win, so the answer was whatever a general-purpose scheduler defaults to,
+which is even.
+
+`apps/admin-server/src/run/priority.ts` lowers the admin server's own OS
+process priority to the platform's lowest level (`os.setPriority`, `PRIORITY_LOW`)
+once, at startup, before the queue can start a job. Every simulator worker
+thread `workers/pool.ts` spawns afterward inherits that priority from the
+process that created it, so the fix reaches every worker without `workers/pool.ts`
+knowing anything about it. This is deliberately an OS-scheduler decision rather
+than a change to either event loop: there is no shared loop to yield into, and
+building one here would reintroduce the coupling §1 exists to rule out.
+Lowering one's own priority needs no elevated privileges on Windows or POSIX;
+where the platform refuses it anyway, the admin server logs the refusal and
+starts regardless, because a shared machine staying responsive is an operational
+property, not a security or correctness boundary this ADR's other sections
+guard.
+
 ## Consequences
 
 - Three new workspaces to build, typecheck, lint and test, and a new Vitest
   project for each of the two that hold tests. This is real cost, paid to keep a
   player bundle that cannot contain admin controls.
 - The admin server can saturate a machine. Where it shares one with the live
-  match server, M08.28 has to make simulator work yield: process separation is
-  what makes that possible, but it is not by itself the same thing.
+  match server, process separation (§1) makes an OS-scheduling answer possible
+  and §8 (M08.28A) supplies it: the admin server, and every simulator worker it
+  starts, run at the OS's lowest scheduling priority.
 - A file-backed catalog will not answer arbitrary analytical queries across every
   run ever recorded. That is accepted; the run directories answer those, and the
   catalog's job is to say which runs exist and what happened to them.

@@ -3,6 +3,7 @@ import { isErr } from '@tcg/shared';
 
 import { openFileCatalogStore } from './catalog/file-catalog-store.js';
 import { ExperimentRunner } from './run/job-runner.js';
+import { lowerSimulatorProcessPriority } from './run/priority.js';
 import { JobQueue } from './run/queue.js';
 import { ADMIN_ENVIRONMENT_KEYS, serviceConfigFromEnvironment } from './service/config.js';
 import { AdminService } from './service/handlers.js';
@@ -34,6 +35,15 @@ import { acquireOrchestratorLock } from './service/lock.js';
  *    than a habit.
  * 5. **The port**, last, once there is something behind it worth answering with.
  *
+ * Alongside that, as soon as configuration succeeds: **OS process priority**
+ * (`run/priority.ts`, M08.28A). Lowering it cannot refuse anything and is not a
+ * gate, so it is not one of the five steps above — but it has to happen before
+ * the queue can ever start a job, because every simulator worker thread
+ * inherits this process's OS priority at the moment it is created. A failure to
+ * lower it is logged and never stops the service from starting: the property it
+ * protects is a shared machine staying responsive under contention, not a
+ * security or correctness boundary.
+ *
  * What is printed is deliberately spare. The bind, the versions, the bound, what
  * the restart found, and nothing else — **no token, no catalog root and no result
  * root**. ADR 0023 §4 keeps the token out of log lines and §5 keeps locations out
@@ -51,6 +61,8 @@ async function main(): Promise<number> {
     );
     return 1;
   }
+
+  const priority = lowerSimulatorProcessPriority();
 
   const lock = await acquireOrchestratorLock(config.value.roots.catalogRoot);
   if (isErr(lock)) {
@@ -84,6 +96,15 @@ async function main(): Promise<number> {
     `Bound to ${String(config.value.limits.maxConcurrentJobs)} concurrent job(s) on up to ` +
       `${String(config.value.limits.maxWorkers)} simulator worker(s).`,
   );
+  if (priority.applied) {
+    console.log(
+      'Process priority lowered: simulator work yields to other processes on a shared machine under CPU contention.',
+    );
+  } else {
+    console.warn(
+      `Could not lower process priority (${priority.reason ?? 'unknown reason'}); simulator work will compete evenly for CPU on a shared machine.`,
+    );
+  }
   if (lock.value.tookOverStaleLock) {
     console.warn(
       'A previous orchestrator left a lock behind and is no longer running; this process took it over.',

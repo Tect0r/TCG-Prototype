@@ -4867,9 +4867,24 @@ expansion, public feedback, matchmaking or automated rebalance work.
 
 ### Work slices
 
-- [ ] **M08.28A — Resource priority and process separation.** Enforce and document
+- [x] **M08.28A — Resource priority and process separation.** Enforce and document
       simulator priority below live multiplayer work on shared machines, without
       moving simulator CPU into the live event loop.
+      `lowerSimulatorProcessPriority()`, new in
+      `apps/admin-server/src/run/priority.ts`, lowers the admin server's own OS
+      process priority to the platform's lowest level (`os.setPriority`,
+      `PRIORITY_LOW`) once at startup, before the queue can start a job — every
+      simulator worker thread `workers/pool.ts` spawns afterward inherits it, so
+      the whole simulator workload concedes CPU to a normal-priority process (the
+      multiplayer server, or anything else on a shared machine) under contention.
+      A failure to lower it is logged and never blocks startup. Documented in
+      [ADR 0023 §8](../architecture/0023-admin-lab-boundary.md#8-process-separation-makes-yielding-possible-os-process-priority-is-what-actually-does-it-m0828a),
+      wired into `apps/admin-server/src/main.ts`. 3 focused tests in
+      `priority.test.ts` pass, the full `apps/admin-server` suite (743 tests)
+      passes, `apps/admin-server` typechecks clean and `eslint` reports no
+      issues on the changed files. Tranche-close gates
+      (`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are
+      deferred to M08.28F, per this milestone's work-slice split.
 - [ ] **M08.28B — Retention, archive and export boundaries.** Bound every retained
       artifact and export path. Add deletion only if separately confirmed, exactly
       targeted, recoverable where practical and path-boundary tested; otherwise keep
