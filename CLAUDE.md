@@ -113,7 +113,16 @@ push state, blockers and the next slice; include log excerpts only for failures.
 
 - `precon_wave_1`: 40-card singleton deck plus one Commander outside the deck.
   40 is the owner-confirmed first-playtest scope (2026-08-14); 50 is the later
-  target and needs 8–9 more colour-legal cards per Commander first.
+  target, and the owner ruled 2026-09-11 (Q19) that it needs each Commander's
+  colour-legal pool at **roughly 65** cards, not the smaller 8–9-card gap
+  previously measured — a bare-legal 50-card deck would leave almost no
+  deckbuilding choice. Three-colour decks wait for a future explicit
+  format/Commander.
+- `resilient` is deleted, not implemented (Q4, owner ruling 2026-09-11): no
+  playable card uses it, and both candidate readings overlap Barrier. Removing
+  it from `KEYWORD_IDS` and the `dread_sovereign` fixture is still pending
+  follow-up work — see `IMPLEMENTATION_PLAN.md`. `armored` stays per damage
+  instance, confirmed the same day.
 - The battlefield has no Unit limit. Large boards are measured, not treated as
   proof that a cap is needed.
 - Each player has one active Relic. Replacing it is neither defeat nor sacrifice.

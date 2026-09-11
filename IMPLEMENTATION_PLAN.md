@@ -402,11 +402,11 @@ findings remaining. Full narrative in
 and `.claude/current-work.md`'s "M08.28F" entry.
 
 **No next milestone is yet named in this plan.** The committed record has no
-scheduled successor to M08: `docs/open-questions.md` still carries Q4
-(`resilient` implement-or-remove), Q44 (multiple blockers per attacker), Q45
-(Barrier ordering against future prevention/reduction effects) and Q46
-(whether Reactions may carry interactive additional costs) as open owner
-decisions, none of which blocks anything active. Two untracked, uncommitted
+scheduled successor to M08. Q4 (`resilient` implement-or-remove), Q44 (multiple
+blockers per attacker), Q45 (Barrier ordering) and Q46 (Reaction additional
+costs) were open owner decisions as of this writing; the owner ruled on all
+four, and every other open question, on 2026-09-11 (see
+`docs/open-questions.md#answered`). Two untracked, uncommitted
 session briefs currently sit in `docs/milestones/` —
 `M08.5_FINAL_CORRECTION_PASS.md` and `M10-prepared-reactions-and-neutral-spells.md`
 — but neither is part of this plan: the first is explicitly marked as a
@@ -1687,10 +1687,11 @@ reference — **M08.4** is the first tranche that could give a queued job a kind
 And cross-process write exclusion is not claimed, which is what ADR 0023 §4's one
 administrator and one orchestration process already assume.
 
-The other candidates the record still holds, none of them blocking, are **Q51**,
-the trade M09.20 measured and raised, **the unverified rendering** M09.19
-recorded, and **the 50-card expansion**, which still needs 8–9 more colour-legal
-cards per Commander first.
+The other candidates the record still holds, none of them blocking, are **Q51**
+(answered 2026-09-11: keep card-in-hand pricing), **the unverified rendering**
+M09.19 recorded, and **the 50-card expansion**, which the owner's 2026-09-11 Q19
+ruling now needs roughly 65 colour-legal cards per Commander, not the 8–9 that
+only closed raw legality.
 
 **M09.19 played the whole feature, and found two defects doing it.** The last
 tranche crossed the four seat mixtures with the four deck modes — a three-bot
@@ -2177,16 +2178,15 @@ fixing properly), rules (a friction point that needs an owner decision) or
 content. It does not decide M08 itself, which is under way; it decides what
 interrupts or follows it.
 
-The **50-card expansion remains the next intended content milestone**: 8–9 further
-colour-legal cards per Commander, or an equivalent shared package, measured
-against colour-legal pools of 42/41/41/42. It is **not started**, and it should
-not start before the playtests, because authoring 32–36 cards against an untested
-40-card baseline would be guessing at what the decks need.
+The **50-card expansion remains the next intended content milestone**, and the
+target moved on 2026-09-11 (Q19): roughly 65 legal cards per Commander, not the
+8–9 that only closed raw legality against colour-legal pools of 42/41/41/42. It
+is **not started**, and it should not start before the playtests, because
+authoring against an untested 40-card baseline would be guessing at what the
+decks need.
 
-The questions under [Owner decisions still open](#owner-decisions-still-open) are
-the other thing the implementation is waiting on, and playing the decks is the
-cheapest way to find out which of them actually matter. `docs/open-questions.md`
-holds every other question the project has recorded. A milestone file under
+`docs/open-questions.md` holds every other question the project has recorded,
+now all answered as of 2026-09-11. A milestone file under
 `docs/milestones/` and a row in the table above is what starts a milestone; M08.0
 added both for M08, and M09.0 added both for M09.
 
@@ -2212,9 +2212,12 @@ Do not reopen these while implementing:
 
 - 40-card singleton Wave 1 decks; Commander outside the deck. Confirmed by the
   owner on 2026-08-14 as the **first-playtest scope**, with a 50-card target kept
-  for later and blocked on content — each Commander's colour-legal pool is 41–42
-  cards, so 50 needs 8–9 more per Commander. Do not move the format's `deck.size`
-  without that content.
+  for later and blocked on content. The owner refined the threshold on
+  2026-09-11 (Q19): each Commander's colour-legal pool needs to reach **roughly
+  65 cards**, not the 41–42 already measured plus the 8–9 that merely closes
+  raw legality — a bare-legal 50-card deck would leave almost no meaningful
+  deckbuilding choice. Three-colour decks wait for a future explicit
+  format/Commander. Do not move the format's `deck.size` without that content.
 - Unlimited Units; one active Relic.
 - Commander defeat returns it immediately to the Command Zone and raises its
   total deployment cost by 1, capped at 10.
@@ -2246,22 +2249,42 @@ Only stop on these when the active tranche genuinely needs the answer.
 `docs/open-questions.md` holds the full write-up of each, and every other open
 question the project has recorded.
 
-- Q4: implement or remove `resilient`. M05.1 answered the content half — it is
-  now a build error in a `playtest`/`active` set, derived from the mechanic
-  support registry — and M05.2 answered the bot half: no pilot pays anything for
-  it anywhere. Deleting it from `KEYWORD_IDS` or implementing one of the two
-  readings is still yours, and is now the only part left.
-- Q44: multiple blockers per attacker.
-- Q45: Barrier ordering against future prevention/reduction effects.
-- Q46: whether Reactions may carry interactive additional costs.
-- Q51: keep the card-in-hand price, or keep Hard's win rate. M09.20 closed the
-  last calibration gap on exactly the condition Q50 set, and measured that
-  closing it costs `hard_tactical` its head-to-head advantage over Normal —
-  53.9% before, 50.1% after, over the same 384 seeded matches. Hard is
-  selectable either way and nothing is blocked; reversing the trade is one
-  boolean and a profile version.
+**None right now.** Q4, Q44, Q45, Q46 and Q51 were the standing short list; the
+owner ruled on all five, and on every other open question the project had
+recorded, on 2026-09-11. Full rulings are compressed into
+[Answered](docs/open-questions.md#answered). Q50 is discharged: Hard is
+published.
 
-Q50 is discharged: Hard is published.
+### Follow-up work unblocked by the 2026-09-11 rulings
+
+Recorded so it is not lost; none of it is scoped as a slice yet. Pick these up
+as their own isolated changes or fold one into the milestone that next touches
+its area — do not treat this list itself as a tranche.
+
+- **Q4 — delete `resilient`.** Remove it from `KEYWORD_IDS` and the mechanic
+  support registry, and fix up the `dread_sovereign` `prototype_core` fixture
+  that prints it (the only card that does). Touches the keyword registry,
+  glossary, `lintDisplayText` coverage and its tests.
+- **Q18 — promote `card_data/token_color_leak` from warning to error** in
+  `loader.ts`. The bundled sets already comply; expected to be a small,
+  low-risk change.
+- **Q8 — add configurable Main/choice and Reaction timers** (~30s / ~5s):
+  server + engine work, needs a design pass on exactly where the timeout
+  action is submitted from.
+- **Q34 — pause the disconnect grace window** while the match is not waiting on
+  the disconnected seat, instead of running it on wall clock regardless of
+  turn. Related to Q8 and likely shares implementation.
+- **Q35 — give three/four-player matches their own `RulesConfig` profile**,
+  distinct from the 1v1 defaults, labelled explicitly unbalanced until measured.
+- **Q52 — fix `pilotSpecSchema`'s override-map defaults** so absent `weights`
+  and present-but-empty `weights` agree, then invalidate and rerun the
+  `robustness` experiment arms the defect touched.
+- **Q19 — author more colour-legal cards per Commander** (target ~65, not the
+  8–9 that only closed raw legality) before `deck.size` can move to 50.
+- **Q17 — write the colour-pie flavour/lore text** (White/Blue/Black/Red/Green
+  identities the owner named) into player-facing docs; no engine change.
+- **Q22 — restate the art-size doc as a 3:4 ratio contract** (prefer
+  1536×2048+, 768×1024 is the floor) rather than one fixed resolution.
 
 ## Completion evidence for every tranche
 

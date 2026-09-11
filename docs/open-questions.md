@@ -24,385 +24,36 @@ re-opened months later.
 
 ## Owner decisions a tranche may stop on
 
-These five are the plan's short list. Each is genuinely a design call rather than
-an engineering one. Q47 and Q48 were on it until 2026-08-14, and Q49 and Q50 were
-each on it for the length of one tranche on 2026-08-20; all four are now under
-[Answered](#answered). Q51 joined it on 2026-08-21, when M09.20 measured a trade
-Q50 had assumed was not there.
-
-### Q4. What should `resilient` do, or should it be deleted?
-
-**Open. Everything except the design call is done.**
-
-`resilient` is the only keyword the engine does not execute. The other ten all
-work — the full table is in
-[open-decisions.md](rules/open-decisions.md#keywords).
-
-Two structural halves are already closed, in both directions:
-
-- **Content.** The mechanic support registry records `resilient` as
-  `engine: 'none'`, and the content build derives a card's support by walking its
-  structured data against that registry rather than trusting the card's own
-  `implemented` flag. A `playtest` or `active` set containing a card built on an
-  inert mechanic — printed, or granted by one of its instructions — is a **build
-  error**. `dread_sovereign`, in the `prototype_core` development fixture set, is
-  the one card that prints it, and the build warns about it there by name.
-- **Bots.** `keywordIsValued` reads the same registry, so an `engine: 'none'`
-  keyword is worth zero everywhere a keyword is priced: a printed statline, a
-  `grant_keyword`, a `remove_keyword`, a continuous grant layer and a
-  `replace_arrival`. Before that, a pilot mulliganed toward a card carrying an
-  inert keyword and a balance run would have reported the difference as a
-  property of the card.
-
-**What is left is yours:** implement it under one of the two readings — clear
-marked damage at end of turn, or survive lethal damage once per turn — or delete
-it from `KEYWORD_IDS`. The readings differ enormously in power and both interact
-directly with "damage persists between turns". No `precon_wave_1` card prints it,
-so deleting it is genuinely on the table.
-
-A second, smaller keyword question rides along: is `armored` per damage instance
-(the current behaviour) or per turn?
-
-**Answered by:** game design, then playtesting.
-
----
-
-### Q44. Do you want multiple blockers per attacker, and if so, when?
-
-**Open. Blocks nothing today.**
-
-`blockersPerAttacker` is a config value defaulting to `1`, and blocker assignment
-is deliberately modelled so more than one can be added without rewriting combat
-state.
-
-It is recorded because reworking combat state twice is the expensive outcome. If
-multi-blocking is eventually wanted, doing it in the same pass as another combat
-change is much cheaper than a third rewrite. If it is a definite no, combat state
-can stay simple.
-
-Not asking for a design — only "eventually yes", "probably never", or "keep it
-open and I will pay for the rewrite later".
-
----
-
-### Q45. Is Barrier consumed before or after other prevention and reduction?
-
-**Open. Blocks the capped `prevent_damage` shield work.**
-
-ADR 0016 Q-D settled Barrier **against Overwhelm**: Overwhelm splits first and
-Barrier saves only the blocker's share. It did not settle Barrier against the
-other reducers, and the engine has `armored` (flat reduction) plus
-`prevent_damage` shields.
-
-For a 5-damage hit on a unit with Barrier and Armored 1:
-
-- **Barrier first** — Barrier eats the whole 5, Armored does nothing, the unit
-  takes 0 and has spent its Barrier.
-- **Reduction first** — Armored makes it 4, Barrier eats the 4. Same visible
-  outcome here, different once a shield has a fixed capacity.
-
-The cases genuinely diverge only when a `prevent_damage` shield with a **capped
-amount** exists. One piece is already fixed: a zero-damage event does not consume
-Barrier, so if reduction takes a hit to 0 then Barrier must survive. That leans
-toward reduction-first, which is also what `damage.ts` does today. Confirm or
-overrule.
-
----
-
-### Q46. May a Reaction carry an additional cost?
-
-**Open. Blocks nothing today.** Raised by, and deliberately left open in,
-[ADR 0017](architecture/0017-optional-instructions-and-interactive-costs.md).
-
-"As an additional cost, sacrifice a Unit" works on a `unit`, `spell` or `relic` —
-the three types the ordinary play-from-hand path handles. The schema **rejects**
-it on a `reaction`, rather than accepting it and quietly not charging it.
-
-The reason is mechanical rather than a rules judgement. An additional cost with a
-real decision pauses for a selection before the card commits, and a Reaction is
-played inside a bounded window where priority is passing clockwise. Two
-interleaved pauses — "who has priority" and "which unit do you feed it" — is a
-timing interaction the window machinery was never designed against, and no
-authored Reaction asks for one.
-
-Three ways this could go, in increasing cost:
-
-- **Leave it rejected.** Reaction costs stay pure Energy. Costs nothing now.
-- **Allow it, non-interactive only.** A Reaction may print a sacrifice cost as
-  long as `selection` is `automatic`, so there is never a second pause inside a
-  window. Cheap, and honest about why it is restricted.
-- **Allow it fully**, which means deciding what happens when a window's priority
-  holder is mid-selection, and whether that selection can time out independently
-  of the window.
-
-Answer it when a Reaction is authored that needs one, not before.
+**None open right now.** Q4, Q44, Q45 and Q46 were this short list, and Q51 had
+joined it on 2026-08-21; the owner ruled on all five on 2026-09-11. Full rulings
+are compressed into [Answered](#answered) below, in the same numeric spots as
+every other answered question. The next question lands here the same way — named
+explicitly, not inferred — when a tranche genuinely needs to stop on one.
 
 ---
 
 ## Design questions, nothing blocked
 
-### Q51. Keep the card-in-hand price, or keep Hard's win rate? — open
-
-**Raised by M09.20, which measured a trade Q50 assumed was not there.** Q50 set
-one standard for publishing Hard — close
-`containment_control/hold_energy_for_the_counter` — and named no rate, on the
-reasoning that a named gap is a thing that can be finished while a threshold
-would have to be argued about. M09.20 closed the gap and published Hard, and
-found that closing it **costs the profile its measured advantage over Normal**.
-
-Over 384 seeded matches on identical games, Hard seated first and second:
-
-| Profile                                         | Head to head vs Normal |
-| ----------------------------------------------- | ---------------------- |
-| `hard_tactical` `1.1.0` — no card-in-hand price | 53.9%                  |
-| `hard_tactical` `1.2.0` — as shipped            | 50.1%                  |
-
-Three shapes of the charge were built and measured, and every one that closes the
-gap gives ground: a precise one that charges only a card's per-turn half reads
-42.0%, a flat share of the play score reads 47.9%, and the uniform share that
-shipped reads 50.1%. Normal against Normal on the same games is 46.9%/53.1%, so a
-profile equal to Normal reads about 50%.
-
-**The question is which the owner wants Hard to be**, and it is a product call
-rather than an engineering one:
-
-- **Keep it on** (what M09.20 shipped): every one of the twenty-four calibration
-  boards is answered, `hold_energy_for_the_counter` is genuinely closed, and Hard
-  is a bot that plays patiently and wins about as often as Normal.
-- **Turn it off**: `pricesCardsInHand` becomes `false` in `HARD_TACTICAL_TACTICS`,
-  the profile returns to `1.1.0`'s behaviour at a new version, Hard beats Normal
-  by about four points, and the calibration board goes back to being a recorded
-  open gap.
-- **Something else**: a fourth shape of the charge, or a smaller retention that
-  narrows the gap without closing it. M09.20 did not go looking for one, because
-  tuning a pilot until a fixture and a scoreboard agree is fitting the pilot to
-  the scoreboard — the thing that tranche's Stop clause exists to prevent.
-
-Nothing is blocked on the answer: Hard is selectable either way, the reversal is
-one boolean and a version, and no schema, message or rule depends on it. It is
-recorded here so that the trade is a decision rather than an accident.
-
-### Q6. Is there an alternate victory condition?
-
-The specified conditions are implemented — Health at or below zero, drawing from
-an empty deck, concession, server timeout, last living player wins, simultaneous
-loss is a draw.
-
-Open only as a design question: should there be an alternate win condition
-(Commander damage, or similar)? Nothing depends on the answer.
-
-### Q17. Colour identity — names, count, and what each colour does
-
-Five placeholder colours with no pie, no lore, no faction. Renaming is safe and
-cheap today; it stops being cheap once card art and player-visible decks exist.
-See [open-decisions.md](rules/open-decisions.md#colour-identities).
-
-### Q18. Does creating a coloured Token leak colour identity into the creator?
-
-A warning (`card_data/token_color_leak`), not an error. Promote it in `loader.ts`
-if it becomes a hard rule; the bundled sets already comply.
-
-### Q19. Is 40-card singleton with a two-colour Commander cap right?
-
-**Scoped, not closed.** The owner confirmed on 2026-08-14 that **40 is the
-deliberate size for the first playtest and a 50-card target remains for later**,
-replacing an earlier project-level decision the repository had never reflected.
-What is still open is when 50 arrives and whether the Commander colour cap should
-open to three.
-
-Fifty is blocked on content rather than on code. `deck.size` is one field in
-`content/formats/precon_wave_1.json`, but each Commander's colour-legal singleton
-pool is only 41–42 cards, so 50 needs 8–9 more legal cards per Commander — or a
-shared neutral package, or a construction-rule change. The measurement, per
-precon, is in
-[open-decisions.md](rules/open-decisions.md#40-is-a-scope-decision-not-a-leftover--owner-2026-08-14).
-
-### Q20. Should `displayText` be generated from structured effects?
-
-It is authored manually today and cross-checked by `lintDisplayText` in **both**
-directions: prose promising behaviour the card lacks, and behaviour the card
-performs that the prose never mentions, with no exemption for hand-written help
-text.
-
-The blocker has moved rather than gone. Generation now waits on the vocabulary
-being stable enough that generated prose would read better than authored prose —
-not on the authoring form being undecided, which it no longer is.
-
-### Q21. Localisation
-
-IDs are language-independent, display names are separate, and the engine keeps
-prose out of match state entirely: a pending choice carries a `reason` code and
-the client turns it into a sentence. The hard part is done and nothing else is
-planned. Confirm it is genuinely out of scope rather than assumed-later.
-
-### Q22. Is 768 × 1024 px the right art size?
-
-The spec's value, marked revisable. Revisit only if real art shows a problem.
+**Nothing open in this category as of 2026-09-11.** Q6, Q17, Q18, Q19, Q20, Q21
+and Q22 were it; the owner ruled on all seven the same day as the short list
+above. See [Answered](#answered).
 
 ---
 
 ## Server and operations
 
-### Q8. What is the turn/action timeout policy?
-
-Partly settled: disconnect expiry is a loss, phase timers are deferred, and the
-engine never reads a clock — the server submits an explicit `server_timeout`
-action when the grace window expires.
-
-**Still open:** whether a Main Phase or choice timer is wanted at all once
-playtesting starts, and if so whether it auto-passes or concedes. A larger table
-raises the cost of getting this wrong, because three other players wait on one
-stalled seat. Related to Q34.
-
-### Q9. Should a match survive a server restart?
-
-It currently does not: lobbies and matches are in memory only, which is
-deliberate. Answering "yes" means persistence.
-
-### Q34. Does the disconnect grace window run while it is not that player's turn?
-
-`disconnectGraceSeconds` is 90 seconds of wall clock. In 1v1 that is nearly always
-the disconnected player's own turn, so it is a fair deadline. At four seats a
-player can be disconnected through three other players' full turns and be
-eliminated without the match ever having waited for them.
-
-Shipped as the harsh option — wall clock regardless of player count or whose turn
-it is — because guessing before anyone has played a four-player match was not
-worth it. The options are to leave it, to pause it while the match is not waiting
-on that seat, or to scale it with player count. Whichever is chosen, the engine
-stays clock-free: this is the server deciding _when_ to submit the timeout action.
-
-### Q35. Do three- and four-player matches need different rule values?
-
-Every value in `RulesConfig` was chosen for 1v1 and is used unchanged at three and
-four seats. The specific worries: 20 Health is far less durable against three
-attackers; the last seat waits three turns for its first attack but draws three
-more cards first; and "the first player skips their first draw" was a two-player
-correction.
-
-Nothing in the engine branches on seat count, so making the config
-per-player-count later is an additive schema change rather than a refactor.
-Worth deciding before balance work leans on four-seat numbers.
+**Nothing open in this category as of 2026-09-11.** Q8, Q9, Q34 and Q35 were it;
+the owner ruled on all four the same day. See [Answered](#answered).
 
 ---
 
 ## The balance laboratory
 
 Phase 4 shipped these on explicit, configurable, clearly-labelled placeholders
-rather than answers, which is what was asked for. What remains open is the
-values, and they are playtest decisions rather than engineering ones.
+rather than answers, which is what was asked for.
 
-### Q14. What thresholds should actually gate a card change?
-
-Every threshold lives in one validated `analysisSettings` block with documented
-provisional defaults, all overridable per experiment — the table is in
-[open-decisions.md](rules/open-decisions.md#simulator-analysis-thresholds).
-
-The analyser never converts one into a verdict: a flag says `review_recommended`,
-`possible_interaction`, `insufficient_data` or `run_quality`, and carries its
-reason code, evidence, sample size and interval so a human can disagree on the
-numbers.
-
-**Still open:** which values are right, and whether any of them should gate a
-change automatically. Needs runs at real scale against a real card pool.
-
-**Needed by:** the first time a card is actually changed on simulated evidence.
-
-### Q15. How is "a healthy plural meta" measured?
-
-Decks are grouped into strategic clusters by a named, inspectable feature vector
-using deterministic average-linkage clustering, and the matchup matrix is reported
-per cluster. The analyser flags a cluster with no unfavourable matchup, a cluster
-with exactly one narrow counter, a polarised pairing, and a population collapsed
-into one cluster.
-
-**Still open:** how many viable clusters is "plural", and how soft a counter has
-to be to count. The tooling reports the shape; nobody has decided what shape is
-healthy.
-
-Two of the measurements behind it were wrong and were corrected in Phase 4
-hardening — `broad_cross_cluster_inclusion` counts _clusters_ a card covers rather
-than the share of decks running it, and card-level counter breadth requires
-controlled replacement evidence instead of being inferred from the cluster matrix.
-That does not answer the question, but the shape being reported is now the shape
-that was asked for.
-
-### Q37. Should the pilots be better players than they are?
-
-The pilots are transparent heuristics with named weights, and they are not good.
-Every report says so, and since M05.4 it says so structurally: a pilot's **agent
-class** decides which evidence claims a run may make, and no pilot in this build
-is archetype-aware or human, so archetype-dependent signals are declined by every
-run this build can produce rather than reported weakly.
-
-Since M05.6 the question is also **measured** rather than argued. Sixteen
-hand-authored calibration fixtures ask one tactical question each; nine are
-answered characteristically by all three heuristic pilots, one splits, and six are
-answered by none — and the six are recorded as `knownGaps`, in both directions, so
-a closed gap fails as loudly as a regression. The clearest is that nothing prices
-holding Energy for a window that has not opened, which is why a Reaction deck
-cannot be judged by these pilots.
-
-**Still open:** whether to make them better, and how much. `pilot-robustness`
-experiments say whether a conclusion survives bounded re-weightings — `stable`,
-`pilot_sensitive` or `insufficient_evidence` — but a `stable` label means a
-finding survived a specific set of perturbations, not that it would survive a
-competent human.
-
-**Needed by:** the first finding that hinges on a card the pilots plausibly
-misplay.
-
-### Q52. Should `pilotSpecSchema`'s overrides stop carrying the generic vector?
-
-**Open, and measured rather than suspected.** Found by M08.4, which had to write
-an experiment configuration to disk and read it back.
-
-`pilotSpecSchema` declares `weights: botWeightsSchema.partial().default({})`, and
-under zod 4 those two paths do not agree:
-
-- **`weights` absent** — every hand-authored configuration, every M08.3 preset
-  expansion, every fixture in the repository — short-circuits to the literal
-  `{}`. `createAggressivePilot({})` merges nothing, so the pilot flies its
-  published `AGGRESSIVE_WEIGHTS`. This is what every recorded run did.
-- **`weights: {}` present** — which is exactly what serializing a _parsed_
-  configuration produces — is run through `.partial()`, whose per-field defaults
-  all apply, yielding the complete generic vector. `createAggressivePilot` merges
-  that over the published one and replaces every entry, so the aggressive pilot
-  flies a default-weighted scorer under an aggressive name.
-
-Two consequences follow, and only the first is hypothetical:
-
-- **A configuration cannot be round-tripped through its own parsed form.** Its
-  `configHashOf` changes and its pilots change with it, so a run resumed from the
-  `config.json` it wrote itself would be refused for drift — or, worse, would not
-  be. Nothing in the repository does this today; M08.4 avoided it by storing the
-  configuration in the shape a hand-authored file states, and by proving the
-  round trip preserves the run's identity per job rather than assuming it.
-- **`perturbPilot` perturbs the generic vector rather than the published one.**
-  It calls `pilotSpecSchema.parse({ ...spec, weights: { ...spec.weights,
-...weights } })`, and a non-empty `weights` is a present one. So a Pilot
-  Robustness arm labelled "aggressive, +10% on removal" has been flying the
-  generic scorer with that perturbation, not the aggressive one. That is a real
-  reading in the record rather than a possibility.
-
-**The fix is small and its blast radius is not.** Making the override maps carry
-no defaults of their own leaves every absent-`weights` run byte-identical, and
-changes what a robustness arm measures. M08.4 did not take it: correcting a
-measurement is not an execution bridge's to make, and the arms it would move are
-evidence somebody has already read.
-
-**Needed by:** the next tranche that runs, reads or cites a `robustness`
-experiment — M08.20 exposes the template, and M08.11 shows calibration standing
-beside results. Whoever takes it owes a statement of which recorded runs the
-correction invalidates.
-
-### Q38. When is a multiplayer balance run worth it?
-
-Experiments run 1v1. `playerCount` is carried through every schedule, record, bot
-observation and analysis path, and the match runner already seats four, so this is
-configuration rather than redesign — but nothing has validated that three- and
-four-player results say anything useful, and they cost 2–4× as much per data
-point. Related to Q35.
+**Nothing open in this category as of 2026-09-11.** Q14, Q15, Q37, Q38 and Q52
+were it; the owner ruled on all five the same day. See [Answered](#answered).
 
 ---
 
@@ -745,3 +396,171 @@ round-1 special case, and any declared attacker — one Token included — break
 streak. Implemented in M04.3 as `@tcg/board-telemetry/stall`, versioned by
 `STALL_DEFINITION_VERSION` and carried inside every document that states a
 verdict, so a verdict never travels without the rule it was judged by.
+
+### Q4. What should `resilient` do, or should it be deleted? — answered 2026-09-11
+
+**Delete it.** No playable card uses `resilient`, and both candidate readings —
+clear marked damage at end of turn, or survive lethal damage once per turn — add
+complexity that overlaps Barrier rather than filling a gap the game needs. A
+precisely named regeneration mechanic can be added later if a real card requires
+one. Rides along: keep `armored` **per damage instance**, matching current
+behaviour.
+
+**Not yet implemented.** Removing `resilient` from `KEYWORD_IDS` and the mechanic
+support registry, and fixing up the `dread_sovereign` `prototype_core` fixture
+that prints it, is follow-up work tracked in `IMPLEMENTATION_PLAN.md`.
+
+### Q44. Do you want multiple blockers per attacker, and if so, when? — answered 2026-09-11
+
+**No general multi-blocking.** One blocker per attacker stays the default rule. A
+future explicit keyword may permit an exception without changing that default.
+`blockersPerAttacker` stays `1`; no code change.
+
+### Q45. Is Barrier consumed before or after other prevention and reduction? — answered 2026-09-11
+
+**Reduction and prevention first, Barrier last.** Barrier is consumed only if
+positive damage remains afterward. This matches `damage.ts`'s current behaviour
+and is why a hit already reduced to zero leaves Barrier unspent. No code change;
+the capped `prevent_damage` shield work this was blocking may proceed under this
+ordering.
+
+### Q46. May a Reaction carry an additional cost? — answered 2026-09-11
+
+**No — keep it prohibited.** Reactions use Energy and M10's prepared-payment
+model only. An interactive sacrifice or discard cost inside a Reaction window
+would create nested timing complexity the owner does not want. The schema's
+rejection stands; no code change.
+
+### Q51. Keep the card-in-hand price, or keep Hard's win rate? — answered 2026-09-11
+
+**Keep card-in-hand pricing.** Correct play matters more than preserving Hard's
+artificially higher win rate — 53.9% before the fix, 50.1% against Normal after
+it, both over the same 384 seeded matches. Improve Hard independently, with new
+heuristics, rather than restoring the valuation defect Q50 closed.
+
+### Q6. Is there an alternate victory condition? — answered 2026-09-11
+
+**No**, not for the core format. Health at or below zero, decking, concession and
+last-player-standing are sufficient. Add one only for a deliberately designed
+future archetype (Commander damage or similar).
+
+### Q17. Colour identity — names, count, and what each colour does — answered 2026-09-11
+
+**Keep five colours plus colourless, with a pie:** White — protection and
+coordination; Blue — control and knowledge; Black — sacrifice and recursion; Red
+— aggression, swarm and direct damage; Green — growth, large Units, Energy and
+Overwhelm. Neutral gets broadly usable but weaker, simpler Spells, Reactions and
+Relics.
+
+**Not yet implemented** beyond the ruling itself. Writing this pie into
+player-facing lore/flavour text is follow-up content work; colour IDs still
+appear only in card data and `COLOR_INFO`, with display names kept separate, so
+nothing engine-side changes.
+
+### Q18. Does creating a coloured Token leak colour identity into the creator? — answered 2026-09-11
+
+**Yes — promote it to a hard content error.** An off-identity coloured Token
+otherwise bypasses deck identity; a future exception must be explicit. The
+bundled sets already comply, so promoting `card_data/token_color_leak` from
+warning to error in `loader.ts` is follow-up work expected to have no content
+fallout.
+
+### Q19. Is 40-card singleton with a two-colour Commander cap right? — answered 2026-09-11
+
+**Yes, for the first playtest.** Keep 40-card singleton and the two-colour
+Commander cap. Move to 50 only once each supported Commander's colour-legal pool
+reaches **roughly 65 cards** — not the 41–42 already measured plus the 8–9 that
+merely closes raw legality, which the owner judged would leave almost no
+meaningful deckbuilding choice at exactly 50. Three-colour decks wait for a
+future explicit format/Commander rather than opening the existing cap. Refines
+the 2026-08-14 scoping recorded in
+[open-decisions.md](rules/open-decisions.md#40-is-a-scope-decision-not-a-leftover--owner-2026-08-14),
+and supersedes the "8–9 more cards" figure that had been repeated in
+`IMPLEMENTATION_PLAN.md` and `CLAUDE.md`.
+
+### Q20. Should `displayText` be generated from structured effects? — answered 2026-09-11
+
+**No — authored text remains canonical.** Generation may become an
+admin-authoring suggestion or preview, but must never silently become the source
+of truth. No change from current behaviour.
+
+### Q21. Localisation — answered 2026-09-11
+
+**Out of scope**, explicitly, until the English rules and UI stabilise.
+Language-independent IDs stay as they are; revisit before public localisation
+work begins.
+
+### Q22. Is 768 × 1024 px the right art size? — answered 2026-09-11
+
+**The contract is the 3:4 aspect ratio, not one fixed resolution.** Keep
+768×1024 as the prototype minimum/fallback; prefer 1536×2048 or higher source
+art and downscale in the client. Follow-up: restate the asset-pipeline docs as a
+ratio contract rather than a fixed size.
+
+### Q8. What is the turn/action timeout policy? — answered 2026-09-11
+
+**Add configurable timers:** approximately 30 seconds for Main Phase and ordinary
+choices, 5 seconds for Reactions. A Reaction timeout passes; a Main Phase timeout
+ends the phase/turn; an optional-choice timeout declines. One ordinary timeout
+must never concede the match.
+
+**Not yet implemented.** Server/engine timer work, tracked alongside Q34 below —
+the engine stays clock-free either way; the server decides when to submit the
+timeout action.
+
+### Q9. Should a match survive a server restart? — answered 2026-09-11
+
+**Required before public online release; unnecessary for current private
+testing.** Recorded as a production gate rather than an unresolved design
+question. No action now.
+
+### Q34. Does the disconnect grace window run while it is not that player's turn? — answered 2026-09-11
+
+**No — count grace only while the match is actually waiting on the disconnected
+seat.** Pause it during other players' turns; an automatically-skipped Reaction
+priority offer does not consume it. The engine stays clock-free: this is server
+policy, not an engine rule. Not yet implemented — follow-up server work,
+alongside Q8's timers.
+
+### Q35. Do three- and four-player matches need different rule values? — answered 2026-09-11
+
+**Yes — multiplayer needs its own `RulesConfig` profile.** Keep the current 1v1
+values for functional tests in the meantime, but label them explicitly unbalanced
+at three/four seats and draw no multiplayer balance conclusions until real
+3/4-player values are measured. Not yet implemented — additive schema/config
+follow-up.
+
+### Q14. What thresholds should actually gate a card change? — answered 2026-09-11
+
+**None automatically.** Thresholds only trigger human review; keep the current
+documented defaults as exploratory flags. An actual card change still requires
+controlled replacement evidence or repeated simulation plus playtesting. Confirms
+existing design; no code change.
+
+### Q15. How is "a healthy plural meta" measured? — answered 2026-09-11
+
+**Initial 1v1 target:** at least three viable clusters, ideally all four intended
+archetypes; no cluster above roughly 50% representation; overall cluster win
+rates around 45–55%; investigate any matchup outside 35–65%. These remain review
+thresholds the analyser reports against, never automatic verdicts.
+
+### Q37. Should the pilots be better players than they are? — answered 2026-09-11
+
+**Improve them iteratively**, driven by failed calibration boards and
+disagreement with real-play data. AI results must not claim human-meta validity
+until the pilots gain archetype awareness and their known strategic gaps close.
+
+### Q52. Should `pilotSpecSchema`'s overrides stop carrying the generic vector? — answered 2026-09-11
+
+**Fix it before another robustness run.** Override maps must carry no defaults of
+their own; ordinary absent-`weights` behaviour must stay byte-identical; bump the
+affected provenance/versioning; invalidate and rerun exactly the `robustness`
+experiment arms this defect touched — not unrelated experiments. Not yet
+implemented — follow-up tracked for the next tranche that runs, reads or cites a
+`robustness` experiment.
+
+### Q38. When is a multiplayer balance run worth it? — answered 2026-09-11
+
+**After** a multiplayer rules profile exists (Q35), four-player functional tests
+pass, and bots have multiplayer calibration. Keep any multiplayer evidence
+completely separate from 1v1 results once it starts.

@@ -69,6 +69,12 @@ told Guardian forces blocks would be actively misled.
 > reading to implement, or whether to delete it, is **Q4** and is an owner
 > decision.
 
+> **Superseded 2026-09-11.** Q4 is answered: delete `resilient`. No playable
+> card uses it and both candidate readings overlap Barrier. Removing it from
+> `KEYWORD_IDS` and the `dread_sovereign` fixture that prints it is pending
+> follow-up work, tracked in `IMPLEMENTATION_PLAN.md`. See
+> [Answered](../open-questions.md#q4-what-should-resilient-do-or-should-it-be-deleted--answered-2026-09-11).
+
 ### Configuration is referenced, never quoted
 
 Content may write `{matchConfig.armoredReduction}` or `{deckRules.deckSize}`.

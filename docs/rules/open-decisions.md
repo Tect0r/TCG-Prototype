@@ -54,19 +54,22 @@ Commander's colour-legal pool. Measured against the shipped set:
 | `precon_grave_sacrifice`     | `grave_matriarch`           | black  | 42                |
 
 Each pool already includes the six colourless cards, which every Commander can
-play, so they cannot close the gap. A legal 50-card deck therefore needs
-**8–9 further colour-legal cards per Commander** — or a shared neutral package
-that solves the same deficit for all four, or a construction-rule change such as
-lifting the singleton limit. Moving to 50 before any of those exist would make
-every bundled precon illegal.
+play, so they cannot close the gap. Closing the raw legality gap only needed
+**8–9 further colour-legal cards per Commander** — but that measured legality,
+not a deckbuilding target.
 
-Reaching 50 is authoring work and a gameplay decision, deliberately not something
-a consistency pass performs: inventing cards, duplicating singleton entries or
-weakening colour identity would each be a design change made silently.
+**Settled, Q19 (owner, 2026-09-11):** keep 40-card singleton and the two-colour
+cap for the first playtest. Move to 50 only once each Commander's colour-legal
+pool reaches **roughly 65 cards**, not the bare 50 the legality measurement
+above would allow — a deck built from exactly 50 legal cards is nominally
+legal but leaves almost no meaningful deckbuilding choice. Three-colour decks
+wait for a future explicit format/Commander rather than opening the existing
+cap. `deck.size` stays 40 until that content exists.
 
-**Provisional:** whether 40-card singleton gives enough consistency, when the
-content for 50 gets authored, and whether the two-colour Commander cap should
-open to three once the colour pie exists. Playtest question — Q19.
+Reaching either threshold is authoring work and a gameplay decision, deliberately
+not something a consistency pass performs: inventing cards, duplicating
+singleton entries or weakening colour identity would each be a design change
+made silently.
 
 ---
 
@@ -109,8 +112,12 @@ covers only _who may be declared_ — declaring a blocker **exhausts** it
 unconditionally in `flow.ts#finalizeBlockers`, because that half is a confirmed
 rule rather than a number.
 
-Whether three- and four-player matches need different values at all is Q35;
-whether the disconnect window is fair at four seats is Q34.
+**Settled, Q35 (owner, 2026-09-11): yes**, multiplayer needs its own
+`RulesConfig` profile. Keep the current 1v1 values for functional tests in the
+meantime, but label them explicitly unbalanced at 3/4 players and draw no
+multiplayer balance conclusions until real 3/4-player values are measured. Not
+yet implemented — schema/config follow-up. Whether the disconnect window is
+fair at four seats is Q34, answered below under "Leaving a live match".
 
 ---
 
@@ -124,9 +131,13 @@ a sixth colour, which makes the legality rule fall out for free: every colour in
 a card's identity must appear in the Commander's, and an empty array satisfies
 that vacuously.
 
-**Provisional:** the final colour names, count, and what each colour actually
-_does_ — Q17. Renaming is safe: colour IDs appear only in card data and
-`COLOR_INFO`, and display names are already separate.
+**Settled, Q17 (owner, 2026-09-11):** keep five colours plus colourless, with a
+pie — White: protection/coordination; Blue: control/knowledge; Black:
+sacrifice/recursion; Red: aggression/swarm/direct damage; Green: growth/large
+Units/Energy/Overwhelm. Neutral gets broadly usable but weaker, simpler Spells,
+Reactions and Relics. Writing this into player-facing lore/flavour text is
+follow-up content work, not an engine change — colour IDs still appear only in
+card data and `COLOR_INFO`, and display names stay separate.
 
 ---
 
@@ -151,7 +162,7 @@ developer-facing note naming the handler that owns each behaviour.
 | `quick_strike`              | Deals combat damage in an earlier step; anything defeated there never strikes back.           |
 | `venom`                     | Any damage it deals to a unit is lethal to that unit.                                         |
 | `siphon`                    | Combat damage it deals heals its controller by the same amount.                               |
-| `resilient`                 | **Inert.** No mechanical effect.                                                              |
+| `resilient`                 | **Inert, and being deleted** (Q4, 2026-09-11) — no mechanical effect.                          |
 
 **`resilient` is the only inert one,** and it is inert on purpose: the plausible
 readings (clear all damage at end of turn, versus survive lethal damage once per
@@ -167,8 +178,14 @@ an `engine: 'none'` keyword is worth **zero** to a pilot everywhere a keyword is
 priced — implementing it switches its valuation on in the same change that
 switches its behaviour on.
 
-**Provisional:** what `resilient` should do, or whether to delete it — Q4.
-Also whether `armored` is per damage instance (current) or per turn.
+**Settled, Q4 (owner, 2026-09-11): delete it.** No playable card uses
+`resilient`, and both candidate readings (clear damage at end of turn; survive
+lethal once per turn) add complexity that overlaps Barrier rather than filling
+a gap. A precisely named regeneration mechanic can be added later if a real
+card needs one. Removing it from `KEYWORD_IDS` and the `dread_sovereign`
+fixture that prints it is pending follow-up work, tracked in
+`IMPLEMENTATION_PLAN.md`. `armored` stays **per damage instance**, confirmed
+the same day.
 
 Changing a keyword means changing the registry entry, the engine note beside it,
 and the handler it names — not hunting through combat code.
@@ -202,8 +219,12 @@ three tests that enforce it.
 
 **Provisional:** whether one round of priority is enough interaction once more
 Reactions exist. Nothing about it is a gap — every layer describes the same rule
-today. Whether a Reaction may carry an additional cost is Q46; the schema rejects
-one today rather than accepting it and quietly not charging it.
+today.
+
+**Settled, Q46 (owner, 2026-09-11): no.** Reactions stay Energy-only, priced
+through M10's prepared-payment model. An interactive sacrifice or discard inside
+a Reaction window would add nested-timing complexity the owner does not want.
+The schema's rejection stands; no code change.
 
 ---
 
@@ -216,8 +237,11 @@ shields, and `damage.ts` currently applies `armored` first. Ruleset update §9's
 "a zero-damage event does not consume Barrier" is already in force, which leans
 toward reduction-first.
 
-**Provisional:** the general ordering, which only genuinely diverges once a
-`prevent_damage` shield with a capped amount exists — Q45.
+**Settled, Q45 (owner, 2026-09-11):** reduction and prevention first, Barrier
+last — Barrier is consumed only if positive damage remains afterward. This
+confirms `damage.ts`'s current behaviour and is why a hit reduced to zero
+already leaves Barrier unspent. No code change; the capped `prevent_damage`
+shield work this was blocking can proceed under this ordering.
 
 ---
 
@@ -226,9 +250,10 @@ toward reduction-first.
 `blockersPerAttacker` defaults to `1`, and blocker assignment is modelled so more
 than one can be added without rewriting combat state.
 
-**Provisional:** whether multi-blocking is ever wanted — Q44. It is recorded here
-because doing it in the same pass as another combat change is far cheaper than a
-second rewrite.
+**Settled, Q44 (owner, 2026-09-11): no general multi-blocking.** One blocker
+per attacker stays the rule; a future explicit keyword may carve out an
+exception without changing the default. `blockersPerAttacker` stays 1; no code
+change.
 
 ---
 
@@ -247,8 +272,16 @@ never inferred from the UI, which only renders what `legalActions` reports.
 Leaving a live match concedes; losing the socket starts the grace window
 instead (`match-server.ts`, `leave` / `disconnect`).
 
-**Provisional:** whether that split is right at four seats, where one stalled
-seat holds up three others — Q34, and related to the timeout policy in Q8.
+**Settled, Q34 (owner, 2026-09-11): no, it is not right at four seats.** Count
+grace only while the match is actually waiting on the disconnected seat; pause
+it during other players' turns, and an auto-skipped Reaction priority offer
+does not consume it. Not yet implemented — server follow-up work, alongside
+Q8's timers below.
+
+**Settled, Q8 (owner, 2026-09-11): add configurable timers.** ~30s for Main
+Phase/ordinary choices, ~5s for Reactions. A Reaction timeout passes; a Main
+timeout ends the phase/turn; an optional-choice timeout declines. One ordinary
+timeout must never concede the match. Not yet implemented.
 
 ---
 
@@ -258,8 +291,11 @@ A card that creates a coloured Token arguably carries that colour. The loader
 emits a **warning** (`card_data/token_color_leak`), not an error, when a card
 creates a Token whose colours are not in the creating card's identity.
 
-**Provisional:** whether this should be a hard rule — Q18. If it becomes one,
-promote the warning to an error in `loader.ts`. The bundled sets already comply.
+**Settled, Q18 (owner, 2026-09-11): yes**, promote it to a hard content error.
+An off-identity coloured Token otherwise bypasses deck identity; a future
+exception must be explicit. The bundled sets already comply, so promoting the
+warning to an error in `loader.ts` is pending follow-up work with no expected
+content fallout.
 
 ---
 
@@ -268,8 +304,11 @@ promote the warning to an error in `loader.ts`. The bundled sets already comply.
 `768 × 1024 px` PNG is what the placeholder generator emits and what the card
 frame reserves space for.
 
-**Provisional:** the size — Q22. Nothing so far suggests changing it; revisit
-only if real art shows a problem.
+**Settled, Q22 (owner, 2026-09-11):** the contract is the **3:4 aspect ratio**,
+not one fixed resolution. Keep 768×1024 as the prototype minimum/fallback;
+prefer 1536×2048 or higher source art and downscale client-side. Follow-up:
+restate the placeholder generator/asset pipeline docs as a ratio contract
+rather than a fixed size.
 
 ---
 
@@ -303,7 +342,11 @@ suite; a setting with no row does not, because this was never a full index.
 | `deadHandShare`          | 0.5                 | Share of drawn copies dead before an inclusion looks wrong   |
 | `abnormalShare`          | 0.02                | Abnormal terminations above which the run is suspect         |
 
-These were chosen to be legible rather than tuned — Q14. The analyser never
+These were chosen to be legible rather than tuned. **Settled, Q14 (owner,
+2026-09-11): none of them gates a change automatically**, confirming the
+existing design — keep the current defaults as exploratory flags; an actual
+card change still requires controlled replacement evidence or repeated
+simulation plus playtesting. No code change. The analyser never
 converts a threshold into a verdict: it produces `review_recommended`,
 `possible_interaction`, `insufficient_data` or `run_quality`, always with the
 evidence, the sample size and the interval attached, so the number can be argued

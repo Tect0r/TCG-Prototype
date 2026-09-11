@@ -127,3 +127,8 @@ information a living player would not have.
 > order and applies nothing until the last answer is in
 > ([ADR 0021](0021-choice-contract.md)), which is the multi-seat analogue of the
 > independent-blocker rule above.
+
+> **Superseded 2026-09-11.** Q44 is answered: no general multi-blocking.
+> `blockersPerAttacker` stays 1 as the default rule; a future explicit keyword
+> may carve out an exception without changing it. See
+> [Answered](../open-questions.md#q44-do-you-want-multiple-blockers-per-attacker-and-if-so-when--answered-2026-09-11).

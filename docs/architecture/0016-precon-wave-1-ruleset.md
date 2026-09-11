@@ -166,6 +166,11 @@ staying deterministic and bounded. It is not proposed as the final rule.
 > Pending Reactions resolve **last in, first out**, with the spell the window
 > opened around at the bottom. Whether a Reaction may carry an interactive
 > additional cost is still open ([Q46](../open-questions.md), ADR 0017).
+>
+> **Superseded 2026-09-11.** Q46 is answered: no. Reactions stay Energy-only,
+> priced through M10's prepared-payment model; an interactive sacrifice or
+> discard cost inside a Reaction window stays rejected by the schema. See
+> [Answered](../open-questions.md#q46-may-a-reaction-carry-an-additional-cost--answered-2026-09-11).
 
 ## Resolved §18 questions
 
@@ -248,3 +253,8 @@ For a blocked attacker with Overwhelm, in order:
 >   the owner's list. Q47 (Reaction answering a Reaction) and Q48 (five Goblin
 >   entry triggers) were both answered on 2026-08-14 by M07.8 and are recorded
 >   under [Answered](../open-questions.md#answered).
+>
+> **Superseded 2026-09-11.** The owner ruled on the whole remaining §18 list the
+> same day: delete `resilient` (Q4); no general multi-blocking (Q44); reduction
+> and prevention before Barrier (Q45); Reactions stay Energy-only (Q46). Nothing
+> is left open from §18. See [Answered](../open-questions.md#answered).
