@@ -24,11 +24,37 @@ re-opened months later.
 
 ## Owner decisions a tranche may stop on
 
-**None open right now.** Q4, Q44, Q45 and Q46 were this short list, and Q51 had
-joined it on 2026-08-21; the owner ruled on all five on 2026-09-11. Full rulings
-are compressed into [Answered](#answered) below, in the same numeric spots as
-every other answered question. The next question lands here the same way — named
-explicitly, not inferred — when a tranche genuinely needs to stop on one.
+Q4, Q44, Q45 and Q46 were this short list, and Q51 had joined it on 2026-08-21;
+the owner ruled on all five on 2026-09-11. Full rulings are compressed into
+[Answered](#answered) below, in the same numeric spots as every other answered
+question. Q53 joined the list the same day, when M08.R4's tested groundwork hit
+a design gap `AdaptiveConfig` does not close.
+
+### Q53. How do adaptive jobs receive pilot selection and per-match turn limits?
+
+**Open. Blocks M08.R4.**
+
+`runAdaptiveExperiment` (`apps/simulator/src/adaptive/run.ts`) requires
+`pilots: readonly PilotSpec[]` and `limits: MatchLimits` — both mandatory. M08.R3
+shipped `AdaptiveConfig` (`apps/simulator/src/adaptive/config.ts`) with no field
+for either: it carries the search budget, swap policy and Commander policy, but
+nothing that names which pilots contest a lineage's matches or how long one
+match may run.
+
+M08.R4 needs the real job runner to dispatch an adaptive job to
+`runAdaptiveExperiment`, and cannot construct that call without inventing a
+policy the owner has not stated. `engine_soak`'s random-pilot defaults are not a
+substitute — they answer a smoke-test question, not a balance-search one, and
+borrowing them here would silently fix the answer to a product question instead
+of asking it.
+
+**What is left is yours:** decide whether pilot selection and the per-match turn
+limit are explicit administrator inputs on the adaptive job request, fixed
+competent defaults baked into `AdaptiveConfig` or the runner, or another
+documented policy — and, if `AdaptiveConfig` grows a field, its schema version
+bump belongs to the same decision.
+
+**Answered by:** game design / balance-lab ownership.
 
 ---
 

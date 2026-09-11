@@ -4,6 +4,6 @@
   "mode": "blocked",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
   "heading": "M08.R4 — Adaptive runner dispatch and lifecycle",
-  "blocker": "Owner decision required: define how adaptive jobs receive pilot selection and per-match turn limits.",
+  "blocker": "Owner decision required: Q53 in docs/open-questions.md — how adaptive jobs receive pilot selection and per-match turn limits.",
   "next": "M08.R4"
 }

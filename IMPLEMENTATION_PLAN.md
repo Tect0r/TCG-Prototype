@@ -47,11 +47,9 @@ Rows carry state only; do not add implementation narratives.
 
 ### Current blocking decision
 
-M08.R4 cannot call `runAdaptiveExperiment` until the owner defines how adaptive
-jobs receive pilot selection and per-match turn limits. Decide whether these are
-explicit administrator inputs, fixed competent defaults, or another documented
-policy. Do not borrow the `engine_soak` random-pilot defaults without a product
-decision.
+M08.R4 is blocked on Q53 — see
+[`docs/open-questions.md`](docs/open-questions.md#q53-how-do-adaptive-jobs-receive-pilot-selection-and-per-match-turn-limits)
+and "Owner decisions still open" below for the full write-up.
 
 ## Where the record lives
 
@@ -84,12 +82,16 @@ Do not reopen these while implementing:
 
 ## Owner decisions still open
 
-**None right now.** Q4, Q44, Q45, Q46 and Q51 were the standing short list; the
-owner ruled on all five, and on every other open question the project had
-recorded, on 2026-09-11. Full rulings are in
-[`docs/open-questions.md`](docs/open-questions.md#answered). Q50 is discharged:
-Hard is published. Several rulings still need follow-up code or content work —
-see below.
+Q4, Q44, Q45, Q46 and Q51 were the standing short list; the owner ruled on all
+five, and on every other open question the project had recorded, on 2026-09-11.
+Full rulings are in [`docs/open-questions.md`](docs/open-questions.md#answered).
+Q50 is discharged: Hard is published. Several rulings still need follow-up code
+or content work — see below.
+
+- Q53: how adaptive jobs receive pilot selection and per-match turn limits.
+  `runAdaptiveExperiment` requires both and `AdaptiveConfig` carries neither;
+  M08.R4 cannot dispatch to it without this decision. Full write-up in
+  [`docs/open-questions.md`](docs/open-questions.md#q53-how-do-adaptive-jobs-receive-pilot-selection-and-per-match-turn-limits).
 
 ### Follow-up work unblocked by the 2026-09-11 rulings
 
