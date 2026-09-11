@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import { makeDeck, type SimDeck } from '@tcg/deck-generator';
+import { tinyEnvironment } from '../test-fixtures.js';
+import { adaptiveConfigHashOf, type AdaptiveConfig } from './config.js';
 import {
   adaptiveRevisionSeedPath,
   makeAdaptiveRevision,
@@ -11,6 +13,7 @@ import {
   adaptiveCheckpointLineageSchema,
   adaptiveCheckpointSchema,
   assertValidAdaptiveCheckpoint,
+  freshAdaptiveCheckpoint,
   parseAdaptiveCheckpoint,
   type AdaptiveCheckpoint,
 } from './checkpoint.js';
@@ -240,6 +243,116 @@ describe('adaptiveCheckpointSchema: pending generation and partial-block state',
     expect(() =>
       adaptiveCheckpointSchema.parse({ ...checkpoint, pendingGeneration }),
     ).not.toThrow();
+  });
+});
+
+describe('freshAdaptiveCheckpoint', () => {
+  const environment = tinyEnvironment();
+  const EXPERIMENT_ID = 'fresh-checkpoint-test';
+  const SEED = 'fresh-checkpoint-seed';
+
+  const rootCards = [
+    { cardId: 'prototype_drone', quantity: 2 },
+    { cardId: 'prototype_scout', quantity: 2 },
+    { cardId: 'prototype_guard', quantity: 2 },
+    { cardId: 'trench_guard', quantity: 2 },
+    { cardId: 'unstable_construct', quantity: 2 },
+    { cardId: 'surveyors_lens', quantity: 2 },
+  ];
+
+  function config(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
+    return {
+      schemaVersion: 1,
+      id: EXPERIMENT_ID,
+      label: '',
+      seed: SEED,
+      output: 'results',
+      environment: environment.config,
+      startingDecks: {
+        kind: 'inline',
+        decks: [{ commanderId: 'prototype_commander_blue', cards: rootCards }],
+      },
+      commanderPolicy: 'locked',
+      selectedCommanderIds: [],
+      informationPolicy: 'public_observation',
+      totalLearningBudget: 6,
+      blockSize: 1,
+      mirrorSeats: true,
+      candidateCount: 2,
+      swapBound: { minCards: 1, maxCards: 1 },
+      rebuildTrigger: null,
+      referenceFieldShare: 0,
+      retention: { replaySampleRate: 50, keepLogs: false, keepDecisions: false },
+      finalValidationGames: 1,
+      ...overrides,
+    };
+  }
+
+  it('gives both lineages the identical shared generation-0 root revision', () => {
+    const checkpoint = freshAdaptiveCheckpoint(config(), environment);
+    expect(checkpoint.lineages.incumbent.revisions).toHaveLength(1);
+    expect(checkpoint.lineages.opponent.revisions).toHaveLength(1);
+    const [incumbentRoot] = checkpoint.lineages.incumbent.revisions;
+    const [opponentRoot] = checkpoint.lineages.opponent.revisions;
+    expect(incumbentRoot?.revisionId).toBe(opponentRoot?.revisionId);
+    expect(incumbentRoot?.construction).toBe('root');
+    expect(incumbentRoot?.parentRevisionId).toBeNull();
+    expect(incumbentRoot?.deck.commanderId).toBe('prototype_commander_blue');
+    expect(checkpoint.lineages.incumbent.activeRevisionId).toBe(incumbentRoot?.revisionId);
+    expect(checkpoint.lineages.opponent.activeRevisionId).toBe(opponentRoot?.revisionId);
+  });
+
+  it('starts clean at generation 1, block 0, with nothing spent or pending', () => {
+    const checkpoint = freshAdaptiveCheckpoint(config(), environment);
+    expect(checkpoint.gamesSpent).toBe(0);
+    expect(checkpoint.referenceField).toEqual([]);
+    expect(checkpoint.pendingGeneration).toBeNull();
+    expect(checkpoint.nextGeneration).toBe(1);
+    expect(checkpoint.nextBlock).toBe(0);
+    expect(checkpoint.nextSeedPath).toBe(adaptiveRevisionSeedPath(SEED, EXPERIMENT_ID, 1, 0));
+  });
+
+  it('records the configuration hash it was built from', () => {
+    const cfg = config();
+    const checkpoint = freshAdaptiveCheckpoint(cfg, environment);
+    expect(checkpoint.configHash).toBe(adaptiveConfigHashOf(cfg));
+  });
+
+  it('parses as a valid checkpoint document', () => {
+    const checkpoint = freshAdaptiveCheckpoint(config(), environment);
+    expect(() => adaptiveCheckpointSchema.parse(checkpoint)).not.toThrow();
+  });
+
+  it('refuses a startingDecks source that resolves to more than one deck', () => {
+    const cfg = config({
+      startingDecks: {
+        kind: 'inline',
+        decks: [
+          { commanderId: 'prototype_commander_blue', cards: rootCards },
+          { commanderId: 'prototype_commander_red', cards: rootCards },
+        ],
+      },
+    });
+    expect(() => freshAdaptiveCheckpoint(cfg, environment)).toThrow(
+      /must resolve to exactly one deck/,
+    );
+  });
+
+  it('refuses a startingDecks source that resolves to no legal deck', () => {
+    const cfg = config({
+      startingDecks: {
+        kind: 'inline',
+        decks: [
+          {
+            commanderId: 'prototype_commander_blue',
+            cards: [{ cardId: 'prototype_drone', quantity: 40 }],
+          },
+        ],
+      },
+    });
+    expect(() => freshAdaptiveCheckpoint(cfg, environment)).toThrow(
+      /must resolve to exactly one deck/,
+    );
   });
 });
 

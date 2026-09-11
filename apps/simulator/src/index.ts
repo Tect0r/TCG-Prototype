@@ -503,6 +503,7 @@ export {
   activeAdaptiveRevisionOf,
   adaptiveCheckpointLineageSchema,
   assertValidAdaptiveCheckpoint,
+  freshAdaptiveCheckpoint,
   type AdaptiveCheckpointLineage,
 } from './adaptive/checkpoint.js';
 

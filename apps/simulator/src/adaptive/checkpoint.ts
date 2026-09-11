@@ -1,10 +1,19 @@
 import { z } from 'zod';
 import { simDeckSchema } from '@tcg/deck-generator';
-import { adaptiveExperimentIdSchema, type AdaptiveCommanderPolicy } from './config.js';
+import { resolveDeckSource } from '../deck-source.js';
+import type { Environment } from '../environment.js';
+import {
+  adaptiveConfigHashOf,
+  adaptiveExperimentIdSchema,
+  type AdaptiveCommanderPolicy,
+  type AdaptiveConfig,
+} from './config.js';
 import { adaptiveGenerationRecordSchema } from './generate.js';
 import {
   adaptiveRevisionSchema,
+  adaptiveRevisionSeedPath,
   assertAdaptiveLineage,
+  makeAdaptiveRevision,
   type AdaptiveRevision,
 } from './revision.js';
 import { ADAPTIVE_BLOCK_SIDES } from './block.js';
@@ -136,6 +145,65 @@ export type AdaptiveCheckpoint = z.infer<typeof adaptiveCheckpointSchema>;
 /** Parses a checkpoint, refusing an unreadable schema version first (M08.16A). */
 export function parseAdaptiveCheckpoint(input: unknown): AdaptiveCheckpoint {
   return parseAdaptiveDocument('checkpoint', adaptiveCheckpointSchema, input);
+}
+
+/**
+ * Builds the checkpoint a brand-new adaptive run starts from (M08.R4).
+ *
+ * `startingDecks` is resolved and required to name exactly one deck — the
+ * shared-single-root-deck contract `packages/admin-contracts/src/
+ * presets.ts`'s `adaptiveCounterChoiceSchema` doc comment already states
+ * ("an adaptive run needs one root"): both co-evolving lineages start from
+ * the identical resolved deck, recorded as each lineage's own generation-0
+ * root revision. That the two roots then share a `revisionId` is expected,
+ * not a collision — `./run.ts`'s `deriveBlockOutcome` attributes a block's
+ * winner by seat/schedule identity precisely so an identical starting deck
+ * on both sides is safe.
+ */
+export function freshAdaptiveCheckpoint(
+  config: AdaptiveConfig,
+  environment: Environment,
+): AdaptiveCheckpoint {
+  const resolved = resolveDeckSource(config.startingDecks, environment, config.seed);
+  const [rootDeck, ...extraDecks] = resolved.decks;
+  if (rootDeck === undefined || extraDecks.length > 0) {
+    const detail =
+      resolved.rejected.length > 0
+        ? ` (${String(resolved.rejected.length)} rejected: ${resolved.rejected
+            .map((entry) => `${entry.id}: ${entry.reasons.join('; ')}`)
+            .join(' | ')})`
+        : '';
+    throw new Error(
+      `Adaptive Counter's startingDecks must resolve to exactly one deck, shared as the ` +
+        `generation-0 root for both lineages; got ${String(resolved.decks.length)}${detail}.`,
+    );
+  }
+  const root = makeAdaptiveRevision({
+    experimentId: config.id,
+    parentRevisionId: null,
+    generation: 0,
+    block: 0,
+    opponentRevisionId: null,
+    construction: 'root',
+    seedPath: adaptiveRevisionSeedPath(config.seed, config.id, 0, 0),
+    deck: rootDeck,
+  });
+
+  return adaptiveCheckpointSchema.parse({
+    schemaVersion: ADAPTIVE_CHECKPOINT_SCHEMA_VERSION,
+    experimentId: config.id,
+    configHash: adaptiveConfigHashOf(config),
+    lineages: {
+      incumbent: { activeRevisionId: root.revisionId, revisions: [root] },
+      opponent: { activeRevisionId: root.revisionId, revisions: [root] },
+    },
+    gamesSpent: 0,
+    referenceField: [],
+    pendingGeneration: null,
+    nextGeneration: 1,
+    nextBlock: 0,
+    nextSeedPath: adaptiveRevisionSeedPath(config.seed, config.id, 1, 0),
+  });
 }
 
 /**
