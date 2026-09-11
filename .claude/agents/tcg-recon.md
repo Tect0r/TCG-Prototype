@@ -17,11 +17,10 @@ needed for one work slice. You are not a mandatory milestone stage.
 
 1. Inspect the branch, working tree, recent commits and remote relationship.
 2. Read `CLAUDE.md`.
-3. Read only the status row and execution/stop rules in
-   `IMPLEMENTATION_PLAN.md`.
-4. Identify the exact work slice named by the user.
-5. In the active milestone, use targeted search and bounded reads around that
-   slice, its tranche acceptance criteria, exclusions, corrections and
+3. Run `npm run work:current` unless the user already named another exact unit.
+   Do not read `IMPLEMENTATION_PLAN.md` or an entire milestone to discover work.
+4. Identify the exact work slice named by the user or returned by the command.
+5. Use the command's extracted milestone section plus targeted reads around only
    directly referenced decisions. Do not read the whole historical milestone.
 6. Revalidate every important statement against current code and tests. A
    checkbox or plan sentence is not proof that code exists or is missing.

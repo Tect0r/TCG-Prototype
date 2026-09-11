@@ -1,8 +1,9 @@
 # TCG Prototype — permanent agent instructions
 
 This file stays deliberately short because it is loaded on every task. The live
-work queue is in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md); detailed
-scope is in exactly one file under `docs/milestones/`.
+cursor is `.claude/current-task.json`; always access it through
+`npm run work:current`, which prints only the active section from one milestone
+file. `IMPLEMENTATION_PLAN.md` is a durable overview, not startup reading.
 
 ## Model routing
 
@@ -27,8 +28,9 @@ review. Never delegate implementation to another Sonnet agent.
 
 1. Sonnet implements exactly one named work slice and runs only its focused
    checks. It may mark that slice complete, but not the tranche checklist.
-2. Sonnet records a coherent checkpoint commit and stops. It never rolls into
-   the next slice in the same session.
+2. Sonnet replaces `.claude/current-task.json` with the next exact state,
+   validates it with `npm run work:check`, records a coherent checkpoint commit
+   and stops. It never rolls into the next slice in the same session.
 3. Repeat in a fresh session until every implementation slice in the tranche is
    complete.
 4. In the tranche-close session, Sonnet revalidates the combined tranche diff,
@@ -55,17 +57,18 @@ instead of looping or widening scope.
 
 1. Inspect the current branch, working tree, recent commits and remote state
    before changing anything.
-2. Read the execution rule and status row in `IMPLEMENTATION_PLAN.md`, then use
-   targeted search to read only the named slice in the active milestone file.
-   Do not load an entire historical milestone record.
+2. Run `npm run work:current`. Its output is the authoritative current cursor
+   plus the exact milestone section. Do not read `IMPLEMENTATION_PLAN.md`, the
+   raw cursor, or an entire milestone merely to discover what is next.
 3. Re-check the named slice against current code. If it is already complete,
    verify and record that fact instead of reimplementing it.
 4. Complete exactly one work slice, or one explicitly named tranche-close run.
    Never continue into another slice in the same session.
 5. Preserve unrelated and user-owned changes.
-6. A normal slice may update only its work-slice checkbox and evidence note.
-   Tranche acceptance checklists, the root status row and generated audit facts
-   move only in the tranche-close run after their gates pass.
+6. A normal slice may update only its work-slice checkbox, a short evidence note
+   and the cursor. Tranche acceptance checklists, the root status row and
+   generated audit facts move only in the tranche-close run after their gates
+   pass.
 7. When a change affects anything counted by `docs/status-audit.md`, regenerate
    it in the tranche-close run; never hand-edit derived facts.
 8. Commit a coherent, focused-test-passing slice as a checkpoint. Push according
@@ -74,6 +77,12 @@ instead of looping or widening scope.
 9. Stop with: slice, files and behavior changed, focused verification, commit and
    push result, remaining blocker, and the exact next slice. A tranche-close run
    also reports full gates, reviewer verdict and the next tranche.
+
+If `npm run work:current` fails because its cursor is invalid or stale, repair
+only the cursor from targeted Git history and milestone searches before doing
+implementation work. The cursor is replaced on every update, never appended to.
+It contains no completed-work narrative; Git, tests and milestone checkboxes are
+the history.
 
 ## Context discipline
 
@@ -93,10 +102,10 @@ an emergency boundary, not a target.
   symbol search or line range answers the question.
 - Do not run the full repository gate during implementation slices unless the
   slice explicitly changes the gate itself. Full gates belong to tranche close.
-- If compaction occurs, do not explore further or widen scope. Finish the current
-  safe checkpoint, run its focused checks, commit if valid, report and stop.
-- If the slice cannot reach a safe checkpoint after compaction, record the exact
-  blocker and stop without marking it complete.
+- One automatic compaction may occur inside a slice. After it, reread only
+  `npm run work:current`, `git status --short` and the changed diff, then finish
+  the current safe checkpoint without widening scope. If a second compaction
+  would be needed, record the exact blocker and stop without marking completion.
 
 ### Compact instructions
 
@@ -160,8 +169,9 @@ document disagrees with the rules above, the older document is stale.
   when answered. Countering never refunds paid costs.
 - Any playable pool must be obtained through a format-scoped database, never the
   entire bundled card universe.
-- Do not silently invent unresolved rules. Record the smallest blocking question
-  in `IMPLEMENTATION_PLAN.md` and stop that tranche.
+- Do not silently invent unresolved rules. Put the smallest blocking question in
+  the cursor and, when it is a durable product question, the canonical question
+  ledger; then stop that unit.
 - Automated warnings and statistical signals are evidence for review, never an
   automatic balance verdict.
 
