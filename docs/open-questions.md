@@ -25,36 +25,11 @@ re-opened months later.
 ## Owner decisions a tranche may stop on
 
 Q4, Q44, Q45 and Q46 were this short list, and Q51 had joined it on 2026-08-21;
-the owner ruled on all five on 2026-09-11. Full rulings are compressed into
-[Answered](#answered) below, in the same numeric spots as every other answered
-question. Q53 joined the list the same day, when M08.R4's tested groundwork hit
-a design gap `AdaptiveConfig` does not close.
+the owner ruled on all five on 2026-09-11. Q53 joined and was ruled on the same
+day. Full rulings are compressed into [Answered](#answered) below, in the same
+numeric spots as every other answered question.
 
-### Q53. How do adaptive jobs receive pilot selection and per-match turn limits?
-
-**Open. Blocks M08.R4.**
-
-`runAdaptiveExperiment` (`apps/simulator/src/adaptive/run.ts`) requires
-`pilots: readonly PilotSpec[]` and `limits: MatchLimits` — both mandatory. M08.R3
-shipped `AdaptiveConfig` (`apps/simulator/src/adaptive/config.ts`) with no field
-for either: it carries the search budget, swap policy and Commander policy, but
-nothing that names which pilots contest a lineage's matches or how long one
-match may run.
-
-M08.R4 needs the real job runner to dispatch an adaptive job to
-`runAdaptiveExperiment`, and cannot construct that call without inventing a
-policy the owner has not stated. `engine_soak`'s random-pilot defaults are not a
-substitute — they answer a smoke-test question, not a balance-search one, and
-borrowing them here would silently fix the answer to a product question instead
-of asking it.
-
-**What is left is yours:** decide whether pilot selection and the per-match turn
-limit are explicit administrator inputs on the adaptive job request, fixed
-competent defaults baked into `AdaptiveConfig` or the runner, or another
-documented policy — and, if `AdaptiveConfig` grows a field, its schema version
-bump belongs to the same decision.
-
-**Answered by:** game design / balance-lab ownership.
+**Nothing open in this category as of 2026-09-11.**
 
 ---
 
@@ -584,6 +559,21 @@ affected provenance/versioning; invalidate and rerun exactly the `robustness`
 experiment arms this defect touched — not unrelated experiments. Not yet
 implemented — follow-up tracked for the next tranche that runs, reads or cites a
 `robustness` experiment.
+
+### Q53. How do adaptive jobs receive pilot selection and per-match turn limits? — answered 2026-09-11
+
+**Explicit administrator inputs, not hidden runner defaults.** Pilots are named
+via `pilotIds` on `AdaptiveConfig` (`apps/simulator/src/adaptive/config.ts`),
+expanded through `pilotSpecsOf` — the same `{ id }` mapping every other
+experiment builder already uses for `pilotIds`. Per-match limits live in
+`AdaptiveConfig.limits`, validated by the shared `matchLimitsSchema` with its
+own defaults and optional advanced overrides. Both fields are ordinary config
+fields, so they are already covered by `adaptiveConfigHashOf`, storage and
+provenance; the runner reads them from the stored config rather than
+constructing its own. `ADAPTIVE_CONFIG_SCHEMA_VERSION` bumped to 2; a
+schema-version-1 config (predating `pilotIds`/`limits`) is refused, not
+migrated. Implemented, with migration/refusal, round-trip, hashing and
+dispatch tests (`config.test.ts`, `job-runner-adaptive.test.ts`).
 
 ### Q38. When is a multiplayer balance run worth it? — answered 2026-09-11
 

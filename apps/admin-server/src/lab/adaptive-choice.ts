@@ -141,6 +141,7 @@ export function estimateAdaptiveChoice(input: PresetChoiceInput | unknown): Adap
       blockSize: choice.blockSize,
       mirrorSeats: choice.mirrorSeats,
       candidateCount: choice.candidateCount,
+      pilotIds: [...choice.pilotIds],
       swapBound: choice.swapBound,
       rebuildTrigger: choice.rebuildTrigger,
       referenceFieldShare: choice.referenceFieldShare,

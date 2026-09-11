@@ -13,6 +13,7 @@ import {
   tallyAdaptiveScreening,
   type AdaptiveCandidateScreeningInput,
 } from './evaluate.js';
+import { ADAPTIVE_CONFIG_SCHEMA_VERSION } from './version.js';
 
 /**
  * M08.17B: scheduling and attributing a candidate revision's own screening
@@ -52,7 +53,7 @@ function candidateRevision(label: string, revisionDeck: SimDeck): AdaptiveRevisi
 
 function baseConfig(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
   return {
-    schemaVersion: 1,
+    schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
     id: 'eval-test',
     label: '',
     seed: 'eval-fixture-seed',
@@ -66,6 +67,8 @@ function baseConfig(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
     blockSize: 20,
     mirrorSeats: true,
     candidateCount: 6,
+    pilotIds: ['value'],
+    limits: { maxTurns: 200, maxActions: 6000, maxDecisionsPerSeat: 4000, noProgressWindow: 60 },
     swapBound: { minCards: 1, maxCards: 3 },
     rebuildTrigger: null,
     referenceFieldShare: 0,

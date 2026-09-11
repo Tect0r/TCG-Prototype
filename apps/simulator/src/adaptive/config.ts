@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { cardIdSchema } from '@tcg/card-data';
-import { deckSourceSchema, retentionSchema } from '../config.js';
+import { PILOT_IDS, pilotIdSchema, pilotSpecSchema, type PilotSpec } from '@tcg/bot-interface';
+import { deckSourceSchema, matchLimitsSchema, retentionSchema } from '../config.js';
 import { environmentConfigSchema } from '../environment.js';
 import { digestOf } from '../hash.js';
 import { ADAPTIVE_CONFIG_SCHEMA_VERSION, parseAdaptiveDocument } from './version.js';
@@ -123,6 +124,20 @@ export const adaptiveConfigSchema = z
     mirrorSeats: z.boolean().default(true),
     /** Candidate revisions generated per adaptation. */
     candidateCount: z.number().int().min(1).max(64),
+    /**
+     * The pilots every evaluation and validation match draws opponents from,
+     * as bare administrator input (Q53) — consistent with the other
+     * experiment builders' `pilotIds`, never a runner-invented default. The
+     * runner maps these into full `PilotSpec[]` (`pilotSpecsOf` below).
+     */
+    pilotIds: z.array(pilotIdSchema).min(1).max(PILOT_IDS.length),
+    /**
+     * Per-match limits (turns, actions, decisions, no-progress window). Q53:
+     * these can change results and so are stored and hashed like any other
+     * run input, with `matchLimitsSchema`'s own validated defaults available
+     * for a run that does not need to override them.
+     */
+    limits: matchLimitsSchema.prefault({}),
     swapBound: adaptiveSwapBoundSchema.default(DEFAULT_ADAPTIVE_SWAP_BOUND),
     rebuildTrigger: adaptiveRebuildTriggerSchema.nullable().default(null),
     /** Share (0–1) of evaluation opponents drawn from the reference field rather than the current opponent. */
@@ -161,6 +176,16 @@ export function parseAdaptiveConfig(input: unknown): AdaptiveConfig {
  * without the store treating it as a different run, the same guarantee
  * `configHashOf` gives `ExperimentConfig`.
  */
+/**
+ * Expands a config's bare `pilotIds` into the full `PilotSpec[]`
+ * `runAdaptiveExperiment` requires, the same `{ id }` mapping
+ * `apps/admin-server/src/lab/expand.ts`'s `common` helper already uses for
+ * every other experiment builder's `pilotIds` (Q53).
+ */
+export function pilotSpecsOf(config: AdaptiveConfig): PilotSpec[] {
+  return config.pilotIds.map((id) => pilotSpecSchema.parse({ id }));
+}
+
 export function adaptiveConfigHashOf(config: AdaptiveConfig): string {
   const { output: _output, ...semantic } = config;
   return digestOf({

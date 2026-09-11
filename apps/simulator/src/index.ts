@@ -423,7 +423,12 @@ export { REPORT_SCHEMA_VERSION, renderReport, type ReportInputs } from './report
  * to itself. Exported so the status audit (M07.1) can read every artifact
  * version the simulator stamps rather than transcribing two of them by hand.
  */
-export { MATCH_STREAM_HEADER_VERSION } from './reporting/match-store.js';
+export {
+  MATCH_STREAM_HEADER_VERSION,
+  MatchStore,
+  type MatchSink,
+  type MatchStoreOptions,
+} from './reporting/match-store.js';
 export { REFERENCE_POPULATION_VERSION } from './reference-population.js';
 
 export {
@@ -479,6 +484,7 @@ export {
   adaptiveRebuildTriggerSchema,
   adaptiveSwapBoundSchema,
   parseAdaptiveConfig,
+  pilotSpecsOf,
   type AdaptiveCommanderPolicy,
   type AdaptiveConfig,
   type AdaptiveConfigInput,

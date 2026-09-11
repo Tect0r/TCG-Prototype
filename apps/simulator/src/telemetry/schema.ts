@@ -293,8 +293,22 @@ export const matchRecordSchema = z.strictObject({
   orderKey: z.string(),
 
   experimentId: z.string(),
-  /** Which experiment kind produced this record, for a mixed `matches.jsonl`. */
-  experimentKind: z.enum(['batch', 'search', 'comparison', 'replacement', 'robustness']),
+  /**
+   * Which experiment kind produced this record, for a mixed `matches.jsonl`.
+   *
+   * `adaptive_counter` (M08.R4) is additive: an old record only ever held one
+   * of the first five values, which stay valid, so this does not need a
+   * `TELEMETRY_SCHEMA_VERSION` bump — every prior bump changed an
+   * *observation's* shape, not this tag's allowed values.
+   */
+  experimentKind: z.enum([
+    'batch',
+    'search',
+    'comparison',
+    'replacement',
+    'robustness',
+    'adaptive_counter',
+  ]),
   /** Hash of the normalized experiment configuration. Resume rejects a mismatch. */
   configHash: z.string(),
   /**

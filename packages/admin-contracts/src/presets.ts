@@ -617,6 +617,7 @@ export const adaptiveCounterChoiceSchema = z.strictObject({
    * a benchmark needs decks to compare, an adaptive run needs one root.
    */
   startingPreconIds: startingDeckSelection,
+  pilotIds: pilotSelection,
   commanderPolicy: adaptiveCommanderPolicySchema.default('locked'),
   /** Which Commander(s) this run is focused on countering. Required only when `commanderPolicy` is `selected`. */
   selectedCommanderIds: z.array(resolvedIdSchema).max(64).default([]),

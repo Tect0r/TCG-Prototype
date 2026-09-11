@@ -11,6 +11,7 @@ import {
 } from './revision.js';
 import type { AdaptiveCheckpoint } from './checkpoint.js';
 import { runAdaptiveExperiment, runAdaptiveFinalValidation, type AdaptiveRawEvent } from './run.js';
+import { ADAPTIVE_CONFIG_SCHEMA_VERSION } from './version.js';
 
 /**
  * M08.18B: resumable orchestration.
@@ -82,7 +83,7 @@ function root(deck: SimDeck): AdaptiveRevision {
  */
 function baseConfig(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
   return {
-    schemaVersion: 1,
+    schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
     id: EXPERIMENT_ID,
     label: '',
     seed: SEED,
@@ -96,6 +97,8 @@ function baseConfig(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
     blockSize: 1,
     mirrorSeats: true,
     candidateCount: 2,
+    pilotIds: ['value'],
+    limits: FAST_LIMITS,
     swapBound: { minCards: 1, maxCards: 1 },
     rebuildTrigger: null,
     referenceFieldShare: 0,

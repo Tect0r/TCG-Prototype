@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import {
   adminError,
   type AdminError,
@@ -10,19 +12,49 @@ import {
 } from '@tcg/admin-contracts';
 import { err, isErr, ok } from '@tcg/shared';
 import {
+  adaptiveCheckpointSchema,
+  adaptiveConfigHashOf,
+  adaptiveRawRecordSchema,
+  adaptiveResultSchema,
+  buildAdaptiveResult,
   configHashOf,
+  freshAdaptiveCheckpoint,
   isExperimentStopped,
+  MatchStore,
+  parseAdaptiveCheckpoint,
+  pilotSpecsOf,
+  resolveEnvironment,
+  runAdaptiveExperiment,
+  runAdaptiveFinalValidation,
   runExperiment as runExperimentDirectly,
+  ADAPTIVE_RAW_SCHEMA_VERSION,
+  ADAPTIVE_RESULT_SCHEMA_VERSION,
 } from '@tcg/simulator';
-import type { ExperimentConfig } from '@tcg/simulator';
+import type {
+  AdaptiveCheckpoint,
+  AdaptiveConfig,
+  AdaptiveGenerationRecord,
+  AdaptiveRawEvent,
+  AdaptiveScreeningRound,
+  AdaptiveSeriesRecord,
+  AdaptiveValidationRun,
+  Environment,
+  ExperimentConfig,
+  RunAdaptiveExperimentOptions,
+} from '@tcg/simulator';
 
+import { readDocumentText, writeJsonAtomically } from '../catalog/files.js';
 import { resolveResultLocation, type ResolvedCatalogRoots } from '../catalog/roots.js';
 import type { CatalogResult, CatalogStore } from '../catalog/store.js';
 import { estimateExperiment } from '../lab/estimate.js';
 import { scrubRefusal } from '../lab/expand.js';
+import { CHECKPOINT_DOCUMENT, RESULT_DOCUMENT } from '../service/adaptive-results.js';
 import { settleActionFor, type RunControl, type StopReason } from './control.js';
 import { readRunIdentity } from './manifest.js';
 import { readCanonicalProgress, type CanonicalReading } from './progress.js';
+
+/** The third document an Adaptive Counter run writes, beside the checkpoint and the result (`./job-runner.ts` is its only writer, `envelopes.ts`'s own doc comment). Not read back anywhere yet — M08.R5 is the crash-safe rewrite of how it accumulates. */
+const RAW_DOCUMENT = 'adaptive-raw.json';
 
 /**
  * The bridge from one catalog job to one canonical experiment directory — the
@@ -210,6 +242,10 @@ export class ExperimentRunner {
     const started = await this.#store.applyJobAction({ jobId, action: 'start', cause: 'runner' });
     if (isErr(started)) return started;
 
+    if (before.value.spec.kind === 'adaptive_counter') {
+      return this.#runAdaptive(jobId, before.value, started.value, attempt);
+    }
+
     const prepared = await this.#prepare(before.value, started.value, attempt);
     if (isErr(prepared)) return this.#fail(jobId, prepared.error, before.value.progress);
 
@@ -396,6 +432,352 @@ export class ExperimentRunner {
     if (isErr(recorded)) return recorded;
 
     return ok({ config: config.value, execution, directory: resolved.value });
+  }
+
+  /**
+   * The adaptive counterpart to `run`'s body (M08.R4).
+   *
+   * Structured the same way — prepare, drive, settle — but an Adaptive Counter
+   * job has no `runExperiment` to call: it drives `runAdaptiveExperiment` and
+   * `runAdaptiveFinalValidation` directly, accumulates the raw events they
+   * report, and writes the three documents `envelopes.ts` names (raw,
+   * checkpoint, result) itself. There is no manifest and no
+   * `StoredResultReference` — an Adaptive Counter job's `result` field stays
+   * `null` forever; `AdaptiveResultReader` reads its own two canonical
+   * documents from the same directory this method resolves, keyed on
+   * `experimentId` exactly as `#prepareAdaptive` resolves it, which is what
+   * keeps the runner and the reader pointed at the same evidence.
+   */
+  async #runAdaptive(
+    jobId: JobId,
+    before: CatalogJobDocument,
+    started: CatalogJobDocument,
+    attempt: JobAttemptOptions,
+  ): Promise<CatalogResult<JobRunOutcome>> {
+    const prepared = await this.#prepareAdaptive(before, started, attempt);
+    if (isErr(prepared)) return this.#fail(jobId, prepared.error, before.progress);
+
+    const { config, environment, sink, execution, directory } = prepared.value;
+    const checkpoint = prepared.value.checkpoint;
+
+    const carriedElapsedMs = before.progress.elapsedMs ?? 0;
+    const attemptStartedMs = this.#clock().getTime();
+
+    /**
+     * An Adaptive Counter run discovers how many evaluation blocks it needs
+     * rather than scheduling them up front (`planAdaptiveBudget`'s own
+     * `gamesScheduled` only covers whole learning blocks, never the screening
+     * games the same budget also pays for), so the one honest exact figure is
+     * the two budgets a run can never exceed: the learning series and the
+     * frozen final validation. `scheduleAdaptiveValidation` plays
+     * `finalValidationGames` per seat orientation, so a mirrored run doubles
+     * it, exactly as `validate.ts`'s own doc comment says. `isBound: true`
+     * says a completed run's `completedMatches` may land under this figure —
+     * most of it is screening, which does not have to spend every game the
+     * budget allows — but never over it.
+     */
+    const scheduled = {
+      matches:
+        config.totalLearningBudget + config.finalValidationGames * (config.mirrorSeats ? 2 : 1),
+      isBound: true,
+    };
+
+    // Seeded from the checkpoint this attempt starts from, then kept current
+    // by `onRawEvent` below — the same "generation, and whether it is still
+    // being decided" pair `stageRefSchema`'s own doc comment asks an adaptive
+    // job to report, without a second formula that recomputes it from scratch.
+    let stageGeneration = checkpoint.nextGeneration;
+    let stagePending = checkpoint.pendingGeneration !== null;
+    const stageOf = (): Progress['stage'] => ({
+      stageId: `gen-${String(stageGeneration)}-${stagePending ? 'pending' : 'active'}`,
+      ordinal: stageGeneration - 1,
+      total: null,
+    });
+
+    let highWater = -1;
+    let latest: Progress = before.progress;
+    const record = async (reading: CanonicalReading): Promise<Progress> => {
+      if (reading.completedMatches < highWater) return latest;
+      highWater = reading.completedMatches;
+
+      const exceedsSchedule = reading.completedMatches > scheduled.matches;
+      const progress: Progress = {
+        completedMatches: reading.completedMatches,
+        scheduledMatches: exceedsSchedule ? null : scheduled.matches,
+        scheduledIsBound: exceedsSchedule ? false : scheduled.isBound,
+        stage: stageOf(),
+        elapsedMs: carriedElapsedMs + Math.max(0, this.#clock().getTime() - attemptStartedMs),
+      };
+      latest = progress;
+      try {
+        await this.#store.setJobProgress(jobId, progress);
+      } catch {
+        // Deliberately ignored; see `run`'s own `record`.
+      }
+      return progress;
+    };
+
+    await record(await readCanonicalProgress(directory));
+    const poll = this.#startPolling(directory, record);
+
+    const series: AdaptiveSeriesRecord[] = [];
+    const generations: AdaptiveGenerationRecord[] = [];
+    const screeningRounds: AdaptiveScreeningRound[] = [];
+    const onRawEvent = (event: AdaptiveRawEvent): void => {
+      switch (event.kind) {
+        case 'series':
+          series.push(event.record);
+          stageGeneration = event.record.generation;
+          stagePending = false;
+          break;
+        case 'generation':
+          generations.push(event.record);
+          stageGeneration = event.record.generation;
+          stagePending = true;
+          break;
+        case 'screeningRound':
+          screeningRounds.push(event.record);
+          stageGeneration = event.record.generation;
+          stagePending = false;
+          break;
+      }
+    };
+
+    const control = attempt.control;
+    const runOptions: RunAdaptiveExperimentOptions = {
+      environment,
+      config,
+      experimentKind: 'adaptive_counter',
+      pilots: pilotSpecsOf(config),
+      limits: config.limits,
+      retention: config.retention,
+      workers: execution.workers,
+      sink,
+      checkpoint,
+      onRawEvent,
+      ...(control === undefined ? {} : { shouldStop: () => control.stopRequested() }),
+    };
+
+    let finalCheckpoint: AdaptiveCheckpoint;
+    try {
+      finalCheckpoint = await runAdaptiveExperiment(runOptions);
+    } catch (cause) {
+      sink.flush?.();
+      poll.stop();
+      await record(await readCanonicalProgress(directory));
+      if (isExperimentStopped(cause)) {
+        // Nothing decided since `checkpoint` was loaded — the caller's own
+        // copy is exactly what a retry replays, the same guarantee
+        // `run.test.ts` documents for `runAdaptiveExperiment` itself. Written
+        // back so a first attempt's freshly constructed checkpoint is on disk
+        // for the restart that resumes it, not only reconstructible from it.
+        await this.#writeAdaptiveCheckpoint(directory, checkpoint);
+        return this.#settle(jobId, latest, null);
+      }
+      return this.#fail(jobId, [runFailed(cause, jobId)], latest);
+    } finally {
+      poll.stop();
+    }
+
+    sink.flush?.();
+    await record(await readCanonicalProgress(directory));
+
+    let validation: AdaptiveValidationRun | null = null;
+    if (finalCheckpoint.pendingGeneration === null) {
+      try {
+        validation = await runAdaptiveFinalValidation({ ...runOptions, checkpoint: finalCheckpoint });
+      } catch (cause) {
+        sink.flush?.();
+        poll.stop();
+        await record(await readCanonicalProgress(directory));
+        if (isExperimentStopped(cause)) {
+          // The learning series is fully decided either way; validation never
+          // mutates a checkpoint (`run.ts`'s own doc comment), so the final one
+          // is exactly what a retry resumes into.
+          await this.#writeAdaptiveCheckpoint(directory, finalCheckpoint);
+          return this.#settle(jobId, latest, null);
+        }
+        return this.#fail(jobId, [runFailed(cause, jobId)], latest);
+      }
+      sink.flush?.();
+      await record(await readCanonicalProgress(directory));
+    }
+
+    const result = buildAdaptiveResult({
+      informationPolicy: config.informationPolicy,
+      checkpoint: finalCheckpoint,
+      series,
+      screeningRounds,
+      validation,
+    });
+    const configHash = adaptiveConfigHashOf(config);
+
+    await writeJsonAtomically(
+      join(directory, RAW_DOCUMENT),
+      adaptiveRawRecordSchema.parse({
+        schemaVersion: ADAPTIVE_RAW_SCHEMA_VERSION,
+        experimentId: config.id,
+        configHash,
+        generations,
+        series,
+        screeningRounds,
+      }),
+    );
+    await this.#writeAdaptiveCheckpoint(directory, finalCheckpoint);
+    await writeJsonAtomically(
+      join(directory, RESULT_DOCUMENT),
+      adaptiveResultSchema.parse({
+        schemaVersion: ADAPTIVE_RESULT_SCHEMA_VERSION,
+        experimentId: config.id,
+        configHash,
+        ...result,
+      }),
+    );
+
+    // No `attachJobResult`: an Adaptive Counter job's `result` field stays
+    // `null` forever, and `AdaptiveResultReader` reads the two documents just
+    // written, directory-keyed, independent of this job document.
+    const settlement = await this.#settleIfRequested(jobId, latest, null);
+    if (settlement !== null) return settlement;
+
+    const completed = await this.#store.applyJobAction({
+      jobId,
+      action: 'complete',
+      cause: 'runner',
+    });
+    if (isErr(completed)) return completed;
+
+    return ok({
+      jobId,
+      status: 'completed',
+      stopReason: null,
+      progress: latest,
+      identity: null,
+      failure: null,
+    });
+  }
+
+  async #writeAdaptiveCheckpoint(directory: string, checkpoint: AdaptiveCheckpoint): Promise<void> {
+    await writeJsonAtomically(
+      join(directory, CHECKPOINT_DOCUMENT),
+      adaptiveCheckpointSchema.parse(checkpoint),
+    );
+  }
+
+  /**
+   * The adaptive counterpart to `#prepare`.
+   *
+   * Two deliberate divergences from the experiment path, both required by
+   * M08.R4's own acceptance: the directory is keyed on the configuration's own
+   * `experimentId`, not `jobId`, because that is the address
+   * `AdaptiveResultReader` already resolves a run at — matching it is what
+   * makes this job's provenance point at the exact output the dashboard reads,
+   * rather than a second, job-keyed copy of the same run. And there is no
+   * `config.value.workers` to fall back to — `AdaptiveConfig` has none, per
+   * Q53 — so a caller with no opinion gets the same default-of-one every other
+   * `workers` field in this codebase declares.
+   */
+  async #prepareAdaptive(
+    before: CatalogJobDocument,
+    started: CatalogJobDocument,
+    attempt: JobAttemptOptions,
+  ): Promise<
+    CatalogResult<{
+      readonly config: AdaptiveConfig;
+      readonly environment: Environment;
+      readonly checkpoint: AdaptiveCheckpoint;
+      readonly sink: MatchStore;
+      readonly execution: JobExecution;
+      readonly directory: string;
+    }>
+  > {
+    const spec = before.spec;
+    if (spec.kind !== 'adaptive_counter') {
+      return err([runFailed(new Error('not an Adaptive Counter job'), before.jobId)]);
+    }
+
+    const location: ResultLocation = before.execution?.location ?? {
+      rootId: this.#resultRootId,
+      directory: spec.experimentId,
+    };
+
+    const resolved = await resolveResultLocation(this.#roots, location);
+    if (isErr(resolved)) return resolved;
+
+    const config = await this.#store.readAdaptiveJobConfig(before.jobId);
+    if (isErr(config)) return config;
+
+    const configHash = adaptiveConfigHashOf(config.value);
+    if (configHash !== spec.configHash) {
+      return err([configDrifted(before.jobId)]);
+    }
+
+    const reading = await readCanonicalProgress(resolved.value);
+    if (reading.streamIdentity !== null && reading.streamIdentity.configHash !== spec.configHash) {
+      return err([streamDrifted(before.jobId)]);
+    }
+
+    let environment: Environment;
+    let checkpoint: AdaptiveCheckpoint;
+    let sink: MatchStore;
+    try {
+      environment = resolveEnvironment(config.value.environment);
+      checkpoint = await this.#loadOrCreateAdaptiveCheckpoint(
+        resolved.value,
+        config.value,
+        configHash,
+        environment,
+      );
+      sink = new MatchStore(resolved.value, {
+        experimentId: config.value.id,
+        experimentKind: 'adaptive_counter',
+        configHash,
+        resume: true,
+      });
+    } catch (cause) {
+      return err([runFailed(cause, before.jobId)]);
+    }
+
+    const execution: JobExecution = {
+      location,
+      mode: 'in_process_workers',
+      workers: attempt.workers ?? this.#workers ?? 1,
+      attempts: (before.execution?.attempts ?? 0) + 1,
+      lastStartedAt: started.timestamps.updatedAt,
+      resumedMatches: reading.completedMatches,
+    };
+
+    const recorded = await this.#store.setJobExecution(before.jobId, execution);
+    if (isErr(recorded)) return recorded;
+
+    return ok({
+      config: config.value,
+      environment,
+      checkpoint,
+      sink,
+      execution,
+      directory: resolved.value,
+    });
+  }
+
+  /** Reads `adaptive-checkpoint.json` if this job has one, or constructs a fresh one otherwise — never both. */
+  async #loadOrCreateAdaptiveCheckpoint(
+    directory: string,
+    config: AdaptiveConfig,
+    configHash: string,
+    environment: Environment,
+  ): Promise<AdaptiveCheckpoint> {
+    const text = await readDocumentText(join(directory, CHECKPOINT_DOCUMENT));
+    if (text === null) return freshAdaptiveCheckpoint(config, environment);
+
+    const checkpoint = parseAdaptiveCheckpoint(JSON.parse(text));
+    if (checkpoint.experimentId !== config.id || checkpoint.configHash !== configHash) {
+      throw new Error(
+        'This job’s checkpoint was written for a different configuration, so resuming into it ' +
+          'would produce a run that is neither. Nothing was played.',
+      );
+    }
+    return checkpoint;
   }
 
   /**

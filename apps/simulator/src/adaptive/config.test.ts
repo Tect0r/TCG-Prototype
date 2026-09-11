@@ -3,11 +3,14 @@ import { ZodError } from 'zod';
 import {
   ADAPTIVE_COMMANDER_POLICIES,
   ADAPTIVE_INFORMATION_POLICIES,
+  adaptiveConfigHashOf,
   adaptiveConfigSchema,
   adaptiveRebuildTriggerSchema,
   adaptiveSwapBoundSchema,
   parseAdaptiveConfig,
+  pilotSpecsOf,
 } from './config.js';
+import { ADAPTIVE_CONFIG_SCHEMA_VERSION } from './version.js';
 
 /**
  * M08.16A: the strict config surface and its policy bounds, proved without
@@ -17,7 +20,7 @@ import {
 
 function validConfig(overrides: Record<string, unknown> = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
     id: 'my-adaptive-run',
     seed: 'adaptive-fixture-seed',
     environment: { id: 'fixture_env' },
@@ -26,6 +29,7 @@ function validConfig(overrides: Record<string, unknown> = {}) {
     blockSize: 20,
     candidateCount: 4,
     finalValidationGames: 50,
+    pilotIds: ['value'],
     ...overrides,
   };
 }
@@ -46,6 +50,12 @@ describe('adaptiveConfigSchema: strict surface', () => {
       replaySampleRate: 50,
       keepLogs: false,
       keepDecisions: false,
+    });
+    expect(parsed.limits).toEqual({
+      maxTurns: 200,
+      maxActions: 6000,
+      maxDecisionsPerSeat: 4000,
+      noProgressWindow: 60,
     });
   });
 
@@ -209,5 +219,62 @@ describe('adaptiveConfigSchema: schema identity', () => {
 
   it('round-trips through adaptiveConfigSchema directly, not only the parse helper', () => {
     expect(() => adaptiveConfigSchema.parse(validConfig())).not.toThrow();
+  });
+
+  it('refuses a schemaVersion-1 config (predates pilotIds/limits, Q53) rather than migrating it', () => {
+    const { pilotIds: _pilotIds, limits: _limits, ...legacy } = validConfig();
+    expect(() => parseAdaptiveConfig({ ...legacy, schemaVersion: 1 })).toThrow(
+      /older build.*no migration/s,
+    );
+  });
+});
+
+/** Q53: pilots and per-match limits are explicit, stored, hashed config inputs. */
+describe('adaptiveConfigSchema: pilotIds and limits (Q53)', () => {
+  it('refuses a config with no pilotIds', () => {
+    expect(() => parseAdaptiveConfig(validConfig({ pilotIds: [] }))).toThrow(ZodError);
+  });
+
+  it('refuses a pilotId outside the registered enum', () => {
+    expect(() => parseAdaptiveConfig(validConfig({ pilotIds: ['not_a_pilot'] }))).toThrow(ZodError);
+  });
+
+  it('accepts multiple distinct pilotIds', () => {
+    const parsed = parseAdaptiveConfig(validConfig({ pilotIds: ['value', 'aggressive'] }));
+    expect(parsed.pilotIds).toEqual(['value', 'aggressive']);
+  });
+
+  it('round-trips explicit limits overrides rather than silently defaulting them', () => {
+    const parsed = parseAdaptiveConfig(
+      validConfig({ limits: { maxTurns: 40, noProgressWindow: 10 } }),
+    );
+    expect(parsed.limits).toEqual({
+      maxTurns: 40,
+      maxActions: 6000,
+      maxDecisionsPerSeat: 4000,
+      noProgressWindow: 10,
+    });
+  });
+
+  it('changes the config hash when pilotIds change', () => {
+    const base = parseAdaptiveConfig(validConfig());
+    const changed = parseAdaptiveConfig(validConfig({ pilotIds: ['aggressive'] }));
+    expect(adaptiveConfigHashOf(changed)).not.toBe(adaptiveConfigHashOf(base));
+  });
+
+  it('changes the config hash when limits change', () => {
+    const base = parseAdaptiveConfig(validConfig());
+    const changed = parseAdaptiveConfig(validConfig({ limits: { maxTurns: 5 } }));
+    expect(adaptiveConfigHashOf(changed)).not.toBe(adaptiveConfigHashOf(base));
+  });
+});
+
+describe('pilotSpecsOf: Q53 pilotIds -> PilotSpec expansion', () => {
+  it('maps each pilotId to a full PilotSpec with defaulted weights/randomConfig', () => {
+    const config = parseAdaptiveConfig(validConfig({ pilotIds: ['value', 'aggressive'] }));
+    expect(pilotSpecsOf(config)).toEqual([
+      { id: 'value', weights: {}, randomConfig: {} },
+      { id: 'aggressive', weights: {}, randomConfig: {} },
+    ]);
   });
 });

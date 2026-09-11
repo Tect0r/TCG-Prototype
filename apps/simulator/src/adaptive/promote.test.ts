@@ -21,6 +21,7 @@ import {
   type AdaptiveCandidateEvidence,
   type AdaptiveSeriesEntry,
 } from './promote.js';
+import { ADAPTIVE_CONFIG_SCHEMA_VERSION } from './version.js';
 
 /**
  * M08.17C: deciding, from finished screening evidence, which candidate (if
@@ -64,7 +65,7 @@ function revision(label: string, revisionDeck: SimDeck, generation = 0): Adaptiv
 
 function baseConfig(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
   return {
-    schemaVersion: 1,
+    schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
     id: 'promote-test',
     label: '',
     seed: 'promote-fixture-seed',
@@ -78,6 +79,8 @@ function baseConfig(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
     blockSize: 20,
     mirrorSeats: true,
     candidateCount: 6,
+    pilotIds: ['value'],
+    limits: { maxTurns: 200, maxActions: 6000, maxDecisionsPerSeat: 4000, noProgressWindow: 60 },
     swapBound: { minCards: 1, maxCards: 3 },
     rebuildTrigger: null,
     referenceFieldShare: 0,

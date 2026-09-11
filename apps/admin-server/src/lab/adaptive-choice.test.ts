@@ -21,6 +21,7 @@ function choice(overrides: Record<string, unknown> = {}): PresetChoiceInput {
     experimentId: 'adaptive-search',
     seed: 'preset-2026-08',
     startingPreconIds: [A_PRECON],
+    pilotIds: ['value'],
     totalLearningBudget: 100,
     blockSize: 10,
     candidateCount: 4,

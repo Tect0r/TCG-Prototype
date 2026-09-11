@@ -8,6 +8,7 @@ import {
 } from '@tcg/admin-contracts';
 import { unwrap, type IdSources } from '@tcg/shared';
 import {
+  ADAPTIVE_CONFIG_SCHEMA_VERSION,
   environmentConfigForFormat,
   parseAdaptiveConfig,
   parseExperimentConfig,
@@ -177,18 +178,23 @@ export function testAdaptiveConfig(
     readonly seed?: string;
     readonly totalLearningBudget?: number;
     readonly blockSize?: number;
+    readonly candidateCount?: number;
+    readonly finalValidationGames?: number;
+    readonly mirrorSeats?: boolean;
   } = {},
 ): AdaptiveConfig {
   return parseAdaptiveConfig({
-    schemaVersion: 1,
+    schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
     id: overrides.id ?? 'fixture-adaptive',
     seed: overrides.seed ?? 'fixture-adaptive-seed',
     environment: FIXTURE_ENVIRONMENT,
     startingDecks: { kind: 'precon', preconIds: ['precon_goblin_swarm'] },
     totalLearningBudget: overrides.totalLearningBudget ?? 100,
     blockSize: overrides.blockSize ?? 10,
-    candidateCount: 4,
-    finalValidationGames: 20,
+    candidateCount: overrides.candidateCount ?? 4,
+    pilotIds: ['value'],
+    finalValidationGames: overrides.finalValidationGames ?? 20,
+    mirrorSeats: overrides.mirrorSeats ?? true,
   });
 }
 

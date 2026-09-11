@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z, ZodError } from 'zod';
 import {
+  ADAPTIVE_CONFIG_SCHEMA_VERSION,
   ADAPTIVE_VERSION_FIELDS,
   assertCompatibleAdaptiveVersion,
   CURRENT_ADAPTIVE_VERSIONS,
@@ -63,14 +64,17 @@ describe('assertCompatibleAdaptiveVersion', () => {
 });
 
 describe('parseAdaptiveDocument', () => {
-  const schema = z.strictObject({ schemaVersion: z.literal(1), value: z.string() });
+  const schema = z.strictObject({
+    schemaVersion: z.literal(ADAPTIVE_CONFIG_SCHEMA_VERSION),
+    value: z.string(),
+  });
 
   it('refuses a future schemaVersion before the strict shape is even checked', () => {
     // `value` is also missing here — if the version check ran second, this
     // would fail with a shape error instead of the readable version message.
-    expect(() => parseAdaptiveDocument('config', schema, { schemaVersion: 2 })).toThrow(
-      /newer build/,
-    );
+    expect(() =>
+      parseAdaptiveDocument('config', schema, { schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION + 1 }),
+    ).toThrow(/newer build/);
   });
 
   it('refuses a missing schemaVersion with the readable message', () => {
@@ -80,12 +84,19 @@ describe('parseAdaptiveDocument', () => {
   });
 
   it('falls through to the ordinary strict-schema error once the version is readable', () => {
-    expect(() => parseAdaptiveDocument('config', schema, { schemaVersion: 1 })).toThrow(ZodError);
+    expect(() =>
+      parseAdaptiveDocument('config', schema, { schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION }),
+    ).toThrow(ZodError);
   });
 
   it('parses a compatible, well-shaped document', () => {
-    expect(parseAdaptiveDocument('config', schema, { schemaVersion: 1, value: 'x' })).toEqual({
-      schemaVersion: 1,
+    expect(
+      parseAdaptiveDocument('config', schema, {
+        schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
+        value: 'x',
+      }),
+    ).toEqual({
+      schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
       value: 'x',
     });
   });

@@ -12,6 +12,7 @@ import {
   type GenerateAdaptiveCandidatesInput,
 } from './generate.js';
 import type { AdaptiveConfig } from './config.js';
+import { ADAPTIVE_CONFIG_SCHEMA_VERSION } from './version.js';
 
 /**
  * M08.16C: deterministic legal candidate generation, proved without any
@@ -45,7 +46,7 @@ const environment = tinyEnvironment();
 
 function baseConfig(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
   return {
-    schemaVersion: 1,
+    schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
     id: 'gen-test',
     label: '',
     seed: 'gen-fixture-seed',
@@ -59,6 +60,8 @@ function baseConfig(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
     blockSize: 20,
     mirrorSeats: true,
     candidateCount: 6,
+    pilotIds: ['value'],
+    limits: { maxTurns: 200, maxActions: 6000, maxDecisionsPerSeat: 4000, noProgressWindow: 60 },
     swapBound: { minCards: 1, maxCards: 3 },
     rebuildTrigger: null,
     referenceFieldShare: 0,

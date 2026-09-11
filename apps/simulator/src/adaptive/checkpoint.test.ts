@@ -17,6 +17,7 @@ import {
   parseAdaptiveCheckpoint,
   type AdaptiveCheckpoint,
 } from './checkpoint.js';
+import { ADAPTIVE_CONFIG_SCHEMA_VERSION } from './version.js';
 
 /**
  * M08.18A: the strict checkpoint contract — active revisions, lineage,
@@ -262,7 +263,7 @@ describe('freshAdaptiveCheckpoint', () => {
 
   function config(overrides: Partial<AdaptiveConfig> = {}): AdaptiveConfig {
     return {
-      schemaVersion: 1,
+      schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
       id: EXPERIMENT_ID,
       label: '',
       seed: SEED,
@@ -279,6 +280,8 @@ describe('freshAdaptiveCheckpoint', () => {
       blockSize: 1,
       mirrorSeats: true,
       candidateCount: 2,
+      pilotIds: ['value'],
+      limits: { maxTurns: 200, maxActions: 6000, maxDecisionsPerSeat: 4000, noProgressWindow: 60 },
       swapBound: { minCards: 1, maxCards: 1 },
       rebuildTrigger: null,
       referenceFieldShare: 0,

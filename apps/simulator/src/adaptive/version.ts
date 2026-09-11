@@ -26,7 +26,8 @@ import type { z } from 'zod';
  * applies here for the first time in this app.
  */
 
-export const ADAPTIVE_CONFIG_SCHEMA_VERSION = 1;
+/** 2: M08.R4 widens the config with mandatory `pilotIds` and `limits`, per-run inputs the runner must consume rather than default. */
+export const ADAPTIVE_CONFIG_SCHEMA_VERSION = 2;
 /**
  * 2: M08.16C additively widens the raw stream with generation records.
  * 3: M08.18D additively widens the raw stream with series and screening-round records.
@@ -79,17 +80,19 @@ export function isFutureAdaptiveVersion(
  * strict schema is even reached. `null` when the version is one this build
  * can read.
  *
- * Two of the four fields still start at 1, so the "older build" branch below
- * is unreached for `config` and `result` — there is no earlier document of
- * theirs anywhere to refuse. It stays beside the "newer build" branch anyway,
- * for the same reason `refusePastVersion` was written into
- * `@tcg/admin-contracts` ahead of the version move that first needed it: the
- * day a number moves, the readable refusal must already exist rather than
- * being invented under pressure at that milestone. `raw` moved first, at
- * M08.16C — a schemaVersion-1 raw record predates candidate generation and is
- * refused as an older build, never guessed at. `checkpoint` moved next, at
- * M08.18A — a schemaVersion-1 checkpoint predates every real resumable field
- * this file now requires and is refused the same way.
+ * One of the four fields still starts at 1, so the "older build" branch below
+ * is unreached for `result` — there is no earlier document of it anywhere to
+ * refuse. It stays beside the "newer build" branch anyway, for the same
+ * reason `refusePastVersion` was written into `@tcg/admin-contracts` ahead of
+ * the version move that first needed it: the day a number moves, the
+ * readable refusal must already exist rather than being invented under
+ * pressure at that milestone. `raw` moved first, at M08.16C — a
+ * schemaVersion-1 raw record predates candidate generation and is refused as
+ * an older build, never guessed at. `checkpoint` moved next, at M08.18A — a
+ * schemaVersion-1 checkpoint predates every real resumable field this file
+ * now requires and is refused the same way. `config` moved third, at M08.R4
+ * (Q53) — a schemaVersion-1 config predates `pilotIds`/`limits` and is
+ * refused rather than run with a hidden runner default.
  */
 export function describeAdaptiveVersionProblem(
   field: AdaptiveVersionField,
