@@ -5402,3 +5402,93 @@ next slice; the root Status table is untouched (tranche-close only).
 
 Next slice: M08.R4 — Adaptive runner dispatch and lifecycle (Correction
 Tranche B). Not started this session.
+
+## M08.R4 — Adaptive runner dispatch and lifecycle (2026-09-11): investigated, blocked
+
+Attempted the slice named above. No `job.ts` wiring was written; the only
+code change kept is one inert export
+(`RESULT_DOCUMENT`/`CHECKPOINT_DOCUMENT` made `export const` in
+`apps/admin-server/src/service/adaptive-results.ts`, so whichever session
+writes `job.ts`/`progress.ts` can import the same literals rather than
+duplicating them) — typecheck clean,
+`adaptive-results.test.ts` 22/22 still passing.
+
+**Settled this session, so a future session should not re-derive them.**
+Directory mapping: `job-runner.ts#prepare()` can set
+`execution.location = spec.experimentId` directly (not `jobId`, unlike the
+ordinary-experiment path) — this is exactly what
+`AdaptiveResultReader#resolve` in `adaptive-results.ts` already resolves
+against, and `adaptiveExperimentIdSchema`'s `^[a-z][a-z0-9_-]*$` (max 40)
+regex is already traversal-proof, so no new validation is needed. Resume/
+crash-safety: `apps/simulator/src/adaptive/run.ts`'s own header comment
+(lines 57–91) documents that retrying `runAdaptiveExperiment` with the
+*same* checkpoint object against the *same* persistent `MatchStore` is
+always safe — every phase up to and including one interrupted by
+`ExperimentStopped` replays as a no-op reconciliation against already-
+committed matches. So `job.ts` needs no incremental checkpoint-persistence
+mechanism of its own: keep the `MatchStore` open across attempts, persist
+`adaptive-checkpoint.json` once before the first phase and once after
+`runAdaptiveExperiment` returns normally, and do nothing extra to it on
+`ExperimentStopped`. Concurrent-owner protection: already fully generic in
+`job-runner.ts`'s `start` transition; needs no adaptive-specific code.
+Provenance: `RunIdentity.kind` (`packages/admin-contracts/src/catalog.ts`
+lines 177–208) is a closed `experimentKindSchema` covering only the five
+ordinary simulator kinds and must not be widened to fit `adaptive_counter` —
+so the adaptive path should skip `attachJobResult`/`RunIdentity` entirely
+and go straight from a successful run to the `complete` lifecycle action,
+leaving `CatalogJobDocument.result: null` (a separate nullable field from
+`execution`; the `complete` action has no observed dependency on it being
+set). Progress: adaptive jobs should always report
+`scheduledMatches: null, scheduledIsBound: false` (per
+`packages/admin-contracts/src/estimate.ts`'s `adaptiveWorkloadEstimateSchema`
+doc comment — an adaptive run has no stage list to schedule a total from);
+a new `readAdaptiveCanonicalProgress(directory)` is needed in
+`apps/admin-server/src/run/progress.ts`, reading `adaptive-checkpoint.json`
+leniently and mapping to
+`{stageId: checkpoint.pendingGeneration === null ? 'generation' : 'screening', ordinal: checkpoint.nextGeneration, total: null}`.
+Raw-record crash-safety (idempotent persistence of `AdaptiveRawEvent`s,
+fault injection) is confirmed out of scope for R4 — it is M08.R5's named
+job (`M08.5_FINAL_CORRECTION_PASS.md` lines 154–178).
+
+**The blocker.** Writing `job.ts` requires a fresh-checkpoint constructor
+from `AdaptiveConfig` — no such constructor exists anywhere in production
+code (grepped every non-test caller of `makeAdaptiveRevision`/
+`construction: 'root'`; the only production match is `revision.ts`'s own
+definition, everything else is `run.test.ts`). Building it collides with
+already-shipped, already-tested engine logic. `packages/admin-contracts/
+src/presets.ts`'s `adaptiveCounterChoiceSchema` doc comment (confirmed
+from two independent reads across sessions) requires `AdaptiveConfig.
+startingDecks` to resolve to **one** deck, shared as the generation-0 root
+for **both** co-evolving lineages ("an adaptive run needs one root"). But
+`apps/simulator/src/adaptive/run.ts`'s `deriveBlockOutcome`/
+`winnerDeckHashOf` attribute a block's winner by **deck content hash**
+(`if (winner === incumbentDeckHash) incumbentWins += 1; else if (winner ===
+opponentDeckHash) opponentWins += 1;`), and `packages/deck-generator/src/
+deck.ts`'s own doc comment states the hash is deliberately content-only
+("two decks with identical cards are the same deck to the engine and to
+every replay, whoever built them"). When both lineages' root is the
+identical resolved deck, `incumbentDeckHash === opponentDeckHash` at block
+0, so the `if`/`else if` ordering silently attributes every decisive win in
+the opening block to `incumbent`; `opponentWins` cannot be incremented no
+matter how the games actually played out. `decideAdaptiveBlock` then
+deterministically decides `{kind: 'win', loser: 'opponent'}` for every
+adaptive run's first block regardless of skill — the concrete first block
+every job this slice would dispatch is guaranteed to play, not a
+hypothetical edge case. `run.test.ts`'s `freshCheckpoint()` fixture has
+never caught this because it deliberately gives the two roots different
+(weak/dominant) decks so the suite has a legible winner.
+
+Resolving it means changing one of two things this slice has no standing
+to decide alone: the shared-single-root-deck contract `presets.ts` already
+documents twice, or `run.ts`'s existing win-attribution logic to key off
+something other than deck content hash (e.g. seat/schedule identity) — a
+simulator engine-correctness change to already-shipped, already-tested
+code, outside "runner dispatch and lifecycle"'s stated scope. Per
+CLAUDE.md's engineering invariant ("do not silently invent unresolved
+rules"), recorded here and in `IMPLEMENTATION_PLAN.md` instead of guessed
+at. No tranche checklist, root Status table, or `docs/status-audit.md` was
+touched — this slice did not complete.
+
+Next slice: still M08.R4, but implementation cannot start until an owner
+decides how the two lineages' generation-0 roots are meant to differ under
+the single-shared-root-deck contract.

@@ -63,8 +63,15 @@ import type { ResultColumn, ResultRow } from '@tcg/admin-contracts';
  * `admin/no_result` refusal rather than as a substitute result.
  */
 
-const RESULT_DOCUMENT = 'adaptive-result.json' as const;
-const CHECKPOINT_DOCUMENT = 'adaptive-checkpoint.json' as const;
+/**
+ * Exported, unlike the rest of this module's internals: `run/job-runner.ts`
+ * (M08.R4) writes these same two file names beneath a job's directory, and
+ * `run/progress.ts` reads the checkpoint one to report generation progress
+ * while a run is in flight. One literal, not three, keeps the writer, the
+ * live-progress reader and this settled-result reader from drifting apart.
+ */
+export const RESULT_DOCUMENT = 'adaptive-result.json' as const;
+export const CHECKPOINT_DOCUMENT = 'adaptive-checkpoint.json' as const;
 
 /**
  * What this run's evidence may never be cited past.

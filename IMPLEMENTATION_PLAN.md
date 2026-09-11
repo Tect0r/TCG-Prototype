@@ -302,9 +302,91 @@ workspaces; full focused suites pass (`packages` 166/166, `admin-server`
 narrative in
 [the M08 milestone file's M08.R3 entry](docs/milestones/M08-ai-lab-and-player-meta.md#correction-tranche-b--executable-and-crash-safe-adaptive-counter).
 
-**Next slice: `M08.R4`** (Correction Tranche B, Adaptive runner dispatch and
-lifecycle — see `docs/milestones/M08-ai-lab-and-player-meta.md`'s correction
-pass section). Do not start it in this session.
+**M08.R4 blocked (2026-09-11), not shipped.** Investigating "Adaptive runner
+dispatch and lifecycle" surfaced a correctness gap upstream of anything this
+slice is scoped to touch, so no code beyond one inert, still-uncommitted
+export (`RESULT_DOCUMENT`/`CHECKPOINT_DOCUMENT` made `export const` in
+`apps/admin-server/src/service/adaptive-results.ts`, needed by whichever
+session writes this slice regardless of how the blocker resolves) was
+changed this session.
+
+Design questions this session did settle, so the next session does not need
+to re-derive them: the directory mapping must key on
+`AdaptiveJobSpec.experimentId` (not `jobId`) beneath the configured result
+root — the same convention `AdaptiveResultReader#resolve` already uses in
+`apps/admin-server/src/service/adaptive-results.ts`, and
+`adaptiveExperimentIdSchema`'s `^[a-z][a-z0-9_-]*$` (max 40) regex is
+traversal-proof by construction; the resume/crash-safety contract needs no
+new incremental-checkpoint mechanism, because `apps/simulator/src/adaptive/
+run.ts`'s own header comment (lines 57–91) already documents it: on
+`ExperimentStopped`, retry `runAdaptiveExperiment` with the *same* checkpoint
+object against the *same* persistent `MatchStore`, and every phase up to and
+including the interrupted one replays as a no-op reconciliation against
+already-committed matches; concurrent-owner protection needs no adaptive-
+specific code, since `job-runner.ts`'s `start` transition already serializes
+on the job's own key; provenance needs no `RunIdentity`/`attachJobResult`
+call at all — `RunIdentity.kind` is closed to the five ordinary
+`ExperimentKind`s and must not be widened to fit a job kind it was never
+meant to name, and `execution.location` (set generically by
+`#prepare()`/`setJobExecution` for every job kind already) is exactly what
+`AdaptiveResultReader` already resolves an `experimentId` against, so linking
+provenance is a byproduct of the directory-mapping decision rather than a
+separate mechanism; progress should always report
+`scheduledMatches: null, scheduledIsBound: false` for an adaptive job (an
+adaptive run has no stage list to schedule a total from —
+`packages/admin-contracts/src/estimate.ts`'s `adaptiveWorkloadEstimateSchema`
+doc comment says so explicitly, and `AdaptiveJobSpec.workloadEstimate` is a
+pre-run display figure, not a progress-computation input), with a new
+`stage` reader needed in `apps/admin-server/src/run/progress.ts` that maps
+`adaptive-checkpoint.json` leniently into `{stageId: 'generation' | 'screening', ordinal: nextGeneration, total: null}`;
+raw-record file persistence (`adaptive-raw.json` or similar) is out of scope
+for R4 entirely — that is M08.R5's named job.
+
+**The actual blocker:** nothing in this codebase yet constructs a fresh
+`AdaptiveCheckpoint` from an `AdaptiveConfig` (grepped every non-test caller
+of `makeAdaptiveRevision`/`construction: 'root'` — the only production file
+is `revision.ts`'s own definition; every other match is a test). Writing that
+constructor is unavoidably part of "dispatch," and the only spec-compliant
+way to build it collides with already-shipped, already-tested engine logic.
+`packages/admin-contracts/src/presets.ts`'s `adaptiveCounterChoiceSchema` doc
+comment is explicit and has been confirmed from two independent sources:
+`AdaptiveConfig.startingDecks` resolves to **one** deck, shared as the
+generation-0 root for **both** co-evolving lineages (`min(1)`, not
+`preconSelection`'s `min(2)` — "a benchmark needs decks to compare, an
+adaptive run needs one root"). But `apps/simulator/src/adaptive/run.ts`'s
+`deriveBlockOutcome`/`winnerDeckHashOf` attribute a block's winner by
+**deck content hash** (`if (winner === incumbentDeckHash) incumbentWins += 1;
+else if (winner === opponentDeckHash) opponentWins += 1;`), and
+`packages/deck-generator/src/deck.ts`'s own doc comment states the hash is
+deliberately content-only ("two decks with identical cards are the same deck
+to the engine and to every replay, whoever built them"). When both lineages'
+root is the identical resolved deck, `incumbentDeckHash === opponentDeckHash`
+at block 0, so the `if`/`else if` ordering silently attributes **every**
+decisive win in the opening block to `incumbent`; `opponentWins` cannot be
+incremented no matter how the games actually played out. `decideAdaptiveBlock`
+then deterministically decides `{kind: 'win', loser: 'opponent'}` for every
+adaptive run's first block, regardless of skill — not a hypothetical edge
+case, but the concrete first block every job this slice would dispatch is
+guaranteed to play. `apps/simulator/src/adaptive/run.test.ts` never exercises
+this path: its `freshCheckpoint()` fixture deliberately gives the two roots
+different (weak/dominant) decks so the suite has a legible winner, which
+means this collision has never been caught by the existing 188/188 adaptive
+suite.
+
+Resolving it means changing one of two things this slice has no standing to
+decide alone: the shared-single-root-deck contract `presets.ts` already
+documents twice, or `run.ts`'s existing win-attribution logic to key off
+something other than deck content hash (e.g. seat/schedule identity) — a
+simulator engine-correctness change to already-shipped, already-tested code,
+outside "runner dispatch and lifecycle"'s stated scope, with the kind of
+gameplay/determinism consequence CLAUDE.md reserves for an explicit decision
+rather than a session inventing one. Per CLAUDE.md's engineering invariants
+("do not silently invent unresolved rules"), this is recorded here rather
+than guessed at. **Next slice: still `M08.R4`, but it cannot proceed until
+an owner decides how the two lineages' generation-0 roots are meant to
+differ** (a deterministic per-side seed/deck perturbation? a same-hash
+special case in `deriveBlockOutcome`? something else?). Do not start
+implementation before that decision is recorded.
 
 **M08 is complete (2026-09-10).** M08.28F closed the milestone: every other
 `### Checklist` in the milestone file was already checked from earlier
