@@ -77,8 +77,9 @@ describe('the endpoint registry', () => {
     // a Player Meta partition's Coverage report named by its exact partition.
     // Plus M08.27D's two: a catalog run's Data Health report named by job ID,
     // and a Player Meta partition's Data Health report named by its exact
-    // partition.
-    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(37);
+    // partition. Plus M08.R3's one: an Adaptive Counter Search choice can be
+    // queued through its own dedicated address, never through `enqueuePreset`.
+    expect(ADMIN_ENDPOINT_NAMES).toHaveLength(38);
     for (const name of ADMIN_ENDPOINT_NAMES) {
       const spec = ADMIN_ENDPOINTS[name];
       expect(`${name}: request`).toBe(spec.request === undefined ? 'unset' : `${name}: request`);
@@ -108,11 +109,12 @@ describe('the endpoint registry', () => {
     }
   });
 
-  it('marks exactly the nine endpoints that change durable state', () => {
+  it('marks exactly the ten endpoints that change durable state', () => {
     const mutating = ADMIN_ENDPOINT_NAMES.filter((name) => ADMIN_ENDPOINTS[name].mutates);
     expect([...mutating].sort()).toEqual([
       'createBatch',
       'duplicateJob',
+      'enqueueAdaptive',
       'enqueuePreset',
       'jobAction',
       'reorderBatch',

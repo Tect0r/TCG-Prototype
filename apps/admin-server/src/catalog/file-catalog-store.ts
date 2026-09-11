@@ -44,6 +44,7 @@ import {
   type JobEventLog,
   type JobExecution,
   type JobId,
+  type JobOrigin,
   type JobStatus,
   type PageRequestInput,
   type Progress,
@@ -51,8 +52,13 @@ import {
   type StoredResultReference,
 } from '@tcg/admin-contracts';
 import { err, generateId, isErr, ok, type IdSources } from '@tcg/shared';
-import type { ExperimentConfig } from '@tcg/simulator';
+import type { AdaptiveConfig, ExperimentConfig } from '@tcg/simulator';
 
+import {
+  prepareAdaptiveJobConfig,
+  readAdaptiveJobConfig as readStoredAdaptiveJobConfig,
+  writeAdaptiveJobConfig,
+} from './adaptive-job-config.js';
 import { encodeCursor, comparePositions, decodeCursor, isAfter } from './cursor.js';
 import {
   appendJsonLine,
@@ -66,6 +72,7 @@ import {
 } from './files.js';
 import { preconCommanderIds } from '../lab/content.js';
 import { prepareJobConfig, readJobConfig, writeJobConfig } from './job-config.js';
+import { migrateCatalogDocument } from './migrations.js';
 import { commanderIdsOf, runContentOf, selectionMatches } from './run-content.js';
 import { resolveResultLocation, type ResolvedCatalogRoots } from './roots.js';
 import { KeyedMutex } from './serialize.js';
@@ -75,6 +82,7 @@ import type {
   CatalogStore,
   ComparisonAnnotationListing,
   JobActionInput,
+  NewAdaptiveJobInput,
   NewBatchInput,
   NewComparisonAnnotationInput,
   NewJobInput,
@@ -446,6 +454,99 @@ export class FileCatalogStore implements CatalogStore {
     });
   }
 
+  /**
+   * The Adaptive Counter counterpart to `createJob` (M08.R3).
+   *
+   * Mints, round-trips and writes exactly as `createJob` does, on the same
+   * batch lock — the two never race each other for a shared job ID because
+   * both mint from the one `#mint('job')` sequence, and both add to the
+   * batch's membership under the same `batchPath` lock. What differs is
+   * which sibling schema validates the stored configuration
+   * (`prepareAdaptiveJobConfig` rather than `prepareJobConfig`) and which
+   * `jobSpecSchema` branch the resulting document carries.
+   */
+  async createAdaptiveJob(
+    input: NewAdaptiveJobInput,
+  ): Promise<CatalogResult<CatalogJobDocument>> {
+    const batchPath = documentPath(this.#batchDir, input.batchId);
+
+    return this.#locks.run(batchPath, async () => {
+      const batch = await this.#readBatchDocument(input.batchId);
+      if (isErr(batch)) return batch;
+
+      if (batch.value.status !== 'draft') {
+        return err([
+          adminError(
+            'admin/illegal_transition',
+            `A batch in \`${batch.value.status}\` has a settled ordering, so a job cannot be added to it.`,
+            {
+              path: 'batchId',
+              context: { entry: 'batch', from: batch.value.status, action: 'add_job' },
+            },
+          ),
+        ]);
+      }
+
+      const jobId = this.#mint('job');
+      if (!jobIdSchema.safeParse(jobId).success) return err([mintingFailed('job')]);
+
+      const jobPath = documentPath(this.#jobDir, jobId);
+      if (await documentExists(jobPath)) return err([duplicateId('job', jobId)]);
+
+      // Before anything is minted or written: a configuration that cannot be
+      // stored and read back as itself is refused, so a job is never queued
+      // against a run nobody asked for.
+      const prepared = prepareAdaptiveJobConfig(input.config, input.workloadEstimate);
+      if (isErr(prepared)) return prepared;
+
+      const now = this.#now();
+      const document: CatalogJobDocument = {
+        documentVersion: CATALOG_DOCUMENT_VERSION,
+        jobId,
+        batchId: input.batchId,
+        label: input.label,
+        spec: prepared.value.spec,
+        origin: input.origin ?? ADAPTIVE_JOB_ORIGIN,
+        purpose: input.purpose,
+        sourceClasses: [...input.sourceClasses],
+        status: 'queued',
+        progress: NO_PROGRESS,
+        timestamps: freshTimestamps(now),
+        annotations: input.annotations ?? NO_ANNOTATIONS,
+        failure: null,
+        execution: null,
+        result: null,
+      };
+
+      const validated = catalogJobDocumentSchema.safeParse(document);
+      if (!validated.success) return err(adminSchemaErrors(validated.error));
+
+      await writeAdaptiveJobConfig(this.#configPath(jobId), prepared.value.stored);
+      await writeJsonAtomically(jobPath, validated.data);
+
+      const withMember: CatalogBatchDocument = {
+        ...batch.value,
+        jobIds: [...batch.value.jobIds, jobId],
+        timestamps: { ...batch.value.timestamps, updatedAt: now },
+      };
+      const written = await this.#writeBatch(batchPath, withMember);
+      if (isErr(written)) return written;
+
+      await this.#append(jobId, {
+        eventVersion: JOB_EVENT_VERSION,
+        jobId,
+        at: now,
+        kind: 'created',
+        batchId: input.batchId,
+        label: input.label,
+        purpose: input.purpose,
+        sourceClasses: validated.data.sourceClasses,
+      });
+
+      return ok(validated.data);
+    });
+  }
+
   /** Reads a job under its own lock, for the reason `readBatch` gives. */
   async readJob(jobId: JobId): Promise<CatalogResult<CatalogJobDocument>> {
     return this.#locks.run(documentPath(this.#jobDir, jobId), () => this.#readJobDocument(jobId));
@@ -585,6 +686,16 @@ export class FileCatalogStore implements CatalogStore {
     }
     return this.#locks.run(this.#configPath(jobId), () =>
       readJobConfig(this.#configPath(jobId), { jobId }),
+    );
+  }
+
+  /** The Adaptive Counter counterpart to `readJobConfig` (M08.R3), re-validated on the way out for the same reason. */
+  async readAdaptiveJobConfig(jobId: JobId): Promise<CatalogResult<AdaptiveConfig>> {
+    if (!jobIdSchema.safeParse(jobId).success) {
+      return err([adminError('admin/unknown_job', 'That is not a job identifier.')]);
+    }
+    return this.#locks.run(this.#configPath(jobId), () =>
+      readStoredAdaptiveJobConfig(this.#configPath(jobId), { jobId }),
     );
   }
 
@@ -956,6 +1067,7 @@ export class FileCatalogStore implements CatalogStore {
       missingMessage: `No test batch \`${batchId}\` is in this catalog.`,
       versionField: 'catalogDocument',
       context: { batchId },
+      migrate: migrateCatalogDocument,
     });
   }
 
@@ -972,6 +1084,7 @@ export class FileCatalogStore implements CatalogStore {
       missingMessage: `No experiment job \`${jobId}\` is in this catalog.`,
       versionField: 'catalogDocument',
       context: { jobId },
+      migrate: migrateCatalogDocument,
     });
   }
 
@@ -1034,6 +1147,7 @@ export class FileCatalogStore implements CatalogStore {
           missingCode,
           missingMessage: 'This catalog document disappeared while it was being listed.',
           versionField: 'catalogDocument',
+          migrate: migrateCatalogDocument,
         }),
       );
       if (isErr(read)) {
@@ -1113,6 +1227,9 @@ export async function openFileCatalogStore(
 function freshTimestamps(now: string): EntryTimestamps {
   return { createdAt: now, updatedAt: now, startedAt: null, completedAt: null };
 }
+
+/** What `createAdaptiveJob` records when nothing named a different origin (M08.R3). */
+const ADAPTIVE_JOB_ORIGIN: JobOrigin = Object.freeze({ kind: 'adaptive_counter' });
 
 const batchIsFinished = (status: string): boolean =>
   status === 'completed' || status === 'cancelled';
@@ -1247,7 +1364,16 @@ export function jobMatchesFilter(job: CatalogJobDocument, filter: CatalogFilter)
   // limitation closed: *a queued job has no kind to filter on* was true only
   // because a kind lived exclusively inside a result, and a job acquires one of
   // those by finishing. A job has had a kind since it was created since M08.4.
-  if (filter.kinds.length > 0 && !filter.kinds.includes(job.spec.kind)) return false;
+  //
+  // `filter.kinds` is `experimentKindSchema`'s five, never `adaptive_counter`
+  // (M08.R3): Adaptive Counter Search is not a member of `EXPERIMENT_KINDS`, so
+  // an adaptive job can never match a non-empty `kinds` filter — it has no kind
+  // this filter could name, not a kind this filter forgot to include.
+  if (filter.kinds.length > 0) {
+    if (job.spec.kind === 'adaptive_counter' || !filter.kinds.includes(job.spec.kind)) {
+      return false;
+    }
+  }
   if (filter.fullContentHash !== null) {
     if (job.result === null) return false;
     if (!fullContentHashesOf(job.result.identity).includes(filter.fullContentHash)) return false;

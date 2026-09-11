@@ -20,7 +20,7 @@ import {
   playerMetaPartitionSchema,
   playerMetaResultTableNameSchema,
 } from './player-meta-results.js';
-import { presetChoiceSchema } from './presets.js';
+import { adaptiveCounterChoiceSchema, presetChoiceSchema } from './presets.js';
 import { savedChoiceLabelSchema } from './saved.js';
 import { resultTableNameSchema } from './results.js';
 import { contractVersionSchema } from './version.js';
@@ -277,6 +277,26 @@ export const enqueuePresetRequestSchema = z.strictObject({
 });
 export type EnqueuePresetRequest = z.infer<typeof enqueuePresetRequestSchema>;
 export type EnqueuePresetRequestInput = z.input<typeof enqueuePresetRequestSchema>;
+
+/**
+ * Queuing an Adaptive Counter Search, the one preset `enqueuePreset` cannot
+ * accept (M08.R3).
+ *
+ * `PRESET_REGISTRY.adaptive_counter`'s own `limitations` say a request to
+ * expand it is refused rather than approximated with a stage plan, so it can
+ * never appear inside `enqueuePresetRequestSchema`'s stage-producing flow —
+ * `adaptiveExpansionSchema` is the whole of what it can validate to before a
+ * job exists. This is a dedicated address rather than a widening of
+ * `enqueuePreset`'s own request for exactly that asymmetry: the choice is
+ * `AdaptiveCounterChoice` alone, not the five-member union, and the answer is
+ * one job, never a staged array.
+ */
+export const enqueueAdaptiveRequestSchema = z.strictObject({
+  batchId: batchIdSchema,
+  choice: adaptiveCounterChoiceSchema,
+});
+export type EnqueueAdaptiveRequest = z.infer<typeof enqueueAdaptiveRequestSchema>;
+export type EnqueueAdaptiveRequestInput = z.input<typeof enqueueAdaptiveRequestSchema>;
 
 /**
  * Turning a Commander Search's deferred finalist round into a scheduled one
@@ -651,6 +671,7 @@ export const ADMIN_REQUEST_PAYLOAD_SCHEMAS = Object.freeze({
   jobAction: jobActionRequestSchema,
   createBatch: createBatchRequestSchema,
   enqueuePreset: enqueuePresetRequestSchema,
+  enqueueAdaptive: enqueueAdaptiveRequestSchema,
   scheduleChampionship: scheduleChampionshipRequestSchema,
   reorderBatch: reorderBatchRequestSchema,
   estimateChoice: estimateChoiceRequestSchema,

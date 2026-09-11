@@ -475,6 +475,7 @@ export {
   adaptiveConfigSchema,
   adaptiveExperimentIdSchema,
   adaptiveInformationPolicySchema,
+  adaptiveConfigHashOf,
   adaptiveRebuildTriggerSchema,
   adaptiveSwapBoundSchema,
   parseAdaptiveConfig,

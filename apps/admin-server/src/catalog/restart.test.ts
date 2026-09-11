@@ -12,10 +12,17 @@ import {
   type JobStatus,
 } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
+import { adaptiveConfigHashOf } from '@tcg/simulator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { FileCatalogStore, openFileCatalogStore } from './file-catalog-store.js';
-import { makeTestCatalog, testConfig, type TestCatalog } from './test-catalog.js';
+import {
+  makeTestCatalog,
+  testAdaptiveConfig,
+  testAdaptiveWorkloadEstimate,
+  testConfig,
+  type TestCatalog,
+} from './test-catalog.js';
 
 /**
  * What a restart does to work that was in flight.
@@ -267,6 +274,42 @@ describe('what an interrupted job keeps, so a retry can continue it', () => {
     const recovered = unwrap(await restarted.readJob(jobId));
     expect(recovered.status).toBe('queued');
     expect(recovered.execution).toBeNull();
+  });
+});
+
+describe('an adaptive job keeps its kind, its origin and its configuration too (M08.R3)', () => {
+  it('is recovered as adaptive_counter, not silently reread as an experiment', async () => {
+    // The recovery mechanism above is generic over `status`, not `spec.kind` —
+    // but the widened union it recovers into is new enough (M08.R3) that a
+    // restart deserves its own proof an adaptive job's kind, origin and stored
+    // configuration are not lost or reinterpreted along the way.
+    const batch = unwrap(await catalog.store.createBatch({ label: 'Adaptive wave' }));
+    const config = testAdaptiveConfig();
+    const job = unwrap(
+      await catalog.store.createAdaptiveJob({
+        batchId: batch.batchId,
+        label: 'Adaptive restart smoke',
+        purpose: 'exploration',
+        sourceClasses: ['ai', 'adaptive'],
+        config,
+        workloadEstimate: testAdaptiveWorkloadEstimate(config),
+      }),
+    );
+    catalog.advance(1_000);
+    unwrap(
+      await catalog.store.applyJobAction({ jobId: job.jobId, action: 'start', cause: 'runner' }),
+    );
+
+    const restarted = new FileCatalogStore({ roots: catalog.roots });
+    unwrap(await restarted.recover());
+
+    const recovered = unwrap(await restarted.readJob(job.jobId));
+    expect(recovered.status).toBe('interrupted');
+    expect(recovered.spec.kind).toBe('adaptive_counter');
+    expect(recovered.origin).toEqual({ kind: 'adaptive_counter' });
+
+    const rereadConfig = unwrap(await restarted.readAdaptiveJobConfig(job.jobId));
+    expect(adaptiveConfigHashOf(rereadConfig)).toBe(adaptiveConfigHashOf(config));
   });
 });
 

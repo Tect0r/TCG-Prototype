@@ -1162,6 +1162,8 @@ function limitationsOf(origin: JobOrigin): string[] {
       ];
     case 'direct':
       return [];
+    case 'adaptive_counter':
+      return [];
   }
 }
 

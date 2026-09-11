@@ -120,7 +120,7 @@ describe('the registry', () => {
     // M08.3's exclusion, structurally: a reserved preset that named a kind would
     // be one an expansion could quietly approximate with a search.
     expect(PRESET_REGISTRY.adaptive_counter.kinds).toEqual([]);
-    expect(PRESET_REGISTRY.adaptive_counter.limitations.join(' ')).toContain('Reserved type');
+    expect(PRESET_REGISTRY.adaptive_counter.limitations.join(' ')).toContain('Reserved as a preset');
   });
 
   it('gives every available preset at least one kind and one limitation', () => {

@@ -276,10 +276,35 @@ tests, `check:consistency`, `audit:check`, `verify` (one confirmed-unrelated
 Windows temp-dir flake on the first attempt, clean rerun). Full narrative in
 [the M08 milestone file's Tranche A review entry](docs/milestones/M08-ai-lab-and-player-meta.md#correction-tranche-a--explorer-truthfulness).
 
-**Correction Tranche A is complete.** **Next slice: `M08.R3`** (Correction
-Tranche B, Adaptive job contracts and catalog persistence — see
-`docs/milestones/M08-ai-lab-and-player-meta.md`'s correction pass section).
-Do not start it in this session.
+**Correction Tranche A is complete.**
+
+**M08.R3 shipped (2026-09-11)** — first slice of Correction Tranche B.
+Adaptive Counter had no enqueue contract of its own and no durable job shape;
+per the owner-locked brief, added a dedicated `enqueueAdaptive` endpoint
+(not a reuse of `enqueue-preset`) and widened `jobSpecSchema` to a
+discriminated union (`experimentJobSpecSchema` | `adaptiveJobSpecSchema`)
+rather than a sixth ordinary `ExperimentConfig` kind; `jobOriginSchema`
+gained `adaptive_counter`. `CatalogStore.createAdaptiveJob` is an explicit
+creation path; `CATALOG_DOCUMENT_VERSION` 4→5, with `migrateCatalogDocument`
+(`apps/admin-server/src/catalog/migrations.ts`) rewriting old documents'
+version number in place (the pre-M08.R3 spec/origin shapes were already a
+subset of the widened unions, so no other field ever needed migrating). A
+future-version document is still refused with the existing "newer build"
+sentence; a pre-M08.R3 client still cannot parse a v5 adaptive job/origin.
+Also fixed a self-discovered regression: `estimateAdaptiveOrRefuse` was
+leaking the internal validated `config` field into `estimateChoice`'s/
+`saveChoice`'s public response. Round-trip, migration (9 tests), restart,
+authorization (already covered by existing endpoint-generic loops),
+unsupported-future-version, malformed-input and handler-level
+duplicate/negative-path tests all pass. Typecheck clean on all four touched
+workspaces; full focused suites pass (`packages` 166/166, `admin-server`
+815/815, `simulator` adaptive suite 188/188, `admin-client` 436/436). Full
+narrative in
+[the M08 milestone file's M08.R3 entry](docs/milestones/M08-ai-lab-and-player-meta.md#correction-tranche-b--executable-and-crash-safe-adaptive-counter).
+
+**Next slice: `M08.R4`** (Correction Tranche B, Adaptive runner dispatch and
+lifecycle — see `docs/milestones/M08-ai-lab-and-player-meta.md`'s correction
+pass section). Do not start it in this session.
 
 **M08 is complete (2026-09-10).** M08.28F closed the milestone: every other
 `### Checklist` in the milestone file was already checked from earlier

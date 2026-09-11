@@ -28,7 +28,11 @@ import {
   type ResultsFilterState,
 } from '../lib/results-view.js';
 import { JOB_STATUS_WORDING } from '../lib/queue-view.js';
-import { EXPERIMENT_KIND_LABELS, SOURCE_CLASS_LABELS } from '../lib/vocabulary.js';
+import {
+  EXPERIMENT_KIND_LABELS,
+  JOB_SPEC_KIND_LABELS,
+  SOURCE_CLASS_LABELS,
+} from '../lib/vocabulary.js';
 import { useAdminSession, useAdminState } from '../state/AdminContext.js';
 import type { AdminFailure } from '../net/transport.js';
 import { Busy, Empty, Failure } from './Feedback.js';
@@ -327,7 +331,7 @@ export function ResultsScreen() {
                         {JOB_STATUS_WORDING[job.status].label}
                       </span>
                       <span className="results__row-note">
-                        {EXPERIMENT_KIND_LABELS[job.spec.kind]} ·{' '}
+                        {JOB_SPEC_KIND_LABELS[job.spec.kind]} ·{' '}
                         {SOURCE_CLASS_LABELS[job.sourceClasses[0] ?? 'ai']}
                         {job.sourceClasses.length > 1
                           ? ` +${String(job.sourceClasses.length - 1)}`
@@ -750,7 +754,7 @@ function JobFacts({ job }: { readonly job: CatalogJobView }) {
       label: 'Source',
       value: job.sourceClasses.map((source) => SOURCE_CLASS_LABELS[source]).join(', '),
     },
-    { label: 'Type', value: EXPERIMENT_KIND_LABELS[job.spec.kind] },
+    { label: 'Type', value: JOB_SPEC_KIND_LABELS[job.spec.kind] },
     { label: 'Experiment', value: <code>{job.spec.experimentId}</code> },
     { label: 'Seed', value: <code>{job.spec.seed}</code> },
     { label: 'Configuration hash', value: <code>{job.spec.configHash}</code> },

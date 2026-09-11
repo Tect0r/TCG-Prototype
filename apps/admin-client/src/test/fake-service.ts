@@ -1581,7 +1581,14 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     ) {
       return false;
     }
-    if (filter.kinds.length > 0 && !filter.kinds.includes(job.spec.kind)) return false;
+    // `filter.kinds` is `experimentKindSchema`'s five, never `adaptive_counter`
+    // (M08.R3), so an adaptive job never matches a non-empty `kinds` filter —
+    // the same rule `FileCatalogStore`'s own filter applies.
+    if (filter.kinds.length > 0) {
+      if (job.spec.kind === 'adaptive_counter' || !filter.kinds.includes(job.spec.kind)) {
+        return false;
+      }
+    }
     if (filter.batchId !== null && job.batchId !== filter.batchId) return false;
     if (filter.tags.length > 0 && !job.annotations.tags.some((tag) => filter.tags.includes(tag))) {
       return false;

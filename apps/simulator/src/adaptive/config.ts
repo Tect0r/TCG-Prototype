@@ -2,18 +2,22 @@ import { z } from 'zod';
 import { cardIdSchema } from '@tcg/card-data';
 import { deckSourceSchema, retentionSchema } from '../config.js';
 import { environmentConfigSchema } from '../environment.js';
+import { digestOf } from '../hash.js';
 import { ADAPTIVE_CONFIG_SCHEMA_VERSION, parseAdaptiveDocument } from './version.js';
 
 /**
  * Adaptive Counter Search configuration (M08.16A).
  *
  * `adaptive_counter` is a reserved preset (`packages/admin-contracts/src/
- * presets.ts`): this build can name an adaptive run and cannot yet schedule
- * one. This is the strict config surface a later tranche's runner will
- * accept — M08.16B adds the immutable revision lineage a run produces,
- * M08.16C the deterministic legal candidate generation, and M08.17 the
- * evaluation loop that actually spends the budget declared below. Nothing
- * here starts a match, generates a candidate or mutates a card definition.
+ * presets.ts`): `expandPreset` cannot expand it into a stage plan. Since
+ * M08.R3 it is no longer true that this build cannot schedule one — a choice
+ * is validated by `estimateAdaptiveChoice` into a real `AdaptiveConfig` and
+ * queued through `enqueueAdaptive`, a dedicated address — but this remains
+ * the strict config surface that path accepts, and this file still starts no
+ * match, generates no candidate and mutates no card definition. M08.16B adds
+ * the immutable revision lineage a run produces, M08.16C the deterministic
+ * legal candidate generation, and M08.17 the evaluation loop that actually
+ * spends the budget declared below.
  *
  * Deliberately its own schema rather than a sixth member of
  * `experimentConfigSchema`'s discriminated union in `../config.js`: that
@@ -145,4 +149,23 @@ export type AdaptiveConfigInput = z.input<typeof adaptiveConfigSchema>;
 /** Parses an Adaptive Counter configuration, refusing an unreadable schema version first. */
 export function parseAdaptiveConfig(input: unknown): AdaptiveConfig {
   return parseAdaptiveDocument('config', adaptiveConfigSchema, input);
+}
+
+/**
+ * Identity of the normalized Adaptive Counter configuration (M08.R3).
+ *
+ * The adaptive counterpart to `configHashOf` (`../experiment.ts`), over the
+ * same principle: everything that changes what the run *is* feeds in, and
+ * only `output` — where it writes, never what it plays — is excluded. That
+ * asymmetry is what would let a resumed run change its output directory
+ * without the store treating it as a different run, the same guarantee
+ * `configHashOf` gives `ExperimentConfig`.
+ */
+export function adaptiveConfigHashOf(config: AdaptiveConfig): string {
+  const { output: _output, ...semantic } = config;
+  return digestOf({
+    version: 1,
+    schema: ADAPTIVE_CONFIG_SCHEMA_VERSION,
+    config: semantic,
+  });
 }

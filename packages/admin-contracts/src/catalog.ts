@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 import { adminErrorSchema } from './errors.js';
+import { adaptiveWorkloadEstimateSchema } from './estimate.js';
 import {
+  adaptiveExperimentIdSchema,
   batchIdSchema,
   contentHashSchema,
   entryTimestampsSchema,
@@ -283,25 +285,67 @@ export function resultReferenceOf(stored: StoredResultReference): ResultReferenc
  * rather than a hope — and it deliberately excludes `output` and `workers`,
  * which is what lets a job resume into its own directory with a different worker
  * count.
+ *
+ * **A discriminated union of two kinds, not five ordinary ones plus a sixth
+ * (M08.R3).** Adaptive Counter Search is not a member of `EXPERIMENT_KINDS`
+ * and does not become one here: `ExperimentConfig` is a closed shape the
+ * simulator's ordinary `runExperiment` switch is exhaustive over, and widening
+ * `EXPERIMENT_KINDS` merely to let an adaptive job persist would be the sixth
+ * kind that switch was never redesigned to run. Instead `kind` discriminates
+ * between the existing `experiment` branch — identical to the object this
+ * schema used to be, so every job created before this tranche parses
+ * unchanged — and a new `adaptive_counter` branch carrying `AdaptiveConfig`'s
+ * own identity fields plus the workload estimate a builder priced before
+ * enqueuing, so that number is as durable as the job it describes rather than
+ * a value only ever seen in a response that was never saved.
  */
-export const jobSpecSchema = z.strictObject({
-  /** The `id` from the experiment configuration. */
-  experimentId: experimentSlugSchema,
-  kind: experimentKindSchema,
-  /** The root seed. Everything in the run derives from it. */
-  seed: z.string().min(1).max(64),
+const jobSpecCommon = {
   /** Hash of the normalized configuration, excluding where and how fast it runs. */
   configHash: contentHashSchema,
   /**
    * The configuration schema version the stored configuration declares.
    *
    * Recorded rather than owned, exactly as `manifestSchemaVersion` is: the
-   * number is `@tcg/simulator`'s `CONFIG_SCHEMA_VERSION`, and writing it down
+   * number is the owning schema's own version constant, and writing it down
    * lets a reader say which build's schema the stored configuration was written
    * against without opening it.
    */
   configSchemaVersion: z.number().int().min(1),
+};
+
+export const experimentJobSpecSchema = z.strictObject({
+  kind: experimentKindSchema,
+  /** The `id` from the experiment configuration. */
+  experimentId: experimentSlugSchema,
+  /** The root seed. Everything in the run derives from it. */
+  seed: z.string().min(1).max(64),
+  ...jobSpecCommon,
 });
+export type ExperimentJobSpec = z.infer<typeof experimentJobSpecSchema>;
+
+export const adaptiveJobSpecSchema = z.strictObject({
+  kind: z.literal('adaptive_counter'),
+  /** The `id` from the Adaptive Counter configuration. */
+  experimentId: adaptiveExperimentIdSchema,
+  /** The root seed. Everything in the run derives from it. */
+  seed: z.string().min(1).max(64),
+  ...jobSpecCommon,
+  /**
+   * What the run was priced at before it was enqueued.
+   *
+   * An adaptive run has no stage schedule to derive a total from later, so
+   * unlike the experiment branch — whose match count a reader can always
+   * recompute from the stored configuration — this is the only durable record
+   * of what the builder showed an administrator before they committed to it.
+   */
+  workloadEstimate: adaptiveWorkloadEstimateSchema,
+});
+export type AdaptiveJobSpec = z.infer<typeof adaptiveJobSpecSchema>;
+
+export const jobSpecSchema = z.discriminatedUnion('kind', [
+  experimentJobSpecSchema,
+  adaptiveJobSpecSchema,
+]);
 export type JobSpec = z.infer<typeof jobSpecSchema>;
 
 /* ------------------------------------------------------ how a job ran */
@@ -501,6 +545,17 @@ export const jobOriginSchema = z.discriminatedUnion('kind', [
     stageId: stageIdSchema,
   }),
   z.strictObject({ kind: z.literal('direct') }),
+  /**
+   * What an Adaptive Counter Search choice produced (M08.R3).
+   *
+   * Provenance, exactly as `preset` is: `spec.kind` on the adaptive job spec
+   * branch already says *what runs*, so this member only needs to say *what
+   * asked for it*. It carries no fields of its own beyond the discriminant —
+   * the choice that produced the job is not queryable catalog state, and the
+   * validated configuration is durable beside the job exactly as an ordinary
+   * experiment's is.
+   */
+  z.strictObject({ kind: z.literal('adaptive_counter') }),
   z.strictObject({
     kind: z.literal('commander_championship'),
     /** The `commander_search` batch whose completed jobs this championship was frozen from. */

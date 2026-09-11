@@ -5274,3 +5274,100 @@ milestone file, following the normal one-slice-per-session workflow.
 
 **Correction Tranche A is complete.** Next: `M08.R3` (Correction Tranche B,
 Adaptive job contracts and catalog persistence).
+
+### Correction Tranche B — Adaptive job contracts and catalog persistence
+
+- [x] **M08.R3 — Adaptive job contracts and catalog persistence.** Adaptive
+      Counter had no enqueue contract of its own: `enqueuePreset` only ever
+      resolved `presetChoiceSchema`'s union into an `ExperimentConfig`, so
+      there was no authenticated/admin path that could create an adaptive
+      job, and no durable shape for one to be stored in. Per the owner-locked
+      brief, added a **dedicated** `enqueueAdaptive` endpoint (not a reuse of
+      `enqueue-preset`) and widened the persisted job spec to a
+      **discriminated union** rather than treating Adaptive Counter as a
+      sixth ordinary `ExperimentConfig` kind.
+
+      Contract (`packages/admin-contracts`): `jobOriginSchema` gained a
+      fourth member, `adaptive_counter` (alongside `preset`/`direct`/
+      `commander_championship`); `jobSpecSchema` became a
+      `z.discriminatedUnion('kind', [experimentJobSpecSchema,
+      adaptiveJobSpecSchema])` — the experiment branch stays exactly what it
+      was (closed to the five real `ExperimentKind`s), and the new branch
+      carries its own validated `AdaptiveConfig`-derived spec (config hash,
+      schema version, seed, workload estimate). `AdaptiveCounterChoice`
+      named the narrow request shape `enqueueAdaptiveRequestSchema` needs,
+      distinct from the broader `presetChoiceSchema` union
+      `enqueuePreset`/`estimateChoice` accept. `CATALOG_DOCUMENT_VERSION`
+      4→5 for the widened unions.
+
+      Server (`apps/admin-server`): `CatalogStore.createAdaptiveJob` is an
+      explicit creation path alongside `createJob`, writing identity,
+      config hash, schema version, seed, workload estimate, timestamps and
+      origin durably via `adaptive-job-config.ts` (mirroring
+      `job-config.ts`'s `refuseForeignVersion` pattern for the stored
+      configuration's own version). `AdminService#enqueueAdaptive`
+      (`service/handlers.ts`) resolves the choice through
+      `resolveAdaptiveChoiceOrRefuse`, which — unlike
+      `estimateAdaptiveOrRefuse` (used by `estimateChoice`/`saveChoice`) —
+      keeps the validated `AdaptiveConfig` needed to create the job rather
+      than stripping it for a public response. `migrations.ts` added
+      `migrateCatalogDocument`, the one migration this repository has
+      needed: rewrites a v4 document's `documentVersion` to 5 in place and
+      returns `null` for anything else, because the pre-M08.R3
+      `jobSpecSchema`/`jobOriginSchema` were already exactly the
+      `experiment` branch and a strict subset of the widened `origin`
+      union — no other field ever needed rewriting. Wired into
+      `readDocument`'s `migrate` option (runs before the version-refusal
+      check) at all three read paths (`#readBatchDocument`,
+      `#readJobDocument`, `#loadAll`, the last one shared by both job and
+      batch listing). A document from a genuinely future build is still
+      refused with the existing "written by a newer build / update the
+      application" sentence, since migration only rewrites a recognized
+      past version and never touches an unrecognized one; a pre-M08.R3
+      client reading a v5 document with an `adaptive_counter` job/origin
+      still fails `jobSpecSchema`/`jobOriginSchema`'s closed unions rather
+      than silently reinterpreting the new kind.
+
+      Tests: round-trip (`adaptive-job-config.test.ts`, config survives
+      store→read unchanged, hash matches), migration
+      (`migrations.test.ts`, 5 unit tests on `migrateCatalogDocument` in
+      isolation + 4 end-to-end through a real `FileCatalogStore`),
+      unsupported-future-version and malformed-input (existing
+      `admin/unsupported_version`/`admin/malformed`/`admin/missing_version`
+      coverage in `adaptive-job-config.test.ts`, mirroring
+      `job-config.test.ts`'s established pattern), authorization (already
+      satisfied without new code — `http.test.ts`'s existing
+      `ADMIN_ENDPOINT_NAMES`-generic routing/authorization loops cover
+      every registered endpoint, `enqueueAdaptive` included), restart
+      (new test in `restart.test.ts`: an adaptive job's `spec.kind`,
+      `origin` and stored `AdaptiveConfig` all survive a `FileCatalogStore`
+      restart mid-run, recovered as `interrupted` like any other in-flight
+      job), and 3 new handler-level tests in `builder-endpoints.test.ts`
+      (successful creation with correct response shape/`origin`/`status`/
+      listing visibility, refusal of an invalid choice with
+      `admin/schema`, refusal of an unknown batch with
+      `admin/unknown_batch`).
+
+      Also fixed, self-discovered while running the full
+      `builder-endpoints.test.ts` suite for the first time this session:
+      `estimateAdaptiveOrRefuse` (`service/handlers.ts`) was declared to
+      return the narrow public `ChoiceEstimate` shape but its body passed
+      `estimateAdaptiveChoice`'s result through unmodified, leaking the
+      internal `config` field into `estimateChoice`'s and `saveChoice`'s
+      public response (TypeScript's excess-property checking does not
+      catch this because it is a passed-through call result, not an
+      object literal). Fixed by destructuring only `expansion`/`estimate`
+      before wrapping in `ok(...)`.
+
+      No admin-client change: nothing in the client calls `enqueueAdaptive`
+      yet (checked — a future UI slice, not this contract/persistence
+      slice), so `fake-service.ts` needs no test double for it.
+
+      Verification (focused, no full gate — reserved for tranche close):
+      typecheck clean on all four touched workspaces
+      (`admin-contracts`/`admin-server`/`simulator`/`admin-client`). Full
+      focused suites pass: `packages` project 166/166 (5 files),
+      `admin-server` project 815/815 (47 files, including the new/updated
+      `migrations.test.ts`, `restart.test.ts`, `builder-endpoints.test.ts`,
+      `adaptive-job-config.test.ts`), `simulator` project's `adaptive/`
+      suite 188/188 (12 files), `admin-client` project 436/436 (29 files).

@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 import { looksLikeFilesystemPath } from './errors.js';
-import { contentHashSchema } from './identity.js';
+import {
+  adaptiveExperimentIdSchema,
+  contentHashSchema,
+  MAX_ADAPTIVE_EXPERIMENT_ID,
+  type AdaptiveExperimentId,
+} from './identity.js';
 import { pageInfoSchema, PAGE_SIZE_MAX } from './pagination.js';
 import { adaptiveInformationPolicySchema } from './presets.js';
 import {
@@ -24,16 +29,19 @@ import {
  * `AdaptiveResultPayload` (`apps/simulator/src/adaptive/report.ts`), which
  * stays the one owner of what a series score or a screening candidate means.
  *
- * It is directory-keyed rather than job-keyed because `EXPERIMENT_KINDS`
- * (`./identity.ts`) has no `'adaptive'` member yet: an Adaptive Counter run
- * cannot be enqueued as a `CatalogStore` job today, so there is no `JobId` to
- * key a reader by. Wiring a directory to a job address — `enqueueAdaptive`, a
- * widened `jobSpec` union, a `JobOrigin` for an adaptive run — is a deferred,
- * unscoped future slice; this contract only has to carry what a reader can
- * already produce from a resolved run directory, and says nothing about how a
- * caller obtains that directory. `apps/admin-server`'s reader is the only
- * thing that resolves one, and it does so exactly as cautiously as
- * `resolveResultLocation` does for every other result (ADR 0023 §5): inside
+ * It stayed directory-keyed rather than job-keyed through M08.19B because
+ * `EXPERIMENT_KINDS` (`./identity.ts`) has no `'adaptive'` member: an Adaptive
+ * Counter run was not yet a `CatalogStore` job, so there was no `JobId` to key
+ * a reader by. M08.R3 wires a directory to a job address —
+ * `enqueueAdaptive`, `./catalog.ts`'s widened `jobSpecSchema`, and a
+ * `JobOrigin` member for an adaptive run — but this contract still carries
+ * what a reader can produce from a resolved run directory rather than adding a
+ * job-keyed alternative: a finished job's `spec.experimentId` already names
+ * the same directory this file's `adaptiveRunRefSchema` does, so the job
+ * address is a second way to say what these requests already say, not a
+ * reason to add a second shape for them. `apps/admin-server`'s reader is the
+ * only thing that resolves a directory, and it does so exactly as cautiously
+ * as `resolveResultLocation` does for every other result (ADR 0023 §5): inside
  * the process, against a configured root, on every request.
  *
  * The five evidence streams `AdaptiveResultPayload` keeps apart — series wins,
@@ -49,27 +57,14 @@ import {
 /* ------------------------------------------------------------------ identity */
 
 /**
- * The same authored-slug bound `@tcg/simulator`'s `adaptive/config.ts` declares
- * for `adaptiveExperimentIdSchema` (40, lowercase, hyphen/underscore safe),
- * restated rather than imported for the dependency reason `./identity.ts`
- * already gives for `EXPERIMENT_KINDS`: a simulator-owned shape is a word this
- * package names, never an import that would put `@tcg/simulator` on
- * `@tcg/admin-contracts`'s dependency graph (ADR 0001). Restating the regex
- * too, not just the bound, is what "publish exactly" requires here — a schema
- * that only capped the length would wave a malformed ID through the outgoing
- * validation this file exists to enforce.
+ * Re-exported from `./identity.ts` (M08.R3), which is where this alphabet now
+ * lives so that `./catalog.ts` can use it for `adaptiveJobSpecSchema` without
+ * importing this module — which imports `./results.ts`, which imports
+ * `./catalog.ts`, and would otherwise be a cycle. Kept re-exported here so
+ * every existing import of `adaptiveExperimentIdSchema` from this file, and
+ * from the package root, is unaffected.
  */
-export const MAX_ADAPTIVE_EXPERIMENT_ID = 40;
-
-export const adaptiveExperimentIdSchema = z
-  .string()
-  .min(1)
-  .max(MAX_ADAPTIVE_EXPERIMENT_ID)
-  .regex(
-    /^[a-z][a-z0-9_-]*$/,
-    'An Adaptive Counter experiment ID is lowercase and hyphen/underscore safe.',
-  );
-export type AdaptiveExperimentId = z.infer<typeof adaptiveExperimentIdSchema>;
+export { adaptiveExperimentIdSchema, MAX_ADAPTIVE_EXPERIMENT_ID, type AdaptiveExperimentId };
 
 /* --------------------------------------------------------------- the tables */
 

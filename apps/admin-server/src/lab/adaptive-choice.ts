@@ -14,6 +14,7 @@ import {
   parseAdaptiveConfig,
   planAdaptiveBudget,
   resolveDeckSource,
+  type AdaptiveConfig,
   type DeckSource,
   type Environment,
 } from '@tcg/simulator';
@@ -40,12 +41,15 @@ import {
  * already documents — and prices it with `planAdaptiveBudget`, the simulator's
  * own budget arithmetic, never a formula written a second time here.
  *
- * What it does not do, on purpose, is schedule anything. M08.19A's own
- * acceptance is "restore every value and show workload before enqueueing";
- * nothing in the M08.19 tranche's documented slices reads a job or a match
- * out of this path. Wiring a queued, executable adaptive run through
- * `ExperimentRunner` touches that runner's core, already-tested execution
- * loop and is deferred to a later, separately named slice.
+ * Through M08.19 it scheduled nothing on purpose — M08.19A's own acceptance
+ * was "restore every value and show workload before enqueueing", and wiring
+ * a queued, executable adaptive run was deferred. M08.R3 is that later slice:
+ * `estimateAdaptiveChoice`'s returned `config` is what `#enqueueAdaptive`
+ * (`apps/admin-server/src/service/handlers.ts`) hands to
+ * `CatalogStore.createAdaptiveJob`, unchanged from what this function already
+ * validated and priced. This module still does not run anything itself —
+ * `ExperimentRunner`'s execution loop is untouched — it only now hands its
+ * answer to a caller that can queue it.
  */
 
 function refuse(path: string, message: string): never {
@@ -76,6 +80,15 @@ function requireCommanders(environment: Environment, commanderIds: readonly stri
 export interface AdaptiveChoiceEstimate {
   readonly expansion: AdaptiveExpansion;
   readonly estimate: AdaptiveWorkloadEstimate;
+  /**
+   * The validated configuration this choice resolved to (M08.R3).
+   *
+   * `#estimateChoice` and `#saveChoice` need only `expansion`/`estimate`, but
+   * `#enqueueAdaptive` needs the configuration itself to create a job from —
+   * this is the same object `planAdaptiveBudget` already priced, not a second
+   * validation of the choice.
+   */
+  readonly config: AdaptiveConfig;
 }
 
 /**
@@ -164,5 +177,6 @@ export function estimateAdaptiveChoice(input: PresetChoiceInput | unknown): Adap
       finalValidationGames: config.finalValidationGames,
       limitations,
     }),
+    config,
   };
 }

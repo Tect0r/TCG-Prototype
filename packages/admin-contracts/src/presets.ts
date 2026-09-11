@@ -314,8 +314,10 @@ export const PRESET_REGISTRY: Readonly<Record<ExperimentPresetId, ExperimentPres
       kinds: [],
       sourceClasses: ['ai', 'adaptive'],
       limitations: [
-        'Reserved type. This build can name an adaptive run and cannot schedule one; a ' +
-          'request to expand it is refused rather than approximated with a search.',
+        'Reserved as a preset. A request to expand this choice into a stage plan is refused ' +
+          'rather than approximated with a search — `enqueuePreset` cannot schedule an adaptive ' +
+          'run. It is scheduled instead through `enqueueAdaptive` (M08.R3), a dedicated address ' +
+          'that takes the same choice and creates one job directly, without expansion.',
       ],
     },
   });
@@ -594,6 +596,49 @@ export type PreconBenchmarkSettingsInput = z.input<typeof preconBenchmarkSetting
  * screen behind it would be a shape nothing sends and nothing validates against
  * a real form.
  */
+/**
+ * What an administrator picks for an Adaptive Counter Search, named on its own
+ * (M08.R3) so `enqueueAdaptive` has a request shape to declare rather than
+ * reaching into `presetChoiceSchema`'s union for its last member.
+ *
+ * The fields are unchanged from the branch `presetChoiceSchema` has always
+ * carried for `adaptive_counter` — this is a name for that shape, not a new
+ * one, so every existing choice built through the union still parses
+ * identically and `estimateAdaptiveChoice` still narrows to this same object.
+ */
+export const adaptiveCounterChoiceSchema = z.strictObject({
+  presetId: z.literal('adaptive_counter'),
+  ...commonChoiceFields,
+  /**
+   * Where both co-evolving lineages' generation-0 root comes from,
+   * resolved by the server exactly like `deckSourceSchema`'s `precon`
+   * variant. `AdaptiveConfig.startingDecks` is one deck source shared by
+   * both sides, so this is `min(1)`, not `preconSelection`'s `min(2)` —
+   * a benchmark needs decks to compare, an adaptive run needs one root.
+   */
+  startingPreconIds: startingDeckSelection,
+  commanderPolicy: adaptiveCommanderPolicySchema.default('locked'),
+  /** Which Commander(s) this run is focused on countering. Required only when `commanderPolicy` is `selected`. */
+  selectedCommanderIds: z.array(resolvedIdSchema).max(64).default([]),
+  informationPolicy: adaptiveInformationPolicySchema.default('public_observation'),
+  /** When a lineage discards its history and rebuilds from the starting root instead of swapping forward. */
+  rebuildTrigger: adaptiveRebuildTriggerSchema.nullable().default(null),
+  /** Total games this run may spend across every evaluation block. */
+  totalLearningBudget: z.number().int().min(1).max(1_000_000),
+  /** Games per pairing in one mirrored evaluation block. */
+  blockSize: z.number().int().min(1).max(10_000),
+  mirrorSeats: z.boolean().default(true),
+  /** Candidate revisions generated per adaptation. */
+  candidateCount: z.number().int().min(1).max(64),
+  swapBound: adaptiveSwapBoundSchema.default(DEFAULT_ADAPTIVE_SWAP_BOUND),
+  /** Share (0-1) of evaluation opponents drawn from the reference field rather than the current opponent. */
+  referenceFieldShare: z.number().min(0).max(1).default(0),
+  /** Games played per pairing in the frozen fresh-seed final validation stage. */
+  finalValidationGames: z.number().int().min(1).max(100_000),
+});
+export type AdaptiveCounterChoice = z.infer<typeof adaptiveCounterChoiceSchema>;
+export type AdaptiveCounterChoiceInput = z.input<typeof adaptiveCounterChoiceSchema>;
+
 export const presetChoiceSchema = z.discriminatedUnion('presetId', [
   z.strictObject({
     presetId: z.literal('precon_smoke'),
@@ -735,36 +780,7 @@ export const presetChoiceSchema = z.discriminatedUnion('presetId', [
      */
     insertionRemoveCardIds: z.array(resolvedIdSchema).max(40).default([]),
   }),
-  z.strictObject({
-    presetId: z.literal('adaptive_counter'),
-    ...commonChoiceFields,
-    /**
-     * Where both co-evolving lineages' generation-0 root comes from,
-     * resolved by the server exactly like `deckSourceSchema`'s `precon`
-     * variant. `AdaptiveConfig.startingDecks` is one deck source shared by
-     * both sides, so this is `min(1)`, not `preconSelection`'s `min(2)` —
-     * a benchmark needs decks to compare, an adaptive run needs one root.
-     */
-    startingPreconIds: startingDeckSelection,
-    commanderPolicy: adaptiveCommanderPolicySchema.default('locked'),
-    /** Which Commander(s) this run is focused on countering. Required only when `commanderPolicy` is `selected`. */
-    selectedCommanderIds: z.array(resolvedIdSchema).max(64).default([]),
-    informationPolicy: adaptiveInformationPolicySchema.default('public_observation'),
-    /** When a lineage discards its history and rebuilds from the starting root instead of swapping forward. */
-    rebuildTrigger: adaptiveRebuildTriggerSchema.nullable().default(null),
-    /** Total games this run may spend across every evaluation block. */
-    totalLearningBudget: z.number().int().min(1).max(1_000_000),
-    /** Games per pairing in one mirrored evaluation block. */
-    blockSize: z.number().int().min(1).max(10_000),
-    mirrorSeats: z.boolean().default(true),
-    /** Candidate revisions generated per adaptation. */
-    candidateCount: z.number().int().min(1).max(64),
-    swapBound: adaptiveSwapBoundSchema.default(DEFAULT_ADAPTIVE_SWAP_BOUND),
-    /** Share (0-1) of evaluation opponents drawn from the reference field rather than the current opponent. */
-    referenceFieldShare: z.number().min(0).max(1).default(0),
-    /** Games played per pairing in the frozen fresh-seed final validation stage. */
-    finalValidationGames: z.number().int().min(1).max(100_000),
-  }),
+  adaptiveCounterChoiceSchema,
 ]);
 export type PresetChoice = z.infer<typeof presetChoiceSchema>;
 export type PresetChoiceInput = z.input<typeof presetChoiceSchema>;

@@ -2,10 +2,17 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  adaptiveWorkloadEstimateSchema,
+  type AdaptiveWorkloadEstimate,
+} from '@tcg/admin-contracts';
 import { unwrap, type IdSources } from '@tcg/shared';
 import {
   environmentConfigForFormat,
+  parseAdaptiveConfig,
   parseExperimentConfig,
+  planAdaptiveBudget,
+  type AdaptiveConfig,
   type ExperimentConfig,
 } from '@tcg/simulator';
 
@@ -154,6 +161,47 @@ export function testConfig(
     gamesPerPairing: overrides.gamesPerPairing ?? 1,
     mirrorSeats: overrides.mirrorSeats ?? false,
     ...(overrides.workers === undefined ? {} : { workers: overrides.workers }),
+  });
+}
+
+/**
+ * The smallest Adaptive Counter configuration a job can legally hold (M08.R3).
+ *
+ * Parsed by `parseAdaptiveConfig`, for the same reason `testConfig` is parsed
+ * by `parseExperimentConfig`: a fixture the simulator would refuse would test
+ * the wrong file. Nothing in the catalog suites ever runs it.
+ */
+export function testAdaptiveConfig(
+  overrides: {
+    readonly id?: string;
+    readonly seed?: string;
+    readonly totalLearningBudget?: number;
+    readonly blockSize?: number;
+  } = {},
+): AdaptiveConfig {
+  return parseAdaptiveConfig({
+    schemaVersion: 1,
+    id: overrides.id ?? 'fixture-adaptive',
+    seed: overrides.seed ?? 'fixture-adaptive-seed',
+    environment: FIXTURE_ENVIRONMENT,
+    startingDecks: { kind: 'precon', preconIds: ['precon_goblin_swarm'] },
+    totalLearningBudget: overrides.totalLearningBudget ?? 100,
+    blockSize: overrides.blockSize ?? 10,
+    candidateCount: 4,
+    finalValidationGames: 20,
+  });
+}
+
+/** The workload `testAdaptiveConfig` prices to, via the simulator's own budget arithmetic. */
+export function testAdaptiveWorkloadEstimate(config: AdaptiveConfig): AdaptiveWorkloadEstimate {
+  const budget = planAdaptiveBudget(config);
+  return adaptiveWorkloadEstimateSchema.parse({
+    gamesPerBlock: budget.gamesPerBlock,
+    blocksScheduled: budget.blocksScheduled,
+    gamesScheduled: budget.gamesScheduled,
+    gamesUnspent: budget.shortfall?.gamesUnspent ?? 0,
+    shortfallReason: budget.shortfall?.reason ?? '',
+    finalValidationGames: config.finalValidationGames,
   });
 }
 

@@ -21,6 +21,7 @@ import {
   type Capabilities,
   type ChoiceEstimate,
   type ContentCatalog,
+  type EnqueueAdaptiveResult,
   type EnqueuePresetResult,
   type JobDetail,
   type JobId,
@@ -36,7 +37,7 @@ import type { CatalogResult, CatalogStore } from '../catalog/store.js';
 import { ChampionshipScheduler } from '../lab/championship.js';
 import { readContentCatalog } from '../lab/content.js';
 import { duplicateConfig } from '../lab/duplicate.js';
-import { estimateAdaptiveChoice } from '../lab/adaptive-choice.js';
+import { estimateAdaptiveChoice, type AdaptiveChoiceEstimate } from '../lab/adaptive-choice.js';
 import { PRESET_FORMAT_ID, PresetRefused, scrubRefusal } from '../lab/expand.js';
 import { estimatePreset, type PresetEstimate } from '../lab/estimate.js';
 import type { JobQueue } from '../run/queue.js';
@@ -172,6 +173,7 @@ export class AdminService {
       saveChoice: (payload) => this.#saveChoice(payload),
       listSavedChoices: () => this.#listSavedChoices(),
       enqueuePreset: (payload) => this.#enqueuePreset(payload),
+      enqueueAdaptive: (payload) => this.#enqueueAdaptive(payload),
       scheduleChampionship: (payload) => this.#scheduleChampionship(payload),
       reorderBatch: (payload) => this.#reorderBatch(payload.batchId, payload.jobIds),
       duplicateJob: (payload) => this.#duplicateJob(payload.jobId),
@@ -377,6 +379,44 @@ export class AdminService {
       jobs,
       expansion: expanded.expansion,
       estimate: expanded.estimate,
+    });
+  }
+
+  /**
+   * Queues one Adaptive Counter Search job directly, on its own address
+   * (M08.R3).
+   *
+   * Not a stage of `#enqueuePreset`: `adaptive_counter`'s own `limitations`
+   * refuse expansion into a stage plan, so this handler validates and prices
+   * the choice itself (`resolveAdaptiveChoiceOrRefuse`) and creates exactly
+   * one job from the result — there is no loop over stages because there is
+   * no stage plan to loop over.
+   */
+  async #enqueueAdaptive(
+    payload: AdminRequestOf<'enqueueAdaptive'>,
+  ): Promise<CatalogResult<EnqueueAdaptiveResult>> {
+    const resolved = resolveAdaptiveChoiceOrRefuse(payload.choice);
+    if (isErr(resolved)) return resolved;
+    const { config, expansion, estimate } = resolved.value;
+
+    const batch = await this.#store.readBatch(payload.batchId);
+    if (isErr(batch)) return batch;
+
+    const created = await this.#store.createAdaptiveJob({
+      batchId: payload.batchId,
+      label: `Adaptive Counter Search: ${config.id}`.slice(0, 120),
+      purpose: 'exploration',
+      sourceClasses: canonicalSourceClasses(expansion.sourceClasses),
+      config,
+      workloadEstimate: estimate,
+      origin: { kind: 'adaptive_counter' },
+    });
+    if (isErr(created)) return created;
+
+    return ok({
+      batchId: payload.batchId,
+      job: catalogJobViewOf(created.value),
+      estimate,
     });
   }
 
@@ -692,11 +732,43 @@ function expandOrRefuse(choice: unknown): CatalogResult<PresetEstimate> {
  * The adaptive counterpart to `expandOrRefuse`, over `estimateAdaptiveChoice`
  * rather than `estimatePreset` — see `../lab/adaptive-choice.ts`'s header for
  * why `adaptive_counter` needs its own door. Used by `#estimateChoice` and
- * `#saveChoice` only: `#enqueuePreset` still goes through `expandOrRefuse`,
- * which refuses `adaptive_counter` outright, because this build cannot
- * schedule one yet.
+ * `#saveChoice` only, both of which need `expansion`/`estimate` and nothing
+ * more: `#enqueuePreset` still goes through `expandOrRefuse`, which refuses
+ * `adaptive_counter` outright, and `#enqueueAdaptive` goes through
+ * `resolveAdaptiveChoiceOrRefuse` below instead, which also carries the
+ * validated `config` a job is created from.
  */
 function estimateAdaptiveOrRefuse(choice: unknown): CatalogResult<ChoiceEstimate> {
+  try {
+    // Drops `config`, which `AdaptiveChoiceEstimate` carries for
+    // `resolveAdaptiveChoiceOrRefuse` below and `choiceEstimateSchema` does
+    // not: passing it through would leak the validated configuration into
+    // `estimateChoice`'s and `saveChoice`'s public response.
+    const { expansion, estimate } = estimateAdaptiveChoice(choice);
+    return ok({ expansion, estimate });
+  } catch (cause) {
+    if (cause instanceof PresetRefused) return err(cause.errors);
+    return err([
+      adminError(
+        'admin/schema',
+        scrubRefusal(
+          `This preset choice could not be expanded: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+        { path: 'choice' },
+      ),
+    ]);
+  }
+}
+
+/**
+ * The counterpart `#enqueueAdaptive` needs, carrying `config` rather than
+ * discarding it (M08.R3).
+ *
+ * Same validation, same refusal translation as `estimateAdaptiveOrRefuse` —
+ * the two differ only in what they return, not in what they check, because
+ * both call the one validator, `estimateAdaptiveChoice`.
+ */
+function resolveAdaptiveChoiceOrRefuse(choice: unknown): CatalogResult<AdaptiveChoiceEstimate> {
   try {
     return ok(estimateAdaptiveChoice(choice));
   } catch (cause) {

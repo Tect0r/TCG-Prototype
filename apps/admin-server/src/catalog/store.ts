@@ -1,5 +1,6 @@
 import type {
   AdminError,
+  AdaptiveWorkloadEstimate,
   Annotations,
   AnnotatableComparisonDecision,
   BatchAction,
@@ -26,7 +27,7 @@ import type {
   StoredResultReference,
 } from '@tcg/admin-contracts';
 import type { Result } from '@tcg/shared';
-import type { ExperimentConfig } from '@tcg/simulator';
+import type { AdaptiveConfig, ExperimentConfig } from '@tcg/simulator';
 
 /**
  * What the catalog can do, stated once and separately from how it does it.
@@ -133,6 +134,35 @@ export interface NewJobInput {
    * job from a configuration it assembled itself, and `DIRECT_JOB_ORIGIN` is what
    * that is. A preset expansion says so, and the run it produces can then be
    * shown beside the limitations `PRESET_REGISTRY` publishes for it.
+   */
+  readonly origin?: JobOrigin;
+}
+
+/**
+ * The Adaptive Counter counterpart to `NewJobInput` (M08.R3).
+ *
+ * A dedicated shape rather than a widened `NewJobInput`, for the reason
+ * `jobSpecSchema` is a discriminated union rather than a sixth
+ * `ExperimentConfig` kind: `config` is `@tcg/simulator`'s `AdaptiveConfig`,
+ * not an `ExperimentConfig`, and `workloadEstimate` has no analogue on the
+ * experiment side at all — an experiment's total is always recoverable from
+ * its stored configuration, but an adaptive run's budget was priced once, by
+ * `planAdaptiveBudget`, before anything was queued, and that price is what
+ * `adaptiveJobSpecSchema.workloadEstimate` durably records.
+ */
+export interface NewAdaptiveJobInput {
+  readonly batchId: BatchId;
+  readonly label: string;
+  readonly purpose: ExperimentPurpose;
+  readonly sourceClasses: readonly SourceClass[];
+  readonly annotations?: Annotations;
+  readonly config: AdaptiveConfig;
+  readonly workloadEstimate: AdaptiveWorkloadEstimate;
+  /**
+   * What asked for this job. Defaults to `{ kind: 'adaptive_counter' }`
+   * rather than `DIRECT_JOB_ORIGIN`, since every adaptive job is created
+   * through `enqueueAdaptive` and none through a bare `POST` of a
+   * configuration nobody chose through the builder.
    */
   readonly origin?: JobOrigin;
 }
@@ -285,6 +315,15 @@ export interface CatalogStore {
 
   /* jobs */
   createJob(input: NewJobInput): Promise<CatalogResult<CatalogJobDocument>>;
+  /**
+   * The Adaptive Counter counterpart to `createJob` (M08.R3).
+   *
+   * Same guarantee, same lock, same batch-must-be-`draft` rule — the only
+   * difference is which of the two `jobSpecSchema` branches the created
+   * document carries and which sibling schema its stored configuration is
+   * validated against.
+   */
+  createAdaptiveJob(input: NewAdaptiveJobInput): Promise<CatalogResult<CatalogJobDocument>>;
   readJob(jobId: JobId): Promise<CatalogResult<CatalogJobDocument>>;
   listJobs(
     filter?: CatalogFilter,
@@ -304,6 +343,17 @@ export interface CatalogStore {
    * (`spec`), which is what a listing, a filter and a queue screen actually need.
    */
   readJobConfig(jobId: JobId): Promise<CatalogResult<ExperimentConfig>>;
+  /**
+   * The Adaptive Counter counterpart to `readJobConfig` (M08.R3).
+   *
+   * Separate rather than a widened return type, for the same reason
+   * `readJobConfig` returns `ExperimentConfig` rather than `unknown`: a
+   * caller that asks for one kind of job's configuration should get that
+   * kind back, not a union it has to narrow itself. A caller that does not
+   * yet know which kind a job is reads `spec.kind` first, exactly as
+   * `job-runner.ts` will.
+   */
+  readAdaptiveJobConfig(jobId: JobId): Promise<CatalogResult<AdaptiveConfig>>;
   /**
    * Records where and how this job ran.
    *

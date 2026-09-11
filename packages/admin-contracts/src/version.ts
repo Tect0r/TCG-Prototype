@@ -350,8 +350,30 @@ import { adminError, type AdminError } from './errors.js';
  *   matter how many controlled comparisons a named job's run had recorded —
  *   the milestone's "partners and replacements" line would stay half true.
  *   That is what a contract version is for saying.
+ * - 17 (M08.R3) — the language acquired `enqueue-adaptive`, the dedicated
+ *   address an Adaptive Counter Search choice is queued through, distinct
+ *   from `enqueue-preset` because the shape it returns — one job, not a
+ *   staged array — and the choice it validates — `AdaptiveCounterChoice`
+ *   alone, not the whole `presetChoiceSchema` union — are both narrower than
+ *   an ordinary preset's. `catalogJobViewSchema`'s `spec` and `origin` also
+ *   widened: `spec.kind` can now be `adaptive_counter`, carrying the
+ *   adaptive configuration's own identity and the workload estimate it was
+ *   priced at, and `origin.kind` can now be `adaptive_counter` too, naming
+ *   the choice that asked for the job. Both widenings are additive unions —
+ *   every `spec` and `origin` this build has ever written still parses
+ *   unchanged — so an old client reading a job it already knew about sees no
+ *   difference; what changes is that a *new* job can now carry a `kind` an
+ *   old client's own `catalogJobViewSchema` has never heard of.
+ *
+ *   A build speaking 16 could read and act on every ordinary preset's jobs,
+ *   and could neither reach the new address nor parse a job it named, so an
+ *   Adaptive Counter Search job created by a build speaking 17 would be
+ *   invisible to it rather than misread as some other kind — `spec` and
+ *   `origin` are `z.discriminatedUnion`s, so an unrecognised `kind` is a
+ *   refused parse, never a silent reinterpretation as `batch` or `preset`.
+ *   That is what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 16;
+export const ADMIN_CONTRACT_VERSION = 17;
 
 /**
  * The version stamped into a persisted catalog document.
@@ -420,8 +442,36 @@ export const ADMIN_CONTRACT_VERSION = 16;
  * directories — which is the argument this file has made at every move so far,
  * restated because the next one should not repeat the promise this entry is
  * correcting.
+ *
+ * - 5 (M08.R3) — `jobSpecSchema` became a discriminated union: the existing
+ *   experiment shape is now the `experiment` branch (restated as
+ *   `experimentJobSpecSchema`, field-for-field identical to the object this
+ *   schema used to be), and a new `adaptive_counter` branch carries an
+ *   Adaptive Counter Search job's own identity and the workload estimate it
+ *   was priced at. `jobOriginSchema` gained a fourth member, `adaptive_counter`,
+ *   the same way `commander_championship` was the third.
+ *
+ * **This is the first move that ships an actual migration rather than
+ * repeating the no-real-deployment argument, and it does so because the
+ * argument stopped being the only honest answer, not because it stopped
+ * being true.** M08.R3 requires "existing catalog/job documents remain
+ * readable through an explicit migration when the persisted schema
+ * changes" as a standing property of this constant from here on, independent
+ * of whether any real deployment yet exists to be broken by skipping it. The
+ * migration itself is small precisely because the shape change is additive:
+ * every job and batch document a v4 build ever wrote parses unchanged under
+ * the v5 schemas — `spec.kind` for every existing job is one of
+ * `EXPERIMENT_KINDS`, which routes to the unchanged `experiment` branch, and
+ * every existing `origin.kind` is one of the three members that already
+ * existed. `readDocument`'s new `migrate` option rewrites a v4 document's
+ * `documentVersion` field to 5 before the existing version check and schema
+ * parse ever see it, content otherwise untouched, so the file on disk is
+ * upgraded in place the first time it is read rather than requiring an
+ * offline rewrite tool. A v3 document or older still has no migration and is
+ * still refused: this move only closes the gap this constant's own file
+ * opens each time it is bumped, not the ones already open.
  */
-export const CATALOG_DOCUMENT_VERSION = 4;
+export const CATALOG_DOCUMENT_VERSION = 5;
 
 /**
  * The version stamped into one line of a job's append-only event log.

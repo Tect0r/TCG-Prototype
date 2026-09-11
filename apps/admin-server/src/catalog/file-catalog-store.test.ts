@@ -22,6 +22,8 @@ import type { CatalogPage } from './store.js';
 import {
   makeTestCatalog,
   sequentialIdSources,
+  testAdaptiveConfig,
+  testAdaptiveWorkloadEstimate,
   testConfig,
   testIdentity,
   type TestCatalog,
@@ -1169,5 +1171,115 @@ describe('what asked for a job (M08.6)', () => {
     unwrap(await catalog.store.applyJobAction({ jobId: job.jobId, action: 'retry' }));
     const moved = unwrap(await catalog.store.readJob(job.jobId));
     expect(moved.origin).toEqual({ kind: 'direct' });
+  });
+});
+
+describe('createAdaptiveJob, the Adaptive Counter counterpart to createJob (M08.R3)', () => {
+  async function seedAdaptiveJob(label = 'Adaptive smoke') {
+    const batch = unwrap(await catalog.store.createBatch({ label: 'Adaptive wave' }));
+    const config = testAdaptiveConfig();
+    return unwrap(
+      await catalog.store.createAdaptiveJob({
+        batchId: batch.batchId,
+        label,
+        purpose: 'exploration',
+        sourceClasses: ['ai', 'adaptive'],
+        config,
+        workloadEstimate: testAdaptiveWorkloadEstimate(config),
+      }),
+    );
+  }
+
+  it('creates a job queued, with an adaptive_counter spec, readable back unchanged', async () => {
+    const job = await seedAdaptiveJob();
+    expect(job.status).toBe('queued');
+    expect(job.spec.kind).toBe('adaptive_counter');
+    const reread = unwrap(await catalog.store.readJob(job.jobId));
+    expect(reread).toEqual(job);
+  });
+
+  it('records `adaptive_counter` as the origin when nothing named a different one', async () => {
+    const job = await seedAdaptiveJob();
+    expect(job.origin).toEqual({ kind: 'adaptive_counter' });
+  });
+
+  it('honours an explicitly supplied origin instead of the adaptive default', async () => {
+    const batch = unwrap(await catalog.store.createBatch({ label: 'Wave 1' }));
+    const config = testAdaptiveConfig();
+    const job = unwrap(
+      await catalog.store.createAdaptiveJob({
+        batchId: batch.batchId,
+        label: 'explicit origin',
+        purpose: 'exploration',
+        sourceClasses: ['ai', 'adaptive'],
+        config,
+        workloadEstimate: testAdaptiveWorkloadEstimate(config),
+        origin: { kind: 'direct' },
+      }),
+    );
+    expect(job.origin).toEqual({ kind: 'direct' });
+  });
+
+  it('adds the job to the batch, in order, exactly as an ordinary job would', async () => {
+    const job = await seedAdaptiveJob();
+    const batch = unwrap(await catalog.store.readBatch(job.batchId));
+    expect(batch.jobIds).toEqual([job.jobId]);
+  });
+
+  it('refuses a duplicate job ID, and does not add it to the batch either', async () => {
+    const minter = sequentialIdSources();
+    const test = await makeTestCatalog({ idSources: minter.sources });
+    const batch = unwrap(await test.store.createBatch({ label: 'Wave 1' }));
+    const config = testAdaptiveConfig();
+    const workloadEstimate = testAdaptiveWorkloadEstimate(config);
+
+    const first = unwrap(
+      await test.store.createAdaptiveJob({
+        batchId: batch.batchId,
+        label: 'first',
+        purpose: 'exploration',
+        sourceClasses: ['ai', 'adaptive'],
+        config,
+        workloadEstimate,
+      }),
+    );
+    minter.repeatLast();
+    const second = await test.store.createAdaptiveJob({
+      batchId: batch.batchId,
+      label: 'second',
+      purpose: 'exploration',
+      sourceClasses: ['ai', 'adaptive'],
+      config,
+      workloadEstimate,
+    });
+
+    expect(isErr(second) && second.error[0]?.code).toBe('admin/duplicate_id');
+    expect(unwrap(await test.store.readBatch(batch.batchId)).jobIds).toEqual([first.jobId]);
+    expect(unwrap(await test.store.readJob(first.jobId)).label).toBe('first');
+    await test.dispose();
+  });
+
+  it('refuses to add an adaptive job to a batch that does not exist', async () => {
+    const config = testAdaptiveConfig();
+    const created = await catalog.store.createAdaptiveJob({
+      batchId: 'batch_absent00001',
+      label: 'orphan',
+      purpose: 'exploration',
+      sourceClasses: ['ai', 'adaptive'],
+      config,
+      workloadEstimate: testAdaptiveWorkloadEstimate(config),
+    });
+    expect(isErr(created) && created.error[0]?.code).toBe('admin/unknown_batch');
+  });
+
+  it('never matches a non-empty kinds filter, because it has no ExperimentKind to name', async () => {
+    const adaptive = await seedAdaptiveJob();
+    const ordinary = await seedJob();
+
+    const filtered = unwrap(
+      await catalog.store.listJobs(catalogFilterSchema.parse({ kinds: ['batch'] })),
+    );
+    expect(filtered.items.map((job) => job.jobId)).toEqual([ordinary.jobId]);
+    expect(filtered.items.map((job) => job.jobId)).not.toContain(adaptive.jobId);
   });
 });

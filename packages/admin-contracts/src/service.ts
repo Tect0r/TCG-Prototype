@@ -38,6 +38,7 @@ import {
   batchRefSchema,
   createBatchRequestSchema,
   emptyRequestSchema,
+  enqueueAdaptiveRequestSchema,
   enqueuePresetRequestSchema,
   estimateChoiceRequestSchema,
   jobActionRequestSchema,
@@ -307,6 +308,25 @@ export const enqueuePresetResultSchema = z
 export type EnqueuePresetResult = z.infer<typeof enqueuePresetResultSchema>;
 
 /**
+ * What an Adaptive Counter Search choice actually created, plus what it will
+ * cost (M08.R3).
+ *
+ * One choice becomes one job, never a stage array — `adaptive_counter`'s own
+ * `limitations` refuse expansion, so there is no `expansion` member here the
+ * way `enqueuePresetResultSchema` carries one. The estimate is
+ * `adaptiveWorkloadEstimateSchema`, the same shape `estimateAdaptiveChoice`
+ * already answers with before a job exists, travelling with the job for the
+ * same reason `enqueuePresetResultSchema`'s estimate does: nothing else ties
+ * what was created to what it was expected to cost.
+ */
+export const enqueueAdaptiveResultSchema = z.strictObject({
+  batchId: batchIdSchema,
+  job: catalogJobViewSchema,
+  estimate: adaptiveWorkloadEstimateSchema,
+});
+export type EnqueueAdaptiveResult = z.infer<typeof enqueueAdaptiveResultSchema>;
+
+/**
  * What a choice *would* schedule, answered without scheduling it (M08.8).
  *
  * The same two members `enqueuePresetResultSchema` carries minus the jobs,
@@ -405,6 +425,12 @@ export const ADMIN_ENDPOINTS = Object.freeze({
     route: 'enqueue-preset',
     request: enqueuePresetRequestSchema,
     response: enqueuePresetResultSchema,
+    mutates: true,
+  }),
+  enqueueAdaptive: endpoint({
+    route: 'enqueue-adaptive',
+    request: enqueueAdaptiveRequestSchema,
+    response: enqueueAdaptiveResultSchema,
     mutates: true,
   }),
   scheduleChampionship: endpoint({

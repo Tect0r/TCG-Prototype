@@ -8,7 +8,9 @@ import {
   ADMIN_ENDPOINTS,
   MAX_SAVED_CHOICES,
   adminResponse,
+  listJobsRequestSchema,
   savedChoiceDocumentSchema,
+  type AdaptiveCounterChoice,
   type PresetChoice,
 } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
@@ -235,6 +237,11 @@ function adaptiveChoice(overrides: Record<string, unknown> = {}): PresetChoice {
   } as unknown as PresetChoice;
 }
 
+/** `adaptiveChoice`, typed for `enqueueAdaptive`'s narrower request instead of the preset union. */
+function adaptiveCounterChoice(overrides: Record<string, unknown> = {}): AdaptiveCounterChoice {
+  return adaptiveChoice(overrides) as unknown as AdaptiveCounterChoice;
+}
+
 describe('adaptive_counter, on its own narrower door', () => {
   it('answers a workload, not a match-count schedule, and shows it before enqueueing', async () => {
     const service = await makeService();
@@ -286,7 +293,7 @@ describe('adaptive_counter, on its own narrower door', () => {
     expect(answer.error[0]?.code).toBe('admin/schema');
   });
 
-  it('still refuses to enqueue, because scheduling an adaptive run is not in this build', async () => {
+  it('still refuses `enqueuePreset` for it, because expansion into a stage plan is not this door (M08.R3)', async () => {
     const service = await makeService();
     const batch = await service.handle('createBatch', {
       label: 'Adaptive attempt',
@@ -299,6 +306,62 @@ describe('adaptive_counter, on its own narrower door', () => {
       choice: adaptiveChoice(),
     });
     expect(isErr(enqueued)).toBe(true);
+  });
+
+  it('enqueues through its own address instead, creating exactly one adaptive_counter job (M08.R3)', async () => {
+    const service = await makeService();
+    const batch = await service.handle('createBatch', {
+      label: 'Adaptive attempt',
+      annotations: { tags: [], note: '', baseline: false },
+    });
+    if (isErr(batch)) throw new Error('createBatch refused');
+
+    const enqueued = await service.handle('enqueueAdaptive', {
+      batchId: batch.value.batchId,
+      choice: adaptiveCounterChoice(),
+    });
+    if (isErr(enqueued)) throw new Error(enqueued.error.map((problem) => problem.message).join('; '));
+
+    valid('enqueueAdaptive', enqueued.value);
+    expect(enqueued.value.batchId).toBe(batch.value.batchId);
+    expect(enqueued.value.job.origin).toEqual({ kind: 'adaptive_counter' });
+    expect(enqueued.value.job.status).toBe('queued');
+    if (enqueued.value.job.spec.kind !== 'adaptive_counter') {
+      throw new Error('expected an adaptive job spec');
+    }
+    expect(enqueued.value.estimate).toEqual(enqueued.value.job.spec.workloadEstimate);
+
+    const listed = await service.handle('listJobs', listJobsRequestSchema.parse({}));
+    if (isErr(listed)) throw new Error('listJobs refused');
+    expect(listed.value.items.map((job) => job.jobId)).toEqual([enqueued.value.job.jobId]);
+  });
+
+  it('refuses to enqueue a choice that could not validate, in the same way estimation refused it', async () => {
+    const service = await makeService();
+    const batch = await service.handle('createBatch', {
+      label: 'Adaptive attempt',
+      annotations: { tags: [], note: '', baseline: false },
+    });
+    if (isErr(batch)) throw new Error('createBatch refused');
+
+    const enqueued = await service.handle('enqueueAdaptive', {
+      batchId: batch.value.batchId,
+      choice: adaptiveCounterChoice({ startingPreconIds: ['precon_not_real'] }),
+    });
+    expect(isErr(enqueued)).toBe(true);
+    if (!isErr(enqueued)) return;
+    expect(enqueued.error[0]?.code).toBe('admin/schema');
+  });
+
+  it('refuses to enqueue into a batch that does not exist', async () => {
+    const service = await makeService();
+    const enqueued = await service.handle('enqueueAdaptive', {
+      batchId: 'batch_absent00001',
+      choice: adaptiveCounterChoice(),
+    });
+    expect(isErr(enqueued)).toBe(true);
+    if (!isErr(enqueued)) return;
+    expect(enqueued.error[0]?.code).toBe('admin/unknown_batch');
   });
 });
 

@@ -139,6 +139,32 @@ export const experimentSlugSchema = z
 export type ExperimentSlug = z.infer<typeof experimentSlugSchema>;
 
 /**
+ * The same authored-slug bound `@tcg/simulator`'s `adaptive/config.ts` declares
+ * for `adaptiveExperimentIdSchema` (40, lowercase, hyphen/underscore safe),
+ * restated rather than imported for the reason `EXPERIMENT_KINDS` already gives
+ * above: a simulator-owned shape is a word this package names, never an import
+ * that would put `@tcg/simulator` on `@tcg/admin-contracts`'s dependency graph
+ * (ADR 0001).
+ *
+ * Lives beside `experimentSlugSchema` rather than in `./adaptive-results.ts`
+ * (M08.R3) so that `./catalog.ts` can use it for `adaptiveJobSpecSchema`
+ * without importing a module that itself imports `./results.ts`, which imports
+ * `./catalog.ts` — this file has no dependency on `./catalog.ts` and is exactly
+ * where every other restated identity alphabet already sits.
+ */
+export const MAX_ADAPTIVE_EXPERIMENT_ID = 40;
+
+export const adaptiveExperimentIdSchema = z
+  .string()
+  .min(1)
+  .max(MAX_ADAPTIVE_EXPERIMENT_ID)
+  .regex(
+    AUTHORED_SLUG,
+    'An Adaptive Counter experiment ID is lowercase and hyphen/underscore safe.',
+  );
+export type AdaptiveExperimentId = z.infer<typeof adaptiveExperimentIdSchema>;
+
+/**
  * Where a stage sits, in full.
  *
  * The ordinal travels with the ID because "which stage is running" and "how far

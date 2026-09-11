@@ -4,6 +4,7 @@ import {
   PRESET_TEST_STYLES,
   SOURCE_CLASSES,
   type ExperimentKind,
+  type JobSpec,
   type PresetStatus,
   type PresetTestStyle,
   type SourceClass,
@@ -45,6 +46,28 @@ export const EXPERIMENT_KIND_LABELS: Readonly<Record<ExperimentKind, string>> = 
   robustness: 'Robustness',
 });
 
+/**
+ * Every `JobSpec.kind` a catalog job document can carry (M08.R3): the five
+ * experiment kinds above, plus `adaptive_counter` — the one `jobSpecSchema`
+ * branch that is not an `ExperimentKind` at all, deliberately, since Adaptive
+ * Counter Search is not a sixth ordinary experiment kind (`catalog.ts`'s own
+ * header on the discriminated union says why).
+ *
+ * Kept separate from `EXPERIMENT_KIND_LABELS` rather than folding
+ * `adaptive_counter` into it: that record is `Record<ExperimentKind, string>`
+ * and stays exactly total over the five real experiment kinds, which is what
+ * lets it keep labelling the *filter* checkboxes above — `CatalogFilter.kinds`
+ * is still `ExperimentKind[]`, unwidened, because a queued job's run identity
+ * is what that filter reads and an adaptive run has none. A job's *own*
+ * `spec.kind`, read off the document itself, is the wider domain this record
+ * is total over instead.
+ */
+export const JOB_SPEC_KINDS = [...EXPERIMENT_KINDS, 'adaptive_counter'] as const;
+export const JOB_SPEC_KIND_LABELS: Readonly<Record<JobSpec['kind'], string>> = Object.freeze({
+  ...EXPERIMENT_KIND_LABELS,
+  adaptive_counter: 'Adaptive Counter Search',
+});
+
 /** The four primary test styles and the three advanced templates, in words. */
 export const TEST_STYLE_LABELS: Readonly<Record<PresetTestStyle, string>> = Object.freeze({
   precon_benchmark: 'Precon Benchmark',
@@ -72,6 +95,7 @@ export const PRESET_STATUS_LABELS: Readonly<Record<PresetStatus, string>> = Obje
 export const LABELLED_VOCABULARIES = Object.freeze({
   sourceClass: { members: SOURCE_CLASSES, labels: SOURCE_CLASS_LABELS },
   experimentKind: { members: EXPERIMENT_KINDS, labels: EXPERIMENT_KIND_LABELS },
+  jobSpecKind: { members: JOB_SPEC_KINDS, labels: JOB_SPEC_KIND_LABELS },
   testStyle: { members: PRESET_TEST_STYLES, labels: TEST_STYLE_LABELS },
   presetStatus: { members: PRESET_STATUSES, labels: PRESET_STATUS_LABELS },
 });

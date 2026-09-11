@@ -5312,3 +5312,93 @@ approach).
 
 Next slice: M08.R3 — Adaptive job contracts and catalog persistence
 (Correction Tranche B). Not started this session.
+
+## M08.R3 — Adaptive job contracts and catalog persistence (2026-09-11)
+
+First slice of Correction Tranche B (`docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`).
+Adaptive Counter had no enqueue contract of its own — `enqueuePreset` only
+ever resolved `presetChoiceSchema`'s union into a real `ExperimentConfig`,
+so there was no authenticated/admin path that could create an adaptive job
+and no durable shape for one. Per the owner-locked brief: a **dedicated**
+`enqueueAdaptive` address (not a reuse of `enqueue-preset`), and `jobSpecSchema`
+widened to a **discriminated union** rather than treating Adaptive Counter
+as a sixth ordinary `ExperimentConfig` kind.
+
+**Contract (`packages/admin-contracts`).** `jobOriginSchema` gained
+`adaptive_counter` as a fourth member. `jobSpecSchema` became
+`z.discriminatedUnion('kind', [experimentJobSpecSchema, adaptiveJobSpecSchema])`
+— the experiment branch is unchanged and still closed to the five real
+`ExperimentKind`s; the new branch carries its own validated spec (config
+hash, schema version, seed, workload estimate). `AdaptiveCounterChoice`
+names the narrow request shape `enqueueAdaptiveRequestSchema` needs, distinct
+from the broader `presetChoiceSchema` union `enqueuePreset`/`estimateChoice`
+still accept. `CATALOG_DOCUMENT_VERSION` 4→5.
+
+**Server (`apps/admin-server`).** `CatalogStore.createAdaptiveJob` is an
+explicit creation path alongside `createJob`. `AdminService#enqueueAdaptive`
+resolves the choice through `resolveAdaptiveChoiceOrRefuse` (keeps the
+validated `AdaptiveConfig` needed to create the job) — distinct from
+`estimateAdaptiveOrRefuse` (used by `estimateChoice`/`saveChoice`, which must
+strip `config` before it reaches the public response). `migrations.ts`
+added `migrateCatalogDocument`: the one migration this repository has
+needed, rewriting a v4 document's `documentVersion` to 5 in place and
+returning `null` for anything else — the pre-M08.R3 `jobSpecSchema`/
+`jobOriginSchema` were already exactly the `experiment` branch and a strict
+subset of the widened `origin` union, so no other field ever needed
+rewriting. Wired into `readDocument`'s `migrate` option (runs before the
+version-refusal check) at all three read paths (`#readBatchDocument`,
+`#readJobDocument`, `#loadAll`). A document from a genuinely future build
+is still refused with the existing "written by a newer build / update the
+application" sentence; a pre-M08.R3 client reading a v5 document with an
+`adaptive_counter` job/origin still fails the closed old unions rather than
+silently reinterpreting the new kind.
+
+**Self-discovered regression, fixed.** `estimateAdaptiveOrRefuse` was
+declared to return the narrow public `ChoiceEstimate` shape but its body
+passed `estimateAdaptiveChoice`'s wider result through unmodified, leaking
+the internal `config` field into `estimateChoice`'s/`saveChoice`'s public
+response (TypeScript's excess-property checking does not catch a
+passed-through call result, only an object literal). Caught only because
+this was the first time `builder-endpoints.test.ts` ran in full this
+session after the M08.R3 changes. Fixed by destructuring only
+`expansion`/`estimate` before wrapping in `ok(...)`.
+
+**Tests added/verified this session.** `migrations.test.ts` (new, 9 tests:
+5 unit-level on `migrateCatalogDocument` in isolation, 4 end-to-end through
+a real `FileCatalogStore`). `restart.test.ts` (new test: an adaptive job's
+`spec.kind`, `origin` and stored `AdaptiveConfig` survive a
+`FileCatalogStore` restart mid-run, recovered as `interrupted`).
+`builder-endpoints.test.ts` (3 new handler-level tests: successful creation
+with correct response shape/`origin`/`status`/listing visibility, refusal
+of an invalid choice with `admin/schema`, refusal of an unknown batch with
+`admin/unknown_batch`; also renamed a stale test title that implied
+adaptive scheduling was impossible, keeping its correct
+`enqueuePreset`-still-refuses assertion). Authorization coverage for
+`enqueueAdaptive` needed no new test — `http.test.ts`'s existing
+`ADMIN_ENDPOINT_NAMES`-generic routing/authorization loops already cover
+every registered endpoint. `adaptive-job-config.test.ts` (round-trip,
+malformed-input, unsupported-future-version, missing-version coverage) was
+already in place from earlier this session, confirmed still passing.
+Checked `apps/admin-client`: nothing calls `enqueueAdaptive` yet (a future
+UI slice, not this one), so `fake-service.ts` needs no test double for it.
+Reviewed other `CATALOG_DOCUMENT_VERSION`/`ADMIN_CONTRACT_VERSION`
+references repo-wide — all either the constant definition itself, doc
+comments, or a generic export-boundary list test; nothing else needed a
+value update.
+
+**Verification (focused, no full gate — reserved for tranche close).**
+Typecheck clean on all four touched workspaces
+(`admin-contracts`/`admin-server`/`simulator`/`admin-client`). Full focused
+suites: `packages` project 166/166 (5 files), `admin-server` project
+815/815 (47 files), `simulator` project's `adaptive/` suite 188/188 (12
+files), `admin-client` project 436/436 (29 files) — all pass.
+
+**Root record.** `docs/milestones/M08-ai-lab-and-player-meta.md` gained a
+new `### Correction Tranche B — Executable and crash-safe Adaptive Counter`
+section with `M08.R3` checked and its evidence note.
+`IMPLEMENTATION_PLAN.md`'s "next bounded task" section documents M08.R3's
+shipment and names `M08.R4` (Adaptive runner dispatch and lifecycle) as the
+next slice; the root Status table is untouched (tranche-close only).
+
+Next slice: M08.R4 — Adaptive runner dispatch and lifecycle (Correction
+Tranche B). Not started this session.

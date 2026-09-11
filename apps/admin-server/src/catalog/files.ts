@@ -326,6 +326,16 @@ export async function readDocument<T>(
     readonly versionField: AdminVersionField;
     /** Safe context for the failure — identifiers only, never a path. */
     readonly context?: Readonly<Record<string, unknown>>;
+    /**
+     * Rewrites a parsed-but-not-yet-validated document into the current
+     * version's shape, applied before the version check and the schema ever
+     * see it (M08.R3). Returns `null` when no migration applies, in which
+     * case `parsed` is read exactly as before — including the "no migration
+     * for this version" refusal a genuinely unreadable document still gets.
+     * `migrateCatalogDocument` (`./migrations.ts`) is the one migration this
+     * repository has ever needed.
+     */
+    readonly migrate?: (parsed: unknown) => unknown | null;
   },
 ): Promise<Result<T, readonly AdminError[]>> {
   const context = options.context ?? {};
@@ -348,6 +358,11 @@ export async function readDocument<T>(
         { context },
       ),
     ]);
+  }
+
+  if (options.migrate !== undefined) {
+    const migrated = options.migrate(parsed);
+    if (migrated !== null) parsed = migrated;
   }
 
   const refusal = versionRefusalOf(parsed, options.versionField);
