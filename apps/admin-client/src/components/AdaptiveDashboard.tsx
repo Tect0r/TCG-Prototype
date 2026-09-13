@@ -7,6 +7,7 @@ import {
   type AdaptiveResultTable,
   type AdaptiveResultTableName,
   type AdaptiveRunSummary,
+  type AdminError,
   type ResultRow,
 } from '@tcg/admin-contracts';
 
@@ -24,7 +25,7 @@ import {
   type SeriesTallyPoint,
 } from '../lib/adaptive-view.js';
 import { formatRate } from '../lib/dashboard-view.js';
-import type { AdminOutcome } from '../net/transport.js';
+import type { AdminFailure, AdminOutcome } from '../net/transport.js';
 import { useAdminSession } from '../state/AdminContext.js';
 import { Busy, Empty, Failure } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
@@ -83,7 +84,14 @@ const TAB_LABELS: Readonly<Record<AdaptiveResultTableName, string>> = {
   validation: 'Validation',
 };
 
-export function AdaptiveRunPanel() {
+export function AdaptiveRunPanel({
+  initialExperimentId = null,
+  onConsumeInitialExperimentId,
+}: {
+  /** A run handed off from elsewhere (M08.R6), such as a queue row's own job. */
+  readonly initialExperimentId?: AdaptiveExperimentId | null | undefined;
+  readonly onConsumeInitialExperimentId?: (() => void) | undefined;
+} = {}) {
   const session = useAdminSession();
   const [input, setInput] = useState('');
   const [experimentId, setExperimentId] = useState<AdaptiveExperimentId | null>(null);
@@ -95,6 +103,7 @@ export function AdaptiveRunPanel() {
 
   const open = useCallback(
     (id: AdaptiveExperimentId) => {
+      setInput(id);
       setExperimentId(id);
       setSummary(null);
       setTables({});
@@ -104,6 +113,16 @@ export function AdaptiveRunPanel() {
     },
     [session],
   );
+
+  useEffect(() => {
+    if (initialExperimentId === null || initialExperimentId === undefined) return;
+    open(initialExperimentId);
+    onConsumeInitialExperimentId?.();
+    // Only the handoff's arrival opens a run; `open` and the consume callback
+    // are stable-enough closures and re-running this for their own sake would
+    // reopen the same run on every unrelated re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialExperimentId]);
 
   useEffect(() => {
     if (experimentId === null || summary === null || !summary.ok) return;
@@ -167,11 +186,7 @@ export function AdaptiveRunPanel() {
 
       {experimentId !== null && summary === null && <Busy label="Reading this run's summary…" />}
       {experimentId !== null && summary !== null && !summary.ok && (
-        <Failure
-          title="This run's summary could not be shown"
-          failure={summary.failure}
-          onRetry={() => open(experimentId)}
-        />
+        <SummaryFailure failure={summary.failure} onRetry={() => open(experimentId)} />
       )}
       {experimentId !== null && summary !== null && summary.ok && (
         <>
@@ -221,6 +236,86 @@ export function AdaptiveRunPanel() {
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * `admin/no_result` covers five distinct reasons a canonical result cannot be
+ * read yet (`adaptive-results.ts`'s own note on the code); this picks that one
+ * error back out of a `refused` failure so the panel below can show pending
+ * generation instead of `Failure`'s "something went wrong" framing.
+ */
+function noResultError(failure: AdminFailure): AdminError | null {
+  if (failure.kind !== 'refused') return null;
+  return failure.errors.find((error) => error.code === 'admin/no_result') ?? null;
+}
+
+function contextCount(context: AdminError['context'], key: string): number | null {
+  if (context === undefined) return null;
+  const value = context[key];
+  return typeof value === 'number' ? value : null;
+}
+
+function contextFlag(context: AdminError['context'], key: string): boolean | null {
+  if (context === undefined) return null;
+  const value = context[key];
+  return typeof value === 'boolean' ? value : null;
+}
+
+/**
+ * "Incomplete output shows pending generation/progress rather than a false
+ * failure" (M08.R6) — `admin/no_result`'s checkpoint context is the only
+ * evidence of that progress, so this reads it back defensively rather than
+ * assuming every field survived the wire as the exact type it left the server.
+ */
+function AdaptivePendingPanel({
+  error,
+  onRetry,
+}: {
+  readonly error: AdminError;
+  readonly onRetry: () => void;
+}) {
+  const gamesSpent = contextCount(error.context, 'gamesSpent');
+  const pendingGeneration = contextFlag(error.context, 'pendingGeneration');
+  const incumbentRevisions = contextCount(error.context, 'incumbentRevisions');
+  const opponentRevisions = contextCount(error.context, 'opponentRevisions');
+  const facts: Fact[] = [];
+  if (gamesSpent !== null) facts.push({ label: 'Games spent so far', value: gamesSpent });
+  if (incumbentRevisions !== null) {
+    facts.push({ label: 'Incumbent revisions recorded', value: incumbentRevisions });
+  }
+  if (opponentRevisions !== null) {
+    facts.push({ label: 'Opponent revisions recorded', value: opponentRevisions });
+  }
+  return (
+    <div className="dashboard__view" role="status">
+      <h3>This run has no canonical result yet</h3>
+      <p className="panel__note">
+        {pendingGeneration === true
+          ? 'This is still generating — not a failure. Check back once it has produced more evidence.'
+          : error.message}
+      </p>
+      {facts.length > 0 && <FactTable caption="What this run has produced so far" facts={facts} />}
+      <p className="builder__actions">
+        <button type="button" onClick={onRetry}>
+          Check again
+        </button>
+      </p>
+    </div>
+  );
+}
+
+function SummaryFailure({
+  failure,
+  onRetry,
+}: {
+  readonly failure: AdminFailure;
+  readonly onRetry: () => void;
+}) {
+  const pending = noResultError(failure);
+  if (pending !== null) return <AdaptivePendingPanel error={pending} onRetry={onRetry} />;
+  return (
+    <Failure title="This run's summary could not be shown" failure={failure} onRetry={onRetry} />
   );
 }
 

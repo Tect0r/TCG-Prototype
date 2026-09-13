@@ -328,13 +328,13 @@ export class JobQueue {
       if (this.#inFlight.has(job.jobId)) continue;
       if (this.#unstartable.has(job.jobId)) continue;
       if (!(await this.#batchReleased(job.batchId, released))) continue;
-      const config = await this.#store.readJobConfig(job.jobId);
+      const requested = await this.#requestedWorkers(job);
       // A job whose stored configuration cannot be read is left where it is
       // rather than started or failed. Reading it is `run`'s first job anyway,
       // and refusing it from here would move a job to `failed` without the event
       // log ever recording that it was started.
-      if (isErr(config)) continue;
-      const workers = grantWorkers(this.#limits, config.value.workers, {
+      if (requested === null) continue;
+      const workers = grantWorkers(this.#limits, requested, {
         jobs: this.#inFlight.size,
         workers: this.#workersInUse,
       });
@@ -342,6 +342,24 @@ export class JobQueue {
       return { jobId: job.jobId, workers };
     }
     return null;
+  }
+
+  /**
+   * What a queued job asks for, read through whichever of the two config
+   * shapes `job.spec.kind` names (M08.R6).
+   *
+   * `AdaptiveConfig` has no `workers` field to read (`job-runner.ts`'s own
+   * note on why, per Q53), so an adaptive job always requests the same
+   * default of one that a caller with no opinion falls back to there —
+   * `grantWorkers` below is still what may shrink that to what is left.
+   */
+  async #requestedWorkers(job: CatalogJobDocument): Promise<number | null> {
+    if (job.spec.kind === 'adaptive_counter') {
+      const config = await this.#store.readAdaptiveJobConfig(job.jobId);
+      return isErr(config) ? null : 1;
+    }
+    const config = await this.#store.readJobConfig(job.jobId);
+    return isErr(config) ? null : config.value.workers;
   }
 
   /**

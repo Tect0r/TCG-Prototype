@@ -5,6 +5,7 @@ import {
   playerMetaFilterSchema,
 } from '@tcg/admin-contracts';
 import type {
+  AdaptiveCounterChoice,
   AdaptiveExperimentId,
   AdaptiveResultTable,
   AdaptiveResultTableName,
@@ -25,6 +26,7 @@ import type {
   ChoiceEstimate,
   ContentCatalog,
   DeckExplorerView,
+  EnqueueAdaptiveResult,
   EnqueuePresetResult,
   ExplorerMatchId,
   JobId,
@@ -361,6 +363,24 @@ export class AdminSession {
     });
     if (!batch.ok) return batch;
     return this.#call('enqueuePreset', { batchId: batch.value.batchId, choice });
+  }
+
+  /**
+   * The same two-call shape as {@link enqueue}, on `enqueueAdaptive`'s own
+   * dedicated address (M08.R3) rather than `enqueuePreset`: an Adaptive Counter
+   * Search choice creates exactly one job, never a staged array, so it needs its
+   * own request/response pair rather than reusing the one built for expansion.
+   */
+  async enqueueAdaptive(
+    label: string,
+    choice: AdaptiveCounterChoice,
+  ): Promise<AdminOutcome<EnqueueAdaptiveResult>> {
+    const batch = await this.#call('createBatch', {
+      label,
+      annotations: { tags: [], note: '', baseline: false },
+    });
+    if (!batch.ok) return batch;
+    return this.#call('enqueueAdaptive', { batchId: batch.value.batchId, choice });
   }
 
   /** Keeps a filled-in form under a name, and re-reads the list it joined. */

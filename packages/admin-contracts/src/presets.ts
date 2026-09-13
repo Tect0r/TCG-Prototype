@@ -307,8 +307,9 @@ export const PRESET_REGISTRY: Readonly<Record<ExperimentPresetId, ExperimentPres
       label: 'Adaptive Counter Search',
       summary:
         'Decks revise between evaluation blocks, with the cumulative series and the frozen ' +
-        'final strength recorded separately. Reserved: the schema and the algorithm are ' +
-        'M08.16 and later.',
+        'final strength recorded separately. Scheduled through its own dedicated address ' +
+        '(M08.R3) rather than the generic experiment pipeline, so it stays reserved: it ' +
+        'carries no experiment kind and never expands into a stage plan.',
       status: 'reserved',
       testStyle: 'adaptive_counter_search',
       kinds: [],

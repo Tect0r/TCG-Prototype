@@ -6,6 +6,7 @@ import {
   JOB_STATUSES,
   PAGE_SIZE_DEFAULT,
   SOURCE_CLASSES,
+  type AdaptiveExperimentId,
   type Annotations,
   type CatalogJobView,
   type ExperimentKind,
@@ -82,7 +83,14 @@ import { DataHealthPanel } from './DataHealthDashboard.js';
  * directory, which is what makes "mark as baseline never mutates canonical
  * output" a fact about the request shape rather than a promise about this code.
  */
-export function ResultsScreen() {
+export function ResultsScreen({
+  initialAdaptiveExperimentId = null,
+  onConsumeAdaptiveExperimentId,
+}: {
+  /** A run handed off from elsewhere (M08.R6), such as a queue row's own job. */
+  readonly initialAdaptiveExperimentId?: AdaptiveExperimentId | null;
+  readonly onConsumeAdaptiveExperimentId?: () => void;
+} = {}) {
   const session = useAdminSession();
   const state = useAdminState();
   const content = state.content.status === 'ready' ? state.content.value : null;
@@ -125,6 +133,11 @@ export function ResultsScreen() {
   const consumeRef = useCallback(() => {
     setPendingRef(null);
   }, []);
+
+  useEffect(() => {
+    if (initialAdaptiveExperimentId === null || initialAdaptiveExperimentId === undefined) return;
+    setMode('adaptive');
+  }, [initialAdaptiveExperimentId]);
 
   const search = useCallback(
     async (next: ResultsFilterState): Promise<void> => {
@@ -255,7 +268,12 @@ export function ResultsScreen() {
         </button>
       </div>
 
-      {mode === 'adaptive' && <AdaptiveRunPanel />}
+      {mode === 'adaptive' && (
+        <AdaptiveRunPanel
+          initialExperimentId={initialAdaptiveExperimentId}
+          onConsumeInitialExperimentId={onConsumeAdaptiveExperimentId}
+        />
+      )}
       {mode === 'coverage' && <CoveragePanel />}
       {mode === 'data-health' && <DataHealthPanel />}
       {mode === 'player-meta' && <PlayerMetaPanel />}

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R6",
+  "unit": "M08.R7",
   "mode": "implementation",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "M08.R6 — Adaptive builder and queue integration",
+  "heading": "M08.R7 — Adaptive selection correctness",
   "blocker": null,
-  "next": "M08.R6"
+  "next": "M08.R7"
 }

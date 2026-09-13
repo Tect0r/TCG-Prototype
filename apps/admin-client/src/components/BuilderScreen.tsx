@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import {
+  ADAPTIVE_COMMANDER_POLICIES,
+  ADAPTIVE_INFORMATION_POLICIES,
   BASIS_WORDING,
   FORCED_INCLUSION_CAVEAT,
   NO_PLAY_QUALITY_CAVEAT,
   PRESET_REGISTRY,
+  type AdaptiveWorkloadEstimate,
   type ChoiceEstimate,
   type ContentCatalog,
+  type EnqueueAdaptiveResult,
   type EnqueuePresetResult,
   type ExperimentPresetDefinitionValue,
   type SavedChoiceView,
@@ -16,6 +20,10 @@ import { Busy, Empty, Failure } from './Feedback.js';
 import {
   EMPTY_CARD_PATCH_ROW,
   PRESET_DEPTHS,
+  adaptiveChoiceOf,
+  adaptiveFormFingerprint,
+  adaptiveFormOf,
+  asAdaptiveCounterChoice,
   asBenchmarkChoice,
   asCandidateComparisonChoice,
   asCardReplacementChoice,
@@ -36,6 +44,7 @@ import {
   engineSoakFormOf,
   formFingerprint,
   formOf,
+  initialAdaptiveForm,
   initialCandidateComparisonForm,
   initialCardReplacementForm,
   initialEngineSoakForm,
@@ -48,6 +57,7 @@ import {
   pilotRobustnessChoiceOf,
   pilotRobustnessFormFingerprint,
   pilotRobustnessFormOf,
+  type AdaptiveForm,
   type BuilderForm,
   type BuilderPresetId,
   type CandidateComparisonForm,
@@ -66,7 +76,8 @@ type Family =
   | 'candidate_comparison'
   | 'pilot_robustness'
   | 'engine_soak'
-  | 'card_replacement';
+  | 'card_replacement'
+  | 'adaptive_counter';
 
 /**
  * The first screen in this build that creates something.
@@ -127,6 +138,7 @@ export function BuilderScreen() {
   const [cardReplacement, setCardReplacement] = useState<CardReplacementForm>(() =>
     initialCardReplacementForm(content),
   );
+  const [adaptive, setAdaptive] = useState<AdaptiveForm>(() => initialAdaptiveForm(content));
   const [seeded, setSeeded] = useState(content !== null);
   const [priced, setPriced] = useState<{
     readonly fingerprint: string;
@@ -134,6 +146,7 @@ export function BuilderScreen() {
   } | null>(null);
   const [failure, setFailure] = useState<AdminFailure | null>(null);
   const [enqueued, setEnqueued] = useState<EnqueuePresetResult | null>(null);
+  const [adaptiveEnqueued, setAdaptiveEnqueued] = useState<EnqueueAdaptiveResult | null>(null);
   const [saveLabel, setSaveLabel] = useState('');
   const [saved, setSaved] = useState<SavedChoiceView | null>(null);
 
@@ -147,6 +160,7 @@ export function BuilderScreen() {
     setCandidateComparison(initialCandidateComparisonForm(content));
     setPilotRobustness(initialPilotRobustnessForm(content));
     setCardReplacement(initialCardReplacementForm(content));
+    setAdaptive(initialAdaptiveForm(content));
     setSeeded(true);
   }, [content, seeded]);
 
@@ -165,7 +179,9 @@ export function BuilderScreen() {
             ? pilotRobustnessFormFingerprint(pilotRobustness)
             : family === 'engine_soak'
               ? engineSoakFormFingerprint(engineSoak)
-              : cardReplacementFormFingerprint(cardReplacement);
+              : family === 'card_replacement'
+                ? cardReplacementFormFingerprint(cardReplacement)
+                : adaptiveFormFingerprint(adaptive);
   const result =
     family === 'benchmark'
       ? choiceOf(form)
@@ -177,7 +193,9 @@ export function BuilderScreen() {
             ? pilotRobustnessChoiceOf(pilotRobustness)
             : family === 'engine_soak'
               ? engineSoakChoiceOf(engineSoak)
-              : cardReplacementChoiceOf(cardReplacement);
+              : family === 'card_replacement'
+                ? cardReplacementChoiceOf(cardReplacement)
+                : adaptiveChoiceOf(adaptive);
   const batchLabel =
     family === 'benchmark'
       ? form.batchLabel
@@ -189,7 +207,9 @@ export function BuilderScreen() {
             ? pilotRobustness.batchLabel
             : family === 'engine_soak'
               ? engineSoak.batchLabel
-              : cardReplacement.batchLabel;
+              : family === 'card_replacement'
+                ? cardReplacement.batchLabel
+                : adaptive.batchLabel;
   const current = priced !== null && priced.fingerprint === fingerprint ? priced.estimate : null;
 
   const update = (change: Partial<BuilderForm>): void => {
@@ -228,10 +248,17 @@ export function BuilderScreen() {
     setSaved(null);
   };
 
+  const updateAdaptive = (change: Partial<AdaptiveForm>): void => {
+    setAdaptive((previous) => ({ ...previous, ...change }));
+    setAdaptiveEnqueued(null);
+    setSaved(null);
+  };
+
   const selectFamily = (next: Family): void => {
     setFamily(next);
     setPriced(null);
     setEnqueued(null);
+    setAdaptiveEnqueued(null);
     setSaved(null);
     setFailure(null);
   };
@@ -259,6 +286,15 @@ export function BuilderScreen() {
     setFailure(null);
     const answer = await session.enqueue(batchLabel.trim(), result.choice);
     if (answer.ok) setEnqueued(answer.value);
+    else setFailure(answer.failure);
+  };
+
+  const enqueueAdaptiveJob = async (): Promise<void> => {
+    const adaptiveResult = adaptiveChoiceOf(adaptive);
+    if (!adaptiveResult.ok || current === null) return;
+    setFailure(null);
+    const answer = await session.enqueueAdaptive(batchLabel.trim(), adaptiveResult.choice);
+    if (answer.ok) setAdaptiveEnqueued(answer.value);
     else setFailure(answer.failure);
   };
 
@@ -298,6 +334,14 @@ export function BuilderScreen() {
         engineSoakReopened === null
           ? cardReplacementFormOf(entry.choice, entry.label)
           : null;
+      const adaptiveReopened =
+        openMetaReopened === null &&
+        candidateComparisonReopened === null &&
+        pilotRobustnessReopened === null &&
+        engineSoakReopened === null &&
+        cardReplacementReopened === null
+          ? adaptiveFormOf(entry.choice, entry.label)
+          : null;
       if (openMetaReopened !== null) {
         setFamily('open_meta');
         setOpenMeta(openMetaReopened);
@@ -313,10 +357,14 @@ export function BuilderScreen() {
       } else if (cardReplacementReopened !== null) {
         setFamily('card_replacement');
         setCardReplacement(cardReplacementReopened);
+      } else if (adaptiveReopened !== null) {
+        setFamily('adaptive_counter');
+        setAdaptive(adaptiveReopened);
       } else return;
     }
     setPriced(null);
     setEnqueued(null);
+    setAdaptiveEnqueued(null);
     setSaved(null);
     setFailure(null);
   };
@@ -387,6 +435,14 @@ export function BuilderScreen() {
               onChange={updateCardReplacement}
             />
           )}
+          {family === 'adaptive_counter' && (
+            <AdaptiveCounterSection
+              content={content}
+              commanderIds={commanderIds}
+              form={adaptive}
+              onChange={updateAdaptive}
+            />
+          )}
 
           <section className="panel" aria-labelledby="builder-estimate">
             <h2 id="builder-estimate">What this schedules</h2>
@@ -435,6 +491,27 @@ export function BuilderScreen() {
                 Enqueueing is offered once this build has told you exactly how many matches the
                 configuration schedules.
               </Empty>
+            ) : family === 'adaptive_counter' ? (
+              'gamesPerBlock' in current.estimate ? (
+                <>
+                  <p className="builder__summary">
+                    <strong>{current.estimate.gamesScheduled.toLocaleString('en')}</strong> games
+                    across <strong>{current.estimate.blocksScheduled.toLocaleString('en')}</strong>{' '}
+                    block(s), in a single job.
+                  </p>
+                  <p className="builder__actions">
+                    <button
+                      type="button"
+                      disabled={state.busy}
+                      onClick={() => void enqueueAdaptiveJob()}
+                    >
+                      Enqueue this adaptive run
+                    </button>
+                  </p>
+                </>
+              ) : (
+                <Empty>This preset does not enqueue a match schedule yet.</Empty>
+              )
             ) : !('totalMatches' in current.estimate) || !('stages' in current.expansion) ? (
               <Empty>This preset does not enqueue a match schedule yet.</Empty>
             ) : (
@@ -453,6 +530,7 @@ export function BuilderScreen() {
               </>
             )}
             {enqueued !== null && <EnqueuedReport result={enqueued} />}
+            {adaptiveEnqueued !== null && <AdaptiveEnqueuedReport result={adaptiveEnqueued} />}
           </section>
 
           <SavedSection
@@ -471,7 +549,9 @@ export function BuilderScreen() {
                       : family === 'card_replacement'
                         ? cardReplacement.baseDeckPreconIds.length +
                           cardReplacement.opponentPreconIds.length
-                        : null
+                        : family === 'adaptive_counter'
+                          ? adaptive.startingPreconIds.length
+                          : null
             }
             saveLabel={saveLabel}
             onLabel={setSaveLabel}
@@ -588,6 +668,20 @@ function FamilySection({
             <span className="builder__choice-label">Card Replacement</span>
           </label>
           <p className="builder__choice-note">{PRESET_REGISTRY.card_replacement.summary}</p>
+        </li>
+        <li>
+          <label>
+            <input
+              type="radio"
+              name="builder-family"
+              checked={family === 'adaptive_counter'}
+              onChange={() => {
+                onChange('adaptive_counter');
+              }}
+            />
+            <span className="builder__choice-label">Adaptive Counter Search</span>
+          </label>
+          <p className="builder__choice-note">{PRESET_REGISTRY.adaptive_counter.summary}</p>
         </li>
       </ul>
     </section>
@@ -2019,9 +2113,261 @@ function CardReplacementSection({
   );
 }
 
+/* ----------------------------------------------------- adaptive counter search */
+
+function AdaptiveCounterSection({
+  content,
+  commanderIds,
+  form,
+  onChange,
+}: {
+  readonly content: ContentCatalog;
+  readonly commanderIds: readonly string[];
+  readonly form: AdaptiveForm;
+  readonly onChange: (change: Partial<AdaptiveForm>) => void;
+}) {
+  const chosenCommanders = new Set(form.selectedCommanderIds);
+  return (
+    <section className="panel" aria-labelledby="builder-adaptive-counter">
+      <h2 id="builder-adaptive-counter">Adaptive Counter Search</h2>
+      <p className="panel__note">{PRESET_REGISTRY.adaptive_counter.summary}</p>
+      <LimitationsNotice limitations={PRESET_REGISTRY.adaptive_counter.limitations} />
+
+      <fieldset className="builder__field">
+        <legend>Target Commander policy</legend>
+        {ADAPTIVE_COMMANDER_POLICIES.map((policy) => (
+          <label key={policy}>
+            <input
+              type="radio"
+              checked={form.commanderPolicy === policy}
+              onChange={() => {
+                onChange({ commanderPolicy: policy });
+              }}
+            />
+            <span>
+              {policy === 'locked'
+                ? 'Locked — counter whichever Commander the starting deck already runs'
+                : policy === 'selected'
+                  ? 'Selected — counter only the Commanders named below'
+                  : 'Open — counter any Commander legal for the starting deck'}
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      {form.commanderPolicy === 'selected' && (
+        <fieldset className="builder__field">
+          <legend>Commanders to counter</legend>
+          {commanderIds.length === 0 ? (
+            <Empty>This format publishes no Commander.</Empty>
+          ) : (
+            <ul className="builder__choices">
+              {commanderIds.map((commanderId) => (
+                <li key={commanderId}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={chosenCommanders.has(commanderId)}
+                      onChange={(event) => {
+                        const next = new Set(form.selectedCommanderIds);
+                        if (event.target.checked) next.add(commanderId);
+                        else next.delete(commanderId);
+                        onChange({
+                          selectedCommanderIds: commanderIds.filter((id) => next.has(id)),
+                        });
+                      }}
+                    />
+                    <span className="builder__choice-label">{commanderId}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+        </fieldset>
+      )}
+
+      <fieldset className="builder__field">
+        <legend>Information policy</legend>
+        {ADAPTIVE_INFORMATION_POLICIES.map((policy) => (
+          <label key={policy}>
+            <input
+              type="radio"
+              checked={form.informationPolicy === policy}
+              onChange={() => {
+                onChange({ informationPolicy: policy });
+              }}
+            />
+            <span>
+              {policy === 'public_observation'
+                ? 'Public observation — the search sees only what a normal match reveals'
+                : 'Analysis, full deck — the search sees full decklists (never leaked into normal matches)'}
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      <PreconChecklist
+        content={content}
+        selected={form.startingPreconIds}
+        onChange={(startingPreconIds) => {
+          onChange({ startingPreconIds });
+        }}
+        heading="Starting deck(s)"
+        note="The lineage both the incumbent and the challenger candidates root from."
+      />
+      <PilotChecklist
+        content={content}
+        selected={form.pilotIds}
+        onChange={(pilotIds) => {
+          onChange({ pilotIds });
+        }}
+        heading="Pilots"
+      />
+
+      <section className="panel" aria-labelledby="builder-adaptive-workload">
+        <h2 id="builder-adaptive-workload">Budget and workload</h2>
+        <label className="builder__field">
+          <span>Total learning budget (games)</span>
+          <input
+            type="number"
+            min={1}
+            max={1_000_000}
+            value={form.totalLearningBudget}
+            onChange={(event) => {
+              onChange({ totalLearningBudget: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label className="builder__field">
+          <span>Block size (games per evaluation block)</span>
+          <input
+            type="number"
+            min={1}
+            max={10_000}
+            value={form.blockSize}
+            onChange={(event) => {
+              onChange({ blockSize: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label className="builder__field">
+          <input
+            type="checkbox"
+            checked={form.mirrorSeats}
+            onChange={(event) => {
+              onChange({ mirrorSeats: event.target.checked });
+            }}
+          />
+          <span>Mirror seats (play each pairing from both sides)</span>
+        </label>
+        <label className="builder__field">
+          <span>Candidate count</span>
+          <input
+            type="number"
+            min={1}
+            max={64}
+            value={form.candidateCount}
+            onChange={(event) => {
+              onChange({ candidateCount: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label className="builder__field">
+          <span>Reference field share</span>
+          <input
+            type="number"
+            min={0}
+            max={1}
+            step={0.05}
+            value={form.referenceFieldShare}
+            onChange={(event) => {
+              onChange({ referenceFieldShare: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label className="builder__field">
+          <span>Final validation games</span>
+          <input
+            type="number"
+            min={1}
+            max={100_000}
+            value={form.finalValidationGames}
+            onChange={(event) => {
+              onChange({ finalValidationGames: Number(event.target.value) });
+            }}
+          />
+        </label>
+      </section>
+
+      <fieldset className="builder__field">
+        <legend>Candidate swap bound (cards changed per generation)</legend>
+        <label>
+          <span>Minimum</span>
+          <input
+            type="number"
+            min={1}
+            max={40}
+            value={form.swapMinCards}
+            onChange={(event) => {
+              onChange({ swapMinCards: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label>
+          <span>Maximum</span>
+          <input
+            type="number"
+            min={1}
+            max={40}
+            value={form.swapMaxCards}
+            onChange={(event) => {
+              onChange({ swapMaxCards: Number(event.target.value) });
+            }}
+          />
+        </label>
+      </fieldset>
+
+      <fieldset className="builder__field">
+        <legend>Rebuild trigger (optional; leave both blank for none)</legend>
+        <label>
+          <span>After this many consecutive losses</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={form.rebuildAfterConsecutiveLossesRaw}
+            onChange={(event) => {
+              onChange({ rebuildAfterConsecutiveLossesRaw: event.target.value });
+            }}
+          />
+        </label>
+        <label>
+          <span>Every this many blocks</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={form.rebuildEveryBlocksRaw}
+            onChange={(event) => {
+              onChange({ rebuildEveryBlocksRaw: event.target.value });
+            }}
+          />
+        </label>
+      </fieldset>
+
+      <TemplateIdentitySection form={form} onChange={onChange} />
+    </section>
+  );
+}
+
 /* --------------------------------------------------------------- estimate */
 
 function EstimateTables({ estimate }: { readonly estimate: ChoiceEstimate }) {
+  if ('gamesPerBlock' in estimate.estimate) {
+    const expansionLimitations =
+      'stages' in estimate.expansion ? [] : estimate.expansion.limitations;
+    return (
+      <AdaptiveEstimateTables estimate={estimate.estimate} expansionLimitations={expansionLimitations} />
+    );
+  }
   if (!('totalMatches' in estimate.estimate) || !('stages' in estimate.expansion)) {
     return (
       <Empty>
@@ -2103,6 +2449,69 @@ function EstimateTables({ estimate }: { readonly estimate: ChoiceEstimate }) {
   );
 }
 
+function AdaptiveEstimateTables({
+  estimate,
+  expansionLimitations,
+}: {
+  readonly estimate: AdaptiveWorkloadEstimate;
+  readonly expansionLimitations: readonly string[];
+}) {
+  const allLimitations = [...expansionLimitations, ...estimate.limitations];
+  return (
+    <div className="builder__estimate">
+      <p className="builder__summary">
+        <strong>{estimate.gamesScheduled.toLocaleString('en')}</strong> games across{' '}
+        <strong>{estimate.blocksScheduled.toLocaleString('en')}</strong> block(s), plus{' '}
+        <strong>{estimate.finalValidationGames.toLocaleString('en')}</strong> frozen fresh-seed
+        final validation games.
+      </p>
+
+      <table className="facts">
+        <caption>Adaptive Counter Search workload</caption>
+        <tbody>
+          <tr>
+            <th scope="row">Games per block</th>
+            <td>{estimate.gamesPerBlock.toLocaleString('en')}</td>
+          </tr>
+          <tr>
+            <th scope="row">Blocks scheduled</th>
+            <td>{estimate.blocksScheduled.toLocaleString('en')}</td>
+          </tr>
+          <tr>
+            <th scope="row">Games scheduled</th>
+            <td>{estimate.gamesScheduled.toLocaleString('en')}</td>
+          </tr>
+          <tr>
+            <th scope="row">Games unspent</th>
+            <td>{estimate.gamesUnspent.toLocaleString('en')}</td>
+          </tr>
+          <tr>
+            <th scope="row">Final validation games</th>
+            <td>{estimate.finalValidationGames.toLocaleString('en')}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {estimate.gamesUnspent > 0 && (
+        <p className="notice notice--warning" role="status">
+          {estimate.shortfallReason}
+        </p>
+      )}
+
+      {allLimitations.length > 0 && (
+        <>
+          <h3>What a result from this may not be cited for</h3>
+          <ul className="builder__limitations">
+            {allLimitations.map((limitation) => (
+              <li key={limitation}>{limitation}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 function EnqueuedReport({ result }: { readonly result: EnqueuePresetResult }) {
   return (
     <div className="builder__enqueued" role="status">
@@ -2131,6 +2540,37 @@ function EnqueuedReport({ result }: { readonly result: EnqueuePresetResult }) {
               <td>{job.status}</td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AdaptiveEnqueuedReport({ result }: { readonly result: EnqueueAdaptiveResult }) {
+  return (
+    <div className="builder__enqueued" role="status">
+      <p>
+        Added <strong>1</strong> job to draft batch <code>{result.batchId}</code>.{' '}
+        <strong>Nothing has started.</strong> The batch is a draft until it is started from Queue,
+        which is also where the job can be reordered, duplicated or withdrawn.
+      </p>
+      <table className="facts">
+        <caption>Job this added to the draft</caption>
+        <thead>
+          <tr>
+            <th scope="col">Job</th>
+            <th scope="col">Label</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">
+              <code>{result.job.jobId}</code>
+            </th>
+            <td>{result.job.label}</td>
+            <td>{result.job.status}</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -2173,7 +2613,8 @@ function SavedSection({
               asCandidateComparisonChoice(entry.choice) !== null ||
               asPilotRobustnessChoice(entry.choice) !== null ||
               asEngineSoakChoice(entry.choice) !== null ||
-              asCardReplacementChoice(entry.choice) !== null,
+              asCardReplacementChoice(entry.choice) !== null ||
+              asAdaptiveCounterChoice(entry.choice) !== null,
           )
         : [],
     [list],

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+
+import type { AdaptiveExperimentId } from '@tcg/admin-contracts';
 
 import { AdminShell } from './components/AdminShell.js';
 import { BuilderScreen } from './components/BuilderScreen.js';
@@ -30,6 +32,20 @@ import { useAdminState } from './state/AdminContext.js';
 export function App() {
   const state = useAdminState();
   const [section, setSection] = useState<AdminSectionId>(DEFAULT_SECTION);
+  /**
+   * A queue row's "View in Adaptive Dashboard" handoff (M08.R6): the only
+   * cross-screen navigation state this shell carries, since every other
+   * screen's own drill-down stays local to that screen.
+   */
+  const [pendingAdaptiveExperimentId, setPendingAdaptiveExperimentId] =
+    useState<AdaptiveExperimentId | null>(null);
+  const navigateToAdaptive = useCallback((experimentId: AdaptiveExperimentId) => {
+    setPendingAdaptiveExperimentId(experimentId);
+    setSection('results');
+  }, []);
+  const consumeAdaptiveExperimentId = useCallback(() => {
+    setPendingAdaptiveExperimentId(null);
+  }, []);
 
   if (state.connection.status !== 'connected') return <ConnectGate />;
 
@@ -50,8 +66,13 @@ export function App() {
     >
       {section === 'overview' && <OverviewScreen />}
       {section === 'new-test-batch' && <BuilderScreen />}
-      {section === 'queue' && <QueueScreen />}
-      {section === 'results' && <ResultsScreen />}
+      {section === 'queue' && <QueueScreen onOpenAdaptive={navigateToAdaptive} />}
+      {section === 'results' && (
+        <ResultsScreen
+          initialAdaptiveExperimentId={pendingAdaptiveExperimentId}
+          onConsumeAdaptiveExperimentId={consumeAdaptiveExperimentId}
+        />
+      )}
     </AdminShell>
   );
 }

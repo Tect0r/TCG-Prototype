@@ -5492,3 +5492,46 @@ touched — this slice did not complete.
 Next slice: still M08.R4, but implementation cannot start until an owner
 decides how the two lineages' generation-0 roots are meant to differ under
 the single-shared-root-deck contract.
+
+## M08.R6 — Adaptive builder and queue integration (2026-09-13): complete
+
+M08.R4 and M08.R5 shipped in intervening sessions (commits `3a15065`,
+`74a53df`); their own evidence notes are in
+`docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`. This session found M08.R6's
+UI/wiring already implemented and 53/53 focused tests passing, with only the
+milestone's required full-stack test outstanding.
+
+Added `apps/admin-client/src/adaptive-full-stack.test.tsx`: a real
+`admin-server` HTTP server (real `FileCatalogStore`, real `ExperimentRunner`
+running the real simulator — the adaptive job kind has no injectable
+`runExperiment` seam) bound to a real loopback socket, driven end-to-end
+through Testing Library — open the builder, select Adaptive Counter Search,
+pick a precon, fill the `FAST_BUDGET`-sized workload `job-runner-adaptive.
+test.ts` already established, price, enqueue, start the batch from Queue,
+wait for real completion, follow "View in Adaptive Dashboard", and assert the
+dashboard's facts include `adaptive-counter` and an `adaptive-result.json`
+read-back path from the real `AdaptiveResultReader` — satisfying the
+milestone's "a fixture copied into a directory is not sufficient" line.
+Confirmed along the way: `catalogRoot`/`resultRoots` are purely job/batch/
+result persistence, never card content, so a fresh empty temp `catalogRoot`
+still serves real precons/pilots with no fixture seeding needed.
+`apps/admin-client/package.json` gained `@tcg/admin-server` as a
+devDependency; `boundary.test.ts` confirmed `.test.tsx` files and
+`devDependencies` are both outside its scan.
+
+Fixed one pre-existing test this slice's own required change invalidated:
+`builder-flow.test.tsx`'s "offers no preset from another test style" asserted
+no radio existed for `'Adaptive Counter Search'`, true only while the preset
+was reserved; narrowed to `'Commander Search'` (still genuinely unbuilt).
+
+Evidence: `adaptive-full-stack.test.tsx` 1/1 (~6s); `builder-flow.test.tsx`
+37/37 after the fix; `boundary.test.ts` 25/25; full `apps/admin-client` suite
+437/437 across 30 files; `apps/admin-client` typecheck clean. One run of the
+new test's command hit an unrelated Vitest/tinypool `ERR_IPC_CHANNEL_CLOSED`
+worker-pool crash with no summary produced; an immediate identical rerun
+passed cleanly — treated as an environment flake, not a defect. Tranche
+gates (`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are
+deferred to Tranche B's own close ("Tranche B review" in
+`M08.5_FINAL_CORRECTION_PASS.md`), not this slice.
+
+Next slice: M08.R7 — Adaptive selection correctness.

@@ -114,8 +114,10 @@ describe('the depth control', () => {
   });
 
   it('offers no preset from another test style', async () => {
+    // Adaptive Counter Search arrived with M08.R6 and is asserted separately
+    // (adaptive-full-stack.test.tsx); the rest are still absent.
     await openBuilder();
-    for (const label of ['Commander Search', 'Adaptive Counter Search']) {
+    for (const label of ['Commander Search']) {
       expect(within(main()).queryByRole('radio', { name: label })).toBeNull();
     }
   });

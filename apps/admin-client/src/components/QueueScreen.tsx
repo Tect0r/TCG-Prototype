@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   operatorActionsFor,
+  type AdaptiveExperimentId,
   type BatchDetail,
   type BatchId,
   type CatalogBatchView,
@@ -79,9 +80,11 @@ export const QUEUE_POLL_MS = 2_000;
 interface QueueScreenProps {
   /** Injected in tests so a poll is a decision rather than a wait. */
   readonly pollMs?: number;
+  /** Opens an Adaptive Counter job's own run in the results screen's dashboard. */
+  readonly onOpenAdaptive?: ((experimentId: AdaptiveExperimentId) => void) | undefined;
 }
 
-export function QueueScreen({ pollMs = QUEUE_POLL_MS }: QueueScreenProps) {
+export function QueueScreen({ pollMs = QUEUE_POLL_MS, onOpenAdaptive }: QueueScreenProps) {
   const session = useAdminSession();
 
   const [batches, setBatches] = useState<readonly CatalogBatchView[] | null>(null);
@@ -305,6 +308,7 @@ export function QueueScreen({ pollMs = QUEUE_POLL_MS }: QueueScreenProps) {
           onScheduleChampionship={(batchId, settings) => {
             void scheduleChampionship(batchId, settings);
           }}
+          onOpenAdaptive={onOpenAdaptive}
         />
       )}
 
@@ -346,6 +350,7 @@ interface BatchPanelProps {
     batchId: BatchId,
     settings: { finalistsPerCommander: number; gamesPerPairing: number; seed: string },
   ) => void;
+  readonly onOpenAdaptive?: ((experimentId: AdaptiveExperimentId) => void) | undefined;
 }
 
 function BatchPanel({
@@ -358,6 +363,7 @@ function BatchPanel({
   onReorder,
   onDuplicate,
   onScheduleChampionship,
+  onOpenAdaptive,
 }: BatchPanelProps) {
   const { batch, jobs } = detail;
   const editable = batch.status === 'draft';
@@ -437,6 +443,7 @@ function BatchPanel({
                 onMove={(to) => {
                   onReorder(moveInOrder(order, index, to));
                 }}
+                onOpenAdaptive={onOpenAdaptive}
               />
             </li>
           ))}
@@ -541,6 +548,7 @@ interface JobRowProps {
   readonly onJobAction: (jobId: JobId, action: OperatorJobAction) => void;
   readonly onDuplicate: (jobId: JobId) => void;
   readonly onMove: (to: number) => void;
+  readonly onOpenAdaptive?: ((experimentId: AdaptiveExperimentId) => void) | undefined;
 }
 
 function JobRow({
@@ -552,6 +560,7 @@ function JobRow({
   onJobAction,
   onDuplicate,
   onMove,
+  onOpenAdaptive,
 }: JobRowProps) {
   const wording = JOB_STATUS_WORDING[job.status];
   const actions = operatorActionsFor(job.status);
@@ -626,6 +635,16 @@ function JobRow({
       )}
 
       <div className="queue__job-actions">
+        {job.spec.kind === 'adaptive_counter' && onOpenAdaptive !== undefined && (
+          <button
+            type="button"
+            onClick={() => {
+              onOpenAdaptive(job.spec.experimentId);
+            }}
+          >
+            View in Adaptive Dashboard
+          </button>
+        )}
         {editable && (
           <>
             <button

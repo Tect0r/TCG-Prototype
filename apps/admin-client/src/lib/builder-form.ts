@@ -1,6 +1,9 @@
 import {
+  DEFAULT_ADAPTIVE_SWAP_BOUND,
   PRESET_REGISTRY,
   presetChoiceSchema,
+  type AdaptiveCommanderPolicy,
+  type AdaptiveInformationPolicy,
   type CandidateCardPatch,
   type ContentCatalog,
   type ExperimentPresetDefinitionValue,
@@ -1105,5 +1108,209 @@ export function cardReplacementFormOf(
     insertionCopiesMode: choice.insertionCopies === 'all' ? 'all' : 'custom',
     insertionCopiesCount: choice.insertionCopies === 'all' ? 1 : choice.insertionCopies,
     insertionRemoveCardIdsRaw: idListRaw(choice.insertionRemoveCardIds),
+  };
+}
+
+/* -------------------------------------------------------- adaptive counter */
+
+export interface AdaptiveForm {
+  readonly batchLabel: string;
+  readonly experimentId: string;
+  readonly seed: string;
+  readonly startingPreconIds: readonly string[];
+  readonly pilotIds: readonly string[];
+  readonly commanderPolicy: AdaptiveCommanderPolicy;
+  readonly selectedCommanderIds: readonly string[];
+  readonly informationPolicy: AdaptiveInformationPolicy;
+  readonly totalLearningBudget: number;
+  readonly blockSize: number;
+  readonly mirrorSeats: boolean;
+  readonly candidateCount: number;
+  readonly swapMinCards: number;
+  readonly swapMaxCards: number;
+  readonly referenceFieldShare: number;
+  readonly finalValidationGames: number;
+  /** Blank means no rebuild trigger of this kind; the schema requires at least one when either is set. */
+  readonly rebuildAfterConsecutiveLossesRaw: string;
+  readonly rebuildEveryBlocksRaw: string;
+}
+
+export type AdaptiveCounterChoice = Extract<PresetChoice, { presetId: 'adaptive_counter' }>;
+
+export function asAdaptiveCounterChoice(choice: PresetChoice): AdaptiveCounterChoice | null {
+  return choice.presetId === 'adaptive_counter' ? choice : null;
+}
+
+export function initialAdaptiveForm(content: ContentCatalog | null): AdaptiveForm {
+  const pilot =
+    content?.pilots.find((entry) => entry.playQualityEvidence)?.pilotId ??
+    content?.pilots[0]?.pilotId;
+  return {
+    batchLabel: 'Adaptive Counter Search',
+    experimentId: 'adaptive-counter',
+    seed: 'adaptive-counter-1',
+    startingPreconIds: [],
+    pilotIds: pilot === undefined ? [] : [pilot],
+    commanderPolicy: 'locked',
+    selectedCommanderIds: [],
+    informationPolicy: 'public_observation',
+    totalLearningBudget: 2000,
+    blockSize: 50,
+    mirrorSeats: true,
+    candidateCount: 4,
+    swapMinCards: DEFAULT_ADAPTIVE_SWAP_BOUND.minCards,
+    swapMaxCards: DEFAULT_ADAPTIVE_SWAP_BOUND.maxCards,
+    referenceFieldShare: 0,
+    finalValidationGames: 200,
+    rebuildAfterConsecutiveLossesRaw: '',
+    rebuildEveryBlocksRaw: '',
+  };
+}
+
+export interface AdaptiveFormProblem {
+  readonly field: keyof AdaptiveForm;
+  readonly message: string;
+}
+
+export type AdaptiveChoiceResult =
+  | { readonly ok: true; readonly choice: AdaptiveCounterChoice }
+  | { readonly ok: false; readonly problems: readonly AdaptiveFormProblem[] };
+
+export function adaptiveChoiceOf(form: AdaptiveForm): AdaptiveChoiceResult {
+  const problems: AdaptiveFormProblem[] = [];
+  if (form.startingPreconIds.length < 1) {
+    problems.push({
+      field: 'startingPreconIds',
+      message: 'Choose the starting deck both lineages root from.',
+    });
+  }
+  if (form.pilotIds.length < 1) {
+    problems.push({ field: 'pilotIds', message: 'Choose at least one pilot to fly the decks.' });
+  }
+  if (form.commanderPolicy === 'selected' && form.selectedCommanderIds.length === 0) {
+    problems.push({
+      field: 'selectedCommanderIds',
+      message:
+        'Name at least one Commander this run is countering, or choose a different Commander policy.',
+    });
+  }
+  if (form.experimentId.trim() === '') {
+    problems.push({ field: 'experimentId', message: 'Give the run a name.' });
+  }
+  if (form.seed.trim() === '') {
+    problems.push({
+      field: 'seed',
+      message: 'Give the run a seed; it is what makes it repeatable.',
+    });
+  }
+  if (form.batchLabel.trim() === '') {
+    problems.push({ field: 'batchLabel', message: 'Give the batch a label.' });
+  }
+  const afterConsecutiveLosses = form.rebuildAfterConsecutiveLossesRaw.trim();
+  const everyBlocks = form.rebuildEveryBlocksRaw.trim();
+  if (afterConsecutiveLosses !== '' && !Number.isFinite(Number(afterConsecutiveLosses))) {
+    problems.push({
+      field: 'rebuildAfterConsecutiveLossesRaw',
+      message: 'Must be a number of consecutive losses.',
+    });
+  }
+  if (everyBlocks !== '' && !Number.isFinite(Number(everyBlocks))) {
+    problems.push({ field: 'rebuildEveryBlocksRaw', message: 'Must be a number of blocks.' });
+  }
+  if (problems.length > 0) return { ok: false, problems };
+
+  const rebuildTrigger =
+    afterConsecutiveLosses === '' && everyBlocks === ''
+      ? null
+      : {
+          ...(afterConsecutiveLosses === ''
+            ? {}
+            : { afterConsecutiveLosses: Number(afterConsecutiveLosses) }),
+          ...(everyBlocks === '' ? {} : { everyBlocks: Number(everyBlocks) }),
+        };
+
+  const parsed = presetChoiceSchema.safeParse({
+    presetId: 'adaptive_counter',
+    experimentId: form.experimentId.trim(),
+    seed: form.seed.trim(),
+    startingPreconIds: [...form.startingPreconIds],
+    pilotIds: [...form.pilotIds],
+    commanderPolicy: form.commanderPolicy,
+    selectedCommanderIds: [...form.selectedCommanderIds],
+    informationPolicy: form.informationPolicy,
+    rebuildTrigger,
+    totalLearningBudget: form.totalLearningBudget,
+    blockSize: form.blockSize,
+    mirrorSeats: form.mirrorSeats,
+    candidateCount: form.candidateCount,
+    swapBound: { minCards: form.swapMinCards, maxCards: form.swapMaxCards },
+    referenceFieldShare: form.referenceFieldShare,
+    finalValidationGames: form.finalValidationGames,
+  });
+  if (parsed.success) {
+    const choice = asAdaptiveCounterChoice(parsed.data);
+    // Unreachable: `presetId: 'adaptive_counter'` was just sent.
+    if (choice === null) throw new Error('Parsed an adaptive_counter request into another preset.');
+    return { ok: true, choice };
+  }
+  return {
+    ok: false,
+    problems: parsed.error.issues.map((issue) => ({
+      field: adaptiveFieldOf(issue.path),
+      message: issue.message,
+    })),
+  };
+}
+
+function adaptiveFieldOf(path: readonly PropertyKey[]): keyof AdaptiveForm {
+  const head = String(path[0] ?? '');
+  const known = new Set<keyof AdaptiveForm>([
+    'startingPreconIds',
+    'pilotIds',
+    'commanderPolicy',
+    'selectedCommanderIds',
+    'informationPolicy',
+    'seed',
+    'totalLearningBudget',
+    'blockSize',
+    'mirrorSeats',
+    'candidateCount',
+    'referenceFieldShare',
+    'finalValidationGames',
+  ]);
+  if ((known as ReadonlySet<string>).has(head)) return head as keyof AdaptiveForm;
+  if (head === 'swapBound') return 'swapMinCards';
+  if (head === 'rebuildTrigger') return 'rebuildAfterConsecutiveLossesRaw';
+  return 'experimentId';
+}
+
+export function adaptiveFormFingerprint(form: AdaptiveForm): string {
+  const result = adaptiveChoiceOf(form);
+  return result.ok ? JSON.stringify(result.choice) : '';
+}
+
+export function adaptiveFormOf(input: PresetChoice, batchLabel: string): AdaptiveForm | null {
+  const choice = asAdaptiveCounterChoice(input);
+  if (choice === null) return null;
+  return {
+    batchLabel,
+    experimentId: choice.experimentId,
+    seed: choice.seed,
+    startingPreconIds: [...choice.startingPreconIds],
+    pilotIds: [...choice.pilotIds],
+    commanderPolicy: choice.commanderPolicy,
+    selectedCommanderIds: [...choice.selectedCommanderIds],
+    informationPolicy: choice.informationPolicy,
+    totalLearningBudget: choice.totalLearningBudget,
+    blockSize: choice.blockSize,
+    mirrorSeats: choice.mirrorSeats,
+    candidateCount: choice.candidateCount,
+    swapMinCards: choice.swapBound.minCards,
+    swapMaxCards: choice.swapBound.maxCards,
+    referenceFieldShare: choice.referenceFieldShare,
+    finalValidationGames: choice.finalValidationGames,
+    rebuildAfterConsecutiveLossesRaw:
+      choice.rebuildTrigger?.afterConsecutiveLosses?.toString() ?? '',
+    rebuildEveryBlocksRaw: choice.rebuildTrigger?.everyBlocks?.toString() ?? '',
   };
 }
