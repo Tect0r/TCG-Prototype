@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeDeck, type SimDeck } from '@tcg/deck-generator';
+import type { ScheduledMatch } from '../schedule.js';
 import { tinyEnvironment, VALUE_PILOT } from '../test-fixtures.js';
 import {
   adaptiveRevisionSeedPath,
@@ -36,6 +37,13 @@ function deck(label: string, extra = 0): SimDeck {
       { cardId: 'prototype_guard', quantity: 2 },
     ],
   });
+}
+
+/** `scheduleAgainst` always builds `decks: [candidateDeck, opponentDeck]`, so deckIndex 0 is always the first-listed deck's seat. */
+function winnerIdForDeckIndex(match: ScheduledMatch, deckIndex: number): string {
+  const seat = match.seats.find((entry) => entry.deckIndex === deckIndex);
+  if (seat === undefined) throw new Error(`match ${match.matchId} has no seat at deckIndex ${String(deckIndex)}`);
+  return seat.playerId;
 }
 
 function candidateRevision(label: string, revisionDeck: SimDeck): AdaptiveRevision {
@@ -193,6 +201,41 @@ describe('scheduleAdaptiveCandidateScreening', () => {
     expect(screening.fieldMatches).toHaveLength(2);
     expect(screening.opponentMatches).toHaveLength(4);
   });
+
+  it('rounds a fractional reference-field share to the nearest game rather than truncating, and gives the opponent group exactly what is left of the fixed block budget', () => {
+    const field = [deck('field-a', 1), deck('field-b', 2), deck('field-c', 3)];
+    const input = baseInput({
+      config: baseConfig({ blockSize: 10, mirrorSeats: false, referenceFieldShare: 0.25 }),
+      referenceField: field,
+    });
+    const screening = scheduleAdaptiveCandidateScreening(input);
+    // Math.round(10 * 0.25) = Math.round(2.5) = 3, not 2.
+    expect(screening.fieldMatches).toHaveLength(3);
+    expect(screening.opponentMatches).toHaveLength(7);
+  });
+
+  it('selects exactly the distinct-hash pool size when the raw reference field is duplicate-laden, without starving the opponent budget', () => {
+    // Three entries share one hash (extra=1) and two share another (extra=2): only 2 distinct decks exist.
+    const field = [
+      deck('a-1', 1),
+      deck('a-2', 1),
+      deck('a-3', 1),
+      deck('b-1', 2),
+      deck('b-2', 2),
+    ];
+    const input = baseInput({
+      config: baseConfig({ blockSize: 10, mirrorSeats: false, referenceFieldShare: 0.5 }),
+      referenceField: field,
+    });
+    const screening = scheduleAdaptiveCandidateScreening(input);
+    // wanted = round(10 * 0.5) = 5, but only 2 distinct hashes exist in the pool.
+    expect(screening.fieldMatches).toHaveLength(2);
+    expect(screening.opponentMatches).toHaveLength(5);
+    const distinctFieldHashes = new Set(
+      screening.fieldMatches.map((entry) => entry.opponentDeckHash),
+    );
+    expect(distinctFieldHashes.size).toBe(2);
+  });
 });
 
 describe('tallyAdaptiveScreening', () => {
@@ -204,14 +247,17 @@ describe('tallyAdaptiveScreening', () => {
     });
     const screening = scheduleAdaptiveCandidateScreening(input);
     const results = [
-      { matchId: screening.opponentMatches[0]!.match.matchId, winnerDeckHash: candidate.deck.hash },
+      {
+        matchId: screening.opponentMatches[0]!.match.matchId,
+        winnerPlayerId: winnerIdForDeckIndex(screening.opponentMatches[0]!.match, 0),
+      },
       {
         matchId: screening.opponentMatches[1]!.match.matchId,
-        winnerDeckHash: input.opponentDeck.hash,
+        winnerPlayerId: winnerIdForDeckIndex(screening.opponentMatches[1]!.match, 1),
       },
       // the third match is left out of `results` entirely to exercise noResult.
     ];
-    const tallies = tallyAdaptiveScreening(screening, candidate.deck.hash, results);
+    const tallies = tallyAdaptiveScreening(screening, results);
     expect(tallies.opponent).toEqual({ candidateWins: 1, opponentWins: 1, noResult: 1 });
     expect(tallies.field).toBeNull();
   });
@@ -228,14 +274,14 @@ describe('tallyAdaptiveScreening', () => {
     const results = [
       ...screening.opponentMatches.map((entry) => ({
         matchId: entry.match.matchId,
-        winnerDeckHash: candidate.deck.hash,
+        winnerPlayerId: winnerIdForDeckIndex(entry.match, 0),
       })),
       ...screening.fieldMatches.map((entry) => ({
         matchId: entry.match.matchId,
-        winnerDeckHash: entry.opponentDeckHash,
+        winnerPlayerId: winnerIdForDeckIndex(entry.match, 1),
       })),
     ];
-    const tallies = tallyAdaptiveScreening(screening, candidate.deck.hash, results);
+    const tallies = tallyAdaptiveScreening(screening, results);
     expect(tallies.opponent).toEqual({
       candidateWins: screening.opponentMatches.length,
       opponentWins: 0,
@@ -246,5 +292,31 @@ describe('tallyAdaptiveScreening', () => {
       opponentWins: screening.fieldMatches.length,
       noResult: 0,
     });
+  });
+
+  it('attributes wins by seat identity, not deck-content hash, when the candidate and opponent share an identical deck', () => {
+    const candidate = candidateRevision('candidate', deck('shared-content', 1));
+    const input = baseInput({
+      candidate,
+      config: baseConfig({ blockSize: 2, mirrorSeats: false, referenceFieldShare: 0 }),
+      // Same commanderId/cards as the candidate's deck under a different label: identical hash.
+      opponentDeck: deck('shared-content-twin', 1),
+    });
+    expect(input.opponentDeck.hash).toBe(candidate.deck.hash);
+    const screening = scheduleAdaptiveCandidateScreening(input);
+    const results = [
+      {
+        matchId: screening.opponentMatches[0]!.match.matchId,
+        winnerPlayerId: winnerIdForDeckIndex(screening.opponentMatches[0]!.match, 0),
+      },
+      {
+        matchId: screening.opponentMatches[1]!.match.matchId,
+        winnerPlayerId: winnerIdForDeckIndex(screening.opponentMatches[1]!.match, 1),
+      },
+    ];
+    const tallies = tallyAdaptiveScreening(screening, results);
+    // A hash-based comparison would misattribute both games (the hashes are equal);
+    // seat-identity attribution correctly splits them one win each.
+    expect(tallies.opponent).toEqual({ candidateWins: 1, opponentWins: 1, noResult: 0 });
   });
 });

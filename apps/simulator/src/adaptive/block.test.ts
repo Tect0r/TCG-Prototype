@@ -123,6 +123,14 @@ describe('decideAdaptiveBlock', () => {
       loser: 'opponent',
     });
   });
+
+  it('is driven by exactly one game when blockSize is 1 and seats are not mirrored: "never adapt from one isolated loss" stops holding here, by configuration rather than by anything this file enforces', () => {
+    expect(adaptiveBlockGameCount({ blockSize: 1, mirrorSeats: false })).toBe(1);
+    expect(decideAdaptiveBlock({ incumbentWins: 0, opponentWins: 1, noResult: 0 })).toEqual({
+      kind: 'win',
+      loser: 'incumbent',
+    });
+  });
 });
 
 describe('adaptiveBlockGameCount', () => {

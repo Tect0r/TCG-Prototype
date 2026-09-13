@@ -9,12 +9,17 @@ import { adaptiveRevisionSeedPath } from './revision.js';
  * The mirrored evaluation block as the adaptive run's sole decision unit
  * (M08.17A).
  *
- * A block is every game two revisions play against each other under the
- * configured `blockSize` and `mirrorSeats` — never one game. Nothing in this
- * file accepts a single game's result as an input: `decideAdaptiveBlock`
- * takes the whole block's win tally, so "never adapt from one isolated loss"
- * (CLAUDE.md's M08.17 default policy) is a fact about this file's own types,
- * not a rule a caller has to remember to apply. Actually evaluating a
+ * `decideAdaptiveBlock` never accepts a single game's raw result as its input
+ * type — only a whole block's win tally (`AdaptiveBlockOutcome`) — so a caller
+ * can never adapt from one game without first folding it into a tally. That is
+ * a fact about this file's own types, not a guarantee that the tally it reads
+ * always spans more than one game: `config.blockSize` has no floor above 1
+ * (`./config.ts`), so a block configured as `blockSize: 1` with
+ * `mirrorSeats: false` schedules exactly one game, and that one game's result
+ * *is* the whole block's tally. "Never adapt from one isolated loss" — CLAUDE.md's
+ * M08.17 default policy — holds only when a run's own configuration keeps more
+ * than one decisive game per block; this file enforces no such floor itself,
+ * and does not claim to. Actually evaluating a
  * candidate — running the games and attributing each one to a revision — is
  * M08.17B's job; actually promoting or rolling back on a decision is
  * M08.17C's. This file only schedules a block's games and turns a completed

@@ -5535,3 +5535,80 @@ deferred to Tranche B's own close ("Tranche B review" in
 `M08.5_FINAL_CORRECTION_PASS.md`), not this slice.
 
 Next slice: M08.R7 — Adaptive selection correctness.
+
+## M08.R7 — Adaptive selection correctness (2026-09-13): complete
+
+Worked all seven named sub-items.
+
+`apps/simulator/src/adaptive/evaluate.ts`'s `selectReferenceField` replaced
+its duplicate-prone `wanted * 4` retry-window sampling with a deterministic
+partial seeded Fisher-Yates shuffle over the hash-deduped pool, guaranteeing
+exactly `min(wanted, deduped.length)` distinct picks with no shortfall
+(item 1). `tallyGroup` in the same file, and `tallyAdaptiveValidation` in
+`./validate.ts`, now attribute a match's winner by seat identity
+(`ScheduledSeat.playerId` → `deckIndex`) instead of comparing
+`ScheduleDeck.hash`/`SimDeck.hash`, since a candidate/incumbent and its
+opponent can freeze onto byte-identical deck content and a hash comparison
+would misattribute every such game (item 3); this changed
+`AdaptiveScreeningResult`/`AdaptiveValidationResult`'s
+`winnerDeckHash: string | null` field to `winnerPlayerId: string | null`,
+dropped `tallyAdaptiveScreening`'s now-redundant `candidateDeckHash`
+parameter, and changed `tallyAdaptiveValidation`'s first parameter from
+`AdaptiveFrozenDecks` to `matches: readonly ScheduledMatch[]` (seats are
+only reachable through the schedule) — `run.ts`'s `winnerPlayerIdOf`
+(renamed from `winnerDeckHashOf`) and both of its call sites were updated to
+match.
+
+`packages/admin-contracts/src/presets.ts`'s `candidateCardPatchSchema.cost`
+dropped `.nullable()` so a `null` cost is refused with a readable Zod field
+error at the contract boundary instead of reaching a downstream exception
+(item 4); `apps/admin-client/src/lib/builder-form.ts`'s one call site
+reading `patch.cost` was updated to drop its now-impossible `=== null`
+branch. `apps/simulator/src/adaptive/block.ts`'s top-of-file comment was
+corrected: `blockSize` has no floor above 1, so `blockSize: 1` with
+`mirrorSeats: false` legitimately produces a one-game block whose single
+result decides it, contrary to the comment's prior claim that a block is
+"never one game" (item 5).
+
+`apps/simulator/src/adaptive/promote.ts`'s `adaptivePromotionScore` doc
+comment now names its Wilson-interval approximation explicitly: pooling
+wins against different opposing populations (opponent vs. reference field)
+violates the identical-distribution assumption, and `mirrorSeats: true`
+replays each rotation on the same underlying shuffle (`../schedule.ts`)
+rather than an independent draw, so the reported interval is narrower than
+the true uncertainty — both accepted because `decideAdaptivePromotion` only
+ever uses this score to rank candidates that already won a plain decisive
+majority, never to decide whether one did (item 6). `apps/simulator/src/
+adaptive/generate.ts`'s `generateRebuildCandidate` hardcoded the
+incumbent's Commander regardless of `config.commanderPolicy`, silently
+behaving as `'locked'` under `'open'`/`'selected'` too; it now routes
+through `generateDeck`'s existing `commanderIds`-restriction/
+`commanderId`-omission mechanism so `'open'` can choose any legal Commander
+in the environment and `'selected'` is restricted to exactly
+`selectedCommanderIds`, while `'locked'` still pins the incumbent (item 7)
+— `generateSwapCandidate`/`mutateDeck` were confirmed correctly
+Commander-invariant by design (a "swap" candidate is a bounded card-count
+change, not a rebuild) and left unmodified.
+
+Evidence: `evaluate.test.ts` 14/14 (adds an adversarial duplicate-hash
+reference-field test, an exact fractional-share rounding test, and a
+same-deck-hash seat-identity attribution test); `validate.test.ts` 15/15
+(adds an equivalent same-deck-hash attribution test built from real
+`scheduleAdaptiveValidation` output); `presets.test.ts` 37/37 (adds a
+`candidateCardPatchSchema` describe block); `block.test.ts` 18/18;
+`promote.test.ts` 15/15; `generate.test.ts` 10/10 (adds four
+Commander-policy tests); full `apps/simulator/src/adaptive/` suite 252/252
+across 13 files; `apps/admin-contracts`, `apps/admin-client` typecheck
+clean. `apps/simulator` typecheck reproduces exactly the same 3
+pre-existing failures present on `main` before this slice
+(`config.test.ts:225`, `run.test.ts:548`, `run.test.ts:564` — confirmed via
+`git stash` against clean `main`) and none new; out of scope for this slice
+per CLAUDE.md's one-work-slice rule, left for the tranche-close full-gate
+run to address if still failing there. Tranche gates
+(`check:consistency`, `audit:check`, `verify`) and `tcg-reviewer` are
+deferred to Tranche B's own close ("Tranche B review" in
+`M08.5_FINAL_CORRECTION_PASS.md`), not this slice.
+
+Next slice: Tranche B review (tranche-close) — revalidate the combined
+Tranche B diff (M08.R3–M08.R7), run `check:consistency`, `audit:check` and
+`verify`, then request `tcg-reviewer`.

@@ -103,6 +103,24 @@ export interface AdaptiveCandidateEvidence {
  * lower bound rather than the point estimate for the same reason
  * `deck-search/evolve.ts` scores that way: a confident result should outrank
  * a lucky one at small sample sizes.
+ *
+ * This score is an accepted approximation, not a statistically validated one,
+ * and two of its assumptions are worth naming so a reader never mistakes the
+ * interval for stronger evidence than it is. First, `proportion()` treats
+ * every pooled game as one independent, identically-distributed Bernoulli
+ * trial with a single true win rate — but the opponent group and the field
+ * group are wins against different decks, so a pooled `meta_aware` score is a
+ * rate against *this run's specific mixture of opposition*, not a rate any
+ * single population actually has. Second, under `mirrorSeats: true` each seat
+ * rotation of one game index replays *the same shuffle* (`../schedule.ts`), so
+ * a mirrored pair is correlated rather than two independent draws; this
+ * function has no way to see that and counts both halves as independent
+ * evidence anyway, so the reported interval is narrower than the true
+ * uncertainty. Both are accepted here because `decideAdaptivePromotion` only
+ * ever uses this score to order candidates that already won a plain decisive
+ * majority (`successes > total - successes`) — never to decide whether one
+ * did — so an optimistic interval can misorder a close tie-break, not
+ * manufacture a win that was not there.
  */
 export function adaptivePromotionScore(evidence: AdaptiveCandidateEvidence): ProportionEstimate {
   const { tallies, screening } = evidence;

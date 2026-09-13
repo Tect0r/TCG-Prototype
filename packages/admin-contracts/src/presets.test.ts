@@ -7,6 +7,7 @@ import {
   PRESET_REGISTRY,
   PRESET_STATUSES,
   PRESET_TEST_STYLES,
+  candidateCardPatchSchema,
   experimentPresetDefinitionSchema,
   experimentPresetIdSchema,
   presetChoiceSchema,
@@ -485,5 +486,24 @@ describe('the definition schema M08.6 added', () => {
         gamesPerPairing: 4,
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('candidateCardPatchSchema', () => {
+  it('accepts a valid numeric cost change', () => {
+    const result = candidateCardPatchSchema.safeParse({ cardId: 'prototype_scout', cost: 3 });
+    expect(result.success).toBe(true);
+  });
+
+  it('refuses a null cost with a readable field error, rather than an unexplained downstream failure', () => {
+    const result = candidateCardPatchSchema.safeParse({ cardId: 'prototype_scout', cost: null });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.includes('cost'))).toBe(true);
+    }
+  });
+
+  it('still requires at least one field to change', () => {
+    expect(candidateCardPatchSchema.safeParse({ cardId: 'prototype_scout' }).success).toBe(false);
   });
 });

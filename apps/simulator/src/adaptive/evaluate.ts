@@ -137,10 +137,14 @@ function dedupeByHash(decks: readonly ScheduleDeck[]): ScheduleDeck[] {
 }
 
 /**
- * Deterministic rotating selection of up to `wanted` distinct reference-field
- * decks, modeled on `deck-search/evolve.ts`'s `selectOpponents`: derived from
- * the candidate's own seed path rather than a clock or counter, so the same
- * candidate always screens against the same slice of a given field.
+ * Deterministic selection of exactly `min(wanted, deduped-pool-size)` distinct
+ * reference-field decks: a seeded partial Fisher-Yates shuffle of the deduped
+ * pool, derived from the candidate's own seed path rather than a clock or
+ * counter, so the same candidate always screens against the same slice of a
+ * given field. Unlike a fixed-width retry window over the raw (possibly
+ * duplicate-laden) pool, this can never fall short of the achievable count:
+ * every pass strictly shrinks the remaining swap range, so it terminates in
+ * exactly `capped` steps and always returns exactly that many distinct decks.
  */
 function selectReferenceField(
   candidate: AdaptiveRevision,
@@ -149,16 +153,16 @@ function selectReferenceField(
 ): ScheduleDeck[] {
   const deduped = dedupeByHash(pool);
   const capped = Math.min(wanted, deduped.length);
-  const chosen: ScheduleDeck[] = [];
-  const used = new Set<string>();
-  for (let index = 0; chosen.length < capped && index < deduped.length * 4; index += 1) {
-    const pickIndex = seededIndex(`${candidate.seedPath}|field:${String(index)}`, deduped.length);
-    const deck = deduped[pickIndex];
-    if (!deck || used.has(deck.hash)) continue;
-    used.add(deck.hash);
-    chosen.push(deck);
+  if (capped <= 0) return [];
+  const order = [...deduped];
+  const swaps = deduped.length - capped;
+  for (let i = deduped.length - 1; i >= swaps; i -= 1) {
+    const j = seededIndex(`${candidate.seedPath}|field:shuffle:${String(i)}`, i + 1);
+    const tmp = order[i]!;
+    order[i] = order[j]!;
+    order[j] = tmp;
   }
-  return chosen;
+  return order.slice(swaps);
 }
 
 /**
@@ -204,10 +208,10 @@ export function scheduleAdaptiveCandidateScreening(
   };
 }
 
-/** One screened game's outcome. `winnerDeckHash` is `null` for an abnormal or otherwise uncounted result. */
+/** One screened game's outcome. `winnerPlayerId` is `null` for an abnormal or otherwise uncounted result. */
 export interface AdaptiveScreeningResult {
   readonly matchId: string;
-  readonly winnerDeckHash: string | null;
+  readonly winnerPlayerId: string | null;
 }
 
 /** A win tally over one group of screening matches. `noResult` covers abnormal terminations and missing results alike. */
@@ -224,18 +228,35 @@ export const adaptiveScreeningTallySchema = z.strictObject({
   noResult: z.number().int().min(0),
 });
 
+/** `scheduleAgainst` always builds `decks: [input.candidate.deck, opponentDeck]`, so the candidate's seat is always index 0. */
+const CANDIDATE_DECK_INDEX = 0;
+
+/**
+ * Attributes each match's winner by seat identity (`playerId` → `deckIndex`),
+ * never by comparing deck content hashes. A candidate and its opponent can
+ * share an identical deck — a rebuild that reproduces the incumbent's list
+ * under an `open` Commander policy, say — and `ScheduleDeck.hash` is
+ * deliberately content-only (`../schedule.ts`), so two seats with the same
+ * hash would misattribute every such game to whichever side is checked first.
+ * `deckIndex` is fixed by the seat's position in the schedule, independent of
+ * what the deck's content happens to be, which is what keeps this correct
+ * even when both seats hold the same deck.
+ */
 function tallyGroup(
   matches: readonly AdaptiveScreeningMatch[],
-  candidateDeckHash: string,
   resultsByMatchId: ReadonlyMap<string, string | null>,
 ): AdaptiveScreeningTally {
   let candidateWins = 0;
   let opponentWins = 0;
   let noResult = 0;
   for (const entry of matches) {
-    const winnerDeckHash = resultsByMatchId.get(entry.match.matchId);
-    if (winnerDeckHash === undefined || winnerDeckHash === null) noResult += 1;
-    else if (winnerDeckHash === candidateDeckHash) candidateWins += 1;
+    const winnerPlayerId = resultsByMatchId.get(entry.match.matchId);
+    const winnerSeat =
+      winnerPlayerId === undefined || winnerPlayerId === null
+        ? undefined
+        : entry.match.seats.find((seat) => seat.playerId === winnerPlayerId);
+    if (winnerSeat === undefined) noResult += 1;
+    else if (winnerSeat.deckIndex === CANDIDATE_DECK_INDEX) candidateWins += 1;
     else opponentWins += 1;
   }
   return { candidateWins, opponentWins, noResult };
@@ -255,17 +276,16 @@ export interface AdaptiveScreeningTallies {
  */
 export function tallyAdaptiveScreening(
   screening: AdaptiveCandidateScreening,
-  candidateDeckHash: string,
   results: readonly AdaptiveScreeningResult[],
 ): AdaptiveScreeningTallies {
   const resultsByMatchId = new Map(
-    results.map((result) => [result.matchId, result.winnerDeckHash]),
+    results.map((result) => [result.matchId, result.winnerPlayerId]),
   );
   return {
-    opponent: tallyGroup(screening.opponentMatches, candidateDeckHash, resultsByMatchId),
+    opponent: tallyGroup(screening.opponentMatches, resultsByMatchId),
     field:
       screening.fieldMatches.length === 0
         ? null
-        : tallyGroup(screening.fieldMatches, candidateDeckHash, resultsByMatchId),
+        : tallyGroup(screening.fieldMatches, resultsByMatchId),
   };
 }

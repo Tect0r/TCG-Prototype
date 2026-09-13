@@ -225,8 +225,8 @@ function shouldRebuildAdaptiveLineage(
   return afterConsecutiveLosses || everyBlocks;
 }
 
-function winnerDeckHashOf(record: MatchRecord): string | null {
-  return record.seats.find((seat) => seat.won)?.deckHash ?? null;
+function winnerPlayerIdOf(record: MatchRecord): string | null {
+  return record.seats.find((seat) => seat.won)?.playerId ?? null;
 }
 
 /** `scheduleAdaptiveBlock`/`playBlock` always pass `decks: [incumbentDeck, opponentDeck]`. */
@@ -467,7 +467,7 @@ async function runCandidateScreening(
       schedule: matches,
     });
     for (const record of recordsForSchedule(options.sink, outcome, matches)) {
-      results.push({ matchId: record.matchId, winnerDeckHash: winnerDeckHashOf(record) });
+      results.push({ matchId: record.matchId, winnerPlayerId: winnerPlayerIdOf(record) });
     }
   }
   return { results };
@@ -524,7 +524,7 @@ async function processGeneration(
     evidence.push({
       candidate: plan.candidate,
       screening: plan.screening,
-      tallies: tallyAdaptiveScreening(plan.screening, plan.candidate.deck.hash, results),
+      tallies: tallyAdaptiveScreening(plan.screening, results),
     });
   }
 
@@ -643,8 +643,8 @@ export async function runAdaptiveFinalValidation(
   const records = recordsForSchedule(options.sink, batchOutcome, matches);
   const results = records.map((record) => ({
     matchId: record.matchId,
-    winnerDeckHash: winnerDeckHashOf(record),
+    winnerPlayerId: winnerPlayerIdOf(record),
   }));
-  const outcome = tallyAdaptiveValidation(decks, results);
+  const outcome = tallyAdaptiveValidation(matches, results);
   return { decks, outcome, standing: adaptiveValidationStanding(outcome) };
 }

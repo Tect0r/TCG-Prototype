@@ -184,6 +184,67 @@ describe('generateAdaptiveCandidates: rebuild candidates', () => {
       expect(candidate.deck.hash).not.toBe(baseInput().incumbent.deck.hash);
     }
   });
+
+  it('keeps every rebuild candidate on the incumbent Commander under a locked policy', () => {
+    const incumbent = incumbentRevision();
+    const record = generateAdaptiveCandidates(
+      baseInput({ rebuild: true, incumbent, config: baseConfig({ commanderPolicy: 'locked' }) }),
+    );
+    expect(record.candidates.length).toBeGreaterThan(0);
+    for (const candidate of record.candidates) {
+      expect(candidate.deck.commanderId).toBe(incumbent.deck.commanderId);
+    }
+  });
+
+  it('lets a rebuild candidate choose a different legal Commander under an open policy, rather than silently pinning the incumbent', () => {
+    const incumbent = incumbentRevision();
+    const record = generateAdaptiveCandidates(
+      baseInput({
+        rebuild: true,
+        incumbent,
+        config: baseConfig({ commanderPolicy: 'open', candidateCount: 12 }),
+      }),
+    );
+    expect(record.candidates.length).toBeGreaterThan(0);
+    expect(record.candidates.some((candidate) => candidate.deck.commanderId !== incumbent.deck.commanderId)).toBe(
+      true,
+    );
+  });
+
+  it('restricts an open-policy rebuild candidate to a legal Commander in this environment', () => {
+    const incumbent = incumbentRevision();
+    const record = generateAdaptiveCandidates(
+      baseInput({
+        rebuild: true,
+        incumbent,
+        config: baseConfig({ commanderPolicy: 'open', candidateCount: 12 }),
+      }),
+    );
+    const legalCommanderIds = new Set(environment.commanders.map((card) => card.id));
+    for (const candidate of record.candidates) {
+      expect(legalCommanderIds.has(candidate.deck.commanderId)).toBe(true);
+    }
+  });
+
+  it('restricts a selected-policy rebuild candidate to exactly the configured Commander pool', () => {
+    const incumbent = incumbentRevision();
+    const selected = 'prototype_commander_red';
+    const record = generateAdaptiveCandidates(
+      baseInput({
+        rebuild: true,
+        incumbent,
+        config: baseConfig({
+          commanderPolicy: 'selected',
+          selectedCommanderIds: [selected],
+          candidateCount: 6,
+        }),
+      }),
+    );
+    expect(record.candidates.length).toBeGreaterThan(0);
+    for (const candidate of record.candidates) {
+      expect(candidate.deck.commanderId).toBe(selected);
+    }
+  });
 });
 
 describe('generateAdaptiveCandidates: public-observation versus analysis-only boundary', () => {

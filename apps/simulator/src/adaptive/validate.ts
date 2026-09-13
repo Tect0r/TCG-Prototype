@@ -116,10 +116,10 @@ export function scheduleAdaptiveValidation(
   });
 }
 
-/** One validation game's outcome. `winnerDeckHash` is `null` for an abnormal or otherwise uncounted result. */
+/** One validation game's outcome. `winnerPlayerId` is `null` for an abnormal or otherwise uncounted result. */
 export interface AdaptiveValidationResult {
   readonly matchId: string;
-  readonly winnerDeckHash: string | null;
+  readonly winnerPlayerId: string | null;
 }
 
 /** The frozen validation stage's win tally. `noResult` covers abnormal terminations and missing results alike. */
@@ -129,18 +129,35 @@ export interface AdaptiveValidationOutcome {
   readonly noResult: number;
 }
 
-/** Tallies a completed validation stage's results against the frozen decks that produced them. */
+/** `scheduleAdaptiveValidation` always builds `decks: [input.decks.incumbent.deck, input.decks.opponent.deck]`, so the incumbent's seat is always index 0. */
+const INCUMBENT_DECK_INDEX = 0;
+
+/**
+ * Tallies a completed validation stage's results by seat identity
+ * (`playerId` → `deckIndex`), never by comparing deck content hashes. The
+ * incumbent and opponent lineages can freeze onto an identical deck, and
+ * `SimDeck.hash` is content-only, so a hash comparison would misattribute
+ * every such game — this reads `deckIndex`, which is fixed by the seat's
+ * schedule position and independent of what either deck's content is (the
+ * same fix `./evaluate.ts`'s `tallyGroup` applies to screening evidence).
+ */
 export function tallyAdaptiveValidation(
-  decks: AdaptiveFrozenDecks,
+  matches: readonly ScheduledMatch[],
   results: readonly AdaptiveValidationResult[],
 ): AdaptiveValidationOutcome {
+  const matchById = new Map(matches.map((match) => [match.matchId, match] as const));
   let incumbentWins = 0;
   let opponentWins = 0;
   let noResult = 0;
   for (const result of results) {
-    if (result.winnerDeckHash === decks.incumbent.deck.hash) incumbentWins += 1;
-    else if (result.winnerDeckHash === decks.opponent.deck.hash) opponentWins += 1;
-    else noResult += 1;
+    const scheduled = matchById.get(result.matchId);
+    const winnerSeat =
+      scheduled === undefined || result.winnerPlayerId === null
+        ? undefined
+        : scheduled.seats.find((seat) => seat.playerId === result.winnerPlayerId);
+    if (winnerSeat === undefined) noResult += 1;
+    else if (winnerSeat.deckIndex === INCUMBENT_DECK_INDEX) incumbentWins += 1;
+    else opponentWins += 1;
   }
   return { incumbentWins, opponentWins, noResult };
 }

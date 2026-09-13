@@ -166,6 +166,30 @@ function generateSwapCandidate(
   });
 }
 
+/**
+ * The Commander a rebuild candidate is allowed to use, per `config.commanderPolicy`.
+ *
+ * `locked` fixes `options.commanderId` to the incumbent's, exactly as before.
+ * `selected` and `open` must not do that — a policy that lets a lineage change
+ * Commander is not honoured by generating every rebuild under the old one
+ * anyway — so both instead restrict `generateDeck`'s own `commanderIds` pool
+ * (to `config.selectedCommanderIds` for `selected`, or every legal Commander
+ * for `open`) and let its seeded `pick` choose, deterministically, from that
+ * pool rather than pinning one.
+ */
+function rebuildCommanderChoice(
+  config: AdaptiveConfig,
+  incumbent: AdaptiveRevision,
+): { readonly commanderIds: readonly CardId[]; readonly commanderId?: CardId } {
+  if (config.commanderPolicy === 'locked') {
+    return { commanderIds: [], commanderId: incumbent.deck.commanderId };
+  }
+  if (config.commanderPolicy === 'selected') {
+    return { commanderIds: config.selectedCommanderIds };
+  }
+  return { commanderIds: [] };
+}
+
 function generateRebuildCandidate(
   environment: Environment,
   config: AdaptiveConfig,
@@ -178,12 +202,15 @@ function generateRebuildCandidate(
   const seedPath = candidateSeedPath(config, generation, block, index);
   const construction: AdaptiveGeneratedConstructionKind = 'rebuild';
 
+  const commanderChoice = rebuildCommanderChoice(config, incumbent);
   const result = generateDeck(
     environment,
     seedFromPath(seedPath, 'r'),
-    {},
+    { commanderIds: [...commanderChoice.commanderIds] },
     {
-      commanderId: incumbent.deck.commanderId,
+      ...(commanderChoice.commanderId !== undefined
+        ? { commanderId: commanderChoice.commanderId }
+        : {}),
       label: `${incumbent.deck.label} rebuild g${String(generation)}`,
     },
   );

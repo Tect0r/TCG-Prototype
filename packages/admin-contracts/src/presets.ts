@@ -414,7 +414,18 @@ const pilotSelection = z.array(resolvedIdSchema).min(1).max(4);
 export const candidateCardPatchSchema = z
   .strictObject({
     cardId: resolvedIdSchema,
-    cost: z.number().int().min(0).max(20).nullable().optional(),
+    /**
+     * Unlike `baseCardSchema.cost`, `null` is refused here: at the full-card
+     * level it legitimately means "never paid for from hand" (Commanders,
+     * tokens — `packages/card-data/src/schema/card.ts`), an identity choice a
+     * card is authored with, not a balance dial. This patch editor only ever
+     * offers three numeric dials on an already-resolved card, and no dial
+     * target has ever meant "make this card never paid for" — so `null`
+     * reaches no defined patch meaning here, and is refused at this boundary
+     * with a readable field error rather than reaching `applyCardPatch`'s
+     * downstream re-validation as an unexplained failure.
+     */
+    cost: z.number().int().min(0).max(20).optional(),
     attack: z.number().int().min(0).max(99).optional(),
     health: z.number().int().min(1).max(99).optional(),
   })

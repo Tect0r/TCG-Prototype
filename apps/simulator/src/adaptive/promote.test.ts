@@ -224,6 +224,27 @@ describe('adaptivePromotionScore', () => {
     expect(score.successes).toBe(4);
     expect(score.total).toBe(4);
   });
+
+  it('scores identical raw counts identically whether or not the games were mirrored — an accepted approximation, not a validated correction for the correlation mirroring introduces (see the doc comment above `adaptivePromotionScore`)', () => {
+    const unmirroredScreening = screeningFor(candidate, opponentDeck, {
+      config: baseConfig({ blockSize: 4, mirrorSeats: false, referenceFieldShare: 0 }),
+    });
+    const mirroredScreening = screeningFor(candidate, opponentDeck, {
+      config: baseConfig({ blockSize: 4, mirrorSeats: true, referenceFieldShare: 0 }),
+    });
+    const opponentTally = tally(6, 2);
+    const unmirroredScore = adaptivePromotionScore({
+      candidate,
+      screening: unmirroredScreening,
+      tallies: { opponent: opponentTally, field: null },
+    });
+    const mirroredScore = adaptivePromotionScore({
+      candidate,
+      screening: mirroredScreening,
+      tallies: { opponent: opponentTally, field: null },
+    });
+    expect(mirroredScore).toEqual(unmirroredScore);
+  });
 });
 
 describe('decideAdaptivePromotion', () => {

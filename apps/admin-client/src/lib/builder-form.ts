@@ -704,7 +704,7 @@ export function candidateComparisonFormOf(
     removeCardIdsRaw: idListRaw(choice.removeCardIds),
     cardPatchRows: choice.cardPatches.map((patch) => ({
       cardId: patch.cardId,
-      cost: patch.cost === undefined || patch.cost === null ? '' : String(patch.cost),
+      cost: patch.cost === undefined ? '' : String(patch.cost),
       attack: patch.attack === undefined ? '' : String(patch.attack),
       health: patch.health === undefined ? '' : String(patch.health),
     })),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeDeck, type SimDeck } from '@tcg/deck-generator';
+import type { ScheduledMatch } from '../schedule.js';
 import { tinyEnvironment, VALUE_PILOT, AGGRESSIVE_PILOT } from '../test-fixtures.js';
 import type { AdaptiveConfig } from './config.js';
 import type { AdaptiveCheckpoint } from './checkpoint.js';
@@ -41,6 +42,13 @@ function deck(label: string, extra = 0): SimDeck {
       { cardId: 'prototype_guard', quantity: 2 },
     ],
   });
+}
+
+/** `scheduleAdaptiveValidation` always builds `decks: [incumbent.deck, opponent.deck]`, so deckIndex 0 is always the incumbent's seat. */
+function winnerIdForDeckIndex(match: ScheduledMatch, deckIndex: number): string {
+  const seat = match.seats.find((entry) => entry.deckIndex === deckIndex);
+  if (seat === undefined) throw new Error(`match ${match.matchId} has no seat at deckIndex ${String(deckIndex)}`);
+  return seat.playerId;
 }
 
 function revision(revisionDeck: SimDeck): AdaptiveRevision {
@@ -242,14 +250,16 @@ describe('scheduleAdaptiveValidation', () => {
 
 describe('tallyAdaptiveValidation', () => {
   it('tallies incumbent, opponent and noResult separately', () => {
-    const decks = frozenDecks();
+    const matches = scheduleAdaptiveValidation(
+      baseScheduleInput({ config: baseConfig({ mirrorSeats: false, finalValidationGames: 4 }) }),
+    );
     const results = [
-      { matchId: 'm1', winnerDeckHash: decks.incumbent.deck.hash },
-      { matchId: 'm2', winnerDeckHash: decks.incumbent.deck.hash },
-      { matchId: 'm3', winnerDeckHash: decks.opponent.deck.hash },
-      { matchId: 'm4', winnerDeckHash: null },
+      { matchId: matches[0]!.matchId, winnerPlayerId: winnerIdForDeckIndex(matches[0]!, 0) },
+      { matchId: matches[1]!.matchId, winnerPlayerId: winnerIdForDeckIndex(matches[1]!, 0) },
+      { matchId: matches[2]!.matchId, winnerPlayerId: winnerIdForDeckIndex(matches[2]!, 1) },
+      { matchId: matches[3]!.matchId, winnerPlayerId: null },
     ];
-    expect(tallyAdaptiveValidation(decks, results)).toEqual({
+    expect(tallyAdaptiveValidation(matches, results)).toEqual({
       incumbentWins: 2,
       opponentWins: 1,
       noResult: 1,
@@ -257,10 +267,41 @@ describe('tallyAdaptiveValidation', () => {
   });
 
   it('is zero across the board for an empty result set', () => {
-    const decks = frozenDecks();
-    expect(tallyAdaptiveValidation(decks, [])).toEqual({
+    const matches = scheduleAdaptiveValidation(baseScheduleInput());
+    expect(tallyAdaptiveValidation(matches, [])).toEqual({
       incumbentWins: 0,
       opponentWins: 0,
+      noResult: 0,
+    });
+  });
+
+  it('attributes wins by seat identity, not deck-content hash, when the incumbent and opponent lineages freeze onto an identical deck', () => {
+    const sharedIncumbent = revision(deck('shared-content', 1));
+    const sharedOpponent = revision(deck('shared-content-twin', 1));
+    const checkpoint = baseCheckpoint({
+      lineages: {
+        incumbent: { activeRevisionId: sharedIncumbent.revisionId, revisions: [sharedIncumbent] },
+        opponent: { activeRevisionId: sharedOpponent.revisionId, revisions: [sharedOpponent] },
+      },
+    });
+    const decks = freezeAdaptiveFinalDecks(checkpoint);
+    expect(decks.incumbent.deck.hash).toBe(decks.opponent.deck.hash);
+
+    const matches = scheduleAdaptiveValidation(
+      baseScheduleInput({
+        decks,
+        config: baseConfig({ mirrorSeats: false, finalValidationGames: 2 }),
+      }),
+    );
+    const results = [
+      { matchId: matches[0]!.matchId, winnerPlayerId: winnerIdForDeckIndex(matches[0]!, 0) },
+      { matchId: matches[1]!.matchId, winnerPlayerId: winnerIdForDeckIndex(matches[1]!, 1) },
+    ];
+    // A hash-based comparison would misattribute both games (the hashes are equal);
+    // seat-identity attribution correctly splits them one win each.
+    expect(tallyAdaptiveValidation(matches, results)).toEqual({
+      incumbentWins: 1,
+      opponentWins: 1,
       noResult: 0,
     });
   });

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R7",
-  "mode": "implementation",
+  "unit": "M08.TrancheB-review",
+  "mode": "tranche-close",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "M08.R7 — Adaptive selection correctness",
+  "heading": "Tranche B review",
   "blocker": null,
-  "next": "M08.R7"
+  "next": "M08.TrancheB-review"
 }
