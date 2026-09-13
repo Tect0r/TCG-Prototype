@@ -88,6 +88,16 @@ import type { ProportionEstimate } from '../analysis/stats.js';
  * the one the checkpoint itself still names, because every phase up to and
  * including the interrupted one replays as a no-op reconciliation against
  * already-committed matches before fresh work resumes.
+ *
+ * `onRawEvent`/`onCheckpoint` (M08.R5) extend this same resume contract to
+ * the evidence a caller persists outside the checkpoint. Every decided phase
+ * — replayed or fresh — calls `onRawEvent` for that phase's raw record(s),
+ * awaits it, then calls `onCheckpoint` with the resulting checkpoint and
+ * awaits that too, before the loop moves on. A caller that persists both,
+ * idempotently and in that order, gets the exact commit sequence a crash
+ * anywhere in this loop needs to be safe to resume from: match records, then
+ * that phase's raw event(s), then that phase's checkpoint advance — never the
+ * reverse.
  */
 
 /**
@@ -119,19 +129,49 @@ export interface RunAdaptiveExperimentOptions {
   readonly shouldStop?: StopSignal;
   readonly softwareCommit?: string | null;
   /**
-   * Notified with every raw-stream event this run produces (M08.18D), leaving
-   * `runAdaptiveExperiment`'s own return type — the final `AdaptiveCheckpoint`
-   * — unchanged. A caller accumulating a raw record or building a canonical
-   * report (`./report.ts`) collects events here rather than the checkpoint
-   * carrying them; the checkpoint stays exactly what `./checkpoint.ts` already
-   * documents it as: state, not evidence. Fires at most once per decided phase
-   * across a run's whole resume history: a phase whose entire schedule was
-   * already committed to the sink before this call is recomputed
-   * deterministically (so the loop can still advance past it) but never
-   * re-emitted here, even though a retried attempt always replays every phase
-   * from the caller's original checkpoint.
+   * Notified with every raw-stream event this run produces (M08.18D, revised
+   * M08.R5), leaving `runAdaptiveExperiment`'s own return type — the final
+   * `AdaptiveCheckpoint` — unchanged. A caller accumulating a raw record or
+   * building a canonical report (`./report.ts`) collects events here rather
+   * than the checkpoint carrying them; the checkpoint stays exactly what
+   * `./checkpoint.ts` already documents it as: state, not evidence.
+   *
+   * Fires once per decided phase **every time that phase is decided**,
+   * including a phase whose entire schedule was already committed to the
+   * sink by an earlier, interrupted attempt and is now only being
+   * deterministically recomputed, never replayed. M08.18D's original design
+   * suppressed that re-emission (gated on whether this exact call produced
+   * fresh matches), on the assumption that a phase recomputed from
+   * already-committed matches had always already been persisted. That
+   * assumption was false: a crash between a phase's match commit and this
+   * callback's own persistence step left the raw event unrecorded forever,
+   * with no later call that would ever re-offer it. Every `record` this
+   * event carries names its own decided phase by a stable, globally unique
+   * `block` number (`./report.ts`'s `adaptiveSeriesRecordSchema` /
+   * `adaptiveScreeningRoundSchema`, `./generate.ts`'s
+   * `adaptiveGenerationRecordSchema`), so a caller persists idempotently by
+   * upserting on that key — replacing whatever it already held for the same
+   * block, never appending a second copy — rather than assuming each call
+   * is new. Awaited before the phase that produced it is considered
+   * committed (see `onCheckpoint` below), so a caller that makes this
+   * persist before returning gets the exact commit order this file's own
+   * resume contract now requires: match record commit, then raw-event
+   * persistence, then checkpoint persistence.
    */
-  readonly onRawEvent?: (event: AdaptiveRawEvent) => void;
+  readonly onRawEvent?: (event: AdaptiveRawEvent) => void | Promise<void>;
+  /**
+   * Notified with the checkpoint that results from one fully decided phase
+   * (M08.R5), immediately after every `onRawEvent` call that phase's
+   * decision produced has resolved. A caller that persists this checkpoint
+   * here — rather than only once, at the end of a whole attempt or on
+   * `ExperimentStopped` — gets a crash-safe per-phase checkpoint commit that
+   * always follows that same phase's raw-event persistence, never precedes
+   * it: resuming into a checkpoint this callback already wrote back can only
+   * ever replay a phase whose raw event was already durably upserted (a safe
+   * no-op), never one whose raw event still needs to be produced for the
+   * first time.
+   */
+  readonly onCheckpoint?: (checkpoint: AdaptiveCheckpoint) => void | Promise<void>;
 }
 
 /** Which fixed lineage slot generated `checkpoint.pendingGeneration`, derived rather than stored. */
@@ -315,34 +355,33 @@ async function playBlock(
     schedule: scheduled.matches,
   });
   const records = recordsForSchedule(options.sink, outcome, scheduled.matches);
-  // A resumed attempt always replays this phase from the caller's original
-  // checkpoint (see the file-level doc comment). `outcome.records` only ever
-  // holds matches freshly run *this* call, so it is empty exactly when every
-  // one of this block's matches was already committed by an earlier,
-  // interrupted attempt — meaning this phase already decided and emitted its
-  // raw event then. Gating on it keeps `onRawEvent` firing at most once per
-  // decided phase even though the surrounding decision is still recomputed.
-  const freshlyPlayed = outcome.records.length > 0;
+  // Always decided and always reported, whether this call's matches were
+  // freshly played or this phase is only being deterministically recomputed
+  // from matches an earlier, interrupted attempt already committed — see
+  // `onRawEvent`'s own doc comment above for why re-emitting a recomputed
+  // phase is required, not redundant, and safe only because the caller
+  // persists it idempotently, keyed on `checkpoint.nextBlock`.
   const decision = decideAdaptiveBlock(deriveBlockOutcome(records, scheduled.matches));
-  if (freshlyPlayed) {
-    options.onRawEvent?.({
-      kind: 'series',
-      record: makeAdaptiveSeriesRecord({
-        generation: incumbentRevision.generation,
-        block: checkpoint.nextBlock,
-        incumbent: incumbentRevision,
-        opponent: opponentRevision,
-        decision,
-      }),
-    });
-  }
+  await options.onRawEvent?.({
+    kind: 'series',
+    record: makeAdaptiveSeriesRecord({
+      generation: incumbentRevision.generation,
+      block: checkpoint.nextBlock,
+      incumbent: incumbentRevision,
+      opponent: opponentRevision,
+      decision,
+    }),
+  });
   const gamesSpent = checkpoint.gamesSpent + records.length;
 
   if (decision.kind !== 'win') {
-    return {
-      scheduled: true,
-      checkpoint: { ...checkpoint, gamesSpent, nextBlock: checkpoint.nextBlock + 1 },
+    const next: AdaptiveCheckpoint = {
+      ...checkpoint,
+      gamesSpent,
+      nextBlock: checkpoint.nextBlock + 1,
     };
+    await options.onCheckpoint?.(next);
+    return { scheduled: true, checkpoint: next };
   }
 
   const loserSide = decision.loser;
@@ -363,31 +402,26 @@ async function playBlock(
     block: checkpoint.nextBlock,
     rebuild,
   });
-  if (freshlyPlayed) {
-    options.onRawEvent?.({ kind: 'generation', record: generationRecord });
-  }
+  await options.onRawEvent?.({ kind: 'generation', record: generationRecord });
 
-  return {
-    scheduled: true,
-    checkpoint: {
-      ...checkpoint,
-      gamesSpent,
-      pendingGeneration: generationRecord,
-      nextGeneration: generationRecord.generation,
-      nextSeedPath: adaptiveRevisionSeedPath(
-        options.config.seed,
-        options.config.id,
-        generationRecord.generation,
-        checkpoint.nextBlock,
-      ),
-    },
+  const next: AdaptiveCheckpoint = {
+    ...checkpoint,
+    gamesSpent,
+    pendingGeneration: generationRecord,
+    nextGeneration: generationRecord.generation,
+    nextSeedPath: adaptiveRevisionSeedPath(
+      options.config.seed,
+      options.config.id,
+      generationRecord.generation,
+      checkpoint.nextBlock,
+    ),
   };
+  await options.onCheckpoint?.(next);
+  return { scheduled: true, checkpoint: next };
 }
 
 interface CandidateScreeningResult {
   readonly results: AdaptiveScreeningResult[];
-  /** Fresh matches actually run this call, across every opponent-deck group. */
-  readonly freshCount: number;
 }
 
 /** One candidate's screening games, run grouped by opponent deck so each `runBatch` call has a fixed deck pair. */
@@ -415,7 +449,6 @@ async function runCandidateScreening(
   }
 
   const results: AdaptiveScreeningResult[] = [];
-  let freshCount = 0;
   for (const [hash, entries] of groups) {
     const opponentDeck = deckByHash.get(hash);
     if (!opponentDeck) {
@@ -433,12 +466,11 @@ async function runCandidateScreening(
       decks: [candidate.deck, opponentDeck],
       schedule: matches,
     });
-    freshCount += outcome.records.length;
     for (const record of recordsForSchedule(options.sink, outcome, matches)) {
       results.push({ matchId: record.matchId, winnerDeckHash: winnerDeckHashOf(record) });
     }
   }
-  return { results, freshCount };
+  return { results };
 }
 
 /**
@@ -481,20 +513,14 @@ async function processGeneration(
   if (totalGames > gamesRemaining) return { checkpoint, scheduled: false };
 
   const evidence: AdaptiveCandidateEvidence[] = [];
-  // Mirrors `playBlock`'s `freshlyPlayed` gate: a resumed attempt replays this
-  // whole generation from the caller's original checkpoint, so `onRawEvent`
-  // must not re-fire once every one of its screening games was already
-  // committed by an earlier, interrupted attempt.
-  let freshlyPlayed = false;
   for (const plan of plans) {
-    const { results, freshCount } = await runCandidateScreening(
+    const { results } = await runCandidateScreening(
       options,
       checkpoint,
       plan.candidate,
       plan.screening,
       opponentRevision.deck,
     );
-    if (freshCount > 0) freshlyPlayed = true;
     evidence.push({
       candidate: plan.candidate,
       screening: plan.screening,
@@ -514,20 +540,18 @@ async function processGeneration(
         `decision (${decision.reason})`,
     );
   }
-  if (freshlyPlayed) {
-    options.onRawEvent?.({
-      kind: 'screeningRound',
-      record: buildAdaptiveScreeningRound({
-        generation: generation.generation,
-        block: checkpoint.nextBlock,
-        loserSide,
-        opponentRevisionId: opponentRevision.revisionId,
-        evidence,
-        score: adaptivePromotionScore,
-        decision,
-      }),
-    });
-  }
+  await options.onRawEvent?.({
+    kind: 'screeningRound',
+    record: buildAdaptiveScreeningRound({
+      generation: generation.generation,
+      block: checkpoint.nextBlock,
+      loserSide,
+      opponentRevisionId: opponentRevision.revisionId,
+      evidence,
+      score: adaptivePromotionScore,
+      decision,
+    }),
+  });
 
   const updatedLineage: AdaptiveCheckpointLineage =
     decision.kind === 'promoted'
@@ -537,16 +561,15 @@ async function processGeneration(
         }
       : checkpoint.lineages[loserSide];
 
-  return {
-    scheduled: true,
-    checkpoint: {
-      ...checkpoint,
-      gamesSpent: checkpoint.gamesSpent + totalGames,
-      lineages: { ...checkpoint.lineages, [loserSide]: updatedLineage },
-      pendingGeneration: null,
-      nextBlock: checkpoint.nextBlock + 1,
-    },
+  const next: AdaptiveCheckpoint = {
+    ...checkpoint,
+    gamesSpent: checkpoint.gamesSpent + totalGames,
+    lineages: { ...checkpoint.lineages, [loserSide]: updatedLineage },
+    pendingGeneration: null,
+    nextBlock: checkpoint.nextBlock + 1,
   };
+  await options.onCheckpoint?.(next);
+  return { scheduled: true, checkpoint: next };
 }
 
 /**

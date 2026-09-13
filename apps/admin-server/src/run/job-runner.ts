@@ -22,6 +22,7 @@ import {
   isExperimentStopped,
   MatchStore,
   parseAdaptiveCheckpoint,
+  parseAdaptiveRawRecord,
   pilotSpecsOf,
   resolveEnvironment,
   runAdaptiveExperiment,
@@ -53,7 +54,7 @@ import { settleActionFor, type RunControl, type StopReason } from './control.js'
 import { readRunIdentity } from './manifest.js';
 import { readCanonicalProgress, type CanonicalReading } from './progress.js';
 
-/** The third document an Adaptive Counter run writes, beside the checkpoint and the result (`./job-runner.ts` is its only writer, `envelopes.ts`'s own doc comment). Not read back anywhere yet — M08.R5 is the crash-safe rewrite of how it accumulates. */
+/** The third document an Adaptive Counter run writes, beside the checkpoint and the result (`./job-runner.ts` is its only writer, `envelopes.ts`'s own doc comment). M08.R5 makes it crash-safe: every attempt reloads it and reseeds its per-`block` maps before resuming, so a raw event a prior attempt already persisted is upserted, never duplicated. */
 const RAW_DOCUMENT = 'adaptive-raw.json';
 
 /**
@@ -520,27 +521,60 @@ export class ExperimentRunner {
     await record(await readCanonicalProgress(directory));
     const poll = this.#startPolling(directory, record);
 
-    const series: AdaptiveSeriesRecord[] = [];
-    const generations: AdaptiveGenerationRecord[] = [];
-    const screeningRounds: AdaptiveScreeningRound[] = [];
-    const onRawEvent = (event: AdaptiveRawEvent): void => {
+    const configHash = adaptiveConfigHashOf(config);
+    const { series, generations, screeningRounds } = await this.#loadOrCreateAdaptiveRaw(
+      directory,
+      config,
+      configHash,
+    );
+    const persistRaw = async (): Promise<void> => {
+      await writeJsonAtomically(
+        join(directory, RAW_DOCUMENT),
+        adaptiveRawRecordSchema.parse({
+          schemaVersion: ADAPTIVE_RAW_SCHEMA_VERSION,
+          experimentId: config.id,
+          configHash,
+          generations: [...generations.values()].sort((a, b) => a.block - b.block),
+          series: [...series.values()].sort((a, b) => a.block - b.block),
+          screeningRounds: [...screeningRounds.values()].sort((a, b) => a.block - b.block),
+        }),
+      );
+    };
+
+    // `block` is a globally unique, monotonically increasing phase identifier
+    // across a whole run (present on every one of the three record shapes
+    // already), so upserting by it is safe whether this phase's record is
+    // genuinely new or a re-emission of one an earlier, interrupted attempt
+    // already persisted (`run.ts`'s own `onRawEvent` doc comment, M08.R5).
+    const onRawEvent = async (event: AdaptiveRawEvent): Promise<void> => {
       switch (event.kind) {
         case 'series':
-          series.push(event.record);
+          series.set(event.record.block, event.record);
           stageGeneration = event.record.generation;
           stagePending = false;
           break;
         case 'generation':
-          generations.push(event.record);
+          generations.set(event.record.block, event.record);
           stageGeneration = event.record.generation;
           stagePending = true;
           break;
         case 'screeningRound':
-          screeningRounds.push(event.record);
+          screeningRounds.set(event.record.block, event.record);
           stageGeneration = event.record.generation;
           stagePending = false;
           break;
       }
+      await persistRaw();
+    };
+
+    // Tracks the most-advanced checkpoint any phase in this attempt has
+    // actually persisted, so a stop mid-attempt (below) writes back real
+    // progress instead of the stale pre-attempt `checkpoint` this attempt
+    // started from.
+    let latestCheckpoint = checkpoint;
+    const onCheckpoint = async (next: AdaptiveCheckpoint): Promise<void> => {
+      latestCheckpoint = next;
+      await this.#writeAdaptiveCheckpoint(directory, next);
     };
 
     const control = attempt.control;
@@ -555,6 +589,7 @@ export class ExperimentRunner {
       sink,
       checkpoint,
       onRawEvent,
+      onCheckpoint,
       ...(control === undefined ? {} : { shouldStop: () => control.stopRequested() }),
     };
 
@@ -566,12 +601,14 @@ export class ExperimentRunner {
       poll.stop();
       await record(await readCanonicalProgress(directory));
       if (isExperimentStopped(cause)) {
-        // Nothing decided since `checkpoint` was loaded — the caller's own
-        // copy is exactly what a retry replays, the same guarantee
-        // `run.test.ts` documents for `runAdaptiveExperiment` itself. Written
-        // back so a first attempt's freshly constructed checkpoint is on disk
-        // for the restart that resumes it, not only reconstructible from it.
-        await this.#writeAdaptiveCheckpoint(directory, checkpoint);
+        // Every phase this attempt decided already persisted its own raw
+        // event and checkpoint, in that order, before the loop moved on
+        // (`run.ts`'s own resume-contract doc comment); this write is
+        // therefore redundant except for the one case it still covers — a
+        // stop before any phase decided, where `latestCheckpoint` is still
+        // the freshly constructed `checkpoint` this attempt started from and
+        // never otherwise reached disk.
+        await this.#writeAdaptiveCheckpoint(directory, latestCheckpoint);
         return this.#settle(jobId, latest, null);
       }
       return this.#fail(jobId, [runFailed(cause, jobId)], latest);
@@ -606,23 +643,16 @@ export class ExperimentRunner {
     const result = buildAdaptiveResult({
       informationPolicy: config.informationPolicy,
       checkpoint: finalCheckpoint,
-      series,
-      screeningRounds,
+      series: [...series.values()].sort((a, b) => a.block - b.block),
+      screeningRounds: [...screeningRounds.values()].sort((a, b) => a.block - b.block),
       validation,
     });
-    const configHash = adaptiveConfigHashOf(config);
 
-    await writeJsonAtomically(
-      join(directory, RAW_DOCUMENT),
-      adaptiveRawRecordSchema.parse({
-        schemaVersion: ADAPTIVE_RAW_SCHEMA_VERSION,
-        experimentId: config.id,
-        configHash,
-        generations,
-        series,
-        screeningRounds,
-      }),
-    );
+    // A defensive final write, sourced from the same maps every `onRawEvent`
+    // call already persisted incrementally: it is a no-op for any run that
+    // decided at least one phase, and it is what keeps `adaptive-raw.json`
+    // existing on disk for the degenerate run that decided none.
+    await persistRaw();
     await this.#writeAdaptiveCheckpoint(directory, finalCheckpoint);
     await writeJsonAtomically(
       join(directory, RESULT_DOCUMENT),
@@ -778,6 +808,44 @@ export class ExperimentRunner {
       );
     }
     return checkpoint;
+  }
+
+  /**
+   * Reads `adaptive-raw.json` if this job has one and reseeds this attempt's
+   * per-`block` maps from it, or starts from three empty maps otherwise —
+   * the raw-evidence counterpart to `#loadOrCreateAdaptiveCheckpoint` just
+   * above, checked against the same identity (M08.R5).
+   */
+  async #loadOrCreateAdaptiveRaw(
+    directory: string,
+    config: AdaptiveConfig,
+    configHash: string,
+  ): Promise<{
+    readonly series: Map<number, AdaptiveSeriesRecord>;
+    readonly generations: Map<number, AdaptiveGenerationRecord>;
+    readonly screeningRounds: Map<number, AdaptiveScreeningRound>;
+  }> {
+    const empty = (): {
+      series: Map<number, AdaptiveSeriesRecord>;
+      generations: Map<number, AdaptiveGenerationRecord>;
+      screeningRounds: Map<number, AdaptiveScreeningRound>;
+    } => ({ series: new Map(), generations: new Map(), screeningRounds: new Map() });
+
+    const text = await readDocumentText(join(directory, RAW_DOCUMENT));
+    if (text === null) return empty();
+
+    const raw = parseAdaptiveRawRecord(JSON.parse(text));
+    if (raw.experimentId !== config.id || raw.configHash !== configHash) {
+      throw new Error(
+        'This job’s raw evidence was written for a different configuration, so resuming into it ' +
+          'would produce a run that is neither. Nothing was played.',
+      );
+    }
+    return {
+      series: new Map(raw.series.map((record) => [record.block, record])),
+      generations: new Map(raw.generations.map((record) => [record.block, record])),
+      screeningRounds: new Map(raw.screeningRounds.map((record) => [record.block, record])),
+    };
   }
 
   /**

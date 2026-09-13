@@ -255,5 +255,86 @@ describe('a real adaptive run, paused and resumed across worker threads', () => 
     expect(resumedOutcome.status).toBe('completed');
     const finished = unwrap(await catalog.store.readJob(jobId));
     expect(finished.execution).toMatchObject({ attempts: 2, resumedMatches: partial });
+
+    // M08.R5: the pause landed mid-phase, so the interrupted attempt's own
+    // raw event (if it had produced one yet) and the resumed attempt's
+    // re-decision of that same phase must have collapsed onto one entry per
+    // `block`, never a duplicate, across the two attempts' writes to the
+    // same `adaptive-raw.json`.
+    const directory = await runDirectory(config.id);
+    const raw = JSON.parse(
+      await readFile(join(directory, 'adaptive-raw.json'), 'utf8'),
+    ) as {
+      series: { block: number }[];
+      generations: { block: number }[];
+      screeningRounds: { block: number }[];
+    };
+    for (const kind of ['series', 'generations', 'screeningRounds'] as const) {
+      const blocks = raw[kind].map((record) => record.block);
+      expect(new Set(blocks).size).toBe(blocks.length);
+    }
+  }, 120_000);
+});
+
+describe('a real adaptive run, paused exactly before final result publication', () => {
+  it('keeps the learning series’ raw evidence and checkpoint durable, with no result yet, until a resumed attempt publishes it', async () => {
+    // Pausing the instant every learning-series game is committed lands the
+    // stop inside (or immediately before) the frozen-seed validation stage —
+    // strictly after the learning series' own raw evidence and checkpoint
+    // are durable (M08.R5's third fault-injection point), but strictly
+    // before this run's final result is built and written (its fourth).
+    const { jobId, config } = await seedAdaptiveJob({
+      id: 'adaptive-pause-before-result',
+      ...FAST_BUDGET,
+    });
+    const runner = makeRunner();
+    const control = new JobStopControl();
+    const matchesPath = experimentPaths(await runDirectory(config.id)).matches;
+
+    const running = runner.run(jobId, { workers: 2, control });
+
+    for (let waited = 0; waited < 10_000; waited += 10) {
+      if ((await countCommittedRecords(matchesPath)) >= config.totalLearningBudget) break;
+      await delay(10);
+    }
+    unwrap(await catalog.store.applyJobAction({ jobId, action: 'pause' }));
+    control.request('pause');
+
+    const outcome = unwrap(await running);
+    const directory = await runDirectory(config.id);
+
+    if (outcome.status === 'stopped') {
+      const checkpoint = JSON.parse(
+        await readFile(join(directory, 'adaptive-checkpoint.json'), 'utf8'),
+      ) as { pendingGeneration: unknown };
+      // The learning series is fully decided (promotion settled) before
+      // validation ever starts, so a stop inside validation always finds it
+      // this way on disk.
+      expect(checkpoint.pendingGeneration).toBeNull();
+      await expect(
+        readFile(join(directory, 'adaptive-result.json'), 'utf8'),
+      ).rejects.toThrow();
+
+      unwrap(await catalog.store.applyJobAction({ jobId, action: 'resume' }));
+      const resumedOutcome = unwrap(await runner.run(jobId));
+      expect(resumedOutcome.status).toBe('completed');
+    } else {
+      // The pause lost the race against a fast validation stage and the run
+      // completed on its own — the property under test (a durable, complete
+      // result) still holds, just without exercising the resume path.
+      expect(outcome.status).toBe('completed');
+    }
+
+    const result = JSON.parse(
+      await readFile(join(directory, 'adaptive-result.json'), 'utf8'),
+    ) as { experimentId: string };
+    expect(result.experimentId).toBe(config.id);
+
+    const matchLines = (await readFile(matchesPath, 'utf8')).trim().split('\n');
+    const matchIds = matchLines.map((line) => (JSON.parse(line) as { matchId: string }).matchId);
+    expect(matchIds).toHaveLength(
+      config.totalLearningBudget + config.finalValidationGames * (config.mirrorSeats ? 2 : 1),
+    );
+    expect(new Set(matchIds).size).toBe(matchIds.length);
   }, 120_000);
 });

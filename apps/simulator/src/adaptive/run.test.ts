@@ -287,7 +287,7 @@ describe('runAdaptiveExperiment', () => {
     expect(new Set(resumedRecords.map((record) => record.matchId)).size).toBe(6);
   });
 
-  it('never re-emits onRawEvent for a phase an earlier, interrupted attempt already decided', async () => {
+  it('always re-emits onRawEvent for a phase an earlier, interrupted attempt already decided', async () => {
     const resumedStore = newStore();
     const startCheckpoint = freshCheckpoint();
     const firstEvents: AdaptiveRawEvent[] = [];
@@ -305,7 +305,9 @@ describe('runAdaptiveExperiment', () => {
       sink: resumedStore,
       checkpoint: startCheckpoint,
       shouldStop: stopAfter(3),
-      onRawEvent: (event) => firstEvents.push(event),
+      onRawEvent: (event) => {
+        firstEvents.push(event);
+      },
     });
     await expect(firstAttempt).rejects.toThrow(ExperimentStopped);
     expect(firstEvents.map((event) => event.kind)).toEqual(['series', 'generation']);
@@ -321,16 +323,26 @@ describe('runAdaptiveExperiment', () => {
       workers: 1,
       sink: resumedStore,
       checkpoint: startCheckpoint,
-      onRawEvent: (event) => resumedEvents.push(event),
+      onRawEvent: (event) => {
+        resumedEvents.push(event);
+      },
     });
 
     expect(resumed.nextBlock).toBe(1);
-    // Block 0's `series` and `generation` events were already emitted by the
-    // first, interrupted attempt — retrying with the original checkpoint
-    // replays that phase (it is fully committed in the sink) but must not
-    // fire them again. Only the screening round, never decided before the
-    // interruption, fires on this attempt.
-    expect(resumedEvents.map((event) => event.kind)).toEqual(['screeningRound']);
+    // Block 0's `series` and `generation` are deterministically recomputed
+    // from already-committed matches (M08.R5 removed the old suppression
+    // that assumed a recomputed phase had always already been persisted),
+    // so this attempt re-decides and re-emits both — byte-identical to the
+    // first attempt's copies — relying on a caller's idempotent
+    // upsert-by-`block` to collapse them rather than on this file ever
+    // withholding a re-emission itself.
+    expect(resumedEvents.map((event) => event.kind)).toEqual([
+      'series',
+      'generation',
+      'screeningRound',
+    ]);
+    expect(resumedEvents[0]).toEqual(firstEvents[0]);
+    expect(resumedEvents[1]).toEqual(firstEvents[1]);
   });
 
   it('stops without spending a game once the budget no longer affords the next block', async () => {
@@ -350,6 +362,217 @@ describe('runAdaptiveExperiment', () => {
     expect(result.gamesSpent).toBe(0);
     expect(result.nextBlock).toBe(0);
     expect(store.all()).toHaveLength(0);
+  });
+});
+
+/**
+ * M08.R5's four required fault-injection points, at the level this file
+ * actually controls: a crash mid-`onRawEvent` (after matches committed, before
+ * that phase's raw event persists), a crash mid-`onCheckpoint` (after the raw
+ * event persists, before the checkpoint advance persists), and a crash that
+ * lands cleanly after a checkpoint advance already persisted but before the
+ * next phase begins — the one case where a real caller's next attempt starts
+ * from an *advanced* checkpoint rather than the pre-attempt one `run.test.ts`'s
+ * other resume tests always reuse. The fourth point — immediately before
+ * final result publication — has no equivalent inside this file at all:
+ * `runAdaptiveExperiment` never builds a final result, so that point is
+ * exercised at the job-runner level instead
+ * (`job-runner-adaptive.test.ts`).
+ */
+describe('crash-safe raw evidence (M08.R5)', () => {
+  it('resumes correctly from a crash inside onRawEvent, after matches committed but before that phase’s raw event persisted', async () => {
+    const uninterruptedStore = newStore();
+    const uninterrupted = await runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: uninterruptedStore,
+      checkpoint: freshCheckpoint(),
+    });
+
+    const crashStore = newStore();
+    const crashCheckpoint = freshCheckpoint();
+    let rawCalls = 0;
+    const crashing = runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: crashStore,
+      checkpoint: crashCheckpoint,
+      onRawEvent: () => {
+        rawCalls += 1;
+        if (rawCalls === 1) throw new Error('simulated crash before raw-event persistence');
+      },
+    });
+    await expect(crashing).rejects.toThrow('simulated crash before raw-event persistence');
+    // Block 0's 2 games are committed to the sink even though the crash
+    // prevented this phase's raw event from ever being persisted.
+    expect(crashStore.all()).toHaveLength(2);
+
+    const events: AdaptiveRawEvent[] = [];
+    const resumed = await runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: crashStore,
+      checkpoint: crashCheckpoint,
+      onRawEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(resumed).toEqual(uninterrupted);
+    expect(events.map((event) => event.kind)).toEqual(['series', 'generation', 'screeningRound']);
+    expect(crashStore.all()).toHaveLength(6);
+    expect(new Set(crashStore.all().map((record) => record.matchId)).size).toBe(6);
+  });
+
+  it('resumes correctly from a crash inside onCheckpoint, after that phase’s raw event persisted but before its checkpoint advance', async () => {
+    const uninterruptedStore = newStore();
+    const uninterrupted = await runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: uninterruptedStore,
+      checkpoint: freshCheckpoint(),
+    });
+
+    const crashStore = newStore();
+    const crashCheckpoint = freshCheckpoint();
+    const persistedEvents: AdaptiveRawEvent[] = [];
+    let checkpointCalls = 0;
+    const crashing = runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: crashStore,
+      checkpoint: crashCheckpoint,
+      onRawEvent: (event) => {
+        persistedEvents.push(event);
+      },
+      onCheckpoint: () => {
+        checkpointCalls += 1;
+        if (checkpointCalls === 1) throw new Error('simulated crash before checkpoint persistence');
+      },
+    });
+    await expect(crashing).rejects.toThrow('simulated crash before checkpoint persistence');
+    // Block 0 decisively wins, so `playBlock` emits both its `series` record
+    // and the losing lineage's `generation` record before calling
+    // `onCheckpoint` once for that whole decided phase — both persisted even
+    // though the crash prevented this phase's checkpoint advance
+    // (pendingGeneration) from ever reaching disk.
+    expect(persistedEvents.map((event) => event.kind)).toEqual(['series', 'generation']);
+
+    const events: AdaptiveRawEvent[] = [];
+    const resumed = await runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: crashStore,
+      checkpoint: crashCheckpoint, // still the original, pre-crash checkpoint
+      onRawEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(resumed).toEqual(uninterrupted);
+    // Block 0 is re-decided (its matches are already committed) and both of
+    // its raw events re-emitted — identical to the crashed attempt's copies —
+    // before the run continues past where the crash stopped it.
+    expect(events.map((event) => event.kind)).toEqual(['series', 'generation', 'screeningRound']);
+    expect(events[0]).toEqual(persistedEvents[0]);
+    expect(events[1]).toEqual(persistedEvents[1]);
+  });
+
+  it('resumes correctly from a crash that lands after one phase’s checkpoint durably advanced but before the next phase began', async () => {
+    const uninterruptedStore = newStore();
+    const uninterrupted = await runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: uninterruptedStore,
+      checkpoint: freshCheckpoint(),
+    });
+
+    const crashStore = newStore();
+    let persistedCheckpoint: AdaptiveCheckpoint | null = null;
+    const crashing = runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: crashStore,
+      checkpoint: freshCheckpoint(),
+      onCheckpoint: (next) => {
+        if (persistedCheckpoint !== null) {
+          throw new Error('simulated crash after the first checkpoint durably advanced');
+        }
+        persistedCheckpoint = next;
+      },
+    });
+    await expect(crashing).rejects.toThrow(
+      'simulated crash after the first checkpoint durably advanced',
+    );
+    expect(persistedCheckpoint).not.toBeNull();
+    expect((persistedCheckpoint as AdaptiveCheckpoint).pendingGeneration).not.toBeNull();
+
+    // A real caller (the job runner) reloads whatever checkpoint it last
+    // durably persisted — here, the advanced one a crash right after
+    // `onCheckpoint` resolved still leaves on disk — rather than replaying
+    // from the pre-attempt checkpoint this file's other resume tests reuse.
+    const events: AdaptiveRawEvent[] = [];
+    const resumed = await runAdaptiveExperiment({
+      environment,
+      config: baseConfig(),
+      experimentKind: 'batch',
+      pilots: [VALUE_PILOT],
+      limits: FAST_LIMITS,
+      retention: NO_RETENTION,
+      workers: 1,
+      sink: crashStore,
+      checkpoint: persistedCheckpoint as AdaptiveCheckpoint,
+      onRawEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(resumed).toEqual(uninterrupted);
+    // Block 0 is never re-decided this attempt — the checkpoint handed in
+    // already names it done — so only the generation's screening round fires.
+    expect(events.map((event) => event.kind)).toEqual(['screeningRound']);
+    expect(crashStore.all()).toHaveLength(6);
+    expect(new Set(crashStore.all().map((record) => record.matchId)).size).toBe(6);
   });
 });
 

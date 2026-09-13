@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R5",
+  "unit": "M08.R6",
   "mode": "implementation",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "M08.R5 — Crash-safe adaptive raw evidence",
+  "heading": "M08.R6 — Adaptive builder and queue integration",
   "blocker": null,
-  "next": "M08.R5"
+  "next": "M08.R6"
 }

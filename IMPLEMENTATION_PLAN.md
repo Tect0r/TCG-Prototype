@@ -23,7 +23,7 @@ the milestone checklist are the history.
 
 | Milestone                                                                   | Status                                        | Active work    |
 | --------------------------------------------------------------------------- | --------------------------------------------- | -------------- |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Complete (2026-09-10); correction pass active | M08.R4 blocked |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Complete (2026-09-10); correction pass active | M08.R6 |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)               | Complete (2026-08-21)                         | —              |
 
 Earlier milestone status and completed-scope summaries live in
@@ -40,16 +40,17 @@ Rows carry state only; do not add implementation narratives.
 | ----------------------------- | ------------------------------- |
 | M08.R1–R2 + Tranche A review  | Complete                        |
 | M08.R3                        | Complete                        |
-| M08.R4                        | Blocked after tested groundwork |
-| M08.R5–R7 + Tranche B review  | Pending                         |
+| M08.R4                        | Complete                        |
+| M08.R5                        | Complete                        |
+| M08.R6–R7 + Tranche B review  | Pending                         |
 | M08.R8–R10 + Tranche C review | Pending                         |
 | M08.R11–R14                   | Pending                         |
 
 ### Current blocking decision
 
-M08.R4 is blocked on Q53 — see
-[`docs/open-questions.md`](docs/open-questions.md#q53-how-do-adaptive-jobs-receive-pilot-selection-and-per-match-turn-limits)
-and "Owner decisions still open" below for the full write-up.
+None. Q53 (M08.R4's blocker) was answered 2026-09-11 and implemented in M08.R4;
+see [`docs/open-questions.md`](docs/open-questions.md#answered). The next unit
+is M08.R6 — Adaptive builder and queue integration.
 
 ## Where the record lives
 
@@ -85,13 +86,9 @@ Do not reopen these while implementing:
 Q4, Q44, Q45, Q46 and Q51 were the standing short list; the owner ruled on all
 five, and on every other open question the project had recorded, on 2026-09-11.
 Full rulings are in [`docs/open-questions.md`](docs/open-questions.md#answered).
-Q50 is discharged: Hard is published. Several rulings still need follow-up code
-or content work — see below.
-
-- Q53: how adaptive jobs receive pilot selection and per-match turn limits.
-  `runAdaptiveExperiment` requires both and `AdaptiveConfig` carries neither;
-  M08.R4 cannot dispatch to it without this decision. Full write-up in
-  [`docs/open-questions.md`](docs/open-questions.md#q53-how-do-adaptive-jobs-receive-pilot-selection-and-per-match-turn-limits).
+Q50 is discharged: Hard is published. Q53 (pilot selection and per-match turn
+limits) was answered and implemented in M08.R4. Several rulings still need
+follow-up code or content work — see below.
 
 ### Follow-up work unblocked by the 2026-09-11 rulings
 

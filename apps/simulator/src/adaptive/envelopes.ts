@@ -52,11 +52,11 @@ const adaptiveDocumentIdentity = {
 export const adaptiveRawRecordSchema = z.strictObject({
   schemaVersion: z.literal(ADAPTIVE_RAW_SCHEMA_VERSION),
   ...adaptiveDocumentIdentity,
-  /** One entry per candidate-generation event (M08.16C), append-only. */
+  /** One entry per candidate-generation event (M08.16C), upserted by `block` (M08.R5) so a resumed writer can idempotently replace a partially-written entry rather than append a duplicate. */
   generations: z.array(adaptiveGenerationRecordSchema).default([]),
-  /** One entry per decided block (M08.18D), append-only. */
+  /** One entry per decided block (M08.18D), upserted by `block` (M08.R5) — see `generations` above. */
   series: z.array(adaptiveSeriesRecordSchema).default([]),
-  /** One entry per decided generation's whole screening (M08.18D), append-only. */
+  /** One entry per decided generation's whole screening (M08.18D), upserted by `block` (M08.R5) — see `generations` above. */
   screeningRounds: z.array(adaptiveScreeningRoundSchema).default([]),
 });
 export type AdaptiveRawRecord = z.infer<typeof adaptiveRawRecordSchema>;
