@@ -5107,11 +5107,42 @@ which exact decks, cards, matches and replays produced it.
 | Surrender                 | Turn and phase distribution plus an exposure-adjusted recent-event table  |
 | Data quality              | Counts, exclusions, limitations, and links to affected matches            |
 
-## Acceptance — not met
+## Acceptance — met, pending one push (2026-09-16)
 
-M08 is accepted when every tranche checklist above is complete, `npm run verify`
-passes, the consistency and audit checks pass, and the tree is clean after the
-final record commit.
+M08 is accepted on the merits: every tranche checklist above (original
+tranches plus the M08.5 correction pass, M08.R1–R14) is complete, `npm run
+verify` passes locally, the consistency and audit checks pass, and
+`tcg-reviewer` approved Correction Tranche D's tranche-close diff. What is
+still open is procedural rather than a review or implementation gap: the
+final SHA below is filled in, and the GitHub Actions run confirmed green for
+it, by a small audit-record-only commit once this tranche-close commit is
+actually pushed.
+
+Final acceptance matrix (M08.5 correction pass):
+
+| Finding                       | Required proof                                               | Evidence                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deck Explorer leakage         | Mixed-opponent fixture returns only selected subject rows    | M08.R1                                                                                                                                                                                 |
+| Card replacements missing     | Structured contract, endpoint, UI, and bounded result tests  | M08.R2                                                                                                                                                                                 |
+| Adaptive not enqueueable      | Admin UI → persisted adaptive job → real runner test         | M08.R3 (contract/catalog persistence) + M08.R6 (`enqueueAdaptive`/queue wiring)                                                                                                        |
+| Adaptive resume evidence loss | Fault-injection resume equivalence tests                     | M08.R5                                                                                                                                                                                 |
+| Reference-field underfill     | Adversarial deterministic exact-count test                   | M08.R7 (`selectReferenceField` seeded Fisher-Yates; `evaluate.test.ts`)                                                                                                                |
+| Nullable patch cost           | Boundary refusal or documented/tested semantics              | M08.R7 (`candidateCardPatchSchema.cost` drops `.nullable()`; `presets.test.ts`)                                                                                                        |
+| Live telemetry disconnected   | Real websocket terminal match appears in Player Meta         | M08.R9 (`live-match-telemetry.test.ts`, `live-match-telemetry-integration.test.ts`)                                                                                                    |
+| Invite-code collision         | Two matches with reused code persist separately              | M08.R8 (`generateId`-derived `matchId`, regression test)                                                                                                                               |
+| Root pollution                | Job/adaptive directories never count as skipped live records | M08.R9/M08.R10 (`live-match-telemetry-integration.test.ts`, `live-match-snapshot.ts`)                                                                                                  |
+| Repeated Player Meta scans    | Large-fixture bounded snapshot/index evidence                | M08.R10 (`openLiveMatchSnapshot`, cache-identity and TTL tests)                                                                                                                        |
+| Lock race                     | Concurrent acquisition has exactly one winner                | M08.R11 (atomic `link`-based acquire) corrected by M08.R14 (verified `rename`-based stale-lock claim; deterministic forced-interleaving regression test)                               |
+| Artifact symlink/TOCTOU       | Escape and swap/growth tests refuse safely                   | M08.R12 (`openArtifactFile`, symlink/swap/growth tests)                                                                                                                                |
+| Local/remote verification     | Clean local gates and green GitHub run for final SHA         | M08.R14 — clean locally (286/286 files, 5381/5381 tests); final SHA and its GitHub Actions run recorded here by the audit-record-only follow-up commit once pushed and confirmed green |
+
+Clean-tree local gates on this tranche-close commit (Node 24.15.0, npm
+11.12.1): `npm ci`, `npm run content:check`, `npm run validate:content`,
+`npm run audit:check`, `npm run check:consistency`, `npm run verify`
+(286/286 files, 5381/5381 tests, build clean, exit 0), `git status
+--porcelain` empty before staging this commit. The pushed SHA and its GitHub
+Actions conclusion are recorded here by the follow-up audit-record-only
+commit.
 
 ---
 
@@ -5522,3 +5553,341 @@ Adaptive job contracts and catalog persistence).
 
 **Correction Tranche B is complete.** Next: `M08.R8` (Correction Tranche C,
 Durable match identity and dedicated telemetry configuration).
+
+### Correction Tranche C — Real-play telemetry that is actually connected
+
+- [x] **M08.R8 — Durable match identity and dedicated telemetry configuration.**
+      `matchId` no longer derived from the recyclable lobby invite code
+      (`match-server.ts`'s `startMatch`), which could collide two matches'
+      telemetry once an invite code was reused after its lobby closed. Uses
+      the project's `generateId` abstraction with the server's own injected
+      clock/random seams, plus a regression test proving invite-code reuse
+      yields distinct `matchId`s. Removed a dead-but-misleading
+      invite-code-derived fallback in `publishPacingSummary`. Added
+      `live-match-telemetry-config.ts`: a standalone, fully-tested
+      configuration module (safe defaults, operator-only root with no
+      default, retention reusing `@tcg/match-telemetry`'s schema, privacy-mode
+      override, environment loader with explicit refusal on unparsable input)
+      for M08.R9 to wire into `main.ts`. `maxAgeDays` is validated but
+      deliberately unenforced per M08.28B's no-unsafe-deletion policy.
+- [x] **M08.R9 — Wire the production multiplayer server to telemetry.**
+      Production wiring (`compose.ts`/`main.ts`, admin-server config/handlers)
+      was already implemented from a prior slice; this slice closed the
+      actual gap: the required tests didn't exist, and a stray edit had
+      regressed `admin-server/package.json`'s boundary test. Fixed the
+      regression (an invalid `devDependencies` entry violating
+      `boundary.test.ts`'s manifest closure rule) and resynced
+      `package-lock.json`. Added two boundary-compliant test files, joined
+      only by a real `LiveMatchEnvelope` file on disk (never by an import),
+      mirroring the filesystem-only coupling ADR 0023 requires between the
+      two processes: `apps/multiplayer-server/src/live-match-telemetry.test.ts`
+      plays a real two-seat match through the actual websocket/protocol
+      boundary against the production `composeMatchServer`/
+      `startWebSocketServer` wiring, asserting exactly one durable
+      schema-valid envelope, proving invite-code reuse produces two distinct
+      records with no stale artifacts, and proving a telemetry write failure
+      never corrupts match authority while being recorded in
+      `liveMatchSinkFailures`; `apps/admin-server/src/live-match-telemetry-integration.test.ts`
+      seeds a matching synthetic envelope into a dedicated `liveMatchRoot`,
+      proves it surfaces through Player Meta/Card Explorer/Deck Explorer,
+      proves this survives a full service restart, and proves
+      simulator-job/adaptive-run directories placed in the separate result
+      root never affect `recordsSkipped` or `recoveredRecords`. 3-4 player
+      telemetry and date/private-test-label filters remain explicit,
+      deliberately deferred open product decisions.
+- [x] **M08.R10 — Bounded Player Meta snapshot/read performance.** Player
+      Meta and explorer readers each independently ran their own
+      `readdirSync` over the whole live-match root, so a single dashboard
+      load (summary + one table request per table + coverage + data health)
+      reparsed the entire root once per request instead of once per load,
+      with no record/byte limits at all. Added
+      `apps/simulator/src/analysis/live-match-snapshot.ts`: one bounded,
+      cached `readdirSync` + envelope/capture parse pass per root
+      (`openLiveMatchSnapshot`), invalidated primarily by the root
+      directory's own mtime (a new match's `mkdirSync` always changes it)
+      with a 2s TTL as a secondary safety net for in-place overwrites mtime
+      can't see. Caps `maxRecords`/`maxBytes` per scan (`truncated` flag) and
+      `maxSkippedDetails` per skip-detail list while `skippedMatchCount`/
+      `skippedCaptureCount` stay exact; no skip reason ever carries a
+      filesystem path. `readLiveMatchEnvelopes`/`readLiveMatchPreActionCaptures`
+      became thin, signature-unchanged projections of one cached snapshot, so
+      card/deck/match explorer and match-representatives readers needed no
+      changes. `player-meta-results.ts`'s `openPlayerMeta`/
+      `openDataHealthEvidence` read the snapshot directly to report the true
+      skipped count even when the detail list is capped. Player Meta Data
+      Health's `recoveredRecords`/`exclusions` entries — the one genuinely
+      unbounded array reaching the browser — are now bounded at the new
+      `PLAYER_META_DATA_HEALTH_MAX_ENTRIES` (200) while `count` stays the
+      true total.
+      Tranche close review (`tcg-reviewer`, Opus) fixed three findings against
+      the live-match telemetry path before approving: a BLOCKER that
+      `parseLiveMatchTelemetryConfig` could return a non-null `rootDirectory`
+      when `enabled` was false, contradicting its own documented invariant
+      and risking `compose.ts` silently wiring a telemetry sink while an
+      operator believed collection was disabled (`rootDirectory` is now null
+      exactly when `enabled` is false, and `compose.ts`'s sink wiring gates on
+      both as defense in depth); a MEDIUM that a truncated
+      `openLiveMatchSnapshot` scan produced a Player Meta summary that looked
+      complete but silently dropped data (`readPlayerMetaSummary` now
+      surfaces this as a limitations entry); and a LOW that the live-match
+      snapshot cache was keyed only by `rootDirectory`, so two callers with
+      different scan limits against the same root could share an incorrectly
+      truncated snapshot (the cache key now includes limits). Each fix has a
+      regression test at the layer that exercises it, including a new
+      end-to-end composition/websocket test proving a configured-but-disabled
+      root writes nothing. `tcg-reviewer` approved (`VERDICT: APPROVE`) on the
+      first recheck after these fixes. All required gates passed:
+      `npm run check:consistency` (no inconsistency), `npm run audit:check`
+      (current), and `npm run verify` (286 files / 5363 tests, full clean
+      pass).
+
+**Correction Tranche C is complete.** Next: `M08.R11` (Correction Tranche D,
+Operational safety and final closure).
+
+### Correction Tranche D — Operational safety and final closure
+
+- [x] **M08.R11 — Genuinely exclusive orchestrator lock acquisition.** The
+      reviewed lock did a read followed by an unconditional write, so two
+      processes could both observe no lock and both succeed. Acquisition is
+      now serialized by one real atomic step: the record is written fully to
+      a private temp file, synced, then published with `link`, which fails
+      rather than replaces when the destination already exists, so a
+      concurrent reader can never observe a half-written lock either. A
+      losing `link` falls back to reading what the winner published, applying
+      the existing cross-host/alive-pid refusals unchanged. A stale,
+      malformed, or already-vanished lock is cleared and the loop retries the
+      atomic create, so replacement is decided there rather than by the
+      clearing step. `release()` is unchanged: it still only removes a lock
+      that still names its own pid and host. Extended `lock.test.ts` with
+      concurrent-acquisition coverage (cold-start race, stale-takeover race,
+      release-then-reacquire, an old owner's release not clobbering a newer
+      owner) and boundary cases (schema-invalid pid, clock injected at the
+      epoch and a future instant). Updated `retention-boundary.test.ts`'s
+      M08.28B scan, which pinned `lock.ts` to a single `rm(path)` call: the
+      new design legitimately adds an unguarded `rm(path)` on the acquire
+      path (clearing a stale lock, never a retained artifact) and an
+      `rm(temp)` cleanup, so the scan accepts both targets while still
+      requiring the release-path guard. Full admin-server suite (836 tests,
+      including 5 repeated runs of `lock.test.ts`) passes; workspace
+      typecheck, eslint and prettier clean on touched files. **This slice's
+      stale-lock clearing step was itself an unconditional `rm(path)` of
+      whatever currently occupied `path`, not specifically the record just
+      read as stale — the tranche-close review below (M08.R14) found this
+      let a lagging contender destroy a different, already-live lock a
+      faster contender had just published. See M08.R14 for the fix (a
+      verified `rename`-based claim replacing the unconditional clear) and
+      the corrected `retention-boundary.test.ts` scan (a third target,
+      `claimPath`, plus `rename`/`link` coverage).
+- [x] **M08.R12 — Symlink- and race-safe artifact reads.** The reviewed
+      artifact service validated the run directory but then called `stat()`
+      and `readFile()` separately on the individual artifact path — following
+      a file symlink and splitting size validation from the actual read,
+      leaving a window for escape or a swap/growth race between the two
+      calls. Replaced both with a single `openArtifactFile()` helper that
+      opens and validates the exact object read: `lstat()` first rejects a
+      symlink or non-file outright; the open then uses `O_NOFOLLOW` where the
+      platform supports it (POSIX); on Windows, where `O_NOFOLLOW` is
+      unavailable, the opened descriptor's `fstat()` dev/ino identity is
+      compared back against the pre-open `lstat()` and refused on any
+      mismatch (or on the absence of a stable identity), giving the same
+      no-follow guarantee without a second filesystem touch. `ELOOP` from the
+      open is treated identically to a detected symlink; non-regular objects
+      are rejected after `fstat()`. The byte-limit check and the bounded read
+      both operate on the already-open, already-validated descriptor, so
+      nothing about the file can change between validation and read.
+      `sizeOf()` and `ArtifactReader.read()` were rewired onto this helper;
+      the three refusal reasons map onto the existing `admin/no_result` and
+      `admin/unsafe_result_reference` codes, so no contract version bump was
+      needed. Test coverage added to `artifacts.test.ts`: a file symlink to
+      an outside target, a symlink chain and a dangling symlink, a path
+      resolving to a directory, exact-byte-limit and one-byte-over
+      boundaries, an artifact swapped for a symlink between validation and
+      open (via `openArtifactFile`'s `afterLstat` test hook), and growth
+      after validation not affecting the bounded read (via its `beforeRead`
+      hook). Directory traversal and encoded traversal identifiers were
+      already structurally blocked by the schema's path-segment allowlist and
+      `resolveResultLocation`, so that case was covered by extending
+      `roots.test.ts`'s existing lexical-escape test with three encoded
+      values instead of duplicating the property through the artifact-read
+      stack. Full `apps/admin-server` workspace suite (49 files, 842 tests)
+      passes; workspace typecheck, eslint and prettier all clean on touched
+      files.
+- [x] **M08.R13 — Compatibility, health, and reviewer-debt sweep.**
+      Revalidated every reviewer-deferred item still present in the M08
+      milestone/review records. Capture-skip visibility:
+      `openLiveMatchSnapshot`'s `skippedCaptureCount` was computed but never
+      surfaced — threaded through `OpenPlayerMeta` as `capturesSkipped` and
+      appended as a new conditional limitation sentence
+      (`captureSkipLimitation`) alongside the existing truncated-snapshot
+      one, using `PLAYER_META_RUN_LIMITATIONS`'s established conditional-
+      append slot (no contract/version bump needed). Content-version mismatch
+      wording: fixed prior slash-containing phrasing ("content/card-balance
+      version") that was silently tripping `looksLikeFilesystemPath`'s
+      refine check on every single summary read, breaking the whole
+      `readPlayerMetaSummary` suite regardless of scenario. Correlation
+      wording: `PlayerMetaDashboard`'s exposed-not-caused caption was already
+      adequate but had no regression test — added one asserting it renders
+      only on surrender tabs and never elsewhere. Admin-contract changelog:
+      verified via `git log -S` that `version.ts`'s version-9 (M08.25C)
+      changelog entry has existed since the exact commit that introduced
+      version 9 — no change needed. Weak/zero denominator fixtures:
+      `player-meta-results.test.ts`'s denominator-visibility test used a
+      single match where every numerator and denominator coincidentally
+      equaled 1 — rewritten with a second, distinct deck so
+      `commanderMatches`/`matchesIncluding`/`commanderUniqueDecks`/
+      `decksIncluding` genuinely differ from their rate numerators.
+      Unreachable raw Zod errors: `diffSwaps` (`adaptive/generate.ts`)
+      computed swap pairs assuming equal-size decks; an unequal
+      removed/added pairing crashed `adaptiveCardSwapSchema.parse` with an
+      opaque raw Zod error — `diffSwaps` now throws a clear, named error on a
+      size mismatch, and its candidate-generation call site
+      (`generateSwapCandidate`) checks sizes before calling it, converting
+      the condition into a proper `AdaptiveRejectedCandidate` refusal with a
+      stated reason rather than a crash (`report.ts`'s
+      `finalAdaptiveDeckDiff` inherits the same clear error unchanged).
+      Broader deferred/not-wired/fixture-only/known-limitation sweep found no
+      remaining unchecked checklist items under M08: re-verified the
+      M08.19A "adaptive execution wiring stays deferred" note against current
+      source, closed by Correction Tranche B (M08.R3's discriminated union,
+      M08.R6's `enqueueAdaptive` endpoint and queue worker wiring); updated
+      M08.26C's now-stale "no structured replacement form" note to point at
+      M08.R2; left M08.26D's live-match-only evidence-source note unchanged
+      as a correctly documented, still-true, deliberate scope decision.
+      Focused verification: `player-meta-results.test.ts` (20/20),
+      `player-meta-flow.test.tsx` (8/8), `generate.test.ts` (11/11, new),
+      `report.test.ts` (11/11), `live-card-evidence.test.ts` (8/8),
+      `live-match-aggregate.test.ts` (9/9) — 67/67 total; admin-server,
+      admin-client and simulator workspace typechecks clean.
+- [x] **M08.R14 — Final verification and evidence record.** Diagnosed and
+      fixed the pushed GitHub failures at the exact commits they occurred on,
+      then proved a clean local/remote match rather than declaring any
+      failure environmental without evidence. **(1)** Pushed `218e74b`
+      (M08.R13) failed the GitHub `verify` job (run `104800136486`) at the
+      format-check step: three test files M08.R13 edited were never run
+      through `prettier --write` before committing. Reproduced locally on
+      the pinned Node 24.15.0 with a clean `npm ci`; fixed by formatting
+      only those three files (no behavior/assertion change) — commit
+      `a699925`. **(2)** The next pushed run (job `104810879687`) failed
+      `job-runner-adaptive.test.ts`'s "paused exactly before final result
+      publication" test with a non-null `checkpoint.pendingGeneration`,
+      though the equivalent local run had passed all 5380 tests. Root cause:
+      the test's wait condition polled total committed match records as a
+      proxy for "the learning series is fully decided," but that count also
+      accumulates each generation's screening-round games (not counted
+      toward `gamesSpent`), so it can cross the budget threshold while a
+      generation is still mid-screening. Fixed by polling the on-disk
+      `adaptive-checkpoint.json` directly for the exact target property
+      (`pendingGeneration === null && gamesSpent >= totalLearningBudget`) —
+      commit `37c0a58`. **(3)** A full clean-tree local rerun after that fix
+      then surfaced a third, Windows-only failure not seen on GitHub
+      (`ubuntu-latest`, already green for `37c0a58`): `queue.test.ts`'s
+      "recovers in-flight work as interrupted" test intermittently failed
+      `ENOTEMPTY` on the shared `test-catalog.ts` fixture's `dispose()`,
+      Node's documented Windows race where a just-closed file can still hold
+      a delete-pending lock for a few milliseconds under heavier parallel
+      I/O. Investigated rather than assumed environmental; fixed by adding
+      `maxRetries: 5, retryDelay: 100` to that one `rm()` call, Node's
+      documented fix for exactly this case — commit `ae6ad7c`. **(4)** A
+      subsequent pushed run for `ae6ad7c` (run `35107641629`) failed the
+      same adaptive pause test again, this time genuinely CI-only: GitHub's
+      annotation showed a real `generation: 1, block: +0` record instead of
+      `null`, proving the test's hardcoded 10-second poll timeout fell
+      through to requesting pause regardless of whether the terminal
+      checkpoint state was ever actually observed, and that the real 4-game
+      screening phase exceeded 10s on that runner. Fixed by racing the poll
+      against the run's own completion instead of any fixed timeout, reusing
+      the existing "pause lost the race" idiom for a run that finishes
+      before the terminal state ever appears. The same local
+      `npm run verify` pass that validated this fix also reproduced (twice,
+      under real concurrent full-suite load — `collect: 361s`) a separate,
+      genuine load-sensitive flake in `live-match-snapshot.test.ts`'s
+      cache-identity assertion, caused by real wall-clock time crossing the
+      production 2-second snapshot-cache TTL during a heavily loaded
+      `verify` run; fixed with `vi.useFakeTimers()` for that one test,
+      matching the file's existing convention — commit `65c3b84`. Required
+      clean-tree verification after `65c3b84` (Node 24.15.0, npm 11.12.1):
+      `npm ci`, `npm run content:check`, `npm run validate:content`,
+      `npm run audit:check`, `npm run check:consistency`, `npm run verify`
+      (286/286 files, 5380/5380 tests, clean build, exit 0), and
+      `git status --porcelain` (empty) all pass. Pushed `65c3b84` verified
+      green on GitHub Actions: run
+      <https://github.com/Tect0r/TCG-Prototype/actions/runs/35112207205>,
+      check-run `104848546842`, status completed, conclusion success.
+      Tranche close review (`tcg-reviewer`, Opus) reviewed the full Tranche D
+      commit range (`4d54b9a..65c3b84`: `27715f1`, `116400f`, `218e74b`,
+      `a699925`, `37c0a58`, `ae6ad7c`, `65c3b84`) plus the uncommitted
+      close-record diff and returned `VERDICT: CHANGES REQUIRED` with one
+      BLOCKER and two LOW findings. **BLOCKER** — M08.R11's stale-lock
+      takeover was not actually serialized: `acquireOrchestratorLock`'s clear
+      step (`rm(path, { force: true })`) removed whatever currently occupied
+      `path`, not specifically the stale record just read, so a contender
+      racing far enough behind another could delete a fresh, live lock a
+      different contender had already published and successfully returned
+      from — the exact "two processes both believe they hold the catalog"
+      outcome M08.R11 was supposed to prevent. Fixed by replacing the
+      unconditional clear with `claimStaleRecord`: it detaches `path` with
+      `rename` (so at most one simultaneous claimant ever finds a source to
+      rename) into a private name, then compares the detached bytes against
+      the exact text this contender read before deciding the record was
+      stale; a match proceeds to the next iteration's atomic create as
+      before, and a mismatch — someone else's fresh record was caught by the
+      rename instead — restores it with `link` (or, if a legitimate
+      successor has already reclaimed `path` in the meantime, leaves it alone
+      on `EEXIST`) and this contender takes no credit for a takeover it did
+      not perform. Added a deterministic regression test ("does not let a
+      stale-lock takeover destroy a live lock a third contender just
+      published") that forces the exact adversarial interleaving through the
+      existing `isAlive` injection seam rather than relying on `Promise.all`
+      timing, so it fails reliably against the old code and passes reliably
+      against the fix; confirmed stable over 8 repeated full-file runs.
+      Updated `retention-boundary.test.ts`'s M08.28B scan to recognize the
+      new private `claimPath` staging file and to verify `lock.ts`'s new
+      `rename`/`link` calls never target anything outside
+      `{path, temp, claimPath}`. **LOW (deferred)** — `artifacts.ts`'s
+      `sizeOf()` collapses every `openArtifactFile` refusal reason, including
+      `'unsafe'` (a symlink planted where a document should be), into the
+      same `null` a genuinely absent artifact produces, so
+      `ArtifactReader.list()` cannot tell a reader "something suspicious is
+      here" from "the run never wrote this." Recorded as follow-up work in
+      `IMPLEMENTATION_PLAN.md` rather than fixed here: distinguishing the
+      reasons in the listing is a `resultArtifactListingSchema` contract
+      change reaching admin-client as well, which this milestone's own
+      engineering invariant requires shipping across the whole contract
+      surface rather than as a same-tranche patch. **LOW (deferred)** —
+      `job-runner-adaptive.test.ts`'s "paused exactly before final result
+      publication" test can silently skip exercising the resume/durability
+      property it names if the terminal checkpoint state is never observed,
+      with no assertion failure signaling the skip. Also recorded as
+      follow-up work rather than fixed here, since it is a test-robustness
+      improvement independent of the BLOCKER this recheck exists to close.
+      Full admin-server suite re-verified after the fix (844 tests, including
+      the new regression test and the updated retention-boundary scan) and
+      clean typecheck/eslint/prettier on every touched file. `tcg-reviewer`
+      rechecked the fix and the corrected close record and returned
+      `VERDICT: APPROVE`, with one MEDIUM and one LOW to fold into this same
+      close commit rather than a further review cycle. **MEDIUM** — the
+      acceptance record below previously cited a specific "final SHA"
+      (`65c3b84…`) and test count that the close commit itself would make
+      stale the moment it landed, self-contradicting the record's own
+      "not yet closeable" language. Fixed by not asserting a final SHA or
+      GitHub run here until this tranche-close commit is actually pushed and
+      confirmed green; that confirmation is recorded in a follow-up
+      audit-record-only commit once it exists, per the M08.5 brief's own
+      required sequence. **LOW** — `claimStaleRecord`'s doc comment framed
+      its `EEXIST`-on-restore branch as harmless, when a rarer three-or-more
+      contender interleaving can instead mean a fresh, still-believed-valid
+      record was discarded without telling its publisher. Fixed by rewriting
+      the comment to state that residual window honestly rather than
+      implying exclusivity is now absolute; no code change, since this
+      window is the accepted cost of a single PID-file advisory lock (no
+      `flock`), scoped by the module's own doc to one administrator and one
+      orchestration process, not a distributed consensus system.
+
+**Correction Tranche D's fix is reviewer-approved; final closure is pending
+one push.** `tcg-reviewer` returned `VERDICT: APPROVE` on the recheck of the
+BLOCKER fix and the close record. What remains is procedural, not a review
+cycle: this commit has to actually reach `origin/main` and GitHub Actions has
+to confirm it green before the acceptance matrix below can honestly name a
+final SHA. That confirmation, and the "M08.R11–R14 + Tranche D close" and M08
+status rows in `IMPLEMENTATION_PLAN.md`, land in one small audit-record-only
+follow-up commit — code and tests do not change again for it.

@@ -21,10 +21,10 @@ the milestone checklist are the history.
 
 ## Status
 
-| Milestone                                                                   | Status                                        | Active work |
-| --------------------------------------------------------------------------- | --------------------------------------------- | ----------- |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Complete (2026-09-10); correction pass active | M08.R11     |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)               | Complete (2026-08-21)                         | —           |
+| Milestone                                                                   | Status                                  | Active work                   |
+| --------------------------------------------------------------------------- | --------------------------------------- | ----------------------------- |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Approved; final SHA record pending push | M08.R11–R14 + Tranche D close |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)               | Complete (2026-08-21)                   | —                             |
 
 Earlier milestone status and completed-scope summaries live in
 [`docs/project-status.md`](docs/project-status.md) and
@@ -36,23 +36,41 @@ The full acceptance text is in
 [`docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`](docs/milestones/M08.5_FINAL_CORRECTION_PASS.md).
 Rows carry state only; do not add implementation narratives.
 
-| Unit                          | State    |
-| ----------------------------- | -------- |
-| M08.R1–R2 + Tranche A review  | Complete |
-| M08.R3                        | Complete |
-| M08.R4                        | Complete |
-| M08.R5                        | Complete |
-| M08.R6–R7 + Tranche B review  | Complete |
-| M08.R8–R10 + Tranche C review | Complete |
-| M08.R11–R14                   | Pending  |
+| Unit                          | State                                                            |
+| ----------------------------- | ---------------------------------------------------------------- |
+| M08.R1–R2 + Tranche A review  | Complete                                                         |
+| M08.R3                        | Complete                                                         |
+| M08.R4                        | Complete                                                         |
+| M08.R5                        | Complete                                                         |
+| M08.R6–R7 + Tranche B review  | Complete                                                         |
+| M08.R8–R10 + Tranche C review | Complete                                                         |
+| M08.R11–R14 + Tranche D close | Approved (`tcg-reviewer`); final-SHA audit-record commit pending |
 
 ### Current blocking decision
 
-None. Tranche C (M08.R8–R10) is complete and Tranche C review passed
-(`VERDICT: APPROVE` after one review/fix cycle — a rootDirectory/enabled
-parser invariant blocker, a silent-truncation Player Meta summary gap, and a
-snapshot-cache key gap, all fixed and regression-tested). The next unit is
-M08.R11 (Correction Tranche D — exclusive orchestrator lock).
+None. `tcg-reviewer`'s first review of the M08.R11–R14 commit range plus the
+close-record diff returned `VERDICT: CHANGES REQUIRED`: one BLOCKER
+(M08.R11's stale-lock takeover used an unconditional `rm` that could destroy
+a different, already-live lock a faster contender had just published) and two
+LOW findings (`artifacts.ts`'s `sizeOf()` collapsing every read-refusal
+reason into the same `null` an absent artifact produces; a silent-skip branch
+in `job-runner-adaptive.test.ts`). The BLOCKER was fixed (`lock.ts`'s
+stale-lock clear is now a verified `rename`-based claim with
+restore-on-mismatch, backed by a new deterministic regression test); the two
+LOWs were deferred as follow-up work (see below) since the `artifacts.ts` fix
+reaches a shared, `z.strictObject` public contract schema
+(`resultArtifactListingSchema`) also consumed by `admin-client`, and the
+test-robustness finding is independent of the BLOCKER. `tcg-reviewer`
+rechecked the fix and returned `VERDICT: APPROVE`, with one MEDIUM (this
+record must not cite a final SHA the close commit itself would make stale —
+resolved by deferring that citation to a follow-up audit-record-only commit)
+and one LOW (a doc comment on `claimStaleRecord` understated a narrow
+three-contender residual window — fixed, comment-only). What remains is
+procedural: push this tranche-close commit, confirm its GitHub Actions run
+green, then land the small audit-record-only commit naming that SHA and
+marking Tranche D and M08 complete. See the milestone's
+[Correction Tranche D](docs/milestones/M08-ai-lab-and-player-meta.md) section
+for the full review record.
 
 ## Where the record lives
 
@@ -122,6 +140,21 @@ its area — do not treat this list itself as a tranche.
   identities the owner named) into player-facing docs; no engine change.
 - **Q22 — restate the art-size doc as a 3:4 ratio contract** (prefer
   1536×2048+, 768×1024 is the floor) rather than one fixed resolution.
+- **M08.R14 review LOW — distinguish artifact-read refusal reasons.**
+  `artifacts.ts`'s `sizeOf()` collapses every `openArtifactFile` refusal
+  (absent, unsafe, unreadable) into the same `null` an absent artifact
+  produces, so `ArtifactReader.list()`'s `present`/`byteLength` fields cannot
+  tell a reader "something suspicious is here" apart from "the run never
+  wrote this." Fixing it changes `resultArtifactListingSchema`
+  (`packages/admin-contracts/src/artifacts.ts`), a shared
+  `z.strictObject` also consumed by `admin-client`'s `fake-service.ts` —
+  needs a coordinated cross-package change, not a same-tranche patch.
+- **M08.R14 review LOW — assert instead of silently skip in
+  `job-runner-adaptive.test.ts`.** Its "paused exactly before final result
+  publication" test can silently skip exercising the resume/durability
+  property it names if the terminal checkpoint state is never observed, with
+  no assertion failure signaling the skip. Test-robustness fix, independent
+  of any product behavior.
 
 ## Completion evidence for every tranche
 

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import { dirname, join } from 'node:path';
-import { link, mkdir, open, rm } from 'node:fs/promises';
+import { link, mkdir, open, rename, rm } from 'node:fs/promises';
 
 import { adminError, type AdminError } from '@tcg/admin-contracts';
 import { err, ok, type Result } from '@tcg/shared';
@@ -146,7 +146,8 @@ export async function acquireOrchestratorLock(
       return ok(makeHeldLock(path, pid, host, tookOverStaleLock));
     }
 
-    const existing = await readLock(path);
+    const existingText = await readDocumentText(path);
+    const existing = existingText === null ? null : parseLockText(existingText);
 
     if (existing !== null) {
       if (existing.host !== host) {
@@ -168,20 +169,33 @@ export async function acquireOrchestratorLock(
         ]);
       }
       // Same host, and either this process's own prior record or a dead pid:
-      // stale. Recorded now because the removal below is not itself what
-      // decides the winner — the next loop's create is — and a losing
-      // contender must not report a takeover it did not perform.
+      // stale. Recorded now, from the observation alone, because the clear
+      // below is not itself what decides the winner — the next loop's create
+      // is, and it can be won by a different contender than the one whose
+      // claim below actually detached the stale record (its own claim can
+      // lose the race to detach first, then win the race to create after).
+      // Every simultaneous contender observed the same genuinely stale
+      // record, so it is correct for each to report a takeover if it is the
+      // one that goes on to win; a losing contender's flag is simply
+      // discarded with the rest of its result.
       if (existing.pid !== pid) tookOverStaleLock = true;
     }
 
     // `existing === null` covers both a malformed record (M08.5's "unreadable
     // is taken over, not treated as authority") and a file another contender
-    // already cleared out from under us. Either way there is nothing here to
-    // preserve, so clear it — `force` makes this safe even if it is already
-    // gone — and let the next iteration's atomic create be the actual
-    // arbitration. Two contenders can both reach this line for the same
-    // stale file; at most one of the creates that follow can win.
-    await rm(path, { force: true });
+    // already cleared out from under us. Either way, the *exact bytes just
+    // read* are the only thing this contender has permission to remove — an
+    // unconditional `rm` here would delete whatever currently occupies `path`,
+    // including a fresh, live lock a different contender published in the
+    // meantime, which is how two processes could both end up believing they
+    // hold the catalog. `claimStaleRecord` detaches the path with `rename`
+    // (so at most one simultaneous claimant ever sees the source exist) and
+    // then verifies the detached content still matches what was read; a
+    // mismatch means someone else already replaced it, so the content is put
+    // back (or left alone, if a legitimate successor already reclaimed the
+    // path) rather than destroyed. Only a genuine, verified detach clears the
+    // path for the next iteration's atomic create.
+    await claimStaleRecord(path, existingText);
   }
 
   return err([
@@ -238,11 +252,63 @@ async function tryCreateLock(path: string, record: LockRecord): Promise<boolean>
 
 async function readLock(path: string): Promise<LockRecord | null> {
   const text = await readDocumentText(path);
-  if (text === null) return null;
+  return text === null ? null : parseLockText(text);
+}
+
+function parseLockText(text: string): LockRecord | null {
   try {
     const parsed = lockSchema.safeParse(JSON.parse(text));
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Detaches `path` with `rename` and verifies the content that came off it was
+ * exactly `expectedText` — the bytes this contender already decided were
+ * stale — before treating the detach as this contender's own takeover.
+ *
+ * `rename` only requires that the source exist, not that it still holds any
+ * particular content, so on its own it is exactly as unsafe as the `rm` it
+ * replaces: two contenders can each detach *something* from the same path,
+ * but only one of them can be detaching the record either of them actually
+ * read. The content check after the detach is what tells them apart. A
+ * mismatch means a different contender's fresh, live record was caught by
+ * this rename instead of the stale one — so it is put back with `link`. An
+ * `EEXIST` there is not automatically benign: it usually means a legitimate
+ * successor already reclaimed `path` before this restore, but with three or
+ * more simultaneous contenders it can instead mean a *third* contender's
+ * `tryCreateLock` won the now-briefly-empty `path` in the gap between this
+ * detach and this restore — in which case the record this function is
+ * discarding was still believed valid by whoever published it, and that
+ * holder is not told. This is the narrow residual window a single PID-file
+ * advisory lock accepts rather than adding real OS-level locking for: it
+ * needs three genuinely concurrent contenders racing the same stale record,
+ * and the file's own module doc already scopes this to one administrator,
+ * one orchestration process. Either way this contender returns `false`,
+ * taking no credit for a takeover it did not perform. The next loop
+ * iteration re-reads the path from scratch rather than trusting anything
+ * decided this round.
+ */
+async function claimStaleRecord(path: string, expectedText: string | null): Promise<boolean> {
+  const claimPath = `${path}.claim.${randomBytes(8).toString('hex')}.tmp`;
+  try {
+    await rename(path, claimPath);
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw cause;
+  }
+  try {
+    const claimedText = await readDocumentText(claimPath);
+    if (claimedText === expectedText) return true;
+    try {
+      await link(claimPath, path);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
+    }
+    return false;
+  } finally {
+    await rm(claimPath, { force: true });
   }
 }

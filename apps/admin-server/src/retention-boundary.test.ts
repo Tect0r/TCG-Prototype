@@ -134,17 +134,21 @@ describe('every retained artifact stays inside a configured root (M08.28B)', () 
     // gaps: `files.ts`'s atomic write removes a same-call's own `.tmp` file
     // on a failed write, never a document; `lock.ts` only ever removes the
     // orchestrator's own lock file (`path`, proven fixed to
-    // `<catalogRoot>/orchestrator.lock` by the sibling test above) or its own
-    // private staging file (`temp`) — never a batch, a job, a saved choice,
-    // an annotation or a result. `release()` additionally checks by PID and
-    // host that the lock still names this process before removing it; the
-    // acquire path's own `rm(path)` calls need no such guard because M08.R11
-    // made lock acquisition itself the exclusive, atomic step (`link`, which
-    // fails rather than replaces) — a stale or malformed lock cleared here is
-    // ephemeral process-coordination state, and clearing it only ever lets
-    // the *next* contender's own atomic `link` decide the winner. The
-    // assertions below confirm each call targets exactly what it claims,
-    // rather than trusting the claim.
+    // `<catalogRoot>/orchestrator.lock` by the sibling test above), its own
+    // private staging file (`temp`), or its own private claim file
+    // (`claimPath`, M08.5's correction of M08.R11: the stale-takeover clear
+    // is a `rename` of `path` to a private name, verified and put back on a
+    // mismatch, rather than an unconditional `rm` of whatever currently
+    // occupies `path`) — never a batch, a job, a saved choice, an annotation
+    // or a result. `release()` additionally checks by PID and host that the
+    // lock still names this process before removing it; the acquire path's
+    // clearing needs no such guard because M08.R11 made lock acquisition
+    // itself the exclusive, atomic step (`link`, which fails rather than
+    // replaces) — a stale or malformed lock cleared here is ephemeral
+    // process-coordination state, and clearing it only ever lets the *next*
+    // contender's own atomic `link` decide the winner. The assertions below
+    // confirm each call targets exactly what it claims, rather than trusting
+    // the claim.
     for (const file of sourceFiles()) {
       if (file.name === 'files.ts') {
         const targets = [...file.text.matchAll(/\brm\(([^,)]+)/g)].map(([, arg]) =>
@@ -154,10 +158,27 @@ describe('every retained artifact stays inside a configured root (M08.28B)', () 
         continue;
       }
       if (file.name === 'lock.ts') {
-        const targets = [...file.text.matchAll(/\brm\(([^,)]+)/g)].map(([, arg]) =>
+        const lockTargets = ['path', 'temp', 'claimPath'];
+        const rmTargets = [...file.text.matchAll(/\brm\(([^,)]+)/g)].map(([, arg]) =>
           (arg ?? '').trim(),
         );
-        expect(targets.every((target) => target === 'path' || target === 'temp')).toBe(true);
+        expect(rmTargets.every((target) => lockTargets.includes(target))).toBe(true);
+        const renameTargets = [...file.text.matchAll(/\brename\(([^,)]+),\s*([^,)]+)/g)].map(
+          ([, from, to]) => [(from ?? '').trim(), (to ?? '').trim()],
+        );
+        expect(
+          renameTargets.every(
+            ([from, to]) => lockTargets.includes(from ?? '') && lockTargets.includes(to ?? ''),
+          ),
+        ).toBe(true);
+        const linkTargets = [...file.text.matchAll(/\blink\(([^,)]+),\s*([^,)]+)/g)].map(
+          ([, from, to]) => [(from ?? '').trim(), (to ?? '').trim()],
+        );
+        expect(
+          linkTargets.every(
+            ([from, to]) => lockTargets.includes(from ?? '') && lockTargets.includes(to ?? ''),
+          ),
+        ).toBe(true);
         // The release-path call is guarded by the PID/host check immediately
         // above it — not reachable any other way.
         expect(file.text).toContain(

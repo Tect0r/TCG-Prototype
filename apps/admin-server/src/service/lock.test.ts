@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -192,6 +193,35 @@ describe('concurrent acquisition', () => {
     const record = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
     expect([200, 300]).toContain(record.pid);
     expect(record.pid).not.toBe(100);
+  });
+
+  it('does not let a stale-lock takeover destroy a live lock a third contender just published', async () => {
+    // The exact race the M08.5 correction pass found: a contender that has
+    // already decided a lock is stale must not blindly clear whatever now
+    // occupies that path, because a different, live contender may have
+    // published a fresh record there in the gap between the read and the
+    // clear. `Promise.all` cannot force that exact interleaving reliably, so
+    // this drives it deterministically through the same `isAlive` seam every
+    // other test here already uses: the moment this contender checks whether
+    // the stale pid is alive is the exact moment a third contender's win is
+    // simulated to land.
+    unwrap(await acquireOrchestratorLock(root, { pid: 100, host: 'lab', isAlive: dead }));
+
+    const interloperRecord = { pid: 999, host: 'lab', startedAt: 'later' };
+    const refused = await acquireOrchestratorLock(root, {
+      pid: 200,
+      host: 'lab',
+      isAlive: (checked) => {
+        if (checked !== 100) return true;
+        writeFileSync(lockPath(), JSON.stringify(interloperRecord), 'utf8');
+        return false;
+      },
+    });
+
+    expect(isErr(refused)).toBe(true);
+    expect(isErr(refused) && refused.error[0]?.code).toBe('admin/already_running');
+    const record = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
+    expect(record.pid).toBe(999);
   });
 
   it('lets a valid owner release and another process then acquire', async () => {
