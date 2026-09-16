@@ -105,7 +105,11 @@ export async function makeTestCatalog(
       clock += milliseconds;
     },
     now: () => new Date(clock).toISOString(),
-    dispose: () => rm(base, { recursive: true, force: true }),
+    // maxRetries/retryDelay: Windows can briefly hold a delete-pending lock on
+    // a file just closed by this same suite (observed as ENOTEMPTY on rmdir in
+    // queue.test.ts); Node's documented fix is to retry rm, not to serialize
+    // the suite.
+    dispose: () => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),
   };
 }
 
