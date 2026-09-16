@@ -42,7 +42,8 @@ function deck(label: string, extra = 0): SimDeck {
 /** `scheduleAgainst` always builds `decks: [candidateDeck, opponentDeck]`, so deckIndex 0 is always the first-listed deck's seat. */
 function winnerIdForDeckIndex(match: ScheduledMatch, deckIndex: number): string {
   const seat = match.seats.find((entry) => entry.deckIndex === deckIndex);
-  if (seat === undefined) throw new Error(`match ${match.matchId} has no seat at deckIndex ${String(deckIndex)}`);
+  if (seat === undefined)
+    throw new Error(`match ${match.matchId} has no seat at deckIndex ${String(deckIndex)}`);
   return seat.playerId;
 }
 
@@ -216,13 +217,7 @@ describe('scheduleAdaptiveCandidateScreening', () => {
 
   it('selects exactly the distinct-hash pool size when the raw reference field is duplicate-laden, without starving the opponent budget', () => {
     // Three entries share one hash (extra=1) and two share another (extra=2): only 2 distinct decks exist.
-    const field = [
-      deck('a-1', 1),
-      deck('a-2', 1),
-      deck('a-3', 1),
-      deck('b-1', 2),
-      deck('b-2', 2),
-    ];
+    const field = [deck('a-1', 1), deck('a-2', 1), deck('a-3', 1), deck('b-1', 2), deck('b-2', 2)];
     const input = baseInput({
       config: baseConfig({ blockSize: 10, mirrorSeats: false, referenceFieldShare: 0.5 }),
       referenceField: field,

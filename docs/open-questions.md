@@ -360,7 +360,7 @@ close, which was the ruling's other half.
 the gap **costs** the profile its head-to-head advantage over Normal — 53.9%
 before the change, 50.1% after, over the same 384 seeded matches. Q50 named no
 rate deliberately, so the ruling is satisfied as written; whether the owner wants
-that trade is [Q51](#q51-keep-the-card-in-hand-price-or-keep-hards-win-rate--open).
+that trade is [Q51](#q51-keep-the-card-in-hand-price-or-keep-hards-win-rate--answered-2026-09-11).
 
 ### Q49. Does a Token count as a Unit? — answered 2026-08-20
 

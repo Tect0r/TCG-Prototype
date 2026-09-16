@@ -2365,7 +2365,10 @@ function EstimateTables({ estimate }: { readonly estimate: ChoiceEstimate }) {
     const expansionLimitations =
       'stages' in estimate.expansion ? [] : estimate.expansion.limitations;
     return (
-      <AdaptiveEstimateTables estimate={estimate.estimate} expansionLimitations={expansionLimitations} />
+      <AdaptiveEstimateTables
+        estimate={estimate.estimate}
+        expansionLimitations={expansionLimitations}
+      />
     );
   }
   if (!('totalMatches' in estimate.estimate) || !('stages' in estimate.expansion)) {
@@ -2456,7 +2459,14 @@ function AdaptiveEstimateTables({
   readonly estimate: AdaptiveWorkloadEstimate;
   readonly expansionLimitations: readonly string[];
 }) {
-  const allLimitations = [...expansionLimitations, ...estimate.limitations];
+  // `estimateAdaptiveChoice` (apps/admin-server/src/lab/adaptive-choice.ts) fills
+  // `expansion.limitations` and `estimate.limitations` from the same array — the
+  // adaptive_counter preset has one limitations list, not an expansion half and an
+  // estimate half that happen to differ, per admin-contracts/presets.ts's note on
+  // `choiceEstimateSchema`. Deduplicating keeps this list correct under that
+  // guarantee while still unioning the two if a future adaptive variant ever makes
+  // them diverge.
+  const allLimitations = [...new Set([...expansionLimitations, ...estimate.limitations])];
   return (
     <div className="builder__estimate">
       <p className="builder__summary">

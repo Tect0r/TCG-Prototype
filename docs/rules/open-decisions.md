@@ -162,7 +162,7 @@ developer-facing note naming the handler that owns each behaviour.
 | `quick_strike`              | Deals combat damage in an earlier step; anything defeated there never strikes back.           |
 | `venom`                     | Any damage it deals to a unit is lethal to that unit.                                         |
 | `siphon`                    | Combat damage it deals heals its controller by the same amount.                               |
-| `resilient`                 | **Inert, and being deleted** (Q4, 2026-09-11) — no mechanical effect.                          |
+| `resilient`                 | **Inert, and being deleted** (Q4, 2026-09-11) — no mechanical effect.                         |
 
 **`resilient` is the only inert one,** and it is inert on purpose: the plausible
 readings (clear all damage at end of turn, versus survive lethal damage once per

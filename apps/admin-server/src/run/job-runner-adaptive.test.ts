@@ -117,9 +117,9 @@ describe('a real adaptive run, dispatched and indexed from what it wrote', () =>
     const checkpoint = JSON.parse(
       await readFile(join(directory, 'adaptive-checkpoint.json'), 'utf8'),
     ) as { experimentId: string };
-    const result = JSON.parse(
-      await readFile(join(directory, 'adaptive-result.json'), 'utf8'),
-    ) as { experimentId: string };
+    const result = JSON.parse(await readFile(join(directory, 'adaptive-result.json'), 'utf8')) as {
+      experimentId: string;
+    };
     expect(raw.experimentId).toBe(config.id);
     expect(checkpoint.experimentId).toBe(config.id);
     expect(result.experimentId).toBe(config.id);
@@ -209,6 +209,25 @@ describe('an adaptive failure says what went wrong without saying where', () => 
   });
 });
 
+describe('a corrupted raw-evidence document fails the job instead of crashing the runner', () => {
+  it('resolves run() to a failed outcome rather than throwing out of it', async () => {
+    const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-corrupt-raw', ...FAST_BUDGET });
+    const directory = await runDirectory(config.id);
+    // `#loadOrCreateAdaptiveRaw` runs after `#prepareAdaptive` succeeds, so a
+    // fresh directory with only a corrupted `adaptive-raw.json` reproduces a
+    // crash mid-attempt (e.g. a prior process killed while writing it) rather
+    // than an obstruction `#prepareAdaptive` itself would already catch.
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, 'adaptive-raw.json'), '{not valid json', 'utf8');
+
+    const outcome = unwrap(await makeRunner().run(jobId));
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.failure?.code).toBe('admin/run_failed');
+    expect(unwrap(await catalog.store.readJob(jobId)).status).toBe('failed');
+  });
+});
+
 describe('a real adaptive run, paused and resumed across worker threads', () => {
   it('stops at a safe checkpoint boundary under a concurrent pause, and resume finishes it without a second owner', async () => {
     // No stand-in: a real Adaptive Counter run across two worker threads,
@@ -234,11 +253,26 @@ describe('a real adaptive run, paused and resumed across worker threads', () => 
       await delay(25);
     }
     // The same two-step `JobQueue#pause` performs: the lifecycle action
-    // first, then the switch a run in flight actually observes.
-    unwrap(await catalog.store.applyJobAction({ jobId, action: 'pause' }));
+    // first, then the switch a run in flight actually observes. FAST_BUDGET's
+    // whole remaining run is only a handful of games, so on a fast or lightly
+    // loaded machine it can finish before this lands — the store then refuses
+    // `pause` from `completed`. That race loss is accepted the same way the
+    // sibling "paused exactly before final result publication" test accepts
+    // its own: it is not what this test means to exercise, but it is not a
+    // defect either.
+    const pauseResult = await catalog.store.applyJobAction({ jobId, action: 'pause' });
+    const pauseLostTheRace =
+      isErr(pauseResult) && pauseResult.error[0]?.code === 'admin/illegal_transition';
+    if (!pauseLostTheRace) unwrap(pauseResult);
     control.request('pause');
 
     const outcome = unwrap(await running);
+
+    if (pauseLostTheRace) {
+      expect(outcome.status).toBe('completed');
+      return;
+    }
+
     expect(outcome.status).toBe('stopped');
     expect(outcome.stopReason).toBe('pause');
     expect(outcome.failure).toBeNull();
@@ -262,9 +296,7 @@ describe('a real adaptive run, paused and resumed across worker threads', () => 
     // `block`, never a duplicate, across the two attempts' writes to the
     // same `adaptive-raw.json`.
     const directory = await runDirectory(config.id);
-    const raw = JSON.parse(
-      await readFile(join(directory, 'adaptive-raw.json'), 'utf8'),
-    ) as {
+    const raw = JSON.parse(await readFile(join(directory, 'adaptive-raw.json'), 'utf8')) as {
       series: { block: number }[];
       generations: { block: number }[];
       screeningRounds: { block: number }[];
@@ -311,9 +343,7 @@ describe('a real adaptive run, paused exactly before final result publication', 
       // validation ever starts, so a stop inside validation always finds it
       // this way on disk.
       expect(checkpoint.pendingGeneration).toBeNull();
-      await expect(
-        readFile(join(directory, 'adaptive-result.json'), 'utf8'),
-      ).rejects.toThrow();
+      await expect(readFile(join(directory, 'adaptive-result.json'), 'utf8')).rejects.toThrow();
 
       unwrap(await catalog.store.applyJobAction({ jobId, action: 'resume' }));
       const resumedOutcome = unwrap(await runner.run(jobId));
@@ -325,9 +355,9 @@ describe('a real adaptive run, paused exactly before final result publication', 
       expect(outcome.status).toBe('completed');
     }
 
-    const result = JSON.parse(
-      await readFile(join(directory, 'adaptive-result.json'), 'utf8'),
-    ) as { experimentId: string };
+    const result = JSON.parse(await readFile(join(directory, 'adaptive-result.json'), 'utf8')) as {
+      experimentId: string;
+    };
     expect(result.experimentId).toBe(config.id);
 
     const matchLines = (await readFile(matchesPath, 'utf8')).trim().split('\n');

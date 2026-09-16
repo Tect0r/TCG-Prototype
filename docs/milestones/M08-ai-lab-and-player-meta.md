@@ -5277,167 +5277,247 @@ Adaptive job contracts and catalog persistence).
 
 ### Correction Tranche B — Adaptive job contracts and catalog persistence
 
-- [x] **M08.R3 — Adaptive job contracts and catalog persistence.** Adaptive
-      Counter had no enqueue contract of its own: `enqueuePreset` only ever
-      resolved `presetChoiceSchema`'s union into an `ExperimentConfig`, so
-      there was no authenticated/admin path that could create an adaptive
-      job, and no durable shape for one to be stored in. Per the owner-locked
-      brief, added a **dedicated** `enqueueAdaptive` endpoint (not a reuse of
-      `enqueue-preset`) and widened the persisted job spec to a
-      **discriminated union** rather than treating Adaptive Counter as a
-      sixth ordinary `ExperimentConfig` kind.
+- [x] **M08.R3 — Adaptive job contracts and catalog persistence.** Adaptive Counter had no enqueue
+      contract of its own: `enqueuePreset` only ever resolved `presetChoiceSchema`'s union into an
+      `ExperimentConfig`, so there was no authenticated/admin path that could create an adaptive
+      job, and no durable shape for one to be stored in. Per the owner-locked brief, added a
+      **dedicated** `enqueueAdaptive` endpoint (not a reuse of `enqueue-preset`) and widened the
+      persisted job spec to a **discriminated union** rather than treating Adaptive Counter as a
+      sixth ordinary `ExperimentConfig` kind. Contract (`packages/admin-contracts`):
+      `jobOriginSchema` gained a fourth member, `adaptive_counter` (alongside `preset`/`direct`/
+      `commander_championship`); `jobSpecSchema` became a
+      `z.discriminatedUnion('kind', [experimentJobSpecSchema, adaptiveJobSpecSchema])` — the
+      experiment branch stays exactly what it was (closed to the five real `ExperimentKind`s), and
+      the new branch carries its own
+      validated `AdaptiveConfig`-derived spec (config hash, schema version, seed, workload
+      estimate). `AdaptiveCounterChoice` named the narrow request shape
+      `enqueueAdaptiveRequestSchema` needs, distinct from the broader `presetChoiceSchema` union
+      `enqueuePreset`/`estimateChoice` accept. `CATALOG_DOCUMENT_VERSION` 4→5 for the widened
+      unions. Server (`apps/admin-server`): `CatalogStore.createAdaptiveJob` is an explicit creation
+      path alongside `createJob`, writing identity, config hash, schema version, seed, workload
+      estimate, timestamps and origin durably via `adaptive-job-config.ts` (mirroring
+      `job-config.ts`'s `refuseForeignVersion` pattern for the stored configuration's own version).
+      `AdminService#enqueueAdaptive` (`service/handlers.ts`) resolves the choice through
+      `resolveAdaptiveChoiceOrRefuse`, which — unlike `estimateAdaptiveOrRefuse` (used by
+      `estimateChoice`/`saveChoice`) — keeps the validated `AdaptiveConfig` needed to create the job
+      rather than stripping it for a public response. `migrations.ts` added
+      `migrateCatalogDocument`, the one migration this repository has needed: rewrites a v4
+      document's `documentVersion` to 5 in place and returns `null` for anything else, because the
+      pre-M08.R3 `jobSpecSchema`/`jobOriginSchema` were already exactly the `experiment` branch and
+      a strict subset of the widened `origin` union — no other field ever needed rewriting. Wired
+      into `readDocument`'s `migrate` option (runs before the version-refusal check) at all three
+      read paths (`#readBatchDocument`, `#readJobDocument`, `#loadAll`, the last one shared by both
+      job and batch listing). A document from a genuinely future build is still refused with the
+      existing "written by a newer build / update the application" sentence, since migration only
+      rewrites a recognized past version and never touches an unrecognized one; a pre-M08.R3 client
+      reading a v5 document with an `adaptive_counter` job/origin still fails
+      `jobSpecSchema`/`jobOriginSchema`'s closed unions rather than silently reinterpreting the new
+      kind. Tests: round-trip (`adaptive-job-config.test.ts`, config survives store→read unchanged,
+      hash matches), migration (`migrations.test.ts`, 5 unit tests on `migrateCatalogDocument` in
+      isolation + 4 end-to-end through a real `FileCatalogStore`), unsupported-future-version and
+      malformed-input (existing
+      `admin/unsupported_version`/`admin/malformed`/`admin/missing_version` coverage in
+      `adaptive-job-config.test.ts`, mirroring `job-config.test.ts`'s established pattern),
+      authorization (already satisfied without new code — `http.test.ts`'s existing
+      `ADMIN_ENDPOINT_NAMES`-generic routing/authorization loops cover every registered endpoint,
+      `enqueueAdaptive` included), restart (new test in `restart.test.ts`: an adaptive job's
+      `spec.kind`, `origin` and stored `AdaptiveConfig` all survive a `FileCatalogStore` restart
+      mid-run, recovered as `interrupted` like any other in-flight job), and 3 new handler-level
+      tests in `builder-endpoints.test.ts` (successful creation with correct response
+      shape/`origin`/`status`/ listing visibility, refusal of an invalid choice with `admin/schema`,
+      refusal of an unknown batch with `admin/unknown_batch`). Also fixed, self-discovered while
+      running the full `builder-endpoints.test.ts` suite for the first time this session:
+      `estimateAdaptiveOrRefuse` (`service/handlers.ts`) was declared to return the narrow public
+      `ChoiceEstimate` shape but its body passed `estimateAdaptiveChoice`'s result through
+      unmodified, leaking the internal `config` field into `estimateChoice`'s and `saveChoice`'s
+      public response (TypeScript's excess-property checking does not catch this because it is a
+      passed-through call result, not an object literal). Fixed by destructuring only
+      `expansion`/`estimate` before wrapping in `ok(...)`. No admin-client change: nothing in the
+      client calls `enqueueAdaptive` yet (checked — a future UI slice, not this contract/persistence
+      slice), so `fake-service.ts` needs no test double for it. Verification (focused, no full gate
+      — reserved for tranche close): typecheck clean on all four touched workspaces
+      (`admin-contracts`/`admin-server`/`simulator`/`admin-client`). Full focused suites pass:
+      `packages` project 166/166 (5 files), `admin-server` project 815/815 (47 files, including the
+      new/updated `migrations.test.ts`, `restart.test.ts`, `builder-endpoints.test.ts`,
+      `adaptive-job-config.test.ts`), `simulator` project's `adaptive/` suite 188/188 (12 files),
+      `admin-client` project 436/436 (29 files).
 
-      Contract (`packages/admin-contracts`): `jobOriginSchema` gained a
-                          fourth member, `adaptive_counter` (alongside `preset`/`direct`/
-                          `commander_championship`); `jobSpecSchema` became a
-                          `z.discriminatedUnion('kind', [experimentJobSpecSchema,
-                          adaptiveJobSpecSchema])` — the experiment branch stays exactly what it
-                          was (closed to the five real `ExperimentKind`s), and the new branch
-                          carries its own validated `AdaptiveConfig`-derived spec (config hash,
-                          schema version, seed, workload estimate). `AdaptiveCounterChoice`
-                          named the narrow request shape `enqueueAdaptiveRequestSchema` needs,
-                          distinct from the broader `presetChoiceSchema` union
-                          `enqueuePreset`/`estimateChoice` accept. `CATALOG_DOCUMENT_VERSION`
-                          4→5 for the widened unions.
+- [x] **M08.R4 — Adaptive runner dispatch and lifecycle.** Resolved across
+      several sessions: `apps/simulator/src/adaptive/checkpoint.ts` gained
+      `freshAdaptiveCheckpoint(config, environment)`, resolving
+      `AdaptiveConfig.startingDecks` to the single shared root and building
+      each lineage's generation-0 `root` revision from it; the shared-root
+      attribution bug this exposed (`deriveBlockOutcome` attributing a
+      block's winner by deck content hash, so an identical shared root
+      handed every decisive win in a run's first block to `incumbent`
+      regardless of how the games played) was fixed by attributing wins by
+      **seat/schedule identity** instead. The pilots/match-limits blocker
+      (nothing in the adaptive config/choice pipeline supplied
+      `runAdaptiveExperiment`'s required `pilots`/`limits`) was resolved by
+      the owner as Q53 (`docs/open-questions.md`) and implemented.
+      `ExperimentRunner` now dispatches `adaptive_counter` jobs to
+      `runAdaptiveExperiment` in `#runAdaptive`
+      (`apps/admin-server/src/run/job-runner.ts`), resolving the result
+      directory from the configured result root and the job's
+      `experimentId` through the same safe-path helper the adaptive reader
+      uses — an unconfigured or unsafe root is refused
+      (`admin/unsafe_result_reference`) before anything is played. Lifecycle
+      transitions reuse the existing `JOB_TRANSITIONS` table, so a second
+      `run()` call on an already-started job is refused
+      (`admin/illegal_transition`) rather than double-running, and
+      pause/resume stop at a safe checkpoint boundary with no second owner.
+      Progress reports generation, screening/match counts and a bounded
+      stage label; the scheduled-match total accounts for `mirrorSeats`
+      doubling final validation (a real bug found and fixed here — the
+      prior formula undercounted and could trip its own `exceedsSchedule`
+      guard). A stored config that no longer hashes to the job's recorded
+      address is refused (`admin/run_failed`, `spec.configHash`) rather than
+      run. Failure messages are sanitized: no token or context value looks
+      like a filesystem path. Covered by
+      `apps/admin-server/src/run/job-runner-adaptive.test.ts` (7 tests, real
+      end-to-end simulator runs, no mocked adaptive path) plus the existing
+      batch `job-runner.test.ts` regression suite (22 tests, unaffected).
+- [x] **M08.R5 — Crash-safe adaptive raw evidence.** Replaced the old
+      freshly-played/freshCount gating with idempotent upsert-by-`block`;
+      `block` is already globally unique and monotonically increasing
+      across series/generation/screeningRound records, so no schema change
+      was needed. `apps/simulator/src/adaptive/run.ts` now always emits
+      `onRawEvent` for the phase it just decided (never gated on "fresh"
+      records) followed by an awaited `onCheckpoint`, establishing the
+      commit order match record(s) → raw event → checkpoint → next phase.
+      `apps/admin-server/src/run/job-runner.ts` reseeds three
+      `Map<number, Record>` (keyed by `block`) from the on-disk raw
+      document at attempt start, upserts into those maps and atomically
+      rewrites the whole raw document on every `onRawEvent`, and persists
+      the checkpoint on every `onCheckpoint` — fixing a latent bug where the
+      `ExperimentStopped` catch path wrote the pre-attempt checkpoint
+      instead of the latest one actually reached. All four required
+      fault-injection points (match-commit-before-raw-event,
+      raw-event-before-checkpoint, checkpoint-durable-before-next-phase,
+      immediately-before-final-result-publication) are covered: the first
+      three unit-tested directly against `run.ts`'s callback contract
+      (`run.test.ts`, throwing from `onRawEvent`/`onCheckpoint` to simulate
+      the crash and asserting no missing/duplicate event and a
+      checkpoint/result matching an uninterrupted run), the fourth
+      end-to-end in `job-runner-adaptive.test.ts` (pausing a real job once
+      the learning budget's match records are committed, asserting
+      `adaptive-result.json` does not exist yet and the checkpoint/raw
+      evidence are durable, then resuming to completion, with no duplicate
+      `block` within any of the three record arrays). Evidence:
+      `apps/simulator/src/adaptive` suite 205/205; full `apps/simulator`
+      suite 734/734 (46 files); `job-runner-adaptive.test.ts` 8/8.
+- [x] **M08.R6 — Adaptive builder and queue integration.** Replaced the
+      reserved Adaptive Counter preset with a usable builder flow.
+      `BuilderScreen.tsx` gained a selectable "Adaptive Counter Search"
+      family radio and an `AdaptiveCounterSection` form exposing
+      target/baseline choice, candidate pool constraints, seed,
+      budget/workload, stopping/promotion settings and output identity,
+      plus an `AdaptiveEnqueuedReport` after enqueue; `builder-form.ts`
+      gained the `AdaptiveForm` state shape following the existing
+      save/restore conventions. `App.tsx` wires a completed job's "View in
+      Adaptive Dashboard" handoff to `ResultsScreen.tsx`, auto-switching its
+      `mode` to `'adaptive'`; `AdaptiveDashboard.tsx`'s `AdaptiveRunPanel`
+      renders a progress view for incomplete output (never a false
+      failure) and a readable refusal for a future schema version.
+      `apps/admin-server/src/run/queue.ts` gained `#requestedWorkers`,
+      reading whichever job config shape `job.spec.kind` names, letting
+      stop/pause/resume/retry (already generic) actually admit an adaptive
+      job to run. Added `apps/admin-client/src/adaptive-full-stack.test.tsx`
+      — a real `admin-server` HTTP server (real `FileCatalogStore`, real
+      `ExperimentRunner` running the real simulator) bound to a real
+      loopback socket, driven end-to-end through Testing Library from form
+      submission through persisted job, runner execution, result envelopes,
+      reader and dashboard — satisfying the "a fixture copied into a
+      directory is not sufficient" requirement. Evidence:
+      `adaptive-full-stack.test.tsx` 1/1; full `apps/admin-client` suite
+      437/437 across 30 files.
+- [x] **M08.R7 — Adaptive selection correctness.** Revalidated seven named
+      smaller defects: `selectReferenceField` now returns exactly
+      `min(requested, uniqueEligiblePool)` distinct decks via a
+      deterministic seeded Fisher-Yates shuffle over the hash-deduped pool,
+      replacing the duplicate-prone `wanted * 4` retry window;
+      `tallyGroup`/`tallyAdaptiveValidation` now attribute a match's winner
+      by seat identity (`ScheduledSeat.playerId` → `deckIndex`) instead of
+      deck-hash comparison, since a candidate/incumbent and its opponent can
+      freeze onto byte-identical deck content; `candidateCardPatchSchema.cost`
+      dropped `.nullable()` so a `null` cost is refused with a readable
+      field error rather than reaching a downstream exception; `block.ts`'s
+      comment claiming a block is "never one game" was corrected (a
+      `blockSize: 1` with `mirrorSeats: false` legitimately produces one);
+      `promote.ts`'s Wilson-interval approximation is now documented
+      explicitly rather than presented as unqualified statistical strength;
+      and `generateRebuildCandidate` now routes through
+      `commanderPolicy`'s actual restriction instead of silently pinning the
+      incumbent Commander under `'open'`/`'selected'`. Evidence: full
+      `apps/simulator/src/adaptive/` suite 252/252 across 13 files.
 
-                          Server (`apps/admin-server`): `CatalogStore.createAdaptiveJob` is an
-                          explicit creation path alongside `createJob`, writing identity,
-                          config hash, schema version, seed, workload estimate, timestamps and
-                          origin durably via `adaptive-job-config.ts` (mirroring
-                          `job-config.ts`'s `refuseForeignVersion` pattern for the stored
-                          configuration's own version). `AdminService#enqueueAdaptive`
-                          (`service/handlers.ts`) resolves the choice through
-                          `resolveAdaptiveChoiceOrRefuse`, which — unlike
-                          `estimateAdaptiveOrRefuse` (used by `estimateChoice`/`saveChoice`) —
-                          keeps the validated `AdaptiveConfig` needed to create the job rather
-                          than stripping it for a public response. `migrations.ts` added
-                          `migrateCatalogDocument`, the one migration this repository has
-                          needed: rewrites a v4 document's `documentVersion` to 5 in place and
-                          returns `null` for anything else, because the pre-M08.R3
-                          `jobSpecSchema`/`jobOriginSchema` were already exactly the
-                          `experiment` branch and a strict subset of the widened `origin`
-                          union — no other field ever needed rewriting. Wired into
-                          `readDocument`'s `migrate` option (runs before the version-refusal
-                          check) at all three read paths (`#readBatchDocument`,
-                          `#readJobDocument`, `#loadAll`, the last one shared by both job and
-                          batch listing). A document from a genuinely future build is still
-                          refused with the existing "written by a newer build / update the
-                          application" sentence, since migration only rewrites a recognized
-                          past version and never touches an unrecognized one; a pre-M08.R3
-                          client reading a v5 document with an `adaptive_counter` job/origin
-                          still fails `jobSpecSchema`/`jobOriginSchema`'s closed unions rather
-                          than silently reinterpreting the new kind.
+### Tranche B review
 
-                          Tests: round-trip (`adaptive-job-config.test.ts`, config survives
-                          store→read unchanged, hash matches), migration
-                          (`migrations.test.ts`, 5 unit tests on `migrateCatalogDocument` in
-                          isolation + 4 end-to-end through a real `FileCatalogStore`),
-                          unsupported-future-version and malformed-input (existing
-                          `admin/unsupported_version`/`admin/malformed`/`admin/missing_version`
-                          coverage in `adaptive-job-config.test.ts`, mirroring
-                          `job-config.test.ts`'s established pattern), authorization (already
-                          satisfied without new code — `http.test.ts`'s existing
-                          `ADMIN_ENDPOINT_NAMES`-generic routing/authorization loops cover
-                          every registered endpoint, `enqueueAdaptive` included), restart
-                          (new test in `restart.test.ts`: an adaptive job's `spec.kind`,
-                          `origin` and stored `AdaptiveConfig` all survive a `FileCatalogStore`
-                          restart mid-run, recovered as `interrupted` like any other in-flight
-                          job), and 3 new handler-level tests in `builder-endpoints.test.ts`
-                          (successful creation with correct response shape/`origin`/`status`/
-                          listing visibility, refusal of an invalid choice with
-                          `admin/schema`, refusal of an unknown batch with
-                          `admin/unknown_batch`).
+- [x] **Tranche B review — tranche-close revalidation.** Reviewed the
+      complete adaptive path (contract → catalog → runner ownership →
+      durable envelopes → reader → dashboard) against the ten named risk
+      categories. Restart, path-traversal-identifier, and
+      duplicate-run/double-submit protection at the runner level were
+      already covered by `restart.test.ts`, `job-runner-adaptive.test.ts`'s
+      "cannot escape its configured result root" and "starting an adaptive
+      job twice" tests; future-schema refusal was already covered at the
+      config/checkpoint/envelope layer (`adaptive-job-config.test.ts`,
+      `checkpoint.test.ts`, `envelopes.test.ts`); deterministic replay was
+      already proven by `run.test.ts`'s resumed-attempt byte-identical
+      re-emission assertion; and maximum-budget boundaries were already
+      exercised at the schema (`config.test.ts`) and block-planning
+      (`block.test.ts`) layers. Found and fixed four genuine gaps:
+      1. **Corrupted checkpoint/raw evidence.** `#runAdaptive`
+         (`job-runner.ts`) let a thrown `#loadOrCreateAdaptiveRaw` failure
+         (a corrupted or unreadable `adaptive-raw.json` from a crash
+         mid-write) escape `run()` as an unhandled rejection instead of
+         resolving to a failed `CatalogResult`, which `JobQueue#launch`
+         does not catch — able to crash the whole admin-server process
+         rather than failing one job. Wrapped in a `try`/`catch` that stops
+         polling and resolves to `#fail(...)`; new test in
+         `job-runner-adaptive.test.ts` ("a corrupted raw-evidence document
+         fails the job instead of crashing the runner").
+      2. **Concurrent-runner/stop-resume flake.** The worker-thread
+         pause/resume test in `job-runner-adaptive.test.ts` unconditionally
+         asserted `pause` succeeded, but `FAST_BUDGET`'s whole remaining run
+         is a handful of games and can legitimately finish before the pause
+         request lands on a fast machine, at which point the store correctly
+         refuses `pause` from `completed`. Now tolerates that race loss
+         explicitly (asserting `completed` instead) rather than flaking.
+      3. **Duplicated limitations text.** `AdaptiveEstimateTables`
+         (`BuilderScreen.tsx`) concatenated `expansionLimitations` and
+         `estimate.limitations`, but `estimateAdaptiveChoice`
+         (`apps/admin-server/src/lab/adaptive-choice.ts`) fills both from the
+         same source array, so every limitation was shown twice. Fixed by
+         deduping through a `Set`.
+      4. **Missing test coverage for the 3 pre-existing `apps/simulator`
+         typecheck failures** M08.R7 left for tranche close
+         (`config.test.ts:225`, `run.test.ts:548`, `run.test.ts:564`, all
+         TypeScript control-flow narrowing gaps, not runtime defects) —
+         fixed by exporting `AdaptiveConfigInput` for a properly-typed test
+         helper and by binding a null-narrowed checkpoint to a freshly typed
+         `const` before reuse.
+      Also fixed, self-discovered while running the full gate: two contract
+      tests (`scripts/lib/consistency.test.ts`,
+      `scripts/lib/status-audit.test.ts`) asserted `questions`/
+      `openNotListed` counts were always greater than zero, which stopped
+      holding once the owner answered every recorded open question
+      (2026-09-11) — narrowed to what the invariant actually requires; a
+      stale anchor link in `docs/open-questions.md` (Q51, already answered,
+      still linked as "open"); `bot-pacing.test.ts`'s Q8 tracking test
+      updated to match its answered-but-not-implemented state; a missing
+      `pilotIds` field in `builder-endpoints.test.ts`'s adaptive choice
+      fixture; and an unrelated architecture-boundary gap in
+      `boundary.test.ts` — its admin-reachability scan did not exclude
+      `*.test.ts`/`*.test.tsx` files, which would have forced a second
+      by-path exception for M08.R6's real-server full-stack test rather
+      than recognizing that a test harness importing `@tcg/admin-server` is
+      not the shipped bundle reaching it.
+      All required gates pass: `npm run check:consistency` (no
+      inconsistency), `npm run audit:check` (current, regenerated at
+      5315/5315 tests across 282 files), and `npm run verify` (full clean
+      pass — typecheck, lint, format, content validation, tests and build
+      all green, zero failures).
 
-                          Also fixed, self-discovered while running the full
-                          `builder-endpoints.test.ts` suite for the first time this session:
-                          `estimateAdaptiveOrRefuse` (`service/handlers.ts`) was declared to
-                          return the narrow public `ChoiceEstimate` shape but its body passed
-                          `estimateAdaptiveChoice`'s result through unmodified, leaking the
-                          internal `config` field into `estimateChoice`'s and `saveChoice`'s
-                          public response (TypeScript's excess-property checking does not
-                          catch this because it is a passed-through call result, not an
-                          object literal). Fixed by destructuring only `expansion`/`estimate`
-                          before wrapping in `ok(...)`.
-
-                          No admin-client change: nothing in the client calls `enqueueAdaptive`
-                          yet (checked — a future UI slice, not this contract/persistence
-                          slice), so `fake-service.ts` needs no test double for it.
-
-                          Verification (focused, no full gate — reserved for tranche close):
-                          typecheck clean on all four touched workspaces
-                          (`admin-contracts`/`admin-server`/`simulator`/`admin-client`). Full
-                          focused suites pass: `packages` project 166/166 (5 files),
-                          `admin-server` project 815/815 (47 files, including the new/updated
-                          `migrations.test.ts`, `restart.test.ts`, `builder-endpoints.test.ts`,
-                          `adaptive-job-config.test.ts`), `simulator` project's `adaptive/`
-                          suite 188/188 (12 files), `admin-client` project 436/436 (29 files).
-
-- [ ] **M08.R4 — Adaptive runner dispatch and lifecycle.** Not shipped this
-      session; blocked before reaching the admin-server dispatch wiring this
-      slice's acceptance text actually names, though two prior blockers this
-      slice inherited are now resolved and two pieces of engine-level
-      groundwork the dispatch code will need are done, tested and
-      typechecked. Resolved this session:
-      `apps/simulator/src/adaptive/checkpoint.ts` gained
-      `freshAdaptiveCheckpoint(config, environment)`, the constructor a
-      prior session's investigation found nothing in the codebase provided
-      — it resolves `AdaptiveConfig.startingDecks` to the single shared
-      root the config's own doc comment requires, builds each lineage's
-      generation-0 `root` revision from it via `makeAdaptiveRevision`, and
-      returns a schema-valid `AdaptiveCheckpoint` with `gamesSpent: 0`,
-      `nextGeneration: 1`, `nextBlock: 0`; exported from
-      `apps/simulator/src/index.ts`; 6 new focused tests in
-      `checkpoint.test.ts`. Also resolved this session, the prior blocker
-      itself: with both lineages sharing one root deck,
-      `apps/simulator/src/adaptive/run.ts`'s `deriveBlockOutcome` used to
-      attribute a block's winner by deck content hash (`SimDeck.hash` is
-      deliberately content-only), so an identical shared root made
-      `incumbentDeckHash === opponentDeckHash` and silently handed every
-      decisive win in a run's first block to `incumbent` regardless of how
-      the games actually played; fixed by attributing wins by
-      **seat/schedule identity** instead — a winning seat's `playerId` is
-      joined back to the `ScheduledMatch` that produced it, and that seat's
-      fixed `deckIndex` (0 = incumbent, 1 = opponent, per
-      `scheduleAdaptiveBlock`'s own ordering) names the winning lineage
-      independent of deck content. `winnerDeckHashOf` stays in place
-      unchanged for raw-event reporting, which never needed attribution
-      semantics; no shared-root-deck contract change was needed, since the
-      resolution was entirely on the attribution side, as the prior
-      session's blocker record left open as one of two options. **New
-      blocker found while designing the dispatch class itself:**
-      `runAdaptiveExperiment` (`apps/simulator/src/adaptive/run.ts`)
-      requires `pilots: readonly PilotSpec[]` and `limits: MatchLimits` as
-      caller-supplied options, but nothing in the adaptive config/choice
-      pipeline supplies or defaults either — `AdaptiveConfig`
-      (`apps/simulator/src/adaptive/config.ts`) has no `pilots`, `limits`
-      or `workers` field; `adaptiveCounterChoiceSchema`
-      (`packages/admin-contracts/src/presets.ts`) has no `pilotIds` or
-      turn-limit field either, unlike every sibling preset choice schema
-      (`precon_smoke`/`precon_standard`/`precon_deep`/`open_meta`), which
-      all require an explicit admin-chosen `pilotIds: pilotSelection`; and
-      `estimateAdaptiveChoice`
-      (`apps/admin-server/src/lab/adaptive-choice.ts`) never derives
-      either field from anything that does exist on the config. The one
-      precedent for a preset pinning a fixed, non-admin-chosen pilot/limit
-      — `apps/admin-server/src/lab/expand.ts`'s `engine_soak` preset,
-      hardcoding `SOAK_PILOT_ID = 'random_legal'` and
-      `SOAK_TURN_LIMIT = 150` — is justified there by a rationale specific
-      to soak testing ("the driver has to be the one that makes no
-      judgements at all") that does not transfer to an adaptive counter
-      search, whose whole purpose is finding real counter decks against a
-      competent opponent. `docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`'s
-      acceptance text for both this slice and the next relevant one
-      (M08.R6, "Adaptive builder and queue integration") was re-read in
-      full and names neither pilots nor match limits anywhere, so no
-      currently-planned slice is documented as the place this gets
-      decided; recorded per CLAUDE.md's "do not silently invent unresolved
-      rules" invariant rather than defaulting to `engine_soak`'s pattern or
-      inventing a new admin-facing field unilaterally, with full detail in
-      `IMPLEMENTATION_PLAN.md`'s "next bounded task" section.
-      _Verification (focused, no full gate — reserved for tranche close):
-      typecheck clean on `apps/simulator`; `simulator` project's
-      `adaptive/` suite 194/194 (12 files, up from 188/188 — the 6 new
-      `checkpoint.test.ts` cases), including `run.test.ts`'s existing
-      coverage passing unchanged under the new seat/schedule attribution.
-      No admin-server, admin-contracts or admin-client file was touched
-      this session, so none of those workspaces' suites were re-run._
+**Correction Tranche B is complete.** Next: `M08.R8` (Correction Tranche C,
+Durable match identity and dedicated telemetry configuration).

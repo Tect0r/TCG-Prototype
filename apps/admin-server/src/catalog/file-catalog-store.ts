@@ -465,9 +465,7 @@ export class FileCatalogStore implements CatalogStore {
    * (`prepareAdaptiveJobConfig` rather than `prepareJobConfig`) and which
    * `jobSpecSchema` branch the resulting document carries.
    */
-  async createAdaptiveJob(
-    input: NewAdaptiveJobInput,
-  ): Promise<CatalogResult<CatalogJobDocument>> {
+  async createAdaptiveJob(input: NewAdaptiveJobInput): Promise<CatalogResult<CatalogJobDocument>> {
     const batchPath = documentPath(this.#batchDir, input.batchId);
 
     return this.#locks.run(batchPath, async () => {

@@ -104,8 +104,12 @@ describe('collectAudit', () => {
     }
     // A question open in the file and absent from the plan's curated short list
     // is ordinary, and must not be counted as the plan contradicting anything.
-    expect(facts.questions.openNotListed).toBeGreaterThan(0);
-    expect(facts.questions.contradictions.length).toBeLessThan(facts.questions.openNotListed);
+    // Not asserted greater than 0 here: `openNotListed` is legitimately 0 once
+    // every recorded question is answered (true as of the 2026-09-11 rulings),
+    // so this can't lean on live-repo data always having an open one.
+    expect(facts.questions.contradictions.length).toBeLessThanOrEqual(
+      facts.questions.openNotListed,
+    );
     // Every row came from one of the two documents, so it must be in one.
     for (const row of facts.questions.rows) {
       expect(row.inQuestions !== 'absent' || row.inPlan).toBe(true);

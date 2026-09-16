@@ -47,7 +47,8 @@ function deck(label: string, extra = 0): SimDeck {
 /** `scheduleAdaptiveValidation` always builds `decks: [incumbent.deck, opponent.deck]`, so deckIndex 0 is always the incumbent's seat. */
 function winnerIdForDeckIndex(match: ScheduledMatch, deckIndex: number): string {
   const seat = match.seats.find((entry) => entry.deckIndex === deckIndex);
-  if (seat === undefined) throw new Error(`match ${match.matchId} has no seat at deckIndex ${String(deckIndex)}`);
+  if (seat === undefined)
+    throw new Error(`match ${match.matchId} has no seat at deckIndex ${String(deckIndex)}`);
   return seat.playerId;
 }
 

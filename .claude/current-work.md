@@ -5422,7 +5422,7 @@ against, and `adaptiveExperimentIdSchema`'s `^[a-z][a-z0-9_-]*$` (max 40)
 regex is already traversal-proof, so no new validation is needed. Resume/
 crash-safety: `apps/simulator/src/adaptive/run.ts`'s own header comment
 (lines 57–91) documents that retrying `runAdaptiveExperiment` with the
-*same* checkpoint object against the *same* persistent `MatchStore` is
+_same_ checkpoint object against the _same_ persistent `MatchStore` is
 always safe — every phase up to and including one interrupted by
 `ExperimentStopped` replays as a no-op reconciliation against already-
 committed matches. So `job.ts` needs no incremental checkpoint-persistence
@@ -5612,3 +5612,83 @@ deferred to Tranche B's own close ("Tranche B review" in
 Next slice: Tranche B review (tranche-close) — revalidate the combined
 Tranche B diff (M08.R3–M08.R7), run `check:consistency`, `audit:check` and
 `verify`, then request `tcg-reviewer`.
+
+## Tranche B review — tranche-close run (2026-09-16)
+
+Picked up a prior session's uncommitted tranche-close work in progress
+(25 modified files, no commits yet) and completed it. Reviewed the entire
+adaptive path (contract → catalog → runner ownership → durable envelopes →
+reader → dashboard) against the ten named risk categories: restart,
+double-submit, concurrent-runner, stop/resume, corrupted checkpoint,
+missing result, future schema, path traversal identifier, maximum budget,
+and deterministic replay.
+
+Six already covered by existing tests needed no change: restart
+(`restart.test.ts`), path-traversal-identifier and double-submit-at-runner
+(`job-runner-adaptive.test.ts`'s "cannot escape its configured result
+root" and "starting an adaptive job twice"), future-schema refusal
+(`adaptive-job-config.test.ts`, `checkpoint.test.ts`, `envelopes.test.ts`),
+deterministic replay (`run.test.ts`'s resumed-attempt byte-identical
+re-emission assertion), and maximum-budget boundaries
+(`config.test.ts`, `block.test.ts`).
+
+Four genuine gaps found and fixed:
+
+1. Corrupted raw evidence: `#runAdaptive` (`job-runner.ts`) let a thrown
+   `#loadOrCreateAdaptiveRaw` failure escape `run()` as an unhandled
+   rejection instead of resolving to a failed `CatalogResult` —
+   `JobQueue#launch` does not catch that, so a corrupted
+   `adaptive-raw.json` could crash the whole admin-server process rather
+   than failing one job. Wrapped in `try`/`catch` resolving to `#fail(...)`;
+   new test in `job-runner-adaptive.test.ts`.
+2. Concurrent-runner/stop-resume flake: the worker-thread pause/resume
+   test unconditionally asserted `pause` succeeded, but a fast machine can
+   finish `FAST_BUDGET`'s remaining run before the pause request lands, at
+   which point the store correctly refuses `pause` from `completed`. Test
+   now tolerates that race loss explicitly.
+3. Duplicated limitations text: `AdaptiveEstimateTables`
+   (`BuilderScreen.tsx`) concatenated `expansionLimitations` and
+   `estimate.limitations`, both filled from the same source array in
+   `estimate-choice.ts`, so every limitation displayed twice. Fixed with a
+   `Set`.
+4. Three pre-existing `apps/simulator` typecheck failures left from M08.R7
+   (`config.test.ts:225`, `run.test.ts:548`, `run.test.ts:564` — narrowing
+   gaps, not runtime defects): fixed by exporting `AdaptiveConfigInput` for
+   a properly-typed test helper and binding a null-narrowed checkpoint to a
+   freshly typed `const` before reuse.
+
+Also fixed, self-discovered while running the full gate: two contract
+tests (`scripts/lib/consistency.test.ts`, `scripts/lib/status-audit.test.ts`)
+asserted question counts were always greater than zero, which stopped
+holding once every recorded open question was answered (2026-09-11);
+narrowed to what the invariant actually requires. A stale anchor link in
+`docs/open-questions.md` (Q51, answered, still linked as "open").
+`bot-pacing.test.ts`'s Q8 tracking test updated to match its
+answered-but-not-implemented state. A missing `pilotIds` field in
+`builder-endpoints.test.ts`'s adaptive choice fixture. An architecture-
+boundary gap in `boundary.test.ts`: its admin-reachability scan did not
+exclude `*.test.ts`/`*.test.tsx`, which would have forced a second
+by-path exception for M08.R6's real-server full-stack test.
+
+Backfilled `docs/milestones/M08-ai-lab-and-player-meta.md`'s Tranche B
+checklist: corrected the stale M08.R4 entry (previously recorded as
+blocked; the blocker — Q53 — was resolved and R4 shipped) and added M08.R5,
+M08.R6, M08.R7 entries condensed from `M08.5_FINAL_CORRECTION_PASS.md`'s
+"Done" evidence, plus this tranche-close revalidation entry.
+
+Gates: `check:consistency` clean; `audit:check` clean (`docs/status-audit.md`
+regenerated — commit `22f6cfb`, 2026-09-16, 282 files / 5315 tests, matching
+a fresh full run); `verify` full clean pass (typecheck, lint, format,
+content validation, tests, build).
+
+`tcg-reviewer` (Opus) reviewed the full Tranche B commit range
+(`ca1255b..22f6cfb`: M08.R3 `9a5b835`; M08.R4 `2a9de77`+`3a15065`; M08.R5
+`74a53df`; M08.R6 `97f3310`; M08.R7 `22f6cfb`) plus the close-record diff.
+VERDICT: APPROVE — no material findings.
+
+Root record: `docs/milestones/M08-ai-lab-and-player-meta.md`'s "### Tranche
+B review" checklist entry and closing sentence; `IMPLEMENTATION_PLAN.md`'s
+Status/Active-correction-queue tables and blocking-decision section.
+
+Next slice: `M08.R8` (Correction Tranche C — durable match identity and
+dedicated telemetry configuration).

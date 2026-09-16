@@ -206,9 +206,11 @@ describe('generateAdaptiveCandidates: rebuild candidates', () => {
       }),
     );
     expect(record.candidates.length).toBeGreaterThan(0);
-    expect(record.candidates.some((candidate) => candidate.deck.commanderId !== incumbent.deck.commanderId)).toBe(
-      true,
-    );
+    expect(
+      record.candidates.some(
+        (candidate) => candidate.deck.commanderId !== incumbent.deck.commanderId,
+      ),
+    ).toBe(true);
   });
 
   it('restricts an open-policy rebuild candidate to a legal Commander in this environment', () => {

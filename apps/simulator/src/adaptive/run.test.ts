@@ -544,8 +544,16 @@ describe('crash-safe raw evidence (M08.R5)', () => {
     await expect(crashing).rejects.toThrow(
       'simulated crash after the first checkpoint durably advanced',
     );
-    expect(persistedCheckpoint).not.toBeNull();
-    expect((persistedCheckpoint as AdaptiveCheckpoint).pendingGeneration).not.toBeNull();
+    if (persistedCheckpoint === null) throw new Error('onCheckpoint never fired.');
+    // `persistedCheckpoint` is reassigned only inside the `onCheckpoint`
+    // closure above, so TS's control-flow analysis cannot see past its
+    // initializer and narrows every direct read of it to `null` even here,
+    // after the runtime-null guard. Binding it to a freshly, explicitly
+    // typed const is the escape: assigning that already-excluded-null
+    // (`never`) value into a `: AdaptiveCheckpoint` binding is always
+    // permitted, and every read of the new binding is properly typed.
+    const crashCheckpoint: AdaptiveCheckpoint = persistedCheckpoint;
+    expect(crashCheckpoint.pendingGeneration).not.toBeNull();
 
     // A real caller (the job runner) reloads whatever checkpoint it last
     // durably persisted — here, the advanced one a crash right after
@@ -561,7 +569,7 @@ describe('crash-safe raw evidence (M08.R5)', () => {
       retention: NO_RETENTION,
       workers: 1,
       sink: crashStore,
-      checkpoint: persistedCheckpoint as AdaptiveCheckpoint,
+      checkpoint: crashCheckpoint,
       onRawEvent: (event) => {
         events.push(event);
       },

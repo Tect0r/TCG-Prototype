@@ -522,11 +522,26 @@ export class ExperimentRunner {
     const poll = this.#startPolling(directory, record);
 
     const configHash = adaptiveConfigHashOf(config);
-    const { series, generations, screeningRounds } = await this.#loadOrCreateAdaptiveRaw(
-      directory,
-      config,
-      configHash,
-    );
+    let series: Map<number, AdaptiveSeriesRecord>;
+    let generations: Map<number, AdaptiveGenerationRecord>;
+    let screeningRounds: Map<number, AdaptiveScreeningRound>;
+    try {
+      ({ series, generations, screeningRounds } = await this.#loadOrCreateAdaptiveRaw(
+        directory,
+        config,
+        configHash,
+      ));
+    } catch (cause) {
+      // A corrupted or unreadable `adaptive-raw.json` (a crash mid-write, a
+      // hand-edited file) must fail this job the same way every other
+      // `#runAdaptive` failure does. Left uncaught, this throws out of
+      // `run()` itself instead of resolving to a `CatalogResult`, which
+      // `JobQueue#launch` (`./queue.ts`) does not catch — an unhandled
+      // rejection that can crash the whole admin-server process rather than
+      // failing one job.
+      poll.stop();
+      return this.#fail(jobId, [runFailed(cause, jobId)], latest);
+    }
     const persistRaw = async (): Promise<void> => {
       await writeJsonAtomically(
         join(directory, RAW_DOCUMENT),
@@ -622,7 +637,10 @@ export class ExperimentRunner {
     let validation: AdaptiveValidationRun | null = null;
     if (finalCheckpoint.pendingGeneration === null) {
       try {
-        validation = await runAdaptiveFinalValidation({ ...runOptions, checkpoint: finalCheckpoint });
+        validation = await runAdaptiveFinalValidation({
+          ...runOptions,
+          checkpoint: finalCheckpoint,
+        });
       } catch (cause) {
         sink.flush?.();
         poll.stop();

@@ -417,6 +417,17 @@ describe('the declared dependencies', () => {
  * dependency on it. Stating either requires writing the package name, and the
  * scan below reads a mention rather than an import — so both files are excluded
  * there and checked, immediately after, to be a refusal rather than an importer.
+ *
+ * The scan itself excludes every `*.test.ts`/`*.test.tsx` file outright (the
+ * same exclusion `apps/admin-client/src/boundary.test.ts` and
+ * `apps/multiplayer-server/src/boundary.test.ts` already apply to their own
+ * scans), because a test file never ships in the player bundle or the live
+ * match server regardless of what it imports. That is what lets
+ * `apps/admin-client/src/adaptive-full-stack.test.tsx` (M08.R6) hold a real,
+ * admin-client-only `@tcg/admin-server` devDependency for its end-to-end
+ * enqueue-through-dashboard proof without naming a third exception here by
+ * path — this invariant is about what the shipped bundle can reach, not about
+ * what a test harness is allowed to import to prove that bundle correct.
  */
 const NAMED_BY_REFUSAL_ADMIN_CLIENT = join(
   REPO_ROOT,
@@ -462,6 +473,7 @@ describe('nothing admin is reachable from the player bundle or the live match se
           continue;
         }
         if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue;
+        if (entry.name.endsWith('.test.ts') || entry.name.endsWith('.test.tsx')) continue;
         if (path.startsWith(PACKAGE_ROOT)) continue;
         if (NAMED_BY_REFUSAL.includes(path)) continue;
         if (readFileSync(path, 'utf8').includes("'@tcg/admin-server'")) hits.push(path);

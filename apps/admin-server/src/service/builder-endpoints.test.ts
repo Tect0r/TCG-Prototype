@@ -229,6 +229,7 @@ function adaptiveChoice(overrides: Record<string, unknown> = {}): PresetChoice {
     experimentId: 'adaptive-search',
     seed: 'adaptive-seed',
     startingPreconIds: ['precon_goblin_swarm'],
+    pilotIds: ['value'],
     totalLearningBudget: 100,
     blockSize: 10,
     candidateCount: 4,
@@ -320,7 +321,8 @@ describe('adaptive_counter, on its own narrower door', () => {
       batchId: batch.value.batchId,
       choice: adaptiveCounterChoice(),
     });
-    if (isErr(enqueued)) throw new Error(enqueued.error.map((problem) => problem.message).join('; '));
+    if (isErr(enqueued))
+      throw new Error(enqueued.error.map((problem) => problem.message).join('; '));
 
     valid('enqueueAdaptive', enqueued.value);
     expect(enqueued.value.batchId).toBe(batch.value.batchId);

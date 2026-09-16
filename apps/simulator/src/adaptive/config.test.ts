@@ -9,6 +9,7 @@ import {
   adaptiveSwapBoundSchema,
   parseAdaptiveConfig,
   pilotSpecsOf,
+  type AdaptiveConfigInput,
 } from './config.js';
 import { ADAPTIVE_CONFIG_SCHEMA_VERSION } from './version.js';
 
@@ -18,7 +19,7 @@ import { ADAPTIVE_CONFIG_SCHEMA_VERSION } from './version.js';
  * yet — every case here only calls `parseAdaptiveConfig`/`adaptiveConfigSchema`.
  */
 
-function validConfig(overrides: Record<string, unknown> = {}) {
+function validConfig(overrides: Record<string, unknown> = {}): AdaptiveConfigInput {
   return {
     schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION,
     id: 'my-adaptive-run',

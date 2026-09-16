@@ -407,7 +407,10 @@ describe('the repository', () => {
     // The three content checks walk the same population; a bundle that loaded
     // no playable set would pass all three by looking at nothing.
     expect(report.counts.playableCards).toBeGreaterThan(0);
-    expect(report.counts.questions).toBeGreaterThan(0);
+    // Not asserted greater than 0: the plan's owner-decisions short list is
+    // legitimately empty once every recorded question is answered (true as of
+    // the 2026-09-11 rulings), so a live-repo count can't guard this parser.
+    // The `checkQuestionLedger` describe block below exercises it with fixtures.
   });
 
   it('ships no unimplemented card in a playable set', () => {

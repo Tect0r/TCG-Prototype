@@ -68,7 +68,9 @@ describe('a v4 document on disk, read through the store it was written for', () 
 
     // The document on disk is migrated only in memory, on read — the file itself
     // is left exactly as the older build wrote it, until something writes to it.
-    expect((JSON.parse(await readFile(path, 'utf8')) as { documentVersion: number }).documentVersion).toBe(4);
+    expect(
+      (JSON.parse(await readFile(path, 'utf8')) as { documentVersion: number }).documentVersion,
+    ).toBe(4);
   });
 
   it('reads a job written by the previous build, whose spec and origin already had this shape', async () => {

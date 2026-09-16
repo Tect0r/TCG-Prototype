@@ -9,11 +9,11 @@ reproducing it means running the suite again.
 
 | Reading          | Value                                       |
 | ---------------- | ------------------------------------------- |
-| Commit           | `f1b0fc90b1c844708015b4353ab95fa9b017b542`  |
+| Commit           | `22f6cfb94d454039f8fcafdd0d93e521476597f1`  |
 | Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-09-10                                  |
+| Taken on         | 2026-09-16                                  |
 | Node             | v24.15.0                                    |
-| `npm run verify` | passed at this commit                       |
+| `npm run verify` | not run for this audit                      |
 
 ### Verification chain
 
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 29      | 435      |
-| admin-server   | 45      | 785      |
-| packages       | 113     | 2585     |
+| admin-client   | 30      | 437      |
+| admin-server   | 48      | 824      |
+| packages       | 113     | 2588     |
 | scripts        | 4       | 69       |
 | server         | 21      | 381      |
-| simulator      | 46      | 717      |
+| simulator      | 46      | 744      |
 | web-client     | 20      | 272      |
-| **total**      | **278** | **5244** |
+| **total**      | **282** | **5315** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -106,8 +106,8 @@ The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contr
 
 | Constant                   | Value | Pins                                                                                                                                   |
 | -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_CONTRACT_VERSION`   | 16    | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
-| `CATALOG_DOCUMENT_VERSION` | 4     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
+| `ADMIN_CONTRACT_VERSION`   | 17    | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `CATALOG_DOCUMENT_VERSION` | 5     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments
 
@@ -227,25 +227,25 @@ No match record observes (31):
 | Q1       | Do `effects` and `abilities` collapse into one form? — answered 202... | answered      | no                      |
 | Q2       | How are static / continuous abilities expressed? — answered 2026-08-07 | answered      | no                      |
 | Q3       | Is `sacrifice` a cost or an effect? — answered 2026-08-07              | answered      | no                      |
-| Q4       | What should `resilient` do, or should it be deleted?                   | open          | yes                     |
+| Q4       | What should `resilient` do, or should it be deleted? — answered 202... | answered      | no                      |
 | Q5       | What happens to a Commander after battlefield defeat? — answered 20... | answered      | no                      |
-| Q6       | Is there an alternate victory condition?                               | open          | no                      |
+| Q6       | Is there an alternate victory condition? — answered 2026-09-11         | answered      | no                      |
 | Q7       | What is the client/server protocol contract? — answered 2026-08-07     | answered      | no                      |
-| Q8       | What is the turn/action timeout policy?                                | open          | no                      |
-| Q9       | Should a match survive a server restart?                               | open          | no                      |
+| Q8       | What is the turn/action timeout policy? — answered 2026-09-11          | answered      | no                      |
+| Q9       | Should a match survive a server restart? — answered 2026-09-11         | answered      | no                      |
 | Q10      | Multiplayer combat and targeting — answered 2026-08-07                 | answered      | no                      |
 | Q11      | Priority order for simultaneous triggers — answered 2026-08-07         | answered      | no                      |
 | Q12      | Elimination semantics — answered 2026-08-07                            | answered      | no                      |
 | Q13      | Team play — in or out? — answered 2026-08-07                           | answered      | no                      |
-| Q14      | What thresholds should actually gate a card change?                    | open          | no                      |
-| Q15      | How is "a healthy plural meta" measured?                               | open          | no                      |
+| Q14      | What thresholds should actually gate a card change? — answered 2026... | answered      | no                      |
+| Q15      | How is "a healthy plural meta" measured? — answered 2026-09-11         | answered      | no                      |
 | Q16      | Simulator determinism boundary — answered 2026-08-08                   | answered      | no                      |
-| Q17      | Colour identity — names, count, and what each colour does              | open          | no                      |
-| Q18      | Does creating a coloured Token leak colour identity into the creator?  | open          | no                      |
-| Q19      | Is 40-card singleton with a two-colour Commander cap right?            | open          | no                      |
-| Q20      | Should `displayText` be generated from structured effects?             | open          | no                      |
-| Q21      | Localisation                                                           | open          | no                      |
-| Q22      | Is 768 × 1024 px the right art size?                                   | open          | no                      |
+| Q17      | Colour identity — names, count, and what each colour does — answere... | answered      | no                      |
+| Q18      | Does creating a coloured Token leak colour identity into the creato... | answered      | no                      |
+| Q19      | Is 40-card singleton with a two-colour Commander cap right? — answe... | answered      | no                      |
+| Q20      | Should `displayText` be generated from structured effects? — answer... | answered      | no                      |
+| Q21      | Localisation — answered 2026-09-11                                     | answered      | no                      |
+| Q22      | Is 768 × 1024 px the right art size? — answered 2026-09-11             | answered      | no                      |
 | Q23      | Should an effect be able to target a player directly? — answered 20... | answered      | no                      |
 | Q24      | Does a sacrificed unit also trigger `on_defeated`? — answered 2026-... | answered      | no                      |
 | Q25      | Must a search find something if a legal card exists? — answered 202... | answered      | no                      |
@@ -257,27 +257,28 @@ No match record observes (31):
 | Q31      | How is seat order determined? — answered 2026-08-08                    | answered      | no                      |
 | Q32      | Is `removed` a real zone, and does elimination reveal hidden inform... | answered      | no                      |
 | Q33      | What order does `all_players` resolve in? — answered 2026-08-08        | answered      | no                      |
-| Q34      | Does the disconnect grace window run while it is not that player's ... | open          | no                      |
-| Q35      | Do three- and four-player matches need different rule values?          | open          | no                      |
+| Q34      | Does the disconnect grace window run while it is not that player's ... | answered      | no                      |
+| Q35      | Do three- and four-player matches need different rule values? — ans... | answered      | no                      |
 | Q36      | Who controls the lobby, and can its size change after players join?... | answered      | no                      |
-| Q37      | Should the pilots be better players than they are?                     | open          | no                      |
-| Q38      | When is a multiplayer balance run worth it?                            | open          | no                      |
+| Q37      | Should the pilots be better players than they are? — answered 2026-... | answered      | no                      |
+| Q38      | When is a multiplayer balance run worth it? — answered 2026-09-11      | answered      | no                      |
 | Q39      | What is the Reaction chaining and ordering policy? — answered 2026-... | answered      | no                      |
 | Q40      | Should root `cards.json` and `precons.json` be deleted? — answered ... | answered      | no                      |
 | Q41      | Are unimplemented cards visible in the deck builder, and is there a... | answered      | no                      |
 | Q42      | What makes two Tokens "identical" for visual stacking? — answered 2... | answered      | no                      |
 | Q43      | What counts as a board stall? — answered 2026-08-12                    | answered      | no                      |
-| Q44      | Do you want multiple blockers per attacker, and if so, when?           | open          | yes                     |
-| Q45      | Is Barrier consumed before or after other prevention and reduction?    | open          | yes                     |
-| Q46      | May a Reaction carry an additional cost?                               | open          | yes                     |
+| Q44      | Do you want multiple blockers per attacker, and if so, when? — answ... | answered      | no                      |
+| Q45      | Is Barrier consumed before or after other prevention and reduction?... | answered      | no                      |
+| Q46      | May a Reaction carry an additional cost? — answered 2026-09-11         | answered      | no                      |
 | Q47      | May a Reaction answer another Reaction? — answered 2026-08-14          | answered      | no                      |
 | Q48      | Five Goblin cards say "enters the battlefield" and behave as "when ... | answered      | no                      |
 | Q49      | Does a Token count as a Unit? — answered 2026-08-20                    | answered      | no                      |
 | Q50      | Is Hard good enough to publish? — answered 2026-08-20, discharged 2... | answered      | no                      |
-| Q51      | Keep the card-in-hand price, or keep Hard's win rate? — open           | open          | yes                     |
-| Q52      | Should `pilotSpecSchema`'s overrides stop carrying the generic vector? | open          | no                      |
+| Q51      | Keep the card-in-hand price, or keep Hard's win rate? — answered 20... | answered      | no                      |
+| Q52      | Should `pilotSpecSchema`'s overrides stop carrying the generic vect... | answered      | no                      |
+| Q53      | How do adaptive jobs receive pilot selection and per-match turn lim... | answered      | no                      |
 
-16 question(s) are open in the question file and not on the plan's
+0 question(s) are open in the question file and not on the plan's
 short list, which is the curated set a tranche might have to stop on rather than an index.
 
 No question the plan calls open is missing or answered in the question file.

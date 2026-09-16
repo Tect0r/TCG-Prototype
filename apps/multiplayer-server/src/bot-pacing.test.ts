@@ -53,8 +53,9 @@ import { MatchServer, type ScheduleTimer, type ServerConnection } from './match-
  *    M09.12 the first of those was the tranche's own exclusion; it is now the
  *    behaviour, and the 0% half is what keeps every earlier match unchanged.
  *
- * And one non-regression: open-questions.md Q8 is still open, and no budget has
- * appeared in `RulesConfig`. A bot waiting is not a rules change (ADR 0024 §4).
+ * And one non-regression: open-questions.md Q8 is answered (owner ruling,
+ * 2026-09-11) but still not implemented, and no budget has appeared in
+ * `RulesConfig`. A bot waiting is not a rules change (ADR 0024 §4).
  */
 
 const shipping = loadFormatCardData(resolveFormatId());
@@ -496,7 +497,7 @@ describe('a configured delay is now an actual wait', () => {
   });
 });
 
-/* ------------------------------------------------------- Q8 is still open */
+/* ------------------------------------------- Q8 is answered, not implemented */
 
 describe('pacing is configuration, not a rule', () => {
   it('puts no budget in the rules configuration', () => {
@@ -510,17 +511,14 @@ describe('pacing is configuration, not a rule', () => {
     expect(keys).toContain('disconnectGraceSeconds');
   });
 
-  it('leaves open-questions.md Q8 open, and does not answer it', () => {
+  it('records open-questions.md Q8 as answered but still not implemented', () => {
     const questions = readFileSync(join(REPO_ROOT, 'docs/open-questions.md'), 'utf8');
-    const heading = '### Q8. What is the turn/action timeout policy?';
-    expect(questions).toContain(heading);
-
-    const answered = questions.indexOf('\n## Answered');
+    // The owner ruled on Q8 2026-09-11 (add configurable Main/Reaction timers),
+    // so it now lives in the Answered section rather than staying open; the
+    // regression this guards is silent implementation without that tracking.
+    const heading = '### Q8. What is the turn/action timeout policy? — answered 2026-09-11';
     const q8 = questions.indexOf(heading);
-    // Answered questions are compressed into their own section rather than
-    // deleted, so "still open" is "above that section", not "still mentioned".
     expect(q8).toBeGreaterThan(-1);
-    if (answered >= 0) expect(q8).toBeLessThan(answered);
-    expect(questions.slice(q8, q8 + 800)).toContain('**Still open:**');
+    expect(questions.slice(q8, q8 + 800)).toContain('**Not yet implemented.**');
   });
 });

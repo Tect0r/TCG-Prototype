@@ -102,82 +102,90 @@ afterEach(async () => {
 });
 
 describe('an Adaptive Counter run, driven through the real form into the real dashboard', () => {
-  it(
-    'schedules, enqueues, runs, completes and reads back through the real reader',
-    async () => {
-      server = await startRealServer();
-      const user = userEvent.setup();
+  it('schedules, enqueues, runs, completes and reads back through the real reader', async () => {
+    server = await startRealServer();
+    const user = userEvent.setup();
 
-      renderAdmin({ transport: realServerTransport(server.origin) });
-      stubLayout('wide');
+    renderAdmin({ transport: realServerTransport(server.origin) });
+    stubLayout('wide');
 
-      await screen.findByRole('heading', { level: 1, name: 'Overview' });
+    await screen.findByRole('heading', { level: 1, name: 'Overview' });
 
-      await user.click(screen.getByRole('button', { name: 'New Test Batch' }));
-      await screen.findByRole('heading', { level: 1, name: 'New Test Batch' });
-      const main = screen.getByRole('main');
+    await user.click(screen.getByRole('button', { name: 'New Test Batch' }));
+    await screen.findByRole('heading', { level: 1, name: 'New Test Batch' });
+    const main = screen.getByRole('main');
 
-      await user.click(within(main).getByRole('radio', { name: /Adaptive Counter Search/ }));
+    await user.click(within(main).getByRole('radio', { name: /Adaptive Counter Search/ }));
 
-      const preconGroup = within(main).getByRole('group', { name: 'Starting deck(s)' });
-      const preconCheckboxes = within(preconGroup).getAllByRole('checkbox');
-      expect(preconCheckboxes.length).toBeGreaterThan(0);
-      await user.click(preconCheckboxes[0]!);
+    const preconGroup = within(main).getByRole('group', { name: 'Starting deck(s)' });
+    const preconCheckboxes = within(preconGroup).getAllByRole('checkbox');
+    expect(preconCheckboxes.length).toBeGreaterThan(0);
+    await user.click(preconCheckboxes[0]!);
 
-      const setNumber = async (label: string, value: number): Promise<void> => {
-        const input = within(main).getByLabelText(label) as HTMLInputElement;
-        await user.clear(input);
-        await user.type(input, String(value));
-      };
-      await setNumber('Total learning budget (games)', 6);
-      await setNumber('Block size (games per evaluation block)', 1);
-      await setNumber('Candidate count', 2);
-      await setNumber('Final validation games', 1);
+    const setNumber = async (label: string, value: number): Promise<void> => {
+      const input = within(main).getByLabelText(label) as HTMLInputElement;
+      await user.clear(input);
+      await user.type(input, String(value));
+    };
+    await setNumber('Total learning budget (games)', 6);
+    await setNumber('Block size (games per evaluation block)', 1);
+    await setNumber('Candidate count', 2);
+    await setNumber('Final validation games', 1);
 
-      await user.click(within(main).getByRole('button', { name: 'Check what this schedules' }));
-      const enqueueButton = await within(main).findByRole('button', {
-        name: 'Enqueue this adaptive run',
-      });
-      await user.click(enqueueButton);
+    await user.click(within(main).getByRole('button', { name: 'Check what this schedules' }));
 
-      await within(main).findByText('Job this added to the draft');
+    // `estimateAdaptiveChoice` (apps/admin-server/src/lab/adaptive-choice.ts) fills
+    // `expansion.limitations` and `estimate.limitations` from the one list the
+    // adaptive_counter preset publishes, by design. `AdaptiveEstimateTables`
+    // (BuilderScreen.tsx) must not render that list twice from unioning both halves.
+    const limitationsHeading = await within(main).findByRole('heading', {
+      name: 'What a result from this may not be cited for',
+    });
+    const limitationsList = limitationsHeading.nextElementSibling;
+    expect(limitationsList?.tagName).toBe('UL');
+    expect(within(limitationsList as HTMLElement).getAllByRole('listitem')).toHaveLength(1);
 
-      await user.click(screen.getByRole('button', { name: 'Queue' }));
-      await screen.findByRole('heading', { level: 1, name: 'Queue' });
-      const queueMain = screen.getByRole('main');
+    const enqueueButton = await within(main).findByRole('button', {
+      name: 'Enqueue this adaptive run',
+    });
+    await user.click(enqueueButton);
 
-      await user.click(
-        await within(queueMain).findByRole('button', { name: /Adaptive Counter Search/ }),
-      );
-      await user.click(await within(queueMain).findByRole('button', { name: 'Start this batch' }));
-      await screen.findByRole('heading', { name: 'Start this batch?' });
-      await user.click(screen.getByRole('button', { name: 'Start it' }));
+    await within(main).findByText('Job this added to the draft');
 
-      const completedArticle = await waitFor(
-        () => {
-          const article = within(queueMain).getByRole('article');
-          expect(article).toHaveAttribute('aria-label', expect.stringContaining('Completed'));
-          return article;
-        },
-        { timeout: 20_000, interval: 250 },
-      );
+    await user.click(screen.getByRole('button', { name: 'Queue' }));
+    await screen.findByRole('heading', { level: 1, name: 'Queue' });
+    const queueMain = screen.getByRole('main');
 
-      await user.click(
-        within(completedArticle).getByRole('button', { name: 'View in Adaptive Dashboard' }),
-      );
+    await user.click(
+      await within(queueMain).findByRole('button', { name: /Adaptive Counter Search/ }),
+    );
+    await user.click(await within(queueMain).findByRole('button', { name: 'Start this batch' }));
+    await screen.findByRole('heading', { name: 'Start this batch?' });
+    await user.click(screen.getByRole('button', { name: 'Start it' }));
 
-      await screen.findByRole('heading', { level: 1, name: 'Results' });
-      const resultsMain = screen.getByRole('main');
-      await within(resultsMain).findByRole('heading', { level: 2, name: 'Adaptive Counter run' });
+    const completedArticle = await waitFor(
+      () => {
+        const article = within(queueMain).getByRole('article');
+        expect(article).toHaveAttribute('aria-label', expect.stringContaining('Completed'));
+        return article;
+      },
+      { timeout: 20_000, interval: 250 },
+    );
 
-      const factsTable = (
-        await within(resultsMain).findByText('What this run has produced so far')
-      ).closest('table');
-      expect(factsTable).not.toBeNull();
-      const facts = within(factsTable as HTMLTableElement);
-      expect(facts.getByText('adaptive-counter')).toBeInTheDocument();
-      expect(await facts.findByText(/adaptive-result\.json/)).toBeInTheDocument();
-    },
-    30_000,
-  );
+    await user.click(
+      within(completedArticle).getByRole('button', { name: 'View in Adaptive Dashboard' }),
+    );
+
+    await screen.findByRole('heading', { level: 1, name: 'Results' });
+    const resultsMain = screen.getByRole('main');
+    await within(resultsMain).findByRole('heading', { level: 2, name: 'Adaptive Counter run' });
+
+    const factsTable = (
+      await within(resultsMain).findByText('What this run has produced so far')
+    ).closest('table');
+    expect(factsTable).not.toBeNull();
+    const facts = within(factsTable as HTMLTableElement);
+    expect(facts.getByText('adaptive-counter')).toBeInTheDocument();
+    expect(await facts.findByText(/adaptive-result\.json/)).toBeInTheDocument();
+  }, 30_000);
 });

@@ -73,7 +73,9 @@ describe('parseAdaptiveDocument', () => {
     // `value` is also missing here — if the version check ran second, this
     // would fail with a shape error instead of the readable version message.
     expect(() =>
-      parseAdaptiveDocument('config', schema, { schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION + 1 }),
+      parseAdaptiveDocument('config', schema, {
+        schemaVersion: ADAPTIVE_CONFIG_SCHEMA_VERSION + 1,
+      }),
     ).toThrow(/newer build/);
   });
 

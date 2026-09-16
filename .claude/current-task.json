@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.TrancheB-review",
-  "mode": "tranche-close",
+  "unit": "M08.R8",
+  "mode": "implementation",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "Tranche B review",
+  "heading": "M08.R8 — Durable match identity and dedicated telemetry configuration",
   "blocker": null,
-  "next": "M08.TrancheB-review"
+  "next": "M08.R8"
 }

@@ -2,7 +2,11 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { isErr, unwrap } from '@tcg/shared';
-import { ADAPTIVE_CONFIG_SCHEMA_VERSION, adaptiveConfigHashOf, parseAdaptiveConfig } from '@tcg/simulator';
+import {
+  ADAPTIVE_CONFIG_SCHEMA_VERSION,
+  adaptiveConfigHashOf,
+  parseAdaptiveConfig,
+} from '@tcg/simulator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { prepareAdaptiveJobConfig } from './adaptive-job-config.js';
