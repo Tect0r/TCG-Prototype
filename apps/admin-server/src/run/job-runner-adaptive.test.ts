@@ -310,35 +310,57 @@ describe('a real adaptive run, paused and resumed across worker threads', () => 
 
 describe('a real adaptive run, paused exactly before final result publication', () => {
   it('keeps the learning series’ raw evidence and checkpoint durable, with no result yet, until a resumed attempt publishes it', async () => {
-    // Pausing the instant every learning-series game is committed lands the
-    // stop inside (or immediately before) the frozen-seed validation stage —
-    // strictly after the learning series' own raw evidence and checkpoint
-    // are durable (M08.R5's third fault-injection point), but strictly
-    // before this run's final result is built and written (its fourth).
+    // Pausing once the on-disk checkpoint itself shows the learning series
+    // fully decided (`pendingGeneration` reset to null by the last
+    // generation's promotion, `gamesSpent` at the full learning budget)
+    // lands the stop inside (or immediately before) the frozen-seed
+    // validation stage — strictly after the learning series' own raw
+    // evidence and checkpoint are durable (M08.R5's third fault-injection
+    // point), but strictly before this run's final result is built and
+    // written (its fourth). Total *committed match records* is not a safe
+    // proxy for that: FAST_BUDGET's own screening games share the same
+    // match log, so their count can cross `totalLearningBudget` while a
+    // generation is still being screened — `pendingGeneration` is exactly
+    // the property under test, so wait on it directly instead of
+    // approximating it from an unrelated count.
     const { jobId, config } = await seedAdaptiveJob({
       id: 'adaptive-pause-before-result',
       ...FAST_BUDGET,
     });
     const runner = makeRunner();
     const control = new JobStopControl();
-    const matchesPath = experimentPaths(await runDirectory(config.id)).matches;
+    const directory = await runDirectory(config.id);
+    const matchesPath = experimentPaths(directory).matches;
+    const checkpointPath = join(directory, 'adaptive-checkpoint.json');
 
     const running = runner.run(jobId, { workers: 2, control });
 
     for (let waited = 0; waited < 10_000; waited += 10) {
-      if ((await countCommittedRecords(matchesPath)) >= config.totalLearningBudget) break;
+      try {
+        const checkpoint = JSON.parse(await readFile(checkpointPath, 'utf8')) as {
+          pendingGeneration: unknown;
+          gamesSpent: number;
+        };
+        if (
+          checkpoint.pendingGeneration === null &&
+          checkpoint.gamesSpent >= config.totalLearningBudget
+        ) {
+          break;
+        }
+      } catch {
+        // Not written yet — keep polling.
+      }
       await delay(10);
     }
     unwrap(await catalog.store.applyJobAction({ jobId, action: 'pause' }));
     control.request('pause');
 
     const outcome = unwrap(await running);
-    const directory = await runDirectory(config.id);
 
     if (outcome.status === 'stopped') {
-      const checkpoint = JSON.parse(
-        await readFile(join(directory, 'adaptive-checkpoint.json'), 'utf8'),
-      ) as { pendingGeneration: unknown };
+      const checkpoint = JSON.parse(await readFile(checkpointPath, 'utf8')) as {
+        pendingGeneration: unknown;
+      };
       // The learning series is fully decided (promotion settled) before
       // validation ever starts, so a stop inside validation always finds it
       // this way on disk.
