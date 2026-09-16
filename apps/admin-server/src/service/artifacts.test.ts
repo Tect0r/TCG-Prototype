@@ -1,4 +1,4 @@
-import { mkdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -17,7 +17,25 @@ import {
   testIdentity,
   type TestCatalog,
 } from '../catalog/test-catalog.js';
-import { ArtifactReader } from './artifacts.js';
+import { ArtifactReader, openArtifactFile } from './artifacts.js';
+
+/**
+ * Creates a file symlink, or reports that this machine will not.
+ *
+ * Mirrors `roots.test.ts`'s `linkDirectory`: on Windows an ordinary user
+ * cannot create a symlink without Developer Mode, and unlike a directory
+ * there is no junction fallback for a file. Where this machine refuses, the
+ * test says so rather than passing quietly — CI runs on Linux, where this
+ * always succeeds.
+ */
+async function linkFile(from: string, to: string): Promise<boolean> {
+  try {
+    await symlink(to, from, 'file');
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Serving what a run already wrote, unchanged.
@@ -196,7 +214,6 @@ describe('downloading one document', () => {
     await mkdir(outside, { recursive: true });
     // Replace the run's directory with a symlink pointing outside the result
     // root, the way `results.test.ts` proves the same refusal for `ResultReader`.
-    const { rm } = await import('node:fs/promises');
     await rm(target, { recursive: true, force: true });
     await symlink(outside, target, 'junction').catch(async () => {
       await symlink(outside, target);
@@ -214,6 +231,134 @@ describe('downloading one document', () => {
     expect(isErr(summary) && summary.error[0]?.message).toContain(
       RESULT_ARTIFACTS.summary.filename,
     );
+  });
+});
+
+describe('symlink- and race-safe artifact reads (M08.R12)', () => {
+  it('refuses an artifact file that is a symlink to a file outside the root', async () => {
+    const { jobId, directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    const outside = join(catalog.resultRoot, '..', 'outside-file');
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, 'secret.md'), 'not yours', 'utf8');
+
+    await rm(paths.report, { force: true });
+    const linked = await linkFile(paths.report, join(outside, 'secret.md'));
+    if (!linked) {
+      // Recorded rather than silently skipped — this machine refused to
+      // create a file symlink; CI runs on Linux, where it always succeeds.
+      expect(process.platform).toBe('win32');
+      return;
+    }
+
+    const refused = await reader.read(jobId, 'report');
+    expect(isErr(refused) && refused.error[0]?.code).toBe('admin/unsafe_result_reference');
+    expect(isErr(refused) && refused.error[0]?.message).not.toContain(outside);
+  });
+
+  it('refuses a symlink chain, and a dangling symlink, identically to a direct link', async () => {
+    const { jobId, directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    const outside = join(catalog.resultRoot, '..', 'outside-chain');
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, 'real.md'), 'not yours', 'utf8');
+    const middleLink = join(outside, 'middle-link.md');
+
+    await rm(paths.report, { force: true });
+    const chained =
+      (await linkFile(middleLink, join(outside, 'real.md'))) &&
+      (await linkFile(paths.report, middleLink));
+    if (!chained) {
+      expect(process.platform).toBe('win32');
+      return;
+    }
+
+    const refused = await reader.read(jobId, 'report');
+    expect(isErr(refused) && refused.error[0]?.code).toBe('admin/unsafe_result_reference');
+
+    await rm(paths.report, { force: true });
+    const dangling = await linkFile(paths.report, join(outside, 'never-written.md'));
+    if (!dangling) {
+      expect(process.platform).toBe('win32');
+      return;
+    }
+    const refusedDangling = await reader.read(jobId, 'report');
+    expect(isErr(refusedDangling) && refusedDangling.error[0]?.code).toBe(
+      'admin/unsafe_result_reference',
+    );
+  });
+
+  it('refuses an artifact path that resolves to a directory rather than a file', async () => {
+    const { jobId, directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    await rm(paths.report, { force: true });
+    await mkdir(paths.report, { recursive: true });
+
+    const refused = await reader.read(jobId, 'report');
+    expect(isErr(refused)).toBe(true);
+  });
+
+  it('serves a document exactly at the byte limit, and refuses one byte over', async () => {
+    const { jobId, directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+
+    await writeFile(paths.report, 'x'.repeat(MAX_ARTIFACT_BYTES), 'utf8');
+    const atLimit = unwrap(await reader.read(jobId, 'report'));
+    expect(atLimit.byteLength).toBe(MAX_ARTIFACT_BYTES);
+    expect(atLimit.content).toHaveLength(MAX_ARTIFACT_BYTES);
+
+    await writeFile(paths.report, 'x'.repeat(MAX_ARTIFACT_BYTES + 1), 'utf8');
+    const overLimit = await reader.read(jobId, 'report');
+    expect(isErr(overLimit) && overLimit.error[0]?.code).toBe('admin/artifact_too_large');
+  });
+
+  it('never opens an artifact that was swapped for a symlink between validation and open', async () => {
+    const { directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    const outside = join(catalog.resultRoot, '..', 'outside-swap');
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, 'swapped.md'), 'not yours', 'utf8');
+
+    let swapped = false;
+    const result = await openArtifactFile(paths.report, {
+      afterLstat: async () => {
+        // The exact window M08.R12 closes: the path was a plain file when
+        // `lstat` validated it, and becomes a symlink out of the root before
+        // it is opened.
+        await rm(paths.report, { force: true });
+        swapped = await linkFile(paths.report, join(outside, 'swapped.md'));
+      },
+    });
+
+    if (!swapped) {
+      expect(process.platform).toBe('win32');
+      return;
+    }
+    expect(result).toEqual({ ok: false, reason: 'unsafe' });
+  });
+
+  it('bounds a read to the size validated, unaffected by growth before the read', async () => {
+    const { directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    const original = 'a'.repeat(1000);
+    await writeFile(paths.report, original, 'utf8');
+
+    const result = await openArtifactFile(paths.report, {
+      beforeRead: async () => {
+        // Growth after the descriptor is already validated and sized must
+        // never change what a bounded read of that descriptor returns.
+        await writeFile(paths.report, `${original}${'b'.repeat(1000)}`, 'utf8');
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.byteLength).toBe(original.length);
+    const buffer = Buffer.alloc(result.byteLength);
+    const { bytesRead } = await result.handle.read(buffer, 0, result.byteLength, 0);
+    await result.handle.close();
+    expect(bytesRead).toBe(original.length);
+    expect(buffer.toString('utf8', 0, bytesRead)).toBe(original);
   });
 });
 

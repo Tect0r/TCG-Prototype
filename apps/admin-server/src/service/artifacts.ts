@@ -16,7 +16,8 @@ import {
 } from '@tcg/admin-contracts';
 import { err, isErr, ok, type Result } from '@tcg/shared';
 import { experimentPaths } from '@tcg/simulator';
-import { readFile, stat } from 'node:fs/promises';
+import { constants as fsConstants, type Stats } from 'node:fs';
+import { lstat, open as openFile, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { resolveResultLocation, type ResolvedCatalogRoots } from '../catalog/roots.js';
@@ -156,17 +157,38 @@ export class ArtifactReader {
     if (isErr(open)) return open;
 
     const path = artifactPath(open.value.directory, artifact);
-    const size = await sizeOf(path);
-    if (size === null) {
+    const opened = await openArtifactFile(path);
+    if (!opened.ok) {
+      if (opened.reason === 'absent') {
+        return err([
+          adminError(
+            'admin/no_result',
+            `This run wrote no ${RESULT_ARTIFACTS[artifact].filename}. That is a fact about the run rather than a failure to read it: not every experiment produces every document.`,
+            { context: { jobId, artifact } },
+          ),
+        ]);
+      }
+      if (opened.reason === 'unsafe') {
+        return err([
+          adminError(
+            'admin/unsafe_result_reference',
+            `This run’s ${RESULT_ARTIFACTS[artifact].filename} does not resolve to a plain file inside the configured result root, so it was refused rather than followed.`,
+            { context: { jobId, artifact } },
+          ),
+        ]);
+      }
       return err([
         adminError(
           'admin/no_result',
-          `This run wrote no ${RESULT_ARTIFACTS[artifact].filename}. That is a fact about the run rather than a failure to read it: not every experiment produces every document.`,
+          `This run’s ${RESULT_ARTIFACTS[artifact].filename} could not be read. Its raw records are still where the run left them.`,
           { context: { jobId, artifact } },
         ),
       ]);
     }
+
+    const size = opened.byteLength;
     if (size > MAX_ARTIFACT_BYTES) {
+      await opened.handle.close();
       return err([
         adminError(
           'admin/artifact_too_large',
@@ -178,7 +200,9 @@ export class ArtifactReader {
 
     let content: string;
     try {
-      content = await readFile(path, 'utf8');
+      const buffer = Buffer.alloc(size);
+      const { bytesRead } = await opened.handle.read(buffer, 0, size, 0);
+      content = buffer.toString('utf8', 0, bytesRead);
     } catch {
       return err([
         adminError(
@@ -187,6 +211,8 @@ export class ArtifactReader {
           { context: { jobId, artifact } },
         ),
       ]);
+    } finally {
+      await opened.handle.close();
     }
 
     const definition = RESULT_ARTIFACTS[artifact];
@@ -203,7 +229,10 @@ export class ArtifactReader {
       mediaType: ARTIFACT_MEDIA_TYPES[definition.format],
       // The size on disk rather than `content.length`: one is bytes and the
       // other is UTF-16 code units, and a report with an em dash in it would
-      // otherwise report a length nothing on disk has.
+      // otherwise report a length nothing on disk has. It is also the exact
+      // byte count validated and read from the open descriptor above, never a
+      // live re-`stat` — a file that grows after that validation cannot move
+      // this number or the bytes actually sent.
       byteLength: size,
       content,
       identity: open.value.identity,
@@ -257,14 +286,121 @@ export class ArtifactReader {
   }
 }
 
-/** The size of a file, or `null` when there is not one there. */
+/** The size of a file, or `null` when there is not one servable there. */
 async function sizeOf(path: string): Promise<number | null> {
+  const opened = await openArtifactFile(path);
+  if (!opened.ok) return null;
+  await opened.handle.close();
+  return opened.byteLength;
+}
+
+type OpenArtifactRefusalReason =
+  /** Nothing exists at the path. */
+  | 'absent'
+  /** A symlink (chain or dangling), a directory, or an object that stopped
+   * matching the one just validated — refused rather than followed. */
+  | 'unsafe'
+  /** Exists, is a plain file, but could not be opened or read. */
+  | 'unreadable';
+
+interface OpenArtifactSuccess {
+  readonly ok: true;
+  readonly handle: FileHandle;
+  /** The byte length `fstat` reported on the open descriptor, never re-read. */
+  readonly byteLength: number;
+}
+
+interface OpenArtifactRefusal {
+  readonly ok: false;
+  readonly reason: OpenArtifactRefusalReason;
+}
+
+type OpenArtifactResult = OpenArtifactSuccess | OpenArtifactRefusal;
+
+/** Test-only interleaving points; always absent in production. */
+interface OpenArtifactHooks {
+  /** Runs after `lstat` confirms a plain file, before the file is opened —
+   * the window M08.R12 closes: a test hook can swap the path for a symlink
+   * here to prove the identity check below catches it. */
+  readonly afterLstat?: () => Promise<void>;
+  /** Runs after the opened descriptor is validated, before it is read — lets
+   * a test grow the file on disk and prove the read stays bounded to the
+   * size already `fstat`-ed rather than re-checking a live size. */
+  readonly beforeRead?: () => Promise<void>;
+}
+
+/**
+ * Opens and validates the exact filesystem object a caller reads, never a
+ * path a second time (M08.R12).
+ *
+ * `stat`-then-`readFile` on a path follows a file symlink and leaves a
+ * window between validating a file and reading it in which the object at
+ * that path can change. This validates the object with `lstat` (which never
+ * follows a link, so a symlink — chained or dangling — is caught by its
+ * immediate hop without ever trying to resolve it), opens it with the
+ * platform's no-follow flag where one exists, then re-validates the open
+ * descriptor with `fstat` against the same identity `lstat` reported before
+ * treating it as the same object. Every subsequent read is bounded to the
+ * size that `fstat` reported and comes from that one descriptor, so nothing
+ * that happens to the path afterward — a swap, a symlink, a truncation, a
+ * later append — can change what is returned.
+ *
+ * Where the platform gives no way to confirm the opened object still is the
+ * one validated (`dev`/`ino` both zero, which the identity check below
+ * cannot then tell apart from a coincidental match), this refuses rather
+ * than trusting the comparison silently — the "refuse the unsafe operation"
+ * half of the milestone's rule, distinct from the "use no-follow where
+ * available" half `O_NOFOLLOW`'s platform gap above already covers.
+ */
+export async function openArtifactFile(
+  path: string,
+  hooks: OpenArtifactHooks = {},
+): Promise<OpenArtifactResult> {
+  let validated: Stats;
   try {
-    const info = await stat(path);
-    return info.isFile() ? info.size : null;
+    validated = await lstat(path);
   } catch {
-    return null;
+    return { ok: false, reason: 'absent' };
   }
+
+  if (!validated.isFile()) {
+    // `isSymbolicLink()` covers a chain and a dangling target identically:
+    // `lstat` reports the immediate entry only, so what it points to (or
+    // whether it resolves at all) is never consulted.
+    return { ok: false, reason: validated.isSymbolicLink() ? 'unsafe' : 'unreadable' };
+  }
+
+  if (hooks.afterLstat) await hooks.afterLstat();
+
+  const noFollowSupported = typeof fsConstants.O_NOFOLLOW === 'number';
+  const flags = noFollowSupported
+    ? fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW
+    : fsConstants.O_RDONLY;
+
+  let handle: FileHandle;
+  try {
+    handle = await openFile(path, flags);
+  } catch (error) {
+    // `ELOOP` is the no-follow refusal for a symlink that appeared after the
+    // `lstat` above (POSIX only; Windows has no equivalent open-time flag,
+    // which is exactly why the `fstat` identity check below exists too).
+    const code = (error as NodeJS.ErrnoException).code;
+    return { ok: false, reason: code === 'ELOOP' ? 'unsafe' : 'unreadable' };
+  }
+
+  const opened = await handle.stat();
+  const hasStableIdentity = !(opened.dev === 0 && opened.ino === 0);
+  const sameObject =
+    hasStableIdentity && opened.dev === validated.dev && opened.ino === validated.ino;
+
+  if (!opened.isFile() || !sameObject) {
+    await handle.close();
+    return { ok: false, reason: 'unsafe' };
+  }
+
+  if (hooks.beforeRead) await hooks.beforeRead();
+
+  return { ok: true, handle, byteLength: opened.size };
 }
 
 /** The refusal for an answer this service built and could not validate. */

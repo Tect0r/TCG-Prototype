@@ -123,6 +123,13 @@ describe('resolving a stored location', () => {
       'C:/windows',
       'back\\slash',
       '..',
+      // Encoded traversal identifiers (M08.R12): `join`/`resolve` never
+      // percent-decode, so these cannot walk out of the root either way —
+      // but `pathSegment`'s allowlist refuses the `%` before that even
+      // matters, which is what this proves.
+      '%2e%2e/escape',
+      '..%2fescape',
+      'run/%2e%2e',
     ]) {
       const refused = await resolveResultLocation(catalog.roots, { rootId: 'local', directory });
       expect(`${directory}: ${String(isErr(refused))}`).toBe(`${directory}: true`);
