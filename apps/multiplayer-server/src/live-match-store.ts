@@ -47,14 +47,12 @@ import type { LiveMatchRecord, LiveMatchSink } from './live-match-sink.js';
  * This store is canonical only for a `matchId` it can trust as a durable
  * identity — it has no way to tell "the same match, retried" from "a
  * different match that reused the name" apart, and treats both the same way
- * on purpose (see "Idempotent duplicate/retry" above). No caller wires this
- * store from a live `matchId` today (only tests construct one), so nothing
- * currently depends on that trust being justified. The open question for
- * whichever future slice does wire it up: `MatchServer` currently derives
- * `matchId` from a lobby invite code, and invite codes are recycled once
- * their lobby closes, so a live `matchId` is not guaranteed unique across the
- * retention window as-is. That slice must either mint a retention-scoped
- * unique id or otherwise close this gap before depending on this store.
+ * on purpose (see "Idempotent duplicate/retry" above). This is now satisfied:
+ * `MatchServer.startMatch` mints `matchId` from `generateId('match', ...)`
+ * (M08.R8), independent of the lobby's recyclable invite code, so two matches
+ * that happen to share an invite code after the first lobby closes still get
+ * distinct, durable ids. No caller wires this store into a running
+ * `MatchServer` yet (only tests construct one) — that wiring is M08.R9.
  */
 
 const MATCH_ID_PATH_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;

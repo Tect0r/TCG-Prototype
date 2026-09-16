@@ -43,7 +43,7 @@ import {
   type MatchDeck,
   type RulesConfig,
 } from '@tcg/rules-engine';
-import { errorsOf, isErr } from '@tcg/shared';
+import { errorsOf, generateId, isErr } from '@tcg/shared';
 import {
   botIdFor,
   carriedRerollCount,
@@ -950,8 +950,13 @@ export class MatchServer {
     // derived from it, so the same seed and the same seating reproduce the same
     // bot play (ADR 0010, ADR 0024 §4).
     const seed = this.#seedFor(lobby.inviteCode);
+    // Durable identity independent of the invite code (M08.R8): invite codes
+    // are recycled once their lobby closes (`closeIfAbandoned`), so a matchId
+    // derived from one is not unique across the retention window and would
+    // collide a later match's telemetry record with an earlier one's.
+    const matchId = generateId('match', { now: this.#now, random: this.#random });
     const created = createMatch({
-      matchId: `match_${lobby.inviteCode}`,
+      matchId,
       seed,
       database: this.#database,
       config: this.#config,
@@ -1391,9 +1396,15 @@ export class MatchServer {
   private publishPacingSummary(lobby: Lobby): void {
     const report = this.#botRunners.get(lobby.inviteCode)?.report();
     if (!report || report.seats.length === 0) return;
+    // A pacing summary is only ever meaningful for a match that actually ran
+    // (this is only called once `lobby.state?.status === 'complete'` has been
+    // confirmed by the caller); guarding here rather than falling back to an
+    // invite-code-derived id keeps this function from ever minting a second,
+    // different matchId for the same match (M08.R8).
+    if (!lobby.state) return;
 
     const summary = buildBotMatchSummary({
-      matchId: lobby.state?.matchId ?? `match_${lobby.inviteCode}`,
+      matchId: lobby.state.matchId,
       // The frozen budgets, so the percentages in the record are percentages of
       // the numbers the match actually ran under rather than of whatever the
       // lobby holds now.

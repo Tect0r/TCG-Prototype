@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R8",
+  "unit": "M08.R9",
   "mode": "implementation",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "M08.R8 — Durable match identity and dedicated telemetry configuration",
+  "heading": "M08.R9 — Wire the production multiplayer server to telemetry",
   "blocker": null,
-  "next": "M08.R8"
+  "next": "M08.R9"
 }

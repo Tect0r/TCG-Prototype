@@ -5692,3 +5692,74 @@ Status/Active-correction-queue tables and blocking-decision section.
 
 Next slice: `M08.R8` (Correction Tranche C — durable match identity and
 dedicated telemetry configuration).
+
+## M08.R8 — Durable match identity and dedicated telemetry configuration (2026-09-16): complete
+
+Two independent halves, per `M08.5_FINAL_CORRECTION_PASS.md`'s M08.R8.
+
+**Durable match identity.** `MatchServer.startMatch` (`match-server.ts`)
+minted `matchId` as `` `match_${lobby.inviteCode}` `` — an invite code is
+recycled once its lobby closes (`closeIfAbandoned`), so a later match could
+reuse an earlier one's `matchId` and collide in any store keyed by it
+(the exact gap `live-match-store.ts`'s own doc comment already named as
+unresolved). Replaced it with `generateId('match', { now: this.#now, random:
+this.#random })` — the project's existing deterministic id abstraction
+(`packages/shared/src/id.ts`), using the server's own injected clock/random
+seams so it stays deterministic in tests. A second, unreachable-but-misleading
+fallback in `publishPacingSummary` (`` lobby.state?.matchId ?? `match_${lobby.inviteCode}` ``)
+was replaced with an explicit `if (!lobby.state) return;` guard plus a direct
+`lobby.state.matchId` read, since that function is only ever called once a
+match is confirmed complete. `live-match-store.ts`'s doc comment updated to
+record the precondition as satisfied rather than open. New regression test in
+`match-server.test.ts` (`durable match identity (M08.R8)`) drives one
+`MatchServer` through two sequential matches with a constant `random` (forcing
+the second lobby to allocate the identical, now-freed invite code) and a
+strictly increasing `now`, asserting the two matches' invite codes are equal
+while their `matchId`s differ and neither contains the invite code.
+`bot-acceptance.test.ts`'s prior assertion — which had encoded the bug
+verbatim, with a comment flagging it as a known disagreement for the owner
+(M09.19) — now asserts the opposite: `summary.matchId` never equals or
+contains the invite code.
+
+**Dedicated telemetry configuration.** New standalone module
+`live-match-telemetry-config.ts` (not wired into `main.ts` — that composition
+is M08.R9's explicit scope): `parseLiveMatchTelemetryConfig` (pure,
+`Result<LiveMatchTelemetryConfig, Issue[]>`) validates `enabled`,
+`rootDirectory` (operator-only; required and must be absolute when enabled, no
+default), `retention` (reuses `@tcg/match-telemetry`'s own
+`liveMatchRetentionConfigSchema` rather than redefining it), `maxAgeDays`
+(1–3650 or `null`) and `privacyMode` (`'standard' | 'strict'`).
+`effectiveLiveMatchRetention` forces every retention tier off under
+`'strict'` regardless of configured `retention`, so the two dials cannot
+silently disagree about which wins. `liveMatchTelemetryConfigFromEnvironment`
+reads `TCG_LIVE_MATCH_TELEMETRY_*` variables (named in the frozen
+`LIVE_MATCH_TELEMETRY_ENVIRONMENT_KEYS`), refusing an unparsable boolean or
+integer rather than silently defaulting it, then delegates every structural
+and cross-field rule to the pure parser — the same two-layer shape
+`apps/admin-server/src/service/config.ts`'s
+`serviceConfigFromEnvironment`/`parseServiceConfig` already use.
+`maxAgeDays` is validated configuration only, deliberately not wired to any
+deletion/purge logic, per M08.28B's standing "omission is preferable to an
+unsafe delete button" ruling — a future purge slice would need its own
+separate confirmation and path-bounded test. Write-failure containment (never
+crash or corrupt the authoritative match) needed no new code: `ingestLiveMatch`/
+`publishLiveMatchRecord` (M08.22A/C) already wrap every sink call in
+`try`/`catch`.
+
+Evidence: `live-match-telemetry-config.test.ts` (new, 18/18 — defaults,
+enabled-without-root refusal, non-absolute-root refusal, `maxAgeDays` bounds,
+invalid `privacyMode`, invalid retention shape, strict-mode override,
+environment parsing including unparsable-boolean/integer refusal and the
+enabled/root cross-field refusal delegated through the environment loader);
+`match-server.test.ts` 37/37; `bot-acceptance.test.ts` 32/32;
+`live-match-store.test.ts` 8/8 (all four files run together: 95/95).
+`@tcg/multiplayer-server` `typecheck` clean. `eslint` clean on every changed
+and new file. Tranche gates (`check:consistency`, `audit:check`, `verify`)
+and `tcg-reviewer` are deferred to Tranche C's own close, not this slice.
+
+Next slice: `M08.R9` — Wire the production multiplayer server to telemetry
+(`apps/multiplayer-server/src/main.ts`: instantiate `LiveMatchFileStore` from
+`liveMatchTelemetryConfigFromEnvironment`, pass it as `MatchServerOptions.
+liveMatchSink`/`liveMatchRetention` via `effectiveLiveMatchRetention`, and
+prove Player Meta reads only the dedicated live root, excluding simulator/
+adaptive directories).

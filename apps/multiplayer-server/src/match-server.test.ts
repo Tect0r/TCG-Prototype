@@ -699,6 +699,80 @@ describe('match termination', () => {
   });
 });
 
+describe('durable match identity (M08.R8)', () => {
+  it('never derives matchId from the invite code, even when a code is recycled', () => {
+    const schedule: ScheduleTimer = () => () => {};
+    let nowMs = 1_000_000;
+    const server = new MatchServer({
+      database,
+      deckFormat: DEVELOPMENT_DECK_FORMAT,
+      // Constant, so `generateInviteCode` mints the identical code for both
+      // matches below once the first lobby's code is freed (invite-code
+      // allocation only avoids codes of *currently open* lobbies).
+      random: () => 0.25,
+      schedule,
+      seedFor: () => 'fixed-server-seed',
+      // Strictly increasing, so `generateId`'s time component still differs
+      // between the two matches despite the constant `random`.
+      now: () => {
+        nowMs += 1;
+        return nowMs;
+      },
+    });
+
+    const send = (connection: FakeConnection, message: ClientMessageInput): void => {
+      server.receive(connection, encode(message as never));
+    };
+
+    function playOneMatchAndFreeItsInviteCode(): { inviteCode: string; matchId: string } {
+      const host = new FakeConnection('conn_host');
+      server.connect(host);
+      send(host, { type: 'create_lobby', versions: CURRENT_VERSIONS, displayName: 'Host' });
+      const hostJoined = host.last('lobby_joined');
+      if (!hostJoined) throw new Error('Host did not join');
+
+      const guest = new FakeConnection('conn_guest');
+      server.connect(guest);
+      send(guest, {
+        type: 'join_lobby',
+        versions: CURRENT_VERSIONS,
+        inviteCode: hostJoined.lobby.inviteCode,
+        displayName: 'Guest',
+      });
+      if (!guest.last('lobby_joined')) throw new Error('Guest did not join');
+
+      send(host, {
+        type: 'submit_deck',
+        deck: legalDeckFor('prototype_commander_blue_red', 'Host Deck'),
+      });
+      send(guest, {
+        type: 'submit_deck',
+        deck: legalDeckFor('prototype_commander_blue_red', 'Guest Deck'),
+      });
+      send(host, { type: 'set_ready', ready: true });
+      send(guest, { type: 'set_ready', ready: true });
+
+      const matchId = host.view().matchId;
+
+      // End the match and disconnect both seats so `closeIfAbandoned` frees
+      // this invite code for the next lobby to reuse.
+      send(guest, { type: 'leave' });
+      server.disconnect(host);
+
+      return { inviteCode: hostJoined.lobby.inviteCode, matchId };
+    }
+
+    const first = playOneMatchAndFreeItsInviteCode();
+    const second = playOneMatchAndFreeItsInviteCode();
+
+    expect(second.inviteCode).toBe(first.inviteCode);
+    expect(second.matchId).not.toBe(first.matchId);
+    expect(first.matchId).not.toContain(first.inviteCode);
+    expect(second.matchId).not.toContain(second.inviteCode);
+    expect(first.matchId).toMatch(/^match_[a-hjkmnp-tv-z0-9]{18}$/);
+  });
+});
+
 /* ------------------------------------------------ Phase 3: free-for-all seats */
 
 /**

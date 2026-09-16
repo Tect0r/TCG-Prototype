@@ -916,14 +916,13 @@ describe('hidden information does not cross any boundary', () => {
     expect(exported).not.toContain('Host');
     for (const human of table.humans) expect(exported).not.toContain(human.reconnectToken);
 
-    // It does carry the invite code, inside `matchId` — recorded rather than
-    // changed. `botMatchSummarySchema.matchId` says \"No invite code\" and the
-    // server builds it as `match_<inviteCode>`, so the two disagree. It is not a
-    // live secret at the moment the summary is published — a finished lobby
-    // refuses `join_lobby` with `protocol/already_started` — and moving it would
-    // move a field every reader of a summary already keys on, so M09.19 records
-    // it for the owner instead (see the milestone's findings).
-    expect(summary?.matchId).toBe(`match_${table.inviteCode}`);
+    // `matchId` is a durable id minted independently of the invite code
+    // (M08.R8), so a summary never carries the invite code as an analytics
+    // identifier — including after the lobby that hosted the match closes and
+    // a later lobby recycles the same code.
+    expect(summary?.matchId).not.toBe(`match_${table.inviteCode}`);
+    expect(summary?.matchId).not.toContain(table.inviteCode);
+    expect(summary?.matchId).toMatch(/^match_[a-hjkmnp-tv-z0-9]{18}$/);
   });
 
   it('never names a hidden card in the log a seat is sent', async () => {
