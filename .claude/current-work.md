@@ -5763,3 +5763,85 @@ Next slice: `M08.R9` — Wire the production multiplayer server to telemetry
 liveMatchSink`/`liveMatchRetention` via `effectiveLiveMatchRetention`, and
 prove Player Meta reads only the dedicated live root, excluding simulator/
 adaptive directories).
+
+## M08.R9 — Wire the production multiplayer server to telemetry (2026-09-16): complete
+
+Production wiring (`compose.ts`'s `composeMatchServer`, wired into `main.ts`;
+`apps/admin-server/src/service/config.ts`'s `liveMatchRootId` field and
+`apps/admin-server/src/service/handlers.ts`'s reader construction) was already
+implemented from a prior slice's work. This slice's job was closing the actual
+gap: M08.R9's required tests did not exist yet, and a stray prior-slice edit
+had regressed `apps/admin-server/package.json`.
+
+**Regression fix.** `apps/admin-server/package.json` had picked up a
+`devDependencies: {"@tcg/multiplayer-server": "*"}` block that violated
+`apps/admin-server/src/boundary.test.ts`'s unconditional
+`expect(MANIFEST.devDependencies).toBeUndefined()` (ADR 0023's admin/simulator
+manifest-closure rule allows no test-only exception). Removed the block; ran
+`npm install --package-lock-only` to resync `package-lock.json`, which also
+picked up one unrelated, already-committed `@tcg/admin-server` entry under
+`apps/admin-client`'s `devDependencies` that predated this session.
+
+**Test placement.** ADR 0023's process boundary is enforced executably by two
+separate `boundary.test.ts` files (one per workspace), and
+`apps/multiplayer-server/src/boundary.test.ts` forbids `@tcg/simulator`,
+`@tcg/admin-server` and `@tcg/admin-contracts` from every multiplayer-server
+source file, test files included. No single file in either workspace's `src/`
+tree can therefore import both a real `MatchServer` and a real `AdminService`.
+Followed the precedent `apps/admin-server/src/e2e-recovery-matrix.test.ts`
+already set: two files, bridged only by a real `LiveMatchEnvelope` file on
+disk — the same filesystem-only coupling production itself uses — never by an
+import.
+
+`apps/multiplayer-server/src/live-match-telemetry.test.ts` (new, 3/3): starts
+the real `composeMatchServer`/`startWebSocketServer` composition over a
+temporary telemetry root; plays a legal two-seat match through the actual
+websocket/protocol boundary (`create_lobby`/`join_lobby`/`submit_precon`/
+`set_ready`, then a `leave` to force a real terminal result) and asserts
+exactly one durable envelope, schema-valid via `@tcg/match-telemetry`'s
+`liveMatchEnvelopeSchema`, keyed by the `matchId` carried in `PlayerView`
+(confirmed present on the wire via `view.ts`'s `matchId: z.string()`, contrary
+to an earlier session's mistaken assumption that it wasn't client-visible);
+reuses the freed invite code for a second match against a raw `MatchServer` +
+`LiveMatchFileStore` and asserts two distinct `matchId`s with no stale
+artifacts left in the root; and injects a `LiveMatchSink` that always throws,
+proving the real match result/winner is unaffected while the failure is
+recorded in `MatchServer.liveMatchSinkFailures`.
+
+`apps/admin-server/src/live-match-telemetry-integration.test.ts` (new, 2/2):
+seeds one synthetic-but-schema-identical `LiveMatchEnvelope` fixture (built
+with `freezeLiveMatchDeckSnapshot`, matching the multiplayer-server test's own
+`reason: 'concede'`/`winnerId` shape) directly into a dedicated `liveMatchRoot`
+via `parseServiceConfig({..., liveMatchRootId: 'live_match'})`; builds a real
+`AdminService` over it and asserts the match surfaces through
+`playerMetaRunSummary` (`recordsRead: 1`, `recordsSkipped: 0`),
+`deckExplorerView` and `cardExplorerView`; "restarts" by building a second,
+fully independent `AdminService`/`JobQueue`/`FileCatalogStore` over the exact
+same directories and re-asserts all three reads; and, in a second test, places
+directories shaped like real simulator-job and adaptive-run output inside the
+*separate* `resultRoot` (never inside `liveMatchRoot`, since
+`readLiveMatchEnvelopes` requires every subdirectory there to hold an
+`envelope.json` and would otherwise correctly flag a foreign one as a corrupt
+record rather than silently ignore it), then asserts `playerMetaRunSummary`
+and `playerMetaDataHealthView`'s `recoveredRecords.count` are unaffected.
+
+Explicitly not covered, per this unit's own standing instruction: 3–4 player
+telemetry and the date/private-test-label filters remain open product
+decisions, not silently claimed. Neither blocks two-player ingestion, which is
+now fully connected end to end.
+
+Evidence: `live-match-telemetry.test.ts` 3/3, `apps/multiplayer-server`
+`boundary.test.ts` 3/3 (unchanged), `@tcg/multiplayer-server` typecheck clean;
+`live-match-telemetry-integration.test.ts` 2/2, `apps/admin-server`
+`boundary.test.ts` 28/28 (regression fixed, confirmed no further regression),
+`@tcg/admin-server` typecheck clean. Tranche gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to Tranche C's own
+close, not this slice.
+
+Next slice: `M08.R10` — Bounded Player Meta snapshot/read performance (revisit
+repeated synchronous directory scans in Player Meta/explorer endpoints;
+introduce a bounded snapshot/cache/index with deterministic pagination, and a
+large synthetic fixture proving one bounded enumeration pass rather than N+1
+whole-root scans, stable pagination, enforced record/byte limits, bounded
+corrupt-record health details, and no unbounded row array sent to the
+browser).

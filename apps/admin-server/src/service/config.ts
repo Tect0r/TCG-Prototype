@@ -132,6 +132,15 @@ export interface AdminServiceConfigInput {
   readonly resultRoots: Readonly<Record<string, string>>;
   /** Which of them new runs are created under. Defaults to the only one, when there is one. */
   readonly defaultResultRootId?: string;
+  /**
+   * Which configured result root Player Meta, Card Explorer, Deck Explorer,
+   * Match Explorer and Match Representatives read live-match envelopes from
+   * (M08.R9). Required, with no default: it must name a root in `resultRoots`
+   * that is a different directory from `defaultResultRootId`'s, so those five
+   * readers can never discover a simulator job or adaptive run directory —
+   * `ExperimentRunner` writes those directly under the default root.
+   */
+  readonly liveMatchRootId: string;
   readonly token?: string | null;
   readonly limits?: Partial<ResourceLimits>;
   readonly requestLimits?: RequestLimitsInput;
@@ -145,6 +154,8 @@ export interface AdminServiceConfig {
   readonly token: string | null;
   readonly roots: ResolvedCatalogRoots;
   readonly resultRootId: string;
+  /** Dedicated live-match telemetry root — never the same directory as `resultRootId`. See M08.R9. */
+  readonly liveMatchRootId: string;
   readonly limits: ResourceLimits;
   readonly requestLimits: RequestLimits;
 }
@@ -244,6 +255,28 @@ export function parseServiceConfig(
     );
   }
 
+  const liveMatchRootId = input.liveMatchRootId;
+  if (roots.ok && !roots.value.resultRoots.has(liveMatchRootId)) {
+    problems.push(
+      adminError(
+        'admin/unsafe_result_reference',
+        `No result root named \`${liveMatchRootId}\` is configured, so live-match telemetry would have nowhere to be read from.`,
+        { path: 'liveMatchRootId' },
+      ),
+    );
+  } else if (
+    roots.ok &&
+    roots.value.resultRoots.get(liveMatchRootId) === roots.value.resultRoots.get(resultRootId)
+  ) {
+    problems.push(
+      adminError(
+        'admin/unsafe_result_reference',
+        `Live-match telemetry root \`${liveMatchRootId}\` must be a different directory from \`${resultRootId}\` (the experiment/adaptive root). Player Meta, Card Explorer, Deck Explorer, Match Explorer and Match Representatives must never scan simulator job or adaptive run directories.`,
+        { path: 'liveMatchRootId' },
+      ),
+    );
+  }
+
   const limits = resourceLimitsSchema.safeParse({ ...DEFAULT_RESOURCE_LIMITS, ...input.limits });
   if (!limits.success) {
     for (const issue of limits.error.issues) {
@@ -277,6 +310,7 @@ export function parseServiceConfig(
     token,
     roots: roots.value,
     resultRootId,
+    liveMatchRootId,
     limits: limits.data,
     requestLimits: requestLimits.data,
   });
@@ -306,14 +340,16 @@ function unexpectedRefusal(): AdminError {
  * there is no environment syntax for is *several*, and inventing one — a
  * delimiter, an escaping rule, a precedence order — before anything needs it
  * would be the premature scaffolding the milestone warns against. A second root
- * arrives with the tranche that has a use for it, through `parseServiceConfig`,
- * which already takes as many as it is given.
+ * arrived with the tranche that had a use for it (M08.R9's dedicated
+ * live-match telemetry root, below), through `parseServiceConfig`, which
+ * already took as many as it was given.
  */
 export const ADMIN_ENVIRONMENT_KEYS = Object.freeze({
   host: 'TCG_ADMIN_HOST',
   port: 'TCG_ADMIN_PORT',
   catalogRoot: 'TCG_ADMIN_CATALOG_ROOT',
   resultRoot: 'TCG_ADMIN_RESULT_ROOT',
+  liveMatchRoot: 'TCG_ADMIN_LIVE_MATCH_ROOT',
   token: 'TCG_ADMIN_TOKEN',
   maxConcurrentJobs: 'TCG_ADMIN_MAX_CONCURRENT_JOBS',
   maxWorkers: 'TCG_ADMIN_MAX_WORKERS',
@@ -322,6 +358,15 @@ export const ADMIN_ENVIRONMENT_KEYS = Object.freeze({
 
 /** The identifier the single environment-configured result root is known by. */
 export const ENVIRONMENT_RESULT_ROOT_ID = 'default';
+
+/**
+ * The identifier the environment-configured live-match telemetry root is
+ * known by (M08.R9) — a directory distinct from `ENVIRONMENT_RESULT_ROOT_ID`,
+ * so Player Meta, Card Explorer, Deck Explorer, Match Explorer and Match
+ * Representatives never scan the experiment/adaptive root `ExperimentRunner`
+ * writes job directories under.
+ */
+export const ENVIRONMENT_LIVE_MATCH_ROOT_ID = 'live_match';
 
 function numberFrom(
   environment: Readonly<Record<string, string | undefined>>,
@@ -345,6 +390,7 @@ export function serviceConfigFromEnvironment(
 
   const catalogRoot = environment[ADMIN_ENVIRONMENT_KEYS.catalogRoot];
   const resultRoot = environment[ADMIN_ENVIRONMENT_KEYS.resultRoot];
+  const liveMatchRoot = environment[ADMIN_ENVIRONMENT_KEYS.liveMatchRoot];
 
   if (catalogRoot === undefined || catalogRoot.trim() === '') {
     problems.push(
@@ -361,6 +407,15 @@ export function serviceConfigFromEnvironment(
         'admin/schema',
         `\`${ADMIN_ENVIRONMENT_KEYS.resultRoot}\` must name the absolute directory experiment directories are written under.`,
         { path: ADMIN_ENVIRONMENT_KEYS.resultRoot },
+      ),
+    );
+  }
+  if (liveMatchRoot === undefined || liveMatchRoot.trim() === '') {
+    problems.push(
+      adminError(
+        'admin/schema',
+        `\`${ADMIN_ENVIRONMENT_KEYS.liveMatchRoot}\` must name the absolute directory live-match telemetry is read from. There is no default and it must not reuse \`${ADMIN_ENVIRONMENT_KEYS.resultRoot}\`: Player Meta, Card Explorer, Deck Explorer, Match Explorer and Match Representatives must never scan simulator job or adaptive run directories.`,
+        { path: ADMIN_ENVIRONMENT_KEYS.liveMatchRoot },
       ),
     );
   }
@@ -391,8 +446,12 @@ export function serviceConfigFromEnvironment(
     ...(host === undefined ? {} : { host }),
     ...(port === undefined ? {} : { port }),
     catalogRoot: catalogRoot as string,
-    resultRoots: { [ENVIRONMENT_RESULT_ROOT_ID]: resultRoot as string },
+    resultRoots: {
+      [ENVIRONMENT_RESULT_ROOT_ID]: resultRoot as string,
+      [ENVIRONMENT_LIVE_MATCH_ROOT_ID]: liveMatchRoot as string,
+    },
     defaultResultRootId: ENVIRONMENT_RESULT_ROOT_ID,
+    liveMatchRootId: ENVIRONMENT_LIVE_MATCH_ROOT_ID,
     // An empty string is *not* a configured token. Treating it as one would give
     // a non-loopback bind a token nobody can guess and nobody can send.
     token: token === undefined || token.trim() === '' ? null : token,

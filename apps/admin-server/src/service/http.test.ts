@@ -147,6 +147,7 @@ async function startHarness(
   const base = options.base ?? (await mkdtemp(join(tmpdir(), 'tcg-admin-http-')));
   const catalogRoot = join(base, 'catalog');
   const resultRoot = join(base, 'results');
+  const liveMatchRoot = join(base, 'live-match');
   await mkdir(resultRoot, { recursive: true });
 
   const config = unwrap(
@@ -154,7 +155,8 @@ async function startHarness(
       host: '127.0.0.1',
       port: 0,
       catalogRoot,
-      resultRoots: { local: resultRoot },
+      resultRoots: { local: resultRoot, live_match: liveMatchRoot },
+      liveMatchRootId: 'live_match',
       ...(options.token === undefined ? {} : { token: options.token }),
       ...(options.requestLimits === undefined ? {} : { requestLimits: options.requestLimits }),
       limits: { maxConcurrentJobs: 1, maxWorkers: 1, maxWorkersPerJob: 1 },
@@ -617,7 +619,7 @@ describe('what the service says it can do', () => {
     });
     expect(payload.limits.pageSizeMax).toBe(PAGE_SIZE_MAX);
     expect(payload.versions.contract).toBe(ADMIN_CONTRACT_VERSION);
-    expect(payload.resultRootIds).toEqual(['local']);
+    expect(payload.resultRootIds.slice().sort()).toEqual(['live_match', 'local'].sort());
   });
 
   it('names the result roots by identifier and never by path', async () => {

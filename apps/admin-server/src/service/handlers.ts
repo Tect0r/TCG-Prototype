@@ -111,26 +111,30 @@ export class AdminService {
       roots: options.config.roots,
       resultRootId: options.config.resultRootId,
     });
+    // These five read live-match envelopes, never adaptive/experiment job
+    // output, so they read the dedicated live-match root (M08.R9) rather than
+    // `resultRootId` — the root `AdaptiveResultReader` above reads its runs
+    // under, and the one `ExperimentRunner` writes job directories into.
     this.#playerMeta = new PlayerMetaResultReader({
       roots: options.config.roots,
-      resultRootId: options.config.resultRootId,
+      resultRootId: options.config.liveMatchRootId,
     });
     this.#deckExplorer = new DeckExplorerReader({
       roots: options.config.roots,
-      resultRootId: options.config.resultRootId,
+      resultRootId: options.config.liveMatchRootId,
     });
     this.#cardExplorer = new CardExplorerReader({
       roots: options.config.roots,
-      resultRootId: options.config.resultRootId,
+      resultRootId: options.config.liveMatchRootId,
       store: options.store,
     });
     this.#matchExplorer = new MatchExplorerReader({
       roots: options.config.roots,
-      resultRootId: options.config.resultRootId,
+      resultRootId: options.config.liveMatchRootId,
     });
     this.#matchRepresentatives = new MatchRepresentativesReader({
       roots: options.config.roots,
-      resultRootId: options.config.resultRootId,
+      resultRootId: options.config.liveMatchRootId,
     });
     this.#artifacts = new ArtifactReader({ store: options.store, roots: options.config.roots });
     this.#championships = new ChampionshipScheduler({

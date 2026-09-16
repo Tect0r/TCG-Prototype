@@ -1,9 +1,7 @@
 /* eslint-disable no-console */
-import { loadFormatCardData, resolveFormatId } from '@tcg/card-data';
-import { deckFormatOf } from '@tcg/deck';
 import { CURRENT_VERSIONS } from '@tcg/protocol';
 import { DEFAULT_RULES_CONFIG } from '@tcg/rules-engine';
-import { MatchServer } from './match-server.js';
+import { composeMatchServer } from './compose.js';
 import { startWebSocketServer } from './ws-adapter.js';
 
 /**
@@ -20,19 +18,17 @@ const host = process.env.HOST ?? '127.0.0.1';
 // universe: a development fixture must be rejected here even though it is still
 // in the content bundle (M01.1). `TCG_FORMAT` selects another format —
 // `development` for the fixture set — and is the only way to leave the shipping
-// format.
-const formatId = resolveFormatId(process.env.TCG_FORMAT);
-const loaded = loadFormatCardData(formatId);
-if (!loaded.ok) {
-  for (const issue of loaded.error) console.error(`[card-data] ${issue.code}: ${issue.message}`);
-  throw new Error(`Cannot start: format "${formatId}" did not resolve to a usable card pool.`);
+// format. Live-match telemetry (M08.R9) is validated the same way: an invalid
+// or half-configured `TCG_LIVE_MATCH_TELEMETRY_*` value refuses startup rather
+// than silently running without telemetry.
+const composed = composeMatchServer(process.env);
+if (!composed.ok) {
+  for (const issue of composed.error) console.error(`[compose] ${issue.code}: ${issue.message}`);
+  throw new Error('Cannot start: the multiplayer server composition failed validation.');
 }
 
-const { database, warnings, format } = loaded.value;
+const { server, formatId, deckFormat, database, warnings, liveMatchTelemetryEnabled } = composed.value;
 for (const warning of warnings) console.warn(`[card-data] ${warning.code}: ${warning.message}`);
-
-const deckFormat = deckFormatOf(format);
-const server = new MatchServer({ database, config: DEFAULT_RULES_CONFIG, deckFormat });
 
 startWebSocketServer(server, { port, host })
   .then((transport) => {
@@ -45,6 +41,7 @@ startWebSocketServer(server, { port, host })
     console.log(
       `Disconnect grace: ${DEFAULT_RULES_CONFIG.disconnectGraceSeconds}s. State is in memory; restarting ends live matches.`,
     );
+    console.log(`Live-match telemetry: ${liveMatchTelemetryEnabled ? 'enabled' : 'disabled'}.`);
   })
   .catch((error: unknown) => {
     console.error('Failed to start the match server:', error);

@@ -118,7 +118,8 @@ async function makeLab(): Promise<Lab> {
       host: '127.0.0.1',
       port: 0,
       catalogRoot: join(base, 'catalog'),
-      resultRoots: { local: join(base, 'results') },
+      resultRoots: { local: join(base, 'results'), live_match: join(base, 'live-match') },
+      liveMatchRootId: 'live_match',
       limits: { maxConcurrentJobs: 2, maxWorkers: 2, maxWorkersPerJob: 1 },
     }),
   );

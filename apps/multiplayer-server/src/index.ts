@@ -44,3 +44,15 @@ export {
   type BotSubmitResult,
 } from './bot-runner.js';
 export { startWebSocketServer, type StartOptions, type WebSocketTransport } from './ws-adapter.js';
+export { composeMatchServer, type MultiplayerServerComposition } from './compose.js';
+export { LiveMatchFileStore, type LiveMatchFileStoreOptions } from './live-match-store.js';
+export type { LiveMatchRecord, LiveMatchSink } from './live-match-sink.js';
+export {
+  effectiveLiveMatchRetention,
+  liveMatchTelemetryConfigFromEnvironment,
+  parseLiveMatchTelemetryConfig,
+  LIVE_MATCH_TELEMETRY_ENVIRONMENT_KEYS,
+  type LiveMatchPrivacyMode,
+  type LiveMatchTelemetryConfig,
+  type LiveMatchTelemetryConfigInput,
+} from './live-match-telemetry-config.js';

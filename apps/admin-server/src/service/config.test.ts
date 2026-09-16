@@ -10,6 +10,7 @@ import {
   DEFAULT_HOST,
   DEFAULT_PORT,
   DEFAULT_REQUEST_LIMITS,
+  ENVIRONMENT_LIVE_MATCH_ROOT_ID,
   ENVIRONMENT_RESULT_ROOT_ID,
   MIN_TOKEN_LENGTH,
   isLoopbackHost,
@@ -42,8 +43,16 @@ afterAll(async () => {
   await rm(base, { recursive: true, force: true });
 });
 
-function roots(): { catalogRoot: string; resultRoots: Record<string, string> } {
-  return { catalogRoot: join(base, 'catalog'), resultRoots: { local: join(base, 'results') } };
+function roots(): {
+  catalogRoot: string;
+  resultRoots: Record<string, string>;
+  liveMatchRootId: string;
+} {
+  return {
+    catalogRoot: join(base, 'catalog'),
+    resultRoots: { local: join(base, 'results'), live_match: join(base, 'live-match') },
+    liveMatchRootId: 'live_match',
+  };
 }
 
 describe('what counts as loopback', () => {
@@ -130,6 +139,7 @@ describe('the roots and the bound', () => {
     const refused = parseServiceConfig({
       catalogRoot: 'catalog',
       resultRoots: { local: 'results' },
+      liveMatchRootId: 'local',
     });
     expect(isErr(refused)).toBe(true);
   });
@@ -165,6 +175,7 @@ describe('reading the configuration out of the environment', () => {
     const rendered = JSON.stringify(isErr(refused) ? refused.error : []);
     expect(rendered).toContain(ADMIN_ENVIRONMENT_KEYS.catalogRoot);
     expect(rendered).toContain(ADMIN_ENVIRONMENT_KEYS.resultRoot);
+    expect(rendered).toContain(ADMIN_ENVIRONMENT_KEYS.liveMatchRoot);
   });
 
   it('configures one result root, under the identifier the catalog will record', () => {
@@ -172,16 +183,21 @@ describe('reading the configuration out of the environment', () => {
       serviceConfigFromEnvironment({
         [ADMIN_ENVIRONMENT_KEYS.catalogRoot]: join(base, 'catalog'),
         [ADMIN_ENVIRONMENT_KEYS.resultRoot]: join(base, 'results'),
+        [ADMIN_ENVIRONMENT_KEYS.liveMatchRoot]: join(base, 'live-match'),
       }),
     );
-    expect([...config.roots.resultRoots.keys()]).toEqual([ENVIRONMENT_RESULT_ROOT_ID]);
+    expect([...config.roots.resultRoots.keys()].sort()).toEqual(
+      [ENVIRONMENT_RESULT_ROOT_ID, ENVIRONMENT_LIVE_MATCH_ROOT_ID].sort(),
+    );
     expect(config.resultRootId).toBe(ENVIRONMENT_RESULT_ROOT_ID);
+    expect(config.liveMatchRootId).toBe(ENVIRONMENT_LIVE_MATCH_ROOT_ID);
   });
 
   it('treats an empty token as no token, not as a token nobody can send', () => {
     const refused = serviceConfigFromEnvironment({
       [ADMIN_ENVIRONMENT_KEYS.catalogRoot]: join(base, 'catalog'),
       [ADMIN_ENVIRONMENT_KEYS.resultRoot]: join(base, 'results'),
+      [ADMIN_ENVIRONMENT_KEYS.liveMatchRoot]: join(base, 'live-match'),
       [ADMIN_ENVIRONMENT_KEYS.host]: '0.0.0.0',
       [ADMIN_ENVIRONMENT_KEYS.token]: '   ',
     });
@@ -193,17 +209,31 @@ describe('reading the configuration out of the environment', () => {
     const refused = serviceConfigFromEnvironment({
       [ADMIN_ENVIRONMENT_KEYS.catalogRoot]: join(base, 'catalog'),
       [ADMIN_ENVIRONMENT_KEYS.resultRoot]: join(base, 'results'),
+      [ADMIN_ENVIRONMENT_KEYS.liveMatchRoot]: join(base, 'live-match'),
       [ADMIN_ENVIRONMENT_KEYS.maxWorkers]: 'lots',
     });
     expect(isErr(refused)).toBe(true);
   });
 
+  it('refuses a live-match root that reuses the result root', () => {
+    const refused = serviceConfigFromEnvironment({
+      [ADMIN_ENVIRONMENT_KEYS.catalogRoot]: join(base, 'catalog'),
+      [ADMIN_ENVIRONMENT_KEYS.resultRoot]: join(base, 'results'),
+      [ADMIN_ENVIRONMENT_KEYS.liveMatchRoot]: join(base, 'results'),
+    });
+    expect(isErr(refused)).toBe(true);
+    expect(isErr(refused) && refused.error.some((e) => e.code === 'admin/unsafe_result_reference')).toBe(
+      true,
+    );
+  });
+
   it('has no variable that turns authentication off', () => {
-    // The absence ADR 0023 §4 asks for, stated as a closed set: eight variables,
+    // The absence ADR 0023 §4 asks for, stated as a closed set: nine variables,
     // and none of them is a switch.
     expect(Object.keys(ADMIN_ENVIRONMENT_KEYS).sort()).toEqual([
       'catalogRoot',
       'host',
+      'liveMatchRoot',
       'maxConcurrentJobs',
       'maxWorkers',
       'maxWorkersPerJob',
