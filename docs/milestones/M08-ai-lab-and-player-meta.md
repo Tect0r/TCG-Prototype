@@ -5107,42 +5107,37 @@ which exact decks, cards, matches and replays produced it.
 | Surrender                 | Turn and phase distribution plus an exposure-adjusted recent-event table  |
 | Data quality              | Counts, exclusions, limitations, and links to affected matches            |
 
-## Acceptance — met, pending one push (2026-09-16)
+## Acceptance — met (2026-09-16)
 
-M08 is accepted on the merits: every tranche checklist above (original
-tranches plus the M08.5 correction pass, M08.R1–R14) is complete, `npm run
-verify` passes locally, the consistency and audit checks pass, and
-`tcg-reviewer` approved Correction Tranche D's tranche-close diff. What is
-still open is procedural rather than a review or implementation gap: the
-final SHA below is filled in, and the GitHub Actions run confirmed green for
-it, by a small audit-record-only commit once this tranche-close commit is
-actually pushed.
+M08 is accepted: every tranche checklist above (original tranches plus the
+M08.5 correction pass, M08.R1–R14) is complete, `npm run verify` passes
+locally and the pushed GitHub verification run is green for the final SHA,
+the consistency and audit checks pass, `tcg-reviewer` approved Correction
+Tranche D's tranche-close diff, and the tree is clean after the final record
+commit.
 
 Final acceptance matrix (M08.5 correction pass):
 
-| Finding                       | Required proof                                               | Evidence                                                                                                                                                                               |
-| ----------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deck Explorer leakage         | Mixed-opponent fixture returns only selected subject rows    | M08.R1                                                                                                                                                                                 |
-| Card replacements missing     | Structured contract, endpoint, UI, and bounded result tests  | M08.R2                                                                                                                                                                                 |
-| Adaptive not enqueueable      | Admin UI → persisted adaptive job → real runner test         | M08.R3 (contract/catalog persistence) + M08.R6 (`enqueueAdaptive`/queue wiring)                                                                                                        |
-| Adaptive resume evidence loss | Fault-injection resume equivalence tests                     | M08.R5                                                                                                                                                                                 |
-| Reference-field underfill     | Adversarial deterministic exact-count test                   | M08.R7 (`selectReferenceField` seeded Fisher-Yates; `evaluate.test.ts`)                                                                                                                |
-| Nullable patch cost           | Boundary refusal or documented/tested semantics              | M08.R7 (`candidateCardPatchSchema.cost` drops `.nullable()`; `presets.test.ts`)                                                                                                        |
-| Live telemetry disconnected   | Real websocket terminal match appears in Player Meta         | M08.R9 (`live-match-telemetry.test.ts`, `live-match-telemetry-integration.test.ts`)                                                                                                    |
-| Invite-code collision         | Two matches with reused code persist separately              | M08.R8 (`generateId`-derived `matchId`, regression test)                                                                                                                               |
-| Root pollution                | Job/adaptive directories never count as skipped live records | M08.R9/M08.R10 (`live-match-telemetry-integration.test.ts`, `live-match-snapshot.ts`)                                                                                                  |
-| Repeated Player Meta scans    | Large-fixture bounded snapshot/index evidence                | M08.R10 (`openLiveMatchSnapshot`, cache-identity and TTL tests)                                                                                                                        |
-| Lock race                     | Concurrent acquisition has exactly one winner                | M08.R11 (atomic `link`-based acquire) corrected by M08.R14 (verified `rename`-based stale-lock claim; deterministic forced-interleaving regression test)                               |
-| Artifact symlink/TOCTOU       | Escape and swap/growth tests refuse safely                   | M08.R12 (`openArtifactFile`, symlink/swap/growth tests)                                                                                                                                |
-| Local/remote verification     | Clean local gates and green GitHub run for final SHA         | M08.R14 — clean locally (286/286 files, 5381/5381 tests); final SHA and its GitHub Actions run recorded here by the audit-record-only follow-up commit once pushed and confirmed green |
+| Finding                       | Required proof                                               | Evidence                                                                                                                                                         |
+| ----------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deck Explorer leakage         | Mixed-opponent fixture returns only selected subject rows    | M08.R1                                                                                                                                                           |
+| Card replacements missing     | Structured contract, endpoint, UI, and bounded result tests  | M08.R2                                                                                                                                                           |
+| Adaptive not enqueueable      | Admin UI → persisted adaptive job → real runner test         | M08.R3 (contract/catalog persistence) + M08.R6 (`enqueueAdaptive`/queue wiring)                                                                                  |
+| Adaptive resume evidence loss | Fault-injection resume equivalence tests                     | M08.R5                                                                                                                                                           |
+| Reference-field underfill     | Adversarial deterministic exact-count test                   | M08.R7 (`selectReferenceField` seeded Fisher-Yates; `evaluate.test.ts`)                                                                                          |
+| Nullable patch cost           | Boundary refusal or documented/tested semantics              | M08.R7 (`candidateCardPatchSchema.cost` drops `.nullable()`; `presets.test.ts`)                                                                                  |
+| Live telemetry disconnected   | Real websocket terminal match appears in Player Meta         | M08.R9 (`live-match-telemetry.test.ts`, `live-match-telemetry-integration.test.ts`)                                                                              |
+| Invite-code collision         | Two matches with reused code persist separately              | M08.R8 (`generateId`-derived `matchId`, regression test)                                                                                                         |
+| Root pollution                | Job/adaptive directories never count as skipped live records | M08.R9/M08.R10 (`live-match-telemetry-integration.test.ts`, `live-match-snapshot.ts`)                                                                            |
+| Repeated Player Meta scans    | Large-fixture bounded snapshot/index evidence                | M08.R10 (`openLiveMatchSnapshot`, cache-identity and TTL tests)                                                                                                  |
+| Lock race                     | Concurrent acquisition has exactly one winner                | M08.R11 (atomic `link`-based acquire) corrected by M08.R14 (verified `rename`-based stale-lock claim; deterministic forced-interleaving regression test)         |
+| Artifact symlink/TOCTOU       | Escape and swap/growth tests refuse safely                   | M08.R12 (`openArtifactFile`, symlink/swap/growth tests)                                                                                                          |
+| Local/remote verification     | Clean local gates and green GitHub run for final SHA         | M08.R14 — SHA `2c4ca59a6fa69dfb227666db5890cc482a0fc4b4`, run <https://github.com/Tect0r/TCG-Prototype/actions/runs/35120617309>, 286/286 files, 5381/5381 tests |
 
-Clean-tree local gates on this tranche-close commit (Node 24.15.0, npm
-11.12.1): `npm ci`, `npm run content:check`, `npm run validate:content`,
-`npm run audit:check`, `npm run check:consistency`, `npm run verify`
-(286/286 files, 5381/5381 tests, build clean, exit 0), `git status
---porcelain` empty before staging this commit. The pushed SHA and its GitHub
-Actions conclusion are recorded here by the follow-up audit-record-only
-commit.
+Clean-tree local gates for the final SHA (Node 24.15.0, npm 11.12.1): `npm ci`,
+`npm run content:check`, `npm run validate:content`, `npm run audit:check`,
+`npm run check:consistency`, `npm run verify` (286/286 files, 5381/5381 tests,
+build clean, exit 0), `git status --porcelain` empty.
 
 ---
 
@@ -5883,11 +5878,8 @@ Operational safety and final closure).
       `flock`), scoped by the module's own doc to one administrator and one
       orchestration process, not a distributed consensus system.
 
-**Correction Tranche D's fix is reviewer-approved; final closure is pending
-one push.** `tcg-reviewer` returned `VERDICT: APPROVE` on the recheck of the
-BLOCKER fix and the close record. What remains is procedural, not a review
-cycle: this commit has to actually reach `origin/main` and GitHub Actions has
-to confirm it green before the acceptance matrix below can honestly name a
-final SHA. That confirmation, and the "M08.R11–R14 + Tranche D close" and M08
-status rows in `IMPLEMENTATION_PLAN.md`, land in one small audit-record-only
-follow-up commit — code and tests do not change again for it.
+**Correction Tranche D is complete.** `tcg-reviewer` returned
+`VERDICT: APPROVE` on the recheck of the BLOCKER fix and the close record.
+The tranche-close commit (SHA `2c4ca59a6fa69dfb227666db5890cc482a0fc4b4`) is
+pushed and its GitHub Actions run is green (see the acceptance matrix below).
+M08, including the M08.5 correction pass (M08.R1–R14), is complete.

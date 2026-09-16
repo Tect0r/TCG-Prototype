@@ -21,10 +21,10 @@ the milestone checklist are the history.
 
 ## Status
 
-| Milestone                                                                   | Status                                  | Active work                   |
-| --------------------------------------------------------------------------- | --------------------------------------- | ----------------------------- |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Approved; final SHA record pending push | M08.R11–R14 + Tranche D close |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)               | Complete (2026-08-21)                   | —                             |
+| Milestone                                                                   | Status                | Active work |
+| --------------------------------------------------------------------------- | --------------------- | ----------- |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Complete (2026-09-16) | —           |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)               | Complete (2026-08-21) | —           |
 
 Earlier milestone status and completed-scope summaries live in
 [`docs/project-status.md`](docs/project-status.md) and
@@ -36,19 +36,20 @@ The full acceptance text is in
 [`docs/milestones/M08.5_FINAL_CORRECTION_PASS.md`](docs/milestones/M08.5_FINAL_CORRECTION_PASS.md).
 Rows carry state only; do not add implementation narratives.
 
-| Unit                          | State                                                            |
-| ----------------------------- | ---------------------------------------------------------------- |
-| M08.R1–R2 + Tranche A review  | Complete                                                         |
-| M08.R3                        | Complete                                                         |
-| M08.R4                        | Complete                                                         |
-| M08.R5                        | Complete                                                         |
-| M08.R6–R7 + Tranche B review  | Complete                                                         |
-| M08.R8–R10 + Tranche C review | Complete                                                         |
-| M08.R11–R14 + Tranche D close | Approved (`tcg-reviewer`); final-SHA audit-record commit pending |
+| Unit                          | State    |
+| ----------------------------- | -------- |
+| M08.R1–R2 + Tranche A review  | Complete |
+| M08.R3                        | Complete |
+| M08.R4                        | Complete |
+| M08.R5                        | Complete |
+| M08.R6–R7 + Tranche B review  | Complete |
+| M08.R8–R10 + Tranche C review | Complete |
+| M08.R11–R14 + Tranche D close | Complete |
 
 ### Current blocking decision
 
-None. `tcg-reviewer`'s first review of the M08.R11–R14 commit range plus the
+None. M08, including the M08.5 correction pass (M08.R1–R14), is complete.
+`tcg-reviewer`'s first review of the M08.R11–R14 commit range plus the
 close-record diff returned `VERDICT: CHANGES REQUIRED`: one BLOCKER
 (M08.R11's stale-lock takeover used an unconditional `rm` that could destroy
 a different, already-live lock a faster contender had just published) and two
@@ -65,10 +66,12 @@ rechecked the fix and returned `VERDICT: APPROVE`, with one MEDIUM (this
 record must not cite a final SHA the close commit itself would make stale —
 resolved by deferring that citation to a follow-up audit-record-only commit)
 and one LOW (a doc comment on `claimStaleRecord` understated a narrow
-three-contender residual window — fixed, comment-only). What remains is
-procedural: push this tranche-close commit, confirm its GitHub Actions run
-green, then land the small audit-record-only commit naming that SHA and
-marking Tranche D and M08 complete. See the milestone's
+three-contender residual window — fixed, comment-only). The tranche-close
+commit (SHA `2c4ca59a6fa69dfb227666db5890cc482a0fc4b4`) is pushed and its
+GitHub Actions run is green
+(<https://github.com/Tect0r/TCG-Prototype/actions/runs/35120617309>). This
+audit-record-only commit names that SHA and marks Tranche D and M08 complete.
+See the milestone's
 [Correction Tranche D](docs/milestones/M08-ai-lab-and-player-meta.md) section
 for the full review record.
 

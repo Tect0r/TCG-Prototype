@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R14-tranche-close",
-  "mode": "tranche-close",
+  "unit": "M08-done",
+  "mode": "done",
   "source": "docs/milestones/M08-ai-lab-and-player-meta.md",
-  "heading": "Acceptance — met, pending one push (2026-09-16)",
+  "heading": "Acceptance — met (2026-09-16)",
   "blocker": null,
   "next": null
 }
