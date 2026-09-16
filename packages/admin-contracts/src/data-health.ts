@@ -161,6 +161,16 @@ export const playerMetaMatchRecordSchema = z.strictObject({
 });
 export type PlayerMetaMatchRecord = z.infer<typeof playerMetaMatchRecordSchema>;
 
+/**
+ * M08.R10 — `recoveredRecords.entries`/`exclusions.entries` are detail lists
+ * over a live-match root that can hold far more records than a Data Health
+ * view should ever render at once; `count` stays the true total (matching
+ * `openLiveMatchSnapshot`'s own `skippedMatchCount`/`excluded.length` split)
+ * while `entries` is capped here so this report can never carry an unbounded
+ * row array to the browser.
+ */
+export const PLAYER_META_DATA_HEALTH_MAX_ENTRIES = 200;
+
 export const playerMetaDataHealthReportSchema = z.strictObject({
   identity: z.strictObject({
     domain: z.literal('player_meta'),
@@ -168,14 +178,14 @@ export const playerMetaDataHealthReportSchema = z.strictObject({
   }),
   recoveredRecords: z.strictObject({
     count: z.number().int().min(0),
-    entries: z.array(playerMetaMatchRecordSchema),
+    entries: z.array(playerMetaMatchRecordSchema).max(PLAYER_META_DATA_HEALTH_MAX_ENTRIES),
   }),
   failures: dataHealthTerminationBucketSchema,
   stalled: dataHealthTerminationBucketSchema,
   /** Matches with no recorded outcome — already excluded from every win-rate/duration figure `player-meta-results.ts` reports (`PLAYER_META_RUN_LIMITATIONS`), read here rather than re-derived. */
   exclusions: z.strictObject({
     count: z.number().int().min(0),
-    entries: z.array(playerMetaMatchRecordSchema),
+    entries: z.array(playerMetaMatchRecordSchema).max(PLAYER_META_DATA_HEALTH_MAX_ENTRIES),
   }),
   /** Always `unavailable` — see file doc comment. `entries` stays typed against the catalog shape so a client never needs two row renderers. */
   replicateDisagreement: z.strictObject({

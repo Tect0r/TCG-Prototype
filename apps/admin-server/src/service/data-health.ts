@@ -2,6 +2,7 @@ import {
   adminError,
   catalogDataHealthReportSchema,
   playerMetaDataHealthReportSchema,
+  PLAYER_META_DATA_HEALTH_MAX_ENTRIES,
   type AdminError,
   type CatalogDataHealthReport,
   type CatalogReplicateDisagreementEntry,
@@ -210,7 +211,7 @@ export function computePlayerMetaDataHealth(
     return ok(validated.data);
   }
 
-  const { matches, skipped, replayStatus } = evidence.value;
+  const { matches, skipped, skippedCount, replayStatus } = evidence.value;
   if (matches.length === 0) {
     const report = unavailablePlayerMetaReport(
       partition,
@@ -242,14 +243,19 @@ export function computePlayerMetaDataHealth(
   const report: PlayerMetaDataHealthReport = {
     identity: { domain: 'player_meta', partition },
     recoveredRecords: {
-      count: skipped.length,
-      entries: skipped.map((entry) => ({ matchId: entry.matchId, reason: entry.reason })),
+      // `skippedCount` is the true total; `skipped` is already capped by `openLiveMatchSnapshot`'s
+      // own `maxSkippedDetails`, but this is sliced again defensively so the two bounds never drift
+      // apart silently (M08.R10 — no unbounded row array reaches the browser).
+      count: skippedCount,
+      entries: skipped
+        .slice(0, PLAYER_META_DATA_HEALTH_MAX_ENTRIES)
+        .map((entry) => ({ matchId: entry.matchId, reason: entry.reason })),
     },
     failures: originBucket(PLAYER_META_FAILURE_ORIGINS),
     stalled: originBucket(PLAYER_META_STALL_ORIGINS),
     exclusions: {
       count: excluded.length,
-      entries: excluded.map((match) => ({
+      entries: excluded.slice(0, PLAYER_META_DATA_HEALTH_MAX_ENTRIES).map((match) => ({
         matchId: match.matchId,
         reason:
           'No recorded outcome for this match — excluded from every win-rate and duration figure this ' +

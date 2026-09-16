@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R10",
-  "mode": "implementation",
+  "unit": "M08.TrancheC-review",
+  "mode": "tranche-close",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "M08.R10 — Bounded Player Meta snapshot/read performance",
+  "heading": "Tranche C review",
   "blocker": null,
-  "next": "M08.R10"
+  "next": "M08.TrancheC-review"
 }

@@ -20,8 +20,7 @@ import {
   aggregateLiveMatchSurrenders,
   currentLiveMatchCardDatabases,
   filterLiveMatches,
-  readLiveMatchEnvelopes,
-  readLiveMatchPreActionCaptures,
+  openLiveMatchSnapshot,
   readLiveMatchReplay,
   type LiveCardEvidence,
   type LiveMatchAggregate,
@@ -48,8 +47,10 @@ import {
  * Unlike an Adaptive Counter run, there is no single canonical result
  * document to open: a Player Meta root directory holds one subdirectory per
  * live match (`LiveMatchFileStore`), and `@tcg/simulator`'s
- * `readLiveMatchEnvelopes` (M08.25B) is the tolerant reader that turns it
- * into `LiveMatchEnvelope[]` plus a skipped-match report. Everything past
+ * `openLiveMatchSnapshot` (M08.R10, superseding the per-reader
+ * `readLiveMatchEnvelopes` scan from M08.25B) is the cached, bounded, tolerant
+ * reader that turns it into `LiveMatchEnvelope[]` plus a skipped-match report.
+ * Everything past
  * that point — filtering (`filterLiveMatches`, M08.25A), card-database
  * resolution (`currentLiveMatchCardDatabases`) and aggregation
  * (`aggregateLiveMatches`, `aggregateLiveCardEvidence`, M08.24) — is
@@ -119,10 +120,10 @@ const PLAYER_META_RUN_LIMITATIONS: readonly string[] = [
 /**
  * `@tcg/simulator` does not export `LiveMatchEnvelope` itself (it is
  * `@tcg/match-telemetry`'s, and ADR 0023 forbids this app importing that
- * package directly) — derived from `readLiveMatchEnvelopes`'s own return type
+ * package directly) — derived from `openLiveMatchSnapshot`'s own return type
  * instead, the same trick `match-representatives.ts` (M08.26E) already uses.
  */
-type LiveMatchEnvelope = ReturnType<typeof readLiveMatchEnvelopes>['matches'][number];
+type LiveMatchEnvelope = ReturnType<typeof openLiveMatchSnapshot>['matches'][number];
 
 /** Restates the three abnormal termination origins nobody chose and the rules never concluded — see `match-representatives.ts`'s own `ABNORMAL_TERMINATION_ORIGINS` for the same restatement. */
 const ABNORMAL_TERMINATION_ORIGINS = [
@@ -142,17 +143,16 @@ interface OpenPlayerMeta {
 }
 
 function openPlayerMeta(rootDirectory: string, filter: PlayerMetaFilter): OpenPlayerMeta {
-  const read = readLiveMatchEnvelopes(rootDirectory);
-  const matches = filterLiveMatches(read.matches, filter);
+  const snapshot = openLiveMatchSnapshot(rootDirectory);
+  const matches = filterLiveMatches(snapshot.matches, filter);
   const databases = currentLiveMatchCardDatabases(matches);
-  const captures = readLiveMatchPreActionCaptures(rootDirectory).captures;
 
   return {
     aggregates: aggregateLiveMatches(matches, { cardDatabasesByContentVersion: databases }),
     cardEvidence: aggregateLiveCardEvidence(matches, { cardDatabasesByContentVersion: databases }),
-    surrenders: aggregateLiveMatchSurrenders(captures, matches).aggregates,
+    surrenders: aggregateLiveMatchSurrenders(snapshot.captures, matches).aggregates,
     recordsRead: matches.length,
-    recordsSkipped: read.skipped.length,
+    recordsSkipped: snapshot.skippedMatchCount,
   };
 }
 
@@ -165,6 +165,8 @@ export interface PlayerMetaDataHealthEvidence {
    * partition's Data Health report from this root sees the same list.
    */
   readonly skipped: readonly SkippedLiveMatch[];
+  /** The true count `skipped` represents — `skipped` itself may be capped for a very damaged root (M08.R10). */
+  readonly skippedCount: number;
   readonly replayStatus: { matchesChecked: number; withReplay: number; withoutReplay: number };
 }
 
@@ -177,8 +179,8 @@ function openDataHealthEvidence(
   rootDirectory: string,
   partition: PlayerMetaPartition,
 ): PlayerMetaDataHealthEvidence {
-  const read = readLiveMatchEnvelopes(rootDirectory);
-  const matches = read.matches.filter(
+  const snapshot = openLiveMatchSnapshot(rootDirectory);
+  const matches = snapshot.matches.filter(
     (match) =>
       match.source === partition.source &&
       match.provenance.contentVersion === partition.contentVersion &&
@@ -195,7 +197,8 @@ function openDataHealthEvidence(
 
   return {
     matches,
-    skipped: read.skipped,
+    skipped: snapshot.skippedMatches,
+    skippedCount: snapshot.skippedMatchCount,
     replayStatus: {
       matchesChecked: abnormal.length,
       withReplay,

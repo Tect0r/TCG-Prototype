@@ -335,6 +335,15 @@ export {
 } from './analysis/live-match-surrender-read.js';
 
 export {
+  DEFAULT_LIVE_MATCH_SNAPSHOT_LIMITS,
+  LIVE_MATCH_SNAPSHOT_TTL_MS,
+  openLiveMatchSnapshot,
+  resetLiveMatchSnapshotCacheForTests,
+  type LiveMatchSnapshot,
+  type LiveMatchSnapshotLimits,
+} from './analysis/live-match-snapshot.js';
+
+export {
   isSafeLiveMatchId,
   readLiveMatchRawEvent,
   readLiveMatchReplay,

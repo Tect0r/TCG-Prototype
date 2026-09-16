@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { JobId, PlayerMetaPartition } from '@tcg/admin-contracts';
+import { PLAYER_META_DATA_HEALTH_MAX_ENTRIES, type JobId, type PlayerMetaPartition } from '@tcg/admin-contracts';
 import { CARD_SCHEMA_VERSION } from '@tcg/card-data';
 import { unwrap } from '@tcg/shared';
 import { experimentPaths } from '@tcg/simulator';
@@ -529,5 +529,33 @@ describe('computePlayerMetaDataHealth', () => {
     const result = unwrap(computePlayerMetaDataHealth(playerMetaReader(), p));
     expect(result.recoveredRecords.count).toBe(1);
     expect(result.recoveredRecords.entries[0]?.matchId).toBe('match_broken');
+  });
+
+  it('M08.R10 — caps recoveredRecords.entries at PLAYER_META_DATA_HEALTH_MAX_ENTRIES while count stays the true total', () => {
+    const p = partition();
+    writeMatch('match_a', ordinaryEnvelope('match_a', p));
+    const brokenCount = PLAYER_META_DATA_HEALTH_MAX_ENTRIES + 5;
+    for (let index = 0; index < brokenCount; index += 1) {
+      const brokenDirectory = join(root, `match_broken_${index}`);
+      mkdirSync(brokenDirectory, { recursive: true });
+      writeFileSync(join(brokenDirectory, 'envelope.json'), 'not json', 'utf8');
+    }
+
+    const result = unwrap(computePlayerMetaDataHealth(playerMetaReader(), p));
+    expect(result.recoveredRecords.count).toBe(brokenCount);
+    expect(result.recoveredRecords.entries).toHaveLength(PLAYER_META_DATA_HEALTH_MAX_ENTRIES);
+  });
+
+  it('M08.R10 — caps exclusions.entries at PLAYER_META_DATA_HEALTH_MAX_ENTRIES while count stays the true total', () => {
+    const p = partition();
+    const excludedCount = PLAYER_META_DATA_HEALTH_MAX_ENTRIES + 5;
+    for (let index = 0; index < excludedCount; index += 1) {
+      const matchId = `match_abandoned_${index}`;
+      writeMatch(matchId, abandonedEnvelope(matchId, p));
+    }
+
+    const result = unwrap(computePlayerMetaDataHealth(playerMetaReader(), p));
+    expect(result.exclusions.count).toBe(excludedCount);
+    expect(result.exclusions.entries).toHaveLength(PLAYER_META_DATA_HEALTH_MAX_ENTRIES);
   });
 });

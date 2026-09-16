@@ -723,6 +723,7 @@ export {
   dataHealthTerminationBucketSchema,
   playerMetaDataHealthReportSchema,
   playerMetaMatchRecordSchema,
+  PLAYER_META_DATA_HEALTH_MAX_ENTRIES,
   type CatalogDataHealthReport,
   type CatalogRecoveredRecord,
   type CatalogReplicateDisagreementEntry,

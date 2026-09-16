@@ -5845,3 +5845,87 @@ large synthetic fixture proving one bounded enumeration pass rather than N+1
 whole-root scans, stable pagination, enforced record/byte limits, bounded
 corrupt-record health details, and no unbounded row array sent to the
 browser).
+
+## M08.R10 — Bounded Player Meta snapshot/read performance (2026-09-16): complete
+
+Every Player Meta and explorer reader called `readLiveMatchEnvelopes`/
+`readLiveMatchPreActionCaptures` (`@tcg/simulator`), and each independently ran
+its own synchronous `readdirSync` over the whole live-match root. A single
+Player Meta dashboard load fires several independent HTTP requests
+(`playerMetaRunSummary`, one `playerMetaResultTable` call per visible table,
+`playerMetaCoverageView`, `playerMetaDataHealthView`), so the whole root was
+enumerated and reparsed once per request rather than once per load — an N+1
+that grows with both live-match volume and the number of tables a page shows.
+Nothing bounded how many match directories or bytes one scan would read.
+
+**New module: `apps/simulator/src/analysis/live-match-snapshot.ts`.**
+`openLiveMatchSnapshot(rootDirectory, limits?)` does one `readdirSync` and, per
+match directory, at most two file reads (`envelope.json`,
+`pre-action-capture.json` — the same two files the prior readers read
+separately), then caches the result by `rootDirectory`. Invalidation is dual:
+primarily directory-mtime-driven (`LiveMatchFileStore.receive`'s `mkdirSync`
+for a genuinely new match changes the root's own mtime, so a new match is
+never hidden), with a bounded `LIVE_MATCH_SNAPSHOT_TTL_MS` (2s) as a secondary
+safety net for the one case mtime cannot see — a retried delivery overwriting
+an existing match's files in place. `LiveMatchSnapshotLimits` caps
+`maxRecords` (10,000) and cumulative `maxBytes` (200MB) per scan, reporting
+`truncated: true` rather than reading further; `maxSkippedDetails` (200) caps
+the *reported* corrupt/missing-record detail lists while `skippedMatchCount`/
+`skippedCaptureCount` stay exact regardless. No skip reason ever carries a
+filesystem path.
+
+`readLiveMatchEnvelopes`/`readLiveMatchPreActionCaptures` (`live-match-read.ts`,
+`live-match-surrender-read.ts`) are now thin, unchanged-signature projections
+of one cached snapshot, so every existing call site (`card-explorer.ts`,
+`deck-explorer.ts`, `match-explorer.ts`, `match-representatives.ts`) needed no
+changes. `player-meta-results.ts`'s `openPlayerMeta` and `openDataHealthEvidence`
+were switched to call `openLiveMatchSnapshot` directly so `recordsSkipped`
+(summary) and the new `PlayerMetaDataHealthEvidence.skippedCount` (data
+health) report the true skipped-match total even when the detail list itself
+is capped.
+
+**No unbounded row array to the browser.** Card/deck/match explorer responses
+were already bounded via `pageOf()`/`PAGE_SIZE_MAX`. The one genuinely
+unbounded array was Player Meta Data Health's `recoveredRecords.entries`/
+`exclusions.entries` (`packages/admin-contracts/src/data-health.ts`), sourced
+from `matches`, which is bounded only by the snapshot's overall `maxRecords`
+(10,000). Added `PLAYER_META_DATA_HEALTH_MAX_ENTRIES` (200) with a schema
+`.max()` on both arrays; `apps/admin-server/src/service/data-health.ts` now
+slices both to that bound while `count` stays the true total
+(`skippedCount`/`excluded.length`).
+
+**Tests.** New `apps/simulator/src/analysis/live-match-snapshot.test.ts`
+(16/16): referential-identity proof that repeated reads and every wrapper
+reader share one cached scan; cache rebuild on a new match directory (mtime
+change); TTL-based rebuild when a file is overwritten in place without the
+root's own mtime changing (`vi.useFakeTimers`); `maxRecords`/`maxBytes`
+truncation; `maxSkippedDetails` capping envelope and capture skip lists while
+counts stay exact; no filesystem path in any skip reason; deterministic
+matchId-sorted ordering; and a large synthetic fixture (500 matches + 3
+corrupt) proving one bounded, ordered pass serves an entire simulated
+dashboard load. Added two tests to `apps/admin-server/src/service/data-health.test.ts`
+proving `recoveredRecords.entries`/`exclusions.entries` cap at
+`PLAYER_META_DATA_HEALTH_MAX_ENTRIES` while `count` stays exact past the cap.
+Existing `live-match-read.test.ts`, `live-match-surrender-read.test.ts`,
+`player-meta-results.test.ts`, `card-explorer.test.ts`, `deck-explorer.test.ts`,
+`match-explorer.test.ts`, `match-representatives.test.ts`, `coverage.test.ts`
+all pass unchanged — the codebase's universal write-fixtures-then-read-once
+test pattern made the cross-call cache safe to introduce with zero test
+modifications outside the two files above.
+
+Evidence: `@tcg/simulator` `live-match-read.test.ts` 8/8,
+`live-match-surrender-read.test.ts` 8/8, `live-match-snapshot.test.ts` 16/16
+(new); `@tcg/admin-server` `player-meta-results.test.ts` 18/18,
+`data-health.test.ts` 13/13 (2 new), `card-explorer.test.ts` 13/13,
+`deck-explorer.test.ts` 6/6, `match-explorer.test.ts` 14/14,
+`match-representatives.test.ts` 14/14, `coverage.test.ts` 6/6 — 116 tests
+total, all passing. `@tcg/simulator`, `@tcg/admin-server` and
+`@tcg/admin-contracts` typecheck clean. Tranche gates (`check:consistency`,
+`audit:check`, `verify`) and `tcg-reviewer` are deferred to Tranche C's own
+close, not this slice.
+
+Next slice: `Tranche C review` — review privacy, retention, identity,
+ingestion, aggregation and read scaling as one path for M08.R8-R10; verify
+private hand/pre-action captures stay excluded from aggregate/public
+responses and that only authorized admin routes reach intended aggregate
+data; fix material findings and push before completion.
