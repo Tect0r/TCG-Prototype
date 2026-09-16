@@ -107,7 +107,8 @@ const PLAYER_META_RUN_LIMITATIONS: readonly string[] = [
     'matches — a match with no recorded outcome (for example an unrecordable abandonment) is excluded ' +
     'from every rate here even though it is still counted as a selection.',
   'Cluster and eligible-card tables are empty for any partition whose matches span more than one game ' +
-    'format, or name a format this build does not have bundled — a card database could not be ' +
+    'format, name a format this build does not have bundled, or were recorded under a content or card-' +
+    "balance version this build's bundled database does not match — a card database could not be " +
     'resolved for that partition, so nothing here fabricates cluster or eligibility evidence for it.',
   'Surrender tables come only from matches that ended in an explicit concede or a leave-triggered ' +
     'concession — a timed-out or otherwise abandoned match produces no pre-action capture and ' +
@@ -129,6 +130,27 @@ const TRUNCATED_SNAPSHOT_LIMITATION =
   'This root holds more live matches than one read scans at a time, so this reading covers only the ' +
   'oldest matches up to that scan limit and excludes newer activity — every number above should be ' +
   'read as a partial, not a complete, picture until an operator raises the limit or prunes the root.';
+
+/**
+ * Appended to `PLAYER_META_RUN_LIMITATIONS` only when `openLiveMatchSnapshot`
+ * hit at least one present-but-unreadable `pre-action-capture.json` file
+ * (`skippedCaptureCount`). Without this, a corrupt capture file silently
+ * shrinks the surrender tables' evidence with no visible signal — the match
+ * itself still counts everywhere else, so nothing else in this summary would
+ * hint that surrender coverage is incomplete.
+ *
+ * A separate sentence from `TRUNCATED_SNAPSHOT_LIMITATION` on purpose: a
+ * truncated scan and a skipped capture are independent failure signals (one
+ * caps how much of the root was read at all, the other reports damage within
+ * what was read) and can both be true of the same reading.
+ */
+function captureSkipLimitation(count: number): string {
+  return (
+    `${String(count)} pre-action capture file${count === 1 ? '' : 's'} in this root could not be read, ` +
+    'so the matches they belonged to contribute no evidence to the surrender tables above even though ' +
+    'they are still counted everywhere else in this reading.'
+  );
+}
 
 /**
  * `@tcg/simulator` does not export `LiveMatchEnvelope` itself (it is
@@ -155,6 +177,14 @@ interface OpenPlayerMeta {
   readonly recordsSkipped: number;
   /** Whether the underlying `openLiveMatchSnapshot` scan stopped before reading the whole root. */
   readonly truncated: boolean;
+  /**
+   * Present-but-unreadable `pre-action-capture.json` files this scan hit
+   * (`openLiveMatchSnapshot`'s `skippedCaptureCount`) — distinct from
+   * `recordsSkipped`, which counts unreadable match *envelopes*. A match can
+   * have a perfectly good envelope and still contribute no surrender-table
+   * evidence because its capture file was corrupt.
+   */
+  readonly capturesSkipped: number;
 }
 
 function openPlayerMeta(rootDirectory: string, filter: PlayerMetaFilter): OpenPlayerMeta {
@@ -169,6 +199,7 @@ function openPlayerMeta(rootDirectory: string, filter: PlayerMetaFilter): OpenPl
     recordsRead: matches.length,
     recordsSkipped: snapshot.skippedMatchCount,
     truncated: snapshot.truncated,
+    capturesSkipped: snapshot.skippedCaptureCount,
   };
 }
 
@@ -243,9 +274,11 @@ export function readPlayerMetaSummary(
       rows: buildPlayerMetaTable(table, open.aggregates, open.cardEvidence, open.surrenders).rows
         .length,
     })),
-    limitations: open.truncated
-      ? [...PLAYER_META_RUN_LIMITATIONS, TRUNCATED_SNAPSHOT_LIMITATION]
-      : PLAYER_META_RUN_LIMITATIONS,
+    limitations: [
+      ...PLAYER_META_RUN_LIMITATIONS,
+      ...(open.truncated ? [TRUNCATED_SNAPSHOT_LIMITATION] : []),
+      ...(open.capturesSkipped > 0 ? [captureSkipLimitation(open.capturesSkipped)] : []),
+    ],
   };
 
   const validated = playerMetaRunSummarySchema.safeParse(value);

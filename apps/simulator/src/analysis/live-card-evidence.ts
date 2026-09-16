@@ -1,7 +1,11 @@
 import { isColorIdentityLegal, type CardDatabase } from '@tcg/card-data';
 import type { LiveMatchEnvelope } from '@tcg/match-telemetry';
 
-import { partitionLiveMatches, type LiveMatchAggregatePartition } from './live-match-aggregate.js';
+import {
+  cardDatabaseUnavailableReason,
+  partitionLiveMatches,
+  type LiveMatchAggregatePartition,
+} from './live-match-aggregate.js';
 import { round } from './stats.js';
 
 /**
@@ -111,9 +115,10 @@ export function aggregateLiveCardEvidence(
       return {
         partition,
         commanders: null,
-        unavailableReason:
-          `No card database was supplied for content version ${String(partition.contentVersion)}, ` +
-          'so card evidence for this partition was not computed.',
+        unavailableReason: cardDatabaseUnavailableReason(
+          partition.contentVersion,
+          'card evidence for this partition was not computed.',
+        ),
       };
     }
     return { partition, commanders: commanderEvidence(group, database), unavailableReason: null };

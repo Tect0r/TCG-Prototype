@@ -155,6 +155,29 @@ describe('opening the Player Meta dashboard', () => {
     expect(alert).toHaveTextContent('admin/unauthorized');
   });
 
+  it('shows the exposed-not-caused correlation caption only on the surrender tabs (M08.R13)', async () => {
+    const { service } = await openPlayerMeta();
+    const turnColumns: readonly ResultColumn[] = [plain('turn', 'Turn', 'count')];
+    service.lab.seedPlayerMeta({
+      summary: playerMetaRunSummaryFixture(),
+      tables: {
+        commanders: playerMetaResultTableFixture('commanders', COMMANDERS_COLUMNS, COMMANDERS_ROWS),
+        surrender_turns: playerMetaResultTableFixture('surrender_turns', turnColumns, [{ turn: 3 }]),
+      },
+    });
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Adaptive Counter run' }));
+    await userEvent.click(within(main()).getByRole('button', { name: 'Player Meta' }));
+
+    await within(main()).findByText('commander_low_matches_high_unique');
+    expect(within(main()).queryByText(/never a stated/i)).not.toBeInTheDocument();
+
+    await userEvent.click(within(main()).getByRole('button', { name: 'Surrender turns' }));
+
+    const caption = await within(main()).findByText(/never a stated/i);
+    expect(caption).toHaveTextContent(/exposed/i);
+  });
+
   it('opens and closes a row’s exact-row drill-down with the Match Explorer disclaimer', async () => {
     const { service } = await openPlayerMeta();
     service.lab.seedPlayerMeta({

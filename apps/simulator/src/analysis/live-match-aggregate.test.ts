@@ -149,7 +149,22 @@ describe('aggregateLiveMatches', () => {
 
     const withoutDatabase = aggregateLiveMatches([envelope()]);
     expect(withoutDatabase[0]?.clusters).toBeNull();
-    expect(withoutDatabase[0]?.clustersUnavailableReason).toMatch(/content version 5/);
+    expect(withoutDatabase[0]?.clustersUnavailableReason).toMatch(/no card database could be resolved/);
+  });
+
+  it('names a historical content-version mismatch distinctly from a merely-unsupplied database', () => {
+    const [aggregate] = aggregateLiveMatches(
+      [
+        envelope({
+          provenance: { softwareVersion: '1.0.0', contentVersion: 4, rulesVersion: '1.0.0' },
+        }),
+      ],
+      { cardDatabasesByContentVersion: new Map([[5, database]]) }, // keyed by 5, this partition is 4
+    );
+    expect(aggregate?.clusters).toBeNull();
+    expect(aggregate?.clustersUnavailableReason).toContain('content version 5');
+    expect(aggregate?.clustersUnavailableReason).toContain('content version 4');
+    expect(aggregate?.clustersUnavailableReason).toMatch(/mismatch/);
   });
 
   it('separates decks of different commanders into different clusters', () => {

@@ -4606,12 +4606,15 @@ representative-selection determinism, unsupported replay and large-fixture tests
       card; when a `jobId` is named, `experimentEvidence.row` reuses that job's
       own `'cards'` table row verbatim rather than restating its fields
       (`null`/checked-empty/populated kept distinct at both the object and row
-      level). Replacements are named by the milestone but have no structured,
-      queryable form anywhere in this codebase yet
-      (`apps/simulator/src/analysis/replacement.ts`/`counters.ts` only produce
-      Markdown prose) — recorded as a deliberately deferred gap
-      (`card-explorer.ts`'s own doc comment), not an invented shape; the exact
-      next question for whichever slice picks it up. `CardExplorerPanel`
+      level). Replacements were named by the milestone but at the time this
+      slice was written had no structured, queryable form anywhere in this
+      codebase (`apps/simulator/src/analysis/replacement.ts`/`counters.ts`
+      only produced Markdown prose) — recorded then as a deliberately
+      deferred gap; **closed by M08.R2**, which added the structured,
+      bounded `'replacements'` result table and `replacementEvidence` on
+      `card-explorer-view` (`packages/admin-contracts/src/card-explorer.ts`,
+      `apps/admin-server/src/service/card-explorer.ts:251-341`) that
+      `CardExplorerDashboard.tsx` now renders. `CardExplorerPanel`
       (`apps/admin-client/src/components/CardExplorerDashboard.tsx`) wired into
       `ResultsScreen.tsx`. 34 new focused tests pass (16 admin-contracts schema + 7 admin-server reader + 5 admin-client unit + 6 admin-client
       integration); pre-existing `deck-explorer`/`service` tests still pass;

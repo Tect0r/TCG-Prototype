@@ -8,6 +8,7 @@ import {
 } from './revision.js';
 import {
   adaptiveGenerationRecordSchema,
+  diffSwaps,
   generateAdaptiveCandidates,
   type GenerateAdaptiveCandidatesInput,
 } from './generate.js';
@@ -162,6 +163,23 @@ describe('generateAdaptiveCandidates: legality and swap bounds', () => {
       expect(rejection.reasons.length).toBeGreaterThan(0);
       expect(rejection.construction).toBe('swap');
     }
+  });
+});
+
+describe('diffSwaps: unequal-size decks (M08.R13)', () => {
+  it('throws a clear, named error instead of an opaque raw Zod crash', () => {
+    const before = makeDeck({
+      commanderId: 'prototype_commander_blue',
+      cards: [{ cardId: 'prototype_scout', quantity: 40 }],
+    });
+    const after = makeDeck({
+      commanderId: 'prototype_commander_blue',
+      cards: [{ cardId: 'prototype_scout', quantity: 39 }],
+    });
+
+    expect(() => diffSwaps(before, after)).toThrow(
+      /cannot diff decks of different sizes \(before: 40, after: 39\)/,
+    );
   });
 });
 

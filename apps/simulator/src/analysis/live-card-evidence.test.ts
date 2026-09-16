@@ -159,7 +159,22 @@ describe('aggregateLiveCardEvidence', () => {
   it('leaves a partition unavailable when no database was supplied for its content version', () => {
     const [evidence] = aggregateLiveCardEvidence([envelope()]);
     expect(evidence?.commanders).toBeNull();
-    expect(evidence?.unavailableReason).toMatch(/content version 5/);
+    expect(evidence?.unavailableReason).toMatch(/no card database could be resolved/);
+  });
+
+  it('names a historical content-version mismatch distinctly from a merely-unsupplied database', () => {
+    const [evidence] = aggregateLiveCardEvidence(
+      [
+        envelope({
+          provenance: { softwareVersion: '1.0.0', contentVersion: 4, rulesVersion: '1.0.0' },
+        }),
+      ],
+      { cardDatabasesByContentVersion: databases }, // keyed by 5, this partition is 4
+    );
+    expect(evidence?.commanders).toBeNull();
+    expect(evidence?.unavailableReason).toContain('content version 5');
+    expect(evidence?.unavailableReason).toContain('content version 4');
+    expect(evidence?.unavailableReason).toMatch(/mismatch/);
   });
 
   it('returns no partitions for an empty input', () => {

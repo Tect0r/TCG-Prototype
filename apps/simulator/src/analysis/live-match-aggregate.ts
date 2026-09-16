@@ -1,4 +1,4 @@
-import type { CardDatabase } from '@tcg/card-data';
+import { CARD_SCHEMA_VERSION, type CardDatabase } from '@tcg/card-data';
 import { simDeckSchema, type SimDeck } from '@tcg/deck-generator';
 import {
   type LiveMatchEnvelope,
@@ -176,6 +176,41 @@ export function partitionLiveMatches(matches: readonly LiveMatchEnvelope[]): rea
       return { partition, matches: group };
     })
     .sort((left, right) => comparePartitions(left.partition, right.partition));
+}
+
+/**
+ * The reason a partition's `contentVersion` has no entry in a
+ * `cardDatabasesByContentVersion` map, shared by `aggregatePartition` below
+ * and `./live-card-evidence.ts`'s `aggregateLiveCardEvidence` so cluster and
+ * card-evidence tables never explain the same gap two different ways.
+ *
+ * `currentLiveMatchCardDatabases` (`./live-match-card-databases.ts`) only
+ * ever keys its map entry by *today's* `CARD_SCHEMA_VERSION` — never by a
+ * historical `contentVersion` — so a miss means one of two honestly
+ * different things, and this distinguishes them instead of collapsing both
+ * into a single "wasn't supplied" sentence a reader could mistake for a
+ * wiring bug:
+ *
+ * - `partition.contentVersion === CARD_SCHEMA_VERSION`: the map itself is
+ *   empty, which only happens when the partition's matches span more than
+ *   one game format, or name a format this build does not have bundled.
+ * - otherwise: these matches were recorded under a content/card-balance
+ *   version this build's bundled database does not match — a genuine
+ *   content-version mismatch between the historical record and today's
+ *   content, not a missing database.
+ */
+export function cardDatabaseUnavailableReason(contentVersion: number, consequence: string): string {
+  if (contentVersion === CARD_SCHEMA_VERSION) {
+    return (
+      'This partition has matches that span more than one game format, or name a format this ' +
+      `build does not have bundled, so no card database could be resolved for it, and ${consequence}`
+    );
+  }
+  return (
+    `This build's bundled card database is for content version ${String(CARD_SCHEMA_VERSION)}, not ` +
+    `this partition's recorded content version ${String(contentVersion)} — a historical content-` +
+    `version mismatch, not a missing database, and ${consequence}`
+  );
 }
 
 /** Aggregates live matches into one entry per `(source, contentVersion, rulesVersion)` partition. */
@@ -360,9 +395,10 @@ function aggregatePartition(
     database === undefined
       ? {
           clusters: null,
-          clustersUnavailableReason:
-            `No card database was supplied for content version ${String(partition.contentVersion)}, ` +
-            'so decks in this partition were not clustered.',
+          clustersUnavailableReason: cardDatabaseUnavailableReason(
+            partition.contentVersion,
+            'decks in this partition were not clustered.',
+          ),
         }
       : {
           clusters: clusterView(deckSnapshots, database, group, clusterThreshold, confidence),

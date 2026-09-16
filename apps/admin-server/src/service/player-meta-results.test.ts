@@ -31,6 +31,8 @@ import type * as SimulatorModule from '@tcg/simulator';
  * reimplementation of the scan cap itself.
  */
 let forceSnapshotTruncated = false;
+/** Same override trick as `forceSnapshotTruncated`, for M08.R13's capture-skip limitation. */
+let forceSnapshotCapturesSkipped = 0;
 
 vi.mock('@tcg/simulator', async () => {
   const actual = await vi.importActual<typeof SimulatorModule>('@tcg/simulator');
@@ -40,7 +42,14 @@ vi.mock('@tcg/simulator', async () => {
       ...args: Parameters<typeof actual.openLiveMatchSnapshot>
     ): ReturnType<typeof actual.openLiveMatchSnapshot> => {
       const snapshot = actual.openLiveMatchSnapshot(...args);
-      return forceSnapshotTruncated ? { ...snapshot, truncated: true } : snapshot;
+      return {
+        ...snapshot,
+        truncated: forceSnapshotTruncated ? true : snapshot.truncated,
+        skippedCaptureCount:
+          forceSnapshotCapturesSkipped > 0
+            ? forceSnapshotCapturesSkipped
+            : snapshot.skippedCaptureCount,
+      };
     },
   };
 });
@@ -63,6 +72,7 @@ let root: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'tcg-admin-player-meta-'));
   forceSnapshotTruncated = false;
+  forceSnapshotCapturesSkipped = 0;
 });
 
 afterEach(() => {
@@ -259,6 +269,19 @@ describe('a summary over live matches', () => {
     expect(withTruncation.limitations.length).toBe(withoutTruncation.limitations.length + 1);
     expect(withTruncation.limitations.some((entry) => entry.includes('scan limit'))).toBe(true);
   });
+
+  it('surfaces skipped capture files as a visible limitation rather than a silent surrender-evidence gap (M08.R13)', () => {
+    writeMatch('match_a', envelope('match_a'));
+    const withoutSkips = unwrap(readPlayerMetaSummary(root, filter));
+
+    forceSnapshotCapturesSkipped = 2;
+    const withSkips = unwrap(readPlayerMetaSummary(root, filter));
+
+    expect(withSkips.limitations.length).toBe(withoutSkips.limitations.length + 1);
+    expect(withSkips.limitations.some((entry) => entry.includes('2 pre-action capture files'))).toBe(
+      true,
+    );
+  });
 });
 
 describe('the commanders table', () => {
@@ -292,7 +315,12 @@ describe('the commanders table', () => {
 });
 
 describe('the eligible-card and pair tables (M08.25B/C)', () => {
-  it("carries the commander's match and unique-deck denominators beside every rate, not only the numerator", () => {
+  it("carries the commander's match and unique-deck denominators beside every rate, not only the numerator (M08.R13)", () => {
+    // Two matches under the same Commander, only one of which plays the
+    // mercenary/guard build, so every denominator below (commanderMatches: 2,
+    // commanderUniqueDecks: 2) genuinely differs from its numerator
+    // (matchesIncluding/decksIncluding: 1) — a fixture where every field
+    // equalled 1 could not distinguish a denominator bug from a numerator bug.
     writeMatch(
       'match_a',
       envelope('match_a', {
@@ -321,6 +349,31 @@ describe('the eligible-card and pair tables (M08.25B/C)', () => {
         ],
       }),
     );
+    writeMatch(
+      'match_b',
+      envelope('match_b', {
+        seats: [
+          {
+            seatIndex: 0,
+            playerId: 'player_1',
+            kind: 'human',
+            deck: freezeLiveMatchDeckSnapshot({
+              commanderId: 'prototype_commander_blue',
+              cards: [{ cardId: 'prototype_drone', quantity: 40 }],
+            }),
+          },
+          {
+            seatIndex: 1,
+            playerId: 'player_2',
+            kind: 'human',
+            deck: freezeLiveMatchDeckSnapshot({
+              commanderId: 'prototype_commander_red',
+              cards: [{ cardId: 'prototype_scout', quantity: 40 }],
+            }),
+          },
+        ],
+      }),
+    );
 
     const bigPage = pageRequestSchema.parse({ limit: PAGE_SIZE_MAX });
     const cards = unwrap(readPlayerMetaTable(root, 'cards', filter, bigPage));
@@ -328,23 +381,23 @@ describe('the eligible-card and pair tables (M08.25B/C)', () => {
       (row) => row.cardId === 'hired_mercenary' && row.commanderId === 'prototype_commander_blue',
     );
     expect(drone).toMatchObject({
-      commanderMatches: 1,
+      commanderMatches: 2,
       matchesIncluding: 1,
-      inclusion: 1,
-      commanderUniqueDecks: 1,
+      inclusion: 0.5,
+      commanderUniqueDecks: 2,
       decksIncluding: 1,
-      inclusionByUniqueDeck: 1,
+      inclusionByUniqueDeck: 0.5,
     });
 
     const pairs = unwrap(readPlayerMetaTable(root, 'pairs', filter, page));
     const pair = pairs.rows.find((row) => row.commanderId === 'prototype_commander_blue');
     expect(pair).toMatchObject({
-      commanderMatches: 1,
+      commanderMatches: 2,
       matchesIncludingBoth: 1,
-      support: 1,
-      commanderUniqueDecks: 1,
+      support: 0.5,
+      commanderUniqueDecks: 2,
       decksIncludingBoth: 1,
-      supportByUniqueDeck: 1,
+      supportByUniqueDeck: 0.5,
     });
   });
 });

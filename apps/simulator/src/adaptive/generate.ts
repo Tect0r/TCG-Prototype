@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { CardId } from '@tcg/card-data';
-import { checkDeck, generateDeck, type SimDeck } from '@tcg/deck-generator';
+import { checkDeck, deckSize, generateDeck, type SimDeck } from '@tcg/deck-generator';
 import type { Environment } from '../environment.js';
 import { mutateDeck } from '../deck-search/mutate.js';
 import { seedFromPath, seededIndex } from '../seed.js';
@@ -86,8 +86,22 @@ export interface GenerateAdaptiveCandidatesInput {
  * cancel along the way without changing what the deck ended up as, and a
  * revision's `swaps` field is a fact about the resulting deck, not about the
  * path a search took to reach it.
+ *
+ * Throws if the two decks are not the same size: an unequal `removed`/`added`
+ * pairing has no sound swap reading, and letting it through used to surface
+ * as an opaque raw Zod error from `adaptiveCardSwapSchema.parse` (M08.R13)
+ * instead of naming the actual problem.
  */
 export function diffSwaps(before: SimDeck, after: SimDeck): AdaptiveCardSwap[] {
+  const beforeSize = deckSize(before);
+  const afterSize = deckSize(after);
+  if (beforeSize !== afterSize) {
+    throw new Error(
+      `diffSwaps: cannot diff decks of different sizes (before: ${String(beforeSize)}, ` +
+        `after: ${String(afterSize)}) — this function only diffs equal-size decks.`,
+    );
+  }
+
   const delta = new Map<CardId, number>();
   for (const entry of before.cards) {
     delta.set(entry.cardId, (delta.get(entry.cardId) ?? 0) + entry.quantity);
@@ -138,6 +152,20 @@ function generateSwapCandidate(
   });
   if (!result.deck) {
     return { index, seedPath, construction, reasons: [...result.reasons] };
+  }
+
+  const incumbentSize = deckSize(incumbent.deck);
+  const resultSize = deckSize(result.deck);
+  if (incumbentSize !== resultSize) {
+    return {
+      index,
+      seedPath,
+      construction,
+      reasons: [
+        `the mutated deck has ${String(resultSize)} cards, not the incumbent's ` +
+          `${String(incumbentSize)} — refused rather than diffed against a size mismatch`,
+      ],
+    };
   }
 
   const swaps = diffSwaps(incumbent.deck, result.deck);

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R13",
-  "mode": "implementation",
+  "unit": "M08.R14",
+  "mode": "tranche-close",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "M08.R13 — Compatibility, health, and reviewer-debt sweep",
+  "heading": "M08.R14 — Final verification and evidence record",
   "blocker": null,
-  "next": "M08.R13"
+  "next": "M08.R14"
 }
