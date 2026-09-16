@@ -146,3 +146,124 @@ describe('the liveness check', () => {
     expect(processIsAlive(0x7fff_fffe)).toBe(false);
   });
 });
+
+describe('concurrent acquisition', () => {
+  it('yields exactly one winner from a cold start, and the loser is refused', async () => {
+    const [first, second] = await Promise.all([
+      acquireOrchestratorLock(root, { pid: 100, host: 'lab', isAlive: alive }),
+      acquireOrchestratorLock(root, { pid: 200, host: 'lab', isAlive: alive }),
+    ]);
+    const results = [first, second];
+    const winners = results.filter((result) => !isErr(result));
+    const losers = results.filter(isErr);
+
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(losers[0]!.error[0]?.code).toBe('admin/already_running');
+    expect(losers[0]!.error[0]?.message).toContain('two independent worker budgets');
+    expect(unwrap(winners[0]!).tookOverStaleLock).toBe(false);
+
+    // The lock on disk names exactly the winner — no torn or double write.
+    const record = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
+    expect([100, 200]).toContain(record.pid);
+  });
+
+  it('takes over a stale lock under contention with exactly one winner', async () => {
+    // A crash left pid 100 behind. Two fresh processes race to replace it.
+    // Only pid 100 is dead — each contender correctly reports the other as
+    // alive once it sees the other's own published record, so the race
+    // resolves to a single, stable winner rather than a chain of steals.
+    await acquireOrchestratorLock(root, { pid: 100, host: 'lab', isAlive: alive });
+    const isAliveExceptFirst = (pid: number): boolean => pid !== 100;
+
+    const [second, third] = await Promise.all([
+      acquireOrchestratorLock(root, { pid: 200, host: 'lab', isAlive: isAliveExceptFirst }),
+      acquireOrchestratorLock(root, { pid: 300, host: 'lab', isAlive: isAliveExceptFirst }),
+    ]);
+    const results = [second, third];
+    const winners = results.filter((result) => !isErr(result));
+    const losers = results.filter(isErr);
+
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(unwrap(winners[0]!).tookOverStaleLock).toBe(true);
+    expect(losers[0]!.error[0]?.code).toBe('admin/already_running');
+
+    const record = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
+    expect([200, 300]).toContain(record.pid);
+    expect(record.pid).not.toBe(100);
+  });
+
+  it('lets a valid owner release and another process then acquire', async () => {
+    const first = unwrap(
+      await acquireOrchestratorLock(root, { pid: 100, host: 'lab', isAlive: alive }),
+    );
+    await first.release();
+
+    const second = unwrap(
+      await acquireOrchestratorLock(root, { pid: 200, host: 'lab', isAlive: alive }),
+    );
+    expect(second.tookOverStaleLock).toBe(false);
+    const record = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
+    expect(record.pid).toBe(200);
+  });
+
+  it('refuses an old owner’s release from clobbering a newer owner acquired concurrently', async () => {
+    const first = unwrap(
+      await acquireOrchestratorLock(root, { pid: 100, host: 'lab', isAlive: dead }),
+    );
+    // A successor takes over the (now stale, per its own liveness check) lock.
+    const second = unwrap(
+      await acquireOrchestratorLock(root, { pid: 200, host: 'lab', isAlive: dead }),
+    );
+    expect(second.tookOverStaleLock).toBe(true);
+
+    // The old owner's release must not remove the successor's lock.
+    await first.release();
+    const record = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
+    expect(record.pid).toBe(200);
+
+    // The successor's own release still works normally.
+    await second.release();
+    await expect(readFile(lockPath(), 'utf8')).rejects.toThrow();
+  });
+});
+
+describe('boundary and malformed data', () => {
+  it('fails safely on a lock naming an impossible pid (schema boundary)', async () => {
+    await writeFile(lockPath(), JSON.stringify({ pid: 0, host: 'lab', startedAt: 'x' }), 'utf8');
+    const held = unwrap(await acquireOrchestratorLock(root, { pid: 5, host: 'lab' }));
+    // A schema-invalid record is indistinguishable from unreadable: taken
+    // over, but not reported as a stale takeover, since there was never a
+    // valid prior owner to take it over from.
+    expect(held.tookOverStaleLock).toBe(false);
+    const record = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
+    expect(record.pid).toBe(5);
+  });
+
+  it('records whatever instant an injected clock reports, at the edges of the representable range', async () => {
+    const epoch = unwrap(
+      await acquireOrchestratorLock(root, {
+        pid: 1,
+        host: 'lab',
+        clock: () => new Date(0),
+      }),
+    );
+    expect(epoch.tookOverStaleLock).toBe(false);
+    const record = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
+    expect(record.startedAt).toBe(new Date(0).toISOString());
+
+    await epoch.release();
+
+    const future = unwrap(
+      await acquireOrchestratorLock(root, {
+        pid: 2,
+        host: 'lab',
+        clock: () => new Date('2099-01-01T00:00:00.000Z'),
+      }),
+    );
+    expect(future.tookOverStaleLock).toBe(false);
+    const laterRecord = JSON.parse(await readFile(lockPath(), 'utf8')) as Record<string, unknown>;
+    expect(laterRecord.startedAt).toBe('2099-01-01T00:00:00.000Z');
+  });
+});

@@ -132,12 +132,19 @@ describe('every retained artifact stays inside a configured root (M08.28B)', () 
     //
     // Two files call `rm`, and both are reviewed exceptions rather than
     // gaps: `files.ts`'s atomic write removes a same-call's own `.tmp` file
-    // on a failed write, never a document; `lock.ts`'s `release()` removes
-    // only the orchestrator's own lock file, after confirming by PID and
-    // host that it still owns it — ephemeral process-coordination state, not
-    // a retained artifact. Neither deletes a batch, a job, a saved choice, an
-    // annotation or a result. The assertions below confirm each targets
-    // exactly what it claims, rather than trusting the claim.
+    // on a failed write, never a document; `lock.ts` only ever removes the
+    // orchestrator's own lock file (`path`, proven fixed to
+    // `<catalogRoot>/orchestrator.lock` by the sibling test above) or its own
+    // private staging file (`temp`) — never a batch, a job, a saved choice,
+    // an annotation or a result. `release()` additionally checks by PID and
+    // host that the lock still names this process before removing it; the
+    // acquire path's own `rm(path)` calls need no such guard because M08.R11
+    // made lock acquisition itself the exclusive, atomic step (`link`, which
+    // fails rather than replaces) — a stale or malformed lock cleared here is
+    // ephemeral process-coordination state, and clearing it only ever lets
+    // the *next* contender's own atomic `link` decide the winner. The
+    // assertions below confirm each call targets exactly what it claims,
+    // rather than trusting the claim.
     for (const file of sourceFiles()) {
       if (file.name === 'files.ts') {
         const targets = [...file.text.matchAll(/\brm\(([^,)]+)/g)].map(([, arg]) =>
@@ -150,9 +157,9 @@ describe('every retained artifact stays inside a configured root (M08.28B)', () 
         const targets = [...file.text.matchAll(/\brm\(([^,)]+)/g)].map(([, arg]) =>
           (arg ?? '').trim(),
         );
-        expect(targets).toEqual(['path']);
-        // The one call is inside `release()`, guarded by the PID/host check
-        // immediately above it — not reachable any other way.
+        expect(targets.every((target) => target === 'path' || target === 'temp')).toBe(true);
+        // The release-path call is guarded by the PID/host check immediately
+        // above it — not reachable any other way.
         expect(file.text).toContain(
           'if (held === null || held.pid !== pid || held.host !== host) return;',
         );

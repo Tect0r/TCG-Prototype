@@ -1,12 +1,13 @@
+import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
-import { join } from 'node:path';
-import { rm } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { link, mkdir, open, rm } from 'node:fs/promises';
 
 import { adminError, type AdminError } from '@tcg/admin-contracts';
 import { err, ok, type Result } from '@tcg/shared';
 import { z } from 'zod';
 
-import { readDocumentText, writeJsonAtomically } from '../catalog/files.js';
+import { readDocumentText } from '../catalog/files.js';
 
 /**
  * One orchestration process per catalog, enforced rather than assumed.
@@ -105,6 +106,15 @@ export function processIsAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Concurrent contenders that all find the same stale lock each retry through
+ * this many rounds before giving up. Each round resolves at most one
+ * contender permanently (the atomic create below either wins outright or
+ * tells its loser the winner's identity), so this is generous headroom for
+ * contention, not a tuning knob for expected latency.
+ */
+const MAX_ACQUIRE_ATTEMPTS = 16;
+
 export async function acquireOrchestratorLock(
   catalogRoot: string,
   options: AcquireLockOptions = {},
@@ -113,37 +123,83 @@ export async function acquireOrchestratorLock(
   const pid = options.pid ?? process.pid;
   const host = options.host ?? hostname();
   const isAlive = options.isAlive ?? processIsAlive;
-  const now = (options.clock ?? (() => new Date()))().toISOString();
+  const clock = options.clock ?? (() => new Date());
 
-  const existing = await readLock(path);
+  await mkdir(dirname(path), { recursive: true });
+
   let tookOverStaleLock = false;
 
-  if (existing !== null) {
-    if (existing.host !== host) {
-      return err([
-        adminError(
-          'admin/already_running',
-          `This catalog is held by an orchestrator on \`${existing.host}\`, and liveness cannot be checked across machines, so it was not taken over. Stop that process, or remove the lock file in the catalog root if you are certain it is gone.`,
-          { context: { holder: existing.host, since: existing.startedAt } },
-        ),
-      ]);
+  for (let attempt = 0; attempt < MAX_ACQUIRE_ATTEMPTS; attempt += 1) {
+    const record: LockRecord = { pid, host, startedAt: clock().toISOString() };
+
+    // The one atomic step: the record is written out fully and synced to a
+    // private temporary file first, then published with `link`, which fails
+    // rather than replacing when the destination already exists. Unlike
+    // `open(path, 'wx')` — which makes the destination visible to a reader
+    // before its content is written — the destination here never exists
+    // until it already names the complete record, so a concurrent reader can
+    // never observe a half-written lock and mistake it for a malformed one.
+    // When several processes race here — whether the lock was empty or was
+    // just cleared below — exactly one `link` call succeeds; every other one
+    // observes `EEXIST` and goes on to read what the winner published.
+    if (await tryCreateLock(path, record)) {
+      return ok(makeHeldLock(path, pid, host, tookOverStaleLock));
     }
-    if (existing.pid !== pid && isAlive(existing.pid)) {
-      return err([
-        adminError(
-          'admin/already_running',
-          'Another orchestration process on this machine is already running this catalog. ADR 0023 §4 describes one administrator and one orchestration process; two would run the same queued job under two independent worker budgets.',
-          { context: { holder: existing.host, since: existing.startedAt } },
-        ),
-      ]);
+
+    const existing = await readLock(path);
+
+    if (existing !== null) {
+      if (existing.host !== host) {
+        return err([
+          adminError(
+            'admin/already_running',
+            `This catalog is held by an orchestrator on \`${existing.host}\`, and liveness cannot be checked across machines, so it was not taken over. Stop that process, or remove the lock file in the catalog root if you are certain it is gone.`,
+            { context: { holder: existing.host, since: existing.startedAt } },
+          ),
+        ]);
+      }
+      if (existing.pid !== pid && isAlive(existing.pid)) {
+        return err([
+          adminError(
+            'admin/already_running',
+            'Another orchestration process on this machine is already running this catalog. ADR 0023 §4 describes one administrator and one orchestration process; two would run the same queued job under two independent worker budgets.',
+            { context: { holder: existing.host, since: existing.startedAt } },
+          ),
+        ]);
+      }
+      // Same host, and either this process's own prior record or a dead pid:
+      // stale. Recorded now because the removal below is not itself what
+      // decides the winner — the next loop's create is — and a losing
+      // contender must not report a takeover it did not perform.
+      if (existing.pid !== pid) tookOverStaleLock = true;
     }
-    tookOverStaleLock = existing.pid !== pid;
+
+    // `existing === null` covers both a malformed record (M08.5's "unreadable
+    // is taken over, not treated as authority") and a file another contender
+    // already cleared out from under us. Either way there is nothing here to
+    // preserve, so clear it — `force` makes this safe even if it is already
+    // gone — and let the next iteration's atomic create be the actual
+    // arbitration. Two contenders can both reach this line for the same
+    // stale file; at most one of the creates that follow can win.
+    await rm(path, { force: true });
   }
 
-  const record: LockRecord = { pid, host, startedAt: now };
-  await writeJsonAtomically(path, record);
+  return err([
+    adminError(
+      'admin/already_running',
+      'Could not acquire the orchestrator lock: another process kept winning it under contention. Retry, or check whether an orchestrator is legitimately starting up.',
+      { context: { host } },
+    ),
+  ]);
+}
 
-  return ok({
+function makeHeldLock(
+  path: string,
+  pid: number,
+  host: string,
+  tookOverStaleLock: boolean,
+): OrchestratorLock {
+  return {
     tookOverStaleLock,
     async release(): Promise<void> {
       // Only if it is still ours. A process that was declared stale and taken
@@ -152,7 +208,32 @@ export async function acquireOrchestratorLock(
       if (held === null || held.pid !== pid || held.host !== host) return;
       await rm(path, { force: true });
     },
-  });
+  };
+}
+
+/**
+ * Writes the record to a private temporary file, then publishes it with an
+ * exclusive `link` so the published file is either absent or complete —
+ * never half-written. `false` means another contender's `link` won instead.
+ */
+async function tryCreateLock(path: string, record: LockRecord): Promise<boolean> {
+  const temp = `${path}.${randomBytes(8).toString('hex')}.tmp`;
+  const handle = await open(temp, 'wx');
+  try {
+    await handle.writeFile(`${JSON.stringify(record, null, 2)}\n`, 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await link(temp, path);
+    return true;
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw cause;
+  } finally {
+    await rm(temp, { force: true });
+  }
 }
 
 async function readLock(path: string): Promise<LockRecord | null> {

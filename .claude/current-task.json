@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R11",
+  "unit": "M08.R12",
   "mode": "implementation",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "M08.R11 — Exclusive orchestrator lock",
+  "heading": "M08.R12 — Symlink- and race-safe artifact reads",
   "blocker": null,
-  "next": "M08.R11"
+  "next": "M08.R12"
 }
