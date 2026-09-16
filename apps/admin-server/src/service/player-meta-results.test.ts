@@ -278,9 +278,9 @@ describe('a summary over live matches', () => {
     const withSkips = unwrap(readPlayerMetaSummary(root, filter));
 
     expect(withSkips.limitations.length).toBe(withoutSkips.limitations.length + 1);
-    expect(withSkips.limitations.some((entry) => entry.includes('2 pre-action capture files'))).toBe(
-      true,
-    );
+    expect(
+      withSkips.limitations.some((entry) => entry.includes('2 pre-action capture files')),
+    ).toBe(true);
   });
 });
 

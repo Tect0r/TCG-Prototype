@@ -162,7 +162,9 @@ describe('opening the Player Meta dashboard', () => {
       summary: playerMetaRunSummaryFixture(),
       tables: {
         commanders: playerMetaResultTableFixture('commanders', COMMANDERS_COLUMNS, COMMANDERS_ROWS),
-        surrender_turns: playerMetaResultTableFixture('surrender_turns', turnColumns, [{ turn: 3 }]),
+        surrender_turns: playerMetaResultTableFixture('surrender_turns', turnColumns, [
+          { turn: 3 },
+        ]),
       },
     });
 

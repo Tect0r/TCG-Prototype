@@ -149,7 +149,9 @@ describe('aggregateLiveMatches', () => {
 
     const withoutDatabase = aggregateLiveMatches([envelope()]);
     expect(withoutDatabase[0]?.clusters).toBeNull();
-    expect(withoutDatabase[0]?.clustersUnavailableReason).toMatch(/no card database could be resolved/);
+    expect(withoutDatabase[0]?.clustersUnavailableReason).toMatch(
+      /no card database could be resolved/,
+    );
   });
 
   it('names a historical content-version mismatch distinctly from a merely-unsupplied database', () => {
