@@ -49,6 +49,11 @@ function sourceFiles(): SourceFile[] {
       if (!entry.name.endsWith('.ts')) continue;
       if (entry.name.endsWith('.test.ts')) continue;
       if (entry.name === 'test-catalog.ts') continue;
+      // A real separate OS process for `lock.test.ts`'s multi-process suites
+      // (M08.R15) — not shipped, and its `RESULT:`/`READY` stdout protocol
+      // carries no token or configured root, only a pid, a closed error code
+      // and a boolean. See `boundary.test.ts`'s matching exclusion.
+      if (entry.name === 'lock-process-harness.ts') continue;
       files.push({ name: entry.name, path, text: codeOf(readFileSync(path, 'utf8')) });
     }
   };

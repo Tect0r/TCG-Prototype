@@ -123,6 +123,20 @@ export const ADMIN_ERROR_CODES = [
    * fixes by stopping that process, not by correcting a field.
    */
   'admin/already_running',
+  /**
+   * The lock names a process that is no longer alive on this host, so
+   * acquisition refused to take it over automatically.
+   *
+   * M08.R15 replaced the lock's old automatic stale-takeover with this
+   * refusal, because the takeover could not be made genuinely race-free
+   * against three or more simultaneous contenders (a single PID-file has no
+   * portable cross-process exclusion primitive to fall back on). An operator
+   * clears it deliberately — one administrator, running one recovery step —
+   * rather than a second orchestration process guessing that it is safe to.
+   * `admin/already_running` still means "stop that process"; this means
+   * "confirm it is gone, then clear the lock yourself."
+   */
+  'admin/stale_lock',
 
   /* --------------------------------------------------- the builder (M08.8) */
 

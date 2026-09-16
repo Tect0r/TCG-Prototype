@@ -134,21 +134,19 @@ describe('every retained artifact stays inside a configured root (M08.28B)', () 
     // gaps: `files.ts`'s atomic write removes a same-call's own `.tmp` file
     // on a failed write, never a document; `lock.ts` only ever removes the
     // orchestrator's own lock file (`path`, proven fixed to
-    // `<catalogRoot>/orchestrator.lock` by the sibling test above), its own
-    // private staging file (`temp`), or its own private claim file
-    // (`claimPath`, M08.5's correction of M08.R11: the stale-takeover clear
-    // is a `rename` of `path` to a private name, verified and put back on a
-    // mismatch, rather than an unconditional `rm` of whatever currently
-    // occupies `path`) — never a batch, a job, a saved choice, an annotation
-    // or a result. `release()` additionally checks by PID and host that the
-    // lock still names this process before removing it; the acquire path's
-    // clearing needs no such guard because M08.R11 made lock acquisition
-    // itself the exclusive, atomic step (`link`, which fails rather than
-    // replaces) — a stale or malformed lock cleared here is ephemeral
-    // process-coordination state, and clearing it only ever lets the *next*
-    // contender's own atomic `link` decide the winner. The assertions below
-    // confirm each call targets exactly what it claims, rather than trusting
-    // the claim.
+    // `<catalogRoot>/orchestrator.lock` by the sibling test above) or its own
+    // private staging file (`temp`) — never a batch, a job, a saved choice, an
+    // annotation or a result. M08.R15 removed the old automatic stale-takeover
+    // (a `rename`-based detach-and-verify dance) entirely: `lock.ts` no
+    // longer imports or calls `rename` at all, because acquisition never
+    // removes or replaces an existing lock — `tryCreateLock`'s exclusive
+    // `link` either publishes the one complete record or fails, full stop.
+    // The only two call sites that ever remove `path` are `release()`, guarded
+    // by a PID/host check that the lock still names this process, and
+    // `clearStaleOrchestratorLock`, the separate single-operator recovery
+    // action, guarded by the same host/liveness checks acquisition itself
+    // uses. The assertions below confirm each call targets exactly what it
+    // claims, rather than trusting the claim.
     for (const file of sourceFiles()) {
       if (file.name === 'files.ts') {
         const targets = [...file.text.matchAll(/\brm\(([^,)]+)/g)].map(([, arg]) =>
@@ -158,19 +156,12 @@ describe('every retained artifact stays inside a configured root (M08.28B)', () 
         continue;
       }
       if (file.name === 'lock.ts') {
-        const lockTargets = ['path', 'temp', 'claimPath'];
+        expect(file.text).not.toContain('rename');
+        const lockTargets = ['path', 'temp'];
         const rmTargets = [...file.text.matchAll(/\brm\(([^,)]+)/g)].map(([, arg]) =>
           (arg ?? '').trim(),
         );
         expect(rmTargets.every((target) => lockTargets.includes(target))).toBe(true);
-        const renameTargets = [...file.text.matchAll(/\brename\(([^,)]+),\s*([^,)]+)/g)].map(
-          ([, from, to]) => [(from ?? '').trim(), (to ?? '').trim()],
-        );
-        expect(
-          renameTargets.every(
-            ([from, to]) => lockTargets.includes(from ?? '') && lockTargets.includes(to ?? ''),
-          ),
-        ).toBe(true);
         const linkTargets = [...file.text.matchAll(/\blink\(([^,)]+),\s*([^,)]+)/g)].map(
           ([, from, to]) => [(from ?? '').trim(), (to ?? '').trim()],
         );

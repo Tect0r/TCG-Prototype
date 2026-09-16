@@ -5145,8 +5145,9 @@ build clean, exit 0), `git status --porcelain` empty.
 
 A post-hoc review of the closed tranches above found gaps that shipped without
 being caught by their own slice's focused tests. Corrections are numbered
-`M08.R1`–`M08.R14` rather than reusing or renumbering any tranche above, so a
-correction never collides with or rewrites the historical `M08.5` tranche name
+`M08.R1`–`M08.R15` (and continuing) rather than reusing or renumbering any
+tranche above, so a correction never collides with or rewrites the historical
+`M08.5` tranche name
 ("Runner lifecycle, recovery and resource bounds") or any other already-closed
 slice. Each correction is its own bounded work slice under this same
 milestone file, following the normal one-slice-per-session workflow.
@@ -5883,3 +5884,93 @@ Operational safety and final closure).
 The tranche-close commit (SHA `2c4ca59a6fa69dfb227666db5890cc482a0fc4b4`) is
 pushed and its GitHub Actions run is green (see the acceptance matrix below).
 M08, including the M08.5 correction pass (M08.R1–R14), is complete.
+
+### Correction Tranche E — Independent review corrections
+
+An independent review of the completed M08.5 correction pass (Tranches A–D
+above) found further correctness and duplication concerns that Tranche D's
+own close did not catch. Numbered `M08.R15` onward, continuing the same
+scheme; this tranche is not closed until every slice below is implemented,
+reviewed as one unit, and the full verification gate is re-run and recorded.
+
+- [x] **M08.R15 — Genuinely exclusive orchestrator lock, with no automatic
+      stale takeover.** M08.R11–M08.R14 (Tranche D) built an increasingly
+      careful *automatic* stale-lock takeover — culminating in M08.R14's
+      `rename`-based `claimStaleRecord` detach-and-verify — and M08.R14's own
+      close record admitted, in as many words, that the construction was
+      "the accepted cost of a single PID-file advisory lock," provably
+      correct for exactly two contenders and not for three or more: a third
+      contender's create could win the briefly-empty path in the gap between
+      a second contender's detach and its own restore-on-mismatch, discarding
+      a fresh record its publisher still believed valid. The independent
+      review that opens this tranche correctly refused to accept a
+      documented residual race as "closed," and offered three ways to fix it:
+      (a) a genuinely portable cross-process lock, (b) a simpler
+      exclusive-create lock that refuses stale takeover and requires explicit
+      operator recovery, or (c) another defensible design proven safe under
+      real contention. Chose (b): Node has no portable advisory locking
+      primitive to build (a), and the module's own long-standing doc comment
+      already treats "a lock this layer cannot explain" as worse than one it
+      can, so a bespoke consensus protocol to close a three-contender window
+      was rejected in favor of removing automatic takeover entirely.
+      `acquireOrchestratorLock` now only ever publishes a lock through
+      `tryCreateLock`'s exclusive `link` (creates or fails with `EEXIST`,
+      never replaces) and never removes, renames or replaces an existing
+      record; a same-host live owner is refused with the existing
+      `admin/already_running`, and a same-host dead owner, a cross-host lock,
+      or an unreadable/malformed record is refused with a new closed error
+      code, `admin/stale_lock` (`ADMIN_CONTRACT_VERSION` 17 → 18). Clearing a
+      stale lock is now a separate, explicit action —
+      `clearStaleOrchestratorLock`, guarded by the same host/liveness checks
+      acquisition itself uses — reachable only through a new
+      `TCG_ADMIN_RECOVER_LOCK` environment variable that `main.ts` (the one
+      file permitted to read `process.env`) checks before acquiring anything,
+      runs alone, and exits; ADR 0023 §4 already scopes this whole file to
+      one administrator, so a human running one recovery step is not a race,
+      because there is only ever one of them. `claimStaleRecord` and its
+      `rename` call are gone entirely; `lock.ts` carries no `rename` at all.
+      Updated `retention-boundary.test.ts`'s M08.28B scan (`rm`/`link`
+      targets now only `path`/`temp`, `rename` asserted absent) and
+      `secret-leak-boundary.test.ts`'s/`boundary.test.ts`'s `process.env`
+      and `console.*` scans to exclude the new, unshipped
+      `lock-process-harness.ts` test-only file, by exact filename, the same
+      way both already exclude `test-catalog.ts`.
+
+      The review's explicit requirement — tests using **actual independent
+      processes**, not `Promise.all` inside one — is what the old design's
+      own regression tests never did, and is why the old design's residual
+      race went uncaught by its own slice's focused tests. Added
+      `lock-process-harness.ts`, a small unshipped script spawned by real
+      filesystem path through `vite-node` (mirroring how `main.ts` itself is
+      started), supporting `acquire`/`hold`/`recover` modes and reporting
+      over a `RESULT:`/`READY` stdout protocol carrying no token or
+      configured root. `lock.test.ts`'s new `describe('real multi-process
+      contention', …)` spawns it to cover: two real processes racing an
+      empty catalog to exactly one winner; three-or-more real processes
+      racing a stale record, all refused, none corrupting the record; at
+      least three real concurrent contenders for a live lock, exactly one
+      winner, the rest refused as `admin/already_running`, and a later
+      fourth contender still refused (the live owner is never displaced); a
+      real killed process (`SIGKILL`, simulating a crash) leaving a stale
+      lock that a fresh acquire is refused against and that
+      `clearStaleOrchestratorLock` then clears for a following acquire to
+      succeed; and `clearStaleOrchestratorLock` itself refusing while the
+      real process is still alive. Graceful release inside the `hold`-mode
+      harness is driven over a `release\n` line on the child's stdin rather
+      than `SIGTERM`/`SIGINT`, because this development platform (Windows)
+      does not deliver a catchable signal to a Node process's own handler at
+      all — an OS-level `SIGTERM` terminates unconditionally — so a
+      handler-based release would be untestable locally; killing a process
+      outright (simulating a genuine crash) still goes through Node's own
+      `ChildProcess.kill()`, which does work cross-platform because no
+      handler is needed to terminate. The one remaining "release cannot
+      delete a successor's lock" scenario from the old suite is no longer
+      constructible from honest multi-process contention under this design
+      (a live owner is never displaced, by any number of contenders), which
+      is the fix rather than a testing gap; `release()`'s pid/host guard is
+      still asserted directly as defense in depth. Full admin-server suite
+      (850 tests, including 24 in the rewritten `lock.test.ts`) and full
+      admin-contracts suite (624 tests) pass; `retention-boundary.test.ts`,
+      `boundary.test.ts` and `secret-leak-boundary.test.ts` all pass with
+      the new exclusions; workspace typecheck, eslint and prettier clean on
+      every touched file.

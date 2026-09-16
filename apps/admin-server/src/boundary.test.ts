@@ -46,6 +46,12 @@ function sourceFiles(): SourceFile[] {
       if (entry.name.endsWith('.test.ts')) continue;
       // The test fixture builder is test-only scaffolding, not shipped behaviour.
       if (entry.name === 'test-catalog.ts') continue;
+      // A real separate OS process for `lock.test.ts`'s multi-process
+      // suites (M08.R15) — not shipped, and reads `process.env` because a
+      // *parent test* hands it instructions the same way any spawned
+      // process reads its environment, not because it is a second
+      // configuration entry point like `main.ts`.
+      if (entry.name === 'lock-process-harness.ts') continue;
       files.push({ name: entry.name, text: codeOf(readFileSync(path, 'utf8')) });
     }
   };
@@ -553,6 +559,7 @@ describe('the public barrel', () => {
       'parseServiceConfig',
       'serviceConfigFromEnvironment',
       'acquireOrchestratorLock',
+      'clearStaleOrchestratorLock',
       'RateLimiter',
       'ResultReader',
       'AdminService',

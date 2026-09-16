@@ -206,6 +206,7 @@ export {
 export {
   ORCHESTRATOR_LOCK_FILE,
   acquireOrchestratorLock,
+  clearStaleOrchestratorLock,
   processIsAlive,
   type AcquireLockOptions,
   type OrchestratorLock,

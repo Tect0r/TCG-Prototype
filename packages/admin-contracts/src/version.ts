@@ -372,8 +372,24 @@ import { adminError, type AdminError } from './errors.js';
  *   `origin` are `z.discriminatedUnion`s, so an unrecognised `kind` is a
  *   refused parse, never a silent reinterpretation as `batch` or `preset`.
  *   That is what a contract version is for saying.
+ * - 18 (M08.R15) — one code was added to the closed list, `admin/stale_lock`.
+ *   The orchestrator lock's old automatic stale-takeover could not be made
+ *   race-free against three or more simultaneous contenders with a single
+ *   PID-file and no portable cross-process locking primitive, so M08.R15
+ *   replaced it with a refusal an operator clears deliberately
+ *   (`clearStaleOrchestratorLock`) rather than a second process guessing it
+ *   is safe to reclaim. No endpoint produces either `already_running` or
+ *   `stale_lock` — both are startup answers, before any request is ever
+ *   served — but the codes list itself is part of what this version names,
+ *   the same reasoning version 3 recorded for `admin/already_running` itself.
+ *
+ *   A build speaking 17 would receive a code it cannot branch on if it ever
+ *   inspected the closed list exhaustively; in practice this reaches nobody
+ *   over the wire, since the lock lives entirely in the orchestration
+ *   process's own startup, before any client connects. That is what a
+ *   contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 17;
+export const ADMIN_CONTRACT_VERSION = 18;
 
 /**
  * The version stamped into a persisted catalog document.

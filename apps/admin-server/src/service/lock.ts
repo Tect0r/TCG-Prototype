@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import { dirname, join } from 'node:path';
-import { link, mkdir, open, rename, rm } from 'node:fs/promises';
+import { link, mkdir, open, rm } from 'node:fs/promises';
 
 import { adminError, type AdminError } from '@tcg/admin-contracts';
 import { err, ok, type Result } from '@tcg/shared';
@@ -12,60 +12,76 @@ import { readDocumentText } from '../catalog/files.js';
 /**
  * One orchestration process per catalog, enforced rather than assumed.
  *
- * M08.5 recorded this as the gap M08.6 would have to close, and named the reason
- * it could not be closed earlier: *two orchestrators in two processes could both
- * pass the `start` transition, and the worker budget is one process's own.
- * ADR 0023 §4 describes one administrator and one orchestration process, and this
- * workspace still has no entry point at all — so there is nothing yet for a lock
- * to protect. M08.6 creates the process, and is where a second one would have to
- * be refused.*
- *
- * The damage a second process does is worth being concrete about, because it is
- * not "two writers race on a file" — the store already handles that with atomic
- * renames and per-document locks. It is that **both would run the same job**. A
- * `queued` job is started by whichever orchestrator reaches it, and two of them
- * would each take the `start` transition on different reads of the same
- * document, each open the same experiment directory, and each append to the same
- * `matches.jsonl`. The stream's identity dedupe would prevent duplicated
- * *records*, but both would be playing the same matches on the same machine
+ * M08.5 recorded this as the gap M08.6 would have to close: *two orchestrators
+ * in two processes could both pass the `start` transition, and the worker
+ * budget is one process's own.* ADR 0023 §4 describes one administrator and
+ * one orchestration process. The damage a second process does is worth being
+ * concrete about, because it is not "two writers race on a file" — the store
+ * already handles that with atomic renames and per-document locks. It is that
+ * **both would run the same job**, each opening the same experiment directory
  * under two independent worker budgets, which is exactly the oversubscription
  * `limits.ts` exists to prevent.
  *
  * ## Why a PID file, and what it honestly gives
  *
- * An advisory lock, and it says so. The file records which process on which host
- * took the catalog, and a second process reads it before doing anything:
+ * An advisory lock, and it says so. The file records which process on which
+ * host took the catalog, and a second process reads it before doing anything:
  *
- * - **Same host, process alive** → refused. `process.kill(pid, 0)` sends no
- *   signal; it asks whether the process exists, which is the question.
- * - **Same host, process gone** → taken over, and the takeover is *reported*
- *   rather than silent. A crash is exactly how this file is normally left
- *   behind, and a lab that refused to start after one would be a lab that needs
- *   a manual step after every crash — which is the step people automate away
- *   with `rm`, and then it protects nothing.
- * - **A different host** → refused, and not taken over. Liveness cannot be
- *   checked across a machine boundary, so the only safe answer is the one that
- *   does not guess. A catalog on a network share is the case, and it is rare
- *   enough to be worth an operator's attention.
- * - **Unreadable** → taken over. A truncated or hand-edited lock names nobody,
- *   and refusing to start because of a file this process would rewrite anyway
- *   would be treating corruption as authority.
+ * - **Same host, process alive** → refused (`admin/already_running`).
+ *   `process.kill(pid, 0)` sends no signal; it asks whether the process
+ *   exists, which is the question.
+ * - **Same host, process gone (or the record is unreadable)** → refused with
+ *   `admin/stale_lock`, **not** taken over automatically. See "no automatic
+ *   takeover" below for why.
+ * - **A different host** → refused, and never taken over automatically.
+ *   Liveness cannot be checked across a machine boundary, so the only safe
+ *   answer is the one that does not guess. A catalog on a network share is
+ *   the case, and it is rare enough to be worth an operator's attention.
  *
  * There is no `flock`: Node has no portable advisory locking, the Windows and
- * POSIX semantics differ in exactly the way that matters here, and a lock this
- * layer cannot explain is worse than one it can. What this does not defend
- * against is a PID that has been reused by an unrelated process, which would
- * cause a spurious refusal rather than a spurious start — the direction an
- * operator can see and act on.
+ * POSIX semantics differ in exactly the way that matters here, and a lock
+ * this layer cannot explain is worse than one it can.
+ *
+ * ## No automatic takeover (M08.R15)
+ *
+ * M08.R11–M08.R14 tried to make an *automatic* stale-lock takeover safe under
+ * arbitrary contention: detach the stale record with `rename` (so at most one
+ * simultaneous claimant sees the source exist), verify the detached content
+ * still matched what was read, and only then treat the path as clear for a
+ * fresh `link`. That construction is provably correct for exactly two
+ * contenders, and M08.R14's own `claimStaleRecord` doc comment recorded,
+ * honestly, that it was *not* provably correct for three or more: a third
+ * contender's create could win the briefly-empty path in the gap between a
+ * second contender's detach and its own restore-on-mismatch, discarding a
+ * fresh record its publisher still believed valid. A design that documents a
+ * residual race while claiming exclusivity is not a fix — it is a narrower
+ * window on the same defect, and an independent review of M08.5 correctly
+ * refused to accept "narrower" as "closed."
+ *
+ * Rather than build a bespoke consensus protocol to close a three-contender
+ * window over a single PID file — a lock this layer could not explain, per
+ * the module's own long-standing rule — acquisition now refuses a stale lock
+ * outright and leaves clearing it to a **separate, explicit, single-operator
+ * action**: `clearStaleOrchestratorLock`. That function performs exactly one
+ * `rm`, guarded by the same liveness and host checks acquisition itself uses,
+ * and ADR 0023 §4 already scopes this whole file to one administrator — a
+ * human running one recovery command is not a race, because there is only
+ * ever one of them. What acquisition itself does — `tryCreateLock`'s
+ * exclusive `link` — is unconditionally exclusive for any number of
+ * contenders: `link` either publishes the one complete record or fails with
+ * `EEXIST`, with no path that ever removes or replaces an existing lock as
+ * part of acquiring a new one. That is the property this file now actually
+ * guarantees, for any number of simultaneous contenders, rather than merely
+ * claims.
  *
  * ## No version constant
  *
- * Deliberately, and by the test M08.1 set for adding one: *a third artifact with
- * its own lifetime is a reason to add a third constant; a second schema inside
- * the same family is not.* This file has no lifetime at all. It exists only
- * while a process does, it is never read by a later build for its contents, and
- * a version it could not parse is a version it discards. A number in it would be
- * a number nothing ever compares.
+ * Deliberately, and by the test M08.1 set for adding one: *a third artifact
+ * with its own lifetime is a reason to add a third constant; a second schema
+ * inside the same family is not.* This file has no lifetime at all. It exists
+ * only while a process does, it is never read by a later build for its
+ * contents, and a version it could not parse is a version it discards. A
+ * number in it would be a number nothing ever compares.
  */
 
 /** The lock's name under the catalog root. */
@@ -80,8 +96,6 @@ type LockRecord = z.infer<typeof lockSchema>;
 
 /** What a held lock lets its holder do: give it back. */
 export interface OrchestratorLock {
-  /** True when a previous process left this behind and this one took it over. */
-  readonly tookOverStaleLock: boolean;
   /** Releases the lock, but only if it still names this process. */
   release(): Promise<void>;
 }
@@ -107,14 +121,15 @@ export function processIsAlive(pid: number): boolean {
 }
 
 /**
- * Concurrent contenders that all find the same stale lock each retry through
- * this many rounds before giving up. Each round resolves at most one
- * contender permanently (the atomic create below either wins outright or
- * tells its loser the winner's identity), so this is generous headroom for
- * contention, not a tuning knob for expected latency.
+ * Acquires the one orchestrator lock for `catalogRoot`, or refuses.
+ *
+ * The only path that ever publishes a lock record is `tryCreateLock`'s
+ * exclusive `link`, which either creates the destination or fails with
+ * `EEXIST` — never replaces one. So this function never removes, renames or
+ * overwrites an existing lock; a stale or malformed one is reported through
+ * `admin/stale_lock` for an operator to clear with `clearStaleOrchestratorLock`,
+ * not cleared here.
  */
-const MAX_ACQUIRE_ATTEMPTS = 16;
-
 export async function acquireOrchestratorLock(
   catalogRoot: string,
   options: AcquireLockOptions = {},
@@ -127,97 +142,103 @@ export async function acquireOrchestratorLock(
 
   await mkdir(dirname(path), { recursive: true });
 
-  let tookOverStaleLock = false;
-
-  for (let attempt = 0; attempt < MAX_ACQUIRE_ATTEMPTS; attempt += 1) {
-    const record: LockRecord = { pid, host, startedAt: clock().toISOString() };
-
-    // The one atomic step: the record is written out fully and synced to a
-    // private temporary file first, then published with `link`, which fails
-    // rather than replacing when the destination already exists. Unlike
-    // `open(path, 'wx')` — which makes the destination visible to a reader
-    // before its content is written — the destination here never exists
-    // until it already names the complete record, so a concurrent reader can
-    // never observe a half-written lock and mistake it for a malformed one.
-    // When several processes race here — whether the lock was empty or was
-    // just cleared below — exactly one `link` call succeeds; every other one
-    // observes `EEXIST` and goes on to read what the winner published.
-    if (await tryCreateLock(path, record)) {
-      return ok(makeHeldLock(path, pid, host, tookOverStaleLock));
-    }
-
-    const existingText = await readDocumentText(path);
-    const existing = existingText === null ? null : parseLockText(existingText);
-
-    if (existing !== null) {
-      if (existing.host !== host) {
-        return err([
-          adminError(
-            'admin/already_running',
-            `This catalog is held by an orchestrator on \`${existing.host}\`, and liveness cannot be checked across machines, so it was not taken over. Stop that process, or remove the lock file in the catalog root if you are certain it is gone.`,
-            { context: { holder: existing.host, since: existing.startedAt } },
-          ),
-        ]);
-      }
-      if (existing.pid !== pid && isAlive(existing.pid)) {
-        return err([
-          adminError(
-            'admin/already_running',
-            'Another orchestration process on this machine is already running this catalog. ADR 0023 §4 describes one administrator and one orchestration process; two would run the same queued job under two independent worker budgets.',
-            { context: { holder: existing.host, since: existing.startedAt } },
-          ),
-        ]);
-      }
-      // Same host, and either this process's own prior record or a dead pid:
-      // stale. Recorded now, from the observation alone, because the clear
-      // below is not itself what decides the winner — the next loop's create
-      // is, and it can be won by a different contender than the one whose
-      // claim below actually detached the stale record (its own claim can
-      // lose the race to detach first, then win the race to create after).
-      // Every simultaneous contender observed the same genuinely stale
-      // record, so it is correct for each to report a takeover if it is the
-      // one that goes on to win; a losing contender's flag is simply
-      // discarded with the rest of its result.
-      if (existing.pid !== pid) tookOverStaleLock = true;
-    }
-
-    // `existing === null` covers both a malformed record (M08.5's "unreadable
-    // is taken over, not treated as authority") and a file another contender
-    // already cleared out from under us. Either way, the *exact bytes just
-    // read* are the only thing this contender has permission to remove — an
-    // unconditional `rm` here would delete whatever currently occupies `path`,
-    // including a fresh, live lock a different contender published in the
-    // meantime, which is how two processes could both end up believing they
-    // hold the catalog. `claimStaleRecord` detaches the path with `rename`
-    // (so at most one simultaneous claimant ever sees the source exist) and
-    // then verifies the detached content still matches what was read; a
-    // mismatch means someone else already replaced it, so the content is put
-    // back (or left alone, if a legitimate successor already reclaimed the
-    // path) rather than destroyed. Only a genuine, verified detach clears the
-    // path for the next iteration's atomic create.
-    await claimStaleRecord(path, existingText);
+  const record: LockRecord = { pid, host, startedAt: clock().toISOString() };
+  if (await tryCreateLock(path, record)) {
+    return ok(makeHeldLock(path, pid, host));
   }
 
+  const existing = await readLock(path);
+
+  if (existing !== null && existing.host !== host) {
+    return err([
+      adminError(
+        'admin/already_running',
+        `This catalog is held by an orchestrator on \`${existing.host}\`, and liveness cannot be checked across machines, so it was not taken over. Stop that process, or clear the lock on that host if you are certain it is gone.`,
+        { context: { holder: existing.host, since: existing.startedAt } },
+      ),
+    ]);
+  }
+
+  if (existing !== null && isAlive(existing.pid)) {
+    return err([
+      adminError(
+        'admin/already_running',
+        'Another orchestration process on this machine is already running this catalog. ADR 0023 §4 describes one administrator and one orchestration process; two would run the same queued job under two independent worker budgets.',
+        { context: { holder: existing.host, since: existing.startedAt } },
+      ),
+    ]);
+  }
+
+  // Either a genuinely dead PID on this host, or a lock this process could
+  // not even parse (M08.5's "unreadable is not authority" — but M08.R15
+  // stopped treating either case as something acquisition may clear itself).
   return err([
     adminError(
-      'admin/already_running',
-      'Could not acquire the orchestrator lock: another process kept winning it under contention. Retry, or check whether an orchestrator is legitimately starting up.',
-      { context: { host } },
+      'admin/stale_lock',
+      'This catalog is held by a lock naming a process that is no longer running on this host. It was not taken over automatically — run the orchestrator lock recovery step once you have confirmed that process is really gone, then start again.',
+      existing === null ? {} : { context: { holder: existing.host, since: existing.startedAt } },
     ),
   ]);
 }
 
-function makeHeldLock(
-  path: string,
-  pid: number,
-  host: string,
-  tookOverStaleLock: boolean,
-): OrchestratorLock {
+/**
+ * The explicit, single-operator recovery action M08.R15's design relies on:
+ * clears the lock at `catalogRoot`, but only when it can positively confirm
+ * there is nothing left to protect — the same host and a dead PID, or a
+ * record this process cannot even parse. A live lock, same-host or
+ * cross-host, is left untouched and reported as a refusal.
+ *
+ * Safe to run concurrently with nothing else, because ADR 0023 §4 scopes the
+ * whole file to one administrator: there is never a second recovery action
+ * racing this one the way two orchestrators could race an automatic takeover.
+ */
+export async function clearStaleOrchestratorLock(
+  catalogRoot: string,
+  options: Pick<AcquireLockOptions, 'host' | 'isAlive'> = {},
+): Promise<Result<{ readonly cleared: boolean }, readonly AdminError[]>> {
+  const path = join(catalogRoot, ORCHESTRATOR_LOCK_FILE);
+  const host = options.host ?? hostname();
+  const isAlive = options.isAlive ?? processIsAlive;
+
+  const text = await readDocumentText(path);
+  if (text === null) return ok({ cleared: false });
+
+  const existing = parseLockText(text);
+  if (existing === null) {
+    // Never named a live owner in the first place — safe to clear.
+    await rm(path, { force: true });
+    return ok({ cleared: true });
+  }
+
+  if (existing.host !== host) {
+    return err([
+      adminError(
+        'admin/stale_lock',
+        `This catalog's lock names a different host (\`${existing.host}\`), and liveness cannot be checked across machines, so it was not cleared. Confirm that orchestrator is really gone, then clear the lock on \`${existing.host}\` itself.`,
+        { context: { holder: existing.host, since: existing.startedAt } },
+      ),
+    ]);
+  }
+
+  if (isAlive(existing.pid)) {
+    return err([
+      adminError(
+        'admin/stale_lock',
+        'The orchestration process that holds this lock is still running on this host, so nothing was cleared. Stop it first.',
+        { context: { holder: existing.host, since: existing.startedAt } },
+      ),
+    ]);
+  }
+
+  await rm(path, { force: true });
+  return ok({ cleared: true });
+}
+
+function makeHeldLock(path: string, pid: number, host: string): OrchestratorLock {
   return {
-    tookOverStaleLock,
     async release(): Promise<void> {
-      // Only if it is still ours. A process that was declared stale and taken
-      // over must not delete the successor's lock on its way out.
+      // Only if it is still ours. A process must never remove a lock some
+      // other holder's name is on it.
       const held = await readLock(path);
       if (held === null || held.pid !== pid || held.host !== host) return;
       await rm(path, { force: true });
@@ -228,7 +249,10 @@ function makeHeldLock(
 /**
  * Writes the record to a private temporary file, then publishes it with an
  * exclusive `link` so the published file is either absent or complete —
- * never half-written. `false` means another contender's `link` won instead.
+ * never half-written, and never a replacement of whatever previously
+ * occupied `path`. `false` means the destination already existed — a fresh
+ * win, a live prior owner or a stale one, this function does not tell them
+ * apart; the caller reads and classifies `path` afterward.
  */
 async function tryCreateLock(path: string, record: LockRecord): Promise<boolean> {
   const temp = `${path}.${randomBytes(8).toString('hex')}.tmp`;
@@ -261,54 +285,5 @@ function parseLockText(text: string): LockRecord | null {
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Detaches `path` with `rename` and verifies the content that came off it was
- * exactly `expectedText` — the bytes this contender already decided were
- * stale — before treating the detach as this contender's own takeover.
- *
- * `rename` only requires that the source exist, not that it still holds any
- * particular content, so on its own it is exactly as unsafe as the `rm` it
- * replaces: two contenders can each detach *something* from the same path,
- * but only one of them can be detaching the record either of them actually
- * read. The content check after the detach is what tells them apart. A
- * mismatch means a different contender's fresh, live record was caught by
- * this rename instead of the stale one — so it is put back with `link`. An
- * `EEXIST` there is not automatically benign: it usually means a legitimate
- * successor already reclaimed `path` before this restore, but with three or
- * more simultaneous contenders it can instead mean a *third* contender's
- * `tryCreateLock` won the now-briefly-empty `path` in the gap between this
- * detach and this restore — in which case the record this function is
- * discarding was still believed valid by whoever published it, and that
- * holder is not told. This is the narrow residual window a single PID-file
- * advisory lock accepts rather than adding real OS-level locking for: it
- * needs three genuinely concurrent contenders racing the same stale record,
- * and the file's own module doc already scopes this to one administrator,
- * one orchestration process. Either way this contender returns `false`,
- * taking no credit for a takeover it did not perform. The next loop
- * iteration re-reads the path from scratch rather than trusting anything
- * decided this round.
- */
-async function claimStaleRecord(path: string, expectedText: string | null): Promise<boolean> {
-  const claimPath = `${path}.claim.${randomBytes(8).toString('hex')}.tmp`;
-  try {
-    await rename(path, claimPath);
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw cause;
-  }
-  try {
-    const claimedText = await readDocumentText(claimPath);
-    if (claimedText === expectedText) return true;
-    try {
-      await link(claimPath, path);
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
-    }
-    return false;
-  } finally {
-    await rm(claimPath, { force: true });
   }
 }

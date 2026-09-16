@@ -8,7 +8,10 @@ import { JobQueue } from './run/queue.js';
 import { ADMIN_ENVIRONMENT_KEYS, serviceConfigFromEnvironment } from './service/config.js';
 import { AdminService } from './service/handlers.js';
 import { startAdminHttpServer } from './service/http.js';
-import { acquireOrchestratorLock } from './service/lock.js';
+import { acquireOrchestratorLock, clearStaleOrchestratorLock } from './service/lock.js';
+
+/** Set to run only the lock recovery step below, then exit — never to start the service. */
+const RECOVER_LOCK_ENV_KEY = 'TCG_ADMIN_RECOVER_LOCK';
 
 /**
  * The orchestration process — the first entry point this workspace has ever had.
@@ -50,6 +53,13 @@ import { acquireOrchestratorLock } from './service/lock.js';
  * of anything that leaves the process; a start-up banner is where both are most
  * tempting and least necessary, because the person reading it is the person who
  * configured them.
+ *
+ * `TCG_ADMIN_RECOVER_LOCK` (any value) short-circuits all of the above except
+ * configuration: it runs `clearStaleOrchestratorLock` alone and exits, never
+ * starting the service. M08.R15 removed the lock's old automatic stale-takeover
+ * — a race that could not be made safe against three or more contenders with a
+ * single PID file — in favor of exactly this: a deliberate, single-operator
+ * step, run separately from an ordinary start.
  */
 async function main(): Promise<number> {
   const config = serviceConfigFromEnvironment(process.env);
@@ -60,6 +70,20 @@ async function main(): Promise<number> {
       `Set ${ADMIN_ENVIRONMENT_KEYS.catalogRoot} and ${ADMIN_ENVIRONMENT_KEYS.resultRoot} to absolute directories.`,
     );
     return 1;
+  }
+
+  if (process.env[RECOVER_LOCK_ENV_KEY] !== undefined) {
+    const recovered = await clearStaleOrchestratorLock(config.value.roots.catalogRoot);
+    if (isErr(recovered)) {
+      for (const problem of recovered.error) console.error(`${problem.code}: ${problem.message}`);
+      return 1;
+    }
+    console.log(
+      recovered.value.cleared
+        ? 'Cleared a stale orchestrator lock. Start the service normally now.'
+        : 'No lock was present; there was nothing to clear.',
+    );
+    return 0;
   }
 
   const priority = lowerSimulatorProcessPriority();
@@ -103,11 +127,6 @@ async function main(): Promise<number> {
   } else {
     console.warn(
       `Could not lower process priority (${priority.reason ?? 'unknown reason'}); simulator work will compete evenly for CPU on a shared machine.`,
-    );
-  }
-  if (lock.value.tookOverStaleLock) {
-    console.warn(
-      'A previous orchestrator left a lock behind and is no longer running; this process took it over.',
     );
   }
   console.log(
