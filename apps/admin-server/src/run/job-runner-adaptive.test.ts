@@ -335,7 +335,25 @@ describe('a real adaptive run, paused exactly before final result publication', 
 
     const running = runner.run(jobId, { workers: 2, control });
 
-    for (let waited = 0; waited < 10_000; waited += 10) {
+    // Poll for the terminal checkpoint rather than waiting a fixed budget:
+    // the screening phase this waits out is real simulation work, and a
+    // fixed cap that is generous locally can still be too short on a slower
+    // or more heavily loaded CI runner. Racing each tick against `running`
+    // itself (instead of falling through to pause on a timeout regardless)
+    // means a run that finishes before the terminal state ever appears is
+    // handled by the same "pause lost the race" branch below, never by
+    // pausing mid-screening against a stale, not-yet-terminal checkpoint.
+    let runFinished = false;
+    running
+      .finally(() => {
+        runFinished = true;
+      })
+      .catch(() => {
+        // Observed via `outcome`/`unwrap(await running)` below.
+      });
+
+    let observedTerminal = false;
+    while (!runFinished) {
       try {
         const checkpoint = JSON.parse(await readFile(checkpointPath, 'utf8')) as {
           pendingGeneration: unknown;
@@ -345,6 +363,7 @@ describe('a real adaptive run, paused exactly before final result publication', 
           checkpoint.pendingGeneration === null &&
           checkpoint.gamesSpent >= config.totalLearningBudget
         ) {
+          observedTerminal = true;
           break;
         }
       } catch {
@@ -352,14 +371,22 @@ describe('a real adaptive run, paused exactly before final result publication', 
       }
       await delay(10);
     }
-    unwrap(await catalog.store.applyJobAction({ jobId, action: 'pause' }));
-    control.request('pause');
+
+    if (observedTerminal) {
+      const pauseResult = await catalog.store.applyJobAction({ jobId, action: 'pause' });
+      const pauseLostTheRace =
+        isErr(pauseResult) && pauseResult.error[0]?.code === 'admin/illegal_transition';
+      if (!pauseLostTheRace) unwrap(pauseResult);
+      control.request('pause');
+    }
 
     const outcome = unwrap(await running);
 
     if (outcome.status === 'stopped') {
       const checkpoint = JSON.parse(await readFile(checkpointPath, 'utf8')) as {
         pendingGeneration: unknown;
+        gamesSpent: number;
+        nextBlock: number;
       };
       // The learning series is fully decided (promotion settled) before
       // validation ever starts, so a stop inside validation always finds it
@@ -371,9 +398,10 @@ describe('a real adaptive run, paused exactly before final result publication', 
       const resumedOutcome = unwrap(await runner.run(jobId));
       expect(resumedOutcome.status).toBe('completed');
     } else {
-      // The pause lost the race against a fast validation stage and the run
-      // completed on its own — the property under test (a durable, complete
-      // result) still holds, just without exercising the resume path.
+      // The run finished on its own before the terminal checkpoint was ever
+      // observed (or before a since-observed pause landed) — the property
+      // under test (a durable, complete result) still holds, just without
+      // exercising the resume path.
       expect(outcome.status).toBe('completed');
     }
 

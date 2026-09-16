@@ -315,6 +315,15 @@ describe('a large synthetic fixture, within reasonable CI limits', () => {
   });
 
   it('serves an entire simulated dashboard load — several independent reader calls — from one cached scan', () => {
+    // Freezes `Date.now()` for this test only (the file's `afterEach` always
+    // restores real timers): five reader calls over a 500-match fixture is
+    // real synchronous I/O, and under a heavily loaded machine — every
+    // workspace's suite running at once, as `npm run verify` does — that can
+    // take long enough in wall-clock time to cross `LIVE_MATCH_SNAPSHOT_TTL_MS`
+    // between calls, which would make this cache-identity assertion flake on
+    // something this test never means to exercise (the TTL itself has its
+    // own coverage above).
+    vi.useFakeTimers();
     const firstLoad = openLiveMatchSnapshot(root);
     const summaryCall = openLiveMatchSnapshot(root);
     const tableCallOne = readLiveMatchEnvelopes(root);
