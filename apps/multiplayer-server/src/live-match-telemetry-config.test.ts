@@ -28,9 +28,7 @@ describe('parseLiveMatchTelemetryConfig', () => {
     const result = parseLiveMatchTelemetryConfig({ enabled: true });
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;
-    expect(result.error.map((issue) => issue.code)).toContain(
-      'live_match_telemetry/root_required',
-    );
+    expect(result.error.map((issue) => issue.code)).toContain('live_match_telemetry/root_required');
   });
 
   it('refuses a root directory that is not absolute', () => {
@@ -62,6 +60,21 @@ describe('parseLiveMatchTelemetryConfig', () => {
       maxAgeDays: 90,
       privacyMode: 'strict',
     });
+  });
+
+  it('a configured root with collection disabled yields no root', () => {
+    // A prior root value must never survive a switch to disabled — this is
+    // what keeps `compose.ts` from wiring a live-match sink while the
+    // operator's own `enabled` flag says off, and it is why
+    // `LiveMatchTelemetryConfig.rootDirectory`'s doc comment promises `null`
+    // exactly when `enabled` is `false`.
+    const result = parseLiveMatchTelemetryConfig({
+      enabled: false,
+      rootDirectory: ABSOLUTE_ROOT,
+    });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.rootDirectory).toBeNull();
   });
 
   it.each([0, -1, 1.5, 3651])('refuses an out-of-bounds maxAgeDays of %s', (maxAgeDays) => {
@@ -191,14 +204,26 @@ describe('liveMatchTelemetryConfigFromEnvironment', () => {
     );
   });
 
+  it('an operator-configured root with no enabled flag set yields no root, not a leaked default-on sink', () => {
+    // The exact shape of an operator who sets `TCG_LIVE_MATCH_TELEMETRY_ROOT`
+    // in advance of turning collection on: `enabled` stays at its documented
+    // disabled default, so `compose.ts` must not construct a live-match sink
+    // from the leftover root.
+    const result = liveMatchTelemetryConfigFromEnvironment({
+      [LIVE_MATCH_TELEMETRY_ENVIRONMENT_KEYS.rootDirectory]: ABSOLUTE_ROOT,
+    });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.enabled).toBe(false);
+    expect(result.value.rootDirectory).toBeNull();
+  });
+
   it('delegates the cross-field enabled/root refusal to the pure parser', () => {
     const result = liveMatchTelemetryConfigFromEnvironment({
       [LIVE_MATCH_TELEMETRY_ENVIRONMENT_KEYS.enabled]: 'true',
     });
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;
-    expect(result.error.map((issue) => issue.code)).toContain(
-      'live_match_telemetry/root_required',
-    );
+    expect(result.error.map((issue) => issue.code)).toContain('live_match_telemetry/root_required');
   });
 });

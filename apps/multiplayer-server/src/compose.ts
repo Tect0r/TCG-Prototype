@@ -2,7 +2,10 @@ import { loadFormatCardData, resolveFormatId, type CardDatabase } from '@tcg/car
 import { deckFormatOf, type DeckFormatConfig } from '@tcg/deck';
 import { DEFAULT_RULES_CONFIG } from '@tcg/rules-engine';
 import { err, ok, type Issue, type Result } from '@tcg/shared';
-import { effectiveLiveMatchRetention, liveMatchTelemetryConfigFromEnvironment } from './live-match-telemetry-config.js';
+import {
+  effectiveLiveMatchRetention,
+  liveMatchTelemetryConfigFromEnvironment,
+} from './live-match-telemetry-config.js';
 import { LiveMatchFileStore } from './live-match-store.js';
 import { MatchServer } from './match-server.js';
 
@@ -44,7 +47,7 @@ export function composeMatchServer(
     database,
     config: DEFAULT_RULES_CONFIG,
     deckFormat,
-    ...(telemetryConfig.rootDirectory !== null
+    ...(telemetryConfig.enabled && telemetryConfig.rootDirectory !== null
       ? {
           liveMatchSink: new LiveMatchFileStore({ rootDirectory: telemetryConfig.rootDirectory }),
           liveMatchRetention: effectiveLiveMatchRetention(telemetryConfig),

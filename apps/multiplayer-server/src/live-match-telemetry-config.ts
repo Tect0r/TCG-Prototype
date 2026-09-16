@@ -1,5 +1,8 @@
 import { isAbsolute } from 'node:path';
-import { liveMatchRetentionConfigSchema, type LiveMatchRetentionConfig } from '@tcg/match-telemetry';
+import {
+  liveMatchRetentionConfigSchema,
+  type LiveMatchRetentionConfig,
+} from '@tcg/match-telemetry';
 import { err, error, ok, type Issue, type Result } from '@tcg/shared';
 
 /**
@@ -146,7 +149,7 @@ export function parseLiveMatchTelemetryConfig(
 
   return ok({
     enabled,
-    rootDirectory,
+    rootDirectory: enabled ? rootDirectory : null,
     retention: retentionParsed.success ? retentionParsed.data : DEFAULT_RETENTION,
     maxAgeDays,
     privacyMode,
@@ -178,7 +181,11 @@ export const LIVE_MATCH_TELEMETRY_ENVIRONMENT_KEYS = Object.freeze({
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
-function booleanFrom(environment: Environment, key: string, problems: Issue[]): boolean | undefined {
+function booleanFrom(
+  environment: Environment,
+  key: string,
+  problems: Issue[],
+): boolean | undefined {
   const raw = environment[key];
   if (raw === undefined || raw.trim() === '') return undefined;
   const normalized = raw.trim().toLowerCase();
@@ -228,7 +235,9 @@ export function liveMatchTelemetryConfigFromEnvironment(
 
   const rawPrivacyMode = environment[keys.privacyMode];
   const privacyMode =
-    rawPrivacyMode === undefined || rawPrivacyMode.trim() === '' ? undefined : rawPrivacyMode.trim();
+    rawPrivacyMode === undefined || rawPrivacyMode.trim() === ''
+      ? undefined
+      : rawPrivacyMode.trim();
 
   if (problems.length > 0) return err(problems);
 

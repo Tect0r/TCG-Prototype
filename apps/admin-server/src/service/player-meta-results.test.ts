@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   NO_PLAYER_META_FILTER,
@@ -17,6 +17,33 @@ import {
 } from '@tcg/match-telemetry';
 
 import { resolveCatalogRoots } from '../catalog/roots.js';
+
+import type * as SimulatorModule from '@tcg/simulator';
+
+/**
+ * A real root large enough to exercise `openLiveMatchSnapshot`'s own
+ * `truncated: true` path would need more match directories than a unit test
+ * should write to disk. This overrides only that one flag on the real
+ * snapshot — every match, capture and aggregate the mocked call returns is
+ * still `@tcg/simulator`'s own real read — so the test below exercises
+ * exactly the plumbing the tranche-close review flagged (M08.R10's
+ * `snapshot.truncated` reaching `PLAYER_META_RUN_LIMITATIONS`), not a
+ * reimplementation of the scan cap itself.
+ */
+let forceSnapshotTruncated = false;
+
+vi.mock('@tcg/simulator', async () => {
+  const actual = await vi.importActual<typeof SimulatorModule>('@tcg/simulator');
+  return {
+    ...actual,
+    openLiveMatchSnapshot: (
+      ...args: Parameters<typeof actual.openLiveMatchSnapshot>
+    ): ReturnType<typeof actual.openLiveMatchSnapshot> => {
+      const snapshot = actual.openLiveMatchSnapshot(...args);
+      return forceSnapshotTruncated ? { ...snapshot, truncated: true } : snapshot;
+    },
+  };
+});
 
 import {
   PlayerMetaResultReader,
@@ -35,6 +62,7 @@ let root: string;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'tcg-admin-player-meta-'));
+  forceSnapshotTruncated = false;
 });
 
 afterEach(() => {
@@ -219,6 +247,17 @@ describe('a summary over live matches', () => {
     expect(summary.source.recordsRead).toBe(1);
     expect(summary.partitions).toHaveLength(1);
     expect(summary.partitions[0]?.partition.source).toBe('ai_ai');
+  });
+
+  it('surfaces a truncated snapshot as a visible limitation rather than a silent partial read (Tranche C review)', () => {
+    writeMatch('match_a', envelope('match_a'));
+    const withoutTruncation = unwrap(readPlayerMetaSummary(root, filter));
+
+    forceSnapshotTruncated = true;
+    const withTruncation = unwrap(readPlayerMetaSummary(root, filter));
+
+    expect(withTruncation.limitations.length).toBe(withoutTruncation.limitations.length + 1);
+    expect(withTruncation.limitations.some((entry) => entry.includes('scan limit'))).toBe(true);
   });
 });
 

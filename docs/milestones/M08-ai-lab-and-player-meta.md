@@ -5466,37 +5466,35 @@ Adaptive job contracts and catalog persistence).
       already proven by `run.test.ts`'s resumed-attempt byte-identical
       re-emission assertion; and maximum-budget boundaries were already
       exercised at the schema (`config.test.ts`) and block-planning
-      (`block.test.ts`) layers. Found and fixed four genuine gaps:
-      1. **Corrupted checkpoint/raw evidence.** `#runAdaptive`
-         (`job-runner.ts`) let a thrown `#loadOrCreateAdaptiveRaw` failure
-         (a corrupted or unreadable `adaptive-raw.json` from a crash
-         mid-write) escape `run()` as an unhandled rejection instead of
-         resolving to a failed `CatalogResult`, which `JobQueue#launch`
-         does not catch — able to crash the whole admin-server process
-         rather than failing one job. Wrapped in a `try`/`catch` that stops
-         polling and resolves to `#fail(...)`; new test in
-         `job-runner-adaptive.test.ts` ("a corrupted raw-evidence document
-         fails the job instead of crashing the runner").
-      2. **Concurrent-runner/stop-resume flake.** The worker-thread
-         pause/resume test in `job-runner-adaptive.test.ts` unconditionally
-         asserted `pause` succeeded, but `FAST_BUDGET`'s whole remaining run
-         is a handful of games and can legitimately finish before the pause
-         request lands on a fast machine, at which point the store correctly
-         refuses `pause` from `completed`. Now tolerates that race loss
-         explicitly (asserting `completed` instead) rather than flaking.
-      3. **Duplicated limitations text.** `AdaptiveEstimateTables`
-         (`BuilderScreen.tsx`) concatenated `expansionLimitations` and
-         `estimate.limitations`, but `estimateAdaptiveChoice`
-         (`apps/admin-server/src/lab/adaptive-choice.ts`) fills both from the
-         same source array, so every limitation was shown twice. Fixed by
-         deduping through a `Set`.
-      4. **Missing test coverage for the 3 pre-existing `apps/simulator`
-         typecheck failures** M08.R7 left for tranche close
-         (`config.test.ts:225`, `run.test.ts:548`, `run.test.ts:564`, all
-         TypeScript control-flow narrowing gaps, not runtime defects) —
-         fixed by exporting `AdaptiveConfigInput` for a properly-typed test
-         helper and by binding a null-narrowed checkpoint to a freshly typed
-         `const` before reuse.
+      (`block.test.ts`) layers. Found and fixed four genuine gaps: **(1)
+      corrupted checkpoint/raw evidence** — `#runAdaptive` (`job-runner.ts`)
+      let a thrown `#loadOrCreateAdaptiveRaw` failure (a corrupted or
+      unreadable `adaptive-raw.json` from a crash mid-write) escape `run()`
+      as an unhandled rejection instead of resolving to a failed
+      `CatalogResult`, which `JobQueue#launch` does not catch — able to
+      crash the whole admin-server process rather than failing one job.
+      Wrapped in a `try`/`catch` that stops polling and resolves to
+      `#fail(...)`; new test in `job-runner-adaptive.test.ts` ("a corrupted
+      raw-evidence document fails the job instead of crashing the runner").
+      **(2) concurrent-runner/stop-resume flake** — the worker-thread
+      pause/resume test in `job-runner-adaptive.test.ts` unconditionally
+      asserted `pause` succeeded, but `FAST_BUDGET`'s whole remaining run is
+      a handful of games and can legitimately finish before the pause
+      request lands on a fast machine, at which point the store correctly
+      refuses `pause` from `completed`. Now tolerates that race loss
+      explicitly (asserting `completed` instead) rather than flaking. **(3)
+      duplicated limitations text** — `AdaptiveEstimateTables`
+      (`BuilderScreen.tsx`) concatenated `expansionLimitations` and
+      `estimate.limitations`, but `estimateAdaptiveChoice`
+      (`apps/admin-server/src/lab/adaptive-choice.ts`) fills both from the
+      same source array, so every limitation was shown twice. Fixed by
+      deduping through a `Set`. **(4) missing test coverage for the 3
+      pre-existing `apps/simulator` typecheck failures** M08.R7 left for
+      tranche close (`config.test.ts:225`, `run.test.ts:548`,
+      `run.test.ts:564`, all TypeScript control-flow narrowing gaps, not
+      runtime defects) — fixed by exporting `AdaptiveConfigInput` for a
+      properly-typed test helper and by binding a null-narrowed checkpoint
+      to a freshly typed `const` before reuse.
       Also fixed, self-discovered while running the full gate: two contract
       tests (`scripts/lib/consistency.test.ts`,
       `scripts/lib/status-audit.test.ts`) asserted `questions`/

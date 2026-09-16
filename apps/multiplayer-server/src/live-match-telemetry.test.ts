@@ -117,7 +117,8 @@ describe('the production composition writes a real durable envelope over a real 
       [LIVE_MATCH_TELEMETRY_ENVIRONMENT_KEYS.enabled]: 'true',
       [LIVE_MATCH_TELEMETRY_ENVIRONMENT_KEYS.rootDirectory]: root,
     });
-    if (!composed.ok) throw new Error('composeMatchServer refused a valid temp-root configuration.');
+    if (!composed.ok)
+      throw new Error('composeMatchServer refused a valid temp-root configuration.');
     expect(composed.value.liveMatchTelemetryEnabled).toBe(true);
     transport = await startWebSocketServer(composed.value.server, { port: 0 });
   });
@@ -170,8 +171,70 @@ describe('the production composition writes a real durable envelope over a real 
   });
 });
 
+describe('a configured root with telemetry disabled writes nothing (Tranche C review)', () => {
+  let root: string;
+  let transport: WebSocketTransport;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'tcg-live-match-disabled-'));
+    // `ENABLED` left unset (its documented disabled default) while `ROOT` is
+    // already configured — the exact operator shape that once slipped a live
+    // match onto disk despite a startup log claiming telemetry was off, before
+    // `parseLiveMatchTelemetryConfig` was fixed to null the root whenever
+    // `enabled` is false and `compose.ts`'s wiring check to require both.
+    const composed = composeMatchServer({
+      [LIVE_MATCH_TELEMETRY_ENVIRONMENT_KEYS.rootDirectory]: root,
+    });
+    if (!composed.ok)
+      throw new Error('composeMatchServer refused a valid temp-root configuration.');
+    expect(composed.value.liveMatchTelemetryEnabled).toBe(false);
+    transport = await startWebSocketServer(composed.value.server, { port: 0 });
+  });
+
+  afterEach(async () => {
+    await transport.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('plays a legal two-seat match to a terminal result and writes no envelope', async () => {
+    const host = await TestClient.connect(transport.port);
+    host.send({ type: 'create_lobby', versions: CURRENT_VERSIONS, displayName: 'Host' });
+    const joined = await host.waitFor('lobby_joined');
+
+    const guest = await TestClient.connect(transport.port);
+    guest.send({
+      type: 'join_lobby',
+      versions: CURRENT_VERSIONS,
+      inviteCode: joined.lobby.inviteCode,
+      displayName: 'Guest',
+    });
+    await guest.waitFor('lobby_joined');
+
+    host.send({ type: 'submit_precon', preconId: HOST_PRECON });
+    guest.send({ type: 'submit_precon', preconId: GUEST_PRECON });
+    host.send({ type: 'set_ready', ready: true });
+    guest.send({ type: 'set_ready', ready: true });
+
+    await host.waitFor('match_state');
+
+    guest.send({ type: 'leave' });
+    const finished = await host.waitForResult();
+    expect(finished.view.result?.winnerId).toBe('player_1');
+
+    const entries = await readdir(root);
+    expect(entries).toEqual([]);
+
+    host.close();
+    guest.close();
+  });
+});
+
 /** Sends a client message the same way `ws-adapter.ts` delivers one off the wire. */
-function deliver(server: MatchServer, connection: ServerConnection, message: ClientMessageInput): void {
+function deliver(
+  server: MatchServer,
+  connection: ServerConnection,
+  message: ClientMessageInput,
+): void {
   server.receive(connection, encode(message as never));
 }
 
@@ -226,7 +289,11 @@ describe('invite-code reuse produces two distinct durable records (M08.R9, proto
       function playOneMatchAndFreeItsInviteCode(): { inviteCode: string; matchId: string } {
         const host = new Client('conn_host');
         server.connect(host);
-        deliver(server, host, { type: 'create_lobby', versions: CURRENT_VERSIONS, displayName: 'Host' });
+        deliver(server, host, {
+          type: 'create_lobby',
+          versions: CURRENT_VERSIONS,
+          displayName: 'Host',
+        });
         const hostJoined = host.last('lobby_joined');
         if (!hostJoined) throw new Error('Host did not join');
 
@@ -294,7 +361,11 @@ describe('a telemetry write failure never corrupts match authority (M08.R9)', ()
 
     const host = new Client('conn_host');
     server.connect(host);
-    deliver(server, host, { type: 'create_lobby', versions: CURRENT_VERSIONS, displayName: 'Host' });
+    deliver(server, host, {
+      type: 'create_lobby',
+      versions: CURRENT_VERSIONS,
+      displayName: 'Host',
+    });
     const hostJoined = host.last('lobby_joined');
     if (!hostJoined) throw new Error('Host did not join');
 

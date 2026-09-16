@@ -44,14 +44,17 @@ async function startRealServer(): Promise<RealServer> {
   const base = await mkdtemp(join(tmpdir(), 'tcg-admin-client-fullstack-'));
   const catalogRoot = join(base, 'catalog');
   const resultRoot = join(base, 'results');
+  const liveMatchRoot = join(base, 'live-match');
   await mkdir(resultRoot, { recursive: true });
+  await mkdir(liveMatchRoot, { recursive: true });
 
   const config = unwrap(
     parseServiceConfig({
       host: '127.0.0.1',
       port: 0,
       catalogRoot,
-      resultRoots: { local: resultRoot },
+      resultRoots: { local: resultRoot, live_match: liveMatchRoot },
+      liveMatchRootId: 'live_match',
       limits: { maxConcurrentJobs: 1, maxWorkers: 1, maxWorkersPerJob: 1 },
     }),
   );

@@ -27,7 +27,8 @@ if (!composed.ok) {
   throw new Error('Cannot start: the multiplayer server composition failed validation.');
 }
 
-const { server, formatId, deckFormat, database, warnings, liveMatchTelemetryEnabled } = composed.value;
+const { server, formatId, deckFormat, database, warnings, liveMatchTelemetryEnabled } =
+  composed.value;
 for (const warning of warnings) console.warn(`[card-data] ${warning.code}: ${warning.message}`);
 
 startWebSocketServer(server, { port, host })

@@ -203,7 +203,7 @@ describe('the surrender-exposure view stays aggregate, never per-player (M08.24D
     const text = codeOf(
       readFileSync(join(SOURCE_ROOT, 'service', 'player-meta-results.ts'), 'utf8'),
     );
-    expect(text).toContain('aggregateLiveMatchSurrenders(captures, matches).aggregates');
+    expect(text).toContain('aggregateLiveMatchSurrenders(snapshot.captures, matches).aggregates');
     expect(text).not.toMatch(/\.unmatched\b/);
   });
 });

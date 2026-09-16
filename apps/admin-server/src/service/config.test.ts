@@ -222,9 +222,9 @@ describe('reading the configuration out of the environment', () => {
       [ADMIN_ENVIRONMENT_KEYS.liveMatchRoot]: join(base, 'results'),
     });
     expect(isErr(refused)).toBe(true);
-    expect(isErr(refused) && refused.error.some((e) => e.code === 'admin/unsafe_result_reference')).toBe(
-      true,
-    );
+    expect(
+      isErr(refused) && refused.error.some((e) => e.code === 'admin/unsafe_result_reference'),
+    ).toBe(true);
   });
 
   it('has no variable that turns authentication off', () => {

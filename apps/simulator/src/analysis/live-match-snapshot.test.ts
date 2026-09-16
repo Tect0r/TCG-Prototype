@@ -144,6 +144,25 @@ describe('one bounded pass per snapshot', () => {
     expect(second).not.toBe(first);
     expect(second).toEqual(first);
   });
+
+  it('keys the cache by limits as well as root, so a differently-limited call never inherits another call’s truncation (Tranche C review)', () => {
+    for (let index = 0; index < 5; index += 1) {
+      writeMatchDirectory(`match_${index}`, JSON.stringify(envelope(`match_${index}`)));
+    }
+
+    const boundedFirst = openLiveMatchSnapshot(root, { maxRecords: 1 });
+    const defaultFirst = openLiveMatchSnapshot(root);
+    expect(boundedFirst.truncated).toBe(true);
+    expect(defaultFirst.truncated).toBe(false);
+
+    // Repeating each call must return its own cached entry, not the other
+    // limits value's — a shared `rootDirectory`-only key would otherwise let
+    // whichever call ran second silently answer both.
+    const boundedSecond = openLiveMatchSnapshot(root, { maxRecords: 1 });
+    const defaultSecond = openLiveMatchSnapshot(root);
+    expect(boundedSecond).toBe(boundedFirst);
+    expect(defaultSecond).toBe(defaultFirst);
+  });
 });
 
 describe('the TTL as a secondary safety net', () => {
@@ -259,7 +278,11 @@ describe('stable ordering', () => {
 
     const snapshot = openLiveMatchSnapshot(root);
 
-    expect(snapshot.matches.map((match) => match.matchId)).toEqual(['match_a', 'match_b', 'match_c']);
+    expect(snapshot.matches.map((match) => match.matchId)).toEqual([
+      'match_a',
+      'match_b',
+      'match_c',
+    ]);
   });
 });
 
@@ -283,7 +306,9 @@ describe('a large synthetic fixture, within reasonable CI limits', () => {
     expect(snapshot.truncated).toBe(false);
     expect(snapshot.matches).toHaveLength(matchCount);
     expect(snapshot.skippedMatchCount).toBe(3);
-    expect(snapshot.recordsScanned).toBeLessThanOrEqual(DEFAULT_LIVE_MATCH_SNAPSHOT_LIMITS.maxRecords);
+    expect(snapshot.recordsScanned).toBeLessThanOrEqual(
+      DEFAULT_LIVE_MATCH_SNAPSHOT_LIMITS.maxRecords,
+    );
 
     const matchIds = snapshot.matches.map((match) => match.matchId);
     expect(matchIds).toEqual([...matchIds].sort());

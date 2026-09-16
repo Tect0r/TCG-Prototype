@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.TrancheC-review",
-  "mode": "tranche-close",
+  "unit": "M08.R11",
+  "mode": "implementation",
   "source": "docs/milestones/M08.5_FINAL_CORRECTION_PASS.md",
-  "heading": "Tranche C review",
+  "heading": "M08.R11 — Exclusive orchestrator lock",
   "blocker": null,
-  "next": "M08.TrancheC-review"
+  "next": "M08.R11"
 }

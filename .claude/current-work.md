@@ -5819,7 +5819,7 @@ via `parseServiceConfig({..., liveMatchRootId: 'live_match'})`; builds a real
 fully independent `AdminService`/`JobQueue`/`FileCatalogStore` over the exact
 same directories and re-asserts all three reads; and, in a second test, places
 directories shaped like real simulator-job and adaptive-run output inside the
-*separate* `resultRoot` (never inside `liveMatchRoot`, since
+_separate_ `resultRoot` (never inside `liveMatchRoot`, since
 `readLiveMatchEnvelopes` requires every subdirectory there to hold an
 `envelope.json` and would otherwise correctly flag a foreign one as a corrupt
 record rather than silently ignore it), then asserts `playerMetaRunSummary`
@@ -5870,7 +5870,7 @@ safety net for the one case mtime cannot see — a retried delivery overwriting
 an existing match's files in place. `LiveMatchSnapshotLimits` caps
 `maxRecords` (10,000) and cumulative `maxBytes` (200MB) per scan, reporting
 `truncated: true` rather than reading further; `maxSkippedDetails` (200) caps
-the *reported* corrupt/missing-record detail lists while `skippedMatchCount`/
+the _reported_ corrupt/missing-record detail lists while `skippedMatchCount`/
 `skippedCaptureCount` stay exact regardless. No skip reason ever carries a
 filesystem path.
 
@@ -5929,3 +5929,205 @@ ingestion, aggregation and read scaling as one path for M08.R8-R10; verify
 private hand/pre-action captures stay excluded from aggregate/public
 responses and that only authorized admin routes reach intended aggregate
 data; fix material findings and push before completion.
+
+## Tranche C review — tranche-close run (2026-09-16)
+
+Reviewed the combined M08.R8-R10 diff (`8c3fb16..fc94b1f`) as one path:
+durable match identity and dedicated telemetry configuration (R8) → wiring
+the production multiplayer server and Player Meta reader to it (R9) →
+bounded snapshot/read scaling on top (R10). `secret-leak-boundary.test.ts`
+already carries the privacy invariants this tranche touches — no bare
+`playerId` in any aggregate-only Player Meta view, and Player Meta reads
+only `aggregateLiveMatchSurrenders(...).aggregates`, never the diagnostic
+`.unmatched` list that carries a raw `matchId`/`playerId` — plus the
+single-authorization-gate test for every route. All ten tests there were
+still semantically intact; two needed mechanical updates to the R8/R10
+refactors rather than a widened or narrowed guarantee (below).
+
+Ran `check:consistency` and `audit:check` clean on the first pass. Full
+`verify` surfaced three genuine gaps, all fixed:
+
+1. **Stale full-stack fixture.** `admin-client`'s
+   `adaptive-full-stack.test.tsx` built an `AdminServiceConfigInput` with a
+   single `local` result root, predating R8's now-required
+   `liveMatchRootId` (which R8 also requires to differ from every
+   experiment/adaptive `resultRootId`, so Player Meta can never scan a job
+   directory). Typecheck caught it as a missing required field. Added a
+   second `live-match` root directory and `liveMatchRootId: 'live_match'`
+   to the fixture, matching the pattern `config.test.ts`'s `roots()` helper
+   already established.
+2. **Stale security-boundary assertion.** R10's snapshot refactor changed
+   `openPlayerMeta`'s call from `aggregateLiveMatchSurrenders(captures,
+matches)` to `aggregateLiveMatchSurrenders(snapshot.captures, matches)`
+   (captures now come from the shared `openLiveMatchSnapshot` result rather
+   than a standalone local). `secret-leak-boundary.test.ts`'s "reads only
+   the surrender aggregates, never the unmatched-capture diagnostics" test
+   asserted the old literal call text, so it no longer matched and was
+   failing closed rather than open — a real regression in the tranche's own
+   diff, not a pre-existing gap, since nothing had exercised this exact
+   assertion since R9. Updated the expected substring to
+   `aggregateLiveMatchSurrenders(snapshot.captures, matches).aggregates`;
+   the invariant itself (never reading `.unmatched`) is unchanged and still
+   enforced by the same test.
+3. **Pre-existing, unrelated `format:check` non-idempotence.** A four-item
+   numbered list nested inside a checklist bullet in
+   `docs/milestones/M08-ai-lab-and-player-meta.md` (Tranche B review's own
+   entry, `5822dcf`, untouched by R8-R10) had never actually been
+   prettier-clean — confirmed by checking out `fc94b1f` before any of this
+   session's edits and running `prettier --check` on it in isolation.
+   Repeated `prettier --write` passes reindented it deeper each time rather
+   than converging, a remark list-nesting bug rather than a one-off
+   mistake. Rewrote the four items as inline `**(n) label**` phrases in the
+   surrounding paragraph instead of a nested ordered list — same content,
+   no list markup for prettier to re-litigate — and confirmed four
+   consecutive `prettier --write` passes now leave it unchanged.
+
+One `verify` run also ended in an `ERR_IPC_CHANNEL_CLOSED` unhandled
+rejection from a `tinypool` worker with no final test summary printed — a
+worker-pool teardown flake, not a real failure; the immediate rerun
+completed cleanly (286/286 test files, 5358/5358 tests).
+
+Gates: `check:consistency` clean; `audit:check` clean (`docs/status-audit.md`
+already current, no regeneration needed — this tranche changed no counted
+fact); `verify` full clean pass (typecheck, lint, format, content
+validation, 5358/5358 tests across 286 files, build).
+
+Next: `tcg-reviewer` (Opus) review of the full Tranche C commit range
+(`8c3fb16..fc94b1f`: M08.R8 `8c3fb16`, M08.R9 `2fcaeff`, M08.R10 `fc94b1f`)
+plus this close-record diff.
+
+### Review/fix cycle 1 — `tcg-reviewer` returned `VERDICT: CHANGES REQUIRED`
+
+Three findings, all fixed:
+
+1. **BLOCKER.** `parseLiveMatchTelemetryConfig`
+   (`apps/multiplayer-server/src/live-match-telemetry-config.ts`) did not
+   null out `rootDirectory` when `enabled: false`, so a root left configured
+   from a prior/future-planned enablement survived a switch to disabled —
+   contradicting the module's own doc comment ("`rootDirectory`: null
+   exactly when `enabled` is `false`"). `compose.ts`'s wiring check keyed
+   only on `rootDirectory !== null`, not on `.enabled`, so this combination
+   would silently construct and wire a live-match sink into `MatchServer`
+   while the startup log printed "disabled." Fixed both: the parser now
+   returns `rootDirectory: enabled ? rootDirectory : null`, and `compose.ts`
+   now requires `telemetryConfig.enabled && telemetryConfig.rootDirectory
+!== null` before wiring (defense in depth — the parser fix alone already
+   makes the unwired case impossible, but a second independent check is
+   what "not one call site's assumption away from a silent leak" means
+   here). Added three regression tests: a unit case in
+   `live-match-telemetry-config.test.ts`'s `parseLiveMatchTelemetryConfig`
+   describe block (disabled + a configured root yields a null root), a
+   companion case in its `liveMatchTelemetryConfigFromEnvironment` describe
+   block (the exact operator shape — `ROOT` set via environment, `ENABLED`
+   left unset), and a composition-level end-to-end case in
+   `live-match-telemetry.test.ts` (a real match played over a real
+   websocket with `ROOT` set and `ENABLED` unset asserts
+   `liveMatchTelemetryEnabled === false` and that the configured root
+   directory ends up empty).
+2. **MEDIUM.** `openLiveMatchSnapshot`'s `truncated` flag (set when a scan
+   hits `maxRecords`/`maxBytes`) was computed but never read by
+   `openPlayerMeta`/`readPlayerMetaSummary`
+   (`apps/admin-server/src/service/player-meta-results.ts`), so a Player
+   Meta root that outgrew one scan's bound would silently freeze every
+   table and figure to its oldest matches (scan order is ascending by
+   `matchId`) with no operator-visible signal. Fixed by threading
+   `snapshot.truncated` through `OpenPlayerMeta` and appending a new
+   `TRUNCATED_SNAPSHOT_LIMITATION` sentence to `PLAYER_META_RUN_LIMITATIONS`
+   in `readPlayerMetaSummary` exactly when it is true — the existing
+   narrative slot the reviewer pointed at, not a new contract field or
+   version bump. Deliberately left `openDataHealthEvidence`/
+   `PlayerMetaDataHealthReport` untouched: its `unavailableReason` field
+   means "no match in this root matches this partition," a different claim
+   than "the scan was cut short," and overloading it would conflate the
+   two; giving truncation its own Data Health field would need an
+   `admin-contracts` schema/version change, which is a larger, separately
+   reviewable change than this cycle's bounded fix. Added a test in
+   `player-meta-results.test.ts` that forces `snapshot.truncated` via a
+   narrow `vi.mock('@tcg/simulator', ...)` wrapper around the real
+   `openLiveMatchSnapshot` (every match/capture/aggregate returned is still
+   the real read; only the one flag is overridden) — writing the
+   10,000+ match directories needed to hit the real default cap in a unit
+   test was not practical, so this isolates exactly the plumbing bug the
+   review flagged.
+3. **LOW.** `openLiveMatchSnapshot`'s cache
+   (`apps/simulator/src/analysis/live-match-snapshot.ts`) was keyed by
+   `rootDirectory` alone, ignoring the `limits` argument — latent today
+   since every production caller shares the same default limits, but a
+   future differently-limited caller sharing a root within the TTL/mtime
+   window could be served another call's cached (and differently
+   truncated) snapshot. Fixed by folding `JSON.stringify(resolvedLimits)`
+   into the cache key alongside `rootDirectory`. Added a test in
+   `live-match-snapshot.test.ts` proving a `{maxRecords: 1}` call and a
+   default-limits call against the same five-match root each get their own
+   correctly-truncated result and their own stable cached identity across
+   repeats.
+
+Re-ran the full focused suites for every touched file plus the three
+workspaces end to end
+(`apps/multiplayer-server`, `apps/admin-server`, `apps/simulator`: 119 test
+files, 1997 tests, all passing — one run hit the same known
+`ERR_IPC_CHANNEL_CLOSED` tinypool teardown flake with no final summary line,
+the immediate retry completed cleanly). Then re-ran all four required gates
+from a clean state: `check:consistency` clean; `audit:check` clean (no
+counted fact changed by these fixes); `verify` — first pass caught one real
+`lint` failure this session introduced (an inline `import()` type annotation
+in the new `player-meta-results.test.ts` mock, forbidden by
+`@typescript-eslint/consistent-type-imports`), fixed by adding a top-level
+`import type * as SimulatorModule from '@tcg/simulator'` and referencing
+that instead; second pass also caught this file
+(`.claude/current-work.md`) needing a `prettier --write` after the earlier
+hand-edit (plus two incidental `*emphasis*` → `_emphasis_` normalizations
+elsewhere in this same file, unrelated to this tranche's content). Full
+`verify` clean after both fixes:
+typecheck/lint/format/content-validation/tests/build all green.
+
+Next: resume the same `tcg-reviewer` agent and ask it to recheck only these
+three fixes and the new diff.
+
+### Review/fix cycle 1 recheck — `tcg-reviewer` returned `VERDICT: APPROVE`
+
+The original reviewer agent instance was no longer reachable in this session
+(a fresh session start; `ListAgents` reported no reachable agents), so the
+recheck ran as a new `tcg-reviewer` invocation scoped explicitly to a
+**recheck**, not a fresh full review: it was given the three prior findings
+verbatim, told exactly what changed to address each, and instructed to keep
+the three known items as the primary verdict driver rather than opening new
+scope.
+
+The recheck independently re-verified all three fixes against the actual
+current file contents (not the prior description alone): the
+`rootDirectory`/`enabled` parser invariant now holds on every success path
+and `compose.ts`'s spread condition can no longer disagree with
+`liveMatchTelemetryEnabled`; the new end-to-end test genuinely exercises the
+fix (it would have written envelopes and failed under the old parser plus
+the old root-only compose check); the Player Meta `truncated` limitation
+fits the `playerMetaRunSummarySchema` bound with room to spare and the
+decision to leave Data Health's contract untouched was independently judged
+sound (its `unavailableReason` is a different claim than "the scan stopped
+early"); and the snapshot-cache key fix is non-vacuous (without it the
+default-limits call in the new test would incorrectly inherit the
+`{maxRecords: 1}` call's truncation within the TTL window).
+
+It also re-confirmed the tranche's core privacy invariant was not weakened:
+`secret-leak-boundary.test.ts`'s diff is a pure `captures` →
+`snapshot.captures` rename that still asserts the same boundary, confirmed
+by grep that `player-meta-results.ts` touches captures at exactly one site
+and never the raw list or `.unmatched` diagnostics, and that the new
+`TRUNCATED_SNAPSHOT_LIMITATION` sentence carries no match/player/path data.
+
+It independently re-ran the focused tests (5 files / 70 tests), `verify`
+(286 files, all green), `check:consistency`, and `audit:check` — all clean
+— rather than taking this record's numbers on report.
+
+No new blocking findings. Three residual, correctly-deferred items were
+named for future tranches: `readPlayerMetaTable` still has no in-band
+truncation marker (needs an `admin-contracts` field, not a Tranche C fix);
+Data Health reports remain silent about truncation for the same
+schema-version reason; and `snapshotCache`'s root+limits key has no
+eviction policy (harmless today — every production caller shares one root
+and the default limits — but unbounded if a future caller varies limits per
+request).
+
+**`VERDICT: APPROVE`.** Review/fix cycle 1 closes here (1 of the max 2
+cycles was needed). Tranche C (M08.R8–R10) is complete. Successor unit:
+M08.R11 (Correction Tranche D — exclusive orchestrator lock).

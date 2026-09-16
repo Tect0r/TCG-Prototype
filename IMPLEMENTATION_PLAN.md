@@ -23,7 +23,7 @@ the milestone checklist are the history.
 
 | Milestone                                                                   | Status                                        | Active work |
 | --------------------------------------------------------------------------- | --------------------------------------------- | ----------- |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Complete (2026-09-10); correction pass active | M08.R8      |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Complete (2026-09-10); correction pass active | M08.R11     |
 | [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)               | Complete (2026-08-21)                         | —           |
 
 Earlier milestone status and completed-scope summaries live in
@@ -43,14 +43,16 @@ Rows carry state only; do not add implementation narratives.
 | M08.R4                        | Complete |
 | M08.R5                        | Complete |
 | M08.R6–R7 + Tranche B review  | Complete |
-| M08.R8–R10 + Tranche C review | Pending  |
+| M08.R8–R10 + Tranche C review | Complete |
 | M08.R11–R14                   | Pending  |
 
 ### Current blocking decision
 
-None. Tranche B (M08.R3–R7) is complete and Tranche B review passed. The next
-unit is M08.R8 (Correction Tranche C — durable match identity and dedicated
-telemetry configuration).
+None. Tranche C (M08.R8–R10) is complete and Tranche C review passed
+(`VERDICT: APPROVE` after one review/fix cycle — a rootDirectory/enabled
+parser invariant blocker, a silent-truncation Player Meta summary gap, and a
+snapshot-cache key gap, all fixed and regression-tested). The next unit is
+M08.R11 (Correction Tranche D — exclusive orchestrator lock).
 
 ## Where the record lives
 

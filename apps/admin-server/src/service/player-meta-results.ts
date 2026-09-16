@@ -118,6 +118,19 @@ const PLAYER_META_RUN_LIMITATIONS: readonly string[] = [
 ];
 
 /**
+ * Appended to `PLAYER_META_RUN_LIMITATIONS` only when `openLiveMatchSnapshot`
+ * stopped early (M08.R10's `truncated`). Without this, a root that has grown
+ * past one scan's `maxRecords`/`maxBytes` cap would silently freeze every
+ * reading to its oldest matches — the scan order is ascending by `matchId` —
+ * with no visible signal that newer activity is missing from every table and
+ * figure this summary reports.
+ */
+const TRUNCATED_SNAPSHOT_LIMITATION =
+  'This root holds more live matches than one read scans at a time, so this reading covers only the ' +
+  'oldest matches up to that scan limit and excludes newer activity — every number above should be ' +
+  'read as a partial, not a complete, picture until an operator raises the limit or prunes the root.';
+
+/**
  * `@tcg/simulator` does not export `LiveMatchEnvelope` itself (it is
  * `@tcg/match-telemetry`'s, and ADR 0023 forbids this app importing that
  * package directly) — derived from `openLiveMatchSnapshot`'s own return type
@@ -140,6 +153,8 @@ interface OpenPlayerMeta {
   readonly surrenders: readonly LiveMatchSurrenderAggregate[];
   readonly recordsRead: number;
   readonly recordsSkipped: number;
+  /** Whether the underlying `openLiveMatchSnapshot` scan stopped before reading the whole root. */
+  readonly truncated: boolean;
 }
 
 function openPlayerMeta(rootDirectory: string, filter: PlayerMetaFilter): OpenPlayerMeta {
@@ -153,6 +168,7 @@ function openPlayerMeta(rootDirectory: string, filter: PlayerMetaFilter): OpenPl
     surrenders: aggregateLiveMatchSurrenders(snapshot.captures, matches).aggregates,
     recordsRead: matches.length,
     recordsSkipped: snapshot.skippedMatchCount,
+    truncated: snapshot.truncated,
   };
 }
 
@@ -227,7 +243,9 @@ export function readPlayerMetaSummary(
       rows: buildPlayerMetaTable(table, open.aggregates, open.cardEvidence, open.surrenders).rows
         .length,
     })),
-    limitations: PLAYER_META_RUN_LIMITATIONS,
+    limitations: open.truncated
+      ? [...PLAYER_META_RUN_LIMITATIONS, TRUNCATED_SNAPSHOT_LIMITATION]
+      : PLAYER_META_RUN_LIMITATIONS,
   };
 
   const validated = playerMetaRunSummarySchema.safeParse(value);
