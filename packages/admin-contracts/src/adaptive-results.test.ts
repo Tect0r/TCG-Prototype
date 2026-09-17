@@ -20,6 +20,7 @@ import { MAX_RESULT_COLUMNS } from './results.js';
 
 function summary(overrides: Record<string, unknown> = {}): unknown {
   return {
+    jobId: null,
     experimentId: 'goblin-counter',
     configHash: 'abcdef0123456789',
     source: { document: 'adaptive-result.json', schemaVersion: 3 },
@@ -148,25 +149,32 @@ describe('an adaptive run summary', () => {
     ).toBe(false);
   });
 
-  it('has nowhere to put a location, a job ID or a calibration standing at all', () => {
-    // Deliberately thinner than `resultSummarySchema` (`./results.ts`):
-    // a directory-keyed run has no `JobId` and writes no calibration
-    // standing, so neither field has anywhere honest to come from.
+  it('has nowhere to put a location or a calibration standing at all', () => {
+    // Deliberately thinner than `resultSummarySchema` (`./results.ts`): a
+    // directory-keyed run writes no calibration standing, so that field has
+    // nowhere honest to come from. Unlike `resultSummarySchema`, this summary
+    // does carry a `jobId` (M08.R16) — `null` when resolved the M08.19B way,
+    // the queued job's id otherwise — checked separately below.
     const shape = JSON.stringify(summary());
     expect(shape).not.toContain('rootId');
     expect(shape).not.toContain('directory');
     expect(
       adaptiveRunSummarySchema.safeParse({
         ...(summary() as Record<string, unknown>),
-        jobId: 'job_abc123',
-      }).success,
-    ).toBe(false);
-    expect(
-      adaptiveRunSummarySchema.safeParse({
-        ...(summary() as Record<string, unknown>),
         calibration: 'balance',
       }).success,
     ).toBe(false);
+  });
+
+  it('carries the queued job it was resolved through, or null when it was not (M08.R16)', () => {
+    expect(adaptiveRunSummarySchema.parse(summary()).jobId).toBeNull();
+    expect(
+      adaptiveRunSummarySchema.parse(summary({ jobId: 'job_abc123' })).jobId,
+    ).toBe('job_abc123');
+    expect(
+      adaptiveRunSummarySchema.safeParse(summary({ jobId: 'not-a-job-id' })).success,
+    ).toBe(false);
+    expect(adaptiveRunSummarySchema.safeParse(summary({ jobId: undefined })).success).toBe(false);
   });
 
   it('refuses a limitation that carries a filesystem path', () => {

@@ -110,6 +110,7 @@ export class AdminService {
     this.#adaptive = new AdaptiveResultReader({
       roots: options.config.roots,
       resultRootId: options.config.resultRootId,
+      store: options.store,
     });
     // These five read live-match envelopes, never adaptive/experiment job
     // output, so they read the dedicated live-match root (M08.R9) rather than
@@ -122,6 +123,7 @@ export class AdminService {
     this.#deckExplorer = new DeckExplorerReader({
       roots: options.config.roots,
       resultRootId: options.config.liveMatchRootId,
+      store: options.store,
     });
     this.#cardExplorer = new CardExplorerReader({
       roots: options.config.roots,
@@ -135,6 +137,7 @@ export class AdminService {
     this.#matchRepresentatives = new MatchRepresentativesReader({
       roots: options.config.roots,
       resultRootId: options.config.liveMatchRootId,
+      store: options.store,
     });
     this.#artifacts = new ArtifactReader({ store: options.store, roots: options.config.roots });
     this.#championships = new ChampionshipScheduler({
@@ -192,9 +195,8 @@ export class AdminService {
       resultSummary: (payload) => this.#results.readSummary(payload.jobId),
       resultTable: (payload) => this.#results.readTable(payload.jobId, payload.table, payload.page),
       resultArtifacts: (payload) => this.#artifacts.list(payload.jobId),
-      adaptiveRunSummary: (payload) => this.#adaptive.readSummary(payload.experimentId),
-      adaptiveResultTable: (payload) =>
-        this.#adaptive.readTable(payload.experimentId, payload.table, payload.page),
+      adaptiveRunSummary: (payload) => this.#adaptive.readSummary(payload),
+      adaptiveResultTable: (payload) => this.#adaptive.readTable(payload, payload.table, payload.page),
       playerMetaRunSummary: async (payload) => this.#playerMeta.readSummary(payload.filter),
       playerMetaResultTable: async (payload) =>
         this.#playerMeta.readTable(

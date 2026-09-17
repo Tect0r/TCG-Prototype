@@ -31,6 +31,7 @@ import {
   savedChoiceIdSchema,
   storedResultReferenceSchema,
   JOB_STATUSES,
+  type AdaptiveExperimentId,
   type AdminError,
   type Annotations,
   type BatchAction,
@@ -548,6 +549,24 @@ export class FileCatalogStore implements CatalogStore {
   /** Reads a job under its own lock, for the reason `readBatch` gives. */
   async readJob(jobId: JobId): Promise<CatalogResult<CatalogJobDocument>> {
     return this.#locks.run(documentPath(this.#jobDir, jobId), () => this.#readJobDocument(jobId));
+  }
+
+  /**
+   * Every queued adaptive job whose `spec.experimentId` matches (M08.R16).
+   *
+   * A bulk scan, the same tradeoff `listJobs` already makes: an unreadable
+   * document is dropped rather than failing the whole lookup, because a
+   * catalog listing answers about what it could read, never about what a
+   * damaged file might have said.
+   */
+  async findAdaptiveJobsByExperimentId(
+    experimentId: AdaptiveExperimentId,
+  ): Promise<CatalogResult<readonly CatalogJobDocument[]>> {
+    const loaded = await this.#loadAll(this.#jobDir, catalogJobDocumentSchema, 'admin/unknown_job');
+    const matching = loaded.documents.filter(
+      (document) => document.spec.kind === 'adaptive_counter' && document.spec.experimentId === experimentId,
+    );
+    return ok(matching);
   }
 
   /**

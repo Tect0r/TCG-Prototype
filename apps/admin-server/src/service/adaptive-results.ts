@@ -9,8 +9,10 @@ import {
   type AdaptiveExperimentId,
   type AdaptiveResultTable,
   type AdaptiveResultTableName,
+  type AdaptiveRunRef,
   type AdaptiveRunSummary,
   type AdminError,
+  type JobId,
   type PageRequest,
 } from '@tcg/admin-contracts';
 import { err, isErr, ok, type Result } from '@tcg/shared';
@@ -22,6 +24,7 @@ import {
   type AdaptiveResult,
 } from '@tcg/simulator';
 
+import type { CatalogStore } from '../catalog/store.js';
 import { readDocumentText } from '../catalog/files.js';
 import { resolveResultLocation, type ResolvedCatalogRoots } from '../catalog/roots.js';
 import {
@@ -77,17 +80,38 @@ export const CHECKPOINT_DOCUMENT = 'adaptive-checkpoint.json' as const;
  * What this run's evidence may never be cited past.
  *
  * Fixed rather than sourced from a registry, because there is no `JobOrigin`
- * for a directory-keyed run yet — see `adaptive-results.ts`'s own note on why
- * `adaptiveRunSummarySchema.limitations` exists at all.
+ * for an adaptive run yet — see `adaptive-results.ts`'s own note on why
+ * `adaptiveRunSummarySchema.limitations` exists at all. `ADAPTIVE_RUN_LIMITATIONS`
+ * is true of every run regardless of how it was addressed; M08.R16 split out
+ * the claim that used to sit here unconditionally — *this reading was not
+ * obtained through a queued job* — because it stopped being true the moment a
+ * `jobId` could name the run: a job-resolved reading now carries exactly the
+ * calibration standing its `JobOrigin` gives it. `noJobLimitations` appends
+ * that claim back only for the reading it is still true of — one resolved
+ * through a caller-named `experimentId` with no queued job behind it.
  */
 const ADAPTIVE_RUN_LIMITATIONS: readonly string[] = [
-  'This reading was not obtained through a queued job: it carries no calibration standing and no ' +
-    'evidence-claim, because a directory-keyed run has neither yet.',
   'The series score reflects mirrored-block decisions only. A block with no decisive game is ' +
     'recorded as a no-decision and does not move it either way.',
   'Reference-field and frozen-validation standings are shown only when this run actually produced ' +
     'them. Their absence from these tables is not evidence of an even split.',
 ];
+
+const NO_JOB_LIMITATION =
+  'This reading was not obtained through a queued job: it carries no calibration standing and no ' +
+  'evidence-claim, because it was addressed by experiment ID with no queued job behind it.';
+
+function limitationsFor(obtainedThroughJob: boolean): readonly string[] {
+  return obtainedThroughJob ? ADAPTIVE_RUN_LIMITATIONS : [NO_JOB_LIMITATION, ...ADAPTIVE_RUN_LIMITATIONS];
+}
+
+/** What a resolved run directory carries about how it was addressed (M08.R16). */
+export interface AdaptiveRunProvenance {
+  readonly jobId: JobId | null;
+  readonly obtainedThroughJob: boolean;
+}
+
+const NO_JOB_PROVENANCE: AdaptiveRunProvenance = { jobId: null, obtainedThroughJob: false };
 
 /* -------------------------------------------------------------- the reader */
 
@@ -96,9 +120,17 @@ interface OpenAdaptiveRun {
   readonly result: AdaptiveResult;
 }
 
-/** Reads a directory's headline Adaptive Counter reading, or the one refusal that covers every way there is not one. */
+/**
+ * Reads a directory's headline Adaptive Counter reading, or the one refusal
+ * that covers every way there is not one.
+ *
+ * `provenance` defaults to "not obtained through a queued job" because most
+ * callers of this low-level function are tests exercising a bare directory;
+ * `AdaptiveResultReader` below passes the provenance it actually resolved.
+ */
 export async function readAdaptiveSummary(
   directory: string,
+  provenance: AdaptiveRunProvenance = NO_JOB_PROVENANCE,
 ): Promise<Result<AdaptiveRunSummary, readonly AdminError[]>> {
   const open = await openAdaptiveRun(directory);
   if (isErr(open)) return open;
@@ -106,6 +138,7 @@ export async function readAdaptiveSummary(
   const tally = result.seriesTally;
 
   const value = {
+    jobId: provenance.jobId,
     experimentId: result.experimentId,
     configHash: result.configHash,
     source: { document: RESULT_DOCUMENT, schemaVersion: result.schemaVersion },
@@ -140,7 +173,7 @@ export async function readAdaptiveSummary(
       table,
       rows: buildAdaptiveTable(table, result).rows.length,
     })),
-    limitations: ADAPTIVE_RUN_LIMITATIONS,
+    limitations: limitationsFor(provenance.obtainedThroughJob),
   };
 
   const validated = adaptiveRunSummarySchema.safeParse(value);
@@ -191,59 +224,108 @@ export async function readAdaptiveTable(
 export interface AdaptiveResultReaderOptions {
   readonly roots: ResolvedCatalogRoots;
   readonly resultRootId: string;
+  readonly store: CatalogStore;
+}
+
+interface ResolvedAdaptiveRun {
+  readonly directory: string;
+  readonly provenance: AdaptiveRunProvenance;
 }
 
 /**
- * Turns an `experimentId` into a run directory and reads it, for the two
+ * Turns an `AdaptiveRunRef` into a run directory and reads it, for the two
  * addresses M08.19C adds (`adaptive-summary`, `adaptive-result-table`).
  *
  * `readAdaptiveSummary`/`readAdaptiveTable` above already take an opened
  * directory and know nothing about HTTP; this is the thin layer that gets
  * them one exactly as cautiously as `ResultReader` does for a catalog job
- * (ADR 0023 §5) — except there is no `CatalogStore` entry to read a directory
- * out of, because a directory-keyed run has no `JobId` (`adaptive-results.ts`'s
- * own note on why). The owner's resolution: an Adaptive Counter run's
- * directory *is* its `experimentId`, one level under the server's configured
- * default result root — the same root catalog jobs already write under. An
- * operator who wants a run to show up here points the adaptive CLI's own
- * `output` at a directory named after the experiment ID; nothing here
- * invents, stores or widens that beyond the one root `resultRootId` already
- * names.
+ * (ADR 0023 §5). A named `jobId` resolves through `store.readJob`'s own
+ * `execution.location`, the same address `job-runner.ts` writes and resolves
+ * an adaptive job's output by since M08.R16. A named `experimentId` resolves
+ * through the deliberate index `store.findAdaptiveJobsByExperimentId`
+ * provides: zero matches falls back to reading the name as a literal
+ * directory one level under the configured default result root — M08.19B's
+ * original, still-supported way to point this reader at a directory the
+ * adaptive CLI's own `output` wrote outside the catalog entirely — one match
+ * resolves through that job's own `jobId`, and two or more is refused with
+ * `admin/ambiguous_experiment` rather than guessed.
  */
 export class AdaptiveResultReader {
   readonly #roots: ResolvedCatalogRoots;
   readonly #resultRootId: string;
+  readonly #store: CatalogStore;
 
   constructor(options: AdaptiveResultReaderOptions) {
     this.#roots = options.roots;
     this.#resultRootId = options.resultRootId;
+    this.#store = options.store;
   }
 
-  async readSummary(
-    experimentId: AdaptiveExperimentId,
-  ): Promise<Result<AdaptiveRunSummary, readonly AdminError[]>> {
-    const directory = await this.#resolve(experimentId);
-    if (isErr(directory)) return directory;
-    return readAdaptiveSummary(directory.value);
+  async readSummary(ref: AdaptiveRunRef): Promise<Result<AdaptiveRunSummary, readonly AdminError[]>> {
+    const resolved = await this.#resolve(ref);
+    if (isErr(resolved)) return resolved;
+    return readAdaptiveSummary(resolved.value.directory, resolved.value.provenance);
   }
 
   async readTable(
-    experimentId: AdaptiveExperimentId,
+    ref: AdaptiveRunRef,
     table: AdaptiveResultTableName,
     page: PageRequest,
   ): Promise<Result<AdaptiveResultTable, readonly AdminError[]>> {
-    const directory = await this.#resolve(experimentId);
-    if (isErr(directory)) return directory;
-    return readAdaptiveTable(directory.value, table, page);
+    const resolved = await this.#resolve(ref);
+    if (isErr(resolved)) return resolved;
+    return readAdaptiveTable(resolved.value.directory, table, page);
   }
 
-  async #resolve(
+  async #resolve(ref: AdaptiveRunRef): Promise<Result<ResolvedAdaptiveRun, readonly AdminError[]>> {
+    if (ref.jobId !== null) return this.#resolveByJob(ref.jobId);
+    if (ref.experimentId !== null) return this.#resolveByExperiment(ref.experimentId);
+    return err([adminError('admin/schema', 'Name a jobId or an experimentId.')]);
+  }
+
+  async #resolveByJob(jobId: JobId): Promise<Result<ResolvedAdaptiveRun, readonly AdminError[]>> {
+    const job = await this.#store.readJob(jobId);
+    if (isErr(job)) return job;
+
+    const location = job.value.execution?.location;
+    if (location === undefined) {
+      return err([
+        noAdaptiveResult(null, 'This job has not started yet, so it has no output directory.'),
+      ]);
+    }
+
+    const resolved = await resolveResultLocation(this.#roots, location);
+    if (isErr(resolved)) return resolved;
+    return ok({ directory: resolved.value, provenance: { jobId, obtainedThroughJob: true } });
+  }
+
+  async #resolveByExperiment(
     experimentId: AdaptiveExperimentId,
-  ): Promise<Result<string, readonly AdminError[]>> {
-    return resolveResultLocation(this.#roots, {
+  ): Promise<Result<ResolvedAdaptiveRun, readonly AdminError[]>> {
+    const matches = await this.#store.findAdaptiveJobsByExperimentId(experimentId);
+    if (isErr(matches)) return matches;
+
+    if (matches.value.length > 1) {
+      return err([
+        adminError(
+          'admin/ambiguous_experiment',
+          `${matches.value.length} queued jobs share this experiment ID. Name one by its jobId.`,
+          { context: { matchingJobCount: matches.value.length } },
+        ),
+      ]);
+    }
+
+    const [only] = matches.value;
+    if (only !== undefined) {
+      return this.#resolveByJob(only.jobId);
+    }
+
+    const resolved = await resolveResultLocation(this.#roots, {
       rootId: this.#resultRootId,
       directory: experimentId,
     });
+    if (isErr(resolved)) return resolved;
+    return ok({ directory: resolved.value, provenance: NO_JOB_PROVENANCE });
   }
 }
 

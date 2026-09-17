@@ -21,6 +21,7 @@ import {
 } from '@tcg/simulator';
 
 import { type ResolvedCatalogRoots } from '../catalog/roots.js';
+import type { CatalogStore } from '../catalog/store.js';
 import { AdaptiveResultReader } from './adaptive-results.js';
 import { decodeRowCursor, encodeRowCursor } from './results.js';
 
@@ -218,7 +219,10 @@ async function readRevisions(
   let cursor: string | null = null;
 
   for (;;) {
-    const page = await adaptive.readTable(experimentId, 'revisions', { limit: 200, cursor });
+    const page = await adaptive.readTable({ jobId: null, experimentId }, 'revisions', {
+      limit: 200,
+      cursor,
+    });
     if (isErr(page)) return page;
 
     for (const row of page.value.rows) {
@@ -488,6 +492,7 @@ async function readMatchRepresentativesView(
 export interface MatchRepresentativesReaderOptions {
   readonly roots: ResolvedCatalogRoots;
   readonly resultRootId: string;
+  readonly store: CatalogStore;
 }
 
 /**

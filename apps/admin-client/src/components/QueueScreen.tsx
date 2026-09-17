@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   operatorActionsFor,
-  type AdaptiveExperimentId,
   type BatchDetail,
   type BatchId,
   type CatalogBatchView,
@@ -80,8 +79,8 @@ export const QUEUE_POLL_MS = 2_000;
 interface QueueScreenProps {
   /** Injected in tests so a poll is a decision rather than a wait. */
   readonly pollMs?: number;
-  /** Opens an Adaptive Counter job's own run in the results screen's dashboard. */
-  readonly onOpenAdaptive?: ((experimentId: AdaptiveExperimentId) => void) | undefined;
+  /** Opens an Adaptive Counter job's own run in the results screen's dashboard, by its jobId (M08.R16). */
+  readonly onOpenAdaptive?: ((jobId: JobId) => void) | undefined;
 }
 
 export function QueueScreen({ pollMs = QUEUE_POLL_MS, onOpenAdaptive }: QueueScreenProps) {
@@ -350,7 +349,7 @@ interface BatchPanelProps {
     batchId: BatchId,
     settings: { finalistsPerCommander: number; gamesPerPairing: number; seed: string },
   ) => void;
-  readonly onOpenAdaptive?: ((experimentId: AdaptiveExperimentId) => void) | undefined;
+  readonly onOpenAdaptive?: ((jobId: JobId) => void) | undefined;
 }
 
 function BatchPanel({
@@ -548,7 +547,7 @@ interface JobRowProps {
   readonly onJobAction: (jobId: JobId, action: OperatorJobAction) => void;
   readonly onDuplicate: (jobId: JobId) => void;
   readonly onMove: (to: number) => void;
-  readonly onOpenAdaptive?: ((experimentId: AdaptiveExperimentId) => void) | undefined;
+  readonly onOpenAdaptive?: ((jobId: JobId) => void) | undefined;
 }
 
 function JobRow({
@@ -639,7 +638,7 @@ function JobRow({
           <button
             type="button"
             onClick={() => {
-              onOpenAdaptive(job.spec.experimentId);
+              onOpenAdaptive(job.jobId);
             }}
           >
             View in Adaptive Dashboard

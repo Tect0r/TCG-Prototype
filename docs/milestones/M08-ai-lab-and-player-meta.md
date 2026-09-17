@@ -5974,3 +5974,49 @@ reviewed as one unit, and the full verification gate is re-run and recorded.
       `boundary.test.ts` and `secret-leak-boundary.test.ts` all pass with
       the new exclusions; workspace typecheck, eslint and prettier clean on
       every touched file.
+
+- [x] **M08.R16 — `jobId`, not `experimentId`, is an adaptive job's canonical
+      output address.** Adaptive Counter jobs defaulted their output
+      directory to `spec.experimentId`, the one field an operator can repeat
+      across queue entries — a rerun or a restart of the same experiment —
+      while every ordinary job already addresses its own output by the
+      `jobId` the catalog assigns uniquely at enqueue. Two jobs sharing an
+      `experimentId` could resolve into, and on a finalization race
+      overwrite, each other's directory. `ADMIN_CONTRACT_VERSION` 18 → 19.
+      `CatalogStore` gained `findAdaptiveJobsByExperimentId`, the deliberate
+      index a lookup by name goes through instead of a guess:
+      `AdaptiveResultReader` now resolves a named `jobId` through
+      `store.readJob(...).execution.location` first; failing that, a named
+      `experimentId` through this index — exactly one match resolves via
+      that job's own `jobId`, two or more refuse with the one new closed
+      error code, `admin/ambiguous_experiment`, and zero matches falls back
+      to reading the name as a literal directory, M08.19B's original
+      compatibility path, preserved rather than removed. `adaptiveRunRefSchema`
+      and `adaptiveResultTableRequestSchema` now name a run by exactly one of
+      `jobId` or `experimentId`; `adaptiveRunSummarySchema` gained a nullable
+      `jobId`, populated only when the run actually resolved through a queued
+      job. `ADAPTIVE_RUN_LIMITATIONS`'s "not obtained through a queued job"
+      sentence is no longer unconditional — `limitationsFor(obtainedThroughJob)`
+      states it only when true, since M08.R16 is precisely the fix that makes
+      it false for a queue-originated run.
+
+      The client's own "View in Adaptive Dashboard" queue-row handoff
+      (`QueueScreen.tsx`) was discarding the row's own `jobId` and passing its
+      `experimentId` instead — a live instance of the exact ambiguity this
+      slice closes, now fixed end-to-end: `App.tsx`, `ResultsScreen.tsx` and
+      `AdaptiveDashboard.tsx` thread a `JobId` handoff through to
+      `session.adaptiveRunSummary`/`adaptiveResultTable`, both retyped to take
+      an `AdaptiveRunRef`; manual `experimentId` entry in the dashboard's own
+      form still works unchanged. `fake-service.ts`'s `adaptiveRunSummaryFixture`
+      was missing the now-required `jobId` key (a real parse-time break, not a
+      style gap); its two adaptive dispatch handlers now resolve either half of
+      an `AdaptiveRunRef` instead of reading a bare `experimentId`.
+
+      Full `admin-contracts` suite (113 files, 2589 tests) and full
+      `admin-server` suite (49 files, 851 tests, including a clean rerun of
+      `job-runner-adaptive.test.ts` after one isolated load-sensitive flake —
+      confirmed pre-existing by diff, not a regression) pass; full
+      `admin-client` suite (30 files, 438 tests, including the real
+      full-stack test exercising the corrected jobId-based dashboard handoff)
+      passes. Workspace typecheck clean for `@tcg/admin-client`,
+      `@tcg/admin-contracts` and `@tcg/admin-server`.

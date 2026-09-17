@@ -561,7 +561,11 @@ describe('human ingestion, surrender capture and explorer drill-down share one l
   });
 
   it('reads a real deck identity for the drilled-down deck hash', async () => {
-    const reader = new DeckExplorerReader({ roots: liveRoots, resultRootId: 'live' });
+    const reader = new DeckExplorerReader({
+      roots: liveRoots,
+      resultRootId: 'live',
+      store: catalog.store,
+    });
     const view = unwrap(
       await reader.readView(
         deckExplorerRequestSchema.parse({ deckHash: FIXTURE_DECK_SEAT_0.deckHash }),
@@ -620,7 +624,11 @@ describe('human ingestion, surrender capture and explorer drill-down share one l
   });
 
   it('carries every representative kind and pages the abnormal-match list', async () => {
-    const reader = new MatchRepresentativesReader({ roots: liveRoots, resultRootId: 'live' });
+    const reader = new MatchRepresentativesReader({
+      roots: liveRoots,
+      resultRootId: 'live',
+      store: catalog.store,
+    });
     const view = unwrap(await reader.readView(matchRepresentativesRequestSchema.parse({})));
     expect(view.representatives).toHaveLength(REPRESENTATIVE_MATCH_ENTRY_COUNT);
     expect(view.abnormalMatches.items).toBeInstanceOf(Array);

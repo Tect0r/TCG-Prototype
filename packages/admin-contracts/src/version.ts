@@ -388,8 +388,37 @@ import { adminError, type AdminError } from './errors.js';
  *   over the wire, since the lock lives entirely in the orchestration
  *   process's own startup, before any client connects. That is what a
  *   contract version is for saying.
+ * - 19 (M08.R16) — an independent review of M08.5 found that an Adaptive
+ *   Counter job's output directory defaulted to `spec.experimentId`, not
+ *   `before.jobId` as every ordinary job's already does, so two queued jobs
+ *   sharing one `experimentId` — a repeat run, a restarted one — could each
+ *   resolve into the other's directory. M08.R16 re-keys adaptive output by
+ *   `jobId`, and widens the two ways a caller names an adaptive run to match:
+ *   `adaptiveRunRefSchema` and `adaptiveResultTableRequestSchema` now accept
+ *   either a `jobId` or an `experimentId`, exactly one, rather than
+ *   `experimentId` alone. Naming an `experimentId` this catalog queued two or
+ *   more jobs for is refused with the one new code added to the closed list,
+ *   `admin/ambiguous_experiment`, rather than resolved by guessing the newest
+ *   or the running one. `adaptiveRunSummarySchema` also gained `jobId`,
+ *   nullable — populated when the run resolved through a queued job, `null`
+ *   when it resolved through a caller-named `experimentId` with no job behind
+ *   it (M08.19B's original directory-pointed use, or a pre-M08.R16 run this
+ *   catalog never re-keyed).
+ *
+ *   Every widening here is additive: a `jobId` field a build speaking 18 never
+ *   read, and a second accepted shape for a request field it already sent one
+ *   way. A build speaking 18 could still name an adaptive run by
+ *   `experimentId` alone and read every field it already knew about unchanged;
+ *   it could not name a run by `jobId`, could not distinguish a job-resolved
+ *   summary from a directory-resolved one, and would receive
+ *   `admin/ambiguous_experiment` as a code it cannot branch on if its own
+ *   `experimentId`-only request ever named more than one queued job — a
+ *   narrower failure than silently reading whichever job's directory a
+ *   three-or-more-contender race happened to leave behind, which is the
+ *   defect this version exists to retire. That is what a contract version is
+ *   for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 18;
+export const ADMIN_CONTRACT_VERSION = 19;
 
 /**
  * The version stamped into a persisted catalog document.

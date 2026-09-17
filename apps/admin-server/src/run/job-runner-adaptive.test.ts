@@ -74,11 +74,9 @@ const FAST_BUDGET = {
   finalValidationGames: 1,
 } as const;
 
-/** Where an adaptive run really lands: keyed on the experiment ID, not the job ID. */
-async function runDirectory(experimentId: string): Promise<string> {
-  return unwrap(
-    await resolveResultLocation(catalog.roots, { rootId: 'local', directory: experimentId }),
-  );
+/** Where an adaptive run really lands: keyed on the job ID (M08.R16), not the experiment ID. */
+async function runDirectory(jobId: JobId): Promise<string> {
+  return unwrap(await resolveResultLocation(catalog.roots, { rootId: 'local', directory: jobId }));
 }
 
 function makeRunner(options: Partial<ExperimentRunnerOptions> = {}): ExperimentRunner {
@@ -106,9 +104,9 @@ describe('a real adaptive run, dispatched and indexed from what it wrote', () =>
     const job = unwrap(await catalog.store.readJob(jobId));
     expect(job.status).toBe('completed');
     expect(job.result).toBeNull();
-    expect(job.execution?.location).toEqual({ rootId: 'local', directory: config.id });
+    expect(job.execution?.location).toEqual({ rootId: 'local', directory: jobId });
 
-    const directory = await runDirectory(config.id);
+    const directory = await runDirectory(jobId);
     // `RAW_DOCUMENT` is a local, unexported constant in `job-runner.ts`; its
     // literal name is restated here rather than imported.
     const raw = JSON.parse(await readFile(join(directory, 'adaptive-raw.json'), 'utf8')) as {
@@ -140,9 +138,58 @@ describe('a real adaptive run, dispatched and indexed from what it wrote', () =>
     const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-provenance', ...FAST_BUDGET });
     unwrap(await makeRunner().run(jobId));
 
-    const reader = new AdaptiveResultReader({ roots: catalog.roots, resultRootId: 'local' });
-    const summary = await reader.readSummary(config.id);
-    expect(isOk(summary)).toBe(true);
+    const reader = new AdaptiveResultReader({
+      roots: catalog.roots,
+      resultRootId: 'local',
+      store: catalog.store,
+    });
+    const byJob = await reader.readSummary({ jobId, experimentId: null });
+    expect(isOk(byJob)).toBe(true);
+
+    const byExperiment = await reader.readSummary({ jobId: null, experimentId: config.id });
+    expect(isOk(byExperiment)).toBe(true);
+  }, 120_000);
+});
+
+describe('two queued jobs that share one experiment ID resolve to independent output (M08.R16)', () => {
+  it('never lets a later job read or overwrite an earlier one’s directory, sequentially or concurrently', async () => {
+    const shared = { id: 'adaptive-shared-experiment', ...FAST_BUDGET };
+    const first = await seedAdaptiveJob(shared);
+    const second = await seedAdaptiveJob(shared);
+    expect(first.jobId).not.toBe(second.jobId);
+
+    const [firstOutcome, secondOutcome] = await Promise.all([
+      makeRunner().run(first.jobId),
+      makeRunner().run(second.jobId),
+    ]);
+    unwrap(firstOutcome);
+    unwrap(secondOutcome);
+
+    const firstDirectory = await runDirectory(first.jobId);
+    const secondDirectory = await runDirectory(second.jobId);
+    expect(firstDirectory).not.toBe(secondDirectory);
+
+    const firstJob = unwrap(await catalog.store.readJob(first.jobId));
+    const secondJob = unwrap(await catalog.store.readJob(second.jobId));
+    expect(firstJob.execution?.location).toEqual({ rootId: 'local', directory: first.jobId });
+    expect(secondJob.execution?.location).toEqual({ rootId: 'local', directory: second.jobId });
+    expect(firstJob.status).toBe('completed');
+    expect(secondJob.status).toBe('completed');
+
+    const reader = new AdaptiveResultReader({
+      roots: catalog.roots,
+      resultRootId: 'local',
+      store: catalog.store,
+    });
+    const ambiguous = await reader.readSummary({ jobId: null, experimentId: shared.id });
+    expect(isErr(ambiguous) && ambiguous.error[0]?.code).toBe('admin/ambiguous_experiment');
+
+    const byFirstJob = unwrap(await reader.readSummary({ jobId: first.jobId, experimentId: null }));
+    expect(byFirstJob.jobId).toBe(first.jobId);
+    const bySecondJob = unwrap(
+      await reader.readSummary({ jobId: second.jobId, experimentId: null }),
+    );
+    expect(bySecondJob.jobId).toBe(second.jobId);
   }, 120_000);
 });
 
@@ -188,8 +235,8 @@ describe('the adaptive configuration a job holds cannot drift out from under it'
 
 describe('an adaptive failure says what went wrong without saying where', () => {
   it('sanitizes a real filesystem error raised while opening the run', async () => {
-    const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-obstructed', ...FAST_BUDGET });
-    const directory = await runDirectory(config.id);
+    const { jobId } = await seedAdaptiveJob({ id: 'adaptive-obstructed', ...FAST_BUDGET });
+    const directory = await runDirectory(jobId);
     // A plain file where the run needs a directory: `MatchStore`'s writer
     // throws a real fs error naming this exact path.
     await mkdir(dirname(directory), { recursive: true });
@@ -211,8 +258,8 @@ describe('an adaptive failure says what went wrong without saying where', () => 
 
 describe('a corrupted raw-evidence document fails the job instead of crashing the runner', () => {
   it('resolves run() to a failed outcome rather than throwing out of it', async () => {
-    const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-corrupt-raw', ...FAST_BUDGET });
-    const directory = await runDirectory(config.id);
+    const { jobId } = await seedAdaptiveJob({ id: 'adaptive-corrupt-raw', ...FAST_BUDGET });
+    const directory = await runDirectory(jobId);
     // `#loadOrCreateAdaptiveRaw` runs after `#prepareAdaptive` succeeds, so a
     // fresh directory with only a corrupted `adaptive-raw.json` reproduces a
     // crash mid-attempt (e.g. a prior process killed while writing it) rather
@@ -241,10 +288,10 @@ describe('a real adaptive run, paused and resumed across worker threads', () => 
     // all), so a mid-run stop that is meant to be resumed has to be a pause,
     // not a cancel — `resume` only exists from `paused`/`interrupted`, and
     // `retry` only from `failed`.
-    const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-pause', ...FAST_BUDGET });
+    const { jobId } = await seedAdaptiveJob({ id: 'adaptive-pause', ...FAST_BUDGET });
     const runner = makeRunner();
     const control = new JobStopControl();
-    const matchesPath = experimentPaths(await runDirectory(config.id)).matches;
+    const matchesPath = experimentPaths(await runDirectory(jobId)).matches;
 
     const running = runner.run(jobId, { workers: 2, control });
 
@@ -295,7 +342,7 @@ describe('a real adaptive run, paused and resumed across worker threads', () => 
     // re-decision of that same phase must have collapsed onto one entry per
     // `block`, never a duplicate, across the two attempts' writes to the
     // same `adaptive-raw.json`.
-    const directory = await runDirectory(config.id);
+    const directory = await runDirectory(jobId);
     const raw = JSON.parse(await readFile(join(directory, 'adaptive-raw.json'), 'utf8')) as {
       series: { block: number }[];
       generations: { block: number }[];
@@ -329,7 +376,7 @@ describe('a real adaptive run, paused exactly before final result publication', 
     });
     const runner = makeRunner();
     const control = new JobStopControl();
-    const directory = await runDirectory(config.id);
+    const directory = await runDirectory(jobId);
     const matchesPath = experimentPaths(directory).matches;
     const checkpointPath = join(directory, 'adaptive-checkpoint.json');
 

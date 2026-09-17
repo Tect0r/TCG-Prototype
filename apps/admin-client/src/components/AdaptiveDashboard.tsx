@@ -3,11 +3,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   PAGE_SIZE_MAX,
   adaptiveExperimentIdSchema,
-  type AdaptiveExperimentId,
   type AdaptiveResultTable,
   type AdaptiveResultTableName,
+  type AdaptiveRunRef,
   type AdaptiveRunSummary,
   type AdminError,
+  type JobId,
   type ResultRow,
 } from '@tcg/admin-contracts';
 
@@ -31,13 +32,14 @@ import { Busy, Empty, Failure } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
 
 /**
- * M08.19C — the directory-keyed Adaptive Counter run dashboard.
+ * M08.19C — the Adaptive Counter run dashboard.
  *
- * An Adaptive Counter run has no `JobId` yet (`adaptive-results.ts`'s own
- * note on why), so this panel is entered by an operator typing the
- * `experimentId` a run was configured with, rather than by selecting a row
- * from the catalog listing `ResultsScreen.tsx` already offers. Everything
- * downstream — the summary, every table — is read through `AdminSession`'s
+ * A run is named by exactly one of a `jobId` or an `experimentId`
+ * (`adaptive-results.ts`'s own note on why, M08.R16): a queue row's own job
+ * hands this panel its `jobId` directly, and an operator typing the
+ * `experimentId` a run was configured with reaches the same run through the
+ * server's own index over queued jobs. Everything downstream — the summary,
+ * every table — is read through `AdminSession`'s
  * `adaptiveRunSummary`/`adaptiveResultTable`, exactly as thin a wrapper
  * around the wire as `ResultDashboard.tsx`'s own calls are.
  *
@@ -85,16 +87,16 @@ const TAB_LABELS: Readonly<Record<AdaptiveResultTableName, string>> = {
 };
 
 export function AdaptiveRunPanel({
-  initialExperimentId = null,
-  onConsumeInitialExperimentId,
+  initialJobId = null,
+  onConsumeInitialJobId,
 }: {
-  /** A run handed off from elsewhere (M08.R6), such as a queue row's own job. */
-  readonly initialExperimentId?: AdaptiveExperimentId | null | undefined;
-  readonly onConsumeInitialExperimentId?: (() => void) | undefined;
+  /** A run handed off from elsewhere (M08.R6), by the queue row's own jobId (M08.R16). */
+  readonly initialJobId?: JobId | null | undefined;
+  readonly onConsumeInitialJobId?: (() => void) | undefined;
 } = {}) {
   const session = useAdminSession();
   const [input, setInput] = useState('');
-  const [experimentId, setExperimentId] = useState<AdaptiveExperimentId | null>(null);
+  const [ref, setRef] = useState<AdaptiveRunRef | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [summary, setSummary] = useState<AdminOutcome<AdaptiveRunSummary> | null>(null);
   const [view, setView] = useState<AdaptiveResultTableName>('series');
@@ -102,34 +104,34 @@ export function AdaptiveRunPanel({
   const [drill, setDrill] = useState<AdaptiveDrillTarget | null>(null);
 
   const open = useCallback(
-    (id: AdaptiveExperimentId) => {
-      setInput(id);
-      setExperimentId(id);
+    (next: AdaptiveRunRef) => {
+      setInput(next.experimentId ?? '');
+      setRef(next);
       setSummary(null);
       setTables({});
       setView('series');
       setDrill(null);
-      void session.adaptiveRunSummary(id).then(setSummary);
+      void session.adaptiveRunSummary(next).then(setSummary);
     },
     [session],
   );
 
   useEffect(() => {
-    if (initialExperimentId === null || initialExperimentId === undefined) return;
-    open(initialExperimentId);
-    onConsumeInitialExperimentId?.();
+    if (initialJobId === null || initialJobId === undefined) return;
+    open({ jobId: initialJobId, experimentId: null });
+    onConsumeInitialJobId?.();
     // Only the handoff's arrival opens a run; `open` and the consume callback
     // are stable-enough closures and re-running this for their own sake would
     // reopen the same run on every unrelated re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialExperimentId]);
+  }, [initialJobId]);
 
   useEffect(() => {
-    if (experimentId === null || summary === null || !summary.ok) return;
+    if (ref === null || summary === null || !summary.ok) return;
     let live = true;
     for (const table of ADAPTIVE_DASHBOARD_TABLES) {
       void session
-        .adaptiveResultTable(experimentId, table, { limit: PAGE_SIZE_MAX, cursor: null })
+        .adaptiveResultTable(ref, table, { limit: PAGE_SIZE_MAX, cursor: null })
         .then((outcome) => {
           if (live) setTables((held) => ({ ...held, [table]: outcome }));
         });
@@ -138,16 +140,16 @@ export function AdaptiveRunPanel({
       live = false;
     };
     // `summary.ok` alone would refetch on every summary re-render; the identity
-    // of `experimentId` is what actually decides whether a new run was opened.
+    // of `ref` is what actually decides whether a new run was opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, experimentId, summary?.ok]);
+  }, [session, ref, summary?.ok]);
 
   return (
     <section className="panel" aria-labelledby="adaptive-run">
       <h2 id="adaptive-run">Adaptive Counter run</h2>
       <p className="panel__note">
-        A directory-keyed run has no job in the catalog above — enter the experiment ID it was
-        configured with. The server resolves its evidence itself; this screen never names or sees a
+        Opened from a queue row's own job, or by typing the experiment ID it was configured with
+        below. The server resolves its evidence itself; this screen never names or sees a
         filesystem path.
       </p>
 
@@ -160,7 +162,7 @@ export function AdaptiveRunPanel({
             return;
           }
           setFormError(null);
-          open(parsed.data);
+          open({ jobId: null, experimentId: parsed.data });
         }}
       >
         <label className="builder__field">
@@ -184,11 +186,11 @@ export function AdaptiveRunPanel({
         )}
       </form>
 
-      {experimentId !== null && summary === null && <Busy label="Reading this run's summary…" />}
-      {experimentId !== null && summary !== null && !summary.ok && (
-        <SummaryFailure failure={summary.failure} onRetry={() => open(experimentId)} />
+      {ref !== null && summary === null && <Busy label="Reading this run's summary…" />}
+      {ref !== null && summary !== null && !summary.ok && (
+        <SummaryFailure failure={summary.failure} onRetry={() => open(ref)} />
       )}
-      {experimentId !== null && summary !== null && summary.ok && (
+      {ref !== null && summary !== null && summary.ok && (
         <>
           <SummaryFacts summary={summary.value} />
 
@@ -336,6 +338,9 @@ function informationPolicyBanner(policy: AdaptiveRunSummary['informationPolicy']
 function SummaryFacts({ summary }: { readonly summary: AdaptiveRunSummary }) {
   const facts: Fact[] = [
     { label: 'Experiment', value: <code>{summary.experimentId}</code> },
+    ...(summary.jobId !== null
+      ? [{ label: 'Job', value: <code>{summary.jobId}</code> }]
+      : []),
     { label: 'Configuration hash', value: <code>{summary.configHash}</code> },
     {
       label: 'Read from',

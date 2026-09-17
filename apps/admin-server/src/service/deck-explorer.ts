@@ -12,6 +12,7 @@ import { err, isErr, ok, type Result } from '@tcg/shared';
 import { filterLiveMatches, readLiveMatchEnvelopes } from '@tcg/simulator';
 
 import { type ResolvedCatalogRoots } from '../catalog/roots.js';
+import type { CatalogStore } from '../catalog/store.js';
 import { AdaptiveResultReader } from './adaptive-results.js';
 
 /**
@@ -128,10 +129,11 @@ async function findKnownRevisions(
   let cursor: string | null = null;
 
   for (;;) {
-    const page = await adaptive.readTable(experimentId, DECK_EXPLORER_REVISION_TABLE, {
-      limit: 200,
-      cursor,
-    });
+    const page = await adaptive.readTable(
+      { jobId: null, experimentId },
+      DECK_EXPLORER_REVISION_TABLE,
+      { limit: 200, cursor },
+    );
     if (isErr(page)) return page;
 
     for (const row of page.value.rows) {
@@ -178,6 +180,7 @@ async function readDeckExplorerView(
 export interface DeckExplorerReaderOptions {
   readonly roots: ResolvedCatalogRoots;
   readonly resultRootId: string;
+  readonly store: CatalogStore;
 }
 
 /**

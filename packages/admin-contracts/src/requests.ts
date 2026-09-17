@@ -443,28 +443,53 @@ export const resultArtifactRequestSchema = z.strictObject({
 export type ResultArtifactRequest = z.infer<typeof resultArtifactRequestSchema>;
 
 /**
- * Which directory-keyed Adaptive Counter run to read (M08.19C).
+ * Which Adaptive Counter run to read (M08.19C; canonicalized to `jobId` by
+ * M08.R16).
  *
- * Named the same way `jobRefSchema` names a catalog run — one identifying field,
- * nothing shaped like a location. The server combines `experimentId` with its own
- * configured result root exactly as `resolveResultLocation` does for every other
- * result (ADR 0023 §5): the caller never says where on disk the run lives.
+ * `jobId` is the canonical address: every adaptive job queued since M08.R3 now
+ * owns its output by `jobId`, exactly as an ordinary catalog job does
+ * (`resultArtifactRequestSchema` above), so naming it resolves that job's own
+ * result unambiguously. `experimentId` is kept for two things `jobId` cannot
+ * name — a run written before M08.R16 canonicalized addressing, and a
+ * directory an operator points the adaptive CLI's own `output` at by hand,
+ * outside the catalog entirely (M08.19B) — and because more than one queued
+ * job can legally share one `experimentId`, naming it can be ambiguous: the
+ * server resolves it through a deliberate index and refuses
+ * (`admin/ambiguous_experiment`) rather than guessing which job's output to
+ * show. Exactly one of the two is required, never both, so a caller can never
+ * name a job and a directory that might disagree.
  */
-export const adaptiveRunRefSchema = z.strictObject({ experimentId: adaptiveExperimentIdSchema });
+export const adaptiveRunRefSchema = z
+  .strictObject({
+    jobId: jobIdSchema.nullable().default(null),
+    experimentId: adaptiveExperimentIdSchema.nullable().default(null),
+  })
+  .refine(
+    (ref) => (ref.jobId === null) !== (ref.experimentId === null),
+    'Name exactly one of jobId or experimentId.',
+  );
 export type AdaptiveRunRef = z.infer<typeof adaptiveRunRefSchema>;
 
 /**
  * One page of one Adaptive Counter run's result table (M08.19C).
  *
- * `resultTableRequestSchema` restated for a directory-keyed run instead of a
- * catalog job: `table` is named from `adaptiveResultTableNameSchema`'s closed
- * list, and there is nowhere in this shape to put a location either.
+ * `resultTableRequestSchema` restated for an adaptive run instead of an
+ * ordinary catalog job, carrying the same `jobId`-or-`experimentId` choice
+ * `adaptiveRunRefSchema` does and for the same reason (M08.R16): `table` is
+ * named from `adaptiveResultTableNameSchema`'s closed list, and there is
+ * nowhere in this shape to put a location either.
  */
-export const adaptiveResultTableRequestSchema = z.strictObject({
-  experimentId: adaptiveExperimentIdSchema,
-  table: adaptiveResultTableNameSchema,
-  page: pageRequestSchema.prefault({}),
-});
+export const adaptiveResultTableRequestSchema = z
+  .strictObject({
+    jobId: jobIdSchema.nullable().default(null),
+    experimentId: adaptiveExperimentIdSchema.nullable().default(null),
+    table: adaptiveResultTableNameSchema,
+    page: pageRequestSchema.prefault({}),
+  })
+  .refine(
+    (value) => (value.jobId === null) !== (value.experimentId === null),
+    'Name exactly one of jobId or experimentId.',
+  );
 export type AdaptiveResultTableRequest = z.infer<typeof adaptiveResultTableRequestSchema>;
 export type AdaptiveResultTableRequestInput = z.input<typeof adaptiveResultTableRequestSchema>;
 

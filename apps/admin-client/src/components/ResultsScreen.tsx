@@ -6,7 +6,6 @@ import {
   JOB_STATUSES,
   PAGE_SIZE_DEFAULT,
   SOURCE_CLASSES,
-  type AdaptiveExperimentId,
   type Annotations,
   type CatalogJobView,
   type ExperimentKind,
@@ -84,12 +83,12 @@ import { DataHealthPanel } from './DataHealthDashboard.js';
  * output" a fact about the request shape rather than a promise about this code.
  */
 export function ResultsScreen({
-  initialAdaptiveExperimentId = null,
-  onConsumeAdaptiveExperimentId,
+  initialAdaptiveJobId = null,
+  onConsumeAdaptiveJobId,
 }: {
-  /** A run handed off from elsewhere (M08.R6), such as a queue row's own job. */
-  readonly initialAdaptiveExperimentId?: AdaptiveExperimentId | null;
-  readonly onConsumeAdaptiveExperimentId?: () => void;
+  /** A run handed off from elsewhere (M08.R6), by the queue row's own jobId (M08.R16). */
+  readonly initialAdaptiveJobId?: JobId | null;
+  readonly onConsumeAdaptiveJobId?: () => void;
 } = {}) {
   const session = useAdminSession();
   const state = useAdminState();
@@ -135,9 +134,9 @@ export function ResultsScreen({
   }, []);
 
   useEffect(() => {
-    if (initialAdaptiveExperimentId === null || initialAdaptiveExperimentId === undefined) return;
+    if (initialAdaptiveJobId === null || initialAdaptiveJobId === undefined) return;
     setMode('adaptive');
-  }, [initialAdaptiveExperimentId]);
+  }, [initialAdaptiveJobId]);
 
   const search = useCallback(
     async (next: ResultsFilterState): Promise<void> => {
@@ -270,8 +269,8 @@ export function ResultsScreen({
 
       {mode === 'adaptive' && (
         <AdaptiveRunPanel
-          initialExperimentId={initialAdaptiveExperimentId}
-          onConsumeInitialExperimentId={onConsumeAdaptiveExperimentId}
+          initialJobId={initialAdaptiveJobId}
+          onConsumeInitialJobId={onConsumeAdaptiveJobId}
         />
       )}
       {mode === 'coverage' && <CoveragePanel />}

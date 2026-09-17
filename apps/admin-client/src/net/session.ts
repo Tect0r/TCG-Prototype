@@ -9,6 +9,7 @@ import type {
   AdaptiveExperimentId,
   AdaptiveResultTable,
   AdaptiveResultTableName,
+  AdaptiveRunRef,
   AdaptiveRunSummary,
   AdminEndpointName,
   AdminRequestOf,
@@ -516,28 +517,26 @@ export class AdminSession {
   /* ------------------------------------------------ the adaptive result reader (M08.19C) */
 
   /**
-   * A directory-keyed Adaptive Counter run's headline reading, or the one
-   * refusal that says why there is none.
+   * An Adaptive Counter run's headline reading, or the one refusal that says
+   * why there is none.
    *
-   * Mirrors `resultSummary` exactly, for a run that has no `JobId` to be read
-   * by yet: `adaptive-summary` takes only `experimentId`, and the server
-   * resolves its directory itself (`AdaptiveResultReader`, ADR 0023 §5) — this
-   * client never learns or sends a path.
+   * Mirrors `resultSummary`, naming the run by exactly one of `jobId` or
+   * `experimentId` (M08.R16) — the server resolves either into a directory
+   * itself (`AdaptiveResultReader`, ADR 0023 §5), and this client never learns
+   * or sends a path either way.
    */
-  async adaptiveRunSummary(
-    experimentId: AdaptiveExperimentId,
-  ): Promise<AdminOutcome<AdaptiveRunSummary>> {
-    return this.#call('adaptiveRunSummary', { experimentId });
+  async adaptiveRunSummary(ref: AdaptiveRunRef): Promise<AdminOutcome<AdaptiveRunSummary>> {
+    return this.#call('adaptiveRunSummary', ref);
   }
 
   /** One page of one Adaptive Counter run's result table — mirrors `resultTable`. */
   async adaptiveResultTable(
-    experimentId: AdaptiveExperimentId,
+    ref: AdaptiveRunRef,
     table: AdaptiveResultTableName,
     page?: PageRequestInput,
   ): Promise<AdminOutcome<AdaptiveResultTable>> {
     return this.#call('adaptiveResultTable', {
-      experimentId,
+      ...ref,
       table,
       page: pageRequestSchema.parse(page ?? {}),
     });

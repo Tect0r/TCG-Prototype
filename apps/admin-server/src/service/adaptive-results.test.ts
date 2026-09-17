@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { adaptiveExperimentIdSchema, pageRequestSchema } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
 
+import { FileCatalogStore } from '../catalog/file-catalog-store.js';
 import { resolveCatalogRoots } from '../catalog/roots.js';
 import {
   AdaptiveResultReader,
@@ -476,8 +477,16 @@ describe('an adaptive result table', () => {
   });
 });
 
-describe('AdaptiveResultReader (M08.19C)', () => {
-  it("resolves an experiment's directory as its own id under the configured result root", async () => {
+describe('AdaptiveResultReader', () => {
+  /**
+   * Every test here opens a store over the same roots with no jobs ever
+   * queued into it — `findAdaptiveJobsByExperimentId` therefore always
+   * returns zero matches, exactly the case that makes `#resolveByExperiment`
+   * fall back to reading `experimentId` as a literal directory name
+   * (M08.R16's explicit M08.19B-compatible legacy path, for a run addressed
+   * by experiment ID alone with no queued job behind it).
+   */
+  it("falls back to an experiment's directory as its own id, when no queued job carries that experiment id (M08.19B legacy path)", async () => {
     const experimentId = adaptiveExperimentIdSchema.parse('goblin_counter');
     const runDirectory = join(directory, experimentId);
     await mkdir(runDirectory);
@@ -493,12 +502,18 @@ describe('AdaptiveResultReader (M08.19C)', () => {
         resultRoots: { default: directory },
       }),
     );
-    const reader = new AdaptiveResultReader({ roots, resultRootId: 'default' });
+    const store = new FileCatalogStore({ roots, clock: () => new Date() });
+    await store.open();
+    const reader = new AdaptiveResultReader({ roots, resultRootId: 'default', store });
 
-    const summary = unwrap(await reader.readSummary(experimentId));
+    const summary = unwrap(await reader.readSummary({ jobId: null, experimentId }));
     expect(summary.experimentId).toBe('goblin_counter');
+    expect(summary.jobId).toBeNull();
+    expect(summary.limitations.join(' ')).toContain('not obtained through a queued job');
 
-    const table = unwrap(await reader.readTable(experimentId, 'revisions', page));
+    const table = unwrap(
+      await reader.readTable({ jobId: null, experimentId }, 'revisions', page),
+    );
     expect(table.experimentId).toBe('goblin_counter');
     expect(table.rows.length).toBeGreaterThan(0);
   });
@@ -511,9 +526,11 @@ describe('AdaptiveResultReader (M08.19C)', () => {
         resultRoots: { default: directory },
       }),
     );
-    const reader = new AdaptiveResultReader({ roots, resultRootId: 'default' });
+    const store = new FileCatalogStore({ roots, clock: () => new Date() });
+    await store.open();
+    const reader = new AdaptiveResultReader({ roots, resultRootId: 'default', store });
 
-    const refused = await reader.readSummary(experimentId);
+    const refused = await reader.readSummary({ jobId: null, experimentId });
     expect(isErr(refused) && refused.error[0]?.code).toBe('admin/no_result');
   });
 
@@ -525,9 +542,11 @@ describe('AdaptiveResultReader (M08.19C)', () => {
         resultRoots: { default: directory },
       }),
     );
-    const reader = new AdaptiveResultReader({ roots, resultRootId: 'unconfigured' });
+    const store = new FileCatalogStore({ roots, clock: () => new Date() });
+    await store.open();
+    const reader = new AdaptiveResultReader({ roots, resultRootId: 'unconfigured', store });
 
-    const refused = await reader.readSummary(experimentId);
+    const refused = await reader.readSummary({ jobId: null, experimentId });
     expect(isErr(refused) && refused.error[0]?.code).toBe('admin/unsafe_result_reference');
   });
 });

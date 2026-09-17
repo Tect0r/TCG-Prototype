@@ -111,6 +111,21 @@ export const ADMIN_ERROR_CODES = [
    */
   'admin/no_result',
   /**
+   * An `experimentId` names more than one queued adaptive job, and the caller
+   * did not say which one's output to read.
+   *
+   * M08.R16 canonicalized adaptive output addressing to `jobId`, the same way
+   * every ordinary catalog job is already addressed, precisely because more
+   * than one job may legally carry the same `experimentId` (a repeat run, a
+   * restarted one) and only `jobId` tells them apart. `adaptiveRunRefSchema`
+   * still accepts a caller-named `experimentId` for a run this catalog never
+   * queued a job for, but when the catalog itself holds two or more matching
+   * jobs, this service refuses rather than picking the newest, the running
+   * one, or any other guess: the smallest blocking question ("which job?") is
+   * the caller's to answer, not this service's to invent.
+   */
+  'admin/ambiguous_experiment',
+  /**
    * Another orchestration process already holds this catalog.
    *
    * ADR 0023 §4 describes one administrator and one orchestration process, and

@@ -446,7 +446,7 @@ export class ExperimentRunner {
    * `StoredResultReference` — an Adaptive Counter job's `result` field stays
    * `null` forever; `AdaptiveResultReader` reads its own two canonical
    * documents from the same directory this method resolves, keyed on
-   * `experimentId` exactly as `#prepareAdaptive` resolves it, which is what
+   * `jobId` exactly as `#prepareAdaptive` resolves it (M08.R16), which is what
    * keeps the runner and the reader pointed at the same evidence.
    */
   async #runAdaptive(
@@ -715,15 +715,21 @@ export class ExperimentRunner {
   /**
    * The adaptive counterpart to `#prepare`.
    *
-   * Two deliberate divergences from the experiment path, both required by
-   * M08.R4's own acceptance: the directory is keyed on the configuration's own
-   * `experimentId`, not `jobId`, because that is the address
-   * `AdaptiveResultReader` already resolves a run at — matching it is what
-   * makes this job's provenance point at the exact output the dashboard reads,
-   * rather than a second, job-keyed copy of the same run. And there is no
-   * `config.value.workers` to fall back to — `AdaptiveConfig` has none, per
-   * Q53 — so a caller with no opinion gets the same default-of-one every other
-   * `workers` field in this codebase declares.
+   * The directory now keys on `before.jobId`, exactly as `#prepare` already
+   * does for an ordinary job — M08.R16 retired the M08.R4 choice to key it on
+   * `spec.experimentId` instead, because more than one queued job can legally
+   * share one `experimentId` (a repeat run, a restarted one), and two jobs
+   * resolving the same directory from `spec.experimentId` alone could each
+   * pass `#loadOrCreateAdaptiveCheckpoint`'s and `#loadOrCreateAdaptiveRaw`'s
+   * `configHash`/`experimentId` identity guards against the *other* one's
+   * output whenever the two happened to share both fields, which is exactly
+   * what an independent review of M08.5 found. `AdaptiveResultReader` resolves
+   * a caller-named `jobId` through this same address now, and a caller-named
+   * `experimentId` through the deliberate index `findAdaptiveJobsByExperimentId`
+   * provides — never by re-deriving this directory from the config content.
+   * There is still no `config.value.workers` to fall back to —
+   * `AdaptiveConfig` has none, per Q53 — so a caller with no opinion gets the
+   * same default-of-one every other `workers` field in this codebase declares.
    */
   async #prepareAdaptive(
     before: CatalogJobDocument,
@@ -746,7 +752,7 @@ export class ExperimentRunner {
 
     const location: ResultLocation = before.execution?.location ?? {
       rootId: this.#resultRootId,
-      directory: spec.experimentId,
+      directory: before.jobId,
     };
 
     const resolved = await resolveResultLocation(this.#roots, location);

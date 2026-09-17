@@ -4,6 +4,7 @@ import { looksLikeFilesystemPath } from './errors.js';
 import {
   adaptiveExperimentIdSchema,
   contentHashSchema,
+  jobIdSchema,
   MAX_ADAPTIVE_EXPERIMENT_ID,
   type AdaptiveExperimentId,
 } from './identity.js';
@@ -32,16 +33,22 @@ import {
  * It stayed directory-keyed rather than job-keyed through M08.19B because
  * `EXPERIMENT_KINDS` (`./identity.ts`) has no `'adaptive'` member: an Adaptive
  * Counter run was not yet a `CatalogStore` job, so there was no `JobId` to key
- * a reader by. M08.R3 wires a directory to a job address —
- * `enqueueAdaptive`, `./catalog.ts`'s widened `jobSpecSchema`, and a
- * `JobOrigin` member for an adaptive run — but this contract still carries
- * what a reader can produce from a resolved run directory rather than adding a
- * job-keyed alternative: a finished job's `spec.experimentId` already names
- * the same directory this file's `adaptiveRunRefSchema` does, so the job
- * address is a second way to say what these requests already say, not a
- * reason to add a second shape for them. `apps/admin-server`'s reader is the
- * only thing that resolves a directory, and it does so exactly as cautiously
- * as `resolveResultLocation` does for every other result (ADR 0023 §5): inside
+ * a reader by. M08.R3 wired a directory to a job address — `enqueueAdaptive`,
+ * `./catalog.ts`'s widened `jobSpecSchema`, and a `JobOrigin` member for an
+ * adaptive run — but an adaptive job's own output directory still defaulted
+ * to `spec.experimentId`, exactly like every other job kind defaults to
+ * `before.jobId`: two jobs sharing one `experimentId` could then race on the
+ * same directory. M08.R16 makes `jobId` the canonical address, the same way
+ * every other job kind already works: `adaptiveRunRefSchema` now names either
+ * a `jobId` (resolved straight through the job's own `execution.location`) or
+ * an `experimentId` (resolved through a deliberate index over queued jobs —
+ * exactly one match resolves via that job's own `jobId`, two or more refuses
+ * with `admin/ambiguous_experiment` rather than guessing, and zero matches
+ * falls back to reading the name as a literal directory, the explicit
+ * M08.19B-compatible legacy path). `adaptiveRunSummarySchema.jobId` reports
+ * which of those three happened. `apps/admin-server`'s reader is the only
+ * thing that resolves a directory, and it does so exactly as cautiously as
+ * `resolveResultLocation` does for every other result (ADR 0023 §5): inside
  * the process, against a configured root, on every request.
  *
  * The five evidence streams `AdaptiveResultPayload` keeps apart — series wins,
@@ -155,17 +162,22 @@ function hasAdaptiveColumn(
  * A run's headline reading, assembled from its canonical result document at
  * the moment it is asked for.
  *
- * Deliberately thinner than `resultSummarySchema`: there is no `jobId`
- * (nothing to key one by yet), no `kind` (`EXPERIMENT_KINDS` has no
- * `'adaptive'` member), and no `identity`/`denominators`/`evidenceStanding` —
- * an Adaptive Counter run writes no manifest and no calibration standing, so a
- * field for either would have nowhere honest to read from. What travels is
- * exactly what a resolved run directory can answer today: which document and
- * schema version produced the reading, the labelled scalars a dashboard needs
- * before it fetches any table, which tables have rows to fetch and how many,
- * and the fixed limitations this evidence may never be cited past.
+ * Deliberately thinner than `resultSummarySchema`: there is no `kind`
+ * (`EXPERIMENT_KINDS` has no `'adaptive'` member), and no
+ * `identity`/`denominators`/`evidenceStanding` — an Adaptive Counter run
+ * writes no manifest and no calibration standing, so a field for either would
+ * have nowhere honest to read from. What travels is exactly what a resolved
+ * run directory can answer today: which document and schema version produced
+ * the reading, the labelled scalars a dashboard needs before it fetches any
+ * table, which tables have rows to fetch and how many, and the fixed
+ * limitations this evidence may never be cited past.
+ *
+ * `jobId` is `null` when this run was resolved the M08.19B way — a caller-named
+ * `experimentId` with no catalog job behind it, or a pre-M08.R16 run this
+ * catalog never re-keyed — and the queued job's id otherwise (M08.R16).
  */
 export const adaptiveRunSummarySchema = z.strictObject({
+  jobId: jobIdSchema.nullable(),
   experimentId: adaptiveExperimentIdSchema,
   configHash: contentHashSchema,
   source: adaptiveResultSourceSchema,

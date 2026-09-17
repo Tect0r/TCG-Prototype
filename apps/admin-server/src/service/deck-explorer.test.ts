@@ -7,6 +7,7 @@ import { adaptiveExperimentIdSchema } from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
 
+import { FileCatalogStore } from '../catalog/file-catalog-store.js';
 import { resolveCatalogRoots, type ResolvedCatalogRoots } from '../catalog/roots.js';
 
 import { DeckExplorerReader } from './deck-explorer.js';
@@ -146,11 +147,18 @@ function roots(): ResolvedCatalogRoots {
   );
 }
 
+/** No jobs are ever queued into this store — every test here names an experiment with no queued job behind it. */
+async function openStore(): Promise<FileCatalogStore> {
+  const store = new FileCatalogStore({ roots: roots(), clock: () => new Date() });
+  await store.open();
+  return store;
+}
+
 describe('DeckExplorerReader (M08.26B)', () => {
   it('reads identity off the lowest-matchId envelope carrying the requested deck hash, with knownRevisions null when no experiment is named', async () => {
     writeMatch('match_b', envelope('match_b'));
     writeMatch('match_a', envelope('match_a'));
-    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default' });
+    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default', store: await openStore() });
 
     const view = unwrap(
       await reader.readView({ deckHash: TARGET_DECK.deckHash, adaptiveExperimentId: null }),
@@ -175,7 +183,7 @@ describe('DeckExplorerReader (M08.26B)', () => {
   });
 
   it('reports identity null when no live match carries the requested deck hash', async () => {
-    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default' });
+    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default', store: await openStore() });
 
     const view = unwrap(
       await reader.readView({ deckHash: TARGET_DECK.deckHash, adaptiveExperimentId: null }),
@@ -203,7 +211,7 @@ describe('DeckExplorerReader (M08.26B)', () => {
       ),
       'utf8',
     );
-    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default' });
+    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default', store: await openStore() });
 
     const view = unwrap(
       await reader.readView({ deckHash: TARGET_DECK.deckHash, adaptiveExperimentId: experimentId }),
@@ -221,7 +229,7 @@ describe('DeckExplorerReader (M08.26B)', () => {
       JSON.stringify(resultDocument()),
       'utf8',
     );
-    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default' });
+    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default', store: await openStore() });
 
     const view = unwrap(
       await reader.readView({ deckHash: TARGET_DECK.deckHash, adaptiveExperimentId: experimentId }),
@@ -243,7 +251,7 @@ describe('DeckExplorerReader (M08.26B)', () => {
 
   it('fails the whole request when the named experiment cannot be read, rather than reporting null or []', async () => {
     const experimentId = adaptiveExperimentIdSchema.parse('nothing_here');
-    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default' });
+    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'default', store: await openStore() });
 
     const refused = await reader.readView({
       deckHash: TARGET_DECK.deckHash,
@@ -254,7 +262,7 @@ describe('DeckExplorerReader (M08.26B)', () => {
   });
 
   it('refuses a resultRootId that is not configured, rather than guessing another root', async () => {
-    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'unconfigured' });
+    const reader = new DeckExplorerReader({ roots: roots(), resultRootId: 'unconfigured', store: await openStore() });
 
     const refused = await reader.readView({
       deckHash: TARGET_DECK.deckHash,

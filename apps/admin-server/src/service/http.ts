@@ -116,6 +116,7 @@ const STATUS_FOR: Readonly<Record<AdminErrorCode, number>> = Object.freeze({
   'admin/payload_too_large': 413,
   'admin/unknown_endpoint': 404,
   'admin/no_result': 404,
+  'admin/ambiguous_experiment': 409,
   'admin/already_running': 409,
   'admin/stale_lock': 409,
 });

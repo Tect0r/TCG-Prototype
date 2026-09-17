@@ -425,6 +425,7 @@ export function adaptiveRunSummaryFixture(
   overrides: Partial<AdaptiveRunSummary> = {},
 ): AdaptiveRunSummary {
   return adaptiveRunSummarySchema.parse({
+    jobId: null,
     experimentId: 'goblin_counter',
     configHash: 'abcdef0123456789',
     source: { document: 'adaptive-result.json', schemaVersion: 1 },
@@ -1968,10 +1969,29 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       return answer(next);
     }
 
+    /**
+     * Resolves an `AdaptiveRunRef`-shaped payload (`jobId` xor `experimentId`,
+     * M08.R16) to the `experimentId` `adaptiveRuns` is keyed by. A named
+     * `jobId` resolves through the queued job's own spec — this fake holds no
+     * separate job-address index, so an unknown job or a job that is not an
+     * `adaptive_counter` job resolves to no run, the same as an unseeded
+     * `experimentId` does, rather than distinguishing "ambiguous" from "not
+     * found" the way the real server's index over queued jobs does.
+     */
+    function resolveAdaptiveRunRef(ref: Record<string, unknown>): string | null {
+      const jobId = ref.jobId;
+      if (typeof jobId === 'string' && jobId.length > 0) {
+        const job = jobs.get(jobId);
+        return job !== undefined && job.spec.kind === 'adaptive_counter' ? job.spec.experimentId : null;
+      }
+      const experimentId = ref.experimentId;
+      return typeof experimentId === 'string' && experimentId.length > 0 ? experimentId : null;
+    }
+
     if (name === 'adaptiveRunSummary') {
-      const experimentId = String(payload.experimentId ?? '');
-      const run = adaptiveRuns.get(experimentId);
-      if (!run) {
+      const experimentId = resolveAdaptiveRunRef(payload);
+      const run = experimentId === null ? undefined : adaptiveRuns.get(experimentId);
+      if (experimentId === null || !run) {
         return refusal(
           'admin/no_result',
           404,
@@ -1983,9 +2003,9 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
     }
 
     if (name === 'adaptiveResultTable') {
-      const experimentId = String(payload.experimentId ?? '');
-      const run = adaptiveRuns.get(experimentId);
-      if (!run) {
+      const experimentId = resolveAdaptiveRunRef(payload);
+      const run = experimentId === null ? undefined : adaptiveRuns.get(experimentId);
+      if (experimentId === null || !run) {
         return refusal(
           'admin/no_result',
           404,

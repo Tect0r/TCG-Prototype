@@ -1,5 +1,6 @@
 import type {
   AdminError,
+  AdaptiveExperimentId,
   AdaptiveWorkloadEstimate,
   Annotations,
   AnnotatableComparisonDecision,
@@ -325,6 +326,23 @@ export interface CatalogStore {
    */
   createAdaptiveJob(input: NewAdaptiveJobInput): Promise<CatalogResult<CatalogJobDocument>>;
   readJob(jobId: JobId): Promise<CatalogResult<CatalogJobDocument>>;
+  /**
+   * Every queued adaptive job whose `spec.experimentId` matches, in no
+   * particular order (M08.R16).
+   *
+   * The deliberate index `AdaptiveResultReader` uses to resolve a caller-named
+   * `experimentId` instead of guessing: zero matches means the name was never
+   * queued as a job (M08.19B's original directory-pointed reading, or a
+   * pre-M08.R16 run this catalog never re-keyed) and falls back to reading the
+   * name as a literal directory; exactly one match resolves through that job's
+   * own `jobId`, the same address `readJob` already uses; two or more is
+   * refused with `admin/ambiguous_experiment` rather than picking one, because
+   * more than one queued job can legally share an `experimentId` (a repeat run,
+   * a restarted one) and only `jobId` tells them apart.
+   */
+  findAdaptiveJobsByExperimentId(
+    experimentId: AdaptiveExperimentId,
+  ): Promise<CatalogResult<readonly CatalogJobDocument[]>>;
   listJobs(
     filter?: CatalogFilter,
     page?: PageRequestInput,

@@ -12,6 +12,7 @@ import {
 import { isErr, unwrap } from '@tcg/shared';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
 
+import { FileCatalogStore } from '../catalog/file-catalog-store.js';
 import { resolveCatalogRoots, type ResolvedCatalogRoots } from '../catalog/roots.js';
 
 import {
@@ -93,8 +94,11 @@ function roots(): ResolvedCatalogRoots {
   );
 }
 
-function reader(): MatchRepresentativesReader {
-  return new MatchRepresentativesReader({ roots: roots(), resultRootId: 'default' });
+/** No jobs are ever queued into this store — every test here names an experiment with no queued job behind it. */
+async function reader(): Promise<MatchRepresentativesReader> {
+  const store = new FileCatalogStore({ roots: roots(), clock: () => new Date() });
+  await store.open();
+  return new MatchRepresentativesReader({ roots: roots(), resultRootId: 'default', store });
 }
 
 const firstPage = { limit: PAGE_SIZE_DEFAULT, cursor: null };
@@ -167,7 +171,7 @@ function resultDocument(overrides: Record<string, unknown> = {}): Record<string,
 describe('MatchRepresentativesReader.readView (M08.26E)', () => {
   it('reports every category null and an empty abnormal list over an empty result root', async () => {
     const view = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: firstPage,
@@ -191,7 +195,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     writeMatch('match_d', envelope('match_d', { outcome: outcomeOf('player_2', 'player_1') })); // red (underdog) beats blue: upset
 
     const view = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: firstPage,
@@ -240,7 +244,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     writeMatch('match_mid', envelope('match_mid', { actionCount: 50 }));
 
     const view = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: firstPage,
@@ -258,14 +262,14 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     writeMatch('match_c', envelope('match_c'));
 
     const first = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: firstPage,
       }),
     );
     const second = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: firstPage,
@@ -288,7 +292,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     );
 
     const view = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: firstPage,
@@ -303,7 +307,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     writeMatch('match_a', envelope('match_a'));
 
     const view = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: firstPage,
@@ -354,7 +358,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     writeMatch('match_old', envelope('match_old'));
 
     const view = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: experimentId,
         page: firstPage,
@@ -380,7 +384,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     writeMatch('match_a', envelope('match_a'));
 
     const view = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: experimentId,
         page: firstPage,
@@ -393,7 +397,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
   it('fails the whole request when the named experiment cannot be read', async () => {
     const experimentId = adaptiveExperimentIdSchema.parse('nothing_here');
 
-    const refused = await reader().readView({
+    const refused = await (await reader()).readView({
       filter: NO_PLAYER_META_FILTER,
       adaptiveExperimentId: experimentId,
       page: firstPage,
@@ -424,7 +428,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     );
 
     const view = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: firstPage,
@@ -458,7 +462,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     }
 
     const first = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: { limit: 2, cursor: null },
@@ -468,7 +472,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     expect(first.abnormalMatches.page.nextCursor).not.toBeNull();
 
     const second = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: { limit: 2, cursor: first.abnormalMatches.page.nextCursor },
@@ -496,7 +500,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     }
 
     const first = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: { limit: PAGE_SIZE_MAX, cursor: null },
@@ -507,7 +511,7 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
     expect(first.abnormalMatches.page.total).toBe(total);
 
     const second = unwrap(
-      await reader().readView({
+      await (await reader()).readView({
         filter: NO_PLAYER_META_FILTER,
         adaptiveExperimentId: null,
         page: { limit: PAGE_SIZE_MAX, cursor: first.abnormalMatches.page.nextCursor },
@@ -525,9 +529,12 @@ describe('MatchRepresentativesReader.readView (M08.26E)', () => {
   });
 
   it('refuses a resultRootId that is not configured, rather than guessing another root', async () => {
+    const store = new FileCatalogStore({ roots: roots(), clock: () => new Date() });
+    await store.open();
     const refused = await new MatchRepresentativesReader({
       roots: roots(),
       resultRootId: 'unconfigured',
+      store,
     }).readView({ filter: NO_PLAYER_META_FILTER, adaptiveExperimentId: null, page: firstPage });
 
     expect(isErr(refused) && refused.error[0]?.code).toBe('admin/unsafe_result_reference');
