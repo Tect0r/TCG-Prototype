@@ -6020,3 +6020,28 @@ reviewed as one unit, and the full verification gate is re-run and recorded.
       full-stack test exercising the corrected jobId-based dashboard handoff)
       passes. Workspace typecheck clean for `@tcg/admin-client`,
       `@tcg/admin-contracts` and `@tcg/admin-server`.
+
+- [x] **M08.R17 — Adaptive final publication now fails the job instead of
+      leaving it running forever.** `#runAdaptive`'s three finalization
+      writes (final raw evidence, final checkpoint, final result) ran
+      unguarded after `runAdaptiveExperiment`/`runAdaptiveFinalValidation`
+      settled: a real filesystem failure there threw out of `run()` as an
+      unhandled rejection `JobQueue#launch`'s `finally` does not catch (it
+      only releases the worker grant), leaving the catalog job stuck at
+      `running` forever since `applyJobAction`'s `fail` transition never ran.
+      Added an injectable `publishAdaptiveDocument` seam (default
+      `writeJsonAtomically`), used only by these three final writes — every
+      incremental write still calls the real writer directly through
+      `persistRaw`/`#writeAdaptiveCheckpoint` — and wrapped the triad in
+      `try`/`catch` routed to the existing `#fail`/`runFailed` path.
+
+      Three new tests in `job-runner-adaptive.test.ts` each obstruct one
+      final write (fabricated `EIO`) and assert the job resolves `'failed'`
+      (`admin/run_failed`), the catalog record is never left `'running'`, and
+      whichever writes were sequenced ahead of the obstructed one landed
+      untouched. All three reuse the file's existing `'adaptive-fast'` id
+      (other candidate ids drove `runAdaptiveFinalValidation` — unrelated,
+      pre-existing code — for minutes under this fixture's fixed seed;
+      per-test catalogs are isolated in `beforeEach`, so id reuse is safe).
+      Focused run: `job-runner-adaptive.test.ts` 13/13 passing (~49s).
+      Workspace typecheck clean for `@tcg/admin-server`.

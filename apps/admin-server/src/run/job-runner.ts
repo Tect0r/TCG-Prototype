@@ -169,7 +169,18 @@ export interface ExperimentRunnerOptions {
    */
   readonly runExperiment?: RunExperimentFn;
   readonly clock?: () => Date;
+  /**
+   * Injectable so a test can fail an adaptive job's final evidence,
+   * checkpoint or result publication independently of one another and of the
+   * run's own many incremental writes to the same two paths (M08.R17) — the
+   * same seam, and the same reason, `runExperiment` above is injectable.
+   * Defaults to the real atomic writer.
+   */
+  readonly publishAdaptiveDocument?: WriteAdaptiveDocumentFn;
 }
+
+/** The shape `writeJsonAtomically` already has; named so a test's stand-in states its own intent. */
+export type WriteAdaptiveDocumentFn = (path: string, value: unknown) => Promise<void>;
 
 /** What one attempt at a job is given, as opposed to what the runner always has. */
 export interface JobAttemptOptions {
@@ -214,6 +225,7 @@ export class ExperimentRunner {
   readonly #pollEveryMs: number;
   readonly #runExperiment: RunExperimentFn;
   readonly #clock: () => Date;
+  readonly #publishAdaptiveDocument: WriteAdaptiveDocumentFn;
 
   constructor(options: ExperimentRunnerOptions) {
     this.#store = options.store;
@@ -223,6 +235,7 @@ export class ExperimentRunner {
     this.#pollEveryMs = options.pollEveryMs ?? 500;
     this.#runExperiment = options.runExperiment ?? runExperimentDirectly;
     this.#clock = options.clock ?? (() => new Date());
+    this.#publishAdaptiveDocument = options.publishAdaptiveDocument ?? writeJsonAtomically;
   }
 
   /**
@@ -542,18 +555,17 @@ export class ExperimentRunner {
       poll.stop();
       return this.#fail(jobId, [runFailed(cause, jobId)], latest);
     }
+    const rawRecordValue = (): unknown =>
+      adaptiveRawRecordSchema.parse({
+        schemaVersion: ADAPTIVE_RAW_SCHEMA_VERSION,
+        experimentId: config.id,
+        configHash,
+        generations: [...generations.values()].sort((a, b) => a.block - b.block),
+        series: [...series.values()].sort((a, b) => a.block - b.block),
+        screeningRounds: [...screeningRounds.values()].sort((a, b) => a.block - b.block),
+      });
     const persistRaw = async (): Promise<void> => {
-      await writeJsonAtomically(
-        join(directory, RAW_DOCUMENT),
-        adaptiveRawRecordSchema.parse({
-          schemaVersion: ADAPTIVE_RAW_SCHEMA_VERSION,
-          experimentId: config.id,
-          configHash,
-          generations: [...generations.values()].sort((a, b) => a.block - b.block),
-          series: [...series.values()].sort((a, b) => a.block - b.block),
-          screeningRounds: [...screeningRounds.values()].sort((a, b) => a.block - b.block),
-        }),
-      );
+      await writeJsonAtomically(join(directory, RAW_DOCUMENT), rawRecordValue());
     };
 
     // `block` is a globally unique, monotonically increasing phase identifier
@@ -666,21 +678,43 @@ export class ExperimentRunner {
       validation,
     });
 
-    // A defensive final write, sourced from the same maps every `onRawEvent`
-    // call already persisted incrementally: it is a no-op for any run that
-    // decided at least one phase, and it is what keeps `adaptive-raw.json`
-    // existing on disk for the degenerate run that decided none.
-    await persistRaw();
-    await this.#writeAdaptiveCheckpoint(directory, finalCheckpoint);
-    await writeJsonAtomically(
-      join(directory, RESULT_DOCUMENT),
-      adaptiveResultSchema.parse({
-        schemaVersion: ADAPTIVE_RESULT_SCHEMA_VERSION,
-        experimentId: config.id,
-        configHash,
-        ...result,
-      }),
-    );
+    // Every write below is final publication, strictly after both
+    // `runAdaptiveExperiment` and (when it ran) `runAdaptiveFinalValidation`
+    // have already settled — outside either one's own `catch`, above, so a
+    // filesystem failure here would otherwise throw out of `run()` itself
+    // rather than resolving to a `CatalogResult`, the same unhandled-rejection
+    // hazard `#loadOrCreateAdaptiveRaw`'s own catch guards against (M08.R17).
+    // Routed through `#publishAdaptiveDocument` rather than the incremental
+    // helpers' own `writeJsonAtomically` calls so a test can fail exactly one
+    // of these three writes without also touching the many incremental writes
+    // the run already made successfully to the same paths.
+    try {
+      // A defensive final write, sourced from the same maps every `onRawEvent`
+      // call already persisted incrementally: it is a no-op for any run that
+      // decided at least one phase, and it is what keeps `adaptive-raw.json`
+      // existing on disk for the degenerate run that decided none.
+      await this.#publishAdaptiveDocument(join(directory, RAW_DOCUMENT), rawRecordValue());
+      await this.#publishAdaptiveDocument(
+        join(directory, CHECKPOINT_DOCUMENT),
+        adaptiveCheckpointSchema.parse(finalCheckpoint),
+      );
+      await this.#publishAdaptiveDocument(
+        join(directory, RESULT_DOCUMENT),
+        adaptiveResultSchema.parse({
+          schemaVersion: ADAPTIVE_RESULT_SCHEMA_VERSION,
+          experimentId: config.id,
+          configHash,
+          ...result,
+        }),
+      );
+    } catch (cause) {
+      // Nothing already durable — the incremental raw evidence and checkpoint
+      // this attempt (or an earlier one) already wrote, and whichever of these
+      // three final writes landed before this one failed — is touched. A
+      // retry resumes from exactly what is on disk, the same guarantee every
+      // other failure in this method already gives.
+      return this.#fail(jobId, [runFailed(cause, jobId)], latest);
+    }
 
     // No `attachJobResult`: an Adaptive Counter job's `result` field stays
     // `null` forever, and `AdaptiveResultReader` reads the two documents just

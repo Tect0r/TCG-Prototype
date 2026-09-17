@@ -6,6 +6,7 @@ import { isErr, isOk, unwrap } from '@tcg/shared';
 import { experimentPaths, type AdaptiveConfig } from '@tcg/simulator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { writeJsonAtomically } from '../catalog/files.js';
 import { resolveResultLocation } from '../catalog/roots.js';
 import {
   makeTestCatalog,
@@ -273,6 +274,120 @@ describe('a corrupted raw-evidence document fails the job instead of crashing th
     expect(outcome.failure?.code).toBe('admin/run_failed');
     expect(unwrap(await catalog.store.readJob(jobId)).status).toBe('failed');
   });
+});
+
+/**
+ * A filesystem failure in final publication (M08.R17): `#runAdaptive`'s three
+ * finalization writes — the defensive final raw-evidence write, the final
+ * checkpoint write, and the once-ever result write — run strictly after both
+ * `runAdaptiveExperiment` and (when it ran) `runAdaptiveFinalValidation` have
+ * already settled successfully, outside either one's own `catch`. Before
+ * M08.R17 none of the three was guarded there, so a real `ENOSPC`/`EIO` at
+ * that point threw out of `run()` itself instead of resolving to a
+ * `CatalogResult`: an unhandled rejection `JobQueue#launch` does not catch,
+ * capable of crashing the whole admin-server process, and — surviving that —
+ * a catalog job stuck `running` forever, because `applyJobAction`'s `fail`
+ * transition never ran.
+ *
+ * `publishAdaptiveDocument` is the seam `job-runner.ts` added to make this
+ * reachable deliberately, and it only ever intercepts these three final
+ * calls — never the many incremental writes to the same two paths the run
+ * already made along the way, which still go through the real writer inside
+ * `persistRaw`/`#writeAdaptiveCheckpoint` untouched. Failing on one exact
+ * target filename therefore fails only the write named, in isolation, the
+ * same way a real disk filling up on the second of three sequential writes
+ * would.
+ */
+describe('a filesystem failure in final adaptive publication fails the job instead of leaving it running forever', () => {
+  function obstructedPublisher(
+    failOnFileName: string,
+  ): (path: string, value: unknown) => Promise<void> {
+    return async (path, value) => {
+      if (path.endsWith(failOnFileName)) {
+        throw Object.assign(new Error('simulated disk failure'), { code: 'EIO' });
+      }
+      await writeJsonAtomically(path, value);
+    };
+  }
+
+  it('fails the job when the final raw-evidence write throws, leaving the incremental evidence it already wrote untouched', async () => {
+    // Reuses `'adaptive-fast'`'s own id (proven, above, to reach a completed
+    // run under `FAST_BUDGET`'s fixed seed): the experiment id feeds this
+    // simulator's own per-match seed derivation, so an arbitrary label here
+    // is not interchangeable with one already known to resolve quickly — a
+    // handful of other candidate labels tried while writing this test left
+    // `runAdaptiveFinalValidation` running for minutes on end.
+    const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-fast', ...FAST_BUDGET });
+    const outcome = unwrap(
+      await makeRunner({ publishAdaptiveDocument: obstructedPublisher('adaptive-raw.json') }).run(
+        jobId,
+      ),
+    );
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.failure?.code).toBe('admin/run_failed');
+    expect(unwrap(await catalog.store.readJob(jobId)).status).toBe('failed');
+
+    const directory = await runDirectory(jobId);
+    // The last incremental write (real, unaffected by the seam above) is
+    // still exactly what a retry would resume from.
+    const raw = JSON.parse(await readFile(join(directory, 'adaptive-raw.json'), 'utf8')) as {
+      experimentId: string;
+    };
+    expect(raw.experimentId).toBe(config.id);
+    await expect(readFile(join(directory, 'adaptive-result.json'), 'utf8')).rejects.toThrow();
+  }, 120_000);
+
+  it('fails the job when the final checkpoint write throws, never reaching result publication', async () => {
+    const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-fast', ...FAST_BUDGET });
+    const outcome = unwrap(
+      await makeRunner({
+        publishAdaptiveDocument: obstructedPublisher('adaptive-checkpoint.json'),
+      }).run(jobId),
+    );
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.failure?.code).toBe('admin/run_failed');
+    expect(unwrap(await catalog.store.readJob(jobId)).status).toBe('failed');
+
+    const directory = await runDirectory(jobId);
+    // The checkpoint's own last incremental write is untouched (still valid
+    // JSON, not the half-written state an interrupted write could leave) —
+    // `writeJsonAtomically`'s own rename-based atomicity is never entered by
+    // the injected failure, which throws before touching the destination.
+    const checkpoint = JSON.parse(
+      await readFile(join(directory, 'adaptive-checkpoint.json'), 'utf8'),
+    ) as { experimentId: string };
+    expect(checkpoint.experimentId).toBe(config.id);
+    await expect(readFile(join(directory, 'adaptive-result.json'), 'utf8')).rejects.toThrow();
+  }, 120_000);
+
+  it('fails the job when the final result write throws, after raw evidence and checkpoint already published cleanly', async () => {
+    const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-fast', ...FAST_BUDGET });
+    const outcome = unwrap(
+      await makeRunner({
+        publishAdaptiveDocument: obstructedPublisher('adaptive-result.json'),
+      }).run(jobId),
+    );
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.failure?.code).toBe('admin/run_failed');
+    expect(unwrap(await catalog.store.readJob(jobId)).status).toBe('failed');
+
+    const directory = await runDirectory(jobId);
+    // The two writes ahead of the failing one in this attempt's own sequence
+    // still landed — the failure is scoped to result publication alone.
+    const raw = JSON.parse(await readFile(join(directory, 'adaptive-raw.json'), 'utf8')) as {
+      experimentId: string;
+    };
+    const checkpoint = JSON.parse(
+      await readFile(join(directory, 'adaptive-checkpoint.json'), 'utf8'),
+    ) as { experimentId: string; pendingGeneration: unknown };
+    expect(raw.experimentId).toBe(config.id);
+    expect(checkpoint.experimentId).toBe(config.id);
+    expect(checkpoint.pendingGeneration).toBeNull();
+    await expect(readFile(join(directory, 'adaptive-result.json'), 'utf8')).rejects.toThrow();
+  }, 120_000);
 });
 
 describe('a real adaptive run, paused and resumed across worker threads', () => {
