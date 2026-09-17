@@ -6045,3 +6045,15 @@ reviewed as one unit, and the full verification gate is re-run and recorded.
       per-test catalogs are isolated in `beforeEach`, so id reuse is safe).
       Focused run: `job-runner-adaptive.test.ts` 13/13 passing (~49s).
       Workspace typecheck clean for `@tcg/admin-server`.
+
+- [x] **M08.R18 — `openLiveMatchSnapshot`'s `maxBytes` is now a genuine
+      pre-read bound**, not a post-hoc counter checked after a file was
+      already fully read. Added `readBoundedEvidenceFile`, mirroring
+      `openArtifactFile` (`artifacts.ts`, M08.R12): `lstat`-based symlink
+      refusal, `O_NOFOLLOW`+`dev`/`ino` re-check, `fstat` size checked
+      against remaining budget before allocating, per-entry failures
+      caught to a `skipped` reason instead of aborting the scan. Test-only
+      `afterLstat`/`beforeRead` hooks cover growth/truncation races.
+      Focused run: `live-match-snapshot.test.ts` 26/26 (9 new); full
+      `@tcg/simulator` 773/773 unaffected; typecheck/eslint/prettier
+      clean.

@@ -1,4 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,8 +19,34 @@ import {
   DEFAULT_LIVE_MATCH_SNAPSHOT_LIMITS,
   LIVE_MATCH_SNAPSHOT_TTL_MS,
   openLiveMatchSnapshot,
+  readBoundedEvidenceFile,
   resetLiveMatchSnapshotCacheForTests,
 } from './live-match-snapshot.js';
+
+/**
+ * Creates a directory symlink (a Windows junction where needed), or reports
+ * that this machine will not — mirrors `roots.test.ts`'s `linkDirectory` and
+ * `artifacts.test.ts`'s `linkFile` (M08.R12): CI runs on Linux, where this
+ * always succeeds; locally, without Developer Mode, a *file* symlink cannot
+ * be created at all, so those cases are reported rather than skipped quietly.
+ */
+function linkDirectory(from: string, to: string): boolean {
+  try {
+    symlinkSync(to, from, process.platform === 'win32' ? 'junction' : 'dir');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function linkFile(from: string, to: string): boolean {
+  try {
+    symlinkSync(to, from, 'file');
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * M08.R10 — the single bounded, cached pass over a `LiveMatchFileStore` root
@@ -225,6 +261,168 @@ describe('bounded scanning', () => {
 
     expect(snapshot.truncated).toBe(false);
     expect(snapshot.matches).toHaveLength(5);
+  });
+
+  it('never allocates or reads a first file that alone exceeds the whole byte budget (M08.R18)', () => {
+    // Before M08.R18, `bytesRead >= maxBytes` was only checked at the top of
+    // the loop, so a single oversized first file was fully read before the
+    // cap was ever consulted. `maxBytes` set below the first file's own size
+    // proves the file itself is never read at all: zero matches, not one.
+    const oversized = JSON.stringify(envelope('match_0', { actionCount: 999_999 }));
+    writeMatchDirectory('match_0', oversized);
+
+    const snapshot = openLiveMatchSnapshot(root, {
+      maxBytes: Buffer.byteLength(oversized, 'utf8') - 1,
+    });
+
+    expect(snapshot.truncated).toBe(true);
+    expect(snapshot.matches).toEqual([]);
+  });
+
+  it('reads a file whose size lands exactly on the remaining byte budget', () => {
+    const exact = JSON.stringify(envelope('match_0'));
+    writeMatchDirectory('match_0', exact);
+
+    const snapshot = openLiveMatchSnapshot(root, {
+      maxBytes: Buffer.byteLength(exact, 'utf8'),
+    });
+
+    expect(snapshot.truncated).toBe(false);
+    expect(snapshot.matches.map((match) => match.matchId)).toEqual(['match_0']);
+  });
+});
+
+describe('symlinked, dangling and unreadable entries (M08.R18)', () => {
+  it('refuses a match directory that is a symlink, and never scans into it', () => {
+    const target = join(root, 'real_target');
+    writeMatchDirectory('real_target', JSON.stringify(envelope('real_target')));
+
+    const linked = linkDirectory(join(root, 'linked_match'), target);
+    if (!linked) {
+      expect(process.platform).toBe('win32');
+      return;
+    }
+
+    const snapshot = openLiveMatchSnapshot(root);
+
+    expect(snapshot.matches.map((match) => match.matchId)).toContain('real_target');
+    expect(snapshot.matches.map((match) => match.matchId)).not.toContain('linked_match');
+    expect(snapshot.skippedMatches).toContainEqual({
+      matchId: 'linked_match',
+      reason: 'match directory is a symlink (refused)',
+    });
+  });
+
+  it('refuses an envelope.json that is a symlink to a file outside the root', () => {
+    const outside = join(root, '..', 'outside-envelope');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'secret.json'), JSON.stringify(envelope('secret')), 'utf8');
+
+    const directory = join(root, 'match_linked');
+    mkdirSync(directory, { recursive: true });
+    const linked = linkFile(join(directory, 'envelope.json'), join(outside, 'secret.json'));
+    if (!linked) {
+      expect(process.platform).toBe('win32');
+      return;
+    }
+
+    const snapshot = openLiveMatchSnapshot(root);
+
+    expect(snapshot.matches).toEqual([]);
+    expect(snapshot.skippedMatches).toContainEqual({
+      matchId: 'match_linked',
+      reason: 'envelope.json is a symlink (refused)',
+    });
+  });
+
+  it('refuses a dangling match-directory symlink (target never existed) without throwing', () => {
+    // `lstat`, unlike `stat`, succeeds on a dangling symlink — it reports the
+    // link itself, never resolving the target — which is exactly why the
+    // scan uses it: a target that never existed must be refused the same
+    // way a live one is, not crash the whole snapshot.
+    const linked = linkDirectory(join(root, 'match_dangling'), join(root, 'never-existed'));
+    if (!linked) {
+      expect(process.platform).toBe('win32');
+      return;
+    }
+
+    const snapshot = openLiveMatchSnapshot(root);
+
+    expect(snapshot.matches).toEqual([]);
+    expect(snapshot.skippedMatches).toContainEqual({
+      matchId: 'match_dangling',
+      reason: 'match directory is a symlink (refused)',
+    });
+  });
+
+  it('refuses a dangling envelope.json symlink the same way as a live one', () => {
+    const directory = join(root, 'match_dangling_file');
+    mkdirSync(directory, { recursive: true });
+    const linked = linkFile(join(directory, 'envelope.json'), join(root, 'never-existed.json'));
+    if (!linked) {
+      expect(process.platform).toBe('win32');
+      return;
+    }
+
+    const outcome = readBoundedEvidenceFile(join(directory, 'envelope.json'), 1_000_000);
+
+    expect(outcome.kind).toBe('unsafe');
+  });
+
+  it('records an honest skipped reason for an envelope.json readBoundedEvidenceFile refuses, without a leaked path', () => {
+    // Exercised directly against the helper: a file whose `lstat` succeeds
+    // but is not a plain file (a directory at the expected file path)
+    // cannot be opened as one, and must be reported rather than thrown.
+    const directory = join(root, 'match_dir_as_file');
+    mkdirSync(join(directory, 'envelope.json'), { recursive: true });
+
+    const outcome = readBoundedEvidenceFile(join(directory, 'envelope.json'), 1_000_000);
+
+    expect(outcome.kind).toBe('unreadable');
+  });
+});
+
+describe('growth and truncation races (M08.R18)', () => {
+  it('bounds a read to the size validated at fstat time, unaffected by growth before the read', () => {
+    const original = JSON.stringify(envelope('match_grown'));
+    const path = join(mkdtempSync(join(tmpdir(), 'tcg-sim-grow-')), 'envelope.json');
+    writeFileSync(path, original, 'utf8');
+
+    const outcome = readBoundedEvidenceFile(path, 1_000_000, {
+      beforeRead: () => {
+        // Growth after the descriptor is already fstat-validated and sized
+        // must never change what a bounded read of that descriptor returns.
+        const fd = openSync(path, 'a');
+        writeSync(fd, Buffer.from('EXTRA GARBAGE THAT MUST NEVER BE READ'));
+        closeSync(fd);
+      },
+    });
+
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(outcome.byteLength).toBe(Buffer.byteLength(original, 'utf8'));
+    expect(outcome.content).toBe(original);
+    expect(JSON.parse(outcome.content)).toMatchObject({ matchId: 'match_grown' });
+  });
+
+  it('reports a file truncated mid-read as unparseable rather than returning a shorter, silently-wrong document', () => {
+    const original = JSON.stringify(envelope('match_shrunk'));
+    const path = join(mkdtempSync(join(tmpdir(), 'tcg-sim-shrink-')), 'envelope.json');
+    writeFileSync(path, original, 'utf8');
+    const shrunkSize = Math.floor(Buffer.byteLength(original, 'utf8') / 2);
+
+    const outcome = readBoundedEvidenceFile(path, 1_000_000, {
+      beforeRead: () => {
+        // Simulates a concurrent writer truncating the file after this
+        // read has already fstat-sized its buffer to the original length.
+        truncateSync(path, shrunkSize);
+      },
+    });
+
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(outcome.byteLength).toBe(shrunkSize);
+    expect(() => JSON.parse(outcome.content)).toThrow();
   });
 });
 
