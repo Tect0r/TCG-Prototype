@@ -35,6 +35,15 @@ import { countCommittedRecords, readCanonicalProgress } from './progress.js';
  * queue integration"), not this slice's. The "no second owner" and "stops at
  * a safe checkpoint boundary" behaviors are therefore proven directly against
  * `ExperimentRunner`, which does not depend on the queue at all.
+ *
+ * Every real run here shares one 180-second per-test ceiling (M08.R23, up
+ * from 120s): this file plays genuine matches through the real simulator,
+ * never a stand-in, so its ceiling has to absorb real CPU contention on a
+ * shared CI runner rather than only local speed — the same reasoning
+ * `vitest.config.ts`'s own header gives the `simulator` project's generous
+ * default. A test that still exceeds it is a genuine hang the runner's own
+ * turn/action limits would otherwise have already caught, not a budget that
+ * was merely tight.
  */
 
 let catalog: TestCatalog;
@@ -133,7 +142,7 @@ describe('a real adaptive run, dispatched and indexed from what it wrote', () =>
     expect(outcome.progress.scheduledIsBound).toBe(true);
     expect(outcome.progress.stage?.stageId).toMatch(/^gen-\d+-(pending|active)$/);
     expect(outcome.progress.stage?.total).toBeNull();
-  }, 120_000);
+  }, 180_000);
 
   it('resolves to the same directory and documents the adaptive result reader already resolves', async () => {
     const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-provenance', ...FAST_BUDGET });
@@ -149,7 +158,7 @@ describe('a real adaptive run, dispatched and indexed from what it wrote', () =>
 
     const byExperiment = await reader.readSummary({ jobId: null, experimentId: config.id });
     expect(isOk(byExperiment)).toBe(true);
-  }, 120_000);
+  }, 180_000);
 });
 
 describe('two queued jobs that share one experiment ID resolve to independent output (M08.R16)', () => {
@@ -191,7 +200,7 @@ describe('two queued jobs that share one experiment ID resolve to independent ou
       await reader.readSummary({ jobId: second.jobId, experimentId: null }),
     );
     expect(bySecondJob.jobId).toBe(second.jobId);
-  }, 120_000);
+  }, 180_000);
 });
 
 describe('starting an adaptive job twice', () => {
@@ -336,7 +345,7 @@ describe('a filesystem failure in final adaptive publication fails the job inste
     };
     expect(raw.experimentId).toBe(config.id);
     await expect(readFile(join(directory, 'adaptive-result.json'), 'utf8')).rejects.toThrow();
-  }, 120_000);
+  }, 180_000);
 
   it('fails the job when the final checkpoint write throws, never reaching result publication', async () => {
     const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-fast', ...FAST_BUDGET });
@@ -360,7 +369,7 @@ describe('a filesystem failure in final adaptive publication fails the job inste
     ) as { experimentId: string };
     expect(checkpoint.experimentId).toBe(config.id);
     await expect(readFile(join(directory, 'adaptive-result.json'), 'utf8')).rejects.toThrow();
-  }, 120_000);
+  }, 180_000);
 
   it('fails the job when the final result write throws, after raw evidence and checkpoint already published cleanly', async () => {
     const { jobId, config } = await seedAdaptiveJob({ id: 'adaptive-fast', ...FAST_BUDGET });
@@ -387,7 +396,7 @@ describe('a filesystem failure in final adaptive publication fails the job inste
     expect(checkpoint.experimentId).toBe(config.id);
     expect(checkpoint.pendingGeneration).toBeNull();
     await expect(readFile(join(directory, 'adaptive-result.json'), 'utf8')).rejects.toThrow();
-  }, 120_000);
+  }, 180_000);
 });
 
 describe('a real adaptive run, paused and resumed across worker threads', () => {
@@ -410,8 +419,27 @@ describe('a real adaptive run, paused and resumed across worker threads', () => 
 
     const running = runner.run(jobId, { workers: 2, control });
 
-    for (let waited = 0; waited < 10_000; waited += 25) {
-      if ((await countCommittedRecords(matchesPath)) >= 1) break;
+    // Poll for a real committed record rather than a fixed wall-clock budget
+    // (M08.R23): a fixed 10-second cap that is generous locally can still be
+    // too short on a slower or more heavily loaded CI runner, and falling
+    // through it regardless left this test pausing against zero evidence —
+    // `partial` below could then be 0, failing the assertion that follows for
+    // a reason having nothing to do with what this test means to exercise.
+    // Racing each tick against `running` itself, the same technique the
+    // sibling "paused exactly before final result publication" test already
+    // uses, means a run that completes before ever producing a committed
+    // record is caught by the existing "pause lost the race" branch below,
+    // never by pausing on evidence that was never going to arrive.
+    let runFinished = false;
+    running
+      .finally(() => {
+        runFinished = true;
+      })
+      .catch(() => {
+        // Observed via `outcome`/`unwrap(await running)` below.
+      });
+
+    while (!runFinished && (await countCommittedRecords(matchesPath)) < 1) {
       await delay(25);
     }
     // The same two-step `JobQueue#pause` performs: the lifecycle action
@@ -467,7 +495,7 @@ describe('a real adaptive run, paused and resumed across worker threads', () => 
       const blocks = raw[kind].map((record) => record.block);
       expect(new Set(blocks).size).toBe(blocks.length);
     }
-  }, 120_000);
+  }, 180_000);
 });
 
 describe('a real adaptive run, paused exactly before final result publication', () => {
@@ -578,5 +606,5 @@ describe('a real adaptive run, paused exactly before final result publication', 
       config.totalLearningBudget + config.finalValidationGames * (config.mirrorSeats ? 2 : 1),
     );
     expect(new Set(matchIds).size).toBe(matchIds.length);
-  }, 120_000);
+  }, 180_000);
 });

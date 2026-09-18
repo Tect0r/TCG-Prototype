@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R23",
-  "mode": "implementation",
+  "unit": "M08-tranche-close",
+  "mode": "tranche-close",
   "source": "docs/milestones/M08-ai-lab-and-player-meta.md",
   "heading": "Correction Tranche E (continued, verification stability)",
   "blocker": null,
-  "next": "tranche-close"
+  "next": null
 }
