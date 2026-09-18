@@ -564,7 +564,8 @@ export class FileCatalogStore implements CatalogStore {
   ): Promise<CatalogResult<readonly CatalogJobDocument[]>> {
     const loaded = await this.#loadAll(this.#jobDir, catalogJobDocumentSchema, 'admin/unknown_job');
     const matching = loaded.documents.filter(
-      (document) => document.spec.kind === 'adaptive_counter' && document.spec.experimentId === experimentId,
+      (document) =>
+        document.spec.kind === 'adaptive_counter' && document.spec.experimentId === experimentId,
     );
     return ok(matching);
   }

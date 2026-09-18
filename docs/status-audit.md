@@ -7,13 +7,13 @@ GENERATED FILE — do not edit. Rebuild with `npm run audit:status`. Every numbe
 A measurement rather than a derivation, so it is not re-checked by the drift test:
 reproducing it means running the suite again.
 
-| Reading          | Value                                       |
-| ---------------- | ------------------------------------------- |
-| Commit           | `22f6cfb94d454039f8fcafdd0d93e521476597f1`  |
-| Working tree     | dirty — the audit includes uncommitted work |
-| Taken on         | 2026-09-16                                  |
-| Node             | v24.15.0                                    |
-| `npm run verify` | not run for this audit                      |
+| Reading          | Value                                      |
+| ---------------- | ------------------------------------------ |
+| Commit           | `74a801ec6683cc6e02614641c29954db8d6b9fa6` |
+| Working tree     | clean                                      |
+| Taken on         | 2026-09-18                                 |
+| Node             | v24.15.0                                   |
+| `npm run verify` | not run for this audit                     |
 
 ### Verification chain
 
@@ -31,14 +31,14 @@ reproducing it means running the suite again.
 
 | Vitest project | Files   | Tests    |
 | -------------- | ------- | -------- |
-| admin-client   | 30      | 437      |
-| admin-server   | 48      | 824      |
-| packages       | 113     | 2588     |
+| admin-client   | 30      | 439      |
+| admin-server   | 49      | 864      |
+| packages       | 113     | 2591     |
 | scripts        | 4       | 69       |
-| server         | 21      | 381      |
-| simulator      | 46      | 744      |
+| server         | 23      | 406      |
+| simulator      | 48      | 784      |
 | web-client     | 20      | 272      |
-| **total**      | **282** | **5315** |
+| **total**      | **287** | **5425** |
 
 Enumerated with `vitest list`, which collects every case without running it.
 
@@ -106,7 +106,7 @@ The AI Lab's own contract versions (ADR 0023 §7). Independent of the play contr
 
 | Constant                   | Value | Pins                                                                                                                                   |
 | -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_CONTRACT_VERSION`   | 17    | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
+| `ADMIN_CONTRACT_VERSION`   | 20    | The request and response language `apps/admin-client` and `apps/admin-server` speak. Compared per request.                             |
 | `CATALOG_DOCUMENT_VERSION` | 5     | A persisted catalog batch or job document. Compared when a file is read, and refused rather than migrated when it names a newer build. |
 
 ### Registries and instruments

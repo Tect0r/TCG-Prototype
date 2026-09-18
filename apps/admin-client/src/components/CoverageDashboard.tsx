@@ -77,7 +77,7 @@ function CatalogCoveragePanel() {
   const session = useAdminSession();
   return (
     <JobIdLookupPanel<CatalogCoverageReport>
-      fetch={(id) => session.catalogCoverageView(id)}
+      load={(id) => session.catalogCoverageView(id)}
       busyLabel="Reading this run's coverage…"
       failureTitle="This run's coverage could not be shown"
     >
@@ -168,7 +168,7 @@ function PlayerMetaCoveragePanel() {
   const session = useAdminSession();
   return (
     <PlayerMetaPartitionLookupPanel<PlayerMetaCoverageReport>
-      fetch={(partition) => session.playerMetaCoverageView(partition)}
+      load={(partition) => session.playerMetaCoverageView(partition)}
       busyLabel="Reading this partition's coverage…"
       failureTitle="This partition's coverage could not be shown"
     >

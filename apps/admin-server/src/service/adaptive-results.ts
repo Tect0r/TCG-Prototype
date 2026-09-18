@@ -102,7 +102,9 @@ const NO_JOB_LIMITATION =
   'evidence-claim, because it was addressed by experiment ID with no queued job behind it.';
 
 function limitationsFor(obtainedThroughJob: boolean): readonly string[] {
-  return obtainedThroughJob ? ADAPTIVE_RUN_LIMITATIONS : [NO_JOB_LIMITATION, ...ADAPTIVE_RUN_LIMITATIONS];
+  return obtainedThroughJob
+    ? ADAPTIVE_RUN_LIMITATIONS
+    : [NO_JOB_LIMITATION, ...ADAPTIVE_RUN_LIMITATIONS];
 }
 
 /** What a resolved run directory carries about how it was addressed (M08.R16). */
@@ -261,7 +263,9 @@ export class AdaptiveResultReader {
     this.#store = options.store;
   }
 
-  async readSummary(ref: AdaptiveRunRef): Promise<Result<AdaptiveRunSummary, readonly AdminError[]>> {
+  async readSummary(
+    ref: AdaptiveRunRef,
+  ): Promise<Result<AdaptiveRunSummary, readonly AdminError[]>> {
     const resolved = await this.#resolve(ref);
     if (isErr(resolved)) return resolved;
     return readAdaptiveSummary(resolved.value.directory, resolved.value.provenance);

@@ -536,9 +536,7 @@ describe('AdaptiveResultReader', () => {
     expect(summary.jobId).toBeNull();
     expect(summary.limitations.join(' ')).toContain('not obtained through a queued job');
 
-    const table = unwrap(
-      await reader.readTable({ jobId: null, experimentId }, 'revisions', page),
-    );
+    const table = unwrap(await reader.readTable({ jobId: null, experimentId }, 'revisions', page));
     expect(table.experimentId).toBe('goblin_counter');
     expect(table.rows.length).toBeGreaterThan(0);
   });

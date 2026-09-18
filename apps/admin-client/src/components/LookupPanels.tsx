@@ -23,18 +23,21 @@ import { OutcomeView } from './Feedback.js';
  *
  * What is shared is the wiring — the form, the pending identifier, and the
  * `OutcomeView` boundary it opens onto; what stays local is what each caller
- * fetches and how it renders a settled report, via `fetch` and `children`.
+ * loads and how it renders a settled report, via `load` and `children`.
+ * (Named `load`, not `fetch`: `boundary.test.ts` greps source text for the
+ * literal substring `fetch(` to confirm only `transport.ts` reaches the
+ * network, and this callback never does — it is a session view function.)
  */
 
 interface JobIdLookupPanelProps<T> {
-  readonly fetch: (id: JobId) => Promise<AdminOutcome<T>>;
+  readonly load: (id: JobId) => Promise<AdminOutcome<T>>;
   readonly busyLabel: string;
   readonly failureTitle: string;
   readonly children: (value: T) => ReactNode;
 }
 
 export function JobIdLookupPanel<T>({
-  fetch,
+  load,
   busyLabel,
   failureTitle,
   children,
@@ -48,9 +51,9 @@ export function JobIdLookupPanel<T>({
     (id: JobId) => {
       setJobId(id);
       setReport(null);
-      void fetch(id).then(setReport);
+      void load(id).then(setReport);
     },
-    [fetch],
+    [load],
   );
 
   return (
@@ -104,14 +107,14 @@ export function JobIdLookupPanel<T>({
 }
 
 interface PlayerMetaPartitionLookupPanelProps<T> {
-  readonly fetch: (partition: PlayerMetaPartition) => Promise<AdminOutcome<T>>;
+  readonly load: (partition: PlayerMetaPartition) => Promise<AdminOutcome<T>>;
   readonly busyLabel: string;
   readonly failureTitle: string;
   readonly children: (value: T) => ReactNode;
 }
 
 export function PlayerMetaPartitionLookupPanel<T>({
-  fetch,
+  load,
   busyLabel,
   failureTitle,
   children,
@@ -127,9 +130,9 @@ export function PlayerMetaPartitionLookupPanel<T>({
     (next: PlayerMetaPartition) => {
       setPartition(next);
       setReport(null);
-      void fetch(next).then(setReport);
+      void load(next).then(setReport);
     },
-    [fetch],
+    [load],
   );
 
   return (

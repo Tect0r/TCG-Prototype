@@ -168,12 +168,12 @@ describe('an adaptive run summary', () => {
 
   it('carries the queued job it was resolved through, or null when it was not (M08.R16)', () => {
     expect(adaptiveRunSummarySchema.parse(summary()).jobId).toBeNull();
-    expect(
-      adaptiveRunSummarySchema.parse(summary({ jobId: 'job_abc123' })).jobId,
-    ).toBe('job_abc123');
-    expect(
-      adaptiveRunSummarySchema.safeParse(summary({ jobId: 'not-a-job-id' })).success,
-    ).toBe(false);
+    expect(adaptiveRunSummarySchema.parse(summary({ jobId: 'job_abc123' })).jobId).toBe(
+      'job_abc123',
+    );
+    expect(adaptiveRunSummarySchema.safeParse(summary({ jobId: 'not-a-job-id' })).success).toBe(
+      false,
+    );
     expect(adaptiveRunSummarySchema.safeParse(summary({ jobId: undefined })).success).toBe(false);
   });
 

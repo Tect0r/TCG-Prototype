@@ -196,7 +196,8 @@ export class AdminService {
       resultTable: (payload) => this.#results.readTable(payload.jobId, payload.table, payload.page),
       resultArtifacts: (payload) => this.#artifacts.list(payload.jobId),
       adaptiveRunSummary: (payload) => this.#adaptive.readSummary(payload),
-      adaptiveResultTable: (payload) => this.#adaptive.readTable(payload, payload.table, payload.page),
+      adaptiveResultTable: (payload) =>
+        this.#adaptive.readTable(payload, payload.table, payload.page),
       playerMetaRunSummary: async (payload) => this.#playerMeta.readSummary(payload.filter),
       playerMetaResultTable: async (payload) =>
         this.#playerMeta.readTable(

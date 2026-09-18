@@ -753,7 +753,9 @@ export function isReadableVersionNumber(found: unknown): found is number {
  * `refuseForeignVersion` makes, exposed for a caller that must attach a
  * message this module does not own. See `isReadableVersionNumber`.
  */
-export function foreignVersionCode(found: unknown): 'admin/missing_version' | 'admin/unsupported_version' {
+export function foreignVersionCode(
+  found: unknown,
+): 'admin/missing_version' | 'admin/unsupported_version' {
   return isReadableVersionNumber(found) ? 'admin/unsupported_version' : 'admin/missing_version';
 }
 

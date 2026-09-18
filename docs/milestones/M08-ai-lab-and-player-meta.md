@@ -6388,3 +6388,56 @@ reviewed as one unit, and the full verification gate is re-run and recorded.
       (`>=24.15.0 <25`), and this session ran Node `v24.15.0`, npm `11.12.1`
       — no `packageManager` field pins npm further. `admin-server` and
       `multiplayer-server` typecheck and eslint clean on every touched file.
+
+**Tranche-close gates, run against the combined M08.R15–R23 diff.** Two
+issues surfaced only at the full-gate level, neither caught by any slice's
+own focused checks, and both are fixed in this close record rather than
+deferred.
+
+`npm run format:check` failed on
+`docs/milestones/M08-ai-lab-and-player-meta.md` — pre-existing at `74a801e`,
+not introduced by this tranche. Isolated with a minimal reproduction: a bold
+span that wraps across a line break makes Prettier's markdown printer
+recompute the continuation-line indent from its own prior output on every
+`--write` pass, so the indent grows without bound instead of converging
+(confirmed directly: repeated passes on the reproduction pushed one
+paragraph's indent from 26 to 42 spaces over four passes, and the same
+paragraph in this file behaved identically). This is a genuine Prettier
+non-idempotency bug, not a structural problem specific to this tranche's own
+additions, and it recurs for any wrapped bold span in a large, hand-wrapped,
+append-only log like this one. Restructuring every such span across 6,000+
+lines of historical record to dodge the bug is disproportionate; excluded
+this one file in `.prettierignore` instead, with the reproduction recorded
+there so a future editor does not mistake the exclusion for carelessness.
+
+`npm run test` failed one test outside any slice this tranche named:
+`admin-client`'s `boundary.test.ts` flagged `LookupPanels.tsx` (introduced by
+M08.R22) as reaching the network, because that architectural check greps
+source text for the literal substring `fetch(` to confirm only
+`transport.ts` calls the real `fetch`. `JobIdLookupPanel`/
+`PlayerMetaPartitionLookupPanel` named their own caller-supplied read
+callback `fetch`, which is a session view function routed through
+`transport.ts` two layers away, not a network call — a naming collision with
+the boundary check's literal text, not an actual violation. Renamed the prop
+to `load` in `LookupPanels.tsx` and its two call sites
+(`CoverageDashboard.tsx`, `DataHealthDashboard.tsx`), with a doc-comment note
+on why `load` and not `fetch`. Focused rerun:
+`boundary.test.ts` 25/25, `coverage-flow.test.tsx` 8/8,
+`data-health-flow.test.tsx` 9/9 — all passing; `admin-client` typecheck and
+eslint clean on every touched file.
+
+A second `jscpd` pass against the full tranche diff found no new high-value
+duplication introduced by M08.R22/R23 beyond what M08.R22's own entry above
+already addressed or explicitly declined.
+
+Full gate results after both fixes: `npm run check:consistency` passes;
+`npm run audit:check` passes (`docs/status-audit.md` regenerated once, for
+the M08.R15–R23 diff, then confirmed current); `npm run verify` passes in
+full — `content:check`, `typecheck` (all workspaces plus the root
+`tsconfig.json`), `lint`, `format:check`, `validate:content`, `test` (287
+files, 5,425 tests, all green), and `build` all succeeded with exit 0.
+
+Per Tranche D's own recorded lesson, this record does not cite a tranche-close
+commit SHA or claim `tcg-reviewer` approval here — both are established only
+after the close commit is pushed and reviewed, recorded in a follow-up to
+this entry rather than asserted ahead of the evidence.

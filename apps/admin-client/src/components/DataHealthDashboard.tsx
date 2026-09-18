@@ -76,7 +76,7 @@ function CatalogDataHealthPanel() {
   const session = useAdminSession();
   return (
     <JobIdLookupPanel<CatalogDataHealthReport>
-      fetch={(id) => session.catalogDataHealthView(id)}
+      load={(id) => session.catalogDataHealthView(id)}
       busyLabel="Reading this run's data health…"
       failureTitle="This run's data health could not be shown"
     >
@@ -110,7 +110,7 @@ function PlayerMetaDataHealthPanel() {
   const session = useAdminSession();
   return (
     <PlayerMetaPartitionLookupPanel<PlayerMetaDataHealthReport>
-      fetch={(partition) => session.playerMetaDataHealthView(partition)}
+      load={(partition) => session.playerMetaDataHealthView(partition)}
       busyLabel="Reading this partition's data health…"
       failureTitle="This partition's data health could not be shown"
     >
