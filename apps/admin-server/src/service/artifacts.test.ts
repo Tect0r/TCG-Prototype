@@ -1,4 +1,4 @@
-import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -17,7 +17,7 @@ import {
   testIdentity,
   type TestCatalog,
 } from '../catalog/test-catalog.js';
-import { ArtifactReader, openArtifactFile } from './artifacts.js';
+import { ArtifactReader, openArtifactFile, readExactlyForTest } from './artifacts.js';
 
 /**
  * Creates a file symlink, or reports that this machine will not.
@@ -359,6 +359,99 @@ describe('symlink- and race-safe artifact reads (M08.R12)', () => {
     await result.handle.close();
     expect(bytesRead).toBe(original.length);
     expect(buffer.toString('utf8', 0, bytesRead)).toBe(original);
+  });
+});
+
+describe('short-read safety (M08.R20)', () => {
+  it('reads a file exactly at its validated size as complete', async () => {
+    const { directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    const original = 'a'.repeat(500);
+    await writeFile(paths.report, original, 'utf8');
+
+    const opened = await openArtifactFile(paths.report);
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+
+    const result = await readExactlyForTest(opened.handle, opened.byteLength);
+    await opened.handle.close();
+    expect(result.complete).toBe(true);
+    expect(result.bytesRead).toBe(original.length);
+    expect(result.content.toString('utf8')).toBe(original);
+  });
+
+  it('never reads past the size validated, unaffected by growth before the read', async () => {
+    const { directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    const original = 'a'.repeat(500);
+    await writeFile(paths.report, original, 'utf8');
+
+    const opened = await openArtifactFile(paths.report, {
+      beforeRead: async () => {
+        await writeFile(paths.report, `${original}${'b'.repeat(500)}`, 'utf8');
+      },
+    });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+
+    const result = await readExactlyForTest(opened.handle, opened.byteLength);
+    await opened.handle.close();
+    expect(result.complete).toBe(true);
+    expect(result.bytesRead).toBe(original.length);
+    expect(result.content.toString('utf8')).toBe(original);
+  });
+
+  it('reports an incomplete read, rather than a full one, when the file shrinks before the read', async () => {
+    const { directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    const original = 'a'.repeat(500);
+    await writeFile(paths.report, original, 'utf8');
+
+    const opened = await openArtifactFile(paths.report, {
+      beforeRead: async () => {
+        // Shrinks the same file the already-`fstat`-ed descriptor points
+        // to, after `byteLength` (500) was already captured — the exact
+        // race a single unbounded `read()` call could silently misreport
+        // as a full 500-byte read of whatever bytes happened to still be
+        // there.
+        await truncate(paths.report, 200);
+      },
+    });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+
+    const result = await readExactlyForTest(opened.handle, opened.byteLength);
+    await opened.handle.close();
+    expect(opened.byteLength).toBe(original.length);
+    expect(result.complete).toBe(false);
+    expect(result.bytesRead).toBe(200);
+    expect(result.bytesRead).toBeLessThan(opened.byteLength);
+  });
+
+  it('refuses the artifact as unstable rather than serving it truncated, end to end', async () => {
+    const { jobId, directory } = await seedRun();
+    const paths = experimentPaths(join(catalog.resultRoot, directory));
+    await writeFile(paths.report, 'a'.repeat(500), 'utf8');
+
+    const refused = await reader.read(jobId, 'report', {
+      beforeRead: async () => {
+        // Lands exactly between `openArtifactFile`'s `fstat` (which reports
+        // 500 bytes) and `read()`'s own read of the same descriptor —
+        // the race a single unbounded `read()` call could silently
+        // misreport as a full, unshrunk 500-byte artifact.
+        await truncate(paths.report, 100);
+      },
+    });
+
+    expect(isErr(refused) && refused.error[0]?.code).toBe('admin/no_result');
+    expect(isErr(refused) && refused.error[0]?.message).toMatch(/ended after 100 of the 500/);
+
+    // The unraced call still succeeds and serves the file's current
+    // (post-truncation) content whole — proving the refusal above is about
+    // the race window, not a permanent refusal of this file.
+    const artifact = unwrap(await reader.read(jobId, 'report'));
+    expect(artifact.content).toBe('a'.repeat(100));
+    expect(artifact.byteLength).toBe(100);
   });
 });
 

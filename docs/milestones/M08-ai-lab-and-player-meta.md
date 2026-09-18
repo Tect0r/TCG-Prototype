@@ -6104,3 +6104,40 @@ reviewed as one unit, and the full verification gate is re-run and recorded.
       `player-meta-results.test.ts`, `data-health-flow.test.tsx` (client,
       +1 test), `data-health-view.test.ts` — 5 files, 80/80 passing;
       typecheck, eslint and prettier clean on every touched file.
+
+- [x] **M08.R20 — Artifact reads can no longer silently return short content
+      under the size they claim.** `ArtifactReader#read` (`artifacts.ts`)
+      validated and `fstat`-sized a document through `openArtifactFile`
+      (M08.R12) but then issued exactly one `handle.read(buffer, 0, size, 0)`
+      call and trusted its `bytesRead` without checking it against `size` —
+      a file that shrank between that `fstat` and this read (a concurrent
+      rewrite, a crash mid-truncate) would come back with fewer bytes than
+      requested while the response still reported the original, larger
+      `byteLength`: a truncated artifact presented as complete.
+
+      Extracted the read into `readExactly(handle, size)`, which loops
+      `handle.read(...)` until either `size` bytes have arrived or the
+      descriptor reports EOF first (`bytesRead === 0`), rather than trusting
+      one syscall to fill the whole buffer. `read()` now checks
+      `readExactly`'s `complete` flag and refuses
+      (`admin/no_result`, "ended after N of the M bytes... refused as
+      unstable rather than sent partial") instead of serving whatever
+      arrived under the original size. `ArtifactReader#read` gained an
+      optional third `hooks` parameter — the same test-only
+      `OpenArtifactHooks` seam `openArtifactFile` already took, passed
+      straight through, never given a value outside a test — so a test can
+      land a shrink race at the exact point production code hits it rather
+      than only exercising the extracted helper in isolation.
+
+      New tests in `artifacts.test.ts`: exact-size read reported complete;
+      growth before the read still yields exactly the validated size,
+      unaffected (mirrors M08.R12's existing growth test, now through
+      `readExactly`); a `truncate()` mid-race reported incomplete with the
+      correct `bytesRead`; and one true end-to-end test using the new
+      `hooks` parameter on `reader.read()` itself, proving the public API
+      refuses the shrunk read (`admin/no_result`, message names 100 of 500)
+      while an unraced call against the same now-100-byte file still
+      succeeds and serves it whole — the guard is about the race window,
+      not a standing refusal of the file. Focused run:
+      `artifacts.test.ts` 23/23 (4 new); typecheck, eslint and prettier
+      clean.

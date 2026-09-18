@@ -148,16 +148,25 @@ export class ArtifactReader {
     return ok(validated.data);
   }
 
-  /** One document, byte for byte, with the identity that says which run wrote it. */
+  /**
+   * One document, byte for byte, with the identity that says which run wrote it.
+   *
+   * `hooks` is the same test-only interleaving seam `openArtifactFile` itself
+   * takes — passed straight through, never given a value outside a test —
+   * so a test can land a race (e.g. shrinking the file between validation
+   * and the read below) at the one point production code can actually hit
+   * it, rather than only unit-testing the lower-level helpers in isolation.
+   */
   async read(
     jobId: JobId,
     artifact: ResultArtifactName,
+    hooks: OpenArtifactHooks = {},
   ): Promise<Result<ResultArtifact, readonly AdminError[]>> {
     const open = await this.#open(jobId);
     if (isErr(open)) return open;
 
     const path = artifactPath(open.value.directory, artifact);
-    const opened = await openArtifactFile(path);
+    const opened = await openArtifactFile(path, hooks);
     if (!opened.ok) {
       if (opened.reason === 'absent') {
         return err([
@@ -200,9 +209,24 @@ export class ArtifactReader {
 
     let content: string;
     try {
-      const buffer = Buffer.alloc(size);
-      const { bytesRead } = await opened.handle.read(buffer, 0, size, 0);
-      content = buffer.toString('utf8', 0, bytesRead);
+      const read = await readExactly(opened.handle, size);
+      if (!read.complete) {
+        // The descriptor was validated and sized by `fstat` above, but the
+        // file underneath it shrank (or hit EOF early some other way)
+        // before every expected byte was actually read. Sending the bytes
+        // that did arrive while still claiming the original `size` would be
+        // exactly the "partial content, original byte length" defect this
+        // read exists to rule out — refused instead, the same as any other
+        // unreadable artifact.
+        return err([
+          adminError(
+            'admin/no_result',
+            `This run’s ${RESULT_ARTIFACTS[artifact].filename} ended after ${String(read.bytesRead)} of the ${String(size)} bytes this service expected, so it was refused as unstable rather than sent partial. Its raw records are still where the run left them.`,
+            { context: { jobId, artifact, expectedBytes: size, actualBytes: read.bytesRead } },
+          ),
+        ]);
+      }
+      content = read.content.toString('utf8');
     } catch {
       return err([
         adminError(
@@ -402,6 +426,46 @@ export async function openArtifactFile(
 
   return { ok: true, handle, byteLength: opened.size };
 }
+
+interface ExactReadResult {
+  /** `true` only when every one of `size` bytes was actually read. */
+  readonly complete: boolean;
+  /** How many bytes were actually read — equal to `size` iff `complete`. */
+  readonly bytesRead: number;
+  readonly content: Buffer;
+}
+
+/**
+ * Reads exactly `size` bytes from an already-validated, already-`fstat`-ed
+ * descriptor, looping rather than trusting one `read()` call to fill the
+ * whole buffer (M08.R20).
+ *
+ * `size` is what `fstat` reported when `openArtifactFile` validated this
+ * descriptor. Nothing stops the underlying file from shrinking after that —
+ * a concurrent rewrite, a crash mid-truncate — and a single bounded `read()`
+ * call that returns fewer bytes than requested says nothing on its own about
+ * *why*: this loops until either `size` bytes have arrived or the
+ * descriptor reports EOF (`bytesRead === 0`) first, so a caller can tell a
+ * genuine short read from a read that simply needed more than one syscall to
+ * satisfy, and never has to guess.
+ */
+async function readExactly(handle: FileHandle, size: number): Promise<ExactReadResult> {
+  const buffer = Buffer.alloc(size);
+  let totalRead = 0;
+  while (totalRead < size) {
+    const { bytesRead } = await handle.read(buffer, totalRead, size - totalRead, totalRead);
+    if (bytesRead === 0) break;
+    totalRead += bytesRead;
+  }
+  return {
+    complete: totalRead === size,
+    bytesRead: totalRead,
+    content: buffer.subarray(0, totalRead),
+  };
+}
+
+/** Exported only for `artifacts.test.ts`'s direct short-read race test. */
+export const readExactlyForTest = readExactly;
 
 /** The refusal for an answer this service built and could not validate. */
 function builtBadly(jobId: JobId): AdminError {
