@@ -21,10 +21,11 @@ the milestone checklist are the history.
 
 ## Status
 
-| Milestone                                                                   | Status                | Active work |
-| --------------------------------------------------------------------------- | --------------------- | ----------- |
-| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md) | Complete (2026-09-16) | —           |
-| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)               | Complete (2026-08-21) | —           |
+| Milestone                                                                                                 | Status                | Active work |
+| --------------------------------------------------------------------------------------------------------- | --------------------- | ----------- |
+| [M08 AI Lab and Player Meta](docs/milestones/M08-ai-lab-and-player-meta.md)                               | Complete (2026-09-18) | —           |
+| [M09 Play Against AI](docs/milestones/M09-play-against-ai.md)                                             | Complete (2026-08-21) | —           |
+| [M10 Prepared Reactions and Neutral Spells](docs/milestones/M10-prepared-reactions-and-neutral-spells.md) | Not started           | —           |
 
 Earlier milestone status and completed-scope summaries live in
 [`docs/project-status.md`](docs/project-status.md) and
@@ -45,33 +46,55 @@ Rows carry state only; do not add implementation narratives.
 | M08.R6–R7 + Tranche B review  | Complete |
 | M08.R8–R10 + Tranche C review | Complete |
 | M08.R11–R14 + Tranche D close | Complete |
+| M08.R15–R23 + Tranche E close | Complete |
 
 ### Current blocking decision
 
-None. M08, including the M08.5 correction pass (M08.R1–R14), is complete.
-`tcg-reviewer`'s first review of the M08.R11–R14 commit range plus the
-close-record diff returned `VERDICT: CHANGES REQUIRED`: one BLOCKER
-(M08.R11's stale-lock takeover used an unconditional `rm` that could destroy
-a different, already-live lock a faster contender had just published) and two
-LOW findings (`artifacts.ts`'s `sizeOf()` collapsing every read-refusal
-reason into the same `null` an absent artifact produces; a silent-skip branch
-in `job-runner-adaptive.test.ts`). The BLOCKER was fixed (`lock.ts`'s
-stale-lock clear is now a verified `rename`-based claim with
-restore-on-mismatch, backed by a new deterministic regression test); the two
-LOWs were deferred as follow-up work (see below) since the `artifacts.ts` fix
-reaches a shared, `z.strictObject` public contract schema
-(`resultArtifactListingSchema`) also consumed by `admin-client`, and the
-test-robustness finding is independent of the BLOCKER. `tcg-reviewer`
-rechecked the fix and returned `VERDICT: APPROVE`, with one MEDIUM (this
-record must not cite a final SHA the close commit itself would make stale —
-resolved by deferring that citation to a follow-up audit-record-only commit)
-and one LOW (a doc comment on `claimStaleRecord` understated a narrow
-three-contender residual window — fixed, comment-only). The tranche-close
-commit (SHA `2c4ca59a6fa69dfb227666db5890cc482a0fc4b4`) is pushed and its
-GitHub Actions run is green
-(<https://github.com/Tect0r/TCG-Prototype/actions/runs/35120617309>). This
-audit-record-only commit names that SHA and marks Tranche D and M08 complete.
-See the milestone's
+None. M08 is complete, including the M08.5 correction pass (M08.R1–R14) and
+the independent-review Correction Tranche E (M08.R15–R23). Tranche E's own
+tranche-close commit (SHA `3f5f99f84a1f08191d5ae56e6014378192946e5a`) is
+pushed and its GitHub Actions run is green
+(<https://github.com/Tect0r/TCG-Prototype/actions/runs/35319827129>).
+`tcg-reviewer` reviewed the full Tranche E commit range plus the close-record
+diff and returned `VERDICT: APPROVE` on the first pass, with two LOW findings
+and no BLOCKER, HIGH or MEDIUM (one recorded as follow-up work below; the
+other — an open-ended `.prettierignore` exclusion — accepted with no action
+required). See the milestone's
+[Correction Tranche E](docs/milestones/M08-ai-lab-and-player-meta.md) section
+for the full review record.
+
+M10 is named as the next milestone. Its precondition that "M08 and its
+correction work are complete, committed and pushed, with a green verification
+run for the exact final SHA" is now met — see
+[the M10 milestone](docs/milestones/M10-prepared-reactions-and-neutral-spells.md).
+M10 has not been opened or started in this session: its own preconditions 3–5
+(precon match playability, AI Lab capability, current version measurements)
+still need revalidating against current code before its first slice
+(M10.1A — Revalidate and record) begins.
+
+Prior Tranche D blocking-decision record (kept for history): `tcg-reviewer`'s
+first review of the M08.R11–R14 commit range plus the close-record diff
+returned `VERDICT: CHANGES REQUIRED`: one BLOCKER (M08.R11's stale-lock
+takeover used an unconditional `rm` that could destroy a different,
+already-live lock a faster contender had just published) and two LOW
+findings (`artifacts.ts`'s `sizeOf()` collapsing every read-refusal reason
+into the same `null` an absent artifact produces; a silent-skip branch in
+`job-runner-adaptive.test.ts`). The BLOCKER was fixed (`lock.ts`'s stale-lock
+clear is now a verified `rename`-based claim with restore-on-mismatch,
+backed by a new deterministic regression test); the two LOWs were deferred as
+follow-up work (see below) since the `artifacts.ts` fix reaches a shared,
+`z.strictObject` public contract schema (`resultArtifactListingSchema`) also
+consumed by `admin-client`, and the test-robustness finding is independent of
+the BLOCKER. `tcg-reviewer` rechecked the fix and returned `VERDICT: APPROVE`,
+with one MEDIUM (this record must not cite a final SHA the close commit
+itself would make stale — resolved by deferring that citation to a
+follow-up audit-record-only commit) and one LOW (a doc comment on
+`claimStaleRecord` understated a narrow three-contender residual window —
+fixed, comment-only). The tranche-close commit (SHA
+`2c4ca59a6fa69dfb227666db5890cc482a0fc4b4`) is pushed and its GitHub Actions
+run is green
+(<https://github.com/Tect0r/TCG-Prototype/actions/runs/35120617309>). See the
+milestone's
 [Correction Tranche D](docs/milestones/M08-ai-lab-and-player-meta.md) section
 for the full review record.
 
@@ -158,6 +181,16 @@ its area — do not treat this list itself as a tranche.
   property it names if the terminal checkpoint state is never observed, with
   no assertion failure signaling the skip. Test-robustness fix, independent
   of any product behavior.
+- **Correction Tranche E review LOW — de-escape the NUL byte in
+  `live-match-snapshot.ts`'s cache key.** `buildLiveMatchSnapshot` embeds a
+  literal NUL control character in its cache-key template literal instead of
+  a `\0` escape, which makes Git classify the file as binary — hiding any
+  future diff to that file (including M10.R18's own bounded-read rewrite)
+  from ordinary review and text search. Pre-existing before this tranche
+  (introduced by an earlier M08 slice, not by Correction Tranche E). Fix is a
+  one-byte template-literal change with no runtime effect; rerun
+  `live-match-snapshot.test.ts` and confirm `git diff` renders the file as
+  text afterward.
 
 ## Completion evidence for every tranche
 

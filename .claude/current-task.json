@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08-tranche-close",
-  "mode": "tranche-close",
-  "source": "docs/milestones/M08-ai-lab-and-player-meta.md",
-  "heading": "Correction Tranche E (continued, verification stability)",
+  "unit": "M10.1A",
+  "mode": "implementation",
+  "source": "docs/milestones/M10-prepared-reactions-and-neutral-spells.md",
+  "heading": "M10.1A — Revalidate and record",
   "blocker": null,
-  "next": null
+  "next": "M10.1B"
 }

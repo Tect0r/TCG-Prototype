@@ -1,6 +1,9 @@
 # M10 — Prepared Reactions and Three-Event Timing
 
-Status: **Draft milestone specification. Do not start while M08 or its correction pass is active.**
+Status: **Precondition 1 met — M08 and its correction pass (through
+Correction Tranche E, tranche-close commit `3f5f99f`) are complete, committed,
+pushed and green as of 2026-09-18. Not yet opened: preconditions 2–5 below
+still need revalidating against current code before M10.1A begins.**
 
 When M10 is scheduled, place this document at
 `docs/milestones/M10-prepared-reactions-and-neutral-spells.md` and add exactly

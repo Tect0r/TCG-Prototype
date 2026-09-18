@@ -6441,3 +6441,31 @@ Per Tranche D's own recorded lesson, this record does not cite a tranche-close
 commit SHA or claim `tcg-reviewer` approval here — both are established only
 after the close commit is pushed and reviewed, recorded in a follow-up to
 this entry rather than asserted ahead of the evidence.
+
+**Tranche-close outcome.** The tranche-close commit (SHA
+`3f5f99f84a1f08191d5ae56e6014378192946e5a`) is pushed and its GitHub Actions
+run is green: run
+<https://github.com/Tect0r/TCG-Prototype/actions/runs/35319827129>,
+check-run `105519618778`, status completed, conclusion success.
+`tcg-reviewer` (Opus) reviewed the full Correction Tranche E commit range
+(`5c30e0a~1..3f5f99f`: `5c30e0a`, `4b7386b`, `fce4393`, `f890d24`, `efd2dbb`,
+`0e7aaac`, `fd17196`, `b6eeee1`, `74a801e`, `3f5f99f`) and returned
+`VERDICT: APPROVE` on the first pass, with two LOW findings and no BLOCKER,
+HIGH or MEDIUM. **LOW** — `live-match-snapshot.ts`'s cache key embeds a
+literal NUL byte rather than an escape sequence, which makes Git classify the
+file as binary and hides R18's bounded-read rewrite from ordinary diff
+review; confirmed pre-existing at `5c30e0a~1` (introduced by an earlier
+tranche, not this one), so it is recorded as follow-up work in
+`IMPLEMENTATION_PLAN.md` rather than fixed in this close. **LOW** — the new
+`.prettierignore` exclusion for this file is open-ended: nothing re-tests
+whether the underlying Prettier non-idempotency bug still reproduces after a
+future dependency bump, so the exclusion could silently outlive its cause;
+accepted as the proportionate cost of excluding one file rather than
+restructuring 6,000+ lines of historical record, with no action required now.
+
+**Correction Tranche E is complete.** `tcg-reviewer` returned
+`VERDICT: APPROVE` on the full tranche commit range. M08, including the
+M08.5 correction pass (M08.R1–R14) and this independent-review correction
+pass (M08.R15–R23), is complete. M10 is named as the next milestone; its own
+preconditions (`docs/milestones/M10-prepared-reactions-and-neutral-spells.md`)
+are now met.
