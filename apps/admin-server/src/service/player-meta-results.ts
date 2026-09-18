@@ -215,6 +215,8 @@ export interface PlayerMetaDataHealthEvidence {
   /** The true count `skipped` represents — `skipped` itself may be capped for a very damaged root (M08.R10). */
   readonly skippedCount: number;
   readonly replayStatus: { matchesChecked: number; withReplay: number; withoutReplay: number };
+  /** M08.R19 — whether `openLiveMatchSnapshot` stopped before reading the whole root; see `data-health.ts`'s `truncatedReason`. */
+  readonly truncated: boolean;
 }
 
 /**
@@ -251,6 +253,7 @@ function openDataHealthEvidence(
       withReplay,
       withoutReplay: abnormal.length - withReplay,
     },
+    truncated: snapshot.truncated,
   };
 }
 

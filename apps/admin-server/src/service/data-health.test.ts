@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   PLAYER_META_DATA_HEALTH_MAX_ENTRIES,
@@ -11,8 +11,34 @@ import {
 } from '@tcg/admin-contracts';
 import { CARD_SCHEMA_VERSION } from '@tcg/card-data';
 import { unwrap } from '@tcg/shared';
-import { experimentPaths } from '@tcg/simulator';
 import { freezeLiveMatchDeckSnapshot, type LiveMatchEnvelope } from '@tcg/match-telemetry';
+
+import type * as SimulatorModule from '@tcg/simulator';
+
+/**
+ * M08.R19 — the same override trick `player-meta-results.test.ts` already
+ * uses to exercise `openLiveMatchSnapshot`'s `truncated: true` path: a real
+ * root large enough to hit the scan's own cap would need far more match
+ * directories than a unit test should write to disk, so this overrides only
+ * that one flag on the real snapshot. Every match, capture and aggregate the
+ * mocked call returns is still `@tcg/simulator`'s own real read.
+ */
+let forceSnapshotTruncated = false;
+
+vi.mock('@tcg/simulator', async () => {
+  const actual = await vi.importActual<typeof SimulatorModule>('@tcg/simulator');
+  return {
+    ...actual,
+    openLiveMatchSnapshot: (
+      ...args: Parameters<typeof actual.openLiveMatchSnapshot>
+    ): ReturnType<typeof actual.openLiveMatchSnapshot> => {
+      const snapshot = actual.openLiveMatchSnapshot(...args);
+      return { ...snapshot, truncated: forceSnapshotTruncated ? true : snapshot.truncated };
+    },
+  };
+});
+
+import { experimentPaths } from '@tcg/simulator';
 
 import { resolveCatalogRoots } from '../catalog/roots.js';
 import {
@@ -318,6 +344,7 @@ describe('computePlayerMetaDataHealth', () => {
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'tcg-admin-data-health-'));
+    forceSnapshotTruncated = false;
   });
 
   afterEach(() => {
@@ -468,6 +495,7 @@ describe('computePlayerMetaDataHealth', () => {
   it('reports unavailable when no live match matches the partition', () => {
     const result = unwrap(computePlayerMetaDataHealth(playerMetaReader(), partition()));
     expect(result.unavailableReason).not.toBeNull();
+    expect(result.truncatedReason).toBeNull();
     expect(result.recoveredRecords).toEqual({ count: 0, entries: [] });
   });
 
@@ -561,5 +589,34 @@ describe('computePlayerMetaDataHealth', () => {
     const result = unwrap(computePlayerMetaDataHealth(playerMetaReader(), p));
     expect(result.exclusions.count).toBe(excludedCount);
     expect(result.exclusions.entries).toHaveLength(PLAYER_META_DATA_HEALTH_MAX_ENTRIES);
+  });
+
+  it('M08.R19 — carries a truncated snapshot into truncatedReason without zeroing any category', () => {
+    const p = partition();
+    writeMatch('match_ordinary', ordinaryEnvelope('match_ordinary', p));
+
+    const complete = unwrap(computePlayerMetaDataHealth(playerMetaReader(), p));
+    expect(complete.truncatedReason).toBeNull();
+
+    forceSnapshotTruncated = true;
+    const truncated = unwrap(computePlayerMetaDataHealth(playerMetaReader(), p));
+    expect(truncated.truncatedReason).not.toBeNull();
+    expect(truncated.truncatedReason).toContain('scan limit');
+    expect(truncated.unavailableReason).toBeNull();
+    // truncation qualifies an otherwise fully measured report — every category
+    // still reflects the same real counts as the untruncated read.
+    expect(truncated.failures).toEqual(complete.failures);
+    expect(truncated.exclusions).toEqual(complete.exclusions);
+  });
+
+  it('M08.R19 — a truncated scan finding no match for this partition names the truncation, not a genuine absence', () => {
+    const p = partition();
+    writeMatch('match_a', ordinaryEnvelope('match_a', { ...p, source: 'ai_ai' }));
+
+    forceSnapshotTruncated = true;
+    const result = unwrap(computePlayerMetaDataHealth(playerMetaReader(), p));
+    expect(result.unavailableReason).not.toBeNull();
+    expect(result.unavailableReason).toContain('scanned window');
+    expect(result.truncatedReason).toBeNull();
   });
 });

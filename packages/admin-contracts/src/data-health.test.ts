@@ -215,6 +215,7 @@ describe('playerMetaDataHealthReportSchema', () => {
   function report(overrides: Partial<Record<string, unknown>> = {}) {
     return {
       identity: { domain: 'player_meta', partition: partition() },
+      truncatedReason: null,
       recoveredRecords: { count: 0, entries: [] },
       failures: emptyTermination(),
       stalled: emptyTermination(),
@@ -252,6 +253,21 @@ describe('playerMetaDataHealthReportSchema', () => {
 
   it('accepts a fully populated report', () => {
     expect(playerMetaDataHealthReportSchema.safeParse(report()).success).toBe(true);
+  });
+
+  it('M08.R19 — accepts a non-null truncatedReason alongside a fully measured report', () => {
+    const result = playerMetaDataHealthReportSchema.safeParse(
+      report({
+        truncatedReason: 'this root holds more live matches than one read scans at a time',
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('M08.R19 — rejects a report missing truncatedReason', () => {
+    const { truncatedReason: _truncatedReason, ...withoutTruncatedReason } = report();
+    const result = playerMetaDataHealthReportSchema.safeParse(withoutTruncatedReason);
+    expect(result.success).toBe(false);
   });
 
   it('accepts a skipped/excluded match record', () => {

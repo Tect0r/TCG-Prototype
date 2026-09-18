@@ -274,6 +274,11 @@ function PlayerMetaDataHealthView({ report }: { readonly report: PlayerMetaDataH
   }
   return (
     <>
+      {report.truncatedReason !== null && (
+        <p className="dashboard__truncation" role="note">
+          {report.truncatedReason}
+        </p>
+      )}
       <FactTable caption="Data Health summary" facts={playerMetaDataHealthFacts(report)} />
       <MatchRecordsTable caption="Recovered records" entries={report.recoveredRecords.entries} />
       <MatchRecordsTable caption="Exclusions" entries={report.exclusions.entries} />

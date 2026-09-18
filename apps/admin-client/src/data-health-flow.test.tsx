@@ -126,6 +126,24 @@ describe('opening the Player Meta partition data health tab', () => {
     ).toBe(true);
   });
 
+  it('M08.R19 — shows a truncated-scan banner without hiding the measured categories', async () => {
+    const { service } = await openPlayerMetaTab();
+    service.lab.seedPlayerMetaDataHealth(
+      playerMetaDataHealthReportFixture(
+        { source: 'ai_ai', contentVersion: 1, rulesVersion: '1.0.0' },
+        { truncatedReason: 'This root holds more live matches than one read scans at a time' },
+      ),
+    );
+
+    await fillPartitionForm();
+
+    expect(
+      await within(main()).findByText(/more live matches than one read scans at a time/),
+    ).toBeVisible();
+    const failuresRow = (await within(main()).findByText('Failures')).closest('tr');
+    expect(failuresRow).toHaveTextContent('0 (none by kind)');
+  });
+
   it('requires a rules version before sending a request', async () => {
     const { service } = await openPlayerMetaTab();
 

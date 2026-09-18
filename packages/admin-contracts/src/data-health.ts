@@ -176,6 +176,19 @@ export const playerMetaDataHealthReportSchema = z.strictObject({
     domain: z.literal('player_meta'),
     partition: playerMetaPartitionSchema,
   }),
+  /**
+   * M08.R19 — set to a fixed sentence whenever the underlying
+   * `openLiveMatchSnapshot` scan stopped early (M08.R10's `truncated`) for
+   * the read this report was built from. Every category below is still a
+   * real measurement, never zeroed, but only over the oldest matches up to
+   * that scan's cap — distinct from `unavailableReason`, which means the
+   * whole report could not be measured at all. A report can have
+   * `truncatedReason !== null` and every category fully populated at the
+   * same time; the two never both fire for the same underlying cause,
+   * because a report with `unavailableReason !== null` already zeros every
+   * category and has nothing left for `truncatedReason` to qualify.
+   */
+  truncatedReason: z.string().nullable(),
   recoveredRecords: z.strictObject({
     count: z.number().int().min(0),
     entries: z.array(playerMetaMatchRecordSchema).max(PLAYER_META_DATA_HEALTH_MAX_ENTRIES),

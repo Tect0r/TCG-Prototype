@@ -417,8 +417,25 @@ import { adminError, type AdminError } from './errors.js';
  *   three-or-more-contender race happened to leave behind, which is the
  *   defect this version exists to retire. That is what a contract version is
  *   for saying.
+ * - 20 (M08.R19) — `playerMetaDataHealthReportSchema` gained `truncatedReason`,
+ *   a nullable string set whenever the live-match scan
+ *   `computePlayerMetaDataHealth` reads from stopped early
+ *   (`openLiveMatchSnapshot`'s `truncated`, M08.R10). Before this version the
+ *   report carried no such signal: a partition whose root had grown past one
+ *   scan's cap was measured only over its oldest matches, silently, with
+ *   every category reported as if it were a complete count — the same
+ *   defect `readPlayerMetaSummary`'s `limitations` array already closed for
+ *   the summary view, left open here. `truncatedReason` is independent of
+ *   `unavailableReason`: the latter still means the whole report could not
+ *   be measured at all (and zeros every category), while the former
+ *   qualifies an otherwise fully measured report as partial.
+ *
+ *   A build speaking 19 would receive a field it does not know and ignore it,
+ *   so every category it already reads still parses; it would keep showing a
+ *   truncated partition's numbers as complete, with no way to learn
+ *   otherwise, which is exactly what a contract version is for saying.
  */
-export const ADMIN_CONTRACT_VERSION = 19;
+export const ADMIN_CONTRACT_VERSION = 20;
 
 /**
  * The version stamped into a persisted catalog document.

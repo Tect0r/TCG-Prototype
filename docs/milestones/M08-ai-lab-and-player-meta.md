@@ -6057,3 +6057,50 @@ reviewed as one unit, and the full verification gate is re-run and recorded.
       Focused run: `live-match-snapshot.test.ts` 26/26 (9 new); full
       `@tcg/simulator` 773/773 unaffected; typecheck/eslint/prettier
       clean.
+
+### Correction Tranche E (continued)
+
+- [x] **M08.R19 — Player Meta Data Health now carries a truncated-scan
+      state instead of silently presenting a partial read as complete.**
+      `openLiveMatchSnapshot`'s `truncated` flag was already threaded into
+      the Player Meta *Summary* path (`TRUNCATED_SNAPSHOT_LIMITATION`, prior
+      work) but dropped on the separate Data Health evidence path:
+      `PlayerMetaDataHealthEvidence`/`openDataHealthEvidence`
+      (`player-meta-results.ts`) never read it, so a report built from a
+      capped scan looked identical to one built from a complete read.
+
+      Added `truncated: boolean` to `PlayerMetaDataHealthEvidence` and a new
+      `truncatedReason: string | null` field on
+      `playerMetaDataHealthReportSchema` only (the catalog report has no
+      live-match scan to bound, so it is unaffected) — deliberately distinct
+      from the existing `unavailableReason`: `unavailableReason` means
+      nothing could be measured (every category zeroed); `truncatedReason`
+      means every category above is a real, non-zero count, just bounded to
+      the oldest matches up to the scan's cap. `ADMIN_CONTRACT_VERSION`
+      19 → 20. `computePlayerMetaDataHealth` now sets `truncatedReason` to
+      the fixed `PLAYER_META_DATA_HEALTH_TRUNCATED_REASON` sentence
+      whenever `evidence.value.truncated` is true, and — when a truncated
+      scan finds zero matches for a partition — names the truncation in
+      `unavailableReason` ("may exist beyond that scanned window") instead
+      of the prior wording, which read as a genuine-absence claim the scan
+      had not actually earned.
+
+      Every literal construction of a full `PlayerMetaDataHealthReport`
+      (server `unavailablePlayerMetaReport`/`computePlayerMetaDataHealth`,
+      `fake-service.ts`'s fixture, and the contracts/client test helpers)
+      was updated for the new required field — `playerMetaDataHealthReportSchema`
+      is a `strictObject`, so a missing field is a hard parse failure,
+      exercised directly by a new rejection test. `DataHealthDashboard.tsx`
+      renders a `dashboard__truncation` banner (the same convention used by
+      the other partial-read dashboards) whenever `truncatedReason` is
+      non-null, without hiding the measured categories below it.
+
+      `data-health.test.ts` (admin-server) gained a
+      `vi.mock('@tcg/simulator', ...)` + module-level
+      `forceSnapshotTruncated` flag, mirroring the existing pattern in
+      `player-meta-results.test.ts`, to drive the truncated path without a
+      large fixture. Focused run: `data-health.test.ts` (contracts, +2
+      tests), `data-health.test.ts` (admin-server, +2 tests),
+      `player-meta-results.test.ts`, `data-health-flow.test.tsx` (client,
+      +1 test), `data-health-view.test.ts` — 5 files, 80/80 passing;
+      typecheck, eslint and prettier clean on every touched file.

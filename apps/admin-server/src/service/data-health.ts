@@ -160,6 +160,19 @@ const UNAVAILABLE_PLAYER_META_ANALYSIS_REASON =
   "`computeFlags` runs only over a catalog batch's own aggregate, pairs and support reading, never over " +
   "live-match telemetry — the same domain gap `./coverage.ts`'s own doc comment names for `target`.";
 
+/**
+ * M08.R19 — set on an otherwise fully measured report whenever
+ * `openLiveMatchSnapshot` stopped before reading the whole root. Every
+ * category still reflects a real count, never zeroed, but only over the
+ * oldest matches up to that scan's cap — mirrors
+ * `player-meta-results.ts`'s own `TRUNCATED_SNAPSHOT_LIMITATION`, restated
+ * for a single-partition report rather than a `limitations` sentence list.
+ */
+const PLAYER_META_DATA_HEALTH_TRUNCATED_REASON =
+  'This root holds more live matches than one read scans at a time, so every category above measures ' +
+  'only the oldest matches up to that scan limit and excludes newer activity — read every count here ' +
+  'as a partial, not a complete, measurement until an operator raises the limit or prunes the root.';
+
 /** A fully zeroed, wholly `unavailable` Player Meta report — this partition's evidence could not be read at all. */
 function unavailablePlayerMetaReport(
   partition: PlayerMetaPartition,
@@ -167,6 +180,7 @@ function unavailablePlayerMetaReport(
 ): PlayerMetaDataHealthReport {
   return {
     identity: { domain: 'player_meta', partition },
+    truncatedReason: null,
     recoveredRecords: { count: 0, entries: [] },
     failures: { count: 0, byKind: {}, unavailableReason: null },
     stalled: { count: 0, byKind: {}, unavailableReason: null },
@@ -211,11 +225,16 @@ export function computePlayerMetaDataHealth(
     return ok(validated.data);
   }
 
-  const { matches, skipped, skippedCount, replayStatus } = evidence.value;
+  const { matches, skipped, skippedCount, replayStatus, truncated } = evidence.value;
   if (matches.length === 0) {
     const report = unavailablePlayerMetaReport(
       partition,
-      'No live match in this Player Meta root matches this partition, so there is nothing to measure.',
+      truncated
+        ? 'No live match in this Player Meta root matches this partition within the scanned ' +
+            "window — the underlying scan stopped before reading the whole root (M08.R10's " +
+            '`truncated`), so this partition may exist beyond that limit rather than being genuinely ' +
+            'absent.'
+        : 'No live match in this Player Meta root matches this partition, so there is nothing to measure.',
     );
     const validated = playerMetaDataHealthReportSchema.safeParse(report);
     if (!validated.success) return err([builtBadly('player_meta_data_health', {})]);
@@ -242,6 +261,7 @@ export function computePlayerMetaDataHealth(
 
   const report: PlayerMetaDataHealthReport = {
     identity: { domain: 'player_meta', partition },
+    truncatedReason: truncated ? PLAYER_META_DATA_HEALTH_TRUNCATED_REASON : null,
     recoveredRecords: {
       // `skippedCount` is the true total; `skipped` is already capped by `openLiveMatchSnapshot`'s
       // own `maxSkippedDetails`, but this is sliced again defensively so the two bounds never drift

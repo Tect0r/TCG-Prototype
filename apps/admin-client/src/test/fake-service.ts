@@ -780,6 +780,7 @@ export function playerMetaDataHealthReportFixture(
 ): PlayerMetaDataHealthReport {
   return playerMetaDataHealthReportSchema.parse({
     identity: { domain: 'player_meta', partition },
+    truncatedReason: null,
     recoveredRecords: { count: 0, entries: [] },
     failures: { count: 0, byKind: {}, unavailableReason: null },
     stalled: { count: 0, byKind: {}, unavailableReason: null },
@@ -1982,7 +1983,9 @@ export function fakeService(initial: FakeServiceOptions = {}): FakeService {
       const jobId = ref.jobId;
       if (typeof jobId === 'string' && jobId.length > 0) {
         const job = jobs.get(jobId);
-        return job !== undefined && job.spec.kind === 'adaptive_counter' ? job.spec.experimentId : null;
+        return job !== undefined && job.spec.kind === 'adaptive_counter'
+          ? job.spec.experimentId
+          : null;
       }
       const experimentId = ref.experimentId;
       return typeof experimentId === 'string' && experimentId.length > 0 ? experimentId : null;

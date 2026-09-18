@@ -156,6 +156,7 @@ describe('playerMetaDataHealthFacts', () => {
         domain: 'player_meta',
         partition: { source: 'ai_ai', contentVersion: 1, rulesVersion: '1.0.0' },
       },
+      truncatedReason: null,
       recoveredRecords: { count: 0, entries: [] },
       failures: terminationBucket(),
       stalled: terminationBucket(),
