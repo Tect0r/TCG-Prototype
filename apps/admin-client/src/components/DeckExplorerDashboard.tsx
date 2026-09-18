@@ -33,7 +33,7 @@ import {
 } from '../lib/player-meta-view.js';
 import type { AdminOutcome } from '../net/transport.js';
 import { useAdminSession } from '../state/AdminContext.js';
-import { Busy, Empty, Failure } from './Feedback.js';
+import { Empty, OutcomeView } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
 
 /**
@@ -200,97 +200,97 @@ export function DeckExplorerPanel({
         </p>
       )}
 
-      {view === null && deckHash !== null && <Busy label="Reading the deck's identity…" />}
-      {view !== null && !view.ok && (
-        <Failure
-          title="This deck could not be shown"
-          failure={view.failure}
-          onRetry={() => {
-            if (deckHash === null) return;
-            open(deckHash, experimentId);
-          }}
-        />
-      )}
-      {view !== null && view.ok && (
-        <>
-          <IdentityView view={view.value} onNavigate={onNavigate} />
-          <RevisionsView view={view.value} />
+      <OutcomeView
+        outcome={view}
+        requested={deckHash !== null}
+        busyLabel="Reading the deck's identity…"
+        failureTitle="This deck could not be shown"
+        onRetry={() => {
+          if (deckHash === null) return;
+          open(deckHash, experimentId);
+        }}
+      >
+        {(value) => (
+          <>
+            <IdentityView view={value} onNavigate={onNavigate} />
+            <RevisionsView view={value} />
 
-          <div className="dashboard__tabs" role="group" aria-label="Deck evidence">
-            {DECK_EXPLORER_EVIDENCE_TABLES.map((table) => (
-              <button
-                key={table}
-                type="button"
-                aria-pressed={evidenceView === table}
-                className={evidenceView === table ? 'is-current' : ''}
-                onClick={() => {
-                  setEvidenceView(table);
-                  setDrill(null);
-                }}
-              >
-                {DECK_EXPLORER_EVIDENCE_TABLE_LABELS[table] ?? table}
-              </button>
-            ))}
-          </div>
-
-          {hasPlayerMetaWeighting(evidenceView) && (
-            <div className="dashboard__tabs" role="group" aria-label="Weighting">
-              <button
-                type="button"
-                aria-pressed={weighting === 'matches'}
-                className={weighting === 'matches' ? 'is-current' : ''}
-                onClick={() => {
-                  setWeighting('matches');
-                  setDrill(null);
-                }}
-              >
-                By matches
-              </button>
-              <button
-                type="button"
-                aria-pressed={weighting === 'unique'}
-                className={weighting === 'unique' ? 'is-current' : ''}
-                onClick={() => {
-                  setWeighting('unique');
-                  setDrill(null);
-                }}
-              >
-                By unique decks
-              </button>
-            </div>
-          )}
-
-          <EvidenceTableView
-            table={evidenceView}
-            outcome={evidence[evidenceView]}
-            weighting={weighting}
-            onDrill={setDrill}
-          />
-
-          {drill !== null && (
-            <div className="dashboard__drill" role="region" aria-label={drill.title}>
-              <div className="dashboard__drill-head">
-                <h4>{drill.title}</h4>
+            <div className="dashboard__tabs" role="group" aria-label="Deck evidence">
+              {DECK_EXPLORER_EVIDENCE_TABLES.map((table) => (
                 <button
+                  key={table}
                   type="button"
+                  aria-pressed={evidenceView === table}
+                  className={evidenceView === table ? 'is-current' : ''}
                   onClick={() => {
+                    setEvidenceView(table);
                     setDrill(null);
                   }}
                 >
-                  Close
+                  {DECK_EXPLORER_EVIDENCE_TABLE_LABELS[table] ?? table}
+                </button>
+              ))}
+            </div>
+
+            {hasPlayerMetaWeighting(evidenceView) && (
+              <div className="dashboard__tabs" role="group" aria-label="Weighting">
+                <button
+                  type="button"
+                  aria-pressed={weighting === 'matches'}
+                  className={weighting === 'matches' ? 'is-current' : ''}
+                  onClick={() => {
+                    setWeighting('matches');
+                    setDrill(null);
+                  }}
+                >
+                  By matches
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={weighting === 'unique'}
+                  className={weighting === 'unique' ? 'is-current' : ''}
+                  onClick={() => {
+                    setWeighting('unique');
+                    setDrill(null);
+                  }}
+                >
+                  By unique decks
                 </button>
               </div>
-              <FactTable caption={drill.title} facts={drill.facts} />
-              <p className="panel__note">
-                This is the exact row a cell summarizes — not a further aggregate. Opening one
-                contributing match or its replay is not available from this screen: that needs a
-                listing over the run&apos;s match records, which is M08.26&apos;s Match Explorer to
-                build.
-              </p>
-            </div>
-          )}
-        </>
-      )}
+            )}
+
+            <EvidenceTableView
+              table={evidenceView}
+              outcome={evidence[evidenceView]}
+              weighting={weighting}
+              onDrill={setDrill}
+            />
+
+            {drill !== null && (
+              <div className="dashboard__drill" role="region" aria-label={drill.title}>
+                <div className="dashboard__drill-head">
+                  <h4>{drill.title}</h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDrill(null);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <FactTable caption={drill.title} facts={drill.facts} />
+                <p className="panel__note">
+                  This is the exact row a cell summarizes — not a further aggregate. Opening one
+                  contributing match or its replay is not available from this screen: that needs a
+                  listing over the run&apos;s match records, which is M08.26&apos;s Match Explorer
+                  to build.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </OutcomeView>
     </section>
   );
 }
@@ -500,22 +500,27 @@ function EvidenceTableView({
   readonly onDrill: (target: PlayerMetaDrillTarget) => void;
 }) {
   const label = DECK_EXPLORER_EVIDENCE_TABLE_LABELS[table] ?? table;
-  if (outcome === undefined) return <Busy label={`Reading ${label}…`} />;
-  if (!outcome.ok) {
-    return <Failure title="This table could not be read" failure={outcome.failure} />;
-  }
-  if (outcome.value.rows.length === 0) {
-    return <Empty>This query matched no row for this table.</Empty>;
-  }
-  const note = playerMetaTruncationNote(outcome.value, 'rows');
   return (
-    <div className="dashboard__view">
-      {note !== null && (
-        <p className="dashboard__truncation" role="note">
-          {note}
-        </p>
-      )}
-      <EvidenceTable table={outcome.value} weighting={weighting} onDrill={onDrill} />
-    </div>
+    <OutcomeView
+      outcome={outcome}
+      busyLabel={`Reading ${label}…`}
+      failureTitle="This table could not be read"
+    >
+      {(value) => {
+        if (value.rows.length === 0)
+          return <Empty>This query matched no row for this table.</Empty>;
+        const note = playerMetaTruncationNote(value, 'rows');
+        return (
+          <div className="dashboard__view">
+            {note !== null && (
+              <p className="dashboard__truncation" role="note">
+                {note}
+              </p>
+            )}
+            <EvidenceTable table={value} weighting={weighting} onDrill={onDrill} />
+          </div>
+        );
+      }}
+    </OutcomeView>
   );
 }

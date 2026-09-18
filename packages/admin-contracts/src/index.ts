@@ -45,6 +45,7 @@ export {
   catalogDocumentVersionSchema,
   comparisonAnnotationVersionSchema,
   contractVersionSchema,
+  foreignVersionCode,
   isFutureVersion,
   jobEventVersionSchema,
   refuseForeignVersion,

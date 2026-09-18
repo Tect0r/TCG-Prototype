@@ -720,7 +720,7 @@ export function refuseForeignVersion(
   supported: number,
   path: string,
 ): AdminError | null {
-  if (typeof found !== 'number' || !Number.isInteger(found) || found < 1) {
+  if (!isReadableVersionNumber(found)) {
     return adminError(
       'admin/missing_version',
       `This record does not declare a readable ${record} version, so it cannot be read.`,
@@ -730,6 +730,31 @@ export function refuseForeignVersion(
   if (found > supported) return newerBuild(record, found, supported, path, { record });
   if (found < supported) return olderBuild(record, found, supported, path, { record });
   return null;
+}
+
+/**
+ * Whether `found` is a version number at all, independent of whether it is
+ * the one this build supports.
+ *
+ * Exported so a caller outside this module that must classify a foreign
+ * version into the same two `AdminError` codes `refuseForeignVersion` uses —
+ * but with its own message text, because the record's owner is the one who
+ * can describe the problem readably — reuses this test rather than
+ * re-deriving it. `apps/admin-server`'s Adaptive Counter job configuration is
+ * the one such caller (M08.R22): the code is standardised here, the sentence
+ * stays `@tcg/simulator`'s own.
+ */
+export function isReadableVersionNumber(found: unknown): found is number {
+  return typeof found === 'number' && Number.isInteger(found) && found >= 1;
+}
+
+/**
+ * The `admin/missing_version` vs `admin/unsupported_version` choice
+ * `refuseForeignVersion` makes, exposed for a caller that must attach a
+ * message this module does not own. See `isReadableVersionNumber`.
+ */
+export function foreignVersionCode(found: unknown): 'admin/missing_version' | 'admin/unsupported_version' {
+  return isReadableVersionNumber(found) ? 'admin/unsupported_version' : 'admin/missing_version';
 }
 
 function newerBuild(

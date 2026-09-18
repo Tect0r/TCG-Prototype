@@ -3,8 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { adaptiveExperimentIdSchema, pageRequestSchema } from '@tcg/admin-contracts';
+import {
+  ADAPTIVE_RESULT_TABLE_NAMES,
+  adaptiveExperimentIdSchema,
+  pageRequestSchema,
+} from '@tcg/admin-contracts';
 import { isErr, unwrap } from '@tcg/shared';
+import { adaptiveResultPayloadSchema } from '@tcg/simulator';
 
 import { FileCatalogStore } from '../catalog/file-catalog-store.js';
 import { resolveCatalogRoots } from '../catalog/roots.js';
@@ -474,6 +479,26 @@ describe('an adaptive result table', () => {
   it('refuses a table read for a run with no readable result', async () => {
     const refused = await readAdaptiveTable(directory, 'series', page);
     expect(isErr(refused) && refused.error[0]?.code).toBe('admin/no_result');
+  });
+});
+
+describe('adaptive result tables track the payload schema', () => {
+  it('claims exactly the payload fields that carry row-shaped evidence', () => {
+    // Fields on `AdaptiveResultPayload` (`apps/simulator/src/adaptive/
+    // report.ts`) that are not one of `ADAPTIVE_RESULT_TABLE_NAMES`'s seven
+    // tables, and why: `informationPolicy` labels the run rather than
+    // holding evidence, and `seriesTally` is a derived aggregate
+    // `readAdaptiveSummary` reads straight into `readings`, never a row set
+    // of its own. Everything else on the payload is exactly one of the
+    // seven tables `buildAdaptiveTable` (`./adaptive-results.ts`) switches
+    // over — a schema `packages/admin-contracts` cannot import directly,
+    // since it must not depend on `apps/simulator`, so this count is the
+    // parity check that dependency boundary leaves for a field added or
+    // removed on one side and not the other.
+    const nonTableFields = ['informationPolicy', 'seriesTally'];
+    const payloadFields = Object.keys(adaptiveResultPayloadSchema.shape);
+    for (const field of nonTableFields) expect(payloadFields).toContain(field);
+    expect(payloadFields.length - nonTableFields.length).toBe(ADAPTIVE_RESULT_TABLE_NAMES.length);
   });
 });
 

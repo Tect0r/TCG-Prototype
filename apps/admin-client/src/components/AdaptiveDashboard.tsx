@@ -28,7 +28,7 @@ import {
 import { formatRate } from '../lib/dashboard-view.js';
 import type { AdminFailure, AdminOutcome } from '../net/transport.js';
 import { useAdminSession } from '../state/AdminContext.js';
-import { Busy, Empty, Failure } from './Feedback.js';
+import { Busy, Empty, Failure, OutcomeView } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
 
 /**
@@ -149,8 +149,8 @@ export function AdaptiveRunPanel({
       <h2 id="adaptive-run">Adaptive Counter run</h2>
       <p className="panel__note">
         Opened from a queue row's own job, or by typing the experiment ID it was configured with
-        below. The server resolves its evidence itself; this screen never names or sees a
-        filesystem path.
+        below. The server resolves its evidence itself; this screen never names or sees a filesystem
+        path.
       </p>
 
       <form
@@ -338,9 +338,7 @@ function informationPolicyBanner(policy: AdaptiveRunSummary['informationPolicy']
 function SummaryFacts({ summary }: { readonly summary: AdaptiveRunSummary }) {
   const facts: Fact[] = [
     { label: 'Experiment', value: <code>{summary.experimentId}</code> },
-    ...(summary.jobId !== null
-      ? [{ label: 'Job', value: <code>{summary.jobId}</code> }]
-      : []),
+    ...(summary.jobId !== null ? [{ label: 'Job', value: <code>{summary.jobId}</code> }] : []),
     { label: 'Configuration hash', value: <code>{summary.configHash}</code> },
     {
       label: 'Read from',
@@ -489,32 +487,38 @@ function SeriesView({
   readonly outcome: TableOutcome | undefined;
   readonly onDrill: (target: AdaptiveDrillTarget) => void;
 }) {
-  if (outcome === undefined) return <Busy label="Reading the series table…" />;
-  if (!outcome.ok)
-    return <Failure title="The series table could not be read" failure={outcome.failure} />;
-  if (outcome.value.rows.length === 0) return <Empty>This run has decided no block yet.</Empty>;
-
-  const note = adaptiveTruncationNote(outcome.value, 'decided blocks');
   return (
-    <div className="dashboard__view">
-      {note !== null && (
-        <p className="dashboard__truncation" role="note">
-          {note}
-        </p>
-      )}
-      <h4>Cumulative — every decided block so far</h4>
-      <SeriesTallyTable
-        caption="Cumulative series tally, one row per decided block"
-        points={cumulativeSeriesTally(outcome.value.rows)}
-      />
-      <h4>Rolling — last {ADAPTIVE_ROLLING_WINDOW} decided blocks</h4>
-      <SeriesTallyTable
-        caption={`Series tally over a trailing window of ${String(ADAPTIVE_ROLLING_WINDOW)} decided blocks`}
-        points={rollingSeriesTally(outcome.value.rows)}
-      />
-      <h4>Exact rows</h4>
-      <ExactTable table={outcome.value} onDrill={onDrill} />
-    </div>
+    <OutcomeView
+      outcome={outcome}
+      busyLabel="Reading the series table…"
+      failureTitle="The series table could not be read"
+    >
+      {(value) => {
+        if (value.rows.length === 0) return <Empty>This run has decided no block yet.</Empty>;
+        const note = adaptiveTruncationNote(value, 'decided blocks');
+        return (
+          <div className="dashboard__view">
+            {note !== null && (
+              <p className="dashboard__truncation" role="note">
+                {note}
+              </p>
+            )}
+            <h4>Cumulative — every decided block so far</h4>
+            <SeriesTallyTable
+              caption="Cumulative series tally, one row per decided block"
+              points={cumulativeSeriesTally(value.rows)}
+            />
+            <h4>Rolling — last {ADAPTIVE_ROLLING_WINDOW} decided blocks</h4>
+            <SeriesTallyTable
+              caption={`Series tally over a trailing window of ${String(ADAPTIVE_ROLLING_WINDOW)} decided blocks`}
+              points={rollingSeriesTally(value.rows)}
+            />
+            <h4>Exact rows</h4>
+            <ExactTable table={value} onDrill={onDrill} />
+          </div>
+        );
+      }}
+    </OutcomeView>
   );
 }
 
@@ -527,43 +531,45 @@ function ScreeningView({
   readonly outcome: TableOutcome | undefined;
   readonly onDrill: (target: AdaptiveDrillTarget) => void;
 }) {
-  if (outcome === undefined) return <Busy label="Reading the screening-candidates table…" />;
-  if (!outcome.ok) {
-    return (
-      <Failure title="The screening-candidates table could not be read" failure={outcome.failure} />
-    );
-  }
-  if (outcome.value.rows.length === 0)
-    return <Empty>This run has screened no candidate yet.</Empty>;
-
-  const note = adaptiveTruncationNote(outcome.value, 'candidates');
   return (
-    <div className="dashboard__view">
-      {note !== null && (
-        <p className="dashboard__truncation" role="note">
-          {note}
-        </p>
-      )}
-      <h4>Promotion score, by candidate</h4>
-      <table className="dashboard__bars">
-        <caption className="visually-hidden">
-          Each screened candidate's promotion score, with interval and sample count
-        </caption>
-        <tbody>
-          {outcome.value.rows.map((row, index) => (
-            <tr key={index}>
-              <th scope="row">
-                Gen {String(row.generation)}, block {String(row.block)} —{' '}
-                {String(row.revisionId ?? '')}
-              </th>
-              <td>{formatRate(readAdaptiveRate(outcome.value, row, 'score'))}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <h4>Exact rows</h4>
-      <ExactTable table={outcome.value} onDrill={onDrill} />
-    </div>
+    <OutcomeView
+      outcome={outcome}
+      busyLabel="Reading the screening-candidates table…"
+      failureTitle="The screening-candidates table could not be read"
+    >
+      {(value) => {
+        if (value.rows.length === 0) return <Empty>This run has screened no candidate yet.</Empty>;
+        const note = adaptiveTruncationNote(value, 'candidates');
+        return (
+          <div className="dashboard__view">
+            {note !== null && (
+              <p className="dashboard__truncation" role="note">
+                {note}
+              </p>
+            )}
+            <h4>Promotion score, by candidate</h4>
+            <table className="dashboard__bars">
+              <caption className="visually-hidden">
+                Each screened candidate's promotion score, with interval and sample count
+              </caption>
+              <tbody>
+                {value.rows.map((row, index) => (
+                  <tr key={index}>
+                    <th scope="row">
+                      Gen {String(row.generation)}, block {String(row.block)} —{' '}
+                      {String(row.revisionId ?? '')}
+                    </th>
+                    <td>{formatRate(readAdaptiveRate(value, row, 'score'))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <h4>Exact rows</h4>
+            <ExactTable table={value} onDrill={onDrill} />
+          </div>
+        );
+      }}
+    </OutcomeView>
   );
 }
 
@@ -576,38 +582,42 @@ function ReferenceFieldView({
   readonly outcome: TableOutcome | undefined;
   readonly onDrill: (target: AdaptiveDrillTarget) => void;
 }) {
-  if (outcome === undefined) return <Busy label="Reading the reference-field table…" />;
-  if (!outcome.ok) {
-    return (
-      <Failure title="The reference-field table could not be read" failure={outcome.failure} />
-    );
-  }
-  if (outcome.value.rows.length === 0) {
-    return (
-      <Empty>
-        This run recorded no reference-field standing — its absence is not evidence of an even
-        split.
-      </Empty>
-    );
-  }
-  const row = outcome.value.rows[0] as ResultRow;
   return (
-    <div className="dashboard__view">
-      <h4>Reference-field standing</h4>
-      <table className="dashboard__bars">
-        <caption className="visually-hidden">
-          Reference-field standing, with interval and sample count
-        </caption>
-        <tbody>
-          <tr>
-            <th scope="row">Standing</th>
-            <td>{formatRate(readAdaptiveRate(outcome.value, row, 'standing'))}</td>
-          </tr>
-        </tbody>
-      </table>
-      <h4>Exact row</h4>
-      <ExactTable table={outcome.value} onDrill={onDrill} />
-    </div>
+    <OutcomeView
+      outcome={outcome}
+      busyLabel="Reading the reference-field table…"
+      failureTitle="The reference-field table could not be read"
+    >
+      {(value) => {
+        if (value.rows.length === 0) {
+          return (
+            <Empty>
+              This run recorded no reference-field standing — its absence is not evidence of an even
+              split.
+            </Empty>
+          );
+        }
+        const row = value.rows[0] as ResultRow;
+        return (
+          <div className="dashboard__view">
+            <h4>Reference-field standing</h4>
+            <table className="dashboard__bars">
+              <caption className="visually-hidden">
+                Reference-field standing, with interval and sample count
+              </caption>
+              <tbody>
+                <tr>
+                  <th scope="row">Standing</th>
+                  <td>{formatRate(readAdaptiveRate(value, row, 'standing'))}</td>
+                </tr>
+              </tbody>
+            </table>
+            <h4>Exact row</h4>
+            <ExactTable table={value} onDrill={onDrill} />
+          </div>
+        );
+      }}
+    </OutcomeView>
   );
 }
 
@@ -620,31 +630,38 @@ function CyclesView({
   readonly outcome: TableOutcome | undefined;
   readonly onDrill: (target: AdaptiveDrillTarget) => void;
 }) {
-  if (outcome === undefined) return <Busy label="Reading the cycles table…" />;
-  if (!outcome.ok)
-    return <Failure title="The cycles table could not be read" failure={outcome.failure} />;
-  if (outcome.value.rows.length === 0) {
-    return (
-      <Empty>
-        This run has recorded no repeated deck-hash pair. Its absence is descriptive only, never a
-        verdict that the meta is healthy, stuck or converged.
-      </Empty>
-    );
-  }
-  const note = adaptiveTruncationNote(outcome.value, 'repeated states');
   return (
-    <div className="dashboard__view">
-      <p className="panel__note">
-        A repeated deck-hash pair is descriptive observation only — evidence for review, never an
-        automatic verdict that the meta is healthy, stuck or converged.
-      </p>
-      {note !== null && (
-        <p className="dashboard__truncation" role="note">
-          {note}
-        </p>
-      )}
-      <ExactTable table={outcome.value} onDrill={onDrill} />
-    </div>
+    <OutcomeView
+      outcome={outcome}
+      busyLabel="Reading the cycles table…"
+      failureTitle="The cycles table could not be read"
+    >
+      {(value) => {
+        if (value.rows.length === 0) {
+          return (
+            <Empty>
+              This run has recorded no repeated deck-hash pair. Its absence is descriptive only,
+              never a verdict that the meta is healthy, stuck or converged.
+            </Empty>
+          );
+        }
+        const note = adaptiveTruncationNote(value, 'repeated states');
+        return (
+          <div className="dashboard__view">
+            <p className="panel__note">
+              A repeated deck-hash pair is descriptive observation only — evidence for review, never
+              an automatic verdict that the meta is healthy, stuck or converged.
+            </p>
+            {note !== null && (
+              <p className="dashboard__truncation" role="note">
+                {note}
+              </p>
+            )}
+            <ExactTable table={value} onDrill={onDrill} />
+          </div>
+        );
+      }}
+    </OutcomeView>
   );
 }
 
@@ -657,39 +674,48 @@ function ValidationView({
   readonly outcome: TableOutcome | undefined;
   readonly onDrill: (target: AdaptiveDrillTarget) => void;
 }) {
-  if (outcome === undefined) return <Busy label="Reading the validation table…" />;
-  if (!outcome.ok)
-    return <Failure title="The validation table could not be read" failure={outcome.failure} />;
-  if (outcome.value.rows.length === 0) {
-    return (
-      <Empty>
-        The frozen validation stage has not been run for this experiment yet. This is separate from
-        the series score above: screening evidence is never folded into a validation standing.
-      </Empty>
-    );
-  }
-  const row = outcome.value.rows[0] as ResultRow;
   return (
-    <div className="dashboard__view">
-      <p className="panel__note">
-        A controlled comparison between the two frozen final decks, on fresh seeds never used during
-        screening — kept apart from <code>seriesTally</code> above rather than folded into it.
-      </p>
-      <h4>Frozen validation standing</h4>
-      <table className="dashboard__bars">
-        <caption className="visually-hidden">
-          Frozen validation standing, with interval and sample count
-        </caption>
-        <tbody>
-          <tr>
-            <th scope="row">Standing</th>
-            <td>{formatRate(readAdaptiveRate(outcome.value, row, 'standing'))}</td>
-          </tr>
-        </tbody>
-      </table>
-      <h4>Exact row</h4>
-      <ExactTable table={outcome.value} onDrill={onDrill} />
-    </div>
+    <OutcomeView
+      outcome={outcome}
+      busyLabel="Reading the validation table…"
+      failureTitle="The validation table could not be read"
+    >
+      {(value) => {
+        if (value.rows.length === 0) {
+          return (
+            <Empty>
+              The frozen validation stage has not been run for this experiment yet. This is separate
+              from the series score above: screening evidence is never folded into a validation
+              standing.
+            </Empty>
+          );
+        }
+        const row = value.rows[0] as ResultRow;
+        return (
+          <div className="dashboard__view">
+            <p className="panel__note">
+              A controlled comparison between the two frozen final decks, on fresh seeds never used
+              during screening — kept apart from <code>seriesTally</code> above rather than folded
+              into it.
+            </p>
+            <h4>Frozen validation standing</h4>
+            <table className="dashboard__bars">
+              <caption className="visually-hidden">
+                Frozen validation standing, with interval and sample count
+              </caption>
+              <tbody>
+                <tr>
+                  <th scope="row">Standing</th>
+                  <td>{formatRate(readAdaptiveRate(value, row, 'standing'))}</td>
+                </tr>
+              </tbody>
+            </table>
+            <h4>Exact row</h4>
+            <ExactTable table={value} onDrill={onDrill} />
+          </div>
+        );
+      }}
+    </OutcomeView>
   );
 }
 
@@ -706,20 +732,27 @@ function PlainTableView({
   readonly noun: string;
   readonly onDrill: (target: AdaptiveDrillTarget) => void;
 }) {
-  if (outcome === undefined) return <Busy label="Reading this table…" />;
-  if (!outcome.ok)
-    return <Failure title="This table could not be read" failure={outcome.failure} />;
-  if (outcome.value.rows.length === 0) return <Empty>{emptyMessage}</Empty>;
-  const note = adaptiveTruncationNote(outcome.value, noun);
   return (
-    <div className="dashboard__view">
-      {note !== null && (
-        <p className="dashboard__truncation" role="note">
-          {note}
-        </p>
-      )}
-      <ExactTable table={outcome.value} onDrill={onDrill} />
-    </div>
+    <OutcomeView
+      outcome={outcome}
+      busyLabel="Reading this table…"
+      failureTitle="This table could not be read"
+    >
+      {(value) => {
+        if (value.rows.length === 0) return <Empty>{emptyMessage}</Empty>;
+        const note = adaptiveTruncationNote(value, noun);
+        return (
+          <div className="dashboard__view">
+            {note !== null && (
+              <p className="dashboard__truncation" role="note">
+                {note}
+              </p>
+            )}
+            <ExactTable table={value} onDrill={onDrill} />
+          </div>
+        );
+      }}
+    </OutcomeView>
   );
 }
 

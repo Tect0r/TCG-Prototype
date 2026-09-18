@@ -1,6 +1,7 @@
 import {
   adaptiveJobSpecSchema,
   adminError,
+  foreignVersionCode,
   type AdaptiveJobSpec,
   type AdaptiveWorkloadEstimate,
   type AdminError,
@@ -141,16 +142,13 @@ export async function readAdaptiveJobConfig(
   const problem = describeAdaptiveVersionProblem('config', declared);
   if (problem !== null) {
     // Same two codes `refuseForeignVersion` gives an experiment configuration
-    // for the same distinction: no readable version number at all is
-    // `admin/missing_version`, and a version outside this build's supported
-    // range — in either direction — is `admin/unsupported_version`. The
-    // message stays the simulator's own (`describeAdaptiveVersionProblem`),
-    // since it names the record precisely; only the code is standardised.
-    const code =
-      typeof declared !== 'number' || !Number.isInteger(declared) || declared < 1
-        ? 'admin/missing_version'
-        : 'admin/unsupported_version';
-    return err([adminError(code, problem, { path: 'schemaVersion', context })]);
+    // for the same distinction — `foreignVersionCode` is that classification,
+    // shared rather than re-derived. The message stays the simulator's own
+    // (`describeAdaptiveVersionProblem`), since it names the record
+    // precisely; only the code is standardised.
+    return err([
+      adminError(foreignVersionCode(declared), problem, { path: 'schemaVersion', context }),
+    ]);
   }
 
   try {

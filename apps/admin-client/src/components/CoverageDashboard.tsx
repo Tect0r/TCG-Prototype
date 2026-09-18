@@ -1,15 +1,9 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 
 import {
   CATALOG_COVERAGE_STAGES,
-  jobIdSchema,
-  LIVE_MATCH_SOURCES,
-  liveMatchContentVersionSchema,
   type CatalogCoverageReport,
-  type JobId,
-  type LiveMatchSource,
   type PlayerMetaCoverageReport,
-  type PlayerMetaPartition,
 } from '@tcg/admin-contracts';
 
 import {
@@ -18,10 +12,10 @@ import {
   coverageStatusLabel,
   playerMetaObservationTally,
 } from '../lib/coverage-view.js';
-import type { AdminOutcome } from '../net/transport.js';
 import { useAdminSession } from '../state/AdminContext.js';
-import { Busy, Empty, Failure } from './Feedback.js';
+import { Empty } from './Feedback.js';
 import { FactTable } from './FactTable.js';
+import { JobIdLookupPanel, PlayerMetaPartitionLookupPanel } from './LookupPanels.js';
 
 /**
  * M08.27C — the Coverage panel: how much of the whole card and mechanic
@@ -81,67 +75,14 @@ export function CoveragePanel() {
 
 function CatalogCoveragePanel() {
   const session = useAdminSession();
-  const [input, setInput] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [jobId, setJobId] = useState<JobId | null>(null);
-  const [report, setReport] = useState<AdminOutcome<CatalogCoverageReport> | null>(null);
-
-  const open = useCallback(
-    (id: JobId) => {
-      setJobId(id);
-      setReport(null);
-      void session.catalogCoverageView(id).then(setReport);
-    },
-    [session],
-  );
-
   return (
-    <>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const parsed = jobIdSchema.safeParse(input.trim());
-          if (!parsed.success) {
-            setFormError(parsed.error.issues[0]?.message ?? 'Not a valid job ID.');
-            return;
-          }
-          setFormError(null);
-          open(parsed.data);
-        }}
-      >
-        <label className="builder__field">
-          Job ID
-          <input
-            type="text"
-            value={input}
-            placeholder="job_..."
-            onChange={(event) => {
-              setInput(event.target.value);
-            }}
-          />
-        </label>
-        <p className="builder__actions">
-          <button type="submit">Open</button>
-        </p>
-        {formError !== null && (
-          <p className="dashboard__truncation" role="alert">
-            {formError}
-          </p>
-        )}
-      </form>
-
-      {jobId !== null && report === null && <Busy label="Reading this run's coverage…" />}
-      {report !== null && !report.ok && (
-        <Failure
-          title="This run's coverage could not be shown"
-          failure={report.failure}
-          onRetry={() => {
-            if (jobId !== null) open(jobId);
-          }}
-        />
-      )}
-      {report !== null && report.ok && <CatalogCoverageView report={report.value} />}
-    </>
+    <JobIdLookupPanel<CatalogCoverageReport>
+      fetch={(id) => session.catalogCoverageView(id)}
+      busyLabel="Reading this run's coverage…"
+      failureTitle="This run's coverage could not be shown"
+    >
+      {(value) => <CatalogCoverageView report={value} />}
+    </JobIdLookupPanel>
   );
 }
 
@@ -225,102 +166,14 @@ function CatalogMechanicsTable({
 
 function PlayerMetaCoveragePanel() {
   const session = useAdminSession();
-  const [source, setSource] = useState<LiveMatchSource>(LIVE_MATCH_SOURCES[0]);
-  const [contentVersionInput, setContentVersionInput] = useState('1');
-  const [rulesVersionInput, setRulesVersionInput] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [partition, setPartition] = useState<PlayerMetaPartition | null>(null);
-  const [report, setReport] = useState<AdminOutcome<PlayerMetaCoverageReport> | null>(null);
-
-  const open = useCallback(
-    (next: PlayerMetaPartition) => {
-      setPartition(next);
-      setReport(null);
-      void session.playerMetaCoverageView(next).then(setReport);
-    },
-    [session],
-  );
-
   return (
-    <>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const parsedVersion = liveMatchContentVersionSchema.safeParse(
-            Number(contentVersionInput),
-          );
-          if (!parsedVersion.success) {
-            setFormError(parsedVersion.error.issues[0]?.message ?? 'Not a valid content version.');
-            return;
-          }
-          const rulesVersion = rulesVersionInput.trim();
-          if (rulesVersion === '') {
-            setFormError('Rules version is required.');
-            return;
-          }
-          setFormError(null);
-          open({ source, contentVersion: parsedVersion.data, rulesVersion });
-        }}
-      >
-        <label className="builder__field">
-          Source
-          <select
-            value={source}
-            onChange={(event) => {
-              setSource(event.target.value as LiveMatchSource);
-            }}
-          >
-            {LIVE_MATCH_SOURCES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="builder__field">
-          Content version
-          <input
-            type="number"
-            min={1}
-            value={contentVersionInput}
-            onChange={(event) => {
-              setContentVersionInput(event.target.value);
-            }}
-          />
-        </label>
-        <label className="builder__field">
-          Rules version
-          <input
-            type="text"
-            value={rulesVersionInput}
-            placeholder="1.0.0"
-            onChange={(event) => {
-              setRulesVersionInput(event.target.value);
-            }}
-          />
-        </label>
-        <p className="builder__actions">
-          <button type="submit">Open</button>
-        </p>
-        {formError !== null && (
-          <p className="dashboard__truncation" role="alert">
-            {formError}
-          </p>
-        )}
-      </form>
-
-      {partition !== null && report === null && <Busy label="Reading this partition's coverage…" />}
-      {report !== null && !report.ok && (
-        <Failure
-          title="This partition's coverage could not be shown"
-          failure={report.failure}
-          onRetry={() => {
-            if (partition !== null) open(partition);
-          }}
-        />
-      )}
-      {report !== null && report.ok && <PlayerMetaCoverageView report={report.value} />}
-    </>
+    <PlayerMetaPartitionLookupPanel<PlayerMetaCoverageReport>
+      fetch={(partition) => session.playerMetaCoverageView(partition)}
+      busyLabel="Reading this partition's coverage…"
+      failureTitle="This partition's coverage could not be shown"
+    >
+      {(value) => <PlayerMetaCoverageView report={value} />}
+    </PlayerMetaPartitionLookupPanel>
   );
 }
 

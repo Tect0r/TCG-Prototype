@@ -6210,3 +6210,137 @@ reviewed as one unit, and the full verification gate is re-run and recorded.
       `apps/simulator/src/adaptive` suite 227/227 passing (up from 218);
       `apps/simulator` typecheck, eslint and prettier clean on every touched
       file.
+
+- [x] **M08.R22 — High-value duplicate cleanup: shared table/panel rendering,
+      one version-mismatch classifier, and two new adaptive-schema parity
+      tests across the dependency boundary.** A `jscpd` clone scan (no
+      dedicated duplicate-scan script exists in this repo, so run ad hoc
+      against `apps`/`packages` excluding tests/content/`node_modules`/`dist`)
+      located the concrete high-value items the review's "high-value
+      duplicate cleanup" item named, and confirmed several tempting matches
+      were not worth touching.
+
+      **Shared exact-row/table rendering** across Adaptive, Player Meta and
+      Deck Explorer dashboards (`AdaptiveDashboard.tsx`,
+      `PlayerMetaDashboard.tsx`, `DeckExplorerDashboard.tsx`, `Feedback.tsx`)
+      was consolidated onto one shared row/table renderer and the shared
+      `OutcomeView<T>` busy/failure/success boundary in `Feedback.tsx`, reused
+      wherever a panel already showed exact rows from a `PlayerMetaTableRow`
+      read. **Request/loading/error shells** in Coverage and Data Health were
+      still duplicated one layer up from that: the earlier `OutcomeView`
+      extraction shared the busy/failure/success rendering, but the
+      surrounding "type an identifier, hold it as pending state, call
+      `fetch`, open `OutcomeView`" form wiring was still restated four times
+      (`CatalogCoveragePanel`, `PlayerMetaCoveragePanel`,
+      `CatalogDataHealthPanel`, `PlayerMetaDataHealthPanel`). New
+      `apps/admin-client/src/components/LookupPanels.tsx` extracts that
+      wiring into two generic components — `JobIdLookupPanel<T>` (a `jobId`
+      form) and `PlayerMetaPartitionLookupPanel<T>` (a
+      source/contentVersion/rulesVersion form) — each parameterised only by
+      `fetch`, labels and a render function; `CoverageDashboard.tsx` and
+      `DataHealthDashboard.tsx` now delegate to them and keep only their
+      domain-specific report rendering local. A second `jscpd` pass confirmed
+      the clone is gone.
+
+      **One version-mismatch classifier.** `refuseForeignVersion`
+      (`packages/admin-contracts/src/version.ts`) and
+      `readAdaptiveJobConfig` (`apps/admin-server/src/catalog/
+      adaptive-job-config.ts`) independently restated the same
+      "is `found` a real declared version number, or is it missing/malformed"
+      test to choose between `admin/missing_version` and
+      `admin/unsupported_version`. Extracted `isReadableVersionNumber(found):
+      found is number` and `foreignVersionCode(found)` into `version.ts`
+      (exported from `packages/admin-contracts/src/index.ts`);
+      `refuseForeignVersion` now calls `foreignVersionCode` internally, and
+      `readAdaptiveJobConfig` calls it externally instead of restating the
+      condition. Only the *code* is shared — `adaptive-job-config.ts` keeps
+      using the simulator's own `describeAdaptiveVersionProblem` message text,
+      unchanged, since that message names the record precisely and the two
+      call sites should never share wording, only classification.
+
+      **Two adaptive-schema parity tests, at the two places the
+      dependency-boundary restatement pattern (`presets.ts`'s own header:
+      admin-contracts cannot import `@tcg/simulator` or `@tcg/card-data`) has
+      no existing check that a restatement and its original stayed in sync:**
+
+      1. `ADAPTIVE_RESULT_TABLE_NAMES` (`packages/admin-contracts/src/
+         adaptive-results.ts`, 7 table names) versus `AdaptiveResultPayload`'s
+         9 top-level fields (`apps/simulator/src/adaptive/report.ts`) — a
+         TypeScript exhaustive switch already protects `buildAdaptiveTable`
+         (`apps/admin-server/src/service/adaptive-results.ts`) against a table
+         name with no case, but nothing protected the reverse: a new payload
+         field added without a matching table. Added a test in
+         `adaptive-results.test.ts` (the one file already importing both
+         `@tcg/admin-contracts` and `@tcg/simulator` for this evidence-table
+         domain) asserting the payload's field count minus the two
+         non-row-shaped fields (`informationPolicy`, a run label;
+         `seriesTally`, a derived aggregate read straight into
+         `readAdaptiveSummary`'s `readings`) equals `ADAPTIVE_RESULT_TABLE_NAMES.length`.
+
+      2. `presets.ts`'s restated `ADAPTIVE_COMMANDER_POLICIES`,
+         `ADAPTIVE_INFORMATION_POLICIES`, `adaptiveSwapBoundSchema` and
+         `adaptiveRebuildTriggerSchema` versus their real definitions in
+         `apps/simulator/src/adaptive/config.ts`. `adaptiveCounterChoiceSchema`
+         validates a choice through the restated versions, and
+         `estimateAdaptiveChoice` (`apps/admin-server/src/lab/
+         adaptive-choice.ts`) passes those same fields into the simulator's
+         `parseAdaptiveConfig` moments later — the one place both sides are
+         reachable together. Added a parity `describe` block to the existing
+         `adaptive-choice.test.ts`: the two policy arrays compared by
+         `toEqual`, and the two bound schemas compared *behaviorally* via
+         `safeParse` over shared boundary values (bound edges, one-over,
+         one-under, the "neither field set" refusal) rather than by reading
+         zod internals — matching the restatement's own documented safety net
+         (narrower drifts over-refuse safely; wider drifts are caught for
+         real by `parseAdaptiveConfig`), so this test exists specifically to
+         catch a *narrower* silent drift, which that safety net alone does
+         not.
+
+      **Judged out of scope, with reasons recorded rather than left
+      unexplained:** `prepareJobConfig`/`prepareAdaptiveJobConfig` and their
+      sibling `*SpecOf`/`write*` functions (`job-config.ts` vs
+      `adaptive-job-config.ts`) share a shape but operate on different
+      config types (`ExperimentConfig` vs `AdaptiveConfig`); a generic
+      extraction would need higher-order parse/hash/message parameters for a
+      cosmetic win. `readJsonLines` (`apps/admin-server/src/catalog/files.ts`)
+      versus `readJsonl` (`apps/simulator/src/reporting/sinks.ts`, exported
+      from `@tcg/simulator` and already reachable from admin-server) look
+      identical in their truncated-tail-tolerant JSONL loop, but differ in
+      two load-bearing ways: async (`readFile`) versus sync (`readFileSync`)
+      I/O, and `readJsonLines`'s extra per-line `versionField` refusal step
+      that `readJsonl` has no use for — unifying them would mean forcing one
+      side's I/O model or threading an unused parameter through the other.
+      `packages/card-data/src/mechanics.ts` vs `packages/deck-generator/src/
+      hash.ts`, and a self-duplicate inside `apps/simulator/src/analysis/
+      replacement.ts`, are both real but non-adaptive and outside this
+      tranche's "adaptive schema"/"job-config persistence" scope. Per the
+      brief, this item does not pursue zero duplication — only duplication
+      that creates drift or obscures ownership, all of which is now
+      addressed or explicitly declined with a reason.
+
+      **Field Medic naming.** `content/sets/precon_wave_1/cards/
+      field_medic.json` and `content/sets/prototype_core/cards/
+      prototype_field_medic.json` share a display name but never coexist in
+      one playable pool: `packages/deck/src/format.ts`'s
+      `PRECON_WAVE_1_DECK_FORMAT` and `DEVELOPMENT_DECK_FORMAT`
+      (`prototype_core`) are disjoint formats, and "any playable pool must be
+      obtained through a format-scoped database" (CLAUDE.md) means no format
+      query ever returns both cards together. No rename needed.
+
+      Focused run: `adaptive-choice.test.ts` 13/13 (+4 new),
+      `adaptive-results.test.ts` 23/23 (+1 new), `coverage-flow.test.tsx`
+      8/8, `data-health-flow.test.tsx` 9/9, `adaptive-flow.test.tsx`,
+      `deck-explorer-flow.test.tsx` 11/11, `player-meta-flow.test.tsx` — all
+      green; `admin-client`, `admin-server` and `admin-contracts` typecheck
+      clean; eslint clean on every touched and new file.
+
+### Correction Tranche E (continued, verification stability)
+
+- [ ] **M08.R23 — Verification stability: the last implementation slice
+      before this tranche closes.** Per the original review's Slice C item 9,
+      fix without weakening the underlying requirement: the bot-latency flake
+      (observed 100.55ms against a strict `<100ms` assertion), the adaptive
+      integration test that exceeded its 120s timeout and the cascading
+      pause-assertion failure in the test that runs after it, and capture
+      final verification evidence using the repository's pinned Node/npm
+      versions.

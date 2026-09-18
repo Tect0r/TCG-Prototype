@@ -22,7 +22,7 @@ import {
 } from '../lib/player-meta-view.js';
 import type { AdminOutcome } from '../net/transport.js';
 import { useAdminSession } from '../state/AdminContext.js';
-import { Busy, Empty, Failure } from './Feedback.js';
+import { Empty, OutcomeView } from './Feedback.js';
 import { FactTable, type Fact } from './FactTable.js';
 
 /**
@@ -135,91 +135,95 @@ export function PlayerMetaPanel() {
         unfiltered; a filter form over the M08.25A surface is a later slice.
       </p>
 
-      {summary === null && <Busy label="Reading the Player Meta summary…" />}
-      {summary !== null && !summary.ok && (
-        <Failure
-          title="The Player Meta summary could not be shown"
-          failure={summary.failure}
-          onRetry={() => {
-            setSummary(null);
-            void session.playerMetaRunSummary(NO_PLAYER_META_FILTER).then(setSummary);
-          }}
-        />
-      )}
-      {summary !== null && summary.ok && (
-        <>
-          <SummaryFacts summary={summary.value} />
+      <OutcomeView
+        outcome={summary}
+        busyLabel="Reading the Player Meta summary…"
+        failureTitle="The Player Meta summary could not be shown"
+        onRetry={() => {
+          setSummary(null);
+          void session.playerMetaRunSummary(NO_PLAYER_META_FILTER).then(setSummary);
+        }}
+      >
+        {(value) => (
+          <>
+            <SummaryFacts summary={value} />
 
-          <div className="dashboard__tabs" role="group" aria-label="Player Meta dashboard view">
-            {PLAYER_META_DASHBOARD_TABLES.map((table) => (
-              <button
-                key={table}
-                type="button"
-                aria-pressed={view === table}
-                className={view === table ? 'is-current' : ''}
-                onClick={() => {
-                  setView(table);
-                  setDrill(null);
-                }}
-              >
-                {TAB_LABELS[table]}
-              </button>
-            ))}
-          </div>
-
-          {hasPlayerMetaWeighting(view) && (
-            <div className="dashboard__tabs" role="group" aria-label="Weighting">
-              <button
-                type="button"
-                aria-pressed={weighting === 'matches'}
-                className={weighting === 'matches' ? 'is-current' : ''}
-                onClick={() => {
-                  setWeighting('matches');
-                  setDrill(null);
-                }}
-              >
-                By matches
-              </button>
-              <button
-                type="button"
-                aria-pressed={weighting === 'unique'}
-                className={weighting === 'unique' ? 'is-current' : ''}
-                onClick={() => {
-                  setWeighting('unique');
-                  setDrill(null);
-                }}
-              >
-                By unique decks
-              </button>
-            </div>
-          )}
-
-          <TableView table={view} outcome={tables[view]} weighting={weighting} onDrill={setDrill} />
-
-          {drill !== null && (
-            <div className="dashboard__drill" role="region" aria-label={drill.title}>
-              <div className="dashboard__drill-head">
-                <h4>{drill.title}</h4>
+            <div className="dashboard__tabs" role="group" aria-label="Player Meta dashboard view">
+              {PLAYER_META_DASHBOARD_TABLES.map((table) => (
                 <button
+                  key={table}
                   type="button"
+                  aria-pressed={view === table}
+                  className={view === table ? 'is-current' : ''}
                   onClick={() => {
+                    setView(table);
                     setDrill(null);
                   }}
                 >
-                  Close
+                  {TAB_LABELS[table]}
+                </button>
+              ))}
+            </div>
+
+            {hasPlayerMetaWeighting(view) && (
+              <div className="dashboard__tabs" role="group" aria-label="Weighting">
+                <button
+                  type="button"
+                  aria-pressed={weighting === 'matches'}
+                  className={weighting === 'matches' ? 'is-current' : ''}
+                  onClick={() => {
+                    setWeighting('matches');
+                    setDrill(null);
+                  }}
+                >
+                  By matches
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={weighting === 'unique'}
+                  className={weighting === 'unique' ? 'is-current' : ''}
+                  onClick={() => {
+                    setWeighting('unique');
+                    setDrill(null);
+                  }}
+                >
+                  By unique decks
                 </button>
               </div>
-              <FactTable caption={drill.title} facts={drill.facts} />
-              <p className="panel__note">
-                This is the exact row a bar or cell summarizes — not a further aggregate. Opening
-                one contributing match or its replay is not available from this screen: that needs a
-                listing over the run's match records, which is M08.26&apos;s Match Explorer to
-                build.
-              </p>
-            </div>
-          )}
-        </>
-      )}
+            )}
+
+            <TableView
+              table={view}
+              outcome={tables[view]}
+              weighting={weighting}
+              onDrill={setDrill}
+            />
+
+            {drill !== null && (
+              <div className="dashboard__drill" role="region" aria-label={drill.title}>
+                <div className="dashboard__drill-head">
+                  <h4>{drill.title}</h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDrill(null);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <FactTable caption={drill.title} facts={drill.facts} />
+                <p className="panel__note">
+                  This is the exact row a bar or cell summarizes — not a further aggregate. Opening
+                  one contributing match or its replay is not available from this screen: that needs
+                  a listing over the run's match records, which is M08.26&apos;s Match Explorer to
+                  build.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </OutcomeView>
     </section>
   );
 }
@@ -382,30 +386,35 @@ function TableView({
   readonly weighting: PlayerMetaWeighting;
   readonly onDrill: (target: PlayerMetaDrillTarget) => void;
 }) {
-  if (outcome === undefined) return <Busy label={`Reading ${TAB_LABELS[table]}…`} />;
-  if (!outcome.ok) {
-    return <Failure title="This table could not be read" failure={outcome.failure} />;
-  }
-  if (outcome.value.rows.length === 0) {
-    return <Empty>This query matched no row for this table.</Empty>;
-  }
-  const note = playerMetaTruncationNote(outcome.value, 'rows');
   return (
-    <div className="dashboard__view">
-      {SURRENDER_TABLES.has(table) && (
-        <p className="panel__note" role="note">
-          Structural state and event/card figures from surrenders only — never board, Health or
-          resource numbers. A card or event listed here was <em>exposed</em> to a surrendering
-          player, in proximity to their concession; this is evidence for review, never a stated
-          cause.
-        </p>
-      )}
-      {note !== null && (
-        <p className="dashboard__truncation" role="note">
-          {note}
-        </p>
-      )}
-      <ExactTable table={outcome.value} weighting={weighting} onDrill={onDrill} />
-    </div>
+    <OutcomeView
+      outcome={outcome}
+      busyLabel={`Reading ${TAB_LABELS[table]}…`}
+      failureTitle="This table could not be read"
+    >
+      {(value) => {
+        if (value.rows.length === 0)
+          return <Empty>This query matched no row for this table.</Empty>;
+        const note = playerMetaTruncationNote(value, 'rows');
+        return (
+          <div className="dashboard__view">
+            {SURRENDER_TABLES.has(table) && (
+              <p className="panel__note" role="note">
+                Structural state and event/card figures from surrenders only — never board, Health
+                or resource numbers. A card or event listed here was <em>exposed</em> to a
+                surrendering player, in proximity to their concession; this is evidence for review,
+                never a stated cause.
+              </p>
+            )}
+            {note !== null && (
+              <p className="dashboard__truncation" role="note">
+                {note}
+              </p>
+            )}
+            <ExactTable table={value} weighting={weighting} onDrill={onDrill} />
+          </div>
+        );
+      }}
+    </OutcomeView>
   );
 }

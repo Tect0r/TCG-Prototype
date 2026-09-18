@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { failureMessages, type AdminFailure } from '../net/transport.js';
+import { failureMessages, type AdminFailure, type AdminOutcome } from '../net/transport.js';
 
 /**
  * The three things a screen says when it has no data: it is asking, it failed to
@@ -80,4 +80,43 @@ export function Failure({ title, failure, onRetry, retryLabel }: FailureProps) {
       )}
     </div>
   );
+}
+
+interface OutcomeViewProps<T> {
+  /** `null`/`undefined` mean "not settled yet" — the two spellings different screens already use. */
+  readonly outcome: AdminOutcome<T> | null | undefined;
+  /** False withholds even the busy state — nothing has been asked for yet. Defaults to true. */
+  readonly requested?: boolean;
+  readonly busyLabel: string;
+  readonly failureTitle: string;
+  readonly onRetry?: () => void;
+  readonly children: (value: T) => ReactNode;
+}
+
+/**
+ * The busy/failed/succeeded boundary every screen built on `AdminOutcome` was
+ * spelling out by hand (M08.R22): once past it, `children` only ever sees the
+ * settled, successful value. Rendering *within* that value — including
+ * whether an empty result is `<Empty>` or something more specific — stays
+ * with the caller, since that part is never actually identical between
+ * screens.
+ */
+export function OutcomeView<T>({
+  outcome,
+  requested = true,
+  busyLabel,
+  failureTitle,
+  onRetry,
+  children,
+}: OutcomeViewProps<T>): ReactNode {
+  if (!requested) return null;
+  if (outcome === null || outcome === undefined) return <Busy label={busyLabel} />;
+  if (!outcome.ok) {
+    return onRetry === undefined ? (
+      <Failure title={failureTitle} failure={outcome.failure} />
+    ) : (
+      <Failure title={failureTitle} failure={outcome.failure} onRetry={onRetry} />
+    );
+  }
+  return children(outcome.value);
 }
