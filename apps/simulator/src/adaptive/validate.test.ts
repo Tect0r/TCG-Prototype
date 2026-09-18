@@ -267,13 +267,33 @@ describe('tallyAdaptiveValidation', () => {
     });
   });
 
-  it('is zero across the board for an empty result set', () => {
+  it('counts every scheduled match as noResult for an empty result set', () => {
     const matches = scheduleAdaptiveValidation(baseScheduleInput());
     expect(tallyAdaptiveValidation(matches, [])).toEqual({
       incumbentWins: 0,
       opponentWins: 0,
-      noResult: 0,
+      noResult: matches.length,
     });
+  });
+
+  it('refuses a result naming a match outside the schedule', () => {
+    const matches = scheduleAdaptiveValidation(baseScheduleInput());
+    expect(() =>
+      tallyAdaptiveValidation(matches, [{ matchId: 'not-a-real-match', winnerPlayerId: null }]),
+    ).toThrow(/not-a-real-match/);
+  });
+
+  it('refuses a duplicated result matchId rather than double-counting it', () => {
+    const matches = scheduleAdaptiveValidation(
+      baseScheduleInput({ config: baseConfig({ mirrorSeats: false, finalValidationGames: 1 }) }),
+    );
+    const winnerPlayerId = winnerIdForDeckIndex(matches[0]!, 0);
+    expect(() =>
+      tallyAdaptiveValidation(matches, [
+        { matchId: matches[0]!.matchId, winnerPlayerId },
+        { matchId: matches[0]!.matchId, winnerPlayerId },
+      ]),
+    ).toThrow(new RegExp(matches[0]!.matchId));
   });
 
   it('attributes wins by seat identity, not deck-content hash, when the incumbent and opponent lineages freeze onto an identical deck', () => {

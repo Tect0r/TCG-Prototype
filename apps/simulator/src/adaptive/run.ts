@@ -11,6 +11,7 @@ import type { MatchStore } from '../reporting/match-store.js';
 import type { MatchRecord } from '../telemetry/schema.js';
 import type { ScheduledMatch } from '../schedule.js';
 import type { StopSignal } from '../stop.js';
+import { tallyAdaptiveSeatOutcomes } from './attribution.js';
 import type { AdaptiveConfig, AdaptiveRebuildTrigger } from './config.js';
 import {
   activeAdaptiveRevisionOf,
@@ -233,49 +234,30 @@ function winnerPlayerIdOf(record: MatchRecord): string | null {
 const INCUMBENT_DECK_INDEX = 0;
 
 /**
- * Attributes a block's wins by **seat/schedule identity**, not by deck-content
- * hash. `SimDeck.hash` is deliberately content-only
- * (`packages/deck-generator/src/deck.ts`'s own doc comment: "two decks with
- * identical cards are the same deck ... whoever built them"), so a hash
- * comparison collapses the instant both lineages' roots share a deck — exactly
- * what the shared-single-root-deck contract (`packages/admin-contracts/src/
- * presets.ts`'s `adaptiveCounterChoiceSchema`) guarantees at generation 0. A
- * winning seat's `playerId` is joined back to the `ScheduledMatch` that
- * produced it, and that seat's `deckIndex` — always `0` for incumbent, `1` for
- * opponent, per `scheduleAdaptiveBlock`'s fixed `decks` ordering — names which
- * lineage actually won, independent of what the two decks contain.
+ * Attributes a block's wins via `./attribution.ts`'s shared seat-identity
+ * logic, never by deck-content hash. `SimDeck.hash` is deliberately
+ * content-only (`packages/deck-generator/src/deck.ts`'s own doc comment: "two
+ * decks with identical cards are the same deck ... whoever built them"), so a
+ * hash comparison collapses the instant both lineages' roots share a deck —
+ * exactly what the shared-single-root-deck contract (`packages/admin-contracts
+ * /src/presets.ts`'s `adaptiveCounterChoiceSchema`) guarantees at generation
+ * 0. `records` (never a bare `matchId`/`winnerPlayerId` result list, unlike
+ * `./evaluate.ts`/`./validate.ts`'s callers) is this block's own freshly-run
+ * or resumed `MatchRecord`s, translated to the shared shape before tallying;
+ * a `record.matchId` naming no match in this block's own `matches` is
+ * refused there as an unknown result, same as everywhere else this module is
+ * used.
  */
 function deriveBlockOutcome(
   records: readonly MatchRecord[],
   matches: readonly ScheduledMatch[],
 ): AdaptiveBlockOutcome {
-  const matchById = new Map(matches.map((match) => [match.matchId, match] as const));
-  let incumbentWins = 0;
-  let opponentWins = 0;
-  let noResult = 0;
-  for (const record of records) {
-    const winnerSeat = record.seats.find((seat) => seat.won);
-    if (winnerSeat === undefined) {
-      noResult += 1;
-      continue;
-    }
-    const scheduled = matchById.get(record.matchId);
-    if (scheduled === undefined) {
-      throw new Error(
-        `deriveBlockOutcome: match record ${record.matchId} names no match in this block's schedule.`,
-      );
-    }
-    const scheduledSeat = scheduled.seats.find((seat) => seat.playerId === winnerSeat.playerId);
-    if (scheduledSeat === undefined) {
-      throw new Error(
-        `deriveBlockOutcome: match ${record.matchId}'s winning seat "${winnerSeat.playerId}" is ` +
-          "absent from that match's own schedule.",
-      );
-    }
-    if (scheduledSeat.deckIndex === INCUMBENT_DECK_INDEX) incumbentWins += 1;
-    else opponentWins += 1;
-  }
-  return { incumbentWins, opponentWins, noResult };
+  const results = records.map((record) => ({
+    matchId: record.matchId,
+    winnerPlayerId: winnerPlayerIdOf(record),
+  }));
+  const tally = tallyAdaptiveSeatOutcomes(matches, results, INCUMBENT_DECK_INDEX);
+  return { incumbentWins: tally.leftWins, opponentWins: tally.rightWins, noResult: tally.noResult };
 }
 
 /**

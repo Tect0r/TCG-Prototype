@@ -3,6 +3,7 @@ import type { PilotSpec } from '@tcg/bot-interface';
 import type { Environment } from '../environment.js';
 import { buildSchedule, type ScheduledMatch } from '../schedule.js';
 import { proportion, type ProportionEstimate } from '../analysis/stats.js';
+import { tallyAdaptiveSeatOutcomes } from './attribution.js';
 import type { AdaptiveConfig } from './config.js';
 import type { AdaptiveCheckpoint } from './checkpoint.js';
 import { activeAdaptiveRevisionOf } from './checkpoint.js';
@@ -133,33 +134,20 @@ export interface AdaptiveValidationOutcome {
 const INCUMBENT_DECK_INDEX = 0;
 
 /**
- * Tallies a completed validation stage's results by seat identity
- * (`playerId` → `deckIndex`), never by comparing deck content hashes. The
- * incumbent and opponent lineages can freeze onto an identical deck, and
- * `SimDeck.hash` is content-only, so a hash comparison would misattribute
- * every such game — this reads `deckIndex`, which is fixed by the seat's
- * schedule position and independent of what either deck's content is (the
- * same fix `./evaluate.ts`'s `tallyGroup` applies to screening evidence).
+ * Tallies a completed validation stage's results via `./attribution.ts`'s
+ * shared seat-identity logic (never deck-content hash — the incumbent and
+ * opponent lineages can freeze onto an identical deck, which is exactly what
+ * that file's own doc comment explains). Iterates the *scheduled* `matches`,
+ * so a match with no entry in `results` at all counts as `noResult` rather
+ * than silently not counting — the tally always spans exactly
+ * `matches.length` games, whatever `results` does or doesn't report.
  */
 export function tallyAdaptiveValidation(
   matches: readonly ScheduledMatch[],
   results: readonly AdaptiveValidationResult[],
 ): AdaptiveValidationOutcome {
-  const matchById = new Map(matches.map((match) => [match.matchId, match] as const));
-  let incumbentWins = 0;
-  let opponentWins = 0;
-  let noResult = 0;
-  for (const result of results) {
-    const scheduled = matchById.get(result.matchId);
-    const winnerSeat =
-      scheduled === undefined || result.winnerPlayerId === null
-        ? undefined
-        : scheduled.seats.find((seat) => seat.playerId === result.winnerPlayerId);
-    if (winnerSeat === undefined) noResult += 1;
-    else if (winnerSeat.deckIndex === INCUMBENT_DECK_INDEX) incumbentWins += 1;
-    else opponentWins += 1;
-  }
-  return { incumbentWins, opponentWins, noResult };
+  const tally = tallyAdaptiveSeatOutcomes(matches, results, INCUMBENT_DECK_INDEX);
+  return { incumbentWins: tally.leftWins, opponentWins: tally.rightWins, noResult: tally.noResult };
 }
 
 /**

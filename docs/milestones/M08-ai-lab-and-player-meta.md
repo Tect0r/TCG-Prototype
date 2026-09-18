@@ -6141,3 +6141,72 @@ reviewed as one unit, and the full verification gate is re-run and recorded.
       not a standing refusal of the file. Focused run:
       `artifacts.test.ts` 23/23 (4 new); typecheck, eslint and prettier
       clean.
+
+- [x] **M08.R21 — One shared seat-identity attribution implementation for
+      screening, validation and block outcomes.** `apps/simulator/src/adaptive
+      /evaluate.ts`'s `tallyGroup`, `validate.ts`'s `tallyAdaptiveValidation`
+      and `run.ts`'s `deriveBlockOutcome` each attributed a match's winner by
+      seat identity independently, and had drifted on three edges: whether a
+      scheduled match with no entry in the reported results counts as
+      `noResult` or silently does not count at all; whether a duplicate or
+      unknown result `matchId` is refused or silently collapsed/ignored; and
+      whether a winner naming no seat in its own match is `noResult` or a
+      thrown invariant violation. `validate.ts`'s own `AdaptiveValidationOutcome`
+      doc comment already claimed "`noResult` covers abnormal terminations and
+      missing results alike," but `tallyAdaptiveValidation` iterated `results`,
+      not `matches` — a scheduled match entirely absent from `results` was
+      never visited, so it silently did not count, and the file's own test
+      ("is zero across the board for an empty result set") asserted exactly
+      that non-counting instead of the doc comment's claim. That contradiction
+      is confirmed real, not a misreading of the review: an empty
+      `finalValidationGames` schedule fed to `tallyAdaptiveValidation([...N
+      matches], [])` returned `{ noResult: 0, ... }` before this slice.
+
+      Added `apps/simulator/src/adaptive/attribution.ts`:
+      `validateAdaptiveSeatResults(matches, results)` builds a
+      `matchId -> winnerPlayerId` map, refusing (throwing) a `matchId` absent
+      from `matches` (unknown) or repeated within `results` (duplicate) rather
+      than letting a `Map`-from-array collapse or double-count either;
+      `tallyAdaptiveSeatOutcomesFromMap(matches, resultsByMatchId,
+      leftDeckIndex)` then iterates `matches` — never the map or `results` —
+      so a missing entry is `noResult` by construction, and a present but
+      `null` (drawn) or seat-unmatched winner is also `noResult` rather than
+      thrown, matching the doc comment's original claim instead of the buggy
+      implementation; `tallyAdaptiveSeatOutcomes` composes both for the common
+      single-group case. Attribution itself is unchanged everywhere (seat
+      `playerId` -> fixed `deckIndex`, never `ScheduleDeck`/`SimDeck.hash`,
+      which is deliberately content-only) — this consolidation is about the
+      three edges above, not the core rule, which all three files already had
+      right.
+
+      `evaluate.ts`'s `tallyAdaptiveScreening` now validates `results` once
+      against the screening's *combined* `opponentMatches` + `fieldMatches`
+      before tallying either group from the resulting map — tallying a group
+      from only its own slice of the map (via `tallyAdaptiveSeatOutcomesFromMap`)
+      means a field-group result is never mistaken for "unknown" while
+      tallying the opponent group, or vice versa, purely because each group's
+      tally only walks its own matches. `validate.ts`'s `tallyAdaptiveValidation`
+      and `run.ts`'s `deriveBlockOutcome` are now three-line wrappers around
+      `tallyAdaptiveSeatOutcomes`/`tallyAdaptiveSeatOutcomesFromMap`, each
+      translating the shared `leftWins`/`rightWins` shape back to its own
+      field names (`candidateWins`/`opponentWins`, `incumbentWins`/
+      `opponentWins`). `deriveBlockOutcome` keeps refusing an unknown
+      `matchId` (now via the shared validator, same as before) but no longer
+      throws for a winning seat absent from its own match's schedule — that
+      case is internally unreachable in practice (`records` come from
+      `runBatch` against the very `matches` this call also receives) and is
+      now `noResult` like everywhere else, consistent with the canonical
+      semantics rather than a special case.
+
+      Corrected the contradicting test: `validate.test.ts`'s "is zero across
+      the board for an empty result set" is now "counts every scheduled match
+      as noResult for an empty result set," asserting `noResult:
+      matches.length`. Added duplicate/unknown-id refusal tests to
+      `validate.test.ts`, and a new `attribution.test.ts` (9 tests) covering
+      missing/drawn/invalid/unknown/duplicate results directly plus the
+      combined-validate-then-per-group-tally path `tallyAdaptiveScreening`
+      relies on. Focused run: `attribution.test.ts` (9, new), `evaluate.test.ts`
+      (14), `validate.test.ts` (17, +2 new), `run.test.ts` (10) — full
+      `apps/simulator/src/adaptive` suite 227/227 passing (up from 218);
+      `apps/simulator` typecheck, eslint and prettier clean on every touched
+      file.

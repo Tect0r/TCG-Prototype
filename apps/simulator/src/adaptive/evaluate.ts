@@ -3,6 +3,7 @@ import type { PilotSpec } from '@tcg/bot-interface';
 import type { Environment } from '../environment.js';
 import { buildSchedule, type ScheduleDeck, type ScheduledMatch } from '../schedule.js';
 import { seededIndex } from '../seed.js';
+import { tallyAdaptiveSeatOutcomesFromMap, validateAdaptiveSeatResults } from './attribution.js';
 import type { AdaptiveConfig } from './config.js';
 import type { AdaptiveRevision } from './revision.js';
 
@@ -232,34 +233,22 @@ export const adaptiveScreeningTallySchema = z.strictObject({
 const CANDIDATE_DECK_INDEX = 0;
 
 /**
- * Attributes each match's winner by seat identity (`playerId` → `deckIndex`),
- * never by comparing deck content hashes. A candidate and its opponent can
- * share an identical deck — a rebuild that reproduces the incumbent's list
- * under an `open` Commander policy, say — and `ScheduleDeck.hash` is
- * deliberately content-only (`../schedule.ts`), so two seats with the same
- * hash would misattribute every such game to whichever side is checked first.
- * `deckIndex` is fixed by the seat's position in the schedule, independent of
- * what the deck's content happens to be, which is what keeps this correct
- * even when both seats hold the same deck.
+ * Tallies one group's matches from an already-validated `matchId -> winner`
+ * map, via `./attribution.ts`'s shared seat-identity logic (never deck
+ * content — see that file's own doc comment for why). Returns the group's
+ * shape (`candidateWins`/`opponentWins`/`noResult`) rather than the shared
+ * function's generic `leftWins`/`rightWins`.
  */
 function tallyGroup(
   matches: readonly AdaptiveScreeningMatch[],
   resultsByMatchId: ReadonlyMap<string, string | null>,
 ): AdaptiveScreeningTally {
-  let candidateWins = 0;
-  let opponentWins = 0;
-  let noResult = 0;
-  for (const entry of matches) {
-    const winnerPlayerId = resultsByMatchId.get(entry.match.matchId);
-    const winnerSeat =
-      winnerPlayerId === undefined || winnerPlayerId === null
-        ? undefined
-        : entry.match.seats.find((seat) => seat.playerId === winnerPlayerId);
-    if (winnerSeat === undefined) noResult += 1;
-    else if (winnerSeat.deckIndex === CANDIDATE_DECK_INDEX) candidateWins += 1;
-    else opponentWins += 1;
-  }
-  return { candidateWins, opponentWins, noResult };
+  const tally = tallyAdaptiveSeatOutcomesFromMap(
+    matches.map((entry) => entry.match),
+    resultsByMatchId,
+    CANDIDATE_DECK_INDEX,
+  );
+  return { candidateWins: tally.leftWins, opponentWins: tally.rightWins, noResult: tally.noResult };
 }
 
 export interface AdaptiveScreeningTallies {
@@ -273,14 +262,21 @@ export interface AdaptiveScreeningTallies {
  * reference-field groups separate exactly as `AdaptiveCandidateScreening`
  * does. Deciding *from* these tallies — a single promotion verdict, whatever
  * a `meta_aware` config does to combine them — is M08.17C's job.
+ *
+ * `results` is validated once against the screening's combined opponent and
+ * field matches — refusing an unknown or duplicated `matchId` — before
+ * either group is tallied from the resulting map, so a field-group result
+ * is never mistaken for "unknown" while tallying the opponent group (and
+ * vice versa) merely because each group's tally only walks its own matches.
  */
 export function tallyAdaptiveScreening(
   screening: AdaptiveCandidateScreening,
   results: readonly AdaptiveScreeningResult[],
 ): AdaptiveScreeningTallies {
-  const resultsByMatchId = new Map(
-    results.map((result) => [result.matchId, result.winnerPlayerId]),
+  const allMatches = [...screening.opponentMatches, ...screening.fieldMatches].map(
+    (entry) => entry.match,
   );
+  const resultsByMatchId = validateAdaptiveSeatResults(allMatches, results);
   return {
     opponent: tallyGroup(screening.opponentMatches, resultsByMatchId),
     field:

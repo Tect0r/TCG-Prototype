@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "unit": "M08.R21",
+  "unit": "M08.R22",
   "mode": "implementation",
   "source": "docs/milestones/M08-ai-lab-and-player-meta.md",
   "heading": "Correction Tranche E (continued)",
   "blocker": null,
-  "next": "M08.R22"
+  "next": "M08.R23"
 }
